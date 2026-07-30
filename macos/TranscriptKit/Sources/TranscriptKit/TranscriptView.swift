@@ -129,6 +129,53 @@ public final class TranscriptView: NSView {
     /// Answers how rows look, and observes display-side events.
     public weak var delegate: TranscriptViewDelegate?
 
+    // MARK: - Row answers
+
+    /// The cell `viewForRow` is currently filling, so that `makeView` can hand
+    /// back the hosted view already inside it. Non-nil only for the duration of
+    /// that delegate call.
+    private var configuringCell: TranscriptCellView?
+
+    /// How tall row `row` is. `.view` rows are the delegate's to measure; the
+    /// three the transcript draws itself measure to nothing until the typesetter
+    /// lands.
+    fileprivate func height(ofRow row: Int) -> CGFloat {
+        guard case .view = dataSource?.transcriptView(self, contentForRow: row),
+            let delegate
+        else { return 0 }
+        return delegate.transcriptView(self, heightOfRow: row, width: contentWidth)
+    }
+
+    /// The cell for row `row`: the transcript's own cell view, with the hosted
+    /// view inside it. `nil` for the rows the transcript draws itself, which have
+    /// nothing to draw yet.
+    fileprivate func view(forRow row: Int) -> NSView? {
+        guard case .view = dataSource?.transcriptView(self, contentForRow: row),
+            let delegate
+        else { return nil }
+
+        let cell =
+            tableView.makeView(withIdentifier: TranscriptCellView.identifier, owner: nil)
+            as? TranscriptCellView ?? TranscriptCellView()
+
+        configuringCell = cell
+        defer { configuringCell = nil }
+        let hosted = delegate.transcriptView(self, viewForRow: row)
+
+        cell.install(hosted, minWidth: minContentWidth, maxWidth: maxContentWidth)
+        return cell
+    }
+
+    /// Reports the row leaving the viewport. What goes back into the pool is the
+    /// cell, but what the host has work to stop on is the view it supplied — so
+    /// that is what it hears about.
+    fileprivate func didRemove(_ rowView: NSTableRowView, forRow row: Int) {
+        guard let cell = rowView.view(atColumn: 0) as? TranscriptCellView,
+            let hosted = cell.hostedView
+        else { return }
+        delegate?.transcriptView(self, didRemove: hosted, forRow: row)
+    }
+
     // MARK: - Table
 
     /// Full width on purpose: the wheel has to keep working over the side
@@ -175,6 +222,13 @@ public final class TranscriptView: NSView {
 
     private static let columnIdentifier = NSUserInterfaceItemIdentifier("TranscriptKit.column")
 
+    /// Answers the table's data source and delegate callbacks on the
+    /// transcript's behalf, so that AppKit's table protocols stay off the
+    /// package's public surface — and so a host can't be handed the transcript
+    /// as a data source for a table of its own. Owned here; the table refers to
+    /// it weakly.
+    private lazy var tableAdapter = TableAdapter(transcript: self)
+
     // MARK: - Lifecycle
 
     public override init(frame frameRect: NSRect) {
@@ -191,6 +245,11 @@ public final class TranscriptView: NSView {
             scrollView.topAnchor.constraint(equalTo: topAnchor),
             scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
+
+        // Safe before any content exists: the row count is 0 until the host
+        // calls `reloadData()`, so the queries this provokes cost nothing.
+        tableView.dataSource = tableAdapter
+        tableView.delegate = tableAdapter
     }
 
     public convenience init() {
@@ -221,6 +280,52 @@ public final class TranscriptView: NSView {
     /// `NSTableView.row(for:)`.
     public func row(for view: NSView) -> Int {
         tableView.row(for: view)
+    }
+
+    // MARK: - Content width
+
+    /// The narrowest the content column is allowed to get, default `0`.
+    ///
+    /// Below this the content stops following the viewport and stays centred,
+    /// with its edges clipped — the trade a layout makes when it has a width it
+    /// cannot usefully go under (a table, a code block). `0` means it always
+    /// follows.
+    public var minContentWidth: CGFloat = 0 {
+        didSet { contentWidthBoundsChanged() }
+    }
+
+    /// The widest the content column is allowed to get, default unbounded.
+    ///
+    /// Past this the window keeps the extra space as margin and the content
+    /// stays centred, which is also where resizing gets cheap: the content width
+    /// stops changing, so no row's height goes stale.
+    public var maxContentWidth: CGFloat = .greatestFiniteMagnitude {
+        didSet { contentWidthBoundsChanged() }
+    }
+
+    /// The width the transcript's content currently occupies: the row width
+    /// clamped into `minContentWidth ... maxContentWidth`.
+    ///
+    /// Read-only because it is derived, the way `NSTableColumn.width` is derived
+    /// from its own bounds while `minWidth` / `maxWidth` are the settable pair.
+    /// This is the number `heightOfRow` is asked against and the number the
+    /// hosted view is laid out at.
+    public var contentWidth: CGFloat {
+        TranscriptCellView.contentWidth(
+            forRowWidth: tableView.bounds.width,
+            minWidth: minContentWidth,
+            maxWidth: maxContentWidth)
+    }
+
+    private func contentWidthBoundsChanged() {
+        // Live cells hold the bounds they were installed with, and every row's
+        // height was measured against the old width.
+        tableView.enumerateAvailableRowViews { rowView, _ in
+            (rowView.view(atColumn: 0) as? TranscriptCellView)?.updateContentWidthBounds(
+                minWidth: minContentWidth, maxWidth: maxContentWidth)
+        }
+        guard numberOfRows > 0 else { return }
+        tableView.noteHeightOfRows(withIndexesChanged: IndexSet(0..<numberOfRows))
     }
 
     // MARK: - Geometry
@@ -286,7 +391,20 @@ public final class TranscriptView: NSView {
         withIdentifier identifier: NSUserInterfaceItemIdentifier,
         make: () -> V
     ) -> V {
-        if let pooled = tableView.makeView(withIdentifier: identifier, owner: nil) {
+        // Hosted views ride inside the cell the table pooled, so the pool to
+        // look in is the cell currently being configured — hosted views never
+        // become cell views themselves, so the table's own reuse queue never
+        // sees them.
+        guard let cell = configuringCell else {
+            assertionFailure(
+                "makeView(withIdentifier:make:) called outside "
+                    + "transcriptView(_:viewForRow:); nothing is being configured, so nothing "
+                    + "can be recycled.")
+            let view = make()
+            view.identifier = identifier
+            return view
+        }
+        if let pooled = cell.hostedView, pooled.identifier == identifier {
             guard let view = pooled as? V else {
                 preconditionFailure(
                     "Identifier \(identifier.rawValue) pooled a \(type(of: pooled)), but this call "
@@ -401,6 +519,42 @@ public final class TranscriptView: NSView {
     /// `NSCollectionView`, and `scrollRowToVisible`'s behaviour is folded in
     /// as `.nearestEdge`.
     public func scrollToRow(at row: Int, scrollPosition: ScrollPosition) {
+    }
+}
+
+/// `NSTableView`'s data source and delegate, forwarded to a `TranscriptView`.
+///
+/// Not a conformance on `TranscriptView` itself: that type is public, so the
+/// conformance would be too, putting AppKit's table callbacks on the package's
+/// surface next to three near-identically named row-count methods. Holds the
+/// transcript weakly — the transcript owns this, the table only refers to it.
+@MainActor
+private final class TableAdapter: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+
+    private weak var transcript: TranscriptView?
+
+    init(transcript: TranscriptView) {
+        self.transcript = transcript
+        super.init()
+    }
+
+    func numberOfRows(in tableView: NSTableView) -> Int {
+        guard let transcript else { return 0 }
+        return transcript.dataSource?.numberOfRows(in: transcript) ?? 0
+    }
+
+    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+        transcript?.height(ofRow: row) ?? 0
+    }
+
+    func tableView(
+        _ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int
+    ) -> NSView? {
+        transcript?.view(forRow: row)
+    }
+
+    func tableView(_ tableView: NSTableView, didRemove rowView: NSTableRowView, forRow row: Int) {
+        transcript?.didRemove(rowView, forRow: row)
     }
 }
 

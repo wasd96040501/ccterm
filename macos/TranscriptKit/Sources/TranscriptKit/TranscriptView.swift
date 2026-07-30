@@ -138,6 +138,10 @@ public final class TranscriptView: NSView {
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = false
+        // Legacy scrollers only — with "always show scroll bars" on, a
+        // transcript shorter than the viewport would otherwise hang a disabled
+        // scroller there and take 15pt of content width for it.
+        scroll.autohidesScrollers = true
         scroll.borderType = .noBorder
         // The host owns the background; the transcript draws none of its own.
         scroll.drawsBackground = false
@@ -158,6 +162,10 @@ public final class TranscriptView: NSView {
         // Rows are measured edge to edge; spacing between them belongs to the
         // content, not to the table.
         table.intercellSpacing = .zero
+        // Already the default, and stated anyway because it picks the height
+        // model: left on, the table measures cell views with Auto Layout and
+        // never asks for a row height at all.
+        table.usesAutomaticRowHeights = false
         // `.automatic` resolves to a style that insets rows and rounds the
         // selection — the transcript wants the row it measured.
         if #available(macOS 11.0, *) { table.style = .plain }

@@ -25,6 +25,10 @@ let package = Package(
             dependencies: [
                 .product(name: "Markdown", package: "swift-markdown")
             ]
-        )
+        ),
+        // `swift test`. Kept in the package rather than folded into the app's
+        // Xcode test target so the package stays buildable and testable on its
+        // own — the point of it being a package.
+        .testTarget(name: "TranscriptKitTests", dependencies: ["TranscriptKit"]),
     ]
 )

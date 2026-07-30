@@ -74,7 +74,42 @@ Extending it meant editing it. Three rules keep that from happening again:
   wrong order unrepresentable or harmless. Don't write the order down and add
   a test to guard the writing.
 
-## 5. How a host is expected to load
+## 5. Tests: mount it, and prove the mount works
+
+`make test-kit` (or `swift test` in this directory). Its own suite rather
+than a slice of the app's `cctermTests`, so the package stays testable
+without the app — which is most of the reason it is a package.
+
+Almost nothing here is testable as pure logic. `NSTableView` only asks its
+data source and delegate anything when it lays out, so a test mounts a real
+`TranscriptView` in an off-screen window (`MountedTranscript`) and asserts
+on geometry and on **what the transcript asked for**: the widths passed to
+`heightOfRow`, how many times, how many views were built rather than
+recycled. That second kind catches more than the first — a wrong width or a
+doubled measurement pass is invisible on screen.
+
+Three rules, learned the hard way:
+
+- **The harness has no logic.** Build a window, mount, flush layout, drain
+  the runloop. No branches, no derived expectations, no helper that computes
+  what a test should assert. A harness with nothing to get wrong needs no
+  verification of its own.
+- **Every test opens by asserting the transcript was provoked.** A mount
+  that silently never lays out makes every later assertion pass on an empty
+  tree. `heightWidths.isEmpty` failing is the difference between a green
+  suite and a meaningful one.
+- **Verify a new test by breaking the code it covers.** Short out the
+  production path, run, and check that *that* test goes red while the others
+  stay green. This is the only step that can falsify the harness; skipping it
+  means shipping tests whose green is unexplained.
+
+`settle()` runs **one** pass on purpose. The transcript's width invalidation
+lands inside the pass that changed the width, so nothing is left for a second
+round to settle — a change that starts needing `passes: 2` has pushed work
+onto a later tick, which is a visible frame at the old geometry, not a test
+detail.
+
+## 6. How a host is expected to load
 
 Not a rule about this package's code — a note on how hosts drive it, recorded
 here so nobody reaches for machinery that isn't needed.

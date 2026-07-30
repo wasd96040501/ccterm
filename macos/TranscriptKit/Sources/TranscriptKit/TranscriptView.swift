@@ -20,7 +20,7 @@ import AppKit
 ///
 /// `NSTableView` asks every row for its height, not just the visible ones.
 /// Hosts absorb that by inserting in batches spread over several main-queue
-/// hops instead of in one call — see §5 of the package's CLAUDE.md.
+/// hops instead of in one call — see §6 of the package's CLAUDE.md.
 ///
 /// Rows drawn by host views recycle: the transcript keeps roughly a
 /// screenful of instances alive and cycles them across rows as the user
@@ -216,7 +216,13 @@ public final class TranscriptView: NSView {
         // `.automatic` resolves to a style that insets rows and rounds the
         // selection — the transcript wants the row it measured.
         if #available(macOS 11.0, *) { table.style = .plain }
-        table.addTableColumn(NSTableColumn(identifier: Self.columnIdentifier))
+        let column = NSTableColumn(identifier: Self.columnIdentifier)
+        // Defaults to 10, which would floor the table's width there while the
+        // clip kept shrinking — and `contentWidth` reads the clip, on the
+        // understanding that the two are the same number. Zero makes that
+        // identity hold at every width instead of every width above 10.
+        column.minWidth = 0
+        table.addTableColumn(column)
         return table
     }()
 
@@ -251,15 +257,16 @@ public final class TranscriptView: NSView {
         tableView.dataSource = tableAdapter
         tableView.delegate = tableAdapter
 
-        // Every source that can move the content width lands on the table's
+        // Every source that can move the content width lands on the clip's
         // frame, so watching that one thing covers all of them — window and
         // split-view resizes, a scroller appearing, `contentInsets`. Watching
         // this view's own frame instead would miss the scroller, which changes
-        // the clip's width without changing ours.
-        tableView.postsFrameChangedNotifications = true
+        // the clip's width without changing ours; watching the table's would put
+        // the invalidation inside the table's own layout.
+        scrollView.contentView.postsFrameChangedNotifications = true
         NotificationCenter.default.addObserver(
-            self, selector: #selector(tableViewFrameDidChange),
-            name: NSView.frameDidChangeNotification, object: tableView)
+            self, selector: #selector(clipViewFrameDidChange),
+            name: NSView.frameDidChangeNotification, object: scrollView.contentView)
     }
 
     deinit {
@@ -324,9 +331,14 @@ public final class TranscriptView: NSView {
     /// from its own bounds while `minWidth` / `maxWidth` are the settable pair.
     /// This is the number `heightOfRow` is asked against and the number the
     /// hosted view is laid out at.
+    /// Measured from the clip rather than from the table, even though the two
+    /// agree: the scroll view rewrites the document view's width to the clip's on
+    /// every tile, so the table's width is a copy and the clip's is the original.
+    /// Reading the original is what lets the invalidation below run before the
+    /// table has laid out, instead of during.
     public var contentWidth: CGFloat {
         TranscriptCellView.contentWidth(
-            forRowWidth: tableView.bounds.width,
+            forRowWidth: scrollView.contentView.bounds.width,
             minWidth: minContentWidth,
             maxWidth: maxContentWidth)
     }
@@ -382,7 +394,15 @@ public final class TranscriptView: NSView {
             withIndexesChanged: IndexSet(integersIn: visible.location..<(visible.location + visible.length)))
     }
 
-    @objc private func tableViewFrameDidChange(_ notification: Notification) {
+    /// The clip has resized and has not yet resized the document view, so the
+    /// table has not laid out at the new width — invalidating here marks the
+    /// heights stale *before* that pass rather than during it.
+    ///
+    /// Observing the table instead put this inside the table's own layout, where
+    /// `noteHeightOfRows` re-enters its delegate: AppKit warns that it will
+    /// become an assert, and the observable symptom was one pass measuring at
+    /// two different widths.
+    @objc private func clipViewFrameDidChange(_ notification: Notification) {
         contentWidthDidChange()
     }
 

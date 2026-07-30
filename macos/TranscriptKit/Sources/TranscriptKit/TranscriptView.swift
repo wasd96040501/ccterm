@@ -129,10 +129,56 @@ public final class TranscriptView: NSView {
     /// Answers how rows look, and observes display-side events.
     public weak var delegate: TranscriptViewDelegate?
 
+    // MARK: - Table
+
+    /// Full width on purpose: the wheel has to keep working over the side
+    /// margins that centred content leaves, and the overlay scroller belongs at
+    /// the window's edge — so centring cannot come from narrowing this.
+    private lazy var scrollView: NSScrollView = {
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = false
+        scroll.borderType = .noBorder
+        // The host owns the background; the transcript draws none of its own.
+        scroll.drawsBackground = false
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        return scroll
+    }()
+
+    private lazy var tableView: NSTableView = {
+        let table = NSTableView()
+        table.headerView = nil
+        table.backgroundColor = .clear
+        // No selection API on the transcript, so no selection to draw.
+        table.selectionHighlightStyle = .none
+        // Rows are measured edge to edge; spacing between them belongs to the
+        // content, not to the table.
+        table.intercellSpacing = .zero
+        // `.automatic` resolves to a style that insets rows and rounds the
+        // selection — the transcript wants the row it measured.
+        if #available(macOS 11.0, *) { table.style = .plain }
+        table.addTableColumn(NSTableColumn(identifier: Self.columnIdentifier))
+        return table
+    }()
+
+    private static let columnIdentifier = NSUserInterfaceItemIdentifier("TranscriptKit.column")
+
     // MARK: - Lifecycle
 
     public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+
+        // Hierarchy.
+        scrollView.documentView = tableView
+        addSubview(scrollView)
+
+        // Constraints.
+        NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
     }
 
     public convenience init() {
@@ -149,7 +195,7 @@ public final class TranscriptView: NSView {
     /// The number of rows the view currently knows about — the data source's
     /// answer as of the last `reloadData()` / mutation call.
     public var numberOfRows: Int {
-        0
+        tableView.numberOfRows
     }
 
     /// The row currently displaying `view`, or `-1` when the transcript is not
@@ -162,21 +208,23 @@ public final class TranscriptView: NSView {
     /// the index it was handed at configure time. Mirrors
     /// `NSTableView.row(for:)`.
     public func row(for view: NSView) -> Int {
-        -1
+        tableView.row(for: view)
     }
 
     // MARK: - Geometry
 
-    /// The rectangle the given row occupies, in the transcript's coordinate
-    /// space; `NSZeroRect` for an out-of-range row or one the first layout
-    /// pass hasn't placed yet. Mirrors `NSTableView.rect(ofRow:)`.
+    /// The rectangle the given row occupies, in the scrolled content's
+    /// coordinate space — row 0 at `y == 0`, growing downwards, unaffected by
+    /// the scroll offset; `NSZeroRect` for an out-of-range row or one the first
+    /// layout pass hasn't placed yet. `NSTableView.rect(ofRow:)`'s space and
+    /// values exactly.
     ///
     /// Spans the full row width, insets included; the content inside is
     /// narrower by those insets. There is no `frameOfCell(atColumn:row:)`
     /// counterpart, because that method's whole job is picking one column out
     /// of a row and a transcript has no columns.
     public func rect(ofRow row: Int) -> NSRect {
-        .zero
+        tableView.rect(ofRow: row)
     }
 
     // MARK: - View row recycling
@@ -201,7 +249,17 @@ public final class TranscriptView: NSView {
         withIdentifier identifier: NSUserInterfaceItemIdentifier,
         make: () -> V
     ) -> V {
-        make()
+        if let pooled = tableView.makeView(withIdentifier: identifier, owner: nil) {
+            guard let view = pooled as? V else {
+                preconditionFailure(
+                    "Identifier \(identifier.rawValue) pooled a \(type(of: pooled)), but this call "
+                        + "asked for a \(V.self). One identifier means one view type.")
+            }
+            return view
+        }
+        let view = make()
+        view.identifier = identifier
+        return view
     }
 
     // MARK: - Data mutations
@@ -226,22 +284,19 @@ public final class TranscriptView: NSView {
     /// transcript lands at the tail unless a `scrollToRow` in the same tick
     /// says otherwise.
     public func reloadData() {
-    }
-
-    /// Tells the view the row count changed at the tail without describing
-    /// the exact edit. Mirrors `NSTableView.noteNumberOfRowsChanged()`;
-    /// prefer the index-based mutations.
-    public func noteNumberOfRowsChanged() {
+        tableView.reloadData()
     }
 
     /// Announces rows newly inserted at `indexes` (positions in the
     /// post-mutation data source).
     public func insertRows(at indexes: IndexSet, withAnimation animation: AnimationOptions = []) {
+        tableView.insertRows(at: indexes, withAnimation: animation.tableViewOptions)
     }
 
     /// Announces rows removed at `indexes` (positions in the pre-mutation
     /// data source).
     public func removeRows(at indexes: IndexSet, withAnimation animation: AnimationOptions = []) {
+        tableView.removeRows(at: indexes, withAnimation: animation.tableViewOptions)
     }
 
     /// Announces in-place content changes: the rows at `indexes` are
@@ -249,6 +304,10 @@ public final class TranscriptView: NSView {
     /// Heights are re-resolved too — a self-sizing row is re-measured, a
     /// `.view` row is re-asked through the delegate's `heightOfRow`.
     public func reloadRows(at indexes: IndexSet) {
+        tableView.reloadData(forRowIndexes: indexes, columnIndexes: IndexSet(integer: 0))
+        // `reloadData(forRowIndexes:)` re-asks for the row's view but keeps the
+        // height it already has, and changed content is a different height.
+        tableView.noteHeightOfRows(withIndexesChanged: indexes)
     }
 
     /// Invalidates the cached heights of the rows at `indexes` without
@@ -261,6 +320,7 @@ public final class TranscriptView: NSView {
     /// height, and a content-width change is handled by the transcript
     /// itself; neither needs this call.
     public func noteHeightOfRows(withIndexesChanged indexes: IndexSet) {
+        tableView.noteHeightOfRows(withIndexesChanged: indexes)
     }
 
     // MARK: - Batching
@@ -274,11 +334,13 @@ public final class TranscriptView: NSView {
     /// third" land on a single, well-defined offset. A mutation outside any
     /// batch samples and restores around itself.
     public func beginUpdates() {
+        tableView.beginUpdates()
     }
 
     /// Ends a `beginUpdates()` group, applies the coalesced mutations, and
     /// restores the scroll anchor sampled at `beginUpdates()`.
     public func endUpdates() {
+        tableView.endUpdates()
     }
 
     // MARK: - Scrolling
@@ -302,5 +364,18 @@ public final class TranscriptView: NSView {
     /// `NSCollectionView`, and `scrollRowToVisible`'s behaviour is folded in
     /// as `.nearestEdge`.
     public func scrollToRow(at row: Int, scrollPosition: ScrollPosition) {
+    }
+}
+
+extension TranscriptView.AnimationOptions {
+
+    /// The `NSTableView` options these stand for — same bits, one type per layer
+    /// so the package's surface doesn't hand out AppKit's.
+    fileprivate var tableViewOptions: NSTableView.AnimationOptions {
+        var options: NSTableView.AnimationOptions = []
+        if contains(.effectFade) { options.insert(.effectFade) }
+        if contains(.slideUp) { options.insert(.slideUp) }
+        if contains(.slideDown) { options.insert(.slideDown) }
+        return options
     }
 }

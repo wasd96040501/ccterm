@@ -8,7 +8,7 @@ transcript driven by a data source.
 The public surface is `NSTableView`'s, name for name and signature for
 signature: `numberOfRows`, `reloadData()`, `insertRows(at:withAnimation:)`,
 `removeRows(at:withAnimation:)`, `noteHeightOfRows(withIndexesChanged:)`,
-`noteNumberOfRowsChanged()`, `beginUpdates()` / `endUpdates()`,
+`beginUpdates()` / `endUpdates()`,
 `scrollRowToVisible(_:)`, `rect(ofRow:)`, `row(for:)`. The data source /
 delegate split is AppKit's too — the data source says *what* the rows are,
 the delegate says *how they appear*.

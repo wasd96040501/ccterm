@@ -16,6 +16,10 @@ let package = Package(
         .package(url: "https://github.com/swiftlang/swift-markdown", exact: "0.7.3")
     ],
     targets: [
+        // Opens a real window with a transcript in it: `swift run
+        // TranscriptKitDemo`. For the things only hands and eyes catch —
+        // scrolling, dragging across the content-width clamp, chrome insets.
+        .executableTarget(name: "TranscriptKitDemo", dependencies: ["TranscriptKit"]),
         .target(
             name: "TranscriptKit",
             dependencies: [

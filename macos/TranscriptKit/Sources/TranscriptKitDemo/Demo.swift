@@ -5,8 +5,10 @@ import TranscriptKit
 /// the one row kind the package renders today. Run with `swift run
 /// TranscriptKitDemo`.
 ///
-/// What it is for: scrolling by hand and dragging the window across the content
-/// width clamp. Everything a probe can't tell you.
+/// What it is for: the things a probe can't tell you. Scroll by hand and drag the
+/// window across the content width clamp; then use the panel to mutate rows above
+/// the viewport and watch that the text under your eyes doesn't move, which is the
+/// one property the tests can assert but not convince anyone of.
 @main
 struct Demo {
 
@@ -32,17 +34,46 @@ struct Demo {
         // Host policy: content stops widening at a readable measure and the
         // window keeps the rest as margin.
         transcript.maxContentWidth = 720
+        host.transcript = transcript
+
+        let panel = ControlPanelView()
+        panel.translatesAutoresizingMaskIntoConstraints = false
 
         root.addSubview(transcript)
+        root.addSubview(panel)
         NSLayoutConstraint.activate([
             transcript.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             transcript.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             transcript.topAnchor.constraint(equalTo: root.topAnchor),
+            // The full height, chrome included: the panel is something rows scroll
+            // under, not something that takes their space away.
             transcript.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            panel.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            panel.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            panel.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            panel.heightAnchor.constraint(equalToConstant: ControlPanelView.height),
         ])
 
-        transcript.contentInsets = NSEdgeInsets(top: 12, left: 0, bottom: 12, right: 0)
+        // The inset the panel earns: the last row comes to rest above the blur
+        // rather than behind it. Written by the host, from a height the host knows
+        // — nothing in the transcript watches for chrome.
+        transcript.contentInsets = NSEdgeInsets(
+            top: 12, left: 0, bottom: ControlPanelView.height + 12, right: 0)
+
+        panel.onScrollToRow = { row, position in
+            transcript.scrollToRow(at: row, scrollPosition: position)
+        }
+        panel.onPrepend = { host.prepend(5) }
+        panel.onAppend = { host.append() }
+        panel.onRemoveTop = { host.removeTop(3) }
+        panel.onGrowFirst = { host.growFirstRow() }
+        panel.onRemeasureFirst = { host.remeasureFirstRow() }
+        panel.onBatch = { host.prependAndRemoveInOneBatch() }
+        panel.onMaxContentWidth = { transcript.maxContentWidth = $0 }
+        host.onRowCountChange = { panel.setStatus("\($0) rows") }
+
         transcript.reloadData()
+        panel.setStatus("\(transcript.numberOfRows) rows")
 
         window.makeKeyAndOrderFront(nil)
         app.activate(ignoringOtherApps: true)
@@ -50,12 +81,94 @@ struct Demo {
     }
 }
 
-/// Data source and delegate for the demo: a fixed script of paragraphs, each one
-/// a `.view` row.
+/// Data source and delegate for the demo: a script of paragraphs, each one a
+/// `.view` row, plus the mutations the control panel drives.
+///
+/// Every mutation is the same two lines a real host writes — change the model,
+/// then announce the change — and each announcement is deliberately the
+/// index-based one rather than `reloadData()`, since that is what scroll
+/// anchoring applies to.
 @MainActor
 private final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate {
 
-    private let messages: [DemoMessage] = DemoMessage.script
+    private var messages: [DemoMessage] = DemoMessage.script
+    private var mutationCount = 0
+
+    weak var transcript: TranscriptView?
+    var onRowCountChange: ((Int) -> Void)?
+
+    // MARK: - Mutations
+
+    /// Above the viewport, wherever the viewport is: the case where holding the
+    /// content still is the whole point.
+    func prepend(_ count: Int) {
+        let inserted = (0..<count).map { index in
+            DemoMessage(author: .assistant, text: label("▲ prepended", index))
+        }
+        messages.insert(contentsOf: inserted, at: 0)
+        transcript?.insertRows(at: IndexSet(0..<count))
+        reportRowCount()
+    }
+
+    /// Below everything: the case where the answer depends on where the reader is
+    /// — at the end it follows, anywhere else it doesn't move.
+    func append() {
+        messages.append(DemoMessage(author: .user, text: label("▼ appended", 0)))
+        transcript?.insertRows(at: IndexSet(integer: messages.count - 1))
+        reportRowCount()
+    }
+
+    func removeTop(_ count: Int) {
+        let removed = min(count, messages.count)
+        guard removed > 0 else { return }
+        messages.removeFirst(removed)
+        transcript?.removeRows(at: IndexSet(0..<removed))
+        reportRowCount()
+    }
+
+    /// A row above the viewport changing height without changing identity — the
+    /// mutation that has no index set to shift, only geometry to compensate for.
+    func growFirstRow() {
+        guard !messages.isEmpty else { return }
+        let grown = String(repeating: "This row keeps growing. ", count: 6)
+        messages[0] = DemoMessage(
+            author: messages[0].author, text: "\(messages[0].text) \(grown)")
+        transcript?.reloadRows(at: IndexSet(integer: 0))
+    }
+
+    /// The same height change announced without re-rendering the row: the other
+    /// public path to it, and the one a hosted view uses when it grows itself.
+    func remeasureFirstRow() {
+        guard !messages.isEmpty else { return }
+        let grown = String(repeating: "Re-measured, not re-rendered. ", count: 4)
+        messages[0] = DemoMessage(
+            author: messages[0].author, text: "\(messages[0].text) \(grown)")
+        transcript?.noteHeightOfRows(withIndexesChanged: IndexSet(integer: 0))
+    }
+
+    /// Two mutations, one anchor: five rows in at the top and three out from just
+    /// below them, so the renumbering has to compose across the group.
+    func prependAndRemoveInOneBatch() {
+        guard messages.count > 13 else { return }
+        transcript?.beginUpdates()
+        prepend(5)
+        messages.removeSubrange(10..<13)
+        transcript?.removeRows(at: IndexSet(10..<13))
+        transcript?.endUpdates()
+        reportRowCount()
+    }
+
+    private func label(_ prefix: String, _ index: Int) -> String {
+        mutationCount += 1
+        return "\(prefix) #\(mutationCount).\(index) — watch whether this pushed the text you "
+            + "were reading off its line."
+    }
+
+    private func reportRowCount() {
+        onRowCountChange?(messages.count)
+    }
+
+    // MARK: - Data source and delegate
 
     func numberOfRows(in transcriptView: TranscriptView) -> Int {
         messages.count

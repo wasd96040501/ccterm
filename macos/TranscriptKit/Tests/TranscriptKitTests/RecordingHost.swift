@@ -1,13 +1,18 @@
 import AppKit
 import TranscriptKit
 
-/// A host that answers every row with a fixed height and a plain view, and
+/// A host that answers every row from a list of heights with a plain view, and
 /// records what it was asked.
 ///
-/// Fixed heights so row geometry is exact arithmetic: row *n* starts at
-/// `n * rowHeight`. The recordings are the point — most of what is worth
-/// asserting about the transcript is not "what does it look like" but "how many
-/// times, and at what width, did it ask".
+/// Heights are uniform unless a test says otherwise, so row geometry stays exact
+/// arithmetic: row *n* starts at `n * rowHeight`. The recordings are the other
+/// half — most of what is worth asserting about the transcript is not "what does
+/// it look like" but "how many times, and at what width, did it ask".
+///
+/// The mutators change only this list. Announcing the change to the transcript is
+/// left to the test, so both halves of what a host does sit next to each other at
+/// the call site — and a test that forgets the announcement fails the way a host
+/// that forgets it would.
 @MainActor
 final class RecordingHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate {
 
@@ -15,8 +20,7 @@ final class RecordingHost: NSObject, TranscriptViewDataSource, TranscriptViewDel
     /// walking the tree.
     final class ProbeView: NSView {}
 
-    let rowHeight: CGFloat
-    var rowCount: Int
+    private(set) var heights: [CGFloat]
 
     /// The `width` argument of every `heightOfRow` call, in order.
     private(set) var heightWidths: [CGFloat] = []
@@ -26,8 +30,7 @@ final class RecordingHost: NSObject, TranscriptViewDataSource, TranscriptViewDel
     private(set) var removals: [Int] = []
 
     init(rowCount: Int, rowHeight: CGFloat = 40) {
-        self.rowCount = rowCount
-        self.rowHeight = rowHeight
+        heights = Array(repeating: rowHeight, count: rowCount)
         super.init()
     }
 
@@ -38,8 +41,24 @@ final class RecordingHost: NSObject, TranscriptViewDataSource, TranscriptViewDel
         removals = []
     }
 
+    // MARK: - Model mutations
+
+    func insertRows(_ count: Int, at index: Int, height: CGFloat = 40) {
+        heights.insert(contentsOf: Array(repeating: height, count: count), at: index)
+    }
+
+    func removeRows(at indexes: IndexSet) {
+        for index in indexes.sorted(by: >) { heights.remove(at: index) }
+    }
+
+    func setHeight(_ height: CGFloat, forRow row: Int) {
+        heights[row] = height
+    }
+
+    // MARK: - Data source and delegate
+
     func numberOfRows(in transcriptView: TranscriptView) -> Int {
-        rowCount
+        heights.count
     }
 
     func transcriptView(
@@ -52,7 +71,7 @@ final class RecordingHost: NSObject, TranscriptViewDataSource, TranscriptViewDel
         _ transcriptView: TranscriptView, heightOfRow row: Int, width: CGFloat
     ) -> CGFloat {
         heightWidths.append(width)
-        return rowHeight
+        return heights[row]
     }
 
     func transcriptView(

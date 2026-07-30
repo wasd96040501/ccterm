@@ -76,6 +76,25 @@ final class MountedTranscript {
         window.setContentSize(NSSize(width: width, height: root.bounds.height))
     }
 
+    /// The transcript's scroll view, found in the mounted tree.
+    ///
+    /// A lookup, not logic. The transcript keeps its scroller to itself, and a
+    /// test asking "where is the viewport" has nowhere to read that but AppKit's
+    /// own public surface — `documentVisibleRect` and the clip's bounds. Which is
+    /// the better place to read it anyway: those are the numbers the window
+    /// draws from, not a second opinion the transcript publishes.
+    var scrollView: NSScrollView {
+        transcript.descendants(ofType: NSScrollView.self)[0]
+    }
+
+    /// Scrolls the way a wheel or a drag would, neither of which can be
+    /// synthesized into an off-screen window.
+    func scroll(toY y: CGFloat) {
+        let clip = scrollView.contentView
+        clip.scroll(to: NSPoint(x: clip.bounds.minX, y: y))
+        scrollView.reflectScrolledClipView(clip)
+    }
+
     func teardown() {
         window.orderOut(nil)
         window.contentView = nil

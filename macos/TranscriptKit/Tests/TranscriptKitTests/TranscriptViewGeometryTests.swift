@@ -51,7 +51,6 @@ final class TranscriptViewGeometryTests: XCTestCase {
         let (mounted, host) = mount(rows: 24)
         defer { mounted.teardown() }
 
-        XCTAssertEqual(mounted.transcript.contentWidth, 720)
         XCTAssertEqual(Set(host.heightWidths), [720], "rows measured at a width other than 720")
 
         let probes = mounted.transcript.descendants(ofType: RecordingHost.ProbeView.self)
@@ -75,6 +74,28 @@ final class TranscriptViewGeometryTests: XCTestCase {
             mounted.transcript.descendants(ofType: RecordingHost.ProbeView.self).count, onScreen)
     }
 
+    /// `contentInsets` already insets the scrollers; `scrollerInsets` adds to it
+    /// rather than replacing it, so setting both — which reads like the obvious
+    /// thing to do — leaves the track ending twice the chrome's height short.
+    /// Legacy scrollers on purpose: an overlay scroller has no track to get wrong,
+    /// and the bug is invisible until someone turns "always show scroll bars" on.
+    func testContentInsetsInsetTheScrollerOnceNotTwice() throws {
+        let (mounted, _) = mount(rows: 100)
+        defer { mounted.teardown() }
+        let scrollView = mounted.scrollView
+        scrollView.scrollerStyle = .legacy
+        scrollView.autohidesScrollers = false
+
+        mounted.transcript.contentInsets = NSEdgeInsets(top: 12, left: 0, bottom: 140, right: 0)
+        mounted.settle()
+
+        let scroller = try XCTUnwrap(scrollView.verticalScroller)
+        XCTAssertGreaterThan(scroller.frame.height, 0, "no scroller was laid out")
+        XCTAssertEqual(
+            scrollView.bounds.height - scroller.frame.maxY, 140, accuracy: 1,
+            "the scroller's track is inset by something other than the content inset")
+    }
+
     // MARK: - Content width invalidation
 
     /// Narrowing past the clamp changes the width the delegate answered for, so
@@ -87,11 +108,15 @@ final class TranscriptViewGeometryTests: XCTestCase {
         mounted.setContentWidth(500)
         mounted.settle()
 
+        // The clip's width rather than the window's: with "always show scroll
+        // bars" on, a legacy scroller takes a slice of it, and the row width is
+        // what's left. Below the clamp the content width *is* the row width.
+        let rowWidth = mounted.scrollView.contentView.bounds.width
+        XCTAssertLessThan(rowWidth, 720, "500 wide should be under the clamp")
         XCTAssertFalse(host.heightWidths.isEmpty, "heights were not re-asked after narrowing")
         XCTAssertEqual(
-            Set(host.heightWidths), [mounted.transcript.contentWidth],
+            Set(host.heightWidths), [rowWidth],
             "re-asked at a width other than the transcript's current one")
-        XCTAssertLessThan(mounted.transcript.contentWidth, 720)
     }
 
     /// Above the clamp the number handed to the delegate stops moving, so
@@ -104,7 +129,6 @@ final class TranscriptViewGeometryTests: XCTestCase {
         mounted.setContentWidth(1400)
         mounted.settle()
 
-        XCTAssertEqual(mounted.transcript.contentWidth, 720)
         XCTAssertEqual(host.heightWidths, [], "heights were re-asked despite the clamp holding")
     }
 

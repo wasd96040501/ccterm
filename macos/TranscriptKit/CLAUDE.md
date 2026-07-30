@@ -38,6 +38,14 @@ put the reason in the doc comment. Standing examples:
   accessor in a view that has no columns. The second is a hook AppKit needs
   because it builds row views itself, whereas `viewForRow` already *is* that
   moment.
+- **No `withAnimation:` on the mutations.** AppKit's options animate *row
+  geometry*, which is the one thing scroll anchoring exists to hold still: rows
+  sliding into place over a quarter second while the compensating scroll offset
+  is already final is a visible shake, and no amount of care reconciles the two
+  — NSTableView's row animation exposes no progress or completion to drive the
+  offset from. It shipped, was watched shaking in the demo, and came back out.
+  A host that wants an arrival to be visible animates inside its own view, where
+  nothing moves the rows.
 
 A deviation with no reason in the comment is a bug: restore parity, or write
 down why not.

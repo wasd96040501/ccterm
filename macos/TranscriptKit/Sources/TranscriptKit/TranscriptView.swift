@@ -50,6 +50,17 @@ import AppKit
 /// Both rules cover every mutation that moves row geometry — `insertRows`,
 /// `removeRows`, `reloadRows`, `noteHeightOfRows`. `scrollToRow(at:scrollPosition:)`
 /// is the deliberate exception: it means "leave where you are and go here."
+/// A window resize is outside both: the content width moving reflows every row,
+/// and holding the viewport still through that would mean writing a scroll offset
+/// from inside the scroll view's own tile.
+///
+/// Working out the offset to restore needs the geometry the mutation produced, so
+/// those four methods resolve it before they return rather than on the next
+/// layout pass — anything later is a frame drawn at the old offset. Which means
+/// the host is asked for row heights from inside its own `insertRows` call: the
+/// model has to be consistent *before* the call, not merely by the end of the
+/// tick. The other side of the same property is that `rect(ofRow:)` is already
+/// correct when the call returns.
 ///
 /// `NSTableView` promises none of this. Its `insertRows(at:withAnimation:)`
 /// documents only that `numberOfRows` grows, and says nothing about the scroll
@@ -64,24 +75,6 @@ import AppKit
 /// it directly with Auto Layout; do not wrap it in another `NSScrollView`.
 @MainActor
 public final class TranscriptView: NSView {
-
-    /// Row mutation animations, mirroring `NSTableView.AnimationOptions`.
-    public struct AnimationOptions: OptionSet, Sendable {
-        public let rawValue: UInt
-
-        public init(rawValue: UInt) {
-            self.rawValue = rawValue
-        }
-
-        /// Fade the affected rows in (insert) or out (remove).
-        public static let effectFade = AnimationOptions(rawValue: 1 << 0)
-
-        /// Slide the affected rows in from above, or out upwards.
-        public static let slideUp = AnimationOptions(rawValue: 1 << 1)
-
-        /// Slide the affected rows in from below, or out downwards.
-        public static let slideDown = AnimationOptions(rawValue: 1 << 2)
-    }
 
     /// Where a row lands when scrolled to — the vertical half of
     /// `NSCollectionView.ScrollPosition`, as an enum.
@@ -325,18 +318,19 @@ public final class TranscriptView: NSView {
     }
 
     /// The width the transcript's content currently occupies: the row width
-    /// clamped into `minContentWidth ... maxContentWidth`.
+    /// clamped into `minContentWidth ... maxContentWidth`. This is the number
+    /// `heightOfRow` is asked against and the number the hosted view is laid out
+    /// at.
     ///
-    /// Read-only because it is derived, the way `NSTableColumn.width` is derived
-    /// from its own bounds while `minWidth` / `maxWidth` are the settable pair.
-    /// This is the number `heightOfRow` is asked against and the number the
-    /// hosted view is laid out at.
+    /// Not public: nothing outside needs it. A host learns the width as the
+    /// argument to `heightOfRow`, which is the only place it has a use for one.
+    ///
     /// Measured from the clip rather than from the table, even though the two
     /// agree: the scroll view rewrites the document view's width to the clip's on
     /// every tile, so the table's width is a copy and the clip's is the original.
     /// Reading the original is what lets the invalidation below run before the
     /// table has laid out, instead of during.
-    public var contentWidth: CGFloat {
+    private var contentWidth: CGFloat {
         TranscriptCellView.contentWidth(
             forRowWidth: scrollView.contentView.bounds.width,
             minWidth: minContentWidth,
@@ -372,6 +366,14 @@ public final class TranscriptView: NSView {
     /// The comparison is against the *clamped* width, not the table's: past
     /// `maxContentWidth` the number handed to the delegate stops moving, so a
     /// window resize above the clamp invalidates nothing at all.
+    ///
+    /// Goes to the table directly rather than through this view's own
+    /// `noteHeightOfRows(withIndexesChanged:)`, which would hold the viewport
+    /// still through the reflow — tempting, because a resize *does* shift the
+    /// content under the reader. It is not available here: this runs from the
+    /// clip's frame-change notification, inside the scroll view's tile, and
+    /// restoring an anchor there would write a scroll offset from inside the very
+    /// layout that is producing it.
     private func contentWidthDidChange() {
         let width = contentWidth
         guard width != measuredContentWidth else { return }
@@ -428,16 +430,19 @@ public final class TranscriptView: NSView {
     /// new height up to its controller, and the controller writes the inset here
     /// in the same pass — nothing in the transcript watches for chrome.
     ///
+    /// These also define where "at the top" and "centred" are: a row scrolled to
+    /// `.top` lands below the top inset, not underneath the chrome, and scroll
+    /// anchoring measures from the same edge.
+    ///
     /// Writing this re-tiles, so compare before assigning if the call site can
     /// run on every layout pass.
+    /// `scrollerInsets` is deliberately left alone: it is *added* to this, so
+    /// mirroring the value here inset a legacy scroller's track by twice the
+    /// chrome's height. Measured — a 140pt bottom inset left the track ending 280pt
+    /// short.
     public var contentInsets: NSEdgeInsets {
         get { scrollView.contentInsets }
-        set {
-            scrollView.contentInsets = newValue
-            // Content and scrollers inset separately; without this the knob's
-            // track still runs to the edge and disappears behind the chrome.
-            scrollView.scrollerInsets = newValue
-        }
+        set { scrollView.contentInsets = newValue }
     }
 
     /// The rectangle the given row occupies, in the scrolled content's
@@ -453,6 +458,78 @@ public final class TranscriptView: NSView {
     public func rect(ofRow row: Int) -> NSRect {
         tableView.rect(ofRow: row)
     }
+
+    /// The part of the scrolled content the host's chrome is not covering, in the
+    /// document's coordinate space.
+    ///
+    /// `contentInsets` describes chrome the transcript scrolls *under*, so the
+    /// clip's own bounds include area the reader cannot see. This is the rest of
+    /// it, and therefore what a landing position and an anchor are both measured
+    /// against.
+    private var unobscuredRect: NSRect {
+        let bounds = scrollView.contentView.bounds
+        let insets = scrollView.contentInsets
+        return NSRect(
+            x: bounds.minX,
+            y: bounds.minY + insets.top,
+            width: bounds.width,
+            height: max(0, bounds.height - insets.top - insets.bottom))
+    }
+
+    /// Scrolls so the unobscured area starts at `y` in the document's coordinate
+    /// space, clamped to the scrollable range.
+    private func scrollClip(toUnobscuredMinY y: CGFloat) {
+        scrollClip(toBoundsMinY: y - scrollView.contentInsets.top)
+    }
+
+    /// Scrolls to the far end of the scrollable range.
+    private func scrollClipToTail() {
+        scrollClip(toBoundsMinY: maxBoundsMinY)
+    }
+
+    private func scrollClip(toBoundsMinY y: CGFloat) {
+        let clip = scrollView.contentView
+        guard y != clip.bounds.minY else { return }
+        var proposed = clip.bounds
+        proposed.origin.y = y
+        // AppKit's own answer for the legal range, rather than measuring
+        // `documentView.frame` against the clip's height: `contentInsets` extends
+        // the scroll past both ends of the document, and this accounts for it.
+        // The clamp has to happen here because `scroll(to:)` does none of its own
+        // — measured, it goes exactly where it is told, off the end included.
+        let origin = clip.constrainBoundsRect(proposed).origin
+        guard origin.y != clip.bounds.minY else { return }
+        // Deliberately not wrapped in a suppressed animation context, even though a
+        // mutation's compensating scroll must never animate: the suppression sits
+        // around the mutation instead, because `scrollToRow` reaches here too and
+        // documents that a host can animate it by wrapping the call.
+        clip.scroll(to: origin)
+        // Without this the scroller's knob stays where it was.
+        scrollView.reflectScrolledClipView(clip)
+    }
+
+    /// The clip origin at the far end of the scroll — asked of
+    /// `constrainBoundsRect` rather than computed, for the reason above.
+    private var maxBoundsMinY: CGFloat {
+        let clip = scrollView.contentView
+        var proposed = clip.bounds
+        // Any value past the end; the constraint turns it into the exact maximum.
+        proposed.origin.y =
+            (scrollView.documentView?.frame.height ?? 0) + scrollView.contentInsets.bottom
+        return clip.constrainBoundsRect(proposed).minY
+    }
+
+    /// Whether the viewport is sitting at the end of the scroll — the whole
+    /// judgement behind rule 1, read fresh from the offset each time it is asked.
+    private var isScrolledToTail: Bool {
+        scrollView.contentView.bounds.minY >= maxBoundsMinY - Self.tailTolerance
+    }
+
+    /// How far from the end still counts as being at the end. Sub-point residue
+    /// is normal — a row height rounded up, a decelerating scroll landing on a
+    /// fraction — and an exact comparison would drop tail following on the
+    /// strength of a rounding error.
+    private static let tailTolerance: CGFloat = 1
 
     // MARK: - View row recycling
 
@@ -523,20 +600,34 @@ public final class TranscriptView: NSView {
     /// across a reload (every row is new, so there is no anchor to hold); the
     /// transcript lands at the tail unless a `scrollToRow` in the same tick
     /// says otherwise.
+    ///
+    /// This is also the one mutation that lays nothing out before returning,
+    /// precisely because it has no anchor to restore.
     public func reloadData() {
         tableView.reloadData()
     }
 
     /// Announces rows newly inserted at `indexes` (positions in the
     /// post-mutation data source).
-    public func insertRows(at indexes: IndexSet, withAnimation animation: AnimationOptions = []) {
-        tableView.insertRows(at: indexes, withAnimation: animation.tableViewOptions)
+    ///
+    /// There is no animation parameter, unlike `NSTableView`'s. Its options all
+    /// animate *row geometry*, which is the one thing scroll anchoring exists to
+    /// hold still — a row sliding into place over a quarter second while the
+    /// compensating offset is already final is exactly the shake anchoring
+    /// prevents, and the two cannot both be honoured. A host that wants an arrival
+    /// to be visible animates inside its own view, where nothing moves the rows.
+    public func insertRows(at indexes: IndexSet) {
+        mutate(shiftedBy: .inserted(indexes)) {
+            tableView.insertRows(at: indexes, withAnimation: [])
+        }
     }
 
     /// Announces rows removed at `indexes` (positions in the pre-mutation
-    /// data source).
-    public func removeRows(at indexes: IndexSet, withAnimation animation: AnimationOptions = []) {
-        tableView.removeRows(at: indexes, withAnimation: animation.tableViewOptions)
+    /// data source). No animation parameter, for the reason on `insertRows`.
+    public func removeRows(at indexes: IndexSet) {
+        mutate(shiftedBy: .removed(indexes)) {
+            tableView.removeRows(at: indexes, withAnimation: [])
+        }
     }
 
     /// Announces in-place content changes: the rows at `indexes` are
@@ -544,10 +635,12 @@ public final class TranscriptView: NSView {
     /// Heights are re-resolved too — a self-sizing row is re-measured, a
     /// `.view` row is re-asked through the delegate's `heightOfRow`.
     public func reloadRows(at indexes: IndexSet) {
-        tableView.reloadData(forRowIndexes: indexes, columnIndexes: IndexSet(integer: 0))
-        // `reloadData(forRowIndexes:)` re-asks for the row's view but keeps the
-        // height it already has, and changed content is a different height.
-        tableView.noteHeightOfRows(withIndexesChanged: indexes)
+        mutate(shiftedBy: .none) {
+            tableView.reloadData(forRowIndexes: indexes, columnIndexes: IndexSet(integer: 0))
+            // `reloadData(forRowIndexes:)` re-asks for the row's view but keeps the
+            // height it already has, and changed content is a different height.
+            tableView.noteHeightOfRows(withIndexesChanged: indexes)
+        }
     }
 
     /// Invalidates the cached heights of the rows at `indexes` without
@@ -560,7 +653,135 @@ public final class TranscriptView: NSView {
     /// height, and a content-width change is handled by the transcript
     /// itself; neither needs this call.
     public func noteHeightOfRows(withIndexesChanged indexes: IndexSet) {
-        tableView.noteHeightOfRows(withIndexesChanged: indexes)
+        mutate(shiftedBy: .none) {
+            tableView.noteHeightOfRows(withIndexesChanged: indexes)
+        }
+    }
+
+    // MARK: - Scroll anchoring
+
+    /// How a mutation renumbers the rows the anchor is expressed in.
+    private enum AnchorShift {
+
+        /// Row indices are unchanged: content or height moved, identity didn't.
+        case none
+
+        /// Positions in the post-insertion data, as `insertRows` takes them.
+        case inserted(IndexSet)
+
+        /// Positions in the pre-removal data, as `removeRows` takes them.
+        case removed(IndexSet)
+    }
+
+    /// The anchor sampled for the mutation currently in flight — `nil` between
+    /// mutations. Not state that outlives a call; see `ScrollAnchor`.
+    private var anchor: ScrollAnchor?
+
+    /// How many nested mutations are in flight. The outermost samples and
+    /// restores; every inner one shifts the anchor and otherwise stands aside.
+    ///
+    /// Which makes nesting harmless rather than merely documented: `reloadRows`
+    /// calling the table twice, a host wrapping three mutations in
+    /// `beginUpdates()`, or both at once all reduce to one sample and one
+    /// restore, and no call has to know what it might be nested inside.
+    private var anchorDepth = 0
+
+    /// Runs `body` with the viewport held: the anchor is sampled before it,
+    /// renumbered by `shift` after it, and restored once the outermost mutation
+    /// finishes.
+    ///
+    /// A closure rather than a sample/restore pair at each call site because the
+    /// pair can be got wrong and this cannot — but the pair still exists, because
+    /// `beginUpdates()` / `endUpdates()` spans two calls the host makes and no
+    /// closure can reach across that.
+    private func mutate(shiftedBy shift: AnchorShift, _ body: () -> Void) {
+        NSAnimationContext.beginGrouping()
+        suppressImplicitAnimation()
+        defer { NSAnimationContext.endGrouping() }
+
+        beginAnchoring()
+        body()
+        switch shift {
+        case .none: break
+        case .inserted(let indexes): anchor = anchor?.shifted(byRowsInserted: indexes)
+        case .removed(let indexes): anchor = anchor?.shifted(byRowsRemoved: indexes)
+        }
+        endAnchoring()
+    }
+
+    /// Turns layer animations off for the animation grouping the caller has opened.
+    ///
+    /// Load-bearing for anchoring, and the reason is worth stating because no
+    /// assertion can catch a regression here. In a layer-backed window — which any
+    /// `NSVisualEffectView` in the tree makes it — the row geometry a mutation
+    /// changes is an animatable property, so the rows slide to their new positions
+    /// over a quarter second while the compensating scroll offset is written
+    /// instantly. The content visibly shakes and settles, and every number involved
+    /// is already final while it happens: `frame` reads the end state, and the
+    /// animation is in the presentation layer, where a test cannot see it.
+    ///
+    /// So the pair has to land in one visual state, and suppressing is the half to
+    /// pick: a compensating scroll is not something anyone asked to see. There is no
+    /// escape hatch on purpose — an animated row mutation and a held viewport are
+    /// mutually exclusive, so the mutations don't offer the animation (see
+    /// `insertRows(at:)`).
+    private func suppressImplicitAnimation() {
+        NSAnimationContext.current.duration = 0
+        NSAnimationContext.current.allowsImplicitAnimation = false
+        CATransaction.setDisableActions(true)
+    }
+
+    private func beginAnchoring() {
+        anchorDepth += 1
+        guard anchorDepth == 1 else { return }
+        anchor = sampledAnchor()
+    }
+
+    private func endAnchoring() {
+        // Unbalanced `endUpdates()`: the table raises its own objection, and
+        // decrementing past zero here would leave every later mutation off by one.
+        guard anchorDepth > 0 else { return }
+        anchorDepth -= 1
+        guard anchorDepth == 0, let anchor else { return }
+        self.anchor = nil
+        restore(anchor)
+    }
+
+    /// Where the viewport is now, as something that can be re-found afterwards.
+    private func sampledAnchor() -> ScrollAnchor {
+        guard numberOfRows > 0, !isScrolledToTail else { return .tail }
+        let visible = unobscuredRect
+        let rows = tableView.rows(in: visible)
+        guard rows.length > 0 else { return .tail }
+        return .row(
+            rows.location, offsetFromTop: visible.minY - tableView.rect(ofRow: rows.location).minY)
+    }
+
+    /// Restores immediately rather than on the next layout pass — waiting would be
+    /// a frame drawn at the old offset.
+    ///
+    /// The flush is not for the numbers. `rect(ofRow:)` and the document view's
+    /// height both resolve the mutation's geometry on demand, so the arithmetic
+    /// below is right without it — measured, by deleting it and watching every
+    /// offset assertion still pass. It is here so the table has positioned its row
+    /// views before the offset moves, on the reasoning that moving the viewport
+    /// past rows that are still at their old positions is a frame worth not
+    /// drawing. That last part is reasoning, not a measurement: the flicker it was
+    /// first added for turned out to be an implicit animation instead (see
+    /// `suppressImplicitAnimation`), and no assertion can tell the difference.
+    private func restore(_ anchor: ScrollAnchor) {
+        tableView.layoutSubtreeIfNeeded()
+        switch anchor {
+        case .tail:
+            scrollClipToTail()
+        case .row(let row, let offsetFromTop):
+            guard numberOfRows > 0 else { return }
+            // A removal that reached the end can leave the anchor past the last
+            // row; the clamp is here rather than in the shift so the shift stays
+            // arithmetic on indices and needs no row count.
+            let clamped = min(row, numberOfRows - 1)
+            scrollClip(toUnobscuredMinY: tableView.rect(ofRow: clamped).minY + offsetFromTop)
+        }
     }
 
     // MARK: - Batching
@@ -574,13 +795,22 @@ public final class TranscriptView: NSView {
     /// third" land on a single, well-defined offset. A mutation outside any
     /// batch samples and restores around itself.
     public func beginUpdates() {
+        beginAnchoring()
         tableView.beginUpdates()
     }
 
     /// Ends a `beginUpdates()` group, applies the coalesced mutations, and
     /// restores the scroll anchor sampled at `beginUpdates()`.
     public func endUpdates() {
+        // The coalesced geometry lands here, so this is where it has to be kept in
+        // the same visual state as the restore that follows it.
+        NSAnimationContext.beginGrouping()
+        suppressImplicitAnimation()
+        // The table's coalesced mutations have to land before the anchor is
+        // restored against the geometry they produce.
         tableView.endUpdates()
+        endAnchoring()
+        NSAnimationContext.endGrouping()
     }
 
     // MARK: - Scrolling
@@ -603,7 +833,37 @@ public final class TranscriptView: NSView {
     /// which can express a landing position — so the shape is borrowed from
     /// `NSCollectionView`, and `scrollRowToVisible`'s behaviour is folded in
     /// as `.nearestEdge`.
+    ///
+    /// Positions are measured against the area the host's chrome is *not*
+    /// covering, so `.top` lands the row below a top `contentInsets`, not
+    /// underneath it. An out-of-range row does nothing, and a position the scroll
+    /// cannot reach lands as close as the range allows.
     public func scrollToRow(at row: Int, scrollPosition: ScrollPosition) {
+        guard row >= 0, row < numberOfRows else { return }
+        // No layout pass forced first: `rect(ofRow:)` resolves row geometry on
+        // demand, `reloadData()` in the same tick included — measured, by
+        // reloading a longer transcript and scrolling to a row that only exists
+        // after the reload.
+        let rowRect = tableView.rect(ofRow: row)
+        let visible = unobscuredRect
+
+        switch scrollPosition {
+        case .top:
+            scrollClip(toUnobscuredMinY: rowRect.minY)
+        case .center:
+            scrollClip(toUnobscuredMinY: rowRect.midY - visible.height / 2)
+        case .bottom:
+            scrollClip(toUnobscuredMinY: rowRect.maxY - visible.height)
+        case .nearestEdge:
+            // A row taller than the viewport cannot be brought fully in, so its
+            // start is shown — `NSTableView.scrollRowToVisible(_:)`'s behaviour,
+            // and the only reading of "least amount" that terminates.
+            if rowRect.height >= visible.height || rowRect.minY < visible.minY {
+                scrollClip(toUnobscuredMinY: rowRect.minY)
+            } else if rowRect.maxY > visible.maxY {
+                scrollClip(toUnobscuredMinY: rowRect.maxY - visible.height)
+            }
+        }
     }
 }
 
@@ -640,18 +900,5 @@ private final class TableAdapter: NSObject, NSTableViewDataSource, NSTableViewDe
 
     func tableView(_ tableView: NSTableView, didRemove rowView: NSTableRowView, forRow row: Int) {
         transcript?.didRemove(rowView, forRow: row)
-    }
-}
-
-extension TranscriptView.AnimationOptions {
-
-    /// The `NSTableView` options these stand for — same bits, one type per layer
-    /// so the package's surface doesn't hand out AppKit's.
-    fileprivate var tableViewOptions: NSTableView.AnimationOptions {
-        var options: NSTableView.AnimationOptions = []
-        if contains(.effectFade) { options.insert(.effectFade) }
-        if contains(.slideUp) { options.insert(.slideUp) }
-        if contains(.slideDown) { options.insert(.slideDown) }
-        return options
     }
 }

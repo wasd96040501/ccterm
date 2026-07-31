@@ -1,14 +1,15 @@
 import AppKit
 import TranscriptKit
 
-/// A window with a `TranscriptView` in it, driven entirely by `.view` rows —
-/// the one row kind the package renders today. Run with `swift run
-/// TranscriptKitDemo`.
+/// A window with a `TranscriptView` in it: assistant turns as `.markdown`,
+/// user turns as host-drawn `.view` bubbles. Run with `make demo-kit`.
 ///
-/// What it is for: the things a probe can't tell you. Scroll by hand and drag the
-/// window across the content width clamp; then use the panel to mutate rows above
-/// the viewport and watch that the text under your eyes doesn't move, which is the
-/// one property the tests can assert but not convince anyone of.
+/// What it is for: the things a probe can't tell you. Read the seven documents
+/// in `DemoMessage.script` and check that they look like documents — that is the
+/// only test markdown rendering really has. Then drag the window across the
+/// content width clamp, and use the panel to mutate rows above the viewport and
+/// watch that the text under your eyes doesn't move, which is the one property
+/// the tests can assert but not convince anyone of.
 @main
 struct Demo {
 
@@ -21,7 +22,7 @@ struct Demo {
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered, defer: false)
-        window.title = "TranscriptKit — .view rows"
+        window.title = "TranscriptKit"
 
         let host = DemoHost()
         let root = NSView()
@@ -92,8 +93,8 @@ struct Demo {
     }
 }
 
-/// Data source and delegate for the demo: a script of paragraphs, each one a
-/// `.view` row, plus the mutations the control panel drives.
+/// Data source and delegate for the demo: the script in `DemoScript.swift`,
+/// plus the mutations the control panel drives.
 ///
 /// Every mutation is the same two lines a real host writes — change the model,
 /// then announce the change — and each announcement is deliberately the
@@ -160,7 +161,9 @@ private final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptView
     /// Two mutations, one anchor: five rows in at the top and three out from just
     /// below them, so the renumbering has to compose across the group.
     func prependAndRemoveInOneBatch() {
-        guard messages.count > 13 else { return }
+        // The removal is expressed in post-insert indices, so it needs three
+        // rows to exist below the five going in.
+        guard messages.count >= 8 else { return }
         transcript?.beginUpdates()
         prepend(5)
         messages.removeSubrange(10..<13)
@@ -185,10 +188,17 @@ private final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptView
         messages.count
     }
 
+    /// Assistant turns go through the transcript's own markdown renderer; user
+    /// turns stay host-drawn bubbles. Mixing the two on purpose — they share one
+    /// recycling pool, and a cell handed back from the wrong kind of row is
+    /// exactly the failure that would otherwise only show up in an app.
     func transcriptView(
         _ transcriptView: TranscriptView, contentForRow row: Int
     ) -> TranscriptRowContent {
-        .view
+        switch messages[row].author {
+        case .assistant: return .markdown(messages[row].text)
+        case .user: return .view
+        }
     }
 
     /// Measured from the model at the width the transcript hands over — never by
@@ -211,47 +221,6 @@ private final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptView
 
 extension NSUserInterfaceItemIdentifier {
     fileprivate static let bubble = NSUserInterfaceItemIdentifier("demo.bubble")
-}
-
-private struct DemoMessage {
-    enum Author { case user, assistant }
-
-    let author: Author
-    let text: String
-
-    /// Enough rows to scroll through several screenfuls, with lengths varied so
-    /// row heights differ and recycling has something to get wrong.
-    static var script: [DemoMessage] {
-        let bodies = [
-            "Give me a one-paragraph summary of what changed in this branch.",
-            "The transcript now serves every row through a cell view that keeps the "
-                + "hosted view at the content width and centres it. The table frames the "
-                + "cell; the cell's interior is Auto Layout. Nothing competes for a frame.",
-            "Why not centre it by narrowing the table itself?",
-            "Because the scroll view rewrites the document view's width back to the "
-                + "clip's on every tile, and not through setFrameSize, so the clamp cannot "
-                + "hold from inside the table. That was measured, not assumed.",
-            "Short one.",
-            "A longer answer, to make the row heights uneven: the content width is "
-                + "resolved by a single function, which both the height query and the cell's "
-                + "layout call. Measuring at one width and laying out at another is the "
-                + "failure this design is shaped to make unrepresentable, so the two callers "
-                + "share one implementation rather than agreeing by convention. Drag the "
-                + "window narrower than 720 points and every row reflows; drag it wider and "
-                + "the content stops growing while the margins take the difference.",
-            "How do the views get recycled?",
-            "Cells and the views inside them recycle as a pair, so a row coming back "
-                + "into the viewport rebuilds no constraints — scroll to the bottom and back "
-                + "and the same handful of bubbles has served every row.",
-        ]
-        return (0..<8).flatMap { block in
-            bodies.enumerated().map { index, body in
-                DemoMessage(
-                    author: index.isMultiple(of: 2) ? .user : .assistant,
-                    text: "\(block * bodies.count + index + 1). \(body)")
-            }
-        }
-    }
 }
 
 /// The demo's hosted view: a rounded bubble with a wrapping label inside it.

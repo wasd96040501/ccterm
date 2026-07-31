@@ -62,6 +62,17 @@ enum MarkdownConvert {
         markups.compactMap(block)
     }
 
+    /// Parses GFM source into the IR — the entry point everything upstream of
+    /// the renderer goes through.
+    ///
+    /// `.parseBlockDirectives` is left off: the syntax is Swift-DocC's, not
+    /// GFM's, and enabling it would turn a line of prose beginning with `@` into
+    /// a directive node that `block(_:)` then drops.
+    static func document(_ source: String) -> MarkdownIR.Document {
+        let parsed = Markdown.Document(parsing: source, options: [])
+        return MarkdownIR.Document(blocks: blocks(Array(parsed.blockChildren)))
+    }
+
     static func item(for listItem: Markdown.ListItem) -> MarkdownIR.List.Item {
         let checkbox: MarkdownIR.List.Item.Checkbox?
         switch listItem.checkbox {

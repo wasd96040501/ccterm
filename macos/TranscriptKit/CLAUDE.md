@@ -117,6 +117,36 @@ round to settle — a change that starts needing `passes: 2` has pushed work
 onto a later tick, which is a visible frame at the old geometry, not a test
 detail.
 
+### What the suite can't check: `make demo-kit`
+
+Run from the repo root, like everything else here — `make test-kit` and
+`make demo-kit` are the package's two entry points, and both just wrap
+`swift test` / `swift run TranscriptKitDemo` in this directory. The demo runs
+in the foreground; close the window to stop it.
+
+A test can assert a row's height, the width it was measured at, and how many
+views got built instead of recycled. It cannot assert that the document in
+that row **looks like a document** — that the gap under a heading differs from
+the gap under a paragraph, that a quote's bar starts and ends with its glyphs,
+that a code card has room to breathe. Those get read, not asserted, and
+markdown rendering is mostly made of them.
+
+So `DemoMessage.script` is seven real markdown documents rather than generated
+filler, and between them they use every node in `MarkdownIR`: all six heading
+levels, ordered / unordered / task / nested lists with a start index, fenced
+code with and without a language plus an indented block, a table carrying all
+four alignments, nested blockquotes holding blocks of their own, thematic
+breaks, and one paragraph containing every inline node at once. **A shape
+missing from that script is a shape nobody is looking at** — landing a new one
+means adding it there too.
+
+The `.view` bubbles interleaved with them are down to a handful on purpose:
+enough to keep both row kinds sharing one recycling pool, which is where a cell
+handed back from the wrong kind of row would show up, and not so many that they
+crowd out the thing being looked at. The control panel stays regardless — the
+mutation buttons are how scroll anchoring gets checked, and no rendering change
+should cost that.
+
 ## 6. How a host is expected to load
 
 Not a rule about this package's code — a note on how hosts drive it, recorded

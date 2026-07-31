@@ -130,30 +130,69 @@ public final class TranscriptView: NSView {
     private var configuringCell: TranscriptCellView?
 
     /// How tall row `row` is. `.view` rows are the delegate's to measure; the
-    /// three the transcript draws itself measure to nothing until the typesetter
-    /// lands.
+    /// self-drawn cases the transcript measures itself, from the same tree it
+    /// will later draw.
     fileprivate func height(ofRow row: Int) -> CGFloat {
-        guard case .view = dataSource?.transcriptView(self, contentForRow: row),
-            let delegate
-        else { return 0 }
-        return delegate.transcriptView(self, heightOfRow: row, width: contentWidth)
+        let answer: CGFloat
+        switch dataSource?.transcriptView(self, contentForRow: row) {
+        case .markdown(let source):
+            answer = MarkdownLayout.make(source, width: contentWidth).size.height
+
+        case .view:
+            guard let delegate else { return Self.minimumRowHeight }
+            answer = delegate.transcriptView(self, heightOfRow: row, width: contentWidth)
+
+        // Neither has a block type behind it yet.
+        case .userMessage, .image, .none:
+            answer = 0
+        }
+        return max(answer, Self.minimumRowHeight)
     }
 
-    /// The cell for row `row`: the transcript's own cell view, with the hosted
-    /// view inside it. `nil` for the rows the transcript draws itself, which have
-    /// nothing to draw yet.
+    /// `NSTableView` throws from inside its own layout when a row measures to
+    /// zero — not at the call that reported it, but at the next pass that tiles,
+    /// which in practice is a window resize several seconds later. Every path
+    /// that can produce a zero goes through the clamp above: a host answering
+    /// `heightOfRow` with `0` for a collapsed row, a content case the transcript
+    /// cannot draw yet, a data source that went away while the transcript was
+    /// still mounted.
+    ///
+    /// Clamping rather than asserting because the failure it replaces is not one
+    /// the host can act on — the exception surfaces in AppKit's layout, with
+    /// nothing in the trace naming the row that caused it.
+    private static let minimumRowHeight: CGFloat = 1
+
+    /// The cell for row `row`: the transcript's own cell view, with either a
+    /// host-supplied view or the transcript's own self-drawn one inside it.
     fileprivate func view(forRow row: Int) -> NSView? {
-        guard case .view = dataSource?.transcriptView(self, contentForRow: row),
-            let delegate
-        else { return nil }
+        guard let content = dataSource?.transcriptView(self, contentForRow: row) else {
+            return nil
+        }
 
         let cell =
             tableView.makeView(withIdentifier: TranscriptCellView.identifier, owner: nil)
             as? TranscriptCellView ?? TranscriptCellView()
 
-        configuringCell = cell
-        defer { configuringCell = nil }
-        let hosted = delegate.transcriptView(self, viewForRow: row)
+        let hosted: NSView
+        switch content {
+        case .markdown(let source):
+            // Recycled through the cell it was already installed in, so a row
+            // scrolling back into view rebuilds no constraints. Falls back to a
+            // fresh instance when the pool hands over a cell that was serving a
+            // `.view` row.
+            let markdown = cell.hostedView as? MarkdownCellView ?? MarkdownCellView()
+            markdown.configure(with: MarkdownLayout.make(source, width: contentWidth))
+            hosted = markdown
+
+        case .view:
+            guard let delegate else { return nil }
+            configuringCell = cell
+            defer { configuringCell = nil }
+            hosted = delegate.transcriptView(self, viewForRow: row)
+
+        case .userMessage, .image:
+            return nil
+        }
 
         cell.install(hosted, minWidth: minContentWidth, maxWidth: maxContentWidth)
         return cell
@@ -164,7 +203,11 @@ public final class TranscriptView: NSView {
     /// that is what it hears about.
     fileprivate func didRemove(_ rowView: NSTableRowView, forRow row: Int) {
         guard let cell = rowView.view(atColumn: 0) as? TranscriptCellView,
-            let hosted = cell.hostedView
+            let hosted = cell.hostedView,
+            // A self-drawn row's view is the transcript's own. Reporting it
+            // would hand the host something it never supplied and cannot have
+            // started work on.
+            !(hosted is MarkdownCellView)
         else { return }
         delegate?.transcriptView(self, didRemove: hosted, forRow: row)
     }

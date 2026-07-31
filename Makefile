@@ -1,4 +1,4 @@
-.PHONY: build release install dmg clean fmt fmt-check test-unit test-kit js-bundles logs icon appkit-doc help
+.PHONY: build release install dmg clean fmt fmt-check test-unit test-kit demo-kit js-bundles logs icon appkit-doc help
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
@@ -39,6 +39,13 @@ test-unit: js-bundles ## Run unit tests (cctermTests) — fast, parallel-safe
 test-kit: ## Run TranscriptKit's package tests (FILTER=SomeTests)
 	@cd macos/TranscriptKit && \
 		if [ -n "$(FILTER)" ]; then swift test --filter "$(FILTER)"; else swift test; fi
+
+# The package's demo app — a real window over real markdown documents. Rendering
+# has no other check: a probe can assert a row's height, not whether the
+# document in it looks like a document. Runs in the foreground; Ctrl-C or close
+# the window to stop it.
+demo-kit: ## Run TranscriptKit's demo app
+	@cd macos/TranscriptKit && swift run TranscriptKitDemo
 
 logs: ## Stream unified logs for THIS worktree's build product only (CONFIG=debug|release CATEGORY=Foo LEVEL=info|debug)
 	@CONFIG="$(CONFIG)" CATEGORY="$(CATEGORY)" LEVEL="$(LEVEL)" ./macos/scripts/logs.sh

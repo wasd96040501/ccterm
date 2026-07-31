@@ -145,4 +145,25 @@ final class TranscriptViewGeometryTests: XCTestCase {
                 + "\(host.heightWidths.reduce(into: [CGFloat: Int]()) { $0[$1, default: 0] += 1 })")
         XCTAssertEqual(host.heightWidths.count, 24, "each row should be measured once")
     }
+
+    /// A row measuring zero makes `NSTableView` throw from inside its own
+    /// layout — and not at the call that reported the zero, but at the next pass
+    /// that tiles, so the symptom is a window resize crashing with nothing in the
+    /// trace naming the row. The transcript clamps instead.
+    ///
+    /// Reachable three ways today: a host answering `0` for a collapsed row, a
+    /// content case the transcript cannot draw yet, and a data source that went
+    /// away while the transcript was still mounted.
+    func testZeroHeightRowsSurviveAResize() throws {
+        let (mounted, host) = mount(rows: 6, rowHeight: 0)
+        defer { mounted.teardown() }
+
+        XCTAssertFalse(host.heightWidths.isEmpty, "the transcript never asked for a row height")
+        XCTAssertGreaterThan(mounted.transcript.rect(ofRow: 0).height, 0)
+
+        mounted.setContentWidth(500)
+        mounted.settle()
+
+        XCTAssertEqual(mounted.transcript.numberOfRows, 6)
+    }
 }

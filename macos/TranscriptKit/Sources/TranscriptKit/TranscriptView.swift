@@ -603,6 +603,17 @@ public final class TranscriptView: NSView {
     ///
     /// This is also the one mutation that lays nothing out before returning,
     /// precisely because it has no anchor to restore.
+    ///
+    /// **Mount and lay out before loading.** Rows are measured at the content
+    /// width the transcript has when the table first lays out, so a load that
+    /// happens before Auto Layout has run measures everything at a width of zero
+    /// and again at the real one — and the correcting pass is a full-table
+    /// `noteHeightOfRows`, which AppKit animates. The first screen arrives and
+    /// then visibly settles. Add the view, activate its constraints,
+    /// `layoutSubtreeIfNeeded()`, then call this. `NSTableView` behaves the same
+    /// way whenever row height depends on width, which is why this is stated
+    /// rather than absorbed: absorbing it would mean a view that quietly ignores
+    /// calls until it is ready.
     public func reloadData() {
         tableView.reloadData()
     }

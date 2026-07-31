@@ -72,6 +72,17 @@ struct Demo {
         panel.onMaxContentWidth = { transcript.maxContentWidth = $0 }
         host.onRowCountChange = { panel.setStatus("\($0) rows") }
 
+        // Lay the tree out before loading, so the table's first — and only —
+        // measurement pass runs at the settled content width. Loading first
+        // measures every row twice: once at the width the transcript has before
+        // Auto Layout has run (zero), then again once it has a real one, and the
+        // correcting pass is a full-table `noteHeightOfRows`, which AppKit
+        // animates. The first screen then arrives and visibly settles.
+        //
+        // `NSTableView` behaves the same way for the same reason, so this is the
+        // host's job rather than something the transcript could take over: mount,
+        // lay out, then load.
+        root.layoutSubtreeIfNeeded()
         transcript.reloadData()
         panel.setStatus("\(transcript.numberOfRows) rows")
 

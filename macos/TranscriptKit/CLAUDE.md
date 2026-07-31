@@ -122,6 +122,21 @@ detail.
 Not a rule about this package's code — a note on how hosts drive it, recorded
 here so nobody reaches for machinery that isn't needed.
 
+**Mount, lay out, then load.** Add the transcript, activate its constraints,
+`layoutSubtreeIfNeeded()`, and only then `reloadData()`. Loading first measures
+every row at a width of zero and again at the real one, and the correcting pass
+is a full-table `noteHeightOfRows` — which AppKit animates, so the first screen
+arrives and then visibly settles. `NSTableView` has exactly this behaviour
+whenever the host's row height depends on width; the app's `NativeTranscript2`
+answers it the same way, by building its scroll view unbound and binding the
+data source after the layout pass (`TranscriptScrollViewFactory`).
+
+This stays the host's job. The transcript could defer its own binding until it
+has a width, and that was tried: it costs a state the host cannot see, mutations
+that silently do nothing while in it, and a `numberOfRows` answered from two
+different places. Parity with `NSTableView` (§1) is worth more than protection
+from an ordering a host gets right once, in the ten lines where it mounts.
+
 A long transcript loads by rendering the first screen, then feeding the
 remainder in batches, **one batch per `DispatchQueue.main.async` hop**. Each
 tick typesets a batch small enough to fit the frame budget, so the cost is

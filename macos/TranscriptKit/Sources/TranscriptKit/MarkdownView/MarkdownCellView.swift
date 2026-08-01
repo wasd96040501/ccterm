@@ -68,6 +68,17 @@ final class MarkdownCellView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let block, let ctx = NSGraphicsContext.current?.cgContext else { return }
-        block.draw(at: .zero, in: ctx, dirty: dirtyRect)
+
+        // Collect, then play. The two steps are what let this view add strokes of
+        // its own — a selection band, later a search hit — at a depth the blocks
+        // decide, without reaching into any block's drawing. It appends an item
+        // with a phase; the player puts it where that phase says.
+        items.removeAll(keepingCapacity: true)
+        block.paint(at: .zero, dirty: dirtyRect, into: &items)
+        items.paint(in: ctx, dirty: dirtyRect)
     }
+
+    /// Held across draws so the list's storage is allocated once rather than per
+    /// repaint. Never read outside `draw(_:)`.
+    private var items: [PaintItem] = []
 }

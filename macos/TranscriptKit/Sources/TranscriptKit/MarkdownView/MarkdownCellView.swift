@@ -1,21 +1,21 @@
 import AppKit
 
-/// The view a self-drawn row is served through: holds one block tree and draws
-/// it.
+/// The view a self-drawn row is served through: holds one measured block and
+/// draws it.
 ///
-/// Deliberately thin. It owns no layout — the tree arrived already laid out at
+/// Deliberately thin. It owns no layout — the block arrived already measured at
 /// the width the transcript committed to — and no styling. What it does own is
-/// the two things a block tree cannot: a place in the view hierarchy, and the
-/// `dirtyRect` that lets the tree skip what cannot be seen.
+/// the two things a block cannot: a place in the view hierarchy, and the
+/// `dirtyRect` that lets the block skip what cannot be seen.
 ///
 /// `isFlipped` is true so that the y-down arithmetic every block is written in
 /// matches the context it draws into, rather than being un-flipped at each of
 /// the several dozen places a rectangle crosses the boundary.
 final class MarkdownCellView: NSView {
 
-    static let identifier = NSUserInterfaceItemIdentifier("TranscriptKit.markdown")
+    static let identifier = NSUserInterfaceItemIdentifier("TranscriptKit.block")
 
-    private(set) var block: Block?
+    private(set) var block: MarkdownBlock?
 
     override var isFlipped: Bool { true }
 
@@ -26,6 +26,18 @@ final class MarkdownCellView: NSView {
     init() {
         super.init(frame: .zero)
         identifier = Self.identifier
+
+        // Layer-backed, and redrawn only when marked. Scrolling then composites
+        // a rasterised bitmap rather than re-issuing `draw(_:)` for every strip
+        // the clip view exposes, and the only thing that costs a repaint is
+        // something actually saying the content changed.
+        //
+        // The counterpart obligation: AppKit's default policy for a `draw(_:)`
+        // view redraws on resize, and this one explicitly does not — so every
+        // resize that changes what should be on screen has to mark the view
+        // itself. Nothing here is exempt from that, including a width change.
+        wantsLayer = true
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
     }
 
     @available(*, unavailable)
@@ -33,11 +45,24 @@ final class MarkdownCellView: NSView {
         fatalError("MarkdownCellView is code-only; init(coder:) is unavailable")
     }
 
-    /// Binds a tree. Idempotent — a recycled instance keeps nothing from the row
-    /// it was serving a moment ago, because the tree is the entirety of its
-    /// state.
-    func configure(with block: Block) {
+    /// Binds a measured block. Idempotent — a recycled instance keeps nothing
+    /// from the row it was serving a moment ago, because the block is the
+    /// entirety of its state.
+    func configure(with block: MarkdownBlock) {
         self.block = block
+        needsDisplay = true
+    }
+
+    /// Light ↔ dark flip, or the view joining a different appearance context.
+    ///
+    /// A repaint is the whole fix: blocks store `NSColor`s rather than resolved
+    /// `CGColor`s, and both Core Text and `setFillColor` resolve them against the
+    /// appearance current at draw time. Measured, not assumed — a tree built
+    /// under light and drawn under dark is pixel-identical to one built under
+    /// dark. So this costs one invalidation, and re-measuring would be wasted
+    /// work.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
         needsDisplay = true
     }
 

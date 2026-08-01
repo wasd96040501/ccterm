@@ -6,7 +6,7 @@ import XCTest
 /// `.markdown` rows end to end: the transcript measures them itself, draws them
 /// through its own cell, and leaves the delegate out of both.
 ///
-/// Mounted rather than pure, unlike `BlockStackSelectionTests` — the block tree
+/// Mounted rather than pure, unlike `BlockSelectionTests` — the block tree
 /// is a value, but *whether the transcript reaches for one* is only observable
 /// once `NSTableView` lays out and starts asking.
 @MainActor

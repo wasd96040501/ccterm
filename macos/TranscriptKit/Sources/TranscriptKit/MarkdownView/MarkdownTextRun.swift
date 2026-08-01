@@ -4,24 +4,25 @@ import CoreText
 /// One attributed string, typeset at one width: the resulting lines, plus the
 /// pixel↔index arithmetic over them.
 ///
-/// **Not a `Block`.** It has no decoration, no place in the document, and
-/// cannot go into a `BlockStack`. It is the piece every line-based block is
-/// built out of — paragraphs, headings, code blocks, table cells, list markers
-/// — so that the typesetting arithmetic exists once instead of once per block
-/// kind. `TextBlock` is the adapter that turns one of these into a `Block`.
+/// **Not a `MarkdownBlock`.** It has no decoration, no place in the document, and no
+/// margins. It is the piece every line-based block is built out of — paragraphs,
+/// headings, code cards, table cells, list markers — so that the typesetting
+/// arithmetic exists once instead of once per block kind. `MarkdownTextBlock` is the
+/// adapter that turns one of these into a `MarkdownBlock`.
 ///
-/// It is also the unit of caching. Streaming output re-parses the whole
-/// document on every arriving token; keying runs by (string, width) is how the
-/// paragraphs that did not change avoid being re-typeset.
+/// `@unchecked Sendable` for the reason given on `MarkdownBlock`: `CTLine` and
+/// `NSAttributedString` are immutable and thread-safe once created, and nothing
+/// here mutates after `make` returns — which is what lets a host typeset off the
+/// main actor.
 ///
 /// Coordinates are y-down with the origin at the run's top-left, matching the
 /// flipped views this ends up drawn into. Core Text's own line origins are
 /// y-up, and that conversion is confined to `make`.
-struct TextRun {
+struct MarkdownTextRun: @unchecked Sendable {
 
     /// One typeset line: the Core Text object, where it sits, and which slice
     /// of the string it covers.
-    struct Line {
+    struct Line: @unchecked Sendable {
         let ctLine: CTLine
 
         /// Top-left of the line's box, in run-local (y-down) coordinates.
@@ -51,7 +52,7 @@ struct TextRun {
     /// is still valid" from "this run happens to be narrow".
     let typesetWidth: CGFloat
 
-    static let empty = TextRun(
+    static let empty = MarkdownTextRun(
         attributed: NSAttributedString(), lines: [], size: .zero, typesetWidth: 0)
 
     // MARK: - Typesetting
@@ -63,7 +64,7 @@ struct TextRun {
     /// origins then have to be un-flipped, and it wants a path sized in advance
     /// — which is the one thing not known yet when the height is what is being
     /// computed.
-    static func make(_ attributed: NSAttributedString, width: CGFloat) -> TextRun {
+    static func make(_ attributed: NSAttributedString, width: CGFloat) -> MarkdownTextRun {
         let length = attributed.length
         guard length > 0, width > 0 else { return .empty }
 
@@ -101,7 +102,7 @@ struct TextRun {
             start += count
         }
 
-        return TextRun(
+        return MarkdownTextRun(
             attributed: attributed,
             lines: lines,
             size: CGSize(width: widest, height: y),

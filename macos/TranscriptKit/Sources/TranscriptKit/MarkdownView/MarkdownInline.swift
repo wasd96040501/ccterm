@@ -7,7 +7,7 @@ import AppKit
 /// nothing, which is the reason that IR exists as enums in the first place.
 ///
 /// Links are carried as an `.link` attribute rather than as a side-table of hit
-/// rectangles. `TextRun` keeps the attributed string it typeset, so "which URL
+/// rectangles. `MarkdownTextRun` keeps the attributed string it typeset, so "which URL
 /// is under this point" is `index(at:)` followed by an attribute lookup — the
 /// hit-testing already written for selection, reused. The renderer this
 /// replaces kept a parallel `[LinkHit]` per layout and re-projected each one
@@ -41,11 +41,11 @@ enum MarkdownInline {
 
         case .emphasis(let children):
             return attributed(
-                children, style: style, font: font.adding(.italicFontMask), color: color)
+                children, style: style, font: font.adding(.italic), color: color)
 
         case .strong(let children):
             return attributed(
-                children, style: style, font: font.adding(.boldFontMask), color: color)
+                children, style: style, font: font.adding(.bold), color: color)
 
         case .strikethrough(let children):
             let inner = NSMutableAttributedString(
@@ -102,9 +102,15 @@ enum MarkdownInline {
 extension NSFont {
 
     /// The same font with a trait added, falling back to the original when the
-    /// family has no such face — `NSFontManager` answers `nil` there, and an
-    /// unstyled word is a better outcome than a crash or a substituted family.
-    fileprivate func adding(_ trait: NSFontTraitMask) -> NSFont {
-        NSFontManager.shared.convert(self, toHaveTrait: trait)
+    /// family has no such face — an unstyled word is a better outcome than a
+    /// crash or a substituted family.
+    ///
+    /// Through `NSFontDescriptor` rather than `NSFontManager`, which is
+    /// main-thread-only: this runs during layout, and layout has to stay
+    /// callable off the main actor.
+    fileprivate func adding(_ traits: NSFontDescriptor.SymbolicTraits) -> NSFont {
+        let descriptor = fontDescriptor.withSymbolicTraits(
+            fontDescriptor.symbolicTraits.union(traits))
+        return NSFont(descriptor: descriptor, size: pointSize) ?? self
     }
 }

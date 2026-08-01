@@ -136,7 +136,7 @@ public final class TranscriptView: NSView {
         let answer: CGFloat
         switch dataSource?.transcriptView(self, contentForRow: row) {
         case .markdown(let source):
-            answer = MarkdownLayout.make(source, width: contentWidth).size.height
+            answer = MarkdownLayout.make(source).measure(contentWidth).size.height
 
         case .view:
             guard let delegate else { return Self.minimumRowHeight }
@@ -181,7 +181,7 @@ public final class TranscriptView: NSView {
             // fresh instance when the pool hands over a cell that was serving a
             // `.view` row.
             let markdown = cell.hostedView as? MarkdownCellView ?? MarkdownCellView()
-            markdown.configure(with: MarkdownLayout.make(source, width: contentWidth))
+            markdown.configure(with: MarkdownLayout.make(source).measure(contentWidth))
             hosted = markdown
 
         case .view:

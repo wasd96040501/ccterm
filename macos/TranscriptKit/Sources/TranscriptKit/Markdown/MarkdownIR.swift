@@ -41,7 +41,7 @@ enum MarkdownIR {
 
     /// One unit of the document's vertical flow.
     ///
-    /// `Node` rather than bare `Block` for two reasons: it marks these as
+    /// `Node` rather than bare `MarkdownBlock` for two reasons: it marks these as
     /// syntax-tree values, distinct from the `…Layout` types that hold typeset
     /// geometry; and `block` / `inline` are CommonMark's own terms, worth
     /// keeping so the spec reads across.

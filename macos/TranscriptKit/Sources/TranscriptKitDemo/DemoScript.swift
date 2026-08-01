@@ -40,6 +40,8 @@ extension DemoMessage {
             .user("And how should I lay a new domain entity out?"),
             .assistant(placingAnEntity),
             .assistant(shortAnswer),
+            .user("Show me every list shape at once."),
+            .assistant(listShapes),
             .assistant(inlineKitchenSink),
         ]
     }
@@ -70,10 +72,11 @@ extension DemoMessage {
 
         ## Highlights
 
-        - [x] A block tree — every markdown shape is a laid-out *value*, built at
-              a width, rather than a recipe re-run at draw time
-        - [x] Recursive containers: a blockquote holds arbitrary blocks, so a
-              code block inside one is representable instead of merely unstyled
+        - [x] Two layers: a `Layout` is a *recipe* that composes before any width
+              is known, and `measure` is the one moment a width is applied
+        - [x] Decorators wrap any layout, not parsed nodes — so a quote holds a
+              code card, a list, or another quote, and never learns which
+        - [x] Measuring runs off the main actor; only drawing needs it
         - [ ] Two-dimensional table selection
         - [ ] Link activation, and the copy button on a code card
 
@@ -162,7 +165,7 @@ extension DemoMessage {
         func height(ofRow row: Int) -> CGFloat {
             switch dataSource?.transcriptView(self, contentForRow: row) {
             case .markdown(let source):
-                return MarkdownLayout.make(source, width: contentWidth).size.height
+                return MarkdownLayout.make(source).measure(contentWidth).size.height
             case .view:
                 return delegate?.transcriptView(
                     self, heightOfRow: row, width: contentWidth) ?? 1
@@ -212,6 +215,54 @@ extension DemoMessage {
         8. And this one the eighth.
         """#
 
+    /// Every shape a list can take, in one place — the document to read when a
+    /// list's rhythm or its marker column looks wrong.
+    ///
+    /// Between them: bullets, ordinals starting somewhere other than one, a task
+    /// list in both states, three levels of nesting, an item holding two
+    /// paragraphs, and an item holding a code block. Every vertical gap in here
+    /// should be identical, at every depth, whatever the item contains — that is
+    /// the one property this document exists to make visible.
+    fileprivate static let listShapes = #"""
+        ### Every list shape
+
+        - A bullet item.
+        - One with a sub-list under it:
+          - Second level.
+          - And a third:
+            - Third level, to check the marker column re-negotiates per list.
+        - Back out to the top level.
+
+        Ordered, and not starting at one — the column widens for `10.` and the
+        markers right-align on the period:
+
+        8. Eighth.
+        9. Ninth.
+        10. Tenth, wider than the two above it.
+
+        A task list, drawn rather than typeset:
+
+        - [x] Checked — a filled box with Material's tick path on it.
+        - [ ] Unchecked — the border alone.
+        - [x] Both states share an advance width, so nothing shifts when one
+              is ticked.
+
+        Items are not limited to a line of text. This one holds two paragraphs:
+
+        - First paragraph of the item.
+
+          Second paragraph of the same item, which should sit exactly as far
+          from the first as the items sit from each other.
+
+        - And this one holds a code block:
+
+          ```swift
+          BlockStack(rows, spacing: 6).measure(width)
+          ```
+
+        - Back to something ordinary, to close the list.
+        """#
+
     /// A single paragraph — here so the script has a short row among tall ones,
     /// which is what makes recycling interesting.
     fileprivate static let shortAnswer = #"""
@@ -241,7 +292,7 @@ extension DemoMessage {
         > Quotes nest, and the inner one holds blocks of its own:
         >
         > > ```swift
-        > > struct Blockquote: Block { let content: BlockStack }
+        > > struct Blockquote: Layout { let content: Layout }
         > > ```
         > >
         > > - including a list

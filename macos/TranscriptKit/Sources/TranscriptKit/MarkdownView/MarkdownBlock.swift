@@ -83,6 +83,22 @@ protocol MarkdownBlock: Sendable {
 
     /// The plain text a selection between two indices copies as.
     func text(from: Int, to: Int) -> String
+
+    /// The word containing `index` — what a double-click takes.
+    ///
+    /// Where the boundaries are is not this package's business to decide:
+    /// `NSAttributedString.doubleClick(at:)` is what `NSTextView` asks, and it
+    /// knows about locales, CJK, hyphens and apostrophes.
+    func wordRange(at index: Int) -> Range<Int>
+
+    /// The paragraph containing `index` — what a triple-click takes.
+    ///
+    /// A *paragraph*, not a visual line, so wrapping never splits one. In
+    /// verbatim text that comes out as one logical line, because the separator
+    /// there is a real newline; in prose a hard break does not end one, which is
+    /// what a browser does with a `<br>` inside a `<p>`. Both fall out of
+    /// `NSString.paragraphRange(for:)` without a branch.
+    func paragraphRange(at index: Int) -> Range<Int>
 }
 
 extension MarkdownBlock {
@@ -104,4 +120,6 @@ extension MarkdownOpaqueBlock {
     func index(at point: CGPoint) -> Int { 0 }
     func rects(from: Int, to: Int) -> [CGRect] { [] }
     func text(from: Int, to: Int) -> String { "" }
+    func wordRange(at index: Int) -> Range<Int> { index..<index }
+    func paragraphRange(at index: Int) -> Range<Int> { index..<index }
 }

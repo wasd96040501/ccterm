@@ -146,6 +146,27 @@ struct BlockStack: Layout {
             return parts.joined(separator: "\n")
         }
 
+        func wordRange(at index: Int) -> Range<Int> {
+            childRange(at: index) { $0.wordRange(at: $1) }
+        }
+
+        func paragraphRange(at index: Int) -> Range<Int> {
+            childRange(at: index) { $0.paragraphRange(at: $1) }
+        }
+
+        /// Both granularities compose the same way: find whose index it is, ask
+        /// them in their own space, shift what comes back. A word never spans two
+        /// blocks, and neither does a paragraph — that is what being a separate
+        /// block means.
+        private func childRange(
+            at index: Int, _ ask: (MarkdownBlock, Int) -> Range<Int>
+        ) -> Range<Int> {
+            guard let position = childIndex(containing: index) else { return index..<index }
+            let child = children[position]
+            let range = ask(child.block, index - child.base)
+            return (range.lowerBound + child.base)..<(range.upperBound + child.base)
+        }
+
         // MARK: - Lookup
 
         /// Which child owns flat index `i`. Zero-length children — a rule, an

@@ -110,9 +110,30 @@ final class MarkdownCellView: NSView {
     override func mouseDown(with event: NSEvent) {
         guard let block else { return super.mouseDown(with: event) }
         window?.makeFirstResponder(self)
-        anchor = block.index(at: convert(event.locationInWindow, from: nil))
-        focus = anchor
+
+        let index = block.index(at: convert(event.locationInWindow, from: nil))
+        // Which unit a click means is the block's to answer — it owns the text
+        // the boundaries are in. All this does is pick the question.
+        let range: Range<Int>
+        switch event.clickCount {
+        case 2: range = block.wordRange(at: index)
+        case 3...: range = block.paragraphRange(at: index)
+        default: range = index..<index
+        }
+        anchor = range.lowerBound
+        focus = range.upperBound
         needsDisplay = true
+    }
+
+    /// An I-beam over the whole row, not only over glyphs.
+    ///
+    /// `NSTextView` does the same, and for a better reason than economy: the
+    /// cursor is telling the reader *this region is selectable*, and the gaps
+    /// between two paragraphs are as selectable as the paragraphs — a drag runs
+    /// straight through them. A pointer that flickered to an arrow in the leading
+    /// would be reporting a boundary that does not exist.
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .iBeam)
     }
 
     override func mouseDragged(with event: NSEvent) {

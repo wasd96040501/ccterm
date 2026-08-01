@@ -441,6 +441,27 @@ struct Table: Layout {
                 .joined(separator: "\n")
         }
 
+        func wordRange(at index: Int) -> Range<Int> {
+            guard length > 0 else { return index..<index }
+            let at = position(of: index)
+            let cell = cells[at.row][at.column]
+            guard cell.run.length > 0 else { return cell.base..<cell.base }
+            let word = cell.run.attributed.doubleClick(
+                at: min(at.character, cell.run.length - 1))
+            return (cell.base + word.lowerBound)..<(cell.base + word.upperBound)
+        }
+
+        /// A triple-click takes the whole cell rather than a paragraph inside it —
+        /// what a browser does with a `<td>`, and what Numbers and Excel do. The
+        /// grid is the structure a reader is pointing at once they have stopped
+        /// pointing at glyphs.
+        func paragraphRange(at index: Int) -> Range<Int> {
+            guard length > 0 else { return index..<index }
+            let at = position(of: index)
+            let cell = cells[at.row][at.column]
+            return cell.base..<cell.lastIndex
+        }
+
         // MARK: - Lookup
 
         /// The two endpoints as grid positions, ordered. `nil` when the selection

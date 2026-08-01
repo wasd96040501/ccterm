@@ -42,4 +42,17 @@ extension MarkdownTextBlock {
     func text(from: Int, to: Int) -> String {
         run.text(from: from, to: to)
     }
+
+    func wordRange(at index: Int) -> Range<Int> {
+        guard run.length > 0 else { return index..<index }
+        let word = run.attributed.doubleClick(at: min(max(0, index), run.length - 1))
+        return word.lowerBound..<word.upperBound
+    }
+
+    func paragraphRange(at index: Int) -> Range<Int> {
+        guard run.length > 0 else { return index..<index }
+        let paragraph = (run.attributed.string as NSString).paragraphRange(
+            for: NSRange(location: min(max(0, index), run.length - 1), length: 0))
+        return paragraph.lowerBound..<paragraph.upperBound
+    }
 }

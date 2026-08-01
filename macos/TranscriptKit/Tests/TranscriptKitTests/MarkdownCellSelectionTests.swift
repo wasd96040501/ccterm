@@ -46,11 +46,17 @@ final class MarkdownCellSelectionTests: XCTestCase {
         mounted.cell.mouseDragged(with: event(mounted, at: to, .leftMouseDragged))
     }
 
-    private func event(_ mounted: Mounted, at point: CGPoint, _ type: NSEvent.EventType) -> NSEvent {
+    private func event(
+        _ mounted: Mounted, at point: CGPoint, _ type: NSEvent.EventType, clicks: Int = 1
+    ) -> NSEvent {
         NSEvent.mouseEvent(
             with: type, location: mounted.cell.convert(point, to: nil), modifierFlags: [],
             timestamp: 0, windowNumber: mounted.window.windowNumber, context: nil,
-            eventNumber: 0, clickCount: 1, pressure: 1)!
+            eventNumber: 0, clickCount: clicks, pressure: 1)!
+    }
+
+    private func click(_ mounted: Mounted, at point: CGPoint, times: Int) {
+        mounted.cell.mouseDown(with: event(mounted, at: point, .leftMouseDown, clicks: times))
     }
 
     /// Far outside the block on either side, at a given height — every block
@@ -162,6 +168,66 @@ final class MarkdownCellSelectionTests: XCTestCase {
         mounted.cell.mouseDown(with: event(mounted, at: CGPoint(x: 20, y: 4), .leftMouseDown))
 
         XCTAssertFalse(canCopy(mounted))
+    }
+
+    // MARK: - Double and triple click
+
+    /// Boundaries come from `NSAttributedString.doubleClick(at:)`, so a word is
+    /// whatever `NSTextView` would call one — the point of asking AppKit rather
+    /// than splitting on spaces.
+    func testDoubleClickTakesTheWordUnderIt() throws {
+        let mounted = mount("alpha beta gamma")
+        let line = try XCTUnwrap(mounted.block.rects(from: 0, to: mounted.block.length).first)
+
+        // Inside "beta": a third of the way along a line of three equal words.
+        click(mounted, at: CGPoint(x: line.minX + line.width / 2, y: line.midY), times: 2)
+        XCTAssertEqual(copiedText(mounted), "beta")
+    }
+
+    /// Verbatim text: a triple-click takes one logical line, because the
+    /// separator inside a code card is a real newline.
+    ///
+    /// The newline comes with it. That is `paragraphRange(for:)`'s definition and
+    /// `NSTextView`'s behaviour — its highlight runs past the last glyph to the
+    /// end of the line — and it is what makes two triple-clicked lines paste as
+    /// two lines rather than run together.
+    func testTripleClickInACodeCardTakesOneLine() throws {
+        let mounted = mount("```\nalpha\nbeta\ngamma\n```")
+        let lines = mounted.block.rects(from: 0, to: mounted.block.length)
+        XCTAssertEqual(lines.count, 3)
+
+        click(mounted, at: CGPoint(x: lines[1].midX, y: lines[1].midY), times: 3)
+        XCTAssertEqual(copiedText(mounted), "beta\n")
+    }
+
+    /// Prose: a hard break does not end a paragraph, so a triple-click runs
+    /// straight through it. This is the reason the boundary comes from
+    /// `paragraphRange(for:)` and not `lineRange(for:)` — a hard break is U+2028,
+    /// which the latter treats as the end of a line and the former does not.
+    func testTripleClickCrossesAHardBreak() throws {
+        let mounted = mount("alpha\\\nbeta")
+        let first = try XCTUnwrap(mounted.block.rects(from: 0, to: mounted.block.length).first)
+
+        click(mounted, at: CGPoint(x: first.midX, y: first.midY), times: 3)
+        let copied = try XCTUnwrap(copiedText(mounted))
+        XCTAssertTrue(copied.contains("alpha"), copied)
+        XCTAssertTrue(copied.contains("beta"), copied)
+    }
+
+    /// And in a grid, a triple-click takes the cell — the structure a reader is
+    /// pointing at once they have stopped pointing at glyphs.
+    func testTripleClickInATableTakesTheWholeCell() throws {
+        let mounted = mount(
+            """
+            | a | b |
+            |---|---|
+            | one two | d |
+            """)
+        let bands = mounted.block.fullRects()
+        XCTAssertEqual(bands.count, 4)
+
+        click(mounted, at: CGPoint(x: bands[2].midX, y: bands[2].midY), times: 3)
+        XCTAssertEqual(copiedText(mounted), "one two")
     }
 
     // MARK: - Letting go

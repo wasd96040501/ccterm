@@ -73,5 +73,10 @@ struct Blockquote: Layout {
         }
 
         func text(from: Int, to: Int) -> String { content.text(from: from, to: to) }
+
+        // No offset on these two: the content owns the whole index space, and the
+        // indent is geometry.
+        func wordRange(at index: Int) -> Range<Int> { content.wordRange(at: index) }
+        func paragraphRange(at index: Int) -> Range<Int> { content.paragraphRange(at: index) }
     }
 }

@@ -199,6 +199,9 @@ struct List: Layout {
             }
 
             func text(from: Int, to: Int) -> String { content.text(from: from, to: to) }
+
+            func wordRange(at index: Int) -> Range<Int> { content.wordRange(at: index) }
+            func paragraphRange(at index: Int) -> Range<Int> { content.paragraphRange(at: index) }
         }
     }
 }

@@ -61,11 +61,6 @@ protocol MarkdownBlock: Sendable {
     /// a row holding a two-thousand-line code block affordable to scroll past.
     func paint(at origin: CGPoint, dirty: CGRect, into list: inout [PaintItem])
 
-    /// Draws immediately into `ctx`. **Being replaced by `paint`**; the two
-    /// coexist only while the tree is migrated one block at a time, and this goes
-    /// away with `PaintItem.Primitive.legacy`.
-    func draw(at origin: CGPoint, in ctx: CGContext, dirty: CGRect)
-
     /// How many positions this block occupies in its parent's flat index space.
     ///
     /// Content that cannot be selected contributes nothing: a list marker, a
@@ -94,14 +89,6 @@ extension MarkdownBlock {
 
     /// The whole block selected.
     func fullRects() -> [CGRect] { rects(from: 0, to: length) }
-
-    /// **Temporary**: a block that has not been migrated yet paints by handing
-    /// itself back as one opaque `.content` item, which the player turns into the
-    /// old `draw` call. Rendering is identical, so every intermediate state of
-    /// the migration is shippable. Removed with `draw`.
-    func paint(at origin: CGPoint, dirty: CGRect, into list: inout [PaintItem]) {
-        list.append(PaintItem(phase: .content, primitive: .legacy(self, at: origin)))
-    }
 }
 
 /// A block with no selectable content — a rule, an image, a decoration. Draws,

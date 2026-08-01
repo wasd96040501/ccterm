@@ -72,20 +72,21 @@ struct BlockStack: Layout {
 
         static let empty = Measured(children: [], size: .zero, length: 0)
 
-        // MARK: - Draw
+        // MARK: - Paint
 
-        func draw(at origin: CGPoint, in ctx: CGContext, dirty: CGRect) {
+        /// Emits nothing of its own — a stack has no appearance. It walks, offsets,
+        /// and lets each child say what it paints and how deep.
+        func paint(at origin: CGPoint, dirty: CGRect, into list: inout [PaintItem]) {
             for child in children {
                 let top = origin.y + child.origin.y
                 // Skipping, not clipping. A row holding a very long code block is
-                // one tall cell whose `draw` is called with a viewport-sized dirty
-                // rect; without this, scrolling past it would cost drawing all of
-                // it, every frame.
+                // one tall cell painted with a viewport-sized dirty rect; without
+                // this, scrolling past it would cost walking all of it, every frame.
                 guard top < dirty.maxY, top + child.block.size.height > dirty.minY else {
                     continue
                 }
-                child.block.draw(
-                    at: CGPoint(x: origin.x + child.origin.x, y: top), in: ctx, dirty: dirty)
+                child.block.paint(
+                    at: CGPoint(x: origin.x + child.origin.x, y: top), dirty: dirty, into: &list)
             }
         }
 

@@ -33,10 +33,12 @@ struct Paragraph: Layout {
         let textOrigin: CGPoint
         let size: CGSize
 
-        func draw(at origin: CGPoint, in ctx: CGContext, dirty: CGRect) {
-            run.draw(
-                at: CGPoint(x: origin.x + textOrigin.x, y: origin.y + textOrigin.y),
-                in: ctx, dirty: dirty)
+        /// One item. A paragraph is nothing but its glyphs — no fill behind them,
+        /// nothing over them — so this is the shortest `paint` in the package and
+        /// the one to read first.
+        func paint(at origin: CGPoint, dirty: CGRect, into list: inout [PaintItem]) {
+            list.append(
+                .run(run, at: CGPoint(x: origin.x + textOrigin.x, y: origin.y + textOrigin.y)))
         }
     }
 }

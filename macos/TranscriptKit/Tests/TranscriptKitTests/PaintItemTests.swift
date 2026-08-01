@@ -139,27 +139,22 @@ final class PaintItemTests: XCTestCase {
         XCTAssertGreaterThan(painted.alphaComponent, 0.1, "the run put nothing on the canvas")
     }
 
-    // MARK: - A block that has not been migrated
+    // MARK: - Nothing paints immediately
 
-    /// The bridge that makes the migration incremental: a block with no `paint`
-    /// of its own falls back to one `.legacy` item, and the player calls its
-    /// `draw`. When this stops compiling because `.legacy` is gone, the migration
-    /// is finished.
-    func testAnUnmigratedBlockPaintsThroughItsOldDraw() throws {
+    /// The property that keeps depth decidable: a block hands back *items*, and
+    /// the caller chooses when and in what order they reach a context. Nothing
+    /// touches `ctx` during `paint` — if anything did, that stroke would land
+    /// wherever the walk happened to be, which is the shape this replaced.
+    func testPaintingTouchesNoContext() {
+        let block = MarkdownLayout.make("A paragraph, `code`, and a rule.\n\n---\n")
+            .measure(200)
+
         var list: [PaintItem] = []
-        LegacyOnlyBlock().paint(at: .zero, dirty: square, into: &list)
+        block.paint(
+            at: .zero, dirty: CGRect(x: 0, y: 0, width: 200, height: 400), into: &list)
 
-        XCTAssertEqual(list.count, 1)
-        try assertColor(topmostColor(of: list), is: .magenta)
-    }
-
-    /// Conforms without implementing `paint`, so it takes the default.
-    private struct LegacyOnlyBlock: MarkdownOpaqueBlock, @unchecked Sendable {
-        var size: CGSize { CGSize(width: 4, height: 4) }
-
-        func draw(at origin: CGPoint, in ctx: CGContext, dirty: CGRect) {
-            ctx.setFillColor(NSColor.magenta.cgColor)
-            ctx.fill(CGRect(origin: origin, size: size))
-        }
+        // No context was ever passed in — there is nowhere for a stray stroke to
+        // have gone — and the walk still produced something to play.
+        XCTAssertFalse(list.isEmpty)
     }
 }

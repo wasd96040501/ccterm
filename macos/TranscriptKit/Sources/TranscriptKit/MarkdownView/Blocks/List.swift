@@ -144,30 +144,37 @@ struct List: Layout {
             let indent: CGFloat
             let size: CGSize
 
-            func draw(at origin: CGPoint, in ctx: CGContext, dirty: CGRect) {
+            /// The marker is `.content`: it is furniture, but it is furniture this
+            /// block is *saying*, not a surface behind what it says. Nothing of
+            /// the content's ever reaches the marker column, so nothing composites
+            /// against it either way.
+            func paint(at origin: CGPoint, dirty: CGRect, into list: inout [PaintItem]) {
                 let line = firstLine
                 switch marker {
                 case .text(let run):
                     // Same point size as the body, so sharing a top means
                     // sharing a baseline.
-                    run.draw(
-                        at: CGPoint(
-                            x: origin.x + markerRightX - run.size.width, y: origin.y + line.minY),
-                        in: ctx, dirty: dirty)
+                    list.append(
+                        .run(
+                            run,
+                            at: CGPoint(
+                                x: origin.x + markerRightX - run.size.width,
+                                y: origin.y + line.minY)))
 
                 case .checkbox(let box):
                     // A drawn shape has no baseline, so it centres on the line
                     // instead — which is what a browser does with a `::marker`
                     // it draws rather than typesets.
-                    box.draw(
-                        in: CGRect(
-                            x: origin.x + markerRightX - box.size,
-                            y: origin.y + line.midY - box.size / 2,
-                            width: box.size, height: box.size),
-                        in: ctx)
+                    list.append(
+                        contentsOf: box.items(
+                            in: CGRect(
+                                x: origin.x + markerRightX - box.size,
+                                y: origin.y + line.midY - box.size / 2,
+                                width: box.size, height: box.size)))
                 }
 
-                content.draw(at: CGPoint(x: origin.x + indent, y: origin.y), in: ctx, dirty: dirty)
+                content.paint(
+                    at: CGPoint(x: origin.x + indent, y: origin.y), dirty: dirty, into: &list)
             }
 
             /// The content's first line box, which is what the marker aligns to.
@@ -234,41 +241,33 @@ struct Checkbox: Sendable {
         CGPoint(x: 22.79 / 24, y: 4.59 / 24),
     ]
 
-    func draw(in rect: CGRect, in ctx: CGContext) {
+    func items(in rect: CGRect) -> [PaintItem] {
         let radius = size * Self.cornerRadius
-        ctx.saveGState()
-        defer { ctx.restoreGState() }
 
         guard checked else {
             // Unchecked: the border only, inset by half its width so the stroke
             // lands inside the box rather than straddling its edge.
             let width = size * Self.borderWidth
-            ctx.setStrokeColor(border.cgColor)
-            ctx.setLineWidth(width)
-            ctx.addPath(
-                CGPath(
+            return [
+                .stroke(
                     roundedRect: rect.insetBy(dx: width / 2, dy: width / 2),
-                    cornerWidth: radius, cornerHeight: radius, transform: nil))
-            ctx.strokePath()
-            return
+                    radius: radius, width: width, border, phase: .content)
+            ]
         }
 
-        ctx.setFillColor(fill.cgColor)
-        ctx.addPath(
-            CGPath(
-                roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))
-        ctx.fillPath()
-
-        ctx.setStrokeColor(mark.cgColor)
-        ctx.setLineWidth(size * Self.markStroke)
-        ctx.setLineCap(.square)
-        ctx.setLineJoin(.miter)
+        let tick = CGMutablePath()
         let points = Self.markPath.map {
             CGPoint(x: rect.minX + $0.x * size, y: rect.minY + $0.y * size)
         }
-        ctx.move(to: points[0])
-        ctx.addLine(to: points[1])
-        ctx.addLine(to: points[2])
-        ctx.strokePath()
+        tick.move(to: points[0])
+        tick.addLine(to: points[1])
+        tick.addLine(to: points[2])
+
+        return [
+            .fill(roundedRect: rect, radius: radius, fill, phase: .content),
+            // Mitred joins are the context's default, so only the square cap has
+            // to be asked for.
+            .stroke(tick, width: size * Self.markStroke, cap: .square, mark, phase: .content),
+        ]
     }
 }

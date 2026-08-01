@@ -60,14 +60,6 @@ struct PaintItem {
         case fill(CGRect, NSColor)
         case fillPath(CGPath, NSColor)
         case strokePath(CGPath, width: CGFloat, cap: CGLineCap, NSColor)
-
-        /// Temporary: a block that still draws itself the old way.
-        ///
-        /// Exists only so the tree can be migrated one type at a time while every
-        /// intermediate state compiles and renders identically. **Deleted, along
-        /// with `MarkdownBlock.draw`, by the commit that migrates the last
-        /// block** — that deletion is the only change this file is expecting.
-        case legacy(MarkdownBlock, at: CGPoint)
     }
 
     let phase: Phase
@@ -174,9 +166,6 @@ extension PaintItem.Primitive {
             ctx.addPath(path)
             ctx.strokePath()
             ctx.restoreGState()
-
-        case .legacy(let block, let origin):
-            block.draw(at: origin, in: ctx, dirty: dirty)
         }
     }
 }

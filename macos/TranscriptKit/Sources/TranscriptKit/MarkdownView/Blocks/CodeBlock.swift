@@ -79,17 +79,22 @@ struct CodeBlock: Layout {
         let name = language?.trimmingCharacters(in: .whitespaces).lowercased() ?? ""
         guard !name.isEmpty else { return nil }
 
-        let line = CTLineCreateWithAttributedString(
+        // A `MarkdownTextRun` rather than a bare `CTLine`, so the chip's text is the
+        // same kind of thing as every other piece of text in the package and needs
+        // no primitive of its own to be painted. One word at unbounded width is
+        // one line, so this costs nothing over typesetting the line directly.
+        let run = MarkdownTextRun.make(
             NSAttributedString(
                 string: name,
                 attributes: [
                     .font: NSFont.systemFont(ofSize: badgeFontSize, weight: .regular),
                     .foregroundColor: badgeTextColor,
-                ]))
-        var ascent: CGFloat = 0
-        var descent: CGFloat = 0
-        var leading: CGFloat = 0
-        let textWidth = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
+                ]),
+            width: .greatestFiniteMagnitude)
+        guard let line = run.lines.first else { return nil }
+        let ascent = line.ascent
+        let descent = line.descent
+        let textWidth = run.size.width
 
         let chipWidth = textWidth + badgeHorizontalPadding * 2
         let rect = CGRect(
@@ -101,12 +106,13 @@ struct CodeBlock: Layout {
         guard rect.minX >= horizontalPadding else { return nil }
 
         return Measured.Badge(
-            line: line,
+            run: run,
             // Centred in the chip: in a y-down layout the glyph box's top is
-            // `midY - (ascent + descent) / 2` and the baseline is `top + ascent`,
-            // which reduces to `midY + (ascent - descent) / 2`.
+            // `midY - (ascent + descent) / 2`. (A run is placed by its top-left;
+            // the baseline it derives from that is `top + ascent`, which is the
+            // `midY + (ascent - descent) / 2` this used to state directly.)
             textOrigin: CGPoint(
-                x: rect.minX + badgeHorizontalPadding, y: rect.midY + (ascent - descent) / 2),
+                x: rect.minX + badgeHorizontalPadding, y: rect.midY - (ascent + descent) / 2),
             rect: rect,
             cornerRadius: badgeCornerRadius,
             backgroundColor: badgeBackgroundColor)
@@ -128,10 +134,10 @@ struct CodeBlock: Layout {
     /// default implementations where the selectable part starts.
     struct Measured: MarkdownTextBlock, @unchecked Sendable {
 
-        /// The language chip: a filled rounded rect with one pre-typeset line.
+        /// The language chip: a filled rounded rect with one pre-typeset run.
         struct Badge {
-            let line: CTLine
-            /// Baseline origin, in block-local coordinates.
+            let run: MarkdownTextRun
+            /// Top-left of the run, in block-local coordinates.
             let textOrigin: CGPoint
             let rect: CGRect
             let cornerRadius: CGFloat
@@ -146,36 +152,29 @@ struct CodeBlock: Layout {
         let backgroundColor: NSColor
         let badge: Badge?
 
-        func draw(at origin: CGPoint, in ctx: CGContext, dirty: CGRect) {
-            ctx.saveGState()
-            ctx.setFillColor(backgroundColor.cgColor)
-            ctx.addPath(
-                CGPath(
+        /// The card is `.background`, the code is `.content`, the chip is
+        /// `.overlay` — which is what makes the chip sit over a long first line
+        /// while a selection band sits under the glyphs and over the card, with
+        /// none of the three knowing about the others.
+        func paint(at origin: CGPoint, dirty: CGRect, into list: inout [PaintItem]) {
+            list.append(
+                .fill(
                     roundedRect: card.offsetBy(dx: origin.x, dy: origin.y),
-                    cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil))
-            ctx.fillPath()
-            ctx.restoreGState()
+                    radius: cornerRadius, backgroundColor))
 
-            // Body first: the badge overlays the top-right corner, so a long
-            // first line passes under the chip rather than over it.
-            run.draw(
-                at: CGPoint(x: origin.x + textOrigin.x, y: origin.y + textOrigin.y),
-                in: ctx, dirty: dirty)
+            list.append(
+                .run(run, at: CGPoint(x: origin.x + textOrigin.x, y: origin.y + textOrigin.y)))
 
             guard let badge else { return }
-            ctx.saveGState()
-            ctx.setFillColor(badge.backgroundColor.cgColor)
-            ctx.addPath(
-                CGPath(
+            list.append(
+                .fill(
                     roundedRect: badge.rect.offsetBy(dx: origin.x, dy: origin.y),
-                    cornerWidth: badge.cornerRadius, cornerHeight: badge.cornerRadius,
-                    transform: nil))
-            ctx.fillPath()
-            ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
-            ctx.textPosition = CGPoint(
-                x: origin.x + badge.textOrigin.x, y: origin.y + badge.textOrigin.y)
-            CTLineDraw(badge.line, ctx)
-            ctx.restoreGState()
+                    radius: badge.cornerRadius, badge.backgroundColor, phase: .overlay))
+            list.append(
+                .run(
+                    badge.run,
+                    at: CGPoint(x: origin.x + badge.textOrigin.x, y: origin.y + badge.textOrigin.y),
+                    phase: .overlay))
         }
     }
 }

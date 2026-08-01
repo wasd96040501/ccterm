@@ -51,12 +51,13 @@ struct Blockquote: Layout {
         let barColor: NSColor
         let size: CGSize
 
-        func draw(at origin: CGPoint, in ctx: CGContext, dirty: CGRect) {
-            ctx.saveGState()
-            ctx.setFillColor(barColor.cgColor)
-            ctx.fill(bar.offsetBy(dx: origin.x, dy: origin.y))
-            ctx.restoreGState()
-            content.draw(at: CGPoint(x: origin.x + indent, y: origin.y), in: ctx, dirty: dirty)
+        /// The bar, and then whatever the content says. `.background` for the bar
+        /// because it is chrome — nothing of the content's ever overlaps it, but
+        /// classifying it by what it *is* keeps the tiers meaning one thing.
+        func paint(at origin: CGPoint, dirty: CGRect, into list: inout [PaintItem]) {
+            list.append(.fill(bar.offsetBy(dx: origin.x, dy: origin.y), barColor))
+            content.paint(
+                at: CGPoint(x: origin.x + indent, y: origin.y), dirty: dirty, into: &list)
         }
 
         // MARK: - Selection — all of it the content's, shifted by the indent

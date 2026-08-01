@@ -32,13 +32,14 @@ struct ThematicBreak: Layout {
         let padding: CGFloat
         let color: NSColor
 
-        func draw(at origin: CGPoint, in ctx: CGContext, dirty: CGRect) {
-            ctx.saveGState()
-            ctx.setFillColor(color.cgColor)
-            ctx.fill(
-                CGRect(
-                    x: origin.x, y: origin.y + padding, width: size.width, height: thickness))
-            ctx.restoreGState()
+        /// `.content`, not `.background`: the line *is* what this block has to
+        /// say, not something sitting behind what it has to say.
+        func paint(at origin: CGPoint, dirty: CGRect, into list: inout [PaintItem]) {
+            list.append(
+                .fill(
+                    CGRect(
+                        x: origin.x, y: origin.y + padding, width: size.width, height: thickness),
+                    color, phase: .content))
         }
     }
 }

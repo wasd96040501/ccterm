@@ -291,27 +291,33 @@ struct Table: Layout {
                 headerBackgroundColor: .clear, zebraBackgroundColor: .clear)
         }
 
-        // MARK: - Draw
+        // MARK: - Paint
 
-        func draw(at origin: CGPoint, in ctx: CGContext, dirty: CGRect) {
+        /// Row tints and seams are `.background`, glyphs `.content`, the border
+        /// `.overlay`. Within `.background` the seams are emitted after the tints
+        /// and so land on them — the one place this type leans on order inside a
+        /// phase.
+        ///
+        /// **No clip.** The rounded corners used to come from clipping every fill
+        /// to the card, which is scoped state and has nowhere to live in a flat
+        /// list. It was never doing more than four corners' worth of work: seams
+        /// sit at interior row boundaries, where the card's edges are straight,
+        /// and only the first and last rows' tints reach a corner at all. Those
+        /// two are emitted as paths rounded on the side that touches one.
+        func paint(at origin: CGPoint, dirty: CGRect, into list: inout [PaintItem]) {
             guard !cells.isEmpty else { return }
             let card = body.offsetBy(dx: origin.x, dy: origin.y)
-
-            // The fills and the dividers share one clip, so the dividers stop at
-            // the rounded corners instead of running out past them.
-            ctx.saveGState()
-            ctx.addPath(
-                CGPath(
-                    roundedRect: card, cornerWidth: cornerRadius, cornerHeight: cornerRadius,
-                    transform: nil))
-            ctx.clip()
+            let last = cells.count - 1
 
             for index in cells.indices {
                 let band = rowRect(index).offsetBy(dx: origin.x, dy: origin.y)
-                guard visible(band, in: dirty) else { continue }
-                guard let fill = rowFill(index) else { continue }
-                ctx.setFillColor(fill.cgColor)
-                ctx.fill(band)
+                guard visible(band, in: dirty), let fill = rowFill(index) else { continue }
+                list.append(
+                    .fill(
+                        Self.path(
+                            band, radius: cornerRadius,
+                            roundingTop: index == 0, roundingBottom: index == last),
+                        fill))
             }
 
             // The header / body seam is the border colour so the header reads as
@@ -319,34 +325,58 @@ struct Table: Layout {
             for index in cells.indices.dropLast() {
                 let band = rowRect(index).offsetBy(dx: origin.x, dy: origin.y)
                 guard visible(band, in: dirty) else { continue }
-                ctx.setFillColor((index == 0 ? borderColor : dividerColor).cgColor)
-                ctx.fill(
-                    CGRect(x: card.minX, y: band.maxY - 0.5, width: card.width, height: 1))
+                list.append(
+                    .fill(
+                        CGRect(x: card.minX, y: band.maxY - 0.5, width: card.width, height: 1),
+                        index == 0 ? borderColor : dividerColor))
             }
-            ctx.restoreGState()
 
             for row in cells {
-                guard let first = row.first, visible(first.frame.offsetBy(dx: origin.x, dy: origin.y), in: dirty)
+                guard let first = row.first,
+                    visible(first.frame.offsetBy(dx: origin.x, dy: origin.y), in: dirty)
                 else { continue }
                 for cell in row {
-                    cell.run.draw(
-                        at: CGPoint(
-                            x: origin.x + cell.textOrigin.x, y: origin.y + cell.textOrigin.y),
-                        in: ctx, dirty: dirty)
+                    list.append(
+                        .run(
+                            cell.run,
+                            at: CGPoint(
+                                x: origin.x + cell.textOrigin.x, y: origin.y + cell.textOrigin.y)))
                 }
             }
 
             // Inset by half the stroke so the 1pt border lands on the pixel grid
             // rather than straddling it — sharp at 1× and 2× alike.
-            ctx.saveGState()
-            ctx.setStrokeColor(borderColor.cgColor)
-            ctx.setLineWidth(1)
-            ctx.addPath(
-                CGPath(
+            list.append(
+                .stroke(
                     roundedRect: card.insetBy(dx: 0.5, dy: 0.5),
-                    cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil))
-            ctx.strokePath()
-            ctx.restoreGState()
+                    radius: cornerRadius, width: 1, borderColor))
+        }
+
+        /// A rectangle rounded on the top, the bottom, both, or neither — a row
+        /// band shaped to whichever end of the card it sits at.
+        private static func path(
+            _ rect: CGRect, radius: CGFloat, roundingTop: Bool, roundingBottom: Bool
+        ) -> CGPath {
+            let top = roundingTop ? radius : 0
+            let bottom = roundingBottom ? radius : 0
+            guard top > 0 || bottom > 0 else { return CGPath(rect: rect, transform: nil) }
+
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+            path.addArc(
+                tangent1End: CGPoint(x: rect.minX, y: rect.minY),
+                tangent2End: CGPoint(x: rect.maxX, y: rect.minY), radius: top)
+            path.addArc(
+                tangent1End: CGPoint(x: rect.maxX, y: rect.minY),
+                tangent2End: CGPoint(x: rect.maxX, y: rect.maxY), radius: top)
+            path.addArc(
+                tangent1End: CGPoint(x: rect.maxX, y: rect.maxY),
+                tangent2End: CGPoint(x: rect.minX, y: rect.maxY), radius: bottom)
+            path.addArc(
+                tangent1End: CGPoint(x: rect.minX, y: rect.maxY),
+                tangent2End: CGPoint(x: rect.minX, y: rect.minY), radius: bottom)
+            path.closeSubpath()
+            return path
         }
 
         /// `nil` for an unstriped row. Body row 0 stays clear so the stripe reads

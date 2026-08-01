@@ -1,12 +1,23 @@
 import AppKit
 
-/// The view a self-drawn row is served through: holds one measured block and
-/// draws it.
+/// The view a self-drawn row is served through: holds one measured block, plays
+/// what it paints, and owns the selection in it.
 ///
-/// Deliberately thin. It owns no layout — the block arrived already measured at
-/// the width the transcript committed to — and no styling. What it does own is
-/// the two things a block cannot: a place in the view hierarchy, and the
-/// `dirtyRect` that lets the block skip what cannot be seen.
+/// It owns no layout — the block arrived already measured at the width the
+/// transcript committed to — and no styling. What it does own is the three things
+/// a block cannot: a place in the view hierarchy, the `dirtyRect` that lets the
+/// block skip what cannot be seen, and **state**.
+///
+/// That last one is the reason selection lives here rather than on the block. A
+/// measured block is a derived value: `heightOfRow` builds one, `viewForRow`
+/// builds another, and a width change throws them all away. State hung on
+/// something that gets rebuilt disappears with it. A view has identity and a
+/// lifetime, and is what AppKit puts `selectedRanges` on for the same reason.
+///
+/// **Selection here is one row's.** A drag that leaves this cell stops at its
+/// edge, and a selection in another row is another cell's business — each drops
+/// its own when it stops being the first responder, which is all the coordination
+/// there is.
 ///
 /// `isFlipped` is true so that the y-down arithmetic every block is written in
 /// matches the context it draws into, rather than being un-flipped at each of
@@ -50,7 +61,76 @@ final class MarkdownCellView: NSView {
     /// entirety of its state.
     func configure(with block: MarkdownBlock) {
         self.block = block
+        // A different document: the old endpoints indexed text that is no longer
+        // here. This is the recycling rule — a pooled cell must arrive as empty
+        // as a fresh one.
+        anchor = nil
+        focus = nil
         needsDisplay = true
+    }
+
+    // MARK: - Selection
+    //
+    // The state is two indices and it lives **here**, not on the block. A
+    // measured block is a derived value: `heightOfRow` builds one, `viewForRow`
+    // builds another, and a width change throws them all away and rebuilds. State
+    // hung on something that gets rebuilt disappears without anyone noticing. A
+    // view, by contrast, has identity and a lifetime, receives the mouse events,
+    // and is what AppKit puts `selectedRanges` on for the same reason.
+    //
+    // The indices survive a re-measure, which is why nothing has to be restored
+    // after one: the flat index space is a function of the document's content, and
+    // no part of it depends on the width the document was laid out at.
+
+    /// Where the drag started, and where it is now. Kept apart rather than as one
+    /// range because a drag runs in either direction and the anchor is the end
+    /// that does not move.
+    private var anchor: Int?
+    private var focus: Int?
+
+    private var selection: Range<Int>? {
+        guard let anchor, let focus, anchor != focus else { return nil }
+        return min(anchor, focus)..<max(anchor, focus)
+    }
+
+    override var acceptsFirstResponder: Bool { true }
+
+    /// Clears on losing focus, which is also how a selection in one row goes away
+    /// when the reader starts one in another: each cell drops its own when it
+    /// stops being the first responder. No coordinator, and nothing in this
+    /// package knows that two rows exist at once — `NSTextField` gets rid of its
+    /// selection the same way.
+    override func resignFirstResponder() -> Bool {
+        anchor = nil
+        focus = nil
+        needsDisplay = true
+        return super.resignFirstResponder()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let block else { return super.mouseDown(with: event) }
+        window?.makeFirstResponder(self)
+        anchor = block.index(at: convert(event.locationInWindow, from: nil))
+        focus = anchor
+        needsDisplay = true
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let block, anchor != nil else { return super.mouseDragged(with: event) }
+        focus = block.index(at: convert(event.locationInWindow, from: nil))
+        // Lets a drag continue past the edge of the viewport, which matters most
+        // on exactly the rows where selection is most wanted — a code block taller
+        // than the window.
+        autoscroll(with: event)
+        needsDisplay = true
+    }
+
+    @objc func copy(_ sender: Any?) {
+        guard let block, let selection else { return }
+        let text = block.text(from: selection.lowerBound, to: selection.upperBound)
+        guard !text.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     /// Light ↔ dark flip, or the view joining a different appearance context.
@@ -75,10 +155,43 @@ final class MarkdownCellView: NSView {
         // with a phase; the player puts it where that phase says.
         items.removeAll(keepingCapacity: true)
         block.paint(at: .zero, dirty: dirtyRect, into: &items)
+
+        if let selection {
+            // Indices in, geometry out — and the block that owns the index space
+            // is the one that decides what lies between two points, which is how a
+            // table hands back a rectangle here rather than everything in reading
+            // order between its corners. Derived every repaint rather than stored:
+            // it changes on every mouse-moved event, so a cache would be stale as
+            // often as it was warm, and this is a tree walk with no typesetting.
+            //
+            // `.decoration` earns exactly one of the two things it looks like it
+            // is doing. Landing above the backgrounds is free — these items are
+            // appended after the whole walk, so within any single tier they would
+            // sort last anyway. Landing *below* the glyphs is the real constraint,
+            // and the only reason this cannot simply be painted after the block.
+            let color: NSColor =
+                window?.isKeyWindow == true
+                ? .selectedTextBackgroundColor : .unemphasizedSelectedTextBackgroundColor
+            for rect in block.rects(from: selection.lowerBound, to: selection.upperBound) {
+                items.append(.fill(rect, color, phase: .decoration))
+            }
+        }
+
         items.paint(in: ctx, dirty: dirtyRect)
     }
 
     /// Held across draws so the list's storage is allocated once rather than per
     /// repaint. Never read outside `draw(_:)`.
     private var items: [PaintItem] = []
+}
+
+extension MarkdownCellView: NSMenuItemValidation {
+
+    /// Greys out Copy when there is nothing selected. ⌘C reaches this view
+    /// because it is the first responder while its selection exists, so the
+    /// standard menu item needs no wiring beyond the two methods.
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard menuItem.action == #selector(copy(_:)) else { return true }
+        return selection != nil
+    }
 }

@@ -59,6 +59,14 @@ final class ControlPanelView: NSVisualEffectView {
         rows.translatesAutoresizingMaskIntoConstraints = false
         addSubview(rows)
 
+        // The controls run off the right edge and are cut off, rather than
+        // setting a floor under the window's width. `rows` is pinned on the
+        // leading side only — no trailing constraint and no width — so its
+        // natural width, which the slider's own 200pt makes several hundred
+        // points, constrains nothing above it. The transcript is what a narrow
+        // window is for looking at.
+        clipsToBounds = true
+
         // A separator rather than a border: the panel's top edge is where content
         // disappears under it, and that edge wants to be legible.
         let separator = NSBox()
@@ -71,7 +79,6 @@ final class ControlPanelView: NSVisualEffectView {
             separator.trailingAnchor.constraint(equalTo: trailingAnchor),
             separator.topAnchor.constraint(equalTo: topAnchor),
             rows.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-            rows.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -16),
             rows.topAnchor.constraint(equalTo: topAnchor, constant: 14),
             widthSlider.widthAnchor.constraint(equalToConstant: 200),
             rowField.widthAnchor.constraint(equalToConstant: 56),

@@ -18,14 +18,14 @@ import CoreText
 /// dragging and link activation need.
 struct CodeBlock: Layout {
 
-    let code: String
-    let language: String?
+    /// The card's body. Monospaced at the body point size — the caller resolves
+    /// that, because the size is the surrounding text's and not the card's.
+    let text: MarkdownText
 
-    /// Monospaced at the body point size, so a card sandwiched between paragraphs
-    /// reads as a sibling rather than a tonal shift. The caller supplies the size
-    /// because it is the surrounding text's, not the card's.
-    var font: NSFont = .monospacedSystemFont(ofSize: 14, weight: .regular)
-    var textColor: NSColor = .labelColor
+    /// The language chip's text, already typeset: one word that never wraps, so
+    /// nothing about it depends on the width the card ends up at. Only where it
+    /// sits does, and that is all `measure` computes.
+    let badge: MarkdownTextRun?
 
     /// `#F5F5F7` light / `#2A2A2E` dark — one elevation tier above the window
     /// background in either mode, so the card reads as a raised surface.
@@ -44,22 +44,22 @@ struct CodeBlock: Layout {
     var outerPadding: CGFloat = 2
 
     var badgeInset: CGFloat = 8
-    var badgeFontSize: CGFloat = 11
     var badgeCornerRadius: CGFloat = 4
     var badgeHorizontalPadding: CGFloat = 6
     var badgeBackgroundColor: NSColor = dynamic(dark: 0x3E3E43, light: 0xE1E1E3)
-    var badgeTextColor: NSColor = .secondaryLabelColor
 
-    init(code: String, language: String?) {
-        self.code = code
-        self.language = language
+    /// The point size the chip's text is set at. Not a property of the card —
+    /// whoever typesets `badge` decides it — but stated here so the one caller
+    /// and the geometry around the chip read from the same number.
+    static let badgeFontSize: CGFloat = 11
+
+    init(text: MarkdownText, badge: MarkdownTextRun? = nil) {
+        self.text = text
+        self.badge = badge
     }
 
     func measure(_ width: CGFloat) -> MarkdownBlock {
-        let run = MarkdownTextRun.make(
-            NSAttributedString(
-                string: code, attributes: [.font: font, .foregroundColor: textColor]),
-            width: max(1, width - horizontalPadding * 2))
+        let run = text.run(width: max(1, width - horizontalPadding * 2))
 
         let card = CGRect(
             x: 0, y: outerPadding,
@@ -72,26 +72,14 @@ struct CodeBlock: Layout {
             card: card,
             cornerRadius: cornerRadius,
             backgroundColor: backgroundColor,
-            badge: badge(width: width, cardTop: card.minY))
+            badge: placedBadge(width: width, cardTop: card.minY))
     }
 
-    private func badge(width: CGFloat, cardTop: CGFloat) -> Measured.Badge? {
-        let name = language?.trimmingCharacters(in: .whitespaces).lowercased() ?? ""
-        guard !name.isEmpty else { return nil }
-
-        // A `MarkdownTextRun` rather than a bare `CTLine`, so the chip's text is the
-        // same kind of thing as every other piece of text in the package and needs
-        // no primitive of its own to be painted. One word at unbounded width is
-        // one line, so this costs nothing over typesetting the line directly.
-        let run = MarkdownTextRun.make(
-            NSAttributedString(
-                string: name,
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: badgeFontSize, weight: .regular),
-                    .foregroundColor: badgeTextColor,
-                ]),
-            width: .greatestFiniteMagnitude)
-        guard let line = run.lines.first else { return nil }
+    /// Where the chip goes. The run itself arrived typeset — all that is left is
+    /// arithmetic against a width, which is why this is the only part of the chip
+    /// still on the `measure` path.
+    private func placedBadge(width: CGFloat, cardTop: CGFloat) -> Measured.Badge? {
+        guard let run = badge, let line = run.lines.first else { return nil }
         let ascent = line.ascent
         let descent = line.descent
         let textWidth = run.size.width

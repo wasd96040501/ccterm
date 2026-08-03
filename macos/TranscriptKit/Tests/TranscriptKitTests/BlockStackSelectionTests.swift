@@ -23,18 +23,31 @@ final class BlockStackSelectionTests: XCTestCase {
     /// A paragraph claims no space of its own, so the vertical arithmetic in a
     /// test is only what that test's `spacing` put there.
     private func paragraph(_ text: String) -> Paragraph {
-        Paragraph(
-            NSAttributedString(
-                string: text,
-                attributes: [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)]))
+        Paragraph(Self.text(text))
     }
 
     private func run(_ text: String, width: CGFloat = 400) -> MarkdownTextRun {
-        .make(
-            NSAttributedString(
-                string: text,
-                attributes: [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)]),
-            width: width)
+        Self.text(text).run(width: width)
+    }
+
+    private static func text(_ string: String) -> MarkdownText {
+        MarkdownText(
+            string, attributes: [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)])
+    }
+
+    /// A list at the fixture font, markers rendered the way `MarkdownLayout`
+    /// renders them — the marker column is settled before any width is known, so
+    /// this is a plain `BlockStack` by the time a test sees it.
+    private func list(_ items: [(List.Kind, Layout)]) -> BlockStack {
+        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        return List.make(
+            items: items.map {
+                List.Item(
+                    marker: List.marker($0.0, font: font, color: .secondaryLabelColor),
+                    content: $0.1)
+            },
+            spacing: 6,
+            gap: font.pointSize * 0.5)
     }
 
     // MARK: - One run
@@ -83,10 +96,9 @@ final class BlockStackSelectionTests: XCTestCase {
     /// stack is told nothing. A heading is the case this exists for — and it can
     /// only ever add, which is why nothing sits *closer* than `spacing`.
     func testHeadingAddsItsExtraRoomInsideItsOwnHeight() {
-        let attributed = NSAttributedString(
-            string: "Title", attributes: [.font: Heading.font(level: 1)])
-        let bare = MarkdownTextRun.make(attributed, width: 400).size.height
-        let heading = Heading(level: 1, attributed: attributed).measure(400)
+        let title = MarkdownText("Title", attributes: [.font: Heading.font(level: 1)])
+        let bare = title.run(width: 400).size.height
+        let heading = Heading(level: 1, text: title).measure(400)
 
         XCTAssertEqual(heading.size.height, bare + 18, accuracy: 0.5)
         // The glyphs moved down by the extra, and selection moved with them.
@@ -167,11 +179,10 @@ final class BlockStackSelectionTests: XCTestCase {
     /// A list marker is furniture: drawn, never selected. Dragging across a list
     /// copies the items and none of the bullets.
     func testListMarkersAreOutsideTheIndexSpace() {
-        let list = List(items: [
-            List.Item(marker: .ordinal(9), content: paragraph("alpha")),
-            List.Item(marker: .task(checked: true), content: paragraph("beta")),
-        ])
-        let block = list.measure(400)
+        let block = list([
+            (.ordinal(9), paragraph("alpha")),
+            (.task(checked: true), paragraph("beta")),
+        ]).measure(400)
 
         XCTAssertEqual(block.length, 9)
         XCTAssertEqual(block.text(from: 0, to: 9), "alpha\nbeta")
@@ -181,11 +192,10 @@ final class BlockStackSelectionTests: XCTestCase {
     /// items' content starts at the same x, past a marker column wide enough for
     /// the wider of the two markers.
     func testListNegotiatesOneMarkerColumnForAllItems() throws {
-        let list = List(items: [
-            List.Item(marker: .ordinal(9), content: paragraph("alpha")),
-            List.Item(marker: .ordinal(10), content: paragraph("beta")),
-        ])
-        let block = list.measure(400)
+        let block = list([
+            (.ordinal(9), paragraph("alpha")),
+            (.ordinal(10), paragraph("beta")),
+        ]).measure(400)
 
         let first = try XCTUnwrap(block.rects(from: 0, to: 5).first)
         let second = try XCTUnwrap(block.rects(from: 5, to: 9).first)

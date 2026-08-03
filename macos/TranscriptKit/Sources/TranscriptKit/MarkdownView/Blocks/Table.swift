@@ -30,12 +30,20 @@ struct Table: Layout {
         case leading, center, trailing
     }
 
-    /// Row 0 of the grid, drawn on the header tint.
-    let header: [NSAttributedString]
+    /// The whole grid, header first, already squared off — source rows may be
+    /// jagged, and short ones were padded with empty cells here so that nothing
+    /// downstream has to ask whether a cell exists.
+    private let grid: [[MarkdownText]]
 
-    /// Body rows in source order. Rows may be jagged — short ones are padded
-    /// with empty cells, so the grid stays rectangular whatever the source did.
-    let rows: [[NSAttributedString]]
+    private let columnCount: Int
+
+    /// Per column, the widest `min-content` and `max-content` its cells reported,
+    /// **without padding**. Both are properties of the text rather than of any
+    /// width it might be placed in, so they are settled here rather than on the
+    /// `measure` path — which is what takes column sizing from three typesetting
+    /// passes per cell down to one. Padding and the floor are applied later,
+    /// because those two are still `var`s a caller may change.
+    private let intrinsics: [(min: CGFloat, max: CGFloat)]
 
     /// One entry per column, in column order. A missing entry is `.leading`.
     let alignments: [Alignment]
@@ -83,24 +91,32 @@ struct Table: Layout {
         .systemFont(ofSize: body.pointSize, weight: .semibold)
     }
 
-    init(header: [NSAttributedString], rows: [[NSAttributedString]], alignments: [Alignment]) {
-        self.header = header
-        self.rows = rows
+    init(header: [MarkdownText], rows: [[MarkdownText]], alignments: [Alignment]) {
+        let columnCount = max(header.count, rows.map(\.count).max() ?? 0)
+        let grid = ([header] + rows).map { row in
+            (0..<columnCount).map { $0 < row.count ? row[$0] : MarkdownText.empty }
+        }
+
+        self.columnCount = columnCount
+        self.grid = grid
         self.alignments = alignments
+        self.intrinsics = (0..<columnCount).map { column in
+            grid.reduce((min: CGFloat(0), max: CGFloat(0))) { widest, row in
+                let cell = row[column].intrinsicWidths()
+                let wide = ceil(cell.max)
+                // An empty cell measures to nothing at both widths; clamping
+                // keeps a column's min from exceeding its own max.
+                let narrow = Swift.min(ceil(cell.min), wide)
+                return (min: Swift.max(widest.min, narrow), max: Swift.max(widest.max, wide))
+            }
+        }
     }
 
     // MARK: - Measure
 
     func measure(_ width: CGFloat) -> MarkdownBlock {
-        let columnCount = max(header.count, rows.map(\.count).max() ?? 0)
         guard columnCount > 0, width > 0 else { return Measured.empty(width: width) }
-
-        // Jagged source rows are squared off here, once, so nothing downstream
-        // has to ask whether a cell exists.
-        let grid = ([header] + rows).map { row in
-            (0..<columnCount).map { $0 < row.count ? row[$0] : NSAttributedString() }
-        }
-        let columns = columnWidths(for: grid, within: width)
+        let columns = columnWidths(within: width)
 
         var cells: [[Measured.Cell]] = []
         cells.reserveCapacity(grid.count)
@@ -111,9 +127,8 @@ struct Table: Layout {
             // Every cell in the row is typeset before any of them is placed: the
             // row's height is the tallest of them, and a cell cannot be given
             // its band until that is known.
-            let runs = row.enumerated().map { column, attributed in
-                MarkdownTextRun.make(
-                    attributed, width: max(1, columns[column] - cellHorizontalPadding * 2))
+            let runs = row.enumerated().map { column, cell in
+                cell.run(width: max(1, columns[column] - cellHorizontalPadding * 2))
             }
             let height = (runs.map(\.size.height).max() ?? 0) + cellVerticalPadding * 2
 
@@ -156,32 +171,13 @@ struct Table: Layout {
     /// A cell offers two numbers: its **min** — what the text settles at when
     /// typeset into a width of one point, which is CSS `min-content`, the natural
     /// break (Latin per word, CJK per glyph) — and its **max**, the width it
-    /// wants with no wrapping at all. A column takes the largest of each over its
-    /// cells, and the three branches below are the three orderings those two sums
-    /// can have against the space available.
-    private func columnWidths(
-        for grid: [[NSAttributedString]], within width: CGFloat
-    )
-        -> [CGFloat]
-    {
-        let columnCount = grid[0].count
-        var mins = [CGFloat](repeating: 0, count: columnCount)
-        var maxes = [CGFloat](repeating: 0, count: columnCount)
+    /// wants with no wrapping at all. Both were settled in `init`; what is left
+    /// here is padding, the floor, and the three branches those two sums can fall
+    /// into against the space available.
+    private func columnWidths(within width: CGFloat) -> [CGFloat] {
+        var mins = intrinsics.map { $0.min + cellHorizontalPadding * 2 }
+        var maxes = intrinsics.map { $0.max + cellHorizontalPadding * 2 }
 
-        for row in grid {
-            for (column, attributed) in row.enumerated() {
-                let wide =
-                    ceil(MarkdownTextRun.make(attributed, width: .greatestFiniteMagnitude).size.width)
-                    + cellHorizontalPadding * 2
-                let narrow =
-                    ceil(MarkdownTextRun.make(attributed, width: 1).size.width)
-                    + cellHorizontalPadding * 2
-                maxes[column] = max(maxes[column], wide)
-                // An empty cell measures to nothing at both widths; clamping
-                // keeps a column's min from exceeding its own max.
-                mins[column] = max(mins[column], min(narrow, wide))
-            }
-        }
         for column in 0..<columnCount {
             mins[column] = max(mins[column], minColumnWidth)
             maxes[column] = max(maxes[column], mins[column])

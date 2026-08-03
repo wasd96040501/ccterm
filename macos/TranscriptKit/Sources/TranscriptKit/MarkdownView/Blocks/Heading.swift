@@ -11,11 +11,11 @@ import AppKit
 struct Heading: Layout {
 
     let level: Int
-    let attributed: NSAttributedString
+    let text: MarkdownText
 
-    init(level: Int, attributed: NSAttributedString) {
+    init(level: Int, text: MarkdownText) {
         self.level = level
-        self.attributed = attributed
+        self.text = text
     }
 
     /// h1 26 / h2 22 / h3–h6 18, semibold. Markdown's six levels collapse to
@@ -50,7 +50,7 @@ struct Heading: Layout {
     }
 
     func measure(_ width: CGFloat) -> MarkdownBlock {
-        let run = MarkdownTextRun.make(attributed, width: width)
+        let run = text.run(width: width)
         let extraTop = extraTop
         return Paragraph.Measured(
             run: run,

@@ -9,7 +9,13 @@ import AppKit
 struct ThematicBreak: Layout {
 
     var thickness: CGFloat = 1
-    var color: NSColor = .separatorColor
+
+    /// `secondaryLabelColor`, not `separatorColor`. A rule in prose is a section
+    /// break the author asked for, and the separator tint — a few per cent of
+    /// black — reads as an accident of the background at one point thick. This
+    /// used to be `separatorColor` here and be overwritten by the document's
+    /// style on the way past, so what the file said and what shipped disagreed.
+    var color: NSColor = .secondaryLabelColor
 
     /// On top of the container's spacing. A thin line has no optical room of its
     /// own — a paragraph's descenders and leading give it some slack, a rule has

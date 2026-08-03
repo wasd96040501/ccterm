@@ -129,6 +129,17 @@ public final class TranscriptView: NSView {
     /// that delegate call.
     private var configuringCell: TranscriptCellView?
 
+    /// What each self-drawn row cost to build, so that the height answer and the
+    /// view answer below share one tree instead of each building their own.
+    private let rowCache = RowCache()
+
+    /// Row `row`'s markdown, parsed and measured at the current content width —
+    /// or handed back from the cache, which is the usual case: `NSTableView` asks
+    /// for a height and then, for the rows it is about to show, a view.
+    private func markdownBlock(forRow row: Int, source: String) -> MarkdownBlock {
+        rowCache.block(forRow: row, width: contentWidth) { MarkdownLayout.make(source) }
+    }
+
     /// How tall row `row` is. `.view` rows are the delegate's to measure; the
     /// self-drawn cases the transcript measures itself, from the same tree it
     /// will later draw.
@@ -136,7 +147,7 @@ public final class TranscriptView: NSView {
         let answer: CGFloat
         switch dataSource?.transcriptView(self, contentForRow: row) {
         case .markdown(let source):
-            answer = MarkdownLayout.make(source).measure(contentWidth).size.height
+            answer = markdownBlock(forRow: row, source: source).size.height
 
         case .view:
             guard let delegate else { return Self.minimumRowHeight }
@@ -181,7 +192,7 @@ public final class TranscriptView: NSView {
             // fresh instance when the pool hands over a cell that was serving a
             // `.view` row.
             let markdown = cell.hostedView as? MarkdownCellView ?? MarkdownCellView()
-            markdown.configure(with: MarkdownLayout.make(source).measure(contentWidth))
+            markdown.configure(with: markdownBlock(forRow: row, source: source))
             hosted = markdown
 
         case .view:
@@ -423,6 +434,8 @@ public final class TranscriptView: NSView {
         measuredContentWidth = width
         guard numberOfRows > 0 else { return }
 
+        reflowVisibleMarkdown()
+
         // `noteHeightOfRows` re-asks the delegate for every index it is handed,
         // so a full pass is O(rows) — nothing once, a freeze sixty times a
         // second through a drag. Mid-drag only the rows on screen are
@@ -437,6 +450,32 @@ public final class TranscriptView: NSView {
         guard visible.length > 0 else { return }
         tableView.noteHeightOfRows(
             withIndexesChanged: IndexSet(integersIn: visible.location..<(visible.location + visible.length)))
+    }
+
+    /// Re-measures the markdown rows currently on screen and hands each cell the
+    /// result.
+    ///
+    /// `noteHeightOfRows` above updates a row's *height*; it does not re-run
+    /// `viewForRow` for a row that already has a view, so without this the cell
+    /// keeps the tree it was configured with and the text stays wrapped at the
+    /// old width — with `layerContentsRedrawPolicy` set to `.onSetNeedsDisplay`,
+    /// not even repainted, just a stale bitmap stretched wider.
+    ///
+    /// Affordable only because of `RowCache`: the height pass that follows asks
+    /// for the same rows at the same width and gets these trees back rather than
+    /// measuring a second time.
+    ///
+    /// Off-screen rows need nothing — they are re-measured when they scroll in,
+    /// through `viewForRow`.
+    private func reflowVisibleMarkdown() {
+        tableView.enumerateAvailableRowViews { [weak self] rowView, row in
+            guard let self,
+                let cell = rowView.view(atColumn: 0) as? TranscriptCellView,
+                let markdown = cell.hostedView as? MarkdownCellView,
+                case .markdown(let source) = dataSource?.transcriptView(self, contentForRow: row)
+            else { return }
+            markdown.remeasured(to: markdownBlock(forRow: row, source: source))
+        }
     }
 
     /// The clip has resized and has not yet resized the document view, so the
@@ -658,6 +697,7 @@ public final class TranscriptView: NSView {
     /// rather than absorbed: absorbing it would mean a view that quietly ignores
     /// calls until it is ready.
     public func reloadData() {
+        rowCache.reloadAll()
         tableView.reloadData()
     }
 
@@ -672,6 +712,9 @@ public final class TranscriptView: NSView {
     /// to be visible animates inside its own view, where nothing moves the rows.
     public func insertRows(at indexes: IndexSet) {
         mutate(shiftedBy: .inserted(indexes)) {
+            // Before the table's call, not after: that call lays out, and laying
+            // out asks for heights, which read the cache.
+            rowCache.insert(at: indexes)
             tableView.insertRows(at: indexes, withAnimation: [])
         }
     }
@@ -680,6 +723,7 @@ public final class TranscriptView: NSView {
     /// data source). No animation parameter, for the reason on `insertRows`.
     public func removeRows(at indexes: IndexSet) {
         mutate(shiftedBy: .removed(indexes)) {
+            rowCache.remove(at: indexes)
             tableView.removeRows(at: indexes, withAnimation: [])
         }
     }
@@ -690,6 +734,7 @@ public final class TranscriptView: NSView {
     /// `.view` row is re-asked through the delegate's `heightOfRow`.
     public func reloadRows(at indexes: IndexSet) {
         mutate(shiftedBy: .none) {
+            rowCache.reload(at: indexes)
             tableView.reloadData(forRowIndexes: indexes, columnIndexes: IndexSet(integer: 0))
             // `reloadData(forRowIndexes:)` re-asks for the row's view but keeps the
             // height it already has, and changed content is a different height.

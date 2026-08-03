@@ -17,10 +17,9 @@ final class TableSelectionTests: XCTestCase {
 
     // MARK: - Fixtures
 
-    private func cell(_ text: String) -> NSAttributedString {
-        NSAttributedString(
-            string: text,
-            attributes: [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)])
+    private func cell(_ text: String) -> MarkdownText {
+        MarkdownText(
+            text, attributes: [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)])
     }
 
     /// A 3×3 grid whose every cell names its own position, so a selection that

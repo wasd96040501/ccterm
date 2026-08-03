@@ -126,14 +126,13 @@ final class PaintItemTests: XCTestCase {
     /// than as a colour, since glyph coverage at a given pixel is Core Text's
     /// business and not a stable thing to pin.
     func testARunPaints() throws {
-        let run = MarkdownTextRun.make(
-            NSAttributedString(
-                string: "████",
-                attributes: [
-                    .font: NSFont.monospacedSystemFont(ofSize: 24, weight: .regular),
-                    .foregroundColor: NSColor.red,
-                ]),
-            width: 200)
+        let run = MarkdownText(
+            "████",
+            attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 24, weight: .regular),
+                .foregroundColor: NSColor.red,
+            ]
+        ).run(width: 200)
 
         let painted = try topmostColor(of: [.run(run, at: CGPoint(x: -2, y: -6))])
         XCTAssertGreaterThan(painted.alphaComponent, 0.1, "the run put nothing on the canvas")

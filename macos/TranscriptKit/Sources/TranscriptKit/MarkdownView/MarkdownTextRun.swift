@@ -10,6 +10,11 @@ import CoreText
 /// arithmetic exists once instead of once per block kind. `MarkdownTextBlock` is the
 /// adapter that turns one of these into a `MarkdownBlock`.
 ///
+/// Produced by `MarkdownText.run(width:)`, never constructed from a string
+/// directly: the shaping a run is broken out of is width-independent and belongs
+/// to the recipe, so the only way to get one is to ask text that has already been
+/// shaped.
+///
 /// `@unchecked Sendable` for the reason given on `MarkdownBlock`: `CTLine` and
 /// `NSAttributedString` are immutable and thread-safe once created, and nothing
 /// here mutates after `make` returns — which is what lets a host typeset off the
@@ -54,60 +59,6 @@ struct MarkdownTextRun: @unchecked Sendable {
 
     static let empty = MarkdownTextRun(
         attributed: NSAttributedString(), lines: [], size: .zero, typesetWidth: 0)
-
-    // MARK: - Typesetting
-
-    /// Breaks `attributed` into lines no wider than `width`.
-    ///
-    /// `CTTypesetter` rather than `CTFramesetter` because the line origins are
-    /// ours to place: a framesetter hands back a frame in y-up coordinates whose
-    /// origins then have to be un-flipped, and it wants a path sized in advance
-    /// — which is the one thing not known yet when the height is what is being
-    /// computed.
-    static func make(_ attributed: NSAttributedString, width: CGFloat) -> MarkdownTextRun {
-        let length = attributed.length
-        guard length > 0, width > 0 else { return .empty }
-
-        let typesetter = CTTypesetterCreateWithAttributedString(attributed)
-        var lines: [Line] = []
-        var start = 0
-        var y: CGFloat = 0
-        var widest: CGFloat = 0
-
-        while start < length {
-            var count = CTTypesetterSuggestLineBreak(typesetter, start, Double(width))
-            // A width too narrow for even one glyph reports a break of zero,
-            // which would spin here forever. Force progress and overflow the
-            // line instead — a clipped glyph is a better failure than a hang.
-            if count <= 0 { count = 1 }
-
-            let range = CFRange(location: start, length: count)
-            let ctLine = CTTypesetterCreateLine(typesetter, range)
-
-            var ascent: CGFloat = 0
-            var descent: CGFloat = 0
-            var leading: CGFloat = 0
-            let lineWidth = CGFloat(
-                CTLineGetTypographicBounds(ctLine, &ascent, &descent, &leading))
-
-            lines.append(
-                Line(
-                    ctLine: ctLine,
-                    origin: CGPoint(x: 0, y: y),
-                    ascent: ascent, descent: descent, leading: leading,
-                    range: NSRange(location: start, length: count)))
-
-            widest = max(widest, lineWidth)
-            y += ascent + descent + leading
-            start += count
-        }
-
-        return MarkdownTextRun(
-            attributed: attributed,
-            lines: lines,
-            size: CGSize(width: widest, height: y),
-            typesetWidth: width)
-    }
 
     // MARK: - Draw
 

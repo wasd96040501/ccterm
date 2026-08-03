@@ -58,60 +58,79 @@ enum MarkdownLayout {
     ) -> Layout {
         switch node {
         case .paragraph(let inlines):
-            return Paragraph(MarkdownInline.attributed(inlines, style: style))
+            return Paragraph(text(inlines, style: style))
 
         case .heading(let level, let inlines):
             return Heading(
                 level: level,
-                attributed: MarkdownInline.attributed(
-                    inlines, style: style, font: Heading.font(level: level)))
+                text: text(inlines, style: style, font: Heading.font(level: level)))
 
         case .blockquote(let children):
-            var quote = Blockquote(stack(children, style: style, spacing: spacing))
-            quote.barColor = style.secondaryColor
-            return quote
+            return Blockquote(stack(children, style: style, spacing: spacing))
 
         case .thematicBreak:
-            var rule = ThematicBreak()
-            rule.color = style.secondaryColor
-            return rule
+            return ThematicBreak()
 
         case .codeBlock(let code):
-            var card = CodeBlock(code: code.code, language: code.language)
-            // Monospaced at the body size: the card's own default guesses one,
-            // but the surrounding text is what it actually has to match.
-            card.font = .monospacedSystemFont(ofSize: style.bodyFont.pointSize, weight: .regular)
-            card.textColor = style.textColor
-            card.badgeTextColor = style.secondaryColor
-            return card
+            return CodeBlock(
+                // Monospaced at the body size: a card sandwiched between
+                // paragraphs has to match the text around it, which is the one
+                // thing the card itself cannot know.
+                text: MarkdownText(
+                    code.code,
+                    attributes: [
+                        .font: NSFont.monospacedSystemFont(
+                            ofSize: style.bodyFont.pointSize, weight: .regular),
+                        .foregroundColor: style.textColor,
+                    ]),
+                badge: badge(code.language, style: style))
 
         case .list(let list):
             // The item's own blocks are stacked at the list's rhythm, not the
             // document's — which is what makes every gap inside a list the same
             // six, whether it separates two items, two paragraphs of one item, or
             // an item from the sub-list under it.
-            var built = List(
+            return List.make(
                 items: list.items.enumerated().map { index, item in
                     List.Item(
-                        marker: marker(for: item, at: index, in: list),
+                        marker: List.marker(
+                            kind(for: item, at: index, in: list),
+                            font: style.bodyFont, color: style.secondaryColor),
                         content: stack(item.content, style: style, spacing: listSpacing))
-                })
-            built.font = style.bodyFont
-            built.color = style.secondaryColor
-            built.spacing = listSpacing
-            return built
+                },
+                spacing: listSpacing,
+                gap: style.bodyFont.pointSize * 0.5)
 
         case .table(let table):
             let headerFont = Table.headerFont(style.bodyFont)
             return Table(
-                header: table.header.map {
-                    MarkdownInline.attributed($0, style: style, font: headerFont)
-                },
-                rows: table.rows.map { row in
-                    row.map { MarkdownInline.attributed($0, style: style) }
-                },
+                header: table.header.map { text($0, style: style, font: headerFont) },
+                rows: table.rows.map { row in row.map { text($0, style: style) } },
                 alignments: table.alignments.map(alignment))
         }
+    }
+
+    /// Lowers inline children and shapes the result — the single place text
+    /// crosses from markdown into something a block can hold. Everything past
+    /// this line is width-independent and stays that way until `measure`.
+    private static func text(
+        _ inlines: [MarkdownIR.InlineNode], style: MarkdownStyle, font: NSFont? = nil
+    ) -> MarkdownText {
+        MarkdownText(MarkdownInline.attributed(inlines, style: style, font: font))
+    }
+
+    /// The language chip, typeset. `nil` for a bare fence or an indented block,
+    /// which have no language to name.
+    private static func badge(_ language: String?, style: MarkdownStyle) -> MarkdownTextRun? {
+        let name = language?.trimmingCharacters(in: .whitespaces).lowercased() ?? ""
+        guard !name.isEmpty else { return nil }
+        return MarkdownText(
+            name,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: CodeBlock.badgeFontSize, weight: .regular),
+                .foregroundColor: style.secondaryColor,
+            ]
+        ).run(width: .greatestFiniteMagnitude)
     }
 
     /// GFM's "no alignment specified" lays out as leading, which is what every
@@ -125,9 +144,9 @@ enum MarkdownLayout {
         }
     }
 
-    private static func marker(
+    private static func kind(
         for item: MarkdownIR.List.Item, at index: Int, in list: MarkdownIR.List
-    ) -> List.Marker {
+    ) -> List.Kind {
         switch item.checkbox {
         case .checked: return .task(checked: true)
         case .unchecked: return .task(checked: false)

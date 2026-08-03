@@ -60,12 +60,27 @@ final class MarkdownCellView: NSView {
     /// from the row it was serving a moment ago, because the block is the
     /// entirety of its state.
     func configure(with block: MarkdownBlock) {
-        self.block = block
         // A different document: the old endpoints indexed text that is no longer
         // here. This is the recycling rule — a pooled cell must arrive as empty
         // as a fresh one.
         anchor = nil
         focus = nil
+        remeasured(to: block)
+    }
+
+    /// The **same** document, re-measured at a new width.
+    ///
+    /// Separate from `configure` for one reason: it keeps the selection. The flat
+    /// index space is a function of the document's content and no part of it
+    /// depends on the width — the invariant stated below — so the endpoints still
+    /// name the characters they named before, and dropping them would lose a
+    /// reader's selection every time the window edge moved.
+    ///
+    /// Marking the view is not optional here. `layerContentsRedrawPolicy` is
+    /// `.onSetNeedsDisplay`, so a resize alone repaints nothing; the old lines
+    /// would simply be stretched.
+    func remeasured(to block: MarkdownBlock) {
+        self.block = block
         needsDisplay = true
     }
 

@@ -3,13 +3,17 @@ import AppKit
 /// A bulleted, numbered or task list: a marker column beside a stack of item
 /// contents.
 ///
-/// **This is the one type that negotiates.** A stack measures its children
-/// independently, so it cannot make `10.` and `9.` line up; the marker column's
-/// width is an agreement *between* siblings. So the list renders every marker
-/// first, takes the widest, and only then measures each item's content against
-/// what is left. The settled number never leaves this function — the same
-/// discipline `Blockquote` follows with its indent, applied to a value that had
-/// to be computed rather than declared.
+/// **Not a `Layout`.** Everything a list does is settled before any width is
+/// known — render the markers, take the widest, and that is the column every item
+/// indents past. So it is a factory that hands back a `BlockStack` of rows, the
+/// same way `MarkdownLayout` hands back layouts: there is no measure-time
+/// behaviour left for it to own, and a type whose `measure` only forwards is a
+/// layer that costs a hop and explains nothing.
+///
+/// That the negotiation is width-independent is the whole reason. A stack cannot
+/// make `10.` and `9.` line up — the marker column is an agreement *between*
+/// siblings — but the agreement is over typeset markers, and typesetting a marker
+/// never depended on how wide the list is.
 ///
 /// **Markers are drawn, not indexed.** A bullet, an ordinal and a task checkbox
 /// occupy zero positions in the selection index space, so dragging across a list
@@ -20,12 +24,28 @@ import AppKit
 /// quotes, or another list, without this type knowing which. Nesting is not a
 /// mechanism of its own: a sub-list is simply one more block inside its parent
 /// item's content.
-struct List: Layout {
+enum List {
 
-    enum Marker {
+    /// What a marker *says*. An input to `marker(_:font:color:)` and never
+    /// stored: by the time a list is assembled, its markers are typeset runs and
+    /// drawn shapes.
+    enum Kind {
         case bullet
         case ordinal(Int)
         case task(checked: Bool)
+    }
+
+    /// What a marker *is*, once rendered.
+    enum Marker {
+        case text(MarkdownTextRun)
+        case checkbox(Checkbox)
+
+        var width: CGFloat {
+            switch self {
+            case .text(let run): return run.size.width
+            case .checkbox(let box): return box.size
+            }
+        }
     }
 
     struct Item {
@@ -38,85 +58,51 @@ struct List: Layout {
         }
     }
 
-    let items: [Item]
-
-    /// Matches the surrounding body face: a marker set at a different size sits
-    /// on a different baseline from the line it belongs to.
-    var font: NSFont = .systemFont(ofSize: 14, weight: .regular)
-    var color: NSColor = .secondaryLabelColor
-
-    /// Tighter than the gap between two document blocks: the items of one list
-    /// are one thought. The same number applies at every nesting depth and
-    /// between the blocks *inside* one item, so a list has a single rhythm no
-    /// matter how it is shaped.
-    var spacing: CGFloat = 6
-
-    /// Just under the body font's cap height. Bigger reads as a button; smaller
-    /// fails to register as a control at all.
-    var checkboxSize: CGFloat { font.pointSize * 0.95 }
-
-    var checkboxFillColor: NSColor = .controlAccentColor
-    var checkboxMarkColor: NSColor = .white
-
-    init(items: [Item]) {
-        self.items = items
-    }
-
-    func measure(_ width: CGFloat) -> MarkdownBlock {
-        // Negotiation, all of it: render every marker, take the widest.
-        let markers = items.map { rendered($0.marker) }
-        let column = markers.map(\.width).max() ?? 0
-        let gap = font.pointSize * 0.5
-
-        return BlockStack(
-            items.indices.map { index in
-                Row(
-                    marker: markers[index],
-                    markerColumn: column,
-                    gap: gap,
-                    content: items[index].content)
-            },
-            spacing: spacing
-        ).measure(width)
-    }
-
-    private func rendered(_ marker: Marker) -> Row.Marker {
-        switch marker {
+    /// Renders one marker. `font` matches the surrounding body face — a marker
+    /// set at a different size sits on a different baseline from the line it
+    /// belongs to — and the checkbox takes just under its cap height: bigger
+    /// reads as a button, smaller fails to register as a control at all.
+    static func marker(_ kind: Kind, font: NSFont, color: NSColor) -> Marker {
+        switch kind {
         case .task(let checked):
             return .checkbox(
                 Checkbox(
-                    size: checkboxSize, checked: checked,
-                    fill: checkboxFillColor, mark: checkboxMarkColor, border: color))
+                    size: font.pointSize * 0.95, checked: checked,
+                    fill: Checkbox.defaultFill, mark: Checkbox.defaultMark, border: color))
 
         case .bullet:
-            return .text(text("•"))
+            return .text(text("•", font: font, color: color))
 
         case .ordinal(let n):
-            return .text(text("\(n)."))
+            return .text(text("\(n).", font: font, color: color))
         }
     }
 
-    private func text(_ string: String) -> MarkdownTextRun {
-        .make(
-            NSAttributedString(
-                string: string, attributes: [.font: font, .foregroundColor: color]),
-            width: .greatestFiniteMagnitude)
+    private static func text(_ string: String, font: NSFont, color: NSColor) -> MarkdownTextRun {
+        MarkdownText(string, attributes: [.font: font, .foregroundColor: color])
+            .run(width: .greatestFiniteMagnitude)
+    }
+
+    /// The list, as a stack of rows sharing one marker column.
+    ///
+    /// `spacing` is tighter than the gap between two document blocks: the items
+    /// of one list are one thought. The same number applies at every nesting
+    /// depth and between the blocks *inside* one item, so a list has a single
+    /// rhythm no matter how it is shaped.
+    ///
+    /// `gap` separates the marker column from the content. Half the body point
+    /// size, so it tracks the text rather than staying fixed while the text
+    /// grows.
+    static func make(items: [Item], spacing: CGFloat, gap: CGFloat) -> BlockStack {
+        // The negotiation, all of it: take the widest marker.
+        let column = items.map(\.marker.width).max() ?? 0
+        return BlockStack(
+            items.map { Row(marker: $0.marker, markerColumn: column, gap: gap, content: $0.content) },
+            spacing: spacing)
     }
 
     /// One item: its marker in the settled column, its content in the remainder.
     private struct Row: Layout {
-
-        enum Marker {
-            case text(MarkdownTextRun)
-            case checkbox(Checkbox)
-
-            var width: CGFloat {
-                switch self {
-                case .text(let run): return run.size.width
-                case .checkbox(let box): return box.size
-                }
-            }
-        }
 
         let marker: Marker
         let markerColumn: CGFloat
@@ -133,6 +119,13 @@ struct List: Layout {
                 markerRightX: markerColumn,
                 content: inner,
                 indent: indent,
+                // The content's first line box, which is what the marker aligns
+                // to. Read off the content rather than assumed, because how much
+                // room a block gives itself is its own business and not something
+                // it reports — and read *here* rather than at paint time, because
+                // it depends on the width and on nothing else.
+                firstLine: inner.rects(from: 0, to: min(1, inner.length)).first
+                    ?? CGRect(x: 0, y: 0, width: 0, height: inner.size.height),
                 size: CGSize(width: width, height: inner.size.height))
         }
 
@@ -142,6 +135,7 @@ struct List: Layout {
             let markerRightX: CGFloat
             let content: MarkdownBlock
             let indent: CGFloat
+            let firstLine: CGRect
             let size: CGSize
 
             /// The marker is `.content`: it is furniture, but it is furniture this
@@ -149,7 +143,6 @@ struct List: Layout {
             /// the content's ever reaches the marker column, so nothing composites
             /// against it either way.
             func paint(at origin: CGPoint, dirty: CGRect, into list: inout [PaintItem]) {
-                let line = firstLine
                 switch marker {
                 case .text(let run):
                     // Same point size as the body, so sharing a top means
@@ -159,7 +152,7 @@ struct List: Layout {
                             run,
                             at: CGPoint(
                                 x: origin.x + markerRightX - run.size.width,
-                                y: origin.y + line.minY)))
+                                y: origin.y + firstLine.minY)))
 
                 case .checkbox(let box):
                     // A drawn shape has no baseline, so it centres on the line
@@ -169,21 +162,12 @@ struct List: Layout {
                         contentsOf: box.items(
                             in: CGRect(
                                 x: origin.x + markerRightX - box.size,
-                                y: origin.y + line.midY - box.size / 2,
+                                y: origin.y + firstLine.midY - box.size / 2,
                                 width: box.size, height: box.size)))
                 }
 
                 content.paint(
                     at: CGPoint(x: origin.x + indent, y: origin.y), dirty: dirty, into: &list)
-            }
-
-            /// The content's first line box, which is what the marker aligns to.
-            /// Read off the content rather than assumed, because how much room a
-            /// block gives itself is its own business and not something it
-            /// reports.
-            private var firstLine: CGRect {
-                content.rects(from: 0, to: min(1, content.length)).first
-                    ?? CGRect(x: 0, y: 0, width: 0, height: size.height)
             }
 
             // MARK: - Selection — the content's only; a marker holds no positions
@@ -230,6 +214,11 @@ struct Checkbox: Sendable {
     let fill: NSColor
     let mark: NSColor
     let border: NSColor
+
+    /// The accent, and white on top of it — a filled checkbox is a control, and
+    /// a control's tint is the system's to pick.
+    static let defaultFill: NSColor = .controlAccentColor
+    static let defaultMark: NSColor = .white
 
     // MARK: - Material's proportions, per unit of box size
 

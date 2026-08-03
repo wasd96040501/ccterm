@@ -23,6 +23,10 @@ struct Demo {
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered, defer: false)
         window.title = "TranscriptKit"
+        // Narrower than any real host would allow, on purpose: reflow, column
+        // collapse and min-content wrapping are all things you have to squeeze
+        // the window to see.
+        window.contentMinSize = NSSize(width: 100, height: 200)
 
         let host = DemoHost()
         let root = NSView()

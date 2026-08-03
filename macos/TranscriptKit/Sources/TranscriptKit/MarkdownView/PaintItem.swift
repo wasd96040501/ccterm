@@ -11,7 +11,7 @@ import CoreText
 /// where something lands is decided by a **number it carries**, and a number can
 /// be attached by anyone.
 ///
-/// That is what lets `MarkdownCellView` add a selection band that sits above a
+/// That is what lets `BlockView` add a selection band that sits above a
 /// code card's fill and below its glyphs without the code card knowing selection
 /// exists — the band is simply tagged `.decoration`, and `.background` <
 /// `.decoration` < `.content` settles it.
@@ -55,7 +55,7 @@ struct PaintItem {
         /// a two-thousand-line code block is one of these, and the run culls its
         /// own lines against `dirty`. Emitting per line would turn a list of
         /// dozens into a list of thousands.
-        case run(MarkdownTextRun, at: CGPoint)
+        case text(TypesetText, at: CGPoint)
 
         case fill(CGRect, NSColor)
         case fillPath(CGPath, NSColor)
@@ -73,12 +73,12 @@ extension PaintItem {
     /// Defaults name the phase each primitive almost always belongs to, so a call
     /// site says the phase only where it is making a real choice — a selection
     /// band, a table's border.
-    static func run(
-        _ run: MarkdownTextRun, at origin: CGPoint, phase: Phase = .content
+    static func text(
+        _ run: TypesetText, at origin: CGPoint, phase: Phase = .content
     )
         -> PaintItem
     {
-        PaintItem(phase: phase, primitive: .run(run, at: origin))
+        PaintItem(phase: phase, primitive: .text(run, at: origin))
     }
 
     static func fill(_ rect: CGRect, _ color: NSColor, phase: Phase = .background) -> PaintItem {
@@ -144,7 +144,7 @@ extension PaintItem.Primitive {
 
     fileprivate func paint(in ctx: CGContext, dirty: CGRect) {
         switch self {
-        case .run(let run, let origin):
+        case .text(let run, let origin):
             run.draw(at: origin, in: ctx, dirty: dirty)
 
         case .fill(let rect, let color):

@@ -68,7 +68,7 @@ final class MarkdownRowTests: XCTestCase {
 
     func testMarkdownRowIsServedThroughTheTranscriptsOwnCell() {
         mount(["A paragraph long enough to occupy a row."])
-        XCTAssertEqual(mounted.transcript.descendants(ofType: MarkdownCellView.self).count, 1)
+        XCTAssertEqual(mounted.transcript.descendants(ofType: BlockView.self).count, 1)
     }
 
     /// Both kinds of row on screen at once. They share one recycling pool, so a
@@ -77,7 +77,7 @@ final class MarkdownRowTests: XCTestCase {
     func testMarkdownAndHostRowsCoexist() {
         let host = mount(["Markdown row.", MarkdownHost.hostRowMarker, "Another markdown row."])
 
-        XCTAssertEqual(mounted.transcript.descendants(ofType: MarkdownCellView.self).count, 2)
+        XCTAssertEqual(mounted.transcript.descendants(ofType: BlockView.self).count, 2)
         XCTAssertEqual(mounted.transcript.descendants(ofType: RecordingHost.ProbeView.self).count, 1)
         // Asked about the host's row, and only that one.
         XCTAssertEqual(host.heightWidths.count, 1)

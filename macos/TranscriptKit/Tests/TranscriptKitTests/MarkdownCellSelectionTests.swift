@@ -17,21 +17,21 @@ final class MarkdownCellSelectionTests: XCTestCase {
 
     private struct Mounted {
         let window: NSWindow
-        let cell: MarkdownCellView
-        let block: MarkdownBlock
+        let cell: BlockView
+        let block: MeasuredBlock
     }
 
     private func mount(_ source: String, width: CGFloat = 400) -> Mounted {
         NSApplication.shared.setActivationPolicy(.prohibited)
 
-        let block = MarkdownLayout.make(source).measure(width)
+        let block = MarkdownBlockBuilder.make(source).measure(width)
         let size = CGSize(width: width, height: block.size.height)
         let window = NSWindow(
             contentRect: NSRect(origin: NSPoint(x: -30_000, y: -30_000), size: size),
             styleMask: [.titled], backing: .buffered, defer: false)
         window.alphaValue = 0.01
 
-        let cell = MarkdownCellView()
+        let cell = BlockView()
         cell.frame = NSRect(origin: .zero, size: size)
         window.contentView?.addSubview(cell)
         cell.configure(with: block)
@@ -75,7 +75,7 @@ final class MarkdownCellSelectionTests: XCTestCase {
     private func canCopy(_ mounted: Mounted) -> Bool {
         mounted.cell.validateMenuItem(
             NSMenuItem(
-                title: "Copy", action: #selector(MarkdownCellView.copy(_:)), keyEquivalent: "c"))
+                title: "Copy", action: #selector(BlockView.copy(_:)), keyEquivalent: "c"))
     }
 
     /// Renders the cell as it stands.
@@ -252,7 +252,7 @@ final class MarkdownCellSelectionTests: XCTestCase {
         sweep(mounted, atY: 4)
         XCTAssertTrue(canCopy(mounted))
 
-        mounted.cell.configure(with: MarkdownLayout.make("something else").measure(400))
+        mounted.cell.configure(with: MarkdownBlockBuilder.make("something else").measure(400))
         XCTAssertFalse(canCopy(mounted))
     }
 

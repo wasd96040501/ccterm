@@ -10,7 +10,7 @@ import Foundation
 /// either way: the detector declines `README.md`, `main.py`, `build.sh` and
 /// `config.json`, despite each ending in what is technically a TLD.
 ///
-/// `MarkdownConvert` must not call this inside `[…](url)` — that would nest a
+/// `MarkdownParser` must not call this inside `[…](url)` — that would nest a
 /// link within a link.
 ///
 /// swift-markdown could in principle spare us this: cmark-gfm ships an

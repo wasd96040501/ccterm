@@ -26,24 +26,24 @@ final class BlockStackSelectionTests: XCTestCase {
         Paragraph(Self.text(text))
     }
 
-    private func run(_ text: String, width: CGFloat = 400) -> MarkdownTextRun {
-        Self.text(text).run(width: width)
+    private func run(_ text: String, width: CGFloat = 400) -> TypesetText {
+        Self.text(text).typeset(width: width)
     }
 
-    private static func text(_ string: String) -> MarkdownText {
-        MarkdownText(
+    private static func text(_ string: String) -> ShapedText {
+        ShapedText(
             string, attributes: [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)])
     }
 
-    /// A list at the fixture font, markers rendered the way `MarkdownLayout`
+    /// A list at the fixture font, markers rendered the way `MarkdownBlockBuilder`
     /// renders them — the marker column is settled before any width is known, so
     /// this is a plain `BlockStack` by the time a test sees it.
-    private func list(_ items: [(List.Kind, Layout)]) -> BlockStack {
+    private func list(_ items: [(ListBuilder.Kind, Block)]) -> BlockStack {
         let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        return List.make(
+        return ListBuilder.make(
             items: items.map {
-                List.Item(
-                    marker: List.marker($0.0, font: font, color: .secondaryLabelColor),
+                ListBuilder.Item(
+                    marker: ListBuilder.marker($0.0, font: font, color: .secondaryLabelColor),
                     content: $0.1)
             },
             spacing: 6,
@@ -96,8 +96,8 @@ final class BlockStackSelectionTests: XCTestCase {
     /// stack is told nothing. A heading is the case this exists for — and it can
     /// only ever add, which is why nothing sits *closer* than `spacing`.
     func testHeadingAddsItsExtraRoomInsideItsOwnHeight() {
-        let title = MarkdownText("Title", attributes: [.font: Heading.font(level: 1)])
-        let bare = title.run(width: 400).size.height
+        let title = ShapedText("Title", attributes: [.font: Heading.font(level: 1)])
+        let bare = title.typeset(width: 400).size.height
         let heading = Heading(level: 1, text: title).measure(400)
 
         XCTAssertEqual(heading.size.height, bare + 18, accuracy: 0.5)
@@ -108,7 +108,7 @@ final class BlockStackSelectionTests: XCTestCase {
     /// Every gap inside a list is the list's own, at any depth — between items,
     /// and between the blocks of one item.
     func testListUsesOneRhythmAtEveryDepth() throws {
-        let block = MarkdownLayout.make(
+        let block = MarkdownBlockBuilder.make(
             """
             - one
             - two

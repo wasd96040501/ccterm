@@ -4,18 +4,18 @@ import CoreText
 /// One attributed string, typeset at one width: the resulting lines, plus the
 /// pixel↔index arithmetic over them.
 ///
-/// **Not a `MarkdownBlock`.** It has no decoration, no place in the document, and no
+/// **Not a `MeasuredBlock`.** It has no decoration, no place in the document, and no
 /// margins. It is the piece every line-based block is built out of — paragraphs,
 /// headings, code cards, table cells, list markers — so that the typesetting
-/// arithmetic exists once instead of once per block kind. `MarkdownTextBlock` is the
-/// adapter that turns one of these into a `MarkdownBlock`.
+/// arithmetic exists once instead of once per block kind. `MeasuredTextBlock` is the
+/// adapter that turns one of these into a `MeasuredBlock`.
 ///
-/// Produced by `MarkdownText.run(width:)`, never constructed from a string
+/// Produced by `ShapedText.typeset(width:)`, never constructed from a string
 /// directly: the shaping a run is broken out of is width-independent and belongs
 /// to the recipe, so the only way to get one is to ask text that has already been
 /// shaped.
 ///
-/// `@unchecked Sendable` for the reason given on `MarkdownBlock`: `CTLine` and
+/// `@unchecked Sendable` for the reason given on `MeasuredBlock`: `CTLine` and
 /// `NSAttributedString` are immutable and thread-safe once created, and nothing
 /// here mutates after `make` returns — which is what lets a host typeset off the
 /// main actor.
@@ -23,7 +23,7 @@ import CoreText
 /// Coordinates are y-down with the origin at the run's top-left, matching the
 /// flipped views this ends up drawn into. Core Text's own line origins are
 /// y-up, and that conversion is confined to `make`.
-struct MarkdownTextRun: @unchecked Sendable {
+struct TypesetText: @unchecked Sendable {
 
     /// One typeset line: the Core Text object, where it sits, and which slice
     /// of the string it covers.
@@ -57,7 +57,7 @@ struct MarkdownTextRun: @unchecked Sendable {
     /// is still valid" from "this run happens to be narrow".
     let typesetWidth: CGFloat
 
-    static let empty = MarkdownTextRun(
+    static let empty = TypesetText(
         attributed: NSAttributedString(), lines: [], size: .zero, typesetWidth: 0)
 
     // MARK: - Draw

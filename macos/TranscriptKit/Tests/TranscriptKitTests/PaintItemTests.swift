@@ -126,15 +126,15 @@ final class PaintItemTests: XCTestCase {
     /// than as a colour, since glyph coverage at a given pixel is Core Text's
     /// business and not a stable thing to pin.
     func testARunPaints() throws {
-        let run = MarkdownText(
+        let run = ShapedText(
             "████",
             attributes: [
                 .font: NSFont.monospacedSystemFont(ofSize: 24, weight: .regular),
                 .foregroundColor: NSColor.red,
             ]
-        ).run(width: 200)
+        ).typeset(width: 200)
 
-        let painted = try topmostColor(of: [.run(run, at: CGPoint(x: -2, y: -6))])
+        let painted = try topmostColor(of: [.text(run, at: CGPoint(x: -2, y: -6))])
         XCTAssertGreaterThan(painted.alphaComponent, 0.1, "the run put nothing on the canvas")
     }
 
@@ -145,7 +145,7 @@ final class PaintItemTests: XCTestCase {
     /// touches `ctx` during `paint` — if anything did, that stroke would land
     /// wherever the walk happened to be, which is the shape this replaced.
     func testPaintingTouchesNoContext() {
-        let block = MarkdownLayout.make("A paragraph, `code`, and a rule.\n\n---\n")
+        let block = MarkdownBlockBuilder.make("A paragraph, `code`, and a rule.\n\n---\n")
             .measure(200)
 
         var list: [PaintItem] = []

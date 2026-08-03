@@ -3,7 +3,7 @@ import AppKit
 /// A run of text occupying one block of the vertical flow.
 ///
 /// It holds no styling decisions. Fonts, colours and inline emphasis arrive
-/// already resolved on the `MarkdownText`, which keeps "what does bold look
+/// already resolved on the `ShapedText`, which keeps "what does bold look
 /// like" in one place instead of one place per block kind — and already shaped,
 /// so `measure` does nothing but break lines.
 ///
@@ -12,16 +12,16 @@ import AppKit
 /// two adjacent paragraphs sit `spacing` apart with neither having said
 /// anything. Only the kinds that want *more* than that — headings above
 /// themselves, bordered blocks, rules — add to their own height.
-struct Paragraph: Layout {
+struct Paragraph: Block {
 
-    let text: MarkdownText
+    let text: ShapedText
 
-    init(_ text: MarkdownText) {
+    init(_ text: ShapedText) {
         self.text = text
     }
 
-    func measure(_ width: CGFloat) -> MarkdownBlock {
-        let run = text.run(width: width)
+    func measure(_ width: CGFloat) -> MeasuredBlock {
+        let run = text.typeset(width: width)
         return Measured(run: run, textOrigin: .zero, size: CGSize(width: width, height: run.size.height))
     }
 
@@ -29,8 +29,8 @@ struct Paragraph: Layout {
     /// from `run.size.width` — the widest line it happened to produce. A short
     /// last line must not narrow the block, or anything aligned to its right edge
     /// would move with the text.
-    struct Measured: MarkdownTextBlock, @unchecked Sendable {
-        let run: MarkdownTextRun
+    struct Measured: MeasuredTextBlock, @unchecked Sendable {
+        let run: TypesetText
         let textOrigin: CGPoint
         let size: CGSize
 
@@ -39,7 +39,7 @@ struct Paragraph: Layout {
         /// the one to read first.
         func paint(at origin: CGPoint, dirty: CGRect, into list: inout [PaintItem]) {
             list.append(
-                .run(run, at: CGPoint(x: origin.x + textOrigin.x, y: origin.y + textOrigin.y)))
+                .text(run, at: CGPoint(x: origin.x + textOrigin.x, y: origin.y + textOrigin.y)))
         }
     }
 }

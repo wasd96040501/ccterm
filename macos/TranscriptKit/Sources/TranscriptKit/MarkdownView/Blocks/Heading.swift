@@ -8,12 +8,12 @@ import AppKit
 /// being scattered into a table keyed by node kind somewhere else. Whoever lowers
 /// the text asks `Heading.font(level:)` for the face; nothing else needs to know
 /// what an h2 is.
-struct Heading: Layout {
+struct Heading: Block {
 
     let level: Int
-    let text: MarkdownText
+    let text: ShapedText
 
-    init(level: Int, text: MarkdownText) {
+    init(level: Int, text: ShapedText) {
         self.level = level
         self.text = text
     }
@@ -49,8 +49,8 @@ struct Heading: Layout {
         }
     }
 
-    func measure(_ width: CGFloat) -> MarkdownBlock {
-        let run = text.run(width: width)
+    func measure(_ width: CGFloat) -> MeasuredBlock {
+        let run = text.typeset(width: width)
         let extraTop = extraTop
         return Paragraph.Measured(
             run: run,

@@ -1,14 +1,14 @@
 import AppKit
 
-/// Turns a parsed document into a `Layout`. The one place markdown and block
-/// layout meet.
+/// Turns a parsed document into a `Block`. The one place markdown and the block
+/// engine meet.
 ///
 /// **No width appears in this file.** An adapter composes recipes; a width is
 /// applied later, once, by whoever is filling a row. That is what keeps the
 /// arithmetic for a quote's indent or a list's marker column inside the type that
 /// owns it, instead of being spread across every call site that builds one.
 ///
-/// It is also the only markdown-aware file below the parser. `Blockquote`, `List`,
+/// It is also the only markdown-aware file below the parser. `Blockquote`, `ListBuilder`,
 /// `BlockStack` and the rest have never heard of `MarkdownIR`, so anything else that
 /// wants to build a row composes them directly without going through here.
 ///
@@ -16,13 +16,13 @@ import AppKit
 /// compile here rather than disappearing from the screen. It is pure dispatch —
 /// one line per case, no layout logic — which is what keeps a central switch from
 /// being the place block behaviour accumulates.
-enum MarkdownLayout {
+enum MarkdownBlockBuilder {
 
-    static func make(_ source: String, style: MarkdownStyle = .default) -> Layout {
-        make(MarkdownConvert.document(source), style: style)
+    static func make(_ source: String, style: MarkdownStyle = .default) -> Block {
+        make(MarkdownParser.document(source), style: style)
     }
 
-    static func make(_ document: MarkdownIR.Document, style: MarkdownStyle) -> Layout {
+    static func make(_ document: MarkdownIR.Document, style: MarkdownStyle) -> Block {
         stack(document.blocks, style: style, spacing: blockSpacing)
     }
 
@@ -46,16 +46,16 @@ enum MarkdownLayout {
     private static func stack(
         _ nodes: [MarkdownIR.BlockNode], style: MarkdownStyle, spacing: CGFloat
     ) -> BlockStack {
-        BlockStack(nodes.map { layout($0, style: style, spacing: spacing) }, spacing: spacing)
+        BlockStack(nodes.map { block($0, style: style, spacing: spacing) }, spacing: spacing)
     }
 
     /// `spacing` is the rhythm of the stack this node is going into, passed down
     /// so a container can hand its children the same one — the only reason it
     /// travels at all is that a list is tighter than a document, and a block
     /// inside a list item belongs to the list's rhythm rather than the page's.
-    private static func layout(
+    private static func block(
         _ node: MarkdownIR.BlockNode, style: MarkdownStyle, spacing: CGFloat
-    ) -> Layout {
+    ) -> Block {
         switch node {
         case .paragraph(let inlines):
             return Paragraph(text(inlines, style: style))
@@ -76,7 +76,7 @@ enum MarkdownLayout {
                 // Monospaced at the body size: a card sandwiched between
                 // paragraphs has to match the text around it, which is the one
                 // thing the card itself cannot know.
-                text: MarkdownText(
+                text: ShapedText(
                     code.code,
                     attributes: [
                         .font: NSFont.monospacedSystemFont(
@@ -90,10 +90,10 @@ enum MarkdownLayout {
             // document's — which is what makes every gap inside a list the same
             // six, whether it separates two items, two paragraphs of one item, or
             // an item from the sub-list under it.
-            return List.make(
+            return ListBuilder.make(
                 items: list.items.enumerated().map { index, item in
-                    List.Item(
-                        marker: List.marker(
+                    ListBuilder.Item(
+                        marker: ListBuilder.marker(
                             kind(for: item, at: index, in: list),
                             font: style.bodyFont, color: style.secondaryColor),
                         content: stack(item.content, style: style, spacing: listSpacing))
@@ -115,22 +115,22 @@ enum MarkdownLayout {
     /// this line is width-independent and stays that way until `measure`.
     private static func text(
         _ inlines: [MarkdownIR.InlineNode], style: MarkdownStyle, font: NSFont? = nil
-    ) -> MarkdownText {
-        MarkdownText(MarkdownInline.attributed(inlines, style: style, font: font))
+    ) -> ShapedText {
+        ShapedText(MarkdownInlineBuilder.attributed(inlines, style: style, font: font))
     }
 
     /// The language chip, typeset. `nil` for a bare fence or an indented block,
     /// which have no language to name.
-    private static func badge(_ language: String?, style: MarkdownStyle) -> MarkdownTextRun? {
+    private static func badge(_ language: String?, style: MarkdownStyle) -> TypesetText? {
         let name = language?.trimmingCharacters(in: .whitespaces).lowercased() ?? ""
         guard !name.isEmpty else { return nil }
-        return MarkdownText(
+        return ShapedText(
             name,
             attributes: [
                 .font: NSFont.systemFont(ofSize: CodeBlock.badgeFontSize, weight: .regular),
                 .foregroundColor: style.secondaryColor,
             ]
-        ).run(width: .greatestFiniteMagnitude)
+        ).typeset(width: .greatestFiniteMagnitude)
     }
 
     /// GFM's "no alignment specified" lays out as leading, which is what every
@@ -146,7 +146,7 @@ enum MarkdownLayout {
 
     private static func kind(
         for item: MarkdownIR.List.Item, at index: Int, in list: MarkdownIR.List
-    ) -> List.Kind {
+    ) -> ListBuilder.Kind {
         switch item.checkbox {
         case .checked: return .task(checked: true)
         case .unchecked: return .task(checked: false)

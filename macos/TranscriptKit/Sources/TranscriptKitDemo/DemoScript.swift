@@ -72,7 +72,7 @@ extension DemoMessage {
 
         ## Highlights
 
-        - [x] Two layers: a `Layout` is a *recipe* that composes before any width
+        - [x] Two layers: a `Block` is a *recipe* that composes before any width
               is known, and `measure` is the one moment a width is applied
         - [x] Decorators wrap any layout, not parsed nodes — so a quote holds a
               code card, a list, or another quote, and never learns which
@@ -165,7 +165,7 @@ extension DemoMessage {
         func height(ofRow row: Int) -> CGFloat {
             switch dataSource?.transcriptView(self, contentForRow: row) {
             case .markdown(let source):
-                return MarkdownLayout.make(source).measure(contentWidth).size.height
+                return MarkdownBlockBuilder.make(source).measure(contentWidth).size.height
             case .view:
                 return delegate?.transcriptView(
                     self, heightOfRow: row, width: contentWidth) ?? 1
@@ -292,7 +292,7 @@ extension DemoMessage {
         > Quotes nest, and the inner one holds blocks of its own:
         >
         > > ```swift
-        > > struct Blockquote: Layout { let content: Layout }
+        > > struct Blockquote: Block { let content: Block }
         > > ```
         > >
         > > - including a list

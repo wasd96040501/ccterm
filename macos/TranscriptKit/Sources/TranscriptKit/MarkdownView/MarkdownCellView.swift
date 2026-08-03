@@ -22,11 +22,11 @@ import AppKit
 /// `isFlipped` is true so that the y-down arithmetic every block is written in
 /// matches the context it draws into, rather than being un-flipped at each of
 /// the several dozen places a rectangle crosses the boundary.
-final class MarkdownCellView: NSView {
+final class BlockView: NSView {
 
     static let identifier = NSUserInterfaceItemIdentifier("TranscriptKit.block")
 
-    private(set) var block: MarkdownBlock?
+    private(set) var block: MeasuredBlock?
 
     override var isFlipped: Bool { true }
 
@@ -53,13 +53,13 @@ final class MarkdownCellView: NSView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
-        fatalError("MarkdownCellView is code-only; init(coder:) is unavailable")
+        fatalError("BlockView is code-only; init(coder:) is unavailable")
     }
 
     /// Binds a measured block. Idempotent — a recycled instance keeps nothing
     /// from the row it was serving a moment ago, because the block is the
     /// entirety of its state.
-    func configure(with block: MarkdownBlock) {
+    func configure(with block: MeasuredBlock) {
         // A different document: the old endpoints indexed text that is no longer
         // here. This is the recycling rule — a pooled cell must arrive as empty
         // as a fresh one.
@@ -79,7 +79,7 @@ final class MarkdownCellView: NSView {
     /// Marking the view is not optional here. `layerContentsRedrawPolicy` is
     /// `.onSetNeedsDisplay`, so a resize alone repaints nothing; the old lines
     /// would simply be stretched.
-    func remeasured(to block: MarkdownBlock) {
+    func remeasured(to block: MeasuredBlock) {
         self.block = block
         needsDisplay = true
     }
@@ -221,7 +221,7 @@ final class MarkdownCellView: NSView {
     private var items: [PaintItem] = []
 }
 
-extension MarkdownCellView: NSMenuItemValidation {
+extension BlockView: NSMenuItemValidation {
 
     /// Greys out Copy when there is nothing selected. ⌘C reaches this view
     /// because it is the first responder while its selection exists, so the

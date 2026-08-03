@@ -1,8 +1,8 @@
 import AppKit
 
-/// A measured layout: fixed size, ready to draw, ready to select in.
+/// A measured block: fixed size, ready to draw, ready to select in.
 ///
-/// The product of `Layout.measure(_:)`, and the half of the pair that has a
+/// The product of `Block.measure(_:)`, and the half of the pair that has a
 /// width. `size.width` is **always the width it was measured into**, never the
 /// extent of its ink — a three-word paragraph in a 700-point column reports 700.
 /// That invariant is what makes "is this tree still valid at the current content
@@ -39,9 +39,9 @@ import AppKit
 /// endpoints leaves the block that owns them free to decide what lies between,
 /// and keeps the decoding of its own index space private.
 ///
-/// Two default paths cover nearly everything: `MarkdownTextBlock` for "I am a stack of
+/// Two default paths cover nearly everything: `MeasuredTextBlock` for "I am a stack of
 /// typeset lines", and `BlockStack.Measured` for "I hold other blocks".
-protocol MarkdownBlock: Sendable {
+protocol MeasuredBlock: Sendable {
 
     /// The measured size. `width` is the width this block was measured into;
     /// `height` is everything it occupies.
@@ -101,7 +101,7 @@ protocol MarkdownBlock: Sendable {
     func paragraphRange(at index: Int) -> Range<Int>
 }
 
-extension MarkdownBlock {
+extension MeasuredBlock {
 
     /// The whole block selected.
     func fullRects() -> [CGRect] { rects(from: 0, to: length) }
@@ -113,9 +113,9 @@ extension MarkdownBlock {
 /// A protocol rather than four empty methods repeated per type, so that "this
 /// one is not selectable" is a declaration at the conformance rather than
 /// something a reader infers from four empty bodies.
-protocol MarkdownOpaqueBlock: MarkdownBlock {}
+protocol MeasuredOpaqueBlock: MeasuredBlock {}
 
-extension MarkdownOpaqueBlock {
+extension MeasuredOpaqueBlock {
     var length: Int { 0 }
     func index(at point: CGPoint) -> Int { 0 }
     func rects(from: Int, to: Int) -> [CGRect] { [] }

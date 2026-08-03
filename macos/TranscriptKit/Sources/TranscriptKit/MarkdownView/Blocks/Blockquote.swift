@@ -4,10 +4,10 @@ import AppKit
 ///
 /// The whole type is the bar and the indent. Arrangement, height, hit testing,
 /// selection, the offset applied to every rectangle that comes back — all belong
-/// to the layout inside, and none of it is written here.
+/// to the block inside, and none of it is written here.
 ///
-/// It wraps a `Layout`, not a parsed node, so it composes with *anything*: a
-/// stack of markdown blocks today, a table or a host-supplied layout tomorrow.
+/// It wraps a `Block`, not a parsed node, so it composes with *anything*: a
+/// stack of markdown blocks today, a table or a host-supplied block tomorrow.
 /// The renderer this replaces modelled a blockquote as
 /// `struct BlockquoteLayout { let text: TextLayout }`, so a quote containing a
 /// code block was not styled badly — it could not be represented.
@@ -21,19 +21,19 @@ import AppKit
 /// what it wraps, and it is the right price: the alternative is asking the
 /// content to publish its own spacing, which is what makes a paragraph
 /// responsible for something only its surroundings can know.
-struct Blockquote: Layout {
+struct Blockquote: Block {
 
-    let content: Layout
+    let content: Block
 
     var indent: CGFloat = 14
     var barWidth: CGFloat = 3
     var barColor: NSColor = .secondaryLabelColor
 
-    init(_ content: Layout) {
+    init(_ content: Block) {
         self.content = content
     }
 
-    func measure(_ width: CGFloat) -> MarkdownBlock {
+    func measure(_ width: CGFloat) -> MeasuredBlock {
         let inner = content.measure(max(1, width - indent))
         return Measured(
             content: inner,
@@ -43,9 +43,9 @@ struct Blockquote: Layout {
             size: CGSize(width: width, height: inner.size.height))
     }
 
-    struct Measured: MarkdownBlock, @unchecked Sendable {
+    struct Measured: MeasuredBlock, @unchecked Sendable {
 
-        let content: MarkdownBlock
+        let content: MeasuredBlock
         let indent: CGFloat
         let bar: CGRect
         let barColor: NSColor

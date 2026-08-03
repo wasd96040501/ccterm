@@ -16,16 +16,16 @@ import CoreText
 /// No copy button yet. It belongs here, next to the badge, and lands when the
 /// package grows a way to hit-test and click a region — the same layer selection
 /// dragging and link activation need.
-struct CodeBlock: Layout {
+struct CodeBlock: Block {
 
     /// The card's body. Monospaced at the body point size — the caller resolves
     /// that, because the size is the surrounding text's and not the card's.
-    let text: MarkdownText
+    let text: ShapedText
 
     /// The language chip's text, already typeset: one word that never wraps, so
     /// nothing about it depends on the width the card ends up at. Only where it
     /// sits does, and that is all `measure` computes.
-    let badge: MarkdownTextRun?
+    let badge: TypesetText?
 
     /// `#F5F5F7` light / `#2A2A2E` dark — one elevation tier above the window
     /// background in either mode, so the card reads as a raised surface.
@@ -53,13 +53,13 @@ struct CodeBlock: Layout {
     /// and the geometry around the chip read from the same number.
     static let badgeFontSize: CGFloat = 11
 
-    init(text: MarkdownText, badge: MarkdownTextRun? = nil) {
+    init(text: ShapedText, badge: TypesetText? = nil) {
         self.text = text
         self.badge = badge
     }
 
-    func measure(_ width: CGFloat) -> MarkdownBlock {
-        let run = text.run(width: max(1, width - horizontalPadding * 2))
+    func measure(_ width: CGFloat) -> MeasuredBlock {
+        let run = text.typeset(width: max(1, width - horizontalPadding * 2))
 
         let card = CGRect(
             x: 0, y: outerPadding,
@@ -117,14 +117,14 @@ struct CodeBlock: Layout {
         }
     }
 
-    /// A `MarkdownTextBlock`, so its whole selection surface is the inherited one — the
+    /// A `MeasuredTextBlock`, so its whole selection surface is the inherited one — the
     /// card and the chip are decoration, and `textOrigin` is what tells the
     /// default implementations where the selectable part starts.
-    struct Measured: MarkdownTextBlock, @unchecked Sendable {
+    struct Measured: MeasuredTextBlock, @unchecked Sendable {
 
         /// The language chip: a filled rounded rect with one pre-typeset run.
         struct Badge {
-            let run: MarkdownTextRun
+            let run: TypesetText
             /// Top-left of the run, in block-local coordinates.
             let textOrigin: CGPoint
             let rect: CGRect
@@ -132,7 +132,7 @@ struct CodeBlock: Layout {
             let backgroundColor: NSColor
         }
 
-        let run: MarkdownTextRun
+        let run: TypesetText
         let textOrigin: CGPoint
         let size: CGSize
         let card: CGRect
@@ -151,7 +151,7 @@ struct CodeBlock: Layout {
                     radius: cornerRadius, backgroundColor))
 
             list.append(
-                .run(run, at: CGPoint(x: origin.x + textOrigin.x, y: origin.y + textOrigin.y)))
+                .text(run, at: CGPoint(x: origin.x + textOrigin.x, y: origin.y + textOrigin.y)))
 
             guard let badge else { return }
             list.append(
@@ -159,7 +159,7 @@ struct CodeBlock: Layout {
                     roundedRect: badge.rect.offsetBy(dx: origin.x, dy: origin.y),
                     radius: badge.cornerRadius, badge.backgroundColor, phase: .overlay))
             list.append(
-                .run(
+                .text(
                     badge.run,
                     at: CGPoint(x: origin.x + badge.textOrigin.x, y: origin.y + badge.textOrigin.y),
                     phase: .overlay))

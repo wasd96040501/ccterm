@@ -7,7 +7,7 @@ import Markdown
 /// one place that says what a node this package doesn't draw degrades to. Add a
 /// shape to `MarkdownIR` and the arm goes here — and only here, because
 /// everything downstream switches over enums the compiler checks.
-enum MarkdownConvert {
+enum MarkdownParser {
 
     static func block(_ markup: Markdown.BlockMarkup) -> MarkdownIR.BlockNode? {
         switch markup {
@@ -167,6 +167,6 @@ extension MarkdownIR.Document {
     /// en dash.
     init(parsing source: String) {
         let document = Markdown.Document(parsing: source, options: [.disableSmartOpts])
-        self.init(blocks: MarkdownConvert.blocks(Array(document.blockChildren)))
+        self.init(blocks: MarkdownParser.blocks(Array(document.blockChildren)))
     }
 }

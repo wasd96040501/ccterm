@@ -1,8 +1,8 @@
 import AppKit
 
-/// A vertical run of layouts — and itself a `Layout`.
+/// A vertical run of blocks — and itself a `Block`.
 ///
-/// That last clause is the whole design. Because a stack is a layout, a stack
+/// That last clause is the whole design. Because a stack is a block, a stack
 /// can hold a stack, so a blockquote is a stack with a bar beside it, a list item
 /// is a stack behind a marker, and a document is a stack with nothing beside it.
 /// None of them re-implements stacking, and none writes a line of selection code.
@@ -21,17 +21,17 @@ import AppKit
 /// list's marker column widening to fit `10.`, a table's columns sizing to their
 /// widest cell — belongs to the type that wants it, which measures its parts and
 /// settles the number before any stack sees it.
-struct BlockStack: Layout {
+struct BlockStack: Block {
 
-    let children: [Layout]
+    let children: [Block]
     var spacing: CGFloat = 0
 
-    init(_ children: [Layout], spacing: CGFloat = 0) {
+    init(_ children: [Block], spacing: CGFloat = 0) {
         self.children = children
         self.spacing = spacing
     }
 
-    func measure(_ width: CGFloat) -> MarkdownBlock {
+    func measure(_ width: CGFloat) -> MeasuredBlock {
         var placed: [Measured.Child] = []
         placed.reserveCapacity(children.count)
 
@@ -51,10 +51,10 @@ struct BlockStack: Layout {
 
     /// A measured stack: its children, where each sits, and where each one's
     /// index space begins.
-    struct Measured: MarkdownBlock, @unchecked Sendable {
+    struct Measured: MeasuredBlock, @unchecked Sendable {
 
         struct Child {
-            let block: MarkdownBlock
+            let block: MeasuredBlock
 
             /// Top-left in the stack's coordinates.
             let origin: CGPoint
@@ -159,7 +159,7 @@ struct BlockStack: Layout {
         /// blocks, and neither does a paragraph — that is what being a separate
         /// block means.
         private func childRange(
-            at index: Int, _ ask: (MarkdownBlock, Int) -> Range<Int>
+            at index: Int, _ ask: (MeasuredBlock, Int) -> Range<Int>
         ) -> Range<Int> {
             guard let position = childIndex(containing: index) else { return index..<index }
             let child = children[position]

@@ -7,7 +7,7 @@ import XCTest
 ///
 /// Everything else in the suite can assume that selecting from A to B takes
 /// everything between them; a table is the counter-example the two-endpoint
-/// signature on `MarkdownBlock.rects(from:to:)` exists for. So these tests are
+/// signature on `MeasuredBlock.rects(from:to:)` exists for. So these tests are
 /// mostly about what a selection *excludes* — the cells a drag passed over on
 /// its way from one corner to the other, which are not part of the answer.
 ///
@@ -17,8 +17,8 @@ final class TableSelectionTests: XCTestCase {
 
     // MARK: - Fixtures
 
-    private func cell(_ text: String) -> MarkdownText {
-        MarkdownText(
+    private func cell(_ text: String) -> ShapedText {
+        ShapedText(
             text, attributes: [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)])
     }
 
@@ -36,7 +36,7 @@ final class TableSelectionTests: XCTestCase {
 
     /// Every cell's band, row-major — a whole-table selection is a rectangle over
     /// all of them, so this is also the assertion that the full range works.
-    private func bands(_ block: MarkdownBlock, count: Int) throws -> [CGRect] {
+    private func bands(_ block: MeasuredBlock, count: Int) throws -> [CGRect] {
         let rects = block.fullRects()
         // Throws rather than only failing: every test here indexes into what
         // comes back, so a wrong count has to stop the test instead of letting

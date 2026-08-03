@@ -3,7 +3,7 @@ import CoreText
 
 /// Text that has been shaped but not yet broken into lines.
 ///
-/// The recipe half of `MarkdownTextRun`, and the reason the split is worth
+/// The recipe half of `TypesetText`, and the reason the split is worth
 /// having: **shaping does not depend on width.** `CTTypesetterCreateWithAttributedString`
 /// does the expensive part — attribute itemisation, font matching and fallback,
 /// bidi analysis, glyph generation — and the only call that takes a width is
@@ -11,14 +11,14 @@ import CoreText
 /// resolved. Holding the typesetter here means a window resize re-breaks lines
 /// without re-shaping a single glyph.
 ///
-/// So this is what a `Layout` stores and `measure` consumes. A block that builds
+/// So this is what a `Block` stores and `measure` consumes. A block that builds
 /// one of these inside `measure` is doing width-independent work on the
 /// width-dependent path, which is the thing that boundary exists to prevent.
 ///
-/// `@unchecked Sendable` for the reason given on `MarkdownBlock`: `CTTypesetter`
+/// `@unchecked Sendable` for the reason given on `MeasuredBlock`: `CTTypesetter`
 /// and `NSAttributedString` are immutable and thread-safe once created, and
 /// nothing here mutates after `init`.
-struct MarkdownText: @unchecked Sendable {
+struct ShapedText: @unchecked Sendable {
 
     let attributed: NSAttributedString
 
@@ -35,7 +35,7 @@ struct MarkdownText: @unchecked Sendable {
         self.init(NSAttributedString(string: string, attributes: attributes))
     }
 
-    static let empty = MarkdownText(NSAttributedString())
+    static let empty = ShapedText(NSAttributedString())
 
     var isEmpty: Bool { typesetter == nil }
 
@@ -48,11 +48,11 @@ struct MarkdownText: @unchecked Sendable {
     /// origins then have to be un-flipped, and it wants a path sized in advance
     /// — which is the one thing not known yet when the height is what is being
     /// computed.
-    func run(width: CGFloat) -> MarkdownTextRun {
+    func typeset(width: CGFloat) -> TypesetText {
         guard let typesetter, width > 0 else { return .empty }
         let length = attributed.length
 
-        var lines: [MarkdownTextRun.Line] = []
+        var lines: [TypesetText.Line] = []
         var start = 0
         var y: CGFloat = 0
         var widest: CGFloat = 0
@@ -73,7 +73,7 @@ struct MarkdownText: @unchecked Sendable {
                 CTLineGetTypographicBounds(ctLine, &ascent, &descent, &leading))
 
             lines.append(
-                MarkdownTextRun.Line(
+                TypesetText.Line(
                     ctLine: ctLine,
                     origin: CGPoint(x: 0, y: y),
                     ascent: ascent, descent: descent, leading: leading,
@@ -84,7 +84,7 @@ struct MarkdownText: @unchecked Sendable {
             start += count
         }
 
-        return MarkdownTextRun(
+        return TypesetText(
             attributed: attributed,
             lines: lines,
             size: CGSize(width: widest, height: y),
@@ -103,6 +103,6 @@ struct MarkdownText: @unchecked Sendable {
     /// narrow pass for every paragraph in a document would cost more than it
     /// saves.
     func intrinsicWidths() -> (min: CGFloat, max: CGFloat) {
-        (min: run(width: 1).size.width, max: run(width: .greatestFiniteMagnitude).size.width)
+        (min: typeset(width: 1).size.width, max: typeset(width: .greatestFiniteMagnitude).size.width)
     }
 }

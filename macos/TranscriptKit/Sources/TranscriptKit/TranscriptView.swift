@@ -136,8 +136,8 @@ public final class TranscriptView: NSView {
     /// Row `row`'s markdown, parsed and measured at the current content width —
     /// or handed back from the cache, which is the usual case: `NSTableView` asks
     /// for a height and then, for the rows it is about to show, a view.
-    private func markdownBlock(forRow row: Int, source: String) -> MarkdownBlock {
-        rowCache.block(forRow: row, width: contentWidth) { MarkdownLayout.make(source) }
+    private func measuredBlock(forRow row: Int, source: String) -> MeasuredBlock {
+        rowCache.measuredBlock(forRow: row, width: contentWidth) { MarkdownBlockBuilder.make(source) }
     }
 
     /// How tall row `row` is. `.view` rows are the delegate's to measure; the
@@ -147,7 +147,7 @@ public final class TranscriptView: NSView {
         let answer: CGFloat
         switch dataSource?.transcriptView(self, contentForRow: row) {
         case .markdown(let source):
-            answer = markdownBlock(forRow: row, source: source).size.height
+            answer = measuredBlock(forRow: row, source: source).size.height
 
         case .view:
             guard let delegate else { return Self.minimumRowHeight }
@@ -191,8 +191,8 @@ public final class TranscriptView: NSView {
             // scrolling back into view rebuilds no constraints. Falls back to a
             // fresh instance when the pool hands over a cell that was serving a
             // `.view` row.
-            let markdown = cell.hostedView as? MarkdownCellView ?? MarkdownCellView()
-            markdown.configure(with: markdownBlock(forRow: row, source: source))
+            let markdown = cell.hostedView as? BlockView ?? BlockView()
+            markdown.configure(with: measuredBlock(forRow: row, source: source))
             hosted = markdown
 
         case .view:
@@ -218,7 +218,7 @@ public final class TranscriptView: NSView {
             // A self-drawn row's view is the transcript's own. Reporting it
             // would hand the host something it never supplied and cannot have
             // started work on.
-            !(hosted is MarkdownCellView)
+            !(hosted is BlockView)
         else { return }
         delegate?.transcriptView(self, didRemove: hosted, forRow: row)
     }
@@ -280,7 +280,7 @@ public final class TranscriptView: NSView {
     /// package's public surface — and so a host can't be handed the transcript
     /// as a data source for a table of its own. Owned here; the table refers to
     /// it weakly.
-    private lazy var tableAdapter = TableAdapter(transcript: self)
+    private lazy var tableAdapter = TableViewAdapter(transcript: self)
 
     // MARK: - Lifecycle
 
@@ -355,7 +355,7 @@ public final class TranscriptView: NSView {
     /// The narrowest the content column is allowed to get, default `0`.
     ///
     /// Below this the content stops following the viewport and stays centred,
-    /// with its edges clipped — the trade a layout makes when it has a width it
+    /// with its edges clipped — the trade a block makes when it has a width it
     /// cannot usefully go under (a table, a code block). `0` means it always
     /// follows.
     public var minContentWidth: CGFloat = 0 {
@@ -471,10 +471,10 @@ public final class TranscriptView: NSView {
         tableView.enumerateAvailableRowViews { [weak self] rowView, row in
             guard let self,
                 let cell = rowView.view(atColumn: 0) as? TranscriptCellView,
-                let markdown = cell.hostedView as? MarkdownCellView,
+                let markdown = cell.hostedView as? BlockView,
                 case .markdown(let source) = dataSource?.transcriptView(self, contentForRow: row)
             else { return }
-            markdown.remeasured(to: markdownBlock(forRow: row, source: source))
+            markdown.remeasured(to: measuredBlock(forRow: row, source: source))
         }
     }
 
@@ -973,7 +973,7 @@ public final class TranscriptView: NSView {
 /// surface next to three near-identically named row-count methods. Holds the
 /// transcript weakly — the transcript owns this, the table only refers to it.
 @MainActor
-private final class TableAdapter: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+private final class TableViewAdapter: NSObject, NSTableViewDataSource, NSTableViewDelegate {
 
     private weak var transcript: TranscriptView?
 

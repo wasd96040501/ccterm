@@ -7,7 +7,7 @@ import AppKit
 /// into a range, so "what lies between two points" is decided by the index space
 /// itself. A table's is not: dragging from the second column down two rows takes
 /// a *block* of cells, and the six cells the drag passed over on the way are not
-/// part of it. That is the whole reason `MarkdownBlock.rects(from:to:)` takes two
+/// part of it. That is the whole reason `MeasuredBlock.rects(from:to:)` takes two
 /// endpoints instead of a `Range` — a range has already asserted the linear
 /// answer, whereas endpoints leave the block that owns them free to decide. This
 /// type is the one that decides differently.
@@ -17,11 +17,11 @@ import AppKit
 /// for the same reason: leaving one cell is the user changing what they are
 /// pointing at, from glyphs to structure.
 ///
-/// **This is the one type besides `List` that negotiates.** A stack measures its
+/// **This is the one type besides `ListBuilder` that negotiates.** A stack measures its
 /// children independently and so cannot size a column to the widest cell in it;
 /// column widths are an agreement between siblings, settled here before anything
 /// is laid out, and never visible outside this file.
-struct Table: Layout {
+struct Table: Block {
 
     /// A column's horizontal alignment. GFM's "unspecified" is not a case of its
     /// own — it lays out exactly as leading does, and a distinction that changes
@@ -33,7 +33,7 @@ struct Table: Layout {
     /// The whole grid, header first, already squared off — source rows may be
     /// jagged, and short ones were padded with empty cells here so that nothing
     /// downstream has to ask whether a cell exists.
-    private let grid: [[MarkdownText]]
+    private let grid: [[ShapedText]]
 
     private let columnCount: Int
 
@@ -91,10 +91,10 @@ struct Table: Layout {
         .systemFont(ofSize: body.pointSize, weight: .semibold)
     }
 
-    init(header: [MarkdownText], rows: [[MarkdownText]], alignments: [Alignment]) {
+    init(header: [ShapedText], rows: [[ShapedText]], alignments: [Alignment]) {
         let columnCount = max(header.count, rows.map(\.count).max() ?? 0)
         let grid = ([header] + rows).map { row in
-            (0..<columnCount).map { $0 < row.count ? row[$0] : MarkdownText.empty }
+            (0..<columnCount).map { $0 < row.count ? row[$0] : ShapedText.empty }
         }
 
         self.columnCount = columnCount
@@ -114,7 +114,7 @@ struct Table: Layout {
 
     // MARK: - Measure
 
-    func measure(_ width: CGFloat) -> MarkdownBlock {
+    func measure(_ width: CGFloat) -> MeasuredBlock {
         guard columnCount > 0, width > 0 else { return Measured.empty(width: width) }
         let columns = columnWidths(within: width)
 
@@ -128,7 +128,7 @@ struct Table: Layout {
             // row's height is the tallest of them, and a cell cannot be given
             // its band until that is known.
             let runs = row.enumerated().map { column, cell in
-                cell.run(width: max(1, columns[column] - cellHorizontalPadding * 2))
+                cell.typeset(width: max(1, columns[column] - cellHorizontalPadding * 2))
             }
             let height = (runs.map(\.size.height).max() ?? 0) + cellVerticalPadding * 2
 
@@ -238,10 +238,10 @@ struct Table: Layout {
     // MARK: - Measured
 
     /// A measured table: its cells with their bands, and the card they sit on.
-    struct Measured: MarkdownBlock, @unchecked Sendable {
+    struct Measured: MeasuredBlock, @unchecked Sendable {
 
         struct Cell {
-            let run: MarkdownTextRun
+            let run: TypesetText
 
             /// Top-left of the run in block-local coordinates — the cell's
             /// padding and its column's alignment, already applied.
@@ -333,7 +333,7 @@ struct Table: Layout {
                 else { continue }
                 for cell in row {
                     list.append(
-                        .run(
+                        .text(
                             cell.run,
                             at: CGPoint(
                                 x: origin.x + cell.textOrigin.x, y: origin.y + cell.textOrigin.y)))
@@ -481,7 +481,7 @@ struct Table: Layout {
 
         /// Which cell owns a flat index, and where inside it.
         ///
-        /// Linear, like `MarkdownTextRun`'s line lookup and for the same reason: a
+        /// Linear, like `TypesetText`'s line lookup and for the same reason: a
         /// table that is large enough for the walk to matter is large enough that
         /// its typesetting dominates by orders of magnitude.
         private func position(of index: Int) -> Position {

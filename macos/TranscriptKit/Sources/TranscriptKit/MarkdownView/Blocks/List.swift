@@ -3,10 +3,10 @@ import AppKit
 /// A bulleted, numbered or task list: a marker column beside a stack of item
 /// contents.
 ///
-/// **Not a `Layout`.** Everything a list does is settled before any width is
+/// **Not a `Block`.** Everything a list does is settled before any width is
 /// known — render the markers, take the widest, and that is the column every item
 /// indents past. So it is a factory that hands back a `BlockStack` of rows, the
-/// same way `MarkdownLayout` hands back layouts: there is no measure-time
+/// same way `MarkdownBlockBuilder` hands back blocks: there is no measure-time
 /// behaviour left for it to own, and a type whose `measure` only forwards is a
 /// layer that costs a hop and explains nothing.
 ///
@@ -20,11 +20,11 @@ import AppKit
 /// copies the items' text and none of the furniture — what a reader expects, and
 /// what a browser does.
 ///
-/// An item's content is any `Layout`, so an item holds paragraphs, code blocks,
+/// An item's content is any `Block`, so an item holds paragraphs, code blocks,
 /// quotes, or another list, without this type knowing which. Nesting is not a
 /// mechanism of its own: a sub-list is simply one more block inside its parent
 /// item's content.
-enum List {
+enum ListBuilder {
 
     /// What a marker *says*. An input to `marker(_:font:color:)` and never
     /// stored: by the time a list is assembled, its markers are typeset runs and
@@ -37,7 +37,7 @@ enum List {
 
     /// What a marker *is*, once rendered.
     enum Marker {
-        case text(MarkdownTextRun)
+        case text(TypesetText)
         case checkbox(Checkbox)
 
         var width: CGFloat {
@@ -50,9 +50,9 @@ enum List {
 
     struct Item {
         let marker: Marker
-        let content: Layout
+        let content: Block
 
-        init(marker: Marker, content: Layout) {
+        init(marker: Marker, content: Block) {
             self.marker = marker
             self.content = content
         }
@@ -78,9 +78,9 @@ enum List {
         }
     }
 
-    private static func text(_ string: String, font: NSFont, color: NSColor) -> MarkdownTextRun {
-        MarkdownText(string, attributes: [.font: font, .foregroundColor: color])
-            .run(width: .greatestFiniteMagnitude)
+    private static func text(_ string: String, font: NSFont, color: NSColor) -> TypesetText {
+        ShapedText(string, attributes: [.font: font, .foregroundColor: color])
+            .typeset(width: .greatestFiniteMagnitude)
     }
 
     /// The list, as a stack of rows sharing one marker column.
@@ -102,14 +102,14 @@ enum List {
     }
 
     /// One item: its marker in the settled column, its content in the remainder.
-    private struct Row: Layout {
+    private struct Row: Block {
 
         let marker: Marker
         let markerColumn: CGFloat
         let gap: CGFloat
-        let content: Layout
+        let content: Block
 
-        func measure(_ width: CGFloat) -> MarkdownBlock {
+        func measure(_ width: CGFloat) -> MeasuredBlock {
             let indent = markerColumn + gap
             let inner = content.measure(max(1, width - indent))
             return Measured(
@@ -129,11 +129,11 @@ enum List {
                 size: CGSize(width: width, height: inner.size.height))
         }
 
-        struct Measured: MarkdownBlock, @unchecked Sendable {
+        struct Measured: MeasuredBlock, @unchecked Sendable {
 
             let marker: Marker
             let markerRightX: CGFloat
-            let content: MarkdownBlock
+            let content: MeasuredBlock
             let indent: CGFloat
             let firstLine: CGRect
             let size: CGSize
@@ -148,7 +148,7 @@ enum List {
                     // Same point size as the body, so sharing a top means
                     // sharing a baseline.
                     list.append(
-                        .run(
+                        .text(
                             run,
                             at: CGPoint(
                                 x: origin.x + markerRightX - run.size.width,

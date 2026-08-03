@@ -7,12 +7,12 @@ import AppKit
 /// nothing, which is the reason that IR exists as enums in the first place.
 ///
 /// Links are carried as an `.link` attribute rather than as a side-table of hit
-/// rectangles. `MarkdownTextRun` keeps the attributed string it typeset, so "which URL
+/// rectangles. `TypesetText` keeps the attributed string it typeset, so "which URL
 /// is under this point" is `index(at:)` followed by an attribute lookup — the
 /// hit-testing already written for selection, reused. The renderer this
 /// replaces kept a parallel `[LinkHit]` per layout and re-projected each one
 /// through every enclosing container by hand.
-enum MarkdownInline {
+enum MarkdownInlineBuilder {
 
     static func attributed(
         _ inlines: [MarkdownIR.InlineNode],

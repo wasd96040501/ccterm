@@ -2,11 +2,11 @@ import AppKit
 
 /// A horizontal rule.
 ///
-/// The first `MarkdownOpaqueBlock`, and the reason that protocol exists: a rule is
+/// The first `MeasuredOpaqueBlock`, and the reason that protocol exists: a rule is
 /// visible but holds no text, so it occupies zero positions in the index space.
 /// A drag straight through one selects the paragraphs on either side and picks up
 /// nothing in between — what a reader expects, and what a browser does.
-struct ThematicBreak: Layout {
+struct ThematicBreak: Block {
 
     var thickness: CGFloat = 1
 
@@ -23,7 +23,7 @@ struct ThematicBreak: Layout {
     /// neighbour is closer.
     var padding: CGFloat = 6
 
-    func measure(_ width: CGFloat) -> MarkdownBlock {
+    func measure(_ width: CGFloat) -> MeasuredBlock {
         Measured(
             size: CGSize(width: width, height: thickness + padding * 2),
             thickness: thickness,
@@ -31,7 +31,7 @@ struct ThematicBreak: Layout {
             color: color)
     }
 
-    struct Measured: MarkdownOpaqueBlock, @unchecked Sendable {
+    struct Measured: MeasuredOpaqueBlock, @unchecked Sendable {
 
         let size: CGSize
         let thickness: CGFloat

@@ -1,6 +1,6 @@
 import AppKit
 
-/// A block whose selectable content is one `MarkdownTextRun` — "I am a stack of typeset
+/// A block whose selectable content is one `TypesetText` — "I am a stack of typeset
 /// lines, possibly with some decoration around them."
 ///
 /// Paragraphs, headings, code blocks and table cells all are. Conforming costs
@@ -14,17 +14,17 @@ import AppKit
 /// renderer this replaces (`BlockquoteLayout.links` re-projecting hit rects,
 /// `ListLayout.Content` carrying an `originInList` per case); one place is the
 /// point.
-protocol MarkdownTextBlock: MarkdownBlock {
+protocol MeasuredTextBlock: MeasuredBlock {
 
     /// The typeset content.
-    var run: MarkdownTextRun { get }
+    var run: TypesetText { get }
 
     /// Where the run's top-left sits inside this block. Defaults to the block's
     /// own top-left, which is right for anything undecorated.
     var textOrigin: CGPoint { get }
 }
 
-extension MarkdownTextBlock {
+extension MeasuredTextBlock {
 
     var textOrigin: CGPoint { .zero }
 

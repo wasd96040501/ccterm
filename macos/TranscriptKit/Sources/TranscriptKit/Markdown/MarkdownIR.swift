@@ -12,7 +12,7 @@ import Foundation
 ///   case. Rendering is exactly where a missed case must not fail quietly — a
 ///   shape nobody handles simply doesn't appear on screen. These are enums.
 /// - **A narrowing, decided once.** cmark-gfm parses more than this package
-///   draws — footnotes, block directives, raw HTML. `MarkdownConvert` is the
+///   draws — footnotes, block directives, raw HTML. `MarkdownParser` is the
 ///   single place that says what each of those degrades to. Drawing off the AST
 ///   would scatter that decision across a `default` arm in every drawing
 ///   routine, to be answered slightly differently each time.
@@ -41,9 +41,10 @@ enum MarkdownIR {
 
     /// One unit of the document's vertical flow.
     ///
-    /// `Node` rather than bare `MarkdownBlock` for two reasons: it marks these as
-    /// syntax-tree values, distinct from the `…Layout` types that hold typeset
-    /// geometry; and `block` / `inline` are CommonMark's own terms, worth
+    /// `Node` rather than bare `Block` for two reasons: it marks these as
+    /// syntax-tree values, distinct from the `Block` / `MeasuredBlock` types
+    /// that hold layout and geometry; and `block` / `inline` are CommonMark's
+    /// own terms, worth
     /// keeping so the spec reads across.
     indirect enum BlockNode: Hashable, Sendable {
         case paragraph([InlineNode])

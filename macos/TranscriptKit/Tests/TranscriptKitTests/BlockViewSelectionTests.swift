@@ -11,7 +11,7 @@ import XCTest
 /// the selection renders in the unemphasised colour; no test here asserts a
 /// colour, only that something changed.
 @MainActor
-final class MarkdownCellSelectionTests: XCTestCase {
+final class BlockViewSelectionTests: XCTestCase {
 
     // MARK: - Harness
 

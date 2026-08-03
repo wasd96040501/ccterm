@@ -23,7 +23,7 @@ import XCTest
 /// So the prohibition on `NSFontManager` and friends is held by review, not by
 /// this file. Anything stronger would need the checker enabled in the test
 /// environment.
-final class OffMainLayoutTests: XCTestCase {
+final class OffMainMeasureTests: XCTestCase {
 
     private static let source = """
         # Heading

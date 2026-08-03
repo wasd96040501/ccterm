@@ -1,0 +1,132 @@
+import AppKit
+import TranscriptKit
+
+/// Data source and delegate for the demo: the script in `DemoMessage.swift`,
+/// plus the mutations the control panel drives.
+///
+/// Every mutation is the same two lines a real host writes — change the model,
+/// then announce the change — and each announcement is deliberately the
+/// index-based one rather than `reloadData()`, since that is what scroll
+/// anchoring applies to.
+@MainActor
+final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate {
+
+    private var messages: [DemoMessage] = DemoMessage.script
+    private var mutationCount = 0
+
+    weak var transcript: TranscriptView?
+    var onRowCountChange: ((Int) -> Void)?
+
+    // MARK: - Mutations
+
+    /// Above the viewport, wherever the viewport is: the case where holding the
+    /// content still is the whole point.
+    func prepend(_ count: Int) {
+        let inserted = (0..<count).map { index in
+            DemoMessage(author: .assistant, text: label("▲ prepended", index))
+        }
+        messages.insert(contentsOf: inserted, at: 0)
+        transcript?.insertRows(at: IndexSet(0..<count))
+        reportRowCount()
+    }
+
+    /// Below everything: the case where the answer depends on where the reader is
+    /// — at the end it follows, anywhere else it doesn't move.
+    func append() {
+        messages.append(DemoMessage(author: .user, text: label("▼ appended", 0)))
+        transcript?.insertRows(at: IndexSet(integer: messages.count - 1))
+        reportRowCount()
+    }
+
+    func removeTop(_ count: Int) {
+        let removed = min(count, messages.count)
+        guard removed > 0 else { return }
+        messages.removeFirst(removed)
+        transcript?.removeRows(at: IndexSet(0..<removed))
+        reportRowCount()
+    }
+
+    /// A row above the viewport changing height without changing identity — the
+    /// mutation that has no index set to shift, only geometry to compensate for.
+    func growFirstRow() {
+        guard !messages.isEmpty else { return }
+        let grown = String(repeating: "This row keeps growing. ", count: 6)
+        messages[0] = DemoMessage(
+            author: messages[0].author, text: "\(messages[0].text) \(grown)")
+        transcript?.reloadRows(at: IndexSet(integer: 0))
+    }
+
+    /// The same height change announced without re-rendering the row: the other
+    /// public path to it, and the one a hosted view uses when it grows itself.
+    func remeasureFirstRow() {
+        guard !messages.isEmpty else { return }
+        let grown = String(repeating: "Re-measured, not re-rendered. ", count: 4)
+        messages[0] = DemoMessage(
+            author: messages[0].author, text: "\(messages[0].text) \(grown)")
+        transcript?.noteHeightOfRows(withIndexesChanged: IndexSet(integer: 0))
+    }
+
+    /// Two mutations, one anchor: five rows in at the top and three out from just
+    /// below them, so the renumbering has to compose across the group.
+    func prependAndRemoveInOneBatch() {
+        // The removal is expressed in post-insert indices, so it needs three
+        // rows to exist below the five going in.
+        guard messages.count >= 8 else { return }
+        transcript?.beginUpdates()
+        prepend(5)
+        messages.removeSubrange(10..<13)
+        transcript?.removeRows(at: IndexSet(10..<13))
+        transcript?.endUpdates()
+        reportRowCount()
+    }
+
+    private func label(_ prefix: String, _ index: Int) -> String {
+        mutationCount += 1
+        return "\(prefix) #\(mutationCount).\(index) — watch whether this pushed the text you "
+            + "were reading off its line."
+    }
+
+    private func reportRowCount() {
+        onRowCountChange?(messages.count)
+    }
+
+    // MARK: - Data source and delegate
+
+    func numberOfRows(in transcriptView: TranscriptView) -> Int {
+        messages.count
+    }
+
+    /// Assistant turns go through the transcript's own markdown renderer; user
+    /// turns stay host-drawn bubbles. Mixing the two on purpose — they share one
+    /// recycling pool, and a cell handed back from the wrong kind of row is
+    /// exactly the failure that would otherwise only show up in an app.
+    func transcriptView(
+        _ transcriptView: TranscriptView, contentForRow row: Int
+    ) -> TranscriptRowContent {
+        switch messages[row].author {
+        case .assistant: return .markdown(messages[row].text)
+        case .user: return .view
+        }
+    }
+
+    /// Measured from the model at the width the transcript hands over — never by
+    /// building a view. The bubble's own constraints have to land on the same
+    /// number, or Auto Layout says so out loud.
+    func transcriptView(
+        _ transcriptView: TranscriptView, heightOfRow row: Int, width: CGFloat
+    ) -> CGFloat {
+        MessageBubbleView.height(for: messages[row], width: width)
+    }
+
+    func transcriptView(
+        _ transcriptView: TranscriptView, viewForRow row: Int
+    ) -> NSView {
+        let bubble = transcriptView.makeView(withIdentifier: .bubble) { MessageBubbleView() }
+        bubble.configure(with: messages[row])
+        return bubble
+    }
+}
+
+extension NSUserInterfaceItemIdentifier {
+    fileprivate static let bubble = NSUserInterfaceItemIdentifier("demo.bubble")
+}

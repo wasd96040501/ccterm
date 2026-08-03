@@ -24,8 +24,6 @@ import AppKit
 /// the several dozen places a rectangle crosses the boundary.
 final class BlockView: NSView {
 
-    static let identifier = NSUserInterfaceItemIdentifier("TranscriptKit.block")
-
     private(set) var block: MeasuredBlock?
 
     override var isFlipped: Bool { true }
@@ -36,7 +34,6 @@ final class BlockView: NSView {
 
     init() {
         super.init(frame: .zero)
-        identifier = Self.identifier
 
         // Layer-backed, and redrawn only when marked. Scrolling then composites
         // a rasterised bitmap rather than re-issuing `draw(_:)` for every strip

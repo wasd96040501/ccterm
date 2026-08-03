@@ -60,14 +60,25 @@ enum ListBuilder {
 
     /// Renders one marker. `font` matches the surrounding body face — a marker
     /// set at a different size sits on a different baseline from the line it
-    /// belongs to — and the checkbox takes just under its cap height: bigger
-    /// reads as a button, smaller fails to register as a control at all.
+    /// belongs to — and the checkbox takes GitHub's share of it: 13pt against the
+    /// 16pt body `.markdown-body` sets, so `13/16` of whatever body size is in
+    /// play here.
+    ///
+    /// **A ratio, where GitHub's is a constant.** A browser draws
+    /// `input[type=checkbox]` at 13px whether the surrounding text is 12px or
+    /// 24px — measured, not assumed — because a form control belongs to the
+    /// operating system rather than to the document, and the OS does not care
+    /// what font a page picked. That reasoning holds for a control a reader can
+    /// click, and stops holding here: this is a glyph in a rendered document, and
+    /// a glyph that stayed 13pt while the text around it grew would read as a
+    /// mistake. So the port takes GitHub's *proportion* and drops its pixel
+    /// count, and the two agree exactly at the size GitHub actually renders.
     static func marker(_ kind: Kind, font: NSFont, color: NSColor) -> Marker {
         switch kind {
         case .task(let checked):
             return .checkbox(
                 Checkbox(
-                    size: font.pointSize * 0.95, checked: checked,
+                    size: font.pointSize * 13 / 16, checked: checked,
                     fill: Checkbox.defaultFill, mark: Checkbox.defaultMark, border: color))
 
         case .bullet:

@@ -20,6 +20,9 @@ final class TranscriptViewGeometryTests: XCTestCase {
     /// not that the transcript is wrong.
     private static let windowSize = NSSize(width: 1100, height: 720)
     private static let maxContentWidth: CGFloat = 720
+    /// What one 40pt row costs in the document: its own height plus the gap the
+    /// transcript puts between rows. Row *n* starts at `n * rowPitch`.
+    private static let rowPitch: CGFloat = 40 + 14
 
     private func mount(rows: Int, rowHeight: CGFloat = 40) -> (MountedTranscript, RecordingHost) {
         let mounted = MountedTranscript(size: Self.windowSize)
@@ -40,10 +43,11 @@ final class TranscriptViewGeometryTests: XCTestCase {
         XCTAssertGreaterThan(host.viewCalls, 0, "the transcript never asked for a row view")
         XCTAssertEqual(mounted.transcript.numberOfRows, 24)
 
-        // Fixed row height, so row n starts at n * height.
+        // Fixed row height, so row n starts at n * pitch. A row rect carries the
+        // gap as well as the row — the table centres the 40pt cell in it.
         XCTAssertEqual(mounted.transcript.rect(ofRow: 0).origin.y, 0)
-        XCTAssertEqual(mounted.transcript.rect(ofRow: 3).origin.y, 120)
-        XCTAssertEqual(mounted.transcript.rect(ofRow: 3).height, 40)
+        XCTAssertEqual(mounted.transcript.rect(ofRow: 3).origin.y, 162)
+        XCTAssertEqual(mounted.transcript.rect(ofRow: 3).height, Self.rowPitch)
     }
 
     /// The eyeball anchor: 1100 wide, clamped at 720, content 720 and centred.
@@ -62,13 +66,33 @@ final class TranscriptViewGeometryTests: XCTestCase {
         }
     }
 
+    /// The gap between rows is the table's, and a row's content still gets
+    /// exactly the height the delegate answered for it. Worth pinning separately
+    /// because the wrong way to spend a gap — folding it into the height, so the
+    /// cell stretches to cover it — leaves the pitch and the document height
+    /// identical, and shows up only as every hosted view being 14pt taller than
+    /// it asked to be.
+    func testTheRowGapSeparatesRowsRatherThanStretchingThem() throws {
+        let (mounted, host) = mount(rows: 24)
+        defer { mounted.teardown() }
+
+        XCTAssertFalse(host.heightWidths.isEmpty, "the transcript never asked for a row height")
+        XCTAssertEqual(mounted.transcript.rect(ofRow: 3).height, Self.rowPitch)
+
+        let probes = mounted.transcript.descendants(ofType: RecordingHost.ProbeView.self)
+        XCTAssertFalse(probes.isEmpty, "no hosted view reached the view tree")
+        for probe in probes {
+            XCTAssertEqual(probe.frame.height, 40, "the gap was absorbed into the row's content")
+        }
+    }
+
     /// Only a screenful of views exists no matter how long the transcript is —
     /// the reason a row-based view beats a stack of everything.
     func testViewsRecycleRatherThanAccumulate() throws {
         let (mounted, host) = mount(rows: 500)
         defer { mounted.teardown() }
 
-        let onScreen = Int((Self.windowSize.height / 40).rounded(.up)) + 2
+        let onScreen = Int((Self.windowSize.height / Self.rowPitch).rounded(.up)) + 2
         XCTAssertLessThanOrEqual(host.builds, onScreen)
         XCTAssertLessThanOrEqual(
             mounted.transcript.descendants(ofType: RecordingHost.ProbeView.self).count, onScreen)

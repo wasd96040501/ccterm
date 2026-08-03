@@ -247,15 +247,37 @@ public final class TranscriptView: NSView {
         return scroll
     }()
 
+    /// The gap between two rows.
+    ///
+    /// A row's box is exactly its content — a document's first paragraph starts
+    /// at the top edge and a hosted bubble ends at the bottom one — so nothing
+    /// inside a row contributes to the gap, and the table adds all of it.
+    ///
+    /// Wider than the 12 two paragraphs of one document sit apart
+    /// (`MarkdownBlockBuilder.blockSpacing`), because a row boundary is where
+    /// the speaker changes and the hard-edged things that live in rows —
+    /// bubbles, cards, images — have no glyph leading around them to read as
+    /// part of the gap. Both numbers are the app transcript's, where a row is a
+    /// single block and each side carries its own half of the gap: 6 below a
+    /// paragraph, 8 above a user bubble.
+    ///
+    /// `NSTableView` splits it — the cell sits centred in a row rect this much
+    /// taller, so consecutive rows are `rowSpacing` apart and the first and last
+    /// get half of it against the document's edges. Two consequences worth
+    /// knowing before reading a number out of `rect(ofRow:)`: a row rect is its
+    /// content plus this, and a `scrollToRow` position lands that rect, so
+    /// `.bottom` leaves the half gap showing below the row.
+    private static let rowSpacing: CGFloat = 14
+
     private lazy var tableView: NSTableView = {
         let table = NSTableView()
         table.headerView = nil
         table.backgroundColor = .clear
         // No selection API on the transcript, so no selection to draw.
         table.selectionHighlightStyle = .none
-        // Rows are measured edge to edge; spacing between them belongs to the
-        // content, not to the table.
-        table.intercellSpacing = .zero
+        // Rows are measured edge to edge, so the gap between two of them is the
+        // table's to add — see `rowSpacing`.
+        table.intercellSpacing = NSSize(width: 0, height: Self.rowSpacing)
         // Already the default, and stated anyway because it picks the height
         // model: left on, the table measures cell views with Auto Layout and
         // never asks for a row height at all.

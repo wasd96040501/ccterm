@@ -17,9 +17,9 @@ import AppKit
 protocol MeasuredTextBlock: MeasuredBlock {
 
     /// The typeset content.
-    var run: TypesetText { get }
+    var text: TypesetText { get }
 
-    /// Where the run's top-left sits inside this block. Defaults to the block's
+    /// Where the text's top-left sits inside this block. Defaults to the block's
     /// own top-left, which is right for anything undecorated.
     var textOrigin: CGPoint { get }
 }
@@ -28,31 +28,34 @@ extension MeasuredTextBlock {
 
     var textOrigin: CGPoint { .zero }
 
-    var length: Int { run.length }
+    var length: Int { text.length }
 
     func index(at point: CGPoint) -> Int {
-        run.index(at: CGPoint(x: point.x - textOrigin.x, y: point.y - textOrigin.y))
+        text.index(at: CGPoint(x: point.x - textOrigin.x, y: point.y - textOrigin.y))
     }
 
     func rects(from: Int, to: Int) -> [CGRect] {
-        run.rects(from: from, to: to)
+        text.rects(from: from, to: to)
             .map { $0.offsetBy(dx: textOrigin.x, dy: textOrigin.y) }
     }
 
+    /// `self.` because the property and this method share a base name — legal,
+    /// since a method's full name includes its labels, but worth spelling out
+    /// rather than leaving a reader to wonder whether it recurses.
     func text(from: Int, to: Int) -> String {
-        run.text(from: from, to: to)
+        self.text.text(from: from, to: to)
     }
 
     func wordRange(at index: Int) -> Range<Int> {
-        guard run.length > 0 else { return index..<index }
-        let word = run.attributed.doubleClick(at: min(max(0, index), run.length - 1))
+        guard text.length > 0 else { return index..<index }
+        let word = text.attributed.doubleClick(at: min(max(0, index), text.length - 1))
         return word.lowerBound..<word.upperBound
     }
 
     func paragraphRange(at index: Int) -> Range<Int> {
-        guard run.length > 0 else { return index..<index }
-        let paragraph = (run.attributed.string as NSString).paragraphRange(
-            for: NSRange(location: min(max(0, index), run.length - 1), length: 0))
+        guard text.length > 0 else { return index..<index }
+        let paragraph = (text.attributed.string as NSString).paragraphRange(
+            for: NSRange(location: min(max(0, index), text.length - 1), length: 0))
         return paragraph.lowerBound..<paragraph.upperBound
     }
 }

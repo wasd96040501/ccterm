@@ -1,6 +1,6 @@
 import AppKit
 
-/// A run of text occupying one block of the vertical flow.
+/// Text occupying one block of the vertical flow.
 ///
 /// It holds no styling decisions. Fonts, colours and inline emphasis arrive
 /// already resolved on the `ShapedText`, which keeps "what does bold look
@@ -21,16 +21,16 @@ struct Paragraph: Block {
     }
 
     func measure(_ width: CGFloat) -> MeasuredBlock {
-        let run = text.typeset(width: width)
-        return Measured(run: run, textOrigin: .zero, size: CGSize(width: width, height: run.size.height))
+        let text = text.typeset(width: width)
+        return Measured(text: text, textOrigin: .zero, size: CGSize(width: width, height: text.size.height))
     }
 
     /// `size.width` is the width the paragraph was measured into, as distinct
-    /// from `run.size.width` — the widest line it happened to produce. A short
+    /// from `text.size.width` — the widest line it happened to produce. A short
     /// last line must not narrow the block, or anything aligned to its right edge
     /// would move with the text.
     struct Measured: MeasuredTextBlock, @unchecked Sendable {
-        let run: TypesetText
+        let text: TypesetText
         let textOrigin: CGPoint
         let size: CGSize
 
@@ -39,7 +39,7 @@ struct Paragraph: Block {
         /// the one to read first.
         func paint(at origin: CGPoint, dirty: CGRect, into list: inout [PaintItem]) {
             list.append(
-                .text(run, at: CGPoint(x: origin.x + textOrigin.x, y: origin.y + textOrigin.y)))
+                .text(text, at: CGPoint(x: origin.x + textOrigin.x, y: origin.y + textOrigin.y)))
         }
     }
 }

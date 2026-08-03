@@ -26,7 +26,7 @@ final class BlockStackSelectionTests: XCTestCase {
         Paragraph(Self.text(text))
     }
 
-    private func run(_ text: String, width: CGFloat = 400) -> TypesetText {
+    private func typeset(_ text: String, width: CGFloat = 400) -> TypesetText {
         Self.text(text).typeset(width: width)
     }
 
@@ -53,21 +53,21 @@ final class BlockStackSelectionTests: XCTestCase {
     // MARK: - One run
 
     func testRunTypesetsOneLinePerHardBreak() {
-        let run = run("alpha\nbeta")
-        XCTAssertEqual(run.lines.count, 2)
-        XCTAssertEqual(run.length, "alpha\nbeta".utf16.count)
+        let text = typeset("alpha\nbeta")
+        XCTAssertEqual(text.lines.count, 2)
+        XCTAssertEqual(text.length, "alpha\nbeta".utf16.count)
     }
 
     func testWrappingProducesMoreLinesThanTheSourceHas() {
-        let narrow = run(String(repeating: "word ", count: 60), width: 100)
+        let narrow = typeset(String(repeating: "word ", count: 60), width: 100)
         XCTAssertGreaterThan(narrow.lines.count, 1)
         XCTAssertLessThanOrEqual(narrow.size.width, 100)
     }
 
     func testIndexAtPointClampsAboveAndBelowTheRun() {
-        let run = run("alpha\nbeta")
-        XCTAssertEqual(run.index(at: CGPoint(x: 0, y: -50)), 0)
-        XCTAssertEqual(run.index(at: CGPoint(x: 10_000, y: 10_000)), run.length)
+        let text = typeset("alpha\nbeta")
+        XCTAssertEqual(text.index(at: CGPoint(x: 0, y: -50)), 0)
+        XCTAssertEqual(text.index(at: CGPoint(x: 10_000, y: 10_000)), text.length)
     }
 
     // MARK: - A measured block reports the width it was measured into
@@ -85,7 +85,7 @@ final class BlockStackSelectionTests: XCTestCase {
     /// A paragraph claims nothing: its box is its glyphs, and what separates two
     /// of them is the stack's `spacing` alone.
     func testParagraphClaimsNoSpaceOfItsOwn() {
-        let line = run("alpha").size.height
+        let line = typeset("alpha").size.height
         XCTAssertEqual(paragraph("alpha").measure(400).size.height, line, accuracy: 0.5)
 
         let stack = BlockStack([paragraph("alpha"), paragraph("beta")], spacing: 12).measure(400)

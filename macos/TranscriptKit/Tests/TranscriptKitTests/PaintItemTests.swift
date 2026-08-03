@@ -126,7 +126,7 @@ final class PaintItemTests: XCTestCase {
     /// than as a colour, since glyph coverage at a given pixel is Core Text's
     /// business and not a stable thing to pin.
     func testARunPaints() throws {
-        let run = ShapedText(
+        let text = ShapedText(
             "████",
             attributes: [
                 .font: NSFont.monospacedSystemFont(ofSize: 24, weight: .regular),
@@ -134,8 +134,8 @@ final class PaintItemTests: XCTestCase {
             ]
         ).typeset(width: 200)
 
-        let painted = try topmostColor(of: [.text(run, at: CGPoint(x: -2, y: -6))])
-        XCTAssertGreaterThan(painted.alphaComponent, 0.1, "the run put nothing on the canvas")
+        let painted = try topmostColor(of: [.text(text, at: CGPoint(x: -2, y: -6))])
+        XCTAssertGreaterThan(painted.alphaComponent, 0.1, "the text put nothing on the canvas")
     }
 
     // MARK: - Nothing paints immediately

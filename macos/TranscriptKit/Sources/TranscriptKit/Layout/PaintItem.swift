@@ -51,9 +51,9 @@ struct PaintItem {
     }
 
     enum Primitive {
-        /// A typeset run at its top-left. One item per *run*, never per line —
-        /// a two-thousand-line code block is one of these, and the run culls its
-        /// own lines against `dirty`. Emitting per line would turn a list of
+        /// Typeset text at its top-left. One item per *block of text*, never
+        /// per line — a two-thousand-line code block is one of these, and the
+        /// text culls its own lines against `dirty`. Emitting per line would turn a list of
         /// dozens into a list of thousands.
         case text(TypesetText, at: CGPoint)
 
@@ -74,11 +74,11 @@ extension PaintItem {
     /// site says the phase only where it is making a real choice — a selection
     /// band, a table's border.
     static func text(
-        _ run: TypesetText, at origin: CGPoint, phase: Phase = .content
+        _ text: TypesetText, at origin: CGPoint, phase: Phase = .content
     )
         -> PaintItem
     {
-        PaintItem(phase: phase, primitive: .text(run, at: origin))
+        PaintItem(phase: phase, primitive: .text(text, at: origin))
     }
 
     static func fill(_ rect: CGRect, _ color: NSColor, phase: Phase = .background) -> PaintItem {
@@ -144,8 +144,8 @@ extension PaintItem.Primitive {
 
     fileprivate func paint(in ctx: CGContext, dirty: CGRect) {
         switch self {
-        case .text(let run, let origin):
-            run.draw(at: origin, in: ctx, dirty: dirty)
+        case .text(let text, let origin):
+            text.draw(at: origin, in: ctx, dirty: dirty)
 
         case .fill(let rect, let color):
             ctx.setFillColor(color.cgColor)

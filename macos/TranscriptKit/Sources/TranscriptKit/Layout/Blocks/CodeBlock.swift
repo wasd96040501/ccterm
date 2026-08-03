@@ -59,14 +59,14 @@ struct CodeBlock: Block {
     }
 
     func measure(_ width: CGFloat) -> MeasuredBlock {
-        let run = text.typeset(width: max(1, width - horizontalPadding * 2))
+        let text = text.typeset(width: max(1, width - horizontalPadding * 2))
 
         let card = CGRect(
             x: 0, y: outerPadding,
-            width: width, height: verticalPadding * 2 + run.size.height)
+            width: width, height: verticalPadding * 2 + text.size.height)
 
         return Measured(
-            run: run,
+            text: text,
             textOrigin: CGPoint(x: horizontalPadding, y: card.minY + verticalPadding),
             size: CGSize(width: width, height: card.height + outerPadding * 2),
             card: card,
@@ -75,14 +75,14 @@ struct CodeBlock: Block {
             badge: placedBadge(width: width, cardTop: card.minY))
     }
 
-    /// Where the chip goes. The run itself arrived typeset — all that is left is
-    /// arithmetic against a width, which is why this is the only part of the chip
-    /// still on the `measure` path.
+    /// Where the chip goes. The chip's text arrived typeset — all that is left
+    /// is arithmetic against a width, which is why this is the only part of the
+    /// chip still on the `measure` path.
     private func placedBadge(width: CGFloat, cardTop: CGFloat) -> Measured.Badge? {
-        guard let run = badge, let line = run.lines.first else { return nil }
+        guard let badge, let line = badge.lines.first else { return nil }
         let ascent = line.ascent
         let descent = line.descent
-        let textWidth = run.size.width
+        let textWidth = badge.size.width
 
         let chipWidth = textWidth + badgeHorizontalPadding * 2
         let rect = CGRect(
@@ -94,9 +94,9 @@ struct CodeBlock: Block {
         guard rect.minX >= horizontalPadding else { return nil }
 
         return Measured.Badge(
-            run: run,
+            text: badge,
             // Centred in the chip: in a y-down layout the glyph box's top is
-            // `midY - (ascent + descent) / 2`. (A run is placed by its top-left;
+            // `midY - (ascent + descent) / 2`. (Text is placed by its top-left;
             // the baseline it derives from that is `top + ascent`, which is the
             // `midY + (ascent - descent) / 2` this used to state directly.)
             textOrigin: CGPoint(
@@ -122,17 +122,17 @@ struct CodeBlock: Block {
     /// default implementations where the selectable part starts.
     struct Measured: MeasuredTextBlock, @unchecked Sendable {
 
-        /// The language chip: a filled rounded rect with one pre-typeset run.
+        /// The language chip: a filled rounded rect with one pre-typeset text.
         struct Badge {
-            let run: TypesetText
-            /// Top-left of the run, in block-local coordinates.
+            let text: TypesetText
+            /// Top-left of the text, in block-local coordinates.
             let textOrigin: CGPoint
             let rect: CGRect
             let cornerRadius: CGFloat
             let backgroundColor: NSColor
         }
 
-        let run: TypesetText
+        let text: TypesetText
         let textOrigin: CGPoint
         let size: CGSize
         let card: CGRect
@@ -151,7 +151,7 @@ struct CodeBlock: Block {
                     radius: cornerRadius, backgroundColor))
 
             list.append(
-                .text(run, at: CGPoint(x: origin.x + textOrigin.x, y: origin.y + textOrigin.y)))
+                .text(text, at: CGPoint(x: origin.x + textOrigin.x, y: origin.y + textOrigin.y)))
 
             guard let badge else { return }
             list.append(
@@ -160,7 +160,7 @@ struct CodeBlock: Block {
                     radius: badge.cornerRadius, badge.backgroundColor, phase: .overlay))
             list.append(
                 .text(
-                    badge.run,
+                    badge.text,
                     at: CGPoint(x: origin.x + badge.textOrigin.x, y: origin.y + badge.textOrigin.y),
                     phase: .overlay))
         }

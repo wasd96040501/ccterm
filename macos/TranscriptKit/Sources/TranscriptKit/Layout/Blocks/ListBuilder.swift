@@ -27,7 +27,7 @@ import AppKit
 enum ListBuilder {
 
     /// What a marker *says*. An input to `marker(_:font:color:)` and never
-    /// stored: by the time a list is assembled, its markers are typeset runs and
+    /// stored: by the time a list is assembled, its markers are typeset text and
     /// drawn shapes.
     enum Kind {
         case bullet
@@ -42,7 +42,7 @@ enum ListBuilder {
 
         var width: CGFloat {
             switch self {
-            case .text(let run): return run.size.width
+            case .text(let text): return text.size.width
             case .checkbox(let box): return box.size
             }
         }
@@ -144,14 +144,14 @@ enum ListBuilder {
             /// against it either way.
             func paint(at origin: CGPoint, dirty: CGRect, into list: inout [PaintItem]) {
                 switch marker {
-                case .text(let run):
+                case .text(let text):
                     // Same point size as the body, so sharing a top means
                     // sharing a baseline.
                     list.append(
                         .text(
-                            run,
+                            text,
                             at: CGPoint(
-                                x: origin.x + markerRightX - run.size.width,
+                                x: origin.x + markerRightX - text.size.width,
                                 y: origin.y + firstLine.minY)))
 
                 case .checkbox(let box):

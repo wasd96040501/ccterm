@@ -50,12 +50,12 @@ struct Heading: Block {
     }
 
     func measure(_ width: CGFloat) -> MeasuredBlock {
-        let run = text.typeset(width: width)
+        let text = text.typeset(width: width)
         let extraTop = extraTop
         return Paragraph.Measured(
-            run: run,
+            text: text,
             textOrigin: CGPoint(x: 0, y: extraTop),
-            size: CGSize(width: width, height: extraTop + run.size.height))
+            size: CGSize(width: width, height: extraTop + text.size.height))
     }
 
     private static func clamp(_ level: Int) -> Int { max(1, min(6, level)) }

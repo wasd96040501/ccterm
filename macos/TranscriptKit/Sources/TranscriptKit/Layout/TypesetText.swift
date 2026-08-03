@@ -11,7 +11,7 @@ import CoreText
 /// adapter that turns one of these into a `MeasuredBlock`.
 ///
 /// Produced by `ShapedText.typeset(width:)`, never constructed from a string
-/// directly: the shaping a run is broken out of is width-independent and belongs
+/// directly: the shaping this is broken out of is width-independent and belongs
 /// to the recipe, so the only way to get one is to ask text that has already been
 /// shaped.
 ///
@@ -20,7 +20,7 @@ import CoreText
 /// here mutates after `make` returns — which is what lets a host typeset off the
 /// main actor.
 ///
-/// Coordinates are y-down with the origin at the run's top-left, matching the
+/// Coordinates are y-down with the origin at the text's top-left, matching the
 /// flipped views this ends up drawn into. Core Text's own line origins are
 /// y-up, and that conversion is confined to `make`.
 struct TypesetText: @unchecked Sendable {
@@ -30,21 +30,21 @@ struct TypesetText: @unchecked Sendable {
     struct Line: @unchecked Sendable {
         let ctLine: CTLine
 
-        /// Top-left of the line's box, in run-local (y-down) coordinates.
+        /// Top-left of the line's box, in text-local (y-down) coordinates.
         let origin: CGPoint
 
         let ascent: CGFloat
         let descent: CGFloat
         let leading: CGFloat
 
-        /// UTF-16 range into the run's string. Contiguous and gapless across
+        /// UTF-16 range into the text's string. Contiguous and gapless across
         /// lines — every character belongs to exactly one line, including the
         /// newline that ended it.
         let range: NSRange
 
         var height: CGFloat { ascent + descent + leading }
 
-        /// Baseline y in run-local coordinates.
+        /// Baseline y in text-local coordinates.
         var baseline: CGFloat { origin.y + ascent }
     }
 
@@ -52,9 +52,9 @@ struct TypesetText: @unchecked Sendable {
     let lines: [Line]
     let size: CGSize
 
-    /// The width this run was typeset against, which is not `size.width` — that
-    /// is the widest line actually produced. Held so a cache can tell "this run
-    /// is still valid" from "this run happens to be narrow".
+    /// The width this text was typeset against, which is not `size.width` — that
+    /// is the widest line actually produced. Held so a cache can tell "this text
+    /// is still valid" from "this text happens to be narrow".
     let typesetWidth: CGFloat
 
     static let empty = TypesetText(
@@ -87,7 +87,7 @@ struct TypesetText: @unchecked Sendable {
     var length: Int { attributed.length }
 
     /// The index nearest `point`, clamped in both axes: above the first line
-    /// resolves to its start, below the last to the run's end, past a line's
+    /// resolves to its start, below the last to the text's end, past a line's
     /// right edge to that line's end.
     func index(at point: CGPoint) -> Int {
         guard let line = lineIndex(atY: point.y).map({ lines[$0] }) else { return 0 }
@@ -132,7 +132,7 @@ struct TypesetText: @unchecked Sendable {
         guard !lines.isEmpty else { return nil }
         if y < 0 { return 0 }
 
-        // Linear rather than binary: a run is one paragraph, and the count is
+        // Linear rather than binary: one of these is one paragraph, and the count is
         // small enough that the search is dominated by the call that reaches
         // it. A code block long enough to change that answer would be the
         // reason to revisit — measure before assuming it is.

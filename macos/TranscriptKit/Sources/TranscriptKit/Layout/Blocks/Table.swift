@@ -127,25 +127,25 @@ struct Table: Block {
             // Every cell in the row is typeset before any of them is placed: the
             // row's height is the tallest of them, and a cell cannot be given
             // its band until that is known.
-            let runs = row.enumerated().map { column, cell in
+            let texts = row.enumerated().map { column, cell in
                 cell.typeset(width: max(1, columns[column] - cellHorizontalPadding * 2))
             }
-            let height = (runs.map(\.size.height).max() ?? 0) + cellVerticalPadding * 2
+            let height = (texts.map(\.size.height).max() ?? 0) + cellVerticalPadding * 2
 
             var laid: [Measured.Cell] = []
-            laid.reserveCapacity(runs.count)
+            laid.reserveCapacity(texts.count)
             var x: CGFloat = 0
-            for (column, run) in runs.enumerated() {
+            for (column, text) in texts.enumerated() {
                 let frame = CGRect(x: x, y: y, width: columns[column], height: height)
                 laid.append(
                     Measured.Cell(
-                        run: run,
+                        text: text,
                         textOrigin: CGPoint(
-                            x: textX(in: frame, runWidth: run.size.width, column: column),
+                            x: textX(in: frame, textWidth: text.size.width, column: column),
                             y: y + cellVerticalPadding),
                         frame: frame,
                         base: base))
-                base += run.length + 1
+                base += text.length + 1
                 x += columns[column]
             }
             cells.append(laid)
@@ -213,14 +213,14 @@ struct Table: Block {
     /// Where a cell's text starts, given its band and how wide the text came out.
     /// Trailing text falls back to the leading pad rather than tucking underneath
     /// it, for the column too narrow to hold its own content.
-    private func textX(in frame: CGRect, runWidth: CGFloat, column: Int) -> CGFloat {
+    private func textX(in frame: CGRect, textWidth: CGFloat, column: Int) -> CGFloat {
         switch column < alignments.count ? alignments[column] : .leading {
         case .leading:
             return frame.minX + cellHorizontalPadding
         case .center:
-            return frame.minX + max(0, (frame.width - runWidth) / 2)
+            return frame.minX + max(0, (frame.width - textWidth) / 2)
         case .trailing:
-            return frame.minX + max(cellHorizontalPadding, frame.width - cellHorizontalPadding - runWidth)
+            return frame.minX + max(cellHorizontalPadding, frame.width - cellHorizontalPadding - textWidth)
         }
     }
 
@@ -241,9 +241,9 @@ struct Table: Block {
     struct Measured: MeasuredBlock, @unchecked Sendable {
 
         struct Cell {
-            let run: TypesetText
+            let text: TypesetText
 
-            /// Top-left of the run in block-local coordinates — the cell's
+            /// Top-left of the text in block-local coordinates — the cell's
             /// padding and its column's alignment, already applied.
             let textOrigin: CGPoint
 
@@ -260,7 +260,7 @@ struct Table: Block {
             /// adjacent empty cells never decode to the same place. `length` is a
             /// count of positions, not of characters, which is what leaves room
             /// for this.
-            var lastIndex: Int { base + run.length }
+            var lastIndex: Int { base + text.length }
         }
 
         /// Row 0 is the header. Rectangular: every row holds the same count.
@@ -334,7 +334,7 @@ struct Table: Block {
                 for cell in row {
                     list.append(
                         .text(
-                            cell.run,
+                            cell.text,
                             at: CGPoint(
                                 x: origin.x + cell.textOrigin.x, y: origin.y + cell.textOrigin.y)))
                 }
@@ -400,20 +400,20 @@ struct Table: Block {
         func index(at point: CGPoint) -> Int {
             guard let cell = cell(at: point) else { return 0 }
             return cell.base
-                + cell.run.index(
+                + cell.text.index(
                     at: CGPoint(x: point.x - cell.textOrigin.x, y: point.y - cell.textOrigin.y))
         }
 
         /// Both endpoints decode back to a cell, and the pair of cells names a
         /// rectangle. One cell means the drag never left it, and the selection is
-        /// the run's own — character-precise. Anything wider is whole cells.
+        /// the text's own — character-precise. Anything wider is whole cells.
         func rects(from: Int, to: Int) -> [CGRect] {
             guard let (a, b) = corners(from, to) else { return [] }
 
             if a.row == b.row, a.column == b.column {
                 let cell = cells[a.row][a.column]
                 guard b.character > a.character else { return [] }
-                return cell.run.rects(from: a.character, to: b.character)
+                return cell.text.rects(from: a.character, to: b.character)
                     .map { $0.offsetBy(dx: cell.textOrigin.x, dy: cell.textOrigin.y) }
             }
 
@@ -429,11 +429,11 @@ struct Table: Block {
 
             if a.row == b.row, a.column == b.column {
                 guard b.character > a.character else { return "" }
-                return cells[a.row][a.column].run.text(from: a.character, to: b.character)
+                return cells[a.row][a.column].text.text(from: a.character, to: b.character)
             }
 
             return rectangle(a, b)
-                .map { row in row.map(\.run.attributed.string).joined(separator: "\t") }
+                .map { row in row.map(\.text.attributed.string).joined(separator: "\t") }
                 .joined(separator: "\n")
         }
 
@@ -441,9 +441,9 @@ struct Table: Block {
             guard length > 0 else { return index..<index }
             let at = position(of: index)
             let cell = cells[at.row][at.column]
-            guard cell.run.length > 0 else { return cell.base..<cell.base }
-            let word = cell.run.attributed.doubleClick(
-                at: min(at.character, cell.run.length - 1))
+            guard cell.text.length > 0 else { return cell.base..<cell.base }
+            let word = cell.text.attributed.doubleClick(
+                at: min(at.character, cell.text.length - 1))
             return (cell.base + word.lowerBound)..<(cell.base + word.upperBound)
         }
 
@@ -494,7 +494,7 @@ struct Table: Block {
             let row = cells.count - 1
             let column = cells[row].count - 1
             return Position(
-                row: row, column: column, character: cells[row][column].run.length)
+                row: row, column: column, character: cells[row][column].text.length)
         }
 
         /// Every cell inside the block the two corners span.

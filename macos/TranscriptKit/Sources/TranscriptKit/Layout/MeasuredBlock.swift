@@ -91,6 +91,16 @@ protocol MeasuredBlock: Sendable {
     /// knows about locales, CJK, hyphens and apostrophes.
     func wordRange(at index: Int) -> Range<Int>
 
+    /// The link under `point`, in block-local coordinates, or `nil`.
+    ///
+    /// No default implementation on purpose. A container that forgets to forward
+    /// this would not fail — its links would simply stop responding, which is
+    /// exactly the kind of quiet loss the closed enums elsewhere here exist to
+    /// prevent. Two protocols supply it for free (`MeasuredTextBlock` looks the
+    /// attribute up, `MeasuredOpaqueBlock` has nothing to find), so what is left
+    /// to write is the containers, where the offset is the whole of the work.
+    func link(at point: CGPoint) -> InlineLink?
+
     /// The paragraph containing `index` — what a triple-click takes.
     ///
     /// A *paragraph*, not a visual line, so wrapping never splits one. In

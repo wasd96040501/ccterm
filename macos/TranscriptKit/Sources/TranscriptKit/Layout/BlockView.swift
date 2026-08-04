@@ -26,6 +26,27 @@ final class BlockView: NSView {
 
     private(set) var block: MeasuredBlock?
 
+    /// A link in this row was clicked. Reported with the view rather than the row
+    /// index, because a row's index moves under it — the transcript resolves the
+    /// current one at the moment of the call.
+    ///
+    /// A closure, where §4 of the package's notes asks for a delegate: those two
+    /// protocols are the *host's* surface, and this crosses no such boundary —
+    /// `TranscriptView` builds these views itself. Handing the view back rather
+    /// than capturing it is what keeps the closure from retaining its own owner.
+    var onLinkActivated: ((BlockView, URL) -> Void)?
+
+    /// The link under the pointer changed. `nil` on leaving one.
+    ///
+    /// Reported rather than acted on: what a hover *shows* is the host's, and
+    /// this package draws none of it. Fires only when the answer changes, so a
+    /// listener may treat each call as an instruction rather than a sample.
+    var onLinkHovered: ((BlockView, URL?, CGPoint) -> Void)?
+
+    /// What the last report said, so a pointer sliding along one link is one
+    /// call and not one per mouse-moved event.
+    private var hovered: URL?
+
     override var isFlipped: Bool { true }
 
     /// Rows do not overlap and the transcript draws no background of its own, so
@@ -46,6 +67,16 @@ final class BlockView: NSView {
         // itself. Nothing here is exempt from that, including a width change.
         wantsLayer = true
         layerContentsRedrawPolicy = .onSetNeedsDisplay
+
+        // Once, not per `updateTrackingAreas` pass: `.inVisibleRect` is the option
+        // that tells AppKit to keep the area's rectangle synchronised with the
+        // view's visible rect itself, which is the whole reason not to re-register
+        // it by hand. The `rect` argument is ignored under that option.
+        addTrackingArea(
+            NSTrackingArea(
+                rect: .zero,
+                options: [.activeInKeyWindow, .inVisibleRect, .mouseMoved, .mouseEnteredAndExited],
+                owner: self))
     }
 
     @available(*, unavailable)
@@ -78,6 +109,7 @@ final class BlockView: NSView {
     /// would simply be stretched.
     func remeasured(to block: MeasuredBlock) {
         self.block = block
+
         needsDisplay = true
     }
 
@@ -99,6 +131,9 @@ final class BlockView: NSView {
     /// that does not move.
     private var anchor: Int?
     private var focus: Int?
+
+    /// The link the current press started on, if it started on one.
+    private var pressedLink: InlineLink?
 
     private var selection: Range<Int>? {
         guard let anchor, let focus, anchor != focus else { return nil }
@@ -123,6 +158,11 @@ final class BlockView: NSView {
         guard let block else { return super.mouseDown(with: event) }
         window?.makeFirstResponder(self)
 
+        // Remembered, not acted on. A press on a link is only a click if it does
+        // not become a drag and does not select anything — the same rule
+        // `NSTextView` uses, and the reason a link's text is still selectable.
+        pressedLink = block.link(at: convert(event.locationInWindow, from: nil))
+
         let index = block.index(at: convert(event.locationInWindow, from: nil))
         // Which unit a click means is the block's to answer — it owns the text
         // the boundaries are in. All this does is pick the question.
@@ -146,6 +186,59 @@ final class BlockView: NSView {
     /// would be reporting a boundary that does not exist.
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .iBeam)
+    }
+
+    /// Links get the pointing hand, and everything else takes the I-beam back.
+    ///
+    /// Driven from `mouseMoved` rather than from more cursor rects, because a
+    /// cursor rect is a rectangle and a link is not one — it wraps, so it is a
+    /// *set* of rectangles that only exists after the text is typeset. Asking the
+    /// block per move is the same point query activation uses, and keeps one
+    /// answer to "is this a link" instead of two that can disagree.
+    ///
+    /// `resetCursorRects` above still sets the I-beam: it covers entering the
+    /// view without moving inside it, which produces no `mouseMoved` at all.
+    override func mouseMoved(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let link = block?.link(at: point)
+        (link == nil ? NSCursor.iBeam : NSCursor.pointingHand).set()
+        report(link?.url, at: point)
+    }
+
+    /// The pointer left the row. Without this the last report would stand after
+    /// the pointer left through an edge, which produces no further `mouseMoved`
+    /// inside this view.
+    override func mouseExited(with event: NSEvent) {
+        report(nil, at: .zero)
+    }
+
+    /// Content slides out from under a stationary pointer, so the last report
+    /// stops being true before any move event says so.
+    override func scrollWheel(with event: NSEvent) {
+        report(nil, at: .zero)
+        super.scrollWheel(with: event)
+    }
+
+    /// Recycled into another row, or taken out of the hierarchy entirely.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { report(nil, at: .zero) }
+    }
+
+    private func report(_ url: URL?, at point: CGPoint) {
+        guard url != hovered else { return }
+        hovered = url
+        onLinkHovered?(self, url, point)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        defer { pressedLink = nil }
+        // `selection` non-nil covers both endings that are not a click: a drag
+        // that moved, and a double-click that took a word. Neither should open
+        // anything.
+        guard let link = pressedLink, selection == nil else { return super.mouseUp(with: event) }
+
+        onLinkActivated?(self, link.url)
     }
 
     override func mouseDragged(with event: NSEvent) {

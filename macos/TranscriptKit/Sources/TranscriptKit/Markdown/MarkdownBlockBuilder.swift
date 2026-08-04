@@ -23,7 +23,32 @@ enum MarkdownBlockBuilder {
     }
 
     static func make(_ document: MarkdownIR.Document, style: MarkdownStyle) -> Block {
-        stack(document.blocks, style: style, spacing: blockSpacing)
+        let body = stack(document.blocks, style: style, spacing: blockSpacing)
+        guard !document.footnotes.isEmpty else { return body }
+        return BlockStack(
+            [body, ThematicBreak(), notes(document.footnotes, style: style)],
+            spacing: blockSpacing)
+    }
+
+    /// The notes, under a rule at the foot of the document.
+    ///
+    /// An ordered list, because that is what it is: a numbered marker column
+    /// beside each note's own blocks. `ListBuilder` already settles the column
+    /// against the widest marker, so a document with ten notes lines `10.` up
+    /// with `9.` without this knowing that is a question.
+    private static func notes(
+        _ footnotes: [MarkdownIR.Document.Footnote], style: MarkdownStyle
+    ) -> Block {
+        ListBuilder.make(
+            items: footnotes.map { note in
+                ListBuilder.Item(
+                    marker: ListBuilder.marker(
+                        .ordinal(note.number), font: style.bodyFont,
+                        color: style.secondaryColor),
+                    content: stack(note.blocks, style: style, spacing: tightListSpacing))
+            },
+            spacing: tightListSpacing,
+            gap: style.bodyFont.pointSize * 0.5)
     }
 
     /// The gap between two blocks of a document — and the number the block types
@@ -37,11 +62,16 @@ enum MarkdownBlockBuilder {
     /// spacing does not need each child to carry half of every gap.
     private static let blockSpacing: CGFloat = 12
 
-    /// The gap inside a list, at every depth: between items, and between the
-    /// blocks within one item. `NativeTranscript2` states these as two constants
-    /// (`listItemSpacing`, `listIntraItemSpacing`) and gives both the same value,
-    /// so a list has one rhythm no matter how it is shaped.
-    private static let listSpacing: CGFloat = 6
+    /// The gap inside a **tight** list, at every depth: between items, and
+    /// between the blocks within one item. `NativeTranscript2` states these as
+    /// two constants (`listItemSpacing`, `listIntraItemSpacing`) and gives both
+    /// the same value, so a list has one rhythm no matter how it is shaped.
+    ///
+    /// A loose list uses `blockSpacing` instead — which is the whole of what
+    /// loose means. HTML gets there by wrapping each item's content in a `<p>`
+    /// and letting paragraph margins do the rest; with one number per stack, the
+    /// same outcome is one number.
+    private static let tightListSpacing: CGFloat = 6
 
     private static func stack(
         _ nodes: [MarkdownIR.BlockNode], style: MarkdownStyle, spacing: CGFloat
@@ -87,9 +117,11 @@ enum MarkdownBlockBuilder {
 
         case .list(let list):
             // The item's own blocks are stacked at the list's rhythm, not the
-            // document's — which is what makes every gap inside a list the same
-            // six, whether it separates two items, two paragraphs of one item, or
-            // an item from the sub-list under it.
+            // document's — which is what makes every gap inside one list match,
+            // whether it separates two items, two paragraphs of one item, or an
+            // item from the sub-list under it. Which rhythm that is, is the
+            // loose/tight distinction and nothing else.
+            let listSpacing = list.isTight ? tightListSpacing : blockSpacing
             return ListBuilder.make(
                 items: list.items.enumerated().map { index, item in
                     ListBuilder.Item(

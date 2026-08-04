@@ -195,6 +195,13 @@ enum ListBuilder {
 
             func text(from: Int, to: Int) -> String { content.text(from: from, to: to) }
 
+            /// The marker column holds no links — a bullet is furniture — so a
+            /// point in it lands left of the content's origin and finds nothing,
+            /// without this having to say so.
+            func link(at point: CGPoint) -> InlineLink? {
+                content.link(at: CGPoint(x: point.x - indent, y: point.y))
+            }
+
             func wordRange(at index: Int) -> Range<Int> { content.wordRange(at: index) }
             func paragraphRange(at index: Int) -> Range<Int> { content.paragraphRange(at: index) }
         }

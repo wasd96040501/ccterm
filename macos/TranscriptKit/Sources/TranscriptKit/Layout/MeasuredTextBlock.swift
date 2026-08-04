@@ -46,6 +46,10 @@ extension MeasuredTextBlock {
         self.text.text(from: from, to: to)
     }
 
+    func link(at point: CGPoint) -> InlineLink? {
+        text.link(at: CGPoint(x: point.x - textOrigin.x, y: point.y - textOrigin.y))
+    }
+
     func wordRange(at index: Int) -> Range<Int> {
         guard text.length > 0 else { return index..<index }
         let word = text.attributed.doubleClick(at: min(max(0, index), text.length - 1))

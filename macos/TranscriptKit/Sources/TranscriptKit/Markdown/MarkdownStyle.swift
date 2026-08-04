@@ -18,6 +18,14 @@ struct MarkdownStyle {
     var secondaryColor: NSColor
     var linkColor: NSColor
 
+    /// The glyph in front of a link, and the one standing in for an image.
+    ///
+    /// Proportions rather than images: an `NSImage` is main-thread work and this
+    /// struct is read while measuring, which runs anywhere. `InlineSymbol`
+    /// rasterises at draw time.
+    var linkSymbol: InlineSymbol.Design
+    var imageSymbol: InlineSymbol.Design
+
     /// Inline code's foreground, and the reason it needs no background: the hue
     /// *is* the signal. A tinted monospaced run reads as code against
     /// surrounding prose without a filled box interrupting the line — and a box
@@ -43,6 +51,8 @@ struct MarkdownStyle {
         textColor: .labelColor,
         secondaryColor: .secondaryLabelColor,
         linkColor: .linkColor,
+        linkSymbol: .link,
+        imageSymbol: .image,
         inlineCodeColor: NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
                 ? NSColor(srgbRed: 0x67 / 255, green: 0xB7 / 255, blue: 0xA4 / 255, alpha: 1)

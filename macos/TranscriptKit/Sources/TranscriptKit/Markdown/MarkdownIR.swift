@@ -12,13 +12,15 @@ import Foundation
 ///   case. Rendering is exactly where a missed case must not fail quietly — a
 ///   shape nobody handles simply doesn't appear on screen. These are enums.
 /// - **A narrowing, decided once.** cmark-gfm parses more than this package
-///   draws — footnotes, block directives, raw HTML. `MarkdownParser` is the
-///   single place that says what each of those degrades to. Drawing off the AST
-///   would scatter that decision across a `default` arm in every drawing
+///   draws — block directives, doxygen commands, raw HTML. `MarkdownParser` is
+///   the single place that says what each of those degrades to. Drawing off the
+///   AST would scatter that decision across a `default` arm in every drawing
 ///   routine, to be answered slightly differently each time.
-/// - **Additions the AST doesn't have.** A bare URL becomes `.link` here;
-///   there is no such node upstream. Doing it while parsing means once per
-///   edit rather than once per draw.
+/// - **Additions the AST doesn't have.** A bare URL becomes `.link` here and a
+///   `[^1]` becomes `.footnoteReference`; upstream has neither node. Doing it
+///   while parsing means once per edit rather than once per draw — and for
+///   footnotes it means the numbering is settled in one pass instead of being
+///   re-derived by whoever draws the marker and whoever draws the note.
 ///
 /// The tree carries no "these blocks can share one typeset run, those need
 /// their own geometry" distinction. Every `BlockNode` is one unit in a vertical
@@ -37,6 +39,25 @@ enum MarkdownIR {
     /// A parsed document — its top-level blocks in source order.
     struct Document: Hashable, Sendable {
         let blocks: [BlockNode]
+
+        /// The footnotes something in `blocks` refers to, numbered in the order
+        /// those references appear. Empty for almost every document.
+        ///
+        /// Beside the blocks rather than among them, because a footnote section
+        /// is not a block the author wrote — it is assembled from definitions
+        /// that were scattered through the source, and only whoever renders the
+        /// whole document is in a position to put it anywhere.
+        let footnotes: [Footnote]
+
+        struct Footnote: Hashable, Sendable {
+            let number: Int
+
+            /// The label as written, kept for nothing but debugging: two notes
+            /// never share one, and the number is what renders.
+            let label: String
+
+            let blocks: [BlockNode]
+        }
     }
 
     /// One unit of the document's vertical flow.
@@ -63,12 +84,28 @@ enum MarkdownIR {
         case strong([InlineNode])
         case strikethrough([InlineNode])
         case code(String)
-        case link(destination: String, children: [InlineNode])
-        case image(source: String, alt: String)
+
+        /// `title` is the quoted string in `[text](url "title")` — what a browser
+        /// shows on hover, and the only part of a link that has no glyphs of its
+        /// own. Carried rather than dropped because the renderer surfaces it as a
+        /// tooltip.
+        case link(destination: String, title: String?, children: [InlineNode])
+
+        /// `alt` is the bracket text, `title` the quoted one. Both are kept
+        /// because neither is reliably present and the renderer prefers `alt`,
+        /// which is the one authored for the case where the image isn't shown —
+        /// exactly this one.
+        case image(source: String, title: String?, alt: String)
 
         /// A hard break — trailing backslash or two spaces. Starts a new line
         /// inside the same block.
         case lineBreak
+
+        /// A `[^label]` whose definition was found. Carries the number rather
+        /// than the label because that is what renders, and because resolving it
+        /// twice — once to number the note, once to draw the marker — is how the
+        /// two drift apart.
+        case footnoteReference(label: String, number: Int)
 
         /// A newline in the source that CommonMark folds into a space. Kept
         /// distinct from `.text(" ")` so the typesetter can decide (it may want
@@ -81,6 +118,16 @@ enum MarkdownIR {
 
         /// The number the first item carries; `nil` when unordered.
         let startIndex: Int?
+
+        /// CommonMark's loose/tight distinction, which decides how much air the
+        /// items get: a tight list is one thought broken into lines, a loose one
+        /// is a run of paragraphs that happen to be numbered.
+        ///
+        /// Derived rather than read off the AST — cmark tracks it, but
+        /// swift-markdown exposes no `isTight`, so `MarkdownParser` recovers it
+        /// from source positions. Kept here anyway, because "how far apart do
+        /// these sit" is a property of the list and not of whoever draws it.
+        let isTight: Bool
 
         let items: [Item]
 

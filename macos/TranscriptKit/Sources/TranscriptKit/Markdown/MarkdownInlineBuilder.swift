@@ -67,23 +67,55 @@ enum MarkdownInlineBuilder {
                     .foregroundColor: style.inlineCodeColor,
                 ])
 
-        case .link(let destination, let children):
+        case .link(let destination, let title, let children):
+            // Glyph, not underline. A rule drawn under a run of prose competes
+            // with the descenders it crosses and says nothing about *what* was
+            // linked; a mark in front says it once, before the text, at the size
+            // of the text.
             let inner = NSMutableAttributedString(
-                attributedString: attributed(
-                    children, style: style, font: font, color: style.linkColor))
-            let whole = NSRange(location: 0, length: inner.length)
-            inner.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: whole)
-            if let url = URL(string: destination) {
-                inner.addAttribute(.link, value: url, range: whole)
-            }
-            return inner
+                attributedString: InlineSymbol(
+                    style.linkSymbol, font: font, color: style.linkColor
+                ).attributedString(font: font))
+            inner.append(attributed(children, style: style, font: font, color: style.linkColor))
+            return decorated(inner, destination: destination, title: title)
 
-        case .image(_, let alt):
-            // Inline images are not drawn yet. The alt text stands in, because a
-            // paragraph that silently loses a word reads as a rendering bug the
-            // reader cannot diagnose; visible alt text reads as a missing image.
+        case .image(let source, let title, let alt):
+            // Inline images are not fetched or drawn. A glyph and the image's own
+            // words stand in, styled like a link, because that is what it is: a
+            // reference to something that lives elsewhere.
+            //
+            // `alt` before `title` — alt is the text an author writes *for* the
+            // case where the image isn't shown, which is exactly this one — and
+            // neither is required, in which case the glyph carries it alone.
+            let caption = [alt, title ?? ""].first { !$0.isEmpty } ?? ""
+            let inner = NSMutableAttributedString(
+                attributedString: InlineSymbol(
+                    style.imageSymbol, font: font, color: style.linkColor
+                ).attributedString(font: font))
+            if !caption.isEmpty {
+                inner.append(
+                    NSAttributedString(
+                        string: caption,
+                        attributes: [.font: font, .foregroundColor: style.linkColor]))
+            }
+            return decorated(inner, destination: source, title: title)
+
+        case .footnoteReference(_, let number):
+            // Core Text's own superscript attribute, not `NSAttributedString`'s:
+            // the two spell the key differently and only `kCTSuperscript…` is
+            // read by a `CTTypesetter`, which is what does the work here.
+            //
+            // A mark, not a control. The number points at a note further down
+            // this same block rather than out of the document, so there is no
+            // destination a host could act on — and a cursor or a click that
+            // promised one would be promising something nothing here does.
             return NSAttributedString(
-                string: alt, attributes: [.font: font, .foregroundColor: style.secondaryColor])
+                string: "\(number)",
+                attributes: [
+                    .font: font,
+                    .foregroundColor: style.linkColor,
+                    NSAttributedString.Key(kCTSuperscriptAttributeName as String): 1,
+                ])
 
         case .lineBreak:
             // U+2028, not `\n`: a line separator breaks the line without ending
@@ -96,6 +128,29 @@ enum MarkdownInlineBuilder {
             // space rather than dropped so the words on either side stay apart.
             return NSAttributedString(string: " ", attributes: [.font: font])
         }
+    }
+}
+
+extension MarkdownInlineBuilder {
+
+    /// Hangs the destination off the whole run.
+    ///
+    /// `.link` rather than a side-table of hit rectangles. `TypesetText` keeps the
+    /// attributed string it typeset, so "which URL is under this point" is
+    /// `index(at:)` followed by an attribute lookup — the hit-testing already
+    /// written for selection, reused. A destination `URL` cannot parse is left
+    /// unmarked rather than mapped to something wrong: it still reads as a link,
+    /// it simply does not activate.
+    ///
+    /// The markdown *title* — `[text](url "title")` — is parsed but not carried:
+    /// hovering shows the destination, which is what a reader is deciding on, and
+    /// what a browser's status bar shows.
+    fileprivate static func decorated(
+        _ text: NSMutableAttributedString, destination: String, title: String?
+    ) -> NSAttributedString {
+        guard let url = URL(string: destination) else { return text }
+        text.addAttribute(.link, value: url, range: NSRange(location: 0, length: text.length))
+        return text
     }
 }
 

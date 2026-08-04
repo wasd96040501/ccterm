@@ -146,6 +146,17 @@ struct BlockStack: Block {
             return parts.joined(separator: "\n")
         }
 
+        /// Unlike `index(at:)`, this does **not** clamp to a child: a point in the
+        /// gap between two blocks is on neither of them, and a link is a thing
+        /// you are either pointing at or not.
+        func link(at point: CGPoint) -> InlineLink? {
+            guard let index = childIndex(atY: point.y) else { return nil }
+            let child = children[index]
+            guard child.frame.contains(point) else { return nil }
+            return child.block.link(
+                at: CGPoint(x: point.x - child.origin.x, y: point.y - child.origin.y))
+        }
+
         func wordRange(at index: Int) -> Range<Int> {
             childRange(at: index) { $0.wordRange(at: $1) }
         }

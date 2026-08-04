@@ -131,14 +131,40 @@ the gap under a paragraph, that a quote's bar starts and ends with its glyphs,
 that a code card has room to breathe. Those get read, not asserted, and
 markdown rendering is mostly made of them.
 
-So `DemoMessage.script` is seven real markdown documents rather than generated
+So `DemoMessage.script` is eight real markdown documents rather than generated
 filler, and between them they use every node in `MarkdownIR`: all six heading
-levels, ordered / unordered / task / nested lists with a start index, fenced
-code with and without a language plus an indented block, a table carrying all
-four alignments, nested blockquotes holding blocks of their own, thematic
-breaks, and one paragraph containing every inline node at once. **A shape
-missing from that script is a shape nobody is looking at** — landing a new one
-means adding it there too.
+levels, ordered / unordered / task / nested lists with a start index, tight
+lists beside loose ones, fenced code with and without a language plus a
+multi-word info string and an indented block, a table carrying all four
+alignments and a spanned cell, nested blockquotes holding blocks of their own,
+thematic breaks, footnotes in all four of their states (referenced, referred to
+twice, referenced-but-undefined, defined-but-unreferenced), images with alt /
+with title / with neither, and one paragraph containing every inline node at
+once. **A shape missing from that script is a shape nobody is looking at** —
+landing a new one means adding it there too.
+
+Some of what only the eye catches is *absence*: that `--amend` did not become
+`--amend`, that `socket.io` did not turn blue. `referencesAndNotes` exists to
+put those side by side, because a regression there reads as ordinary text and no
+assertion elsewhere is looking at it.
+
+**A hover is reported, not drawn** — `transcriptView(_:didHover:at:inRow:)`,
+and the demo's `LinkTooltip` is what puts a label on screen. That split is §4
+applied to something that looked like it wanted to live in here: the transcript
+knows which run the pointer is on and a host cannot, so that is what crosses;
+what the label looks like, whether it follows the pointer, whether it appears at
+all, are the host's.
+
+It also lands the testable half on the near side. A real hover cannot be
+provoked from a test — `xctest` never becomes the active application, so a
+tracking area scoped to the key window never arms, and no synthetic event
+substitutes for a pointer resting somewhere; measured, not assumed, after an
+afternoon of trying, and the same reason AppKit's own `addToolTip` is
+unreachable from here. But `mouseMoved` is an ordinary method, so the *report*
+is assertable: that it fires, that it says `nil` on the way out, and that
+sliding along one link is one call rather than seventy-three. What still needs
+eyes is only the demo's label — its material, where it sits, whether it flickers
+while scanning a paragraph.
 
 The `.view` bubbles interleaved with them are down to a handful on purpose:
 enough to keep both row kinds sharing one recycling pool, which is where a cell

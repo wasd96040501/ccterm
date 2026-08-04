@@ -125,6 +125,41 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
         bubble.configure(with: messages[row])
         return bubble
     }
+
+    // MARK: - Links
+
+    /// Opening it is the host's too, and this is the whole of what that takes.
+    ///
+    /// Guarded on a scheme because a document's links are not all addresses: the
+    /// demo's images point at `block-tree.png` and friends, which are relative
+    /// paths to files that do not exist. Handing one of those to the workspace
+    /// asks it to open something relative to nothing. A real host would resolve
+    /// them against wherever the document came from.
+    func transcriptView(
+        _ transcriptView: TranscriptView, didActivate url: URL, inRow row: Int
+    ) {
+        guard url.scheme != nil else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    /// Where a link goes, shown while the pointer is on it.
+    ///
+    /// The whole of what the transcript does here is *say which link* — this is
+    /// the host deciding to draw a label for it, and the demo exists partly to
+    /// show that the decision is the host's. An app might put the address in a
+    /// status bar, or nothing at all.
+    ///
+    /// The hover is reported on change only, so this is one call per link rather
+    /// than one per mouse-moved event, and `hide()` needs no state kept here.
+    func transcriptView(
+        _ transcriptView: TranscriptView, didHover url: URL?, at point: NSPoint, inRow row: Int
+    ) {
+        guard let url else { return tooltip.hide() }
+        let text = url.absoluteString
+        tooltip.show(text.removingPercentEncoding ?? text, at: point, in: transcriptView)
+    }
+
+    private let tooltip = LinkTooltip()
 }
 
 extension NSUserInterfaceItemIdentifier {

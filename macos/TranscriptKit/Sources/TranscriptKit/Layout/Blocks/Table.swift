@@ -437,6 +437,15 @@ struct Table: Block {
                 .joined(separator: "\n")
         }
 
+        /// Whichever cell the point is in answers in its own space. `cell(at:)`
+        /// clamps to the nearest edge cell, so the containment check is what keeps
+        /// a point outside the card from picking up its last cell's link.
+        func link(at point: CGPoint) -> InlineLink? {
+            guard let cell = cell(at: point), cell.frame.contains(point) else { return nil }
+            return cell.text.link(
+                at: CGPoint(x: point.x - cell.textOrigin.x, y: point.y - cell.textOrigin.y))
+        }
+
         func wordRange(at index: Int) -> Range<Int> {
             guard length > 0 else { return index..<index }
             let at = position(of: index)

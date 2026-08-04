@@ -74,6 +74,10 @@ struct Blockquote: Block {
 
         func text(from: Int, to: Int) -> String { content.text(from: from, to: to) }
 
+        func link(at point: CGPoint) -> InlineLink? {
+            content.link(at: CGPoint(x: point.x - indent, y: point.y))
+        }
+
         // No offset on these two: the content owns the whole index space, and the
         // indent is geometry.
         func wordRange(at index: Int) -> Range<Int> { content.wordRange(at: index) }

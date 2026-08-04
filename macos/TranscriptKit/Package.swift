@@ -4,7 +4,11 @@ import PackageDescription
 
 let package = Package(
     name: "TranscriptKit",
-    platforms: [.macOS(.v10_15)],
+    // 12 rather than the app's 14: the floor is what the code actually needs —
+    // `NSImage.SymbolConfiguration(paletteColors:)`, which is how an inline SF
+    // Symbol gets tinted. Raising it to match the app would be a restriction
+    // nothing in here can point at.
+    platforms: [.macOS(.v12)],
     products: [
         .library(name: "TranscriptKit", targets: ["TranscriptKit"])
     ],

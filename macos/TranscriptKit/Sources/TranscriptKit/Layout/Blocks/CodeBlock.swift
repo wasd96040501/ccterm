@@ -13,9 +13,10 @@ import CoreText
 /// early. Its opaque chip is what keeps it legible when that happens, which is
 /// why the chip is filled rather than drawn as text alone.
 ///
-/// No copy button yet. It belongs here, next to the badge, and lands when the
-/// package grows a way to hit-test and click a region — the same layer selection
-/// dragging and link activation need.
+/// No copy button yet. It belongs here, next to the badge, and the layer it was
+/// waiting on now exists: `MeasuredBlock.link(at:)` is a point query answered by
+/// the block that owns the geometry, and `BlockView` already turns a press into
+/// a click on one. A button is that shape with a closure where the `URL` is.
 struct CodeBlock: Block {
 
     /// The card's body. Monospaced at the body point size — the caller resolves

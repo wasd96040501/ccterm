@@ -13,6 +13,7 @@ extension MeasuredOpaqueBlock {
     func index(at point: CGPoint) -> Int { 0 }
     func rects(from: Int, to: Int) -> [CGRect] { [] }
     func text(from: Int, to: Int) -> String { "" }
+    func link(at point: CGPoint) -> InlineLink? { nil }
     func wordRange(at index: Int) -> Range<Int> { index..<index }
     func paragraphRange(at index: Int) -> Range<Int> { index..<index }
 }

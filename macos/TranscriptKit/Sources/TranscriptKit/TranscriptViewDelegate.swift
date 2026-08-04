@@ -126,6 +126,30 @@ public protocol TranscriptViewDelegate: AnyObject {
 
     /// A link inside a rendered row was activated.
     func transcriptView(_ transcriptView: TranscriptView, didActivate url: URL, inRow row: Int)
+
+    /// The link under the pointer changed — to `url`, or to `nil` on leaving one.
+    ///
+    /// **Reported, not drawn.** Showing the address is the host's: what it looks
+    /// like, whether it follows the pointer, how long it lingers and whether it
+    /// appears at all are product decisions, and a panel built in here would be
+    /// this package growing chrome it has no business owning (§4). What the
+    /// transcript knows and the host cannot is which run the pointer is on; that
+    /// is the whole of what crosses.
+    ///
+    /// Fires on **changes only**, not once per mouse-moved event, so a host may
+    /// treat each call as "show this" / "hide" without tracking state of its own.
+    /// Sliding along one link is one call. Leaving the row, scrolling under a
+    /// stationary pointer, and the row being recycled all report `nil`.
+    ///
+    /// `point` is in `transcriptView`'s coordinates — where the pointer was when
+    /// the answer changed — and is `.zero` when `url` is `nil`, which is a
+    /// position nobody needs.
+    ///
+    /// A footnote's number is not a link and never appears here. It is a mark:
+    /// no cursor change, no click, nothing to report — the note it refers to is
+    /// already on the page, a few lines further down.
+    func transcriptView(
+        _ transcriptView: TranscriptView, didHover url: URL?, at point: NSPoint, inRow row: Int)
 }
 
 extension TranscriptViewDelegate {
@@ -156,5 +180,9 @@ extension TranscriptViewDelegate {
 
     public func transcriptView(
         _ transcriptView: TranscriptView, didActivate url: URL, inRow row: Int
+    ) {}
+
+    public func transcriptView(
+        _ transcriptView: TranscriptView, didHover url: URL?, at point: NSPoint, inRow row: Int
     ) {}
 }

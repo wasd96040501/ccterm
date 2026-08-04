@@ -48,8 +48,20 @@ struct TypesetText: @unchecked Sendable {
         var baseline: CGFloat { origin.y + ascent }
     }
 
+    /// One inline symbol, and where it landed. Not part of `Line` because a
+    /// symbol is a property of the *text* rather than of the line that happened
+    /// to catch it — and because drawing them after every line is what keeps them
+    /// out of the text matrix Core Text needs flipped.
+    struct Symbol: @unchecked Sendable {
+        let symbol: InlineSymbol
+
+        /// The box the glyph is fitted into, in text-local (y-down) coordinates.
+        let rect: CGRect
+    }
+
     let attributed: NSAttributedString
     let lines: [Line]
+    let symbols: [Symbol]
     let size: CGSize
 
     /// The width this text was typeset against, which is not `size.width` — that
@@ -58,7 +70,7 @@ struct TypesetText: @unchecked Sendable {
     let typesetWidth: CGFloat
 
     static let empty = TypesetText(
-        attributed: NSAttributedString(), lines: [], size: .zero, typesetWidth: 0)
+        attributed: NSAttributedString(), lines: [], symbols: [], size: .zero, typesetWidth: 0)
 
     // MARK: - Draw
 
@@ -80,6 +92,15 @@ struct TypesetText: @unchecked Sendable {
         }
 
         ctx.restoreGState()
+
+        // After the glyphs, and outside the flipped text matrix: an image is
+        // placed by a rectangle rather than by a baseline, so it wants the same
+        // y-down space every other rectangle here is stated in.
+        for placement in symbols {
+            let rect = placement.rect.offsetBy(dx: origin.x, dy: origin.y)
+            guard rect.minY < dirty.maxY, rect.maxY > dirty.minY else { continue }
+            placement.symbol.draw(in: rect, into: ctx)
+        }
     }
 
     // MARK: - Selection
@@ -117,11 +138,60 @@ struct TypesetText: @unchecked Sendable {
         }
     }
 
+    /// An inline symbol occupies a real character, so a drag across one picks it
+    /// up; it is dropped here rather than at the drag, because the index space
+    /// has to stay a function of the string for the endpoints to survive a
+    /// re-measure. What reaches the pasteboard is the text a reader can see.
     func text(from: Int, to: Int) -> String {
         let lo = max(0, min(from, to))
         let hi = min(length, max(from, to))
         guard hi > lo else { return "" }
-        return attributed.attributedSubstring(from: NSRange(location: lo, length: hi - lo)).string
+        let slice = attributed.attributedSubstring(from: NSRange(location: lo, length: hi - lo))
+        guard !symbols.isEmpty else { return slice.string }
+        return slice.string.filter { $0 != InlineSymbol.placeholder }
+    }
+
+    /// The link under `point`, or `nil`.
+    ///
+    /// Two steps, and the second is the one that matters. `index(at:)` clamps —
+    /// a point past the end of a line resolves to that line's last character, a
+    /// point below the text to its end — so an attribute lookup on its own would
+    /// report a link for the empty space to the right of one. The index is
+    /// trusted only once the point is confirmed to be inside a rectangle the run
+    /// actually occupies, which is the same `rects(from:to:)` a selection draws.
+    func link(at point: CGPoint) -> InlineLink? {
+        guard !lines.isEmpty, length > 0, let index = characterIndex(at: point) else { return nil }
+
+        var range = NSRange()
+        guard let url = attributed.attribute(.link, at: index, effectiveRange: &range) as? URL,
+            rects(from: range.location, to: NSMaxRange(range))
+                .contains(where: { $0.contains(point) })
+        else { return nil }
+
+        return InlineLink(url: url)
+    }
+
+    /// The index of the character the point is **inside**, rather than the
+    /// insertion point nearest it.
+    ///
+    /// `index(at:)` answers the caret's question — a click in the right half of a
+    /// glyph puts the caret after it — and that is right for selection and wrong
+    /// for "what am I pointing at". The difference is invisible on a run of
+    /// several characters and total on a run of one: a footnote's superscript is
+    /// a single digit, and the caret index for a point anywhere past its middle
+    /// is the character *after* it, which carries none of its attributes.
+    private func characterIndex(at point: CGPoint) -> Int? {
+        guard let line = lineIndex(atY: point.y).map({ lines[$0] }) else { return nil }
+
+        let x = point.x - line.origin.x
+        let caret = CTLineGetStringIndexForPosition(line.ctLine, CGPoint(x: x, y: 0))
+        guard caret != kCFNotFound else { return nil }
+
+        var index = min(max(caret, line.range.location), NSMaxRange(line.range))
+        if index > line.range.location, CTLineGetOffsetForStringIndex(line.ctLine, index, nil) > x {
+            index -= 1
+        }
+        return min(index, length - 1)
     }
 
     // MARK: - Lookup

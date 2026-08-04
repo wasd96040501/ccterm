@@ -1,14 +1,16 @@
 import Foundation
 
-/// Splits bare URLs out of plain text into `.link` inlines.
+/// Splits bare URLs out of plain text into `.link` inlines — GFM's extended
+/// autolink extension, reimplemented.
 ///
-/// Only `http://` and `https://` survive the filter. `NSDataDetector` also
-/// reports bare domains and e-mail addresses, but in a transcript those read
-/// more often as a package or module name than as something worth clicking —
-/// `socket.io`, `sentry.io`, `deno.land` — while genuine URLs in model output
-/// essentially always carry a scheme. Filenames turn out not to be a concern
-/// either way: the detector declines `README.md`, `main.py`, `build.sh` and
-/// `config.json`, despite each ending in what is technically a TLD.
+/// Four shapes link, and they are exactly the ones the GFM spec lists:
+/// `http://…`, `https://…`, anything beginning `www.`, and an e-mail address.
+/// **A bare domain does not.** That is the spec's rule rather than a house
+/// preference, and it happens to be the one a transcript wants: `socket.io`,
+/// `sentry.io` and `deno.land` read as package names, not destinations. (Nor is
+/// `NSDataDetector` fooled by filenames — it declines `README.md`, `main.py`,
+/// `build.sh` and `config.json`, despite each ending in what is technically a
+/// TLD.)
 ///
 /// `MarkdownParser` must not call this inside `[…](url)` — that would nest a
 /// link within a link.
@@ -24,9 +26,10 @@ enum MarkdownAutolink {
     /// Returns a single `.text` when nothing matches, otherwise an alternating
     /// `.text` / `.link` sequence covering the whole input.
     static func split(_ text: String) -> [MarkdownIR.InlineNode] {
-        // Both accepted schemes contain "://", so most paragraphs bail out
-        // here without the detector ever running.
-        guard text.contains("://") else { return [.text(text)] }
+        // Every accepted shape contains one of these three, so most paragraphs
+        // bail out here without the detector ever running.
+        guard text.contains("://") || text.contains("@") || text.contains("ww")
+        else { return [.text(text)] }
         guard let detector = Self.detector else { return [.text(text)] }
 
         let ns = text as NSString
@@ -37,24 +40,21 @@ enum MarkdownAutolink {
         var result: [MarkdownIR.InlineNode] = []
         var cursor = 0
         for match in matches {
-            guard let scheme = match.url?.scheme?.lowercased() else { continue }
-            guard scheme == "http" || scheme == "https" else { continue }
-
             var range = match.range
             trimTrailingPunctuation(&range, in: ns)
             guard range.length > 0, range.location >= cursor else { continue }
+
+            let matched = ns.substring(with: range)
+            guard let destination = destination(for: matched, detected: match.url) else { continue }
 
             if range.location > cursor {
                 let head = ns.substring(
                     with: NSRange(location: cursor, length: range.location - cursor))
                 result.append(.text(head))
             }
-            // The matched text is its own destination. The scheme filter above
-            // guarantees it is already absolute, so normalising through
-            // `match.url` would buy nothing — and would give back exactly the
-            // character `trimTrailingPunctuation` just removed.
-            let urlText = ns.substring(with: range)
-            result.append(.link(destination: urlText, children: [.text(urlText)]))
+            // The matched text is what shows; only the destination may differ
+            // from it, and only for the two shapes that carry no scheme.
+            result.append(.link(destination: destination, title: nil, children: [.text(matched)]))
             cursor = range.location + range.length
         }
 
@@ -67,6 +67,37 @@ enum MarkdownAutolink {
     }
 
     // MARK: - Private
+
+    /// Where a matched run points, or `nil` when GFM would not link it at all.
+    ///
+    /// Decided from the **matched text** rather than from `NSDataDetector`'s
+    /// normalised `URL`, because the detector reports `example.com` and
+    /// `www.example.com` identically — both as `http://…` — and only the source
+    /// spelling separates the one GFM links from the one it leaves alone. The
+    /// `URL` is consulted for one thing: telling an address from a host, which
+    /// the detector already knows and which re-deriving would mean writing an
+    /// e-mail grammar.
+    private static func destination(for matched: String, detected: URL?) -> String? {
+        let lowered = matched.lowercased()
+
+        // Already absolute — and `trimTrailingPunctuation` has just removed a
+        // character that normalising through `detected` would hand back.
+        if lowered.hasPrefix("http://") || lowered.hasPrefix("https://")
+            || lowered.hasPrefix("mailto:")
+        {
+            return matched
+        }
+
+        // GFM's extended www autolink: the literal prefix is the whole
+        // qualification, and the destination it produces carries a scheme the
+        // source never had.
+        if lowered.hasPrefix("www.") { return "http://" + matched }
+
+        if detected?.scheme?.lowercased() == "mailto" { return "mailto:" + matched }
+
+        // A bare domain. GFM leaves it as text, and so do we.
+        return nil
+    }
 
     /// `NSDataDetector` inherits from `NSRegularExpression`, whose
     /// `matches(in:options:range:)` Apple documents as thread-safe — so one

@@ -53,6 +53,7 @@ struct ShapedText: @unchecked Sendable {
         let length = attributed.length
 
         var lines: [TypesetText.Line] = []
+        var symbols: [TypesetText.Symbol] = []
         var start = 0
         var y: CGFloat = 0
         var widest: CGFloat = 0
@@ -72,12 +73,30 @@ struct ShapedText: @unchecked Sendable {
             let lineWidth = CGFloat(
                 CTLineGetTypographicBounds(ctLine, &ascent, &descent, &leading))
 
+            let range = NSRange(location: start, length: count)
             lines.append(
                 TypesetText.Line(
                     ctLine: ctLine,
                     origin: CGPoint(x: 0, y: y),
                     ascent: ascent, descent: descent, leading: leading,
-                    range: NSRange(location: start, length: count)))
+                    range: range))
+
+            // Where each inline symbol landed, settled here because it is
+            // width-dependent — the same reason line origins are settled here and
+            // not on the recipe. Asking Core Text once per symbol, on the line
+            // that owns it, rather than re-deriving it on every repaint.
+            attributed.enumerateAttribute(.inlineSymbol, in: range) { value, at, _ in
+                guard let symbol = value as? InlineSymbol else { return }
+                symbols.append(
+                    TypesetText.Symbol(
+                        symbol: symbol,
+                        // The pen and the baseline are all this knows; where the
+                        // artwork goes relative to them is the symbol's own
+                        // arithmetic.
+                        rect: symbol.frame(
+                            pen: CTLineGetOffsetForStringIndex(ctLine, at.location, nil),
+                            baseline: y + ascent)))
+            }
 
             widest = max(widest, lineWidth)
             y += ascent + descent + leading
@@ -87,6 +106,7 @@ struct ShapedText: @unchecked Sendable {
         return TypesetText(
             attributed: attributed,
             lines: lines,
+            symbols: symbols,
             size: CGSize(width: widest, height: y),
             typesetWidth: width)
     }

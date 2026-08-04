@@ -193,6 +193,22 @@ public final class TranscriptView: NSView {
             // `.view` row.
             let markdown = cell.hostedView as? BlockView ?? BlockView()
             markdown.configure(with: measuredBlock(forRow: row, source: source))
+            // Re-bound on every pass rather than once at construction: the view
+            // is recycled, and `row` is captured only as the fallback for a
+            // lookup that can fail once the view has left the table.
+            markdown.onLinkActivated = { [weak self] view, url in
+                guard let self else { return }
+                let current = self.row(for: view)
+                self.delegate?.transcriptView(
+                    self, didActivate: url, inRow: current >= 0 ? current : row)
+            }
+            markdown.onLinkHovered = { [weak self] view, url, point in
+                guard let self else { return }
+                let current = self.row(for: view)
+                self.delegate?.transcriptView(
+                    self, didHover: url, at: self.convert(point, from: view),
+                    inRow: current >= 0 ? current : row)
+            }
             hosted = markdown
 
         case .view:

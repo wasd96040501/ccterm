@@ -20,14 +20,16 @@ extension DemoMessage {
     /// padding. Repeated lorem answers that question for one shape and hides it
     /// for every other.
     ///
-    /// Between them the seven documents use every node `MarkdownIR` has: all
-    /// six heading levels, ordered / unordered / task / nested lists with a
-    /// start index, fenced code with and without a language plus an indented
-    /// block, a table carrying all four alignments, nested blockquotes holding
-    /// blocks of their own, thematic breaks, and — in `inlineKitchenSink` — one
-    /// paragraph containing every inline node at once. A shape that renders
-    /// wrongly is visible on this screen; a shape missing from here is a shape
-    /// nobody is looking at.
+    /// Between them the eight documents use every node `MarkdownIR` has: all six
+    /// heading levels, ordered / unordered / task / nested lists with a start
+    /// index, tight lists beside loose ones, fenced code with and without a
+    /// language plus a multi-word info string and an indented block, a table
+    /// carrying all four alignments and a spanned cell, nested blockquotes
+    /// holding blocks of their own, thematic breaks, footnotes in all four of
+    /// their states, images with alt / with title / with neither, and — in
+    /// `inlineKitchenSink` — one paragraph containing every inline node at once.
+    /// A shape that renders wrongly is visible on this screen; a shape missing
+    /// from here is a shape nobody is looking at.
     static var script: [DemoMessage] {
         [
             .user("What shipped in 0.3?"),
@@ -43,6 +45,8 @@ extension DemoMessage {
             .user("Show me every list shape at once."),
             .assistant(listShapes),
             .assistant(inlineKitchenSink),
+            .user("And the things that only render right by accident?"),
+            .assistant(referencesAndNotes),
         ]
     }
 
@@ -147,10 +151,15 @@ extension DemoMessage {
         | KVO | 1:many | no | `NSKeyValueObservation` alive = observing |
         | Combine `@Published` | 1:many | no | `AnyCancellable` in a `Set` |
         | closure callback | 1:1 | yes | captured — mind `[weak self]` |
+        | [the docs](https://developer.apple.com/documentation/appkit "AppKit reference") ||| a link, and a cell spanning the rest |
 
         A table is the one shape whose selection is genuinely two-dimensional:
         dragging from *Cardinality* down two rows should take a rectangle, not a
         text range that swallows everything in between.
+
+        The last row is a `colspan`: cmark-gfm fills the columns a spanned cell
+        swallows with empty placeholders, so the grid stays rectangular and the
+        row simply reads as merged — there being no vertical rules to interrupt.
         """#
 
     /// Fenced code with a language, twice, plus an indented block.
@@ -175,9 +184,10 @@ extension DemoMessage {
         }
         ```
 
-        Run the suite before believing any of it:
+        Run the suite before believing any of it — and note that the chip reads
+        `bash`, not the whole info string:
 
-        ```bash
+        ```bash filename="run.sh" highlight=1
         make test-kit FILTER=MarkdownRowTests
         ```
 
@@ -261,6 +271,57 @@ extension DemoMessage {
           ```
 
         - Back to something ordinary, to close the list.
+
+        Every list above is **tight** — no blank line between its items, so they
+        sit six apart. A **loose** one is the same list with the blank lines left
+        in, and it breathes at the document's own twelve instead:
+
+        * Loose, because a blank line follows.
+
+        * Which CommonMark treats as a run of paragraphs that happen to be
+          numbered, rather than one thought broken into lines.
+
+        * cmark settles this while parsing and swift-markdown drops the answer,
+          so it is recovered here from source line numbers.
+        """#
+
+    /// Footnotes, the three shapes an image takes, the autolinks GFM makes and
+    /// the one it declines, and the punctuation that must reach the screen
+    /// unchanged.
+    fileprivate static let referencesAndNotes = #"""
+        ### References, notes, and things that must not change
+
+        Smart typography is off, and this is the line that proves it: run git
+        commit --amend, he said "hi", and so on ... Two hyphens stay two hyphens
+        rather than becoming an en dash, a straight quote stays straight, and
+        three periods stay three. In a transcript those are program output.
+
+        Bare domains stay text — socket.io, sentry.io and deno.land read as
+        package names, and GFM agrees: its extended autolink wants a literal
+        `www.` prefix or a scheme before it will link anything.
+
+        Images take three shapes. Alt beats title, because alt is what an author
+        writes *for* the case where the image is not shown — which is this one:
+
+        - Alt only: ![throughput over the last hour](chart.png)
+        - Title only: ![](chart.png "a title, standing in for absent alt text")
+        - Neither, so the glyph carries it alone: ![](chart.png)
+
+        Footnotes are numbered by first reference[^numbering], not by the order
+        their definitions appear[^order]. A reference with no definition[^missing]
+        stays as literal text, because dropping it would lose a word the author
+        typed; a definition nothing refers to renders as nothing at all.
+
+        [^order]: Defined first, numbered second — because `numbering` is
+            referred to before it.
+
+        [^numbering]: What GitHub does. A note holds blocks of its own:
+
+                ListBuilder.make(items: notes, spacing: 6, gap: 7)
+
+            including a second paragraph, indented four spaces under the first.
+
+        [^unused]: Nothing refers to this one, so it never reaches the screen.
         """#
 
     /// A single paragraph — here so the script has a short row among tall ones,
@@ -278,8 +339,10 @@ extension DemoMessage {
 
         Plain text, *emphasis*, **strong**, ***both together***, ~~struck
         through~~, `inline code`, an [explicit link](https://swiftpackageindex.com),
-        a bare https://github.com/apple/swift-markdown, and an image with no
-        renderer behind it yet: ![a diagram of the block tree](block-tree.png)
+        a [titled one](https://commonmark.org "Hover me — this is a link title"),
+        a bare https://github.com/apple/swift-markdown, an extended autolink at
+        www.commonmark.org, an address at core-team@swift.org, and an image
+        standing in for itself: ![a diagram of the block tree](block-tree.png)
 
         A soft break folds into a space,
         like the one before "like", whereas a hard break\

@@ -63,6 +63,23 @@ protocol MeasuredBlock: Sendable {
 
     /// How many positions this block occupies in its parent's flat index space.
     ///
+    /// **Positions, not characters.** The two coincide in a paragraph and are not
+    /// required to: a container that stitches its children's text together with a
+    /// separator may reserve a position for it, which is what lets an empty child
+    /// still be somewhere a selection can start. `Table` does reserve one and
+    /// `BlockStack` does not, each for a reason written where it packs — an empty
+    /// cell is a place, a thematic break is not.
+    ///
+    /// What the contract fixes is only this: every index in `0..<length` decodes
+    /// to exactly one place in this block, and a block agrees with itself about
+    /// where that place is — point at something, take the index back, and the
+    /// geometry that index reports contains the point. `IndexRoundTripTests` is
+    /// what holds it, and it is the test a wrong `base` in a container fails.
+    ///
+    /// Note what that does *not* claim: that every position is pointable. A
+    /// reserved separator has no glyph, so no point resolves to it — which is why
+    /// the property above is stated over points rather than over `0..<length`.
+    ///
     /// Content that cannot be selected contributes nothing: a list marker, a
     /// task checkbox, a rule, an image. They are drawn, not indexed.
     var length: Int { get }
@@ -91,15 +108,39 @@ protocol MeasuredBlock: Sendable {
     /// knows about locales, CJK, hyphens and apostrophes.
     func wordRange(at index: Int) -> Range<Int>
 
-    /// The link under `point`, in block-local coordinates, or `nil`.
+    /// The character the pointer is **inside**, in block-local coordinates, or
+    /// `nil` when it is inside none.
     ///
-    /// No default implementation on purpose. A container that forgets to forward
-    /// this would not fail — its links would simply stop responding, which is
-    /// exactly the kind of quiet loss the closed enums elsewhere here exist to
-    /// prevent. Two protocols supply it for free (`MeasuredTextBlock` looks the
-    /// attribute up, `MeasuredOpaqueBlock` has nothing to find), so what is left
-    /// to write is the containers, where the offset is the whole of the work.
-    func link(at point: CGPoint) -> InlineLink?
+    /// The pointing question, where `index(at:)` is the caret's. It declines
+    /// rather than clamps: the gap a short last line leaves, the padding around a
+    /// table's cells, the space past the end of a line are all places a caret has
+    /// to go somewhere and a pointer is on nothing. Keeping the two apart is what
+    /// stops a click to the right of a link from opening it — and it is why
+    /// `link(at:)` below has no geometry left to re-check.
+    func characterIndex(at point: CGPoint) -> Int?
+
+    /// The link covering `index`, or `nil`.
+    ///
+    /// The third member of the family `wordRange(at:)` and `paragraphRange(at:)`
+    /// belong to — *which positions does the thing containing this index cover* —
+    /// differing only in that a link may not be there, and that it carries a
+    /// destination alongside its range.
+    ///
+    /// It takes an index rather than a point because a query that **locates**
+    /// something has to hand back the location. The version this replaces returned
+    /// a bare destination from a point, which left every caller holding a link it
+    /// could not address, and made this the one member of the protocol with
+    /// nothing to translate — it looked like it obeyed the rules only because it
+    /// had discarded the thing the rules are about.
+    ///
+    /// No default implementation on purpose, here or on `characterIndex(at:)`. A
+    /// container that forgets to forward either would not fail — its links would
+    /// simply stop responding, which is exactly the kind of quiet loss the closed
+    /// enums elsewhere here exist to prevent. Two protocols supply both for free
+    /// (`MeasuredTextBlock` looks the attribute up, `MeasuredOpaqueBlock` has
+    /// nothing to find), so what is left to write is the containers, where the
+    /// offset and the lift are the whole of the work.
+    func link(at index: Int) -> InlineLink?
 
     /// The paragraph containing `index` — what a triple-click takes.
     ///
@@ -115,4 +156,14 @@ extension MeasuredBlock {
 
     /// The whole block selected.
     func fullRects() -> [CGRect] { rects(from: 0, to: length) }
+
+    /// The link under `point`, in block-local coordinates, or `nil`.
+    ///
+    /// Written **once**, here, rather than once per container — which is most of
+    /// what the split bought. Both halves are members every container already has
+    /// to implement, and how they compose is not a decision any container gets to
+    /// make differently.
+    func link(at point: CGPoint) -> InlineLink? {
+        characterIndex(at: point).flatMap { link(at: $0) }
+    }
 }

@@ -145,6 +145,9 @@ struct Table: Block {
                             y: y + cellVerticalPadding),
                         frame: frame,
                         base: base))
+                // One more than the cell holds — see `Cell.lastIndex`. `BlockStack`
+                // packs its children with no such slot, and says why there; a grid
+                // is the case where the empty thing is still a place.
                 base += text.length + 1
                 x += columns[column]
             }
@@ -439,11 +442,26 @@ struct Table: Block {
 
         /// Whichever cell the point is in answers in its own space. `cell(at:)`
         /// clamps to the nearest edge cell, so the containment check is what keeps
-        /// a point outside the card from picking up its last cell's link.
-        func link(at point: CGPoint) -> InlineLink? {
+        /// a point outside the card from picking up its last cell's glyphs.
+        func characterIndex(at point: CGPoint) -> Int? {
             guard let cell = cell(at: point), cell.frame.contains(point) else { return nil }
-            return cell.text.link(
-                at: CGPoint(x: point.x - cell.textOrigin.x, y: point.y - cell.textOrigin.y))
+            return
+                cell.text
+                .characterIndex(
+                    at: CGPoint(x: point.x - cell.textOrigin.x, y: point.y - cell.textOrigin.y)
+                )
+                .map { $0 + cell.base }
+        }
+
+        /// The same shape as `wordRange(at:)`: decode to a cell, ask it in its own
+        /// space, lift what comes back. A separator position decodes to a cell at
+        /// `character == text.length`, which the text declines — so the slots
+        /// between cells hold no link, which is what they are for.
+        func link(at index: Int) -> InlineLink? {
+            guard length > 0 else { return nil }
+            let at = position(of: index)
+            let cell = cells[at.row][at.column]
+            return cell.text.link(at: at.character).map { $0.lifted(by: cell.base) }
         }
 
         func wordRange(at index: Int) -> Range<Int> {

@@ -151,37 +151,59 @@ struct TypesetText: @unchecked Sendable {
         return slice.string.filter { $0 != InlineSymbol.placeholder }
     }
 
-    /// The link under `point`, or `nil`.
+    /// The link covering `index`, or `nil`.
     ///
-    /// Two steps, and the second is the one that matters. `index(at:)` clamps —
-    /// a point past the end of a line resolves to that line's last character, a
-    /// point below the text to its end — so an attribute lookup on its own would
-    /// report a link for the empty space to the right of one. The index is
-    /// trusted only once the point is confirmed to be inside a rectangle the run
-    /// actually occupies, which is the same `rects(from:to:)` a selection draws.
-    func link(at point: CGPoint) -> InlineLink? {
-        guard !lines.isEmpty, length > 0, let index = characterIndex(at: point) else { return nil }
-
-        var range = NSRange()
-        guard let url = attributed.attribute(.link, at: index, effectiveRange: &range) as? URL,
-            rects(from: range.location, to: NSMaxRange(range))
-                .contains(where: { $0.contains(point) })
+    /// A **pure attribute lookup**. Whether the point that produced this index was
+    /// on a glyph at all is `characterIndex(at:)`'s question, asked once, there;
+    /// re-checking any geometry here is how two answers to one question come to
+    /// disagree.
+    /// **`longestEffectiveRange`, not `effectiveRange`.** The latter is only
+    /// documented to return *an* extent over which the attribute holds, not the
+    /// widest one, and `NSAttributedString` takes that liberty: the inline builder
+    /// sets attributes per node, so a link's run is split wherever anything else
+    /// about the text changes, and the answer comes back one character wide.
+    ///
+    /// That went unnoticed while the range was only used to confirm the point was
+    /// on the run — a one-character range still contains the character being
+    /// pointed at. It stops being invisible the moment anyone draws the range.
+    ///
+    /// The cheap lookup runs first so that prose pays for the widening only when
+    /// there is a link to widen; over a code block of a few thousand lines with no
+    /// links in it, the difference is the whole scan.
+    func link(at index: Int) -> InlineLink? {
+        guard index >= 0, index < length,
+            let url = attributed.attribute(.link, at: index, effectiveRange: nil) as? URL
         else { return nil }
 
-        return InlineLink(url: url)
+        var range = NSRange()
+        _ = attributed.attribute(
+            .link, at: index, longestEffectiveRange: &range,
+            in: NSRange(location: 0, length: length))
+
+        return InlineLink(url: url, range: range.lowerBound..<range.upperBound)
     }
 
-    /// The index of the character the point is **inside**, rather than the
-    /// insertion point nearest it.
+    /// The character the point is **inside**, or `nil` when it is inside none.
     ///
-    /// `index(at:)` answers the caret's question — a click in the right half of a
-    /// glyph puts the caret after it — and that is right for selection and wrong
-    /// for "what am I pointing at". The difference is invisible on a run of
-    /// several characters and total on a run of one: a footnote's superscript is
-    /// a single digit, and the caret index for a point anywhere past its middle
-    /// is the character *after* it, which carries none of its attributes.
-    private func characterIndex(at point: CGPoint) -> Int? {
-        guard let line = lineIndex(atY: point.y).map({ lines[$0] }) else { return nil }
+    /// Two things separate this from `index(at:)`, and both are load-bearing.
+    ///
+    /// The first is which question it answers. `index(at:)` answers the caret's —
+    /// a click in the right half of a glyph puts the caret after it — and that is
+    /// right for selection and wrong for "what am I pointing at". The difference
+    /// is invisible on a run of several characters and total on a run of one: a
+    /// footnote's superscript is a single digit, and the caret index for a point
+    /// anywhere past its middle is the character *after* it, which carries none of
+    /// its attributes.
+    ///
+    /// The second is that this one may **decline**. `index(at:)` clamps in both
+    /// axes because every click has to resolve to somewhere a caret can go;
+    /// pointing is not like that — above the text, below it, and in the space a
+    /// short last line leaves to its right are all places where the honest answer
+    /// is "no character". Putting that check here rather than at each caller is
+    /// the point of the split: it is the difference between the two questions, not
+    /// a detail of whoever happens to be asking.
+    func characterIndex(at point: CGPoint) -> Int? {
+        guard length > 0, let line = lineIndex(atY: point.y).map({ lines[$0] }) else { return nil }
 
         let x = point.x - line.origin.x
         let caret = CTLineGetStringIndexForPosition(line.ctLine, CGPoint(x: x, y: 0))
@@ -191,7 +213,20 @@ struct TypesetText: @unchecked Sendable {
         if index > line.range.location, CTLineGetOffsetForStringIndex(line.ctLine, index, nil) > x {
             index -= 1
         }
-        return min(index, length - 1)
+        index = min(index, length - 1)
+
+        return rect(of: index, on: line).contains(point) ? index : nil
+    }
+
+    /// One character's box, taken from the line already in hand rather than
+    /// through `rects(from:to:)` — that walks every line, and this runs on every
+    /// mouse-moved event, including over a code block of a few thousand.
+    private func rect(of index: Int, on line: Line) -> CGRect {
+        let x1 = CTLineGetOffsetForStringIndex(line.ctLine, index, nil)
+        let x2 = CTLineGetOffsetForStringIndex(line.ctLine, index + 1, nil)
+        return CGRect(
+            x: line.origin.x + min(x1, x2), y: line.origin.y,
+            width: abs(x2 - x1), height: line.height)
     }
 
     // MARK: - Lookup

@@ -43,6 +43,13 @@ struct BlockStack: Block {
             if !placed.isEmpty { y += spacing }
             placed.append(Measured.Child(block: block, origin: CGPoint(x: 0, y: y), base: base))
             y += block.size.height
+            // Packed **contiguously** — no slot reserved for the newline
+            // `text(from:to:)` puts between two children. `Table` reserves one and
+            // says why; the difference is what the two are made of. An empty cell
+            // is a place a reader means to select; a thematic break is not, and
+            // giving it a position would let a drag stop *on* the rule and copy a
+            // stray newline for it. The cost is that a zero-length child is
+            // unreachable, which is exactly the intent.
             base += block.length
         }
 
@@ -147,14 +154,26 @@ struct BlockStack: Block {
         }
 
         /// Unlike `index(at:)`, this does **not** clamp to a child: a point in the
-        /// gap between two blocks is on neither of them, and a link is a thing
-        /// you are either pointing at or not.
-        func link(at point: CGPoint) -> InlineLink? {
+        /// gap between two blocks is on neither of them, and a character is a
+        /// thing you are either pointing at or not.
+        func characterIndex(at point: CGPoint) -> Int? {
             guard let index = childIndex(atY: point.y) else { return nil }
             let child = children[index]
             guard child.frame.contains(point) else { return nil }
-            return child.block.link(
-                at: CGPoint(x: point.x - child.origin.x, y: point.y - child.origin.y))
+            return
+                child.block
+                .characterIndex(
+                    at: CGPoint(x: point.x - child.origin.x, y: point.y - child.origin.y)
+                )
+                .map { $0 + child.base }
+        }
+
+        /// The mirror of the above, and the same shape as `childRange(at:)`: find
+        /// whose index it is, ask them in their own space, lift what comes back.
+        func link(at index: Int) -> InlineLink? {
+            guard let position = childIndex(containing: index) else { return nil }
+            let child = children[position]
+            return child.block.link(at: index - child.base).map { $0.lifted(by: child.base) }
         }
 
         func wordRange(at index: Int) -> Range<Int> {

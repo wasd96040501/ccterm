@@ -83,12 +83,39 @@ final class LinkActivationTests: XCTestCase {
         XCTAssertNil(block.link(at: CGPoint(x: 1, y: rect.midY)))
     }
 
+    // MARK: - Pointing at nothing
+    //
+    // `characterIndex(at:)` is the half of the split that may decline, and the
+    // contract that keeps a click to the right of a link from opening it. Its
+    // counterpart `index(at:)` clamps, so asserting the two against the same point
+    // is what shows they are answering different questions rather than one being a
+    // convenience over the other.
+
+    func testPointingBesideTheTextIsPointingAtNothing() throws {
+        let block = measured("[word](https://example.com)")
+        let rect = try XCTUnwrap(block.fullRects().first)
+        let beside = CGPoint(x: rect.maxX + 60, y: rect.midY)
+
+        XCTAssertNil(block.characterIndex(at: beside))
+        // The same point still has to resolve for a caret — a drag that ends out
+        // here selects to the end of the line rather than selecting nothing.
+        XCTAssertGreaterThan(block.index(at: beside), 0)
+    }
+
+    func testPointingBelowTheTextIsPointingAtNothing() throws {
+        let block = measured("[word](https://example.com)")
+        let rect = try XCTUnwrap(block.fullRects().first)
+        XCTAssertNil(block.characterIndex(at: CGPoint(x: rect.midX, y: rect.maxY + 40)))
+    }
+
     // MARK: - What a link carries
 
-    /// The destination and nothing else. A markdown title — `[a](b "title")` —
-    /// is parsed and dropped: what to *show* for a link is the host's, reached
-    /// through the delegate, and a second string riding along here would be this
-    /// package deciding for it.
+    /// The destination and where it sits — no title. A markdown title —
+    /// `[a](b "title")` — is parsed and dropped: what to *show* for a link is the
+    /// host's, reached through the delegate, and a second string riding along here
+    /// would be this package deciding for it. The range is not a third thing of
+    /// that kind; it is the location of the thing that was found, which a query
+    /// that locates something owes its caller.
     func testALinkCarriesItsDestinationAlone() throws {
         let titled = measured(#"[word](https://example.com "Read this")"#)
         let plain = measured("[word](https://example.com)")

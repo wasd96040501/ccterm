@@ -46,9 +46,12 @@ extension MeasuredTextBlock {
         self.text.text(from: from, to: to)
     }
 
-    func link(at point: CGPoint) -> InlineLink? {
-        text.link(at: CGPoint(x: point.x - textOrigin.x, y: point.y - textOrigin.y))
+    func characterIndex(at point: CGPoint) -> Int? {
+        text.characterIndex(at: CGPoint(x: point.x - textOrigin.x, y: point.y - textOrigin.y))
     }
+
+    /// No offset: `textOrigin` is geometry, and this side is index space.
+    func link(at index: Int) -> InlineLink? { text.link(at: index) }
 
     func wordRange(at index: Int) -> Range<Int> {
         guard text.length > 0 else { return index..<index }

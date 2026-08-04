@@ -74,12 +74,14 @@ struct Blockquote: Block {
 
         func text(from: Int, to: Int) -> String { content.text(from: from, to: to) }
 
-        func link(at point: CGPoint) -> InlineLink? {
-            content.link(at: CGPoint(x: point.x - indent, y: point.y))
+        func characterIndex(at point: CGPoint) -> Int? {
+            content.characterIndex(at: CGPoint(x: point.x - indent, y: point.y))
         }
 
-        // No offset on these two: the content owns the whole index space, and the
-        // indent is geometry.
+        // No offset on these three: the content owns the whole index space, and
+        // the indent is geometry. Nothing to lift, because there is only one child
+        // and its base is zero.
+        func link(at index: Int) -> InlineLink? { content.link(at: index) }
         func wordRange(at index: Int) -> Range<Int> { content.wordRange(at: index) }
         func paragraphRange(at index: Int) -> Range<Int> { content.paragraphRange(at: index) }
     }

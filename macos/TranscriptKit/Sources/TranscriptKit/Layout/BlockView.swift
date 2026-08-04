@@ -64,7 +64,8 @@ final class BlockView: NSView {
         // The counterpart obligation: AppKit's default policy for a `draw(_:)`
         // view redraws on resize, and this one explicitly does not — so every
         // resize that changes what should be on screen has to mark the view
-        // itself. Nothing here is exempt from that, including a width change.
+        // itself. Nothing here is exempt from that, including a width change,
+        // and `invalidate()` is where every one of them goes through.
         wantsLayer = true
         layerContentsRedrawPolicy = .onSetNeedsDisplay
 
@@ -110,6 +111,24 @@ final class BlockView: NSView {
     func remeasured(to block: MeasuredBlock) {
         self.block = block
 
+        invalidate()
+    }
+
+    /// The one place this view is marked for repaint.
+    ///
+    /// A funnel rather than a habit, and it is here before there is anything to
+    /// funnel. `layerContentsRedrawPolicy` is `.onSetNeedsDisplay`, so nothing
+    /// repaints unless something says so — and the moment a row composites more
+    /// than one surface, *every* surface has to be marked, in the **same source
+    /// phase**, so that they flush into a single transaction at `beforeWaiting`.
+    /// Marked in two different phases, they land in two transactions and the frame
+    /// between them shows one surface updated against the other's stale contents:
+    /// a selection band moved, the card fill under it not yet.
+    ///
+    /// Five call sites each remembering that is five chances to tear a frame. One
+    /// is none, and the sites read better for saying what they mean rather than
+    /// how it is achieved.
+    private func invalidate() {
         needsDisplay = true
     }
 
@@ -150,7 +169,7 @@ final class BlockView: NSView {
     override func resignFirstResponder() -> Bool {
         anchor = nil
         focus = nil
-        needsDisplay = true
+        invalidate()
         return super.resignFirstResponder()
     }
 
@@ -174,7 +193,7 @@ final class BlockView: NSView {
         }
         anchor = range.lowerBound
         focus = range.upperBound
-        needsDisplay = true
+        invalidate()
     }
 
     /// An I-beam over the whole row, not only over glyphs.
@@ -248,7 +267,7 @@ final class BlockView: NSView {
         // on exactly the rows where selection is most wanted — a code block taller
         // than the window.
         autoscroll(with: event)
-        needsDisplay = true
+        invalidate()
     }
 
     @objc func copy(_ sender: Any?) {
@@ -269,7 +288,7 @@ final class BlockView: NSView {
     /// work.
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        needsDisplay = true
+        invalidate()
     }
 
     override func draw(_ dirtyRect: NSRect) {

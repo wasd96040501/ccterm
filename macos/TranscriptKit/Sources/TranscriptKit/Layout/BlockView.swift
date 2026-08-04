@@ -48,6 +48,27 @@ final class BlockView: NSView {
     /// instruction rather than a sample.
     var onLinkHovered: ((BlockView, URL?, CGPoint) -> Void)?
 
+    /// This row was right-clicked, and the menu passed over is the one **this
+    /// package** would show: the commands it implements itself, and nothing
+    /// else. What comes back is what gets displayed — the same menu with items
+    /// added, a different menu, or `nil` for none at all.
+    ///
+    /// Handing over a proposed menu rather than asking whether to show one is
+    /// what lets the two sets of commands compose. Copy depends on a selection
+    /// nobody outside this view can see, so it cannot be the host's to build;
+    /// Quote, Retry and the rest depend on a model this package will never know
+    /// about, so they cannot be this view's. A proposal that comes back edited
+    /// is the only shape where each side writes the half it can.
+    ///
+    /// The menu is built fresh per click for that reason too — an accumulating
+    /// shared instance would grow another copy of the host's items every time
+    /// the reader right-clicked. That is the one place this deviates from
+    /// `NSView.defaultMenu`, whose class-property shape hands the same object to
+    /// everyone.
+    ///
+    /// Same closure-not-delegate reasoning as the two above.
+    var onContextMenu: ((BlockView, NSMenu) -> NSMenu?)?
+
     /// The link the pointer is on. Holds the whole link rather than its address
     /// so that a pointer sliding along one run is one report and one band, and so
     /// that the band survives a re-measure — the range still names the same
@@ -599,6 +620,69 @@ final class BlockView: NSView {
         guard !text.isEmpty else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    // MARK: - The context menu
+
+    /// The menu for a right-click (or a control-click, which arrives here by the
+    /// same route).
+    ///
+    /// **Why the whole of it is here rather than split with `rightMouseDown`.**
+    /// AppKit's own `rightMouseDown(with:)` does not display a context menu — its
+    /// documented implementation "simply passes this message to the next
+    /// responder", and the note beneath it says AppKit walks the chain only *if*
+    /// it "doesn't find an associated context menu to display for the view."
+    /// Finding it is this method, called from AppKit's event dispatch before any
+    /// responder sees the click. So a `rightMouseDown` override would run after
+    /// the menu had already been built, and everything below would be a click
+    /// late.
+    ///
+    /// Two things have to happen before the menu exists, and both are the reason
+    /// this is not a pure getter:
+    ///
+    /// 1. **Take first responder.** A menu item with a `nil` target dispatches
+    ///    through the responder chain from the *window's first responder* — not
+    ///    from the view the menu came from. Right-clicking a row nobody has
+    ///    clicked yet would otherwise validate Copy against whatever still held
+    ///    focus, and grey it out over a perfectly good selection.
+    ///
+    /// 2. **Select the word under the pointer**, unless the click landed inside
+    ///    a selection that already exists — in which case that selection is what
+    ///    the reader is pointing at and taking it away would be the surprise.
+    ///    `NSTextView` and WebKit both do exactly this, and the alternative is a
+    ///    menu whose only item is greyed out, which is a menu worth not showing.
+    ///
+    /// Containment is tested in the index space rather than geometrically. That
+    /// is `NSTextView`'s test too, and it is the right one here for a reason of
+    /// our own: a table's selection is a rectangle, so "between the endpoints"
+    /// and "inside the highlight" genuinely differ, and the endpoints are what
+    /// the copy would be taken from.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        window?.makeFirstResponder(self)
+
+        if let block {
+            let index = block.index(at: convert(event.locationInWindow, from: nil))
+            if selection?.contains(index) != true {
+                let word = block.wordRange(at: index)
+                anchor = word.lowerBound
+                focus = word.upperBound
+                invalidate()
+            }
+        }
+
+        let menu = NSMenu()
+        // `nil` target on purpose: that is what sends it up the responder chain
+        // to this view's `copy(_:)`, and what routes validation back through
+        // `validateMenuItem`. A key equivalent is left off because a context
+        // menu conventionally carries none — the Edit menu is where ⌘C is
+        // advertised.
+        menu.addItem(
+            NSMenuItem(
+                title: String(localized: "Copy", bundle: .module),
+                action: #selector(copy(_:)), keyEquivalent: ""))
+
+        guard let onContextMenu else { return menu }
+        return onContextMenu(self, menu)
     }
 
     /// Light ↔ dark flip, or the view joining a different appearance context.

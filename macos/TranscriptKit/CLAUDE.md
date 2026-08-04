@@ -75,6 +75,30 @@ Extending it meant editing it. Three rules keep that from happening again:
   closures threaded between internal types, no `@Observable` request fields
   the host is expected to watch. A new host-facing event is a delegate
   requirement with a default implementation — that is the whole mechanism.
+
+  The **context menu** is where this gets leaned on hardest, so it is worth
+  saying what shape it took. `transcriptView(_:menu:forRow:)` hands over the
+  menu the transcript would show and takes back the one that gets shown. The
+  transcript contributes only commands it can implement itself — today, Copy,
+  which depends on a selection no host can see — and *executes* only those.
+  Quote, Retry, Copy as Markdown and everything else of that kind depend on a
+  model this package will never know about, so they are items the host appends
+  carrying its own target and action; nothing routes back through here when one
+  is chosen. That asymmetry is the point: a proposal that comes back edited is
+  the only shape where each side writes the half it can, and it is why the next
+  five menu items cost no new API.
+
+  The demo does **not** implement the hook, on purpose. What it shows is what a
+  host that has not thought about menus yet gets — Copy alone — and the hook's
+  own behaviour is assertable rather than eyeball-only, so `ContextMenuTests`
+  carries it instead (§5).
+
+  Two consequences fall out rather than being decided. The menu is built fresh
+  per click — a shared instance in `NSView.defaultMenu`'s class-property shape
+  would accumulate another copy of the host's items on every right-click. And
+  `.view` rows never reach the hook: a host-drawn row already has a view of the
+  host's own, and AppKit finds a menu by asking the view under the pointer, so
+  the hook exists precisely where that option does not.
 - **Ordering contracts live in the API shape, not in prose.** `dataSource`
   deliberately does not refresh on assignment; the host has to call
   `reloadData()`, so "wire it up, then load" cannot be got wrong by accident.

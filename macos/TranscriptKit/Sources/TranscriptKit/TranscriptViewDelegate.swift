@@ -150,6 +150,50 @@ public protocol TranscriptViewDelegate: AnyObject {
     /// already on the page, a few lines further down.
     func transcriptView(
         _ transcriptView: TranscriptView, didHover url: URL?, at point: NSPoint, inRow row: Int)
+
+    /// A self-drawn row was right-clicked. `menu` is what the transcript would
+    /// show on its own; the return value is what actually gets shown.
+    ///
+    /// Return `menu` with items appended (the common case), a menu of your own,
+    /// or `nil` to show none. The default implementation returns `menu`
+    /// unchanged, so a host that does not implement this still gets the
+    /// transcript's own commands.
+    ///
+    /// **The transcript contributes only what it can implement itself, and
+    /// executes only that.** Today that is Copy, which depends on a selection no
+    /// host can see. Everything a *product* wants here — Quote, Retry, Copy as
+    /// Markdown, Report — depends on a model this package will never know
+    /// about, so those are items the host appends carrying **its own target and
+    /// action**. The transcript displays them and stays out of the way; nothing
+    /// routes back through here when one is chosen.
+    ///
+    /// ```swift
+    /// func transcriptView(
+    ///     _ tv: TranscriptView, menu: NSMenu, forRow row: Int
+    /// ) -> NSMenu? {
+    ///     menu.addItem(.separator())
+    ///     let quote = NSMenuItem(
+    ///         title: "Quote", action: #selector(quote(_:)), keyEquivalent: "")
+    ///     quote.target = self
+    ///     quote.representedObject = row
+    ///     menu.addItem(quote)
+    ///     return menu
+    /// }
+    /// ```
+    ///
+    /// `row` is resolved at the moment of the click, so it is safe to capture
+    /// into the item — the menu does not outlive the click that opened it.
+    ///
+    /// **`.view` rows never arrive here.** A host-drawn row already has a view
+    /// of the host's own, and AppKit finds a context menu by asking the view
+    /// under the pointer — so setting `menu` on that view, or overriding its
+    /// `menu(for:)`, is both the shorter path and the one that keeps a card's
+    /// menu next to the card. This hook exists precisely where that option does
+    /// not: rows the transcript draws itself, where the host has no view to hang
+    /// a menu on.
+    func transcriptView(
+        _ transcriptView: TranscriptView, menu: NSMenu, forRow row: Int
+    ) -> NSMenu?
 }
 
 extension TranscriptViewDelegate {
@@ -185,4 +229,12 @@ extension TranscriptViewDelegate {
     public func transcriptView(
         _ transcriptView: TranscriptView, didHover url: URL?, at point: NSPoint, inRow row: Int
     ) {}
+
+    /// The transcript's own menu, unchanged — so not implementing this leaves
+    /// Copy working rather than leaving the row with no menu at all.
+    public func transcriptView(
+        _ transcriptView: TranscriptView, menu: NSMenu, forRow row: Int
+    ) -> NSMenu? {
+        menu
+    }
 }

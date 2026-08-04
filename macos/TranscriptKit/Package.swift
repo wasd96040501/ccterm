@@ -4,6 +4,18 @@ import PackageDescription
 
 let package = Package(
     name: "TranscriptKit",
+    // The package puts user-visible text on screen of its own — the titles of
+    // the menu items it contributes — so it carries its own catalogue rather
+    // than borrowing the host's. A host's `Localizable.xcstrings` lives in the
+    // host's bundle and `Bundle.module` cannot reach it.
+    //
+    // `.lproj/Localizable.strings` rather than the app's `.xcstrings`, and the
+    // reason is the toolchain rather than taste: SwiftPM copies an `.xcstrings`
+    // through verbatim without compiling it, so the lookup would resolve under
+    // Xcode (which does compile it) and silently fall back to the key under
+    // `swift test` / `swift run` — two of this package's three entry points.
+    // Measured, not assumed: the built bundle held the `.xcstrings` unchanged.
+    defaultLocalization: "en",
     // 12 rather than the app's 14: the floor is what the code actually needs —
     // `NSImage.SymbolConfiguration(paletteColors:)`, which is how an inline SF
     // Symbol gets tinted. Raising it to match the app would be a restriction
@@ -28,7 +40,8 @@ let package = Package(
             name: "TranscriptKit",
             dependencies: [
                 .product(name: "Markdown", package: "swift-markdown")
-            ]
+            ],
+            resources: [.process("Resources")]
         ),
         // `swift test`. Kept in the package rather than folded into the app's
         // Xcode test target so the package stays buildable and testable on its

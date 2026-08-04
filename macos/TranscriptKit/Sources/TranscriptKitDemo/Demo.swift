@@ -17,6 +17,7 @@ struct Demo {
     static func main() {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
+        app.mainMenu = makeMainMenu()
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720),
@@ -94,5 +95,43 @@ struct Demo {
         window.makeKeyAndOrderFront(nil)
         app.activate(ignoringOtherApps: true)
         app.run()
+    }
+
+    /// The Edit menu is not decoration here — it is the **only** thing that makes
+    /// ⌘C work, and its absence is what this demo was quietly missing.
+    ///
+    /// A key equivalent is not delivered to the first responder the way a
+    /// keystroke is. `NSApplication` hands the event to the key window and then
+    /// to the main menu; the Copy item, carrying action `copy:` and a `nil`
+    /// target, is what turns it into a responder-chain dispatch that reaches the
+    /// selected row. With no main menu there is no such item, so the chain is
+    /// never walked and `BlockView.copy(_:)` is never called — which looks
+    /// exactly like the transcript not implementing copy at all.
+    ///
+    /// Worth stating plainly because it is also the demo's job to show that the
+    /// package needs *no* wiring for this: an app that has a normal Edit menu
+    /// (any nib-based app, and any SwiftUI shell) gets ⌘C for free.
+    @MainActor
+    private static func makeMainMenu() -> NSMenu {
+        let main = NSMenu()
+
+        let appItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(
+            withTitle: "Quit \(ProcessInfo.processInfo.processName)",
+            action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appItem.submenu = appMenu
+        main.addItem(appItem)
+
+        let editItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+        // `nil` target, so this dispatches down the responder chain rather than
+        // to any particular object — which is the whole mechanism.
+        editMenu.addItem(
+            withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editItem.submenu = editMenu
+        main.addItem(editItem)
+
+        return main
     }
 }

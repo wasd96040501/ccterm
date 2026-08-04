@@ -160,6 +160,20 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
     }
 
     private let tooltip = LinkTooltip()
+
+    // MARK: - The context menu
+    //
+    // Deliberately not implemented. `transcriptView(_:menu:forRow:)` is where a
+    // host appends its own items — Quote, Retry, Copy as Markdown — and the
+    // default implementation returns the transcript's menu unchanged, so what
+    // the demo shows is what a host that has not thought about menus yet gets:
+    // the transcript's own Copy, and nothing else.
+    //
+    // Nothing is lost by leaving it out. The hook's behaviour — that the host is
+    // asked about the row it clicked, that its answer is what gets shown, that
+    // returning `nil` suppresses the menu — is assertable, and `ContextMenuTests`
+    // asserts it. The demo carries what tests cannot reach (§5), and a menu item
+    // that prints to stdout is not that.
 }
 
 extension NSUserInterfaceItemIdentifier {

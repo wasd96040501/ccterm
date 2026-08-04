@@ -209,6 +209,16 @@ public final class TranscriptView: NSView {
                     self, didHover: url, at: self.convert(point, from: view),
                     inRow: current >= 0 ? current : row)
             }
+            // Not `delegate?.transcriptView(…) ?? menu`: optional-chaining a
+            // method that itself returns an optional flattens the two, so a host
+            // answering "show no menu" would be indistinguishable from having no
+            // delegate — and would silently get the default menu instead.
+            markdown.onContextMenu = { [weak self] view, menu in
+                guard let self, let delegate = self.delegate else { return menu }
+                let current = self.row(for: view)
+                return delegate.transcriptView(
+                    self, menu: menu, forRow: current >= 0 ? current : row)
+            }
             hosted = markdown
 
         case .view:

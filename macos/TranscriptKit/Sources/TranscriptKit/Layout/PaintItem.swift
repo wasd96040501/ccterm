@@ -35,7 +35,14 @@ struct PaintItem {
     ///
     /// Declaration order **is** the paint order, and `allCases` is what the
     /// player iterates.
-    enum Phase: Int, CaseIterable {
+    ///
+    /// `Comparable` over that declaration order, so that "which side of the band
+    /// does this land on" is a comparison rather than a lookup table kept in step
+    /// by hand.
+    enum Phase: Int, CaseIterable, Comparable {
+
+        static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
+
         /// Opaque things behind text: a code card's fill, a table's row tints and
         /// dividers, a quote's bar.
         case background
@@ -48,6 +55,43 @@ struct PaintItem {
         case content
         /// Over the glyphs: a table's border, a code card's language chip.
         case overlay
+
+        /// The whole order. The default slice, and the bounds any cut divides.
+        static let all: ClosedRange<Phase> = .background ... .overlay
+
+        /// The order divided at `cuts`: contiguous slices, in paint order,
+        /// together covering every phase exactly once.
+        ///
+        /// **This is the only way slices are made**, and the reason is that the
+        /// three ways a hand-assembled set can be wrong — a gap, an overlap, a
+        /// pair in the wrong order — are all silent. A gap is content nothing
+        /// draws; an overlap is content drawn twice; the wrong order inverts the
+        /// paint model for the phases involved. None of them raises anything.
+        ///
+        /// Here they are not so much prevented as unreachable: the walk visits
+        /// every phase once, in declaration order, and each one is appended to
+        /// exactly one slice before it is emitted. A partition is what the loop
+        /// *does*, not something it is checked against afterwards.
+        ///
+        /// A cut at the first phase, or one repeated, yields no empty slice —
+        /// which is why callers can pass whatever cut they mean without first
+        /// asking whether it lands anywhere useful.
+        static func slices(cutAt cuts: Set<Phase>) -> [ClosedRange<Phase>] {
+            var slices: [ClosedRange<Phase>] = []
+            var pending: [Phase] = []
+
+            for phase in allCases {
+                if cuts.contains(phase), let first = pending.first, let last = pending.last {
+                    slices.append(first...last)
+                    pending = []
+                }
+                pending.append(phase)
+            }
+            if let first = pending.first, let last = pending.last {
+                slices.append(first...last)
+            }
+            return slices
+        }
     }
 
     enum Primitive {
@@ -138,8 +182,15 @@ extension Array where Element == PaintItem {
     /// glyphs were drawn into, so the glyphs move to a surface above it and each
     /// surface plays its own slice. Between them the surfaces of one row cover
     /// every phase exactly once.
-    func paint(in ctx: CGContext, dirty: CGRect, phases: [PaintItem.Phase]) {
-        for phase in phases {
+    ///
+    /// **A range, not a list.** The walk is still driven by `allCases`, so the
+    /// declaration order remains the paint order and the slice can only say *which*
+    /// phases to play, never in what sequence. Taking a list instead — which this
+    /// briefly did — hands that sequence to the caller, and a caller that passed
+    /// `[.content, .background]` would paint a code card's fill over its own code
+    /// with nothing to catch it. A `ClosedRange` has no such degree of freedom.
+    func paint(in ctx: CGContext, dirty: CGRect, phases: ClosedRange<PaintItem.Phase>) {
+        for phase in PaintItem.Phase.allCases where phases.contains(phase) {
             for item in self where item.phase == phase {
                 item.primitive.paint(in: ctx, dirty: dirty)
             }

@@ -75,8 +75,7 @@ final class BlockView: NSView {
         wantsLayer = true
         layerContentsRedrawPolicy = .never
 
-        surfaces = [SurfaceLayer(playing: PaintItem.Phase.allCases, for: self)]
-        surfaces.forEach { layer?.addSublayer($0) }
+        restack()
 
         // Once, not per `updateTrackingAreas` pass: `.inVisibleRect` is the option
         // that tells AppKit to keep the area's rectangle synchronised with the
@@ -119,11 +118,16 @@ final class BlockView: NSView {
     /// name the characters they named before, and dropping them would lose a
     /// reader's selection every time the window edge moved.
     ///
-    /// Marking the view is not optional here. `layerContentsRedrawPolicy` is
-    /// `.onSetNeedsDisplay`, so a resize alone repaints nothing; the old lines
-    /// would simply be stretched.
+    /// Marking is not optional here. A surface redraws only when told to, so a
+    /// resize alone repaints nothing and the old lines would simply be stretched
+    /// to the new size.
     func remeasured(to block: MeasuredBlock) {
         self.block = block
+        // A different tree may paint at different phases — a paragraph that became
+        // a table has something under the band now, and the cached answer was
+        // about the old one.
+        paintsUnderBand = nil
+        restack()
 
         invalidate()
         // The band is geometry over a range, and the range is the half that does
@@ -136,8 +140,8 @@ final class BlockView: NSView {
     /// The one place this view is marked for repaint.
     ///
     /// A funnel rather than a habit, and it is here before there is anything to
-    /// funnel. `layerContentsRedrawPolicy` is `.onSetNeedsDisplay`, so nothing
-    /// repaints unless something says so — and the moment a row composites more
+    /// funnel. A surface redraws only when marked, so nothing here repaints
+    /// unless something says so — and the moment a row composites more
     /// than one surface, *every* surface has to be marked, in the **same source
     /// phase**, so that they flush into a single transaction at `beforeWaiting`.
     /// Marked in two different phases, they land in two transactions and the frame
@@ -239,11 +243,18 @@ final class BlockView: NSView {
             guard let self, self.hovered == nil else { return }
             band.removeFromSuperlayer()
             self.hoverBand = nil
+            // Back to one surface: the split existed to hold the band apart from
+            // what was under it, and there is no longer a band.
+            self.restack()
         }
     }
 
     /// Immediately, with no fade and no completion to race — for the paths where
     /// the row stops being this row at all.
+    /// No `restack()` here, and that is not an omission: the only caller is
+    /// `configure(with:)`, which re-measures on the next line, and re-measuring
+    /// is what owns putting the stack back in step with the block it now holds.
+    /// A second call would be one nothing can break and therefore nothing covers.
     private func removeHoverBand() {
         hovered = nil
         hoverBand?.removeFromSuperlayer()
@@ -254,9 +265,11 @@ final class BlockView: NSView {
         let band = CAShapeLayer()
         band.opacity = 0
         band.contentsScale = window?.backingScaleFactor ?? 2
-        // Below the surfaces, which is below the glyphs.
-        layer?.insertSublayer(band, at: 0)
         hoverBand = band
+        // Its depth is the stack's to decide, not this method's: it goes wherever
+        // `bandPhase` puts it, which is under the glyphs and — where there is
+        // anything down there — over the backgrounds.
+        restack()
         return band
     }
 
@@ -334,6 +347,87 @@ final class BlockView: NSView {
     /// The row's painting, bottom to top. One of these covering every phase is the
     /// resting state; a decoration that has to sit under the glyphs splits it.
     private var surfaces: [SurfaceLayer] = []
+
+    /// Where the band sits in the paint order — above the backgrounds and below
+    /// the glyphs, which is the tier a selection band is emitted at and for the
+    /// same reason. The cut goes on a phase **boundary**, never inside one:
+    /// ordering within a phase is load-bearing (a table emits its row fills and
+    /// then its dividers, both `.background`), and a cut through the middle of one
+    /// would decide that order by which surface an item happened to land on.
+    ///
+    /// Putting the cut *at* `.decoration` rather than after it also settles the
+    /// band against the selection correctly: the selection is emitted at
+    /// `.decoration`, so it lands on the upper surface and therefore over the
+    /// band. Selecting a link tints it and keeps the hover visible underneath.
+    private static let bandPhase = PaintItem.Phase.decoration
+
+    /// Whether this block paints anything at all below the band's phase — the
+    /// question that decides whether a second surface is worth its bitmap. Cached
+    /// per binding, because it is a tree walk and the answer cannot change while
+    /// the block does not.
+    ///
+    /// Deliberately coarse: it asks whether anything is down there, not whether
+    /// anything down there is *behind this particular run*. A blockquote's bar is
+    /// at `.background` and never overlaps the text beside it, so a quote splits
+    /// when it strictly need not. Testing the overlap instead would mean deriving
+    /// a rectangle from every primitive and getting that right for four of them,
+    /// to save one bitmap on a row that is being hovered right now.
+    private var paintsUnderBand: Bool?
+
+    private func blockPaintsUnderBand() -> Bool {
+        if let paintsUnderBand { return paintsUnderBand }
+        guard let block else { return false }
+
+        var items: [PaintItem] = []
+        block.paint(at: .zero, dirty: CGRect(origin: .zero, size: block.size), into: &items)
+        let answer = items.contains { $0.phase < Self.bandPhase }
+        paintsUnderBand = answer
+        return answer
+    }
+
+    /// Arranges the sublayers into paint order: the surfaces under the band, the
+    /// band, the surfaces over it.
+    ///
+    /// **The stack is split only when there is something to separate** — a band
+    /// present *and* something painted beneath its phase. With nothing under the
+    /// band, "beneath the glyphs" and "beneath everything" are the same place, and
+    /// a second surface would be an empty bitmap the size of the row. That is the
+    /// common case and it stays at one surface: prose, headings and list items
+    /// paint nothing at `.background` behind their text.
+    ///
+    /// Idempotent, and cheap when nothing changed — which matters because the only
+    /// rows that ever re-split are the ones being hovered.
+    private func restack() {
+        // The cut is asked for only when there is something to separate; the
+        // partition it produces is the phase order's own business.
+        let split = hoverBand != nil && blockPaintsUnderBand()
+        let wanted = PaintItem.Phase.slices(cutAt: split ? [Self.bandPhase] : [])
+
+        if surfaces.map(\.phases) != wanted {
+            surfaces.forEach { $0.removeFromSuperlayer() }
+            surfaces = wanted.map { SurfaceLayer(playing: $0, for: self) }
+            let scale = window?.backingScaleFactor ?? 2
+            for surface in surfaces {
+                surface.frame = bounds
+                surface.contentsScale = scale
+                surface.setNeedsDisplay()
+            }
+        }
+
+        // The band goes after every surface that lies entirely below its phase —
+        // which is none of them when the order was not cut, putting it at the
+        // bottom, and derived rather than hardcoded for any number of cuts.
+        let beneath = surfaces.prefix { $0.phases.upperBound < Self.bandPhase }
+        var ordered: [CALayer] = beneath.map { $0 }
+        if let hoverBand { ordered.append(hoverBand) }
+        ordered.append(contentsOf: surfaces.dropFirst(beneath.count).map { $0 as CALayer })
+
+        guard (layer?.sublayers ?? []) != ordered else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer?.sublayers = ordered
+        CATransaction.commit()
+    }
 
     /// Sizing is this view's, not autoresizing's: the surfaces are congruent with
     /// the view by definition, and a mask would express that as an accident of
@@ -534,7 +628,9 @@ final class BlockView: NSView {
     /// for one phase at a time — would mean walking it once per surface and giving
     /// every block a reason to know which phase it is being asked about. Playing
     /// is where the slice applies, because that is where the order lives.
-    fileprivate func paint(_ phases: [PaintItem.Phase], in ctx: CGContext, dirty dirtyRect: CGRect) {
+    fileprivate func paint(
+        _ phases: ClosedRange<PaintItem.Phase>, in ctx: CGContext, dirty dirtyRect: CGRect
+    ) {
         guard let block else { return }
 
         // Collect, then play. The two steps are what let this view add strokes of
@@ -600,15 +696,18 @@ final class BlockView: NSView {
 /// every callback into "which layer is this".
 private final class SurfaceLayer: CALayer {
 
-    /// The phases this surface plays, in paint order. Between them, the surfaces
-    /// of one row cover every phase exactly once.
-    private var phases: [PaintItem.Phase] = []
+    /// The slice of the paint order this surface plays. A **range**, so that a
+    /// surface can say which phases are its own and cannot say what order to draw
+    /// them in — that stays the declaration order, for everyone. Between them the
+    /// surfaces of one row cover the order exactly once, which the cut they are
+    /// derived from guarantees rather than their construction sites remembering.
+    fileprivate private(set) var phases: ClosedRange<PaintItem.Phase> = PaintItem.Phase.all
 
     /// Weak, and the direction that matters: the view owns its layers, so a
     /// strong edge back would be a cycle that outlives every row it recycles.
     private weak var owner: BlockView?
 
-    init(playing phases: [PaintItem.Phase], for owner: BlockView) {
+    init(playing phases: ClosedRange<PaintItem.Phase>, for owner: BlockView) {
         self.phases = phases
         self.owner = owner
         super.init()

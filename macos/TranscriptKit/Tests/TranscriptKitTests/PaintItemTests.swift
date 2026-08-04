@@ -32,7 +32,7 @@ final class PaintItemTests: XCTestCase {
         items.paint(
             in: graphics.cgContext,
             dirty: CGRect(x: 0, y: 0, width: side, height: side),
-            phases: PaintItem.Phase.allCases)
+            phases: PaintItem.Phase.all)
         NSGraphicsContext.restoreGraphicsState()
 
         return try XCTUnwrap(rep.colorAt(x: side / 2, y: side / 2))
@@ -158,5 +158,45 @@ final class PaintItemTests: XCTestCase {
         // No context was ever passed in — there is nowhere for a stray stroke to
         // have gone — and the walk still produced something to play.
         XCTAssertFalse(list.isEmpty)
+    }
+
+    // MARK: - Cutting the order
+
+    /// `slices(cutAt:)` is what a row's composited surfaces are built from, and
+    /// the only thing standing between the paint model and three silent failures:
+    /// a gap (content nothing draws), an overlap (content drawn twice), and a pair
+    /// in the wrong order (the model inverted for those phases).
+    ///
+    /// Small enough to check **exhaustively** rather than by example — four phases
+    /// is sixteen possible cut sets, so this asserts the partition holds for every
+    /// input the function has, not for the ones someone thought to write down.
+    func testEveryCutProducesAPartitionOfTheOrder() {
+        let all = PaintItem.Phase.allCases
+
+        for mask in 0..<(1 << all.count) {
+            let cuts = Set(all.enumerated().filter { mask & (1 << $0.offset) != 0 }.map(\.element))
+            let slices = PaintItem.Phase.slices(cutAt: cuts)
+
+            // Flattened, the slices are exactly the order — which is one assertion
+            // for all three failures at once: a gap or an overlap changes the
+            // contents, and a swapped pair changes the sequence.
+            let covered = slices.flatMap { slice in all.filter { slice.contains($0) } }
+            XCTAssertEqual(covered, all, "cuts \(cuts.map(\.rawValue).sorted()) do not partition")
+
+            XCTAssertFalse(
+                slices.contains { $0.lowerBound > $0.upperBound },
+                "cuts \(cuts.map(\.rawValue).sorted()) produced an inverted slice")
+        }
+    }
+
+    /// A cut where nothing is above or below it is not a cut. Callers ask for the
+    /// phase they mean without first checking whether it divides anything, so the
+    /// degenerate answers have to be the sensible ones rather than empty slices.
+    func testACutAtTheEdgeDividesNothing() {
+        XCTAssertEqual(PaintItem.Phase.slices(cutAt: []), [PaintItem.Phase.all])
+        XCTAssertEqual(PaintItem.Phase.slices(cutAt: [.background]), [PaintItem.Phase.all])
+        XCTAssertEqual(
+            PaintItem.Phase.slices(cutAt: [.overlay]),
+            [.background ... .content, .overlay ... .overlay])
     }
 }

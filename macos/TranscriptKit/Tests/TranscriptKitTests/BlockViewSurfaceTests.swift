@@ -58,6 +58,92 @@ final class BlockViewSurfaceTests: XCTestCase {
         (mounted.cell.layer?.sublayers ?? []).filter { !($0 is CAShapeLayer) }
     }
 
+    // MARK: - Where the cut goes
+
+    private func hover(_ mounted: Mounted, at point: CGPoint) {
+        let event = NSEvent.mouseEvent(
+            with: .mouseMoved, location: mounted.cell.convert(point, to: nil), modifierFlags: [],
+            timestamp: 0, windowNumber: mounted.window.windowNumber, context: nil,
+            eventNumber: 0, clickCount: 0, pressure: 0)!
+        mounted.cell.mouseMoved(with: event)
+    }
+
+    private static func firstLinkPoint(in block: MeasuredBlock) -> CGPoint? {
+        for y in stride(from: 0, to: block.size.height, by: 3) {
+            for x in stride(from: 0, to: block.size.width, by: 3) {
+                let point = CGPoint(x: x, y: y)
+                if block.link(at: point) != nil { return point }
+            }
+        }
+        return nil
+    }
+
+    /// The common case pays nothing for the mechanism. Prose paints nothing at
+    /// `.background` behind its text, so "under the glyphs" and "under everything"
+    /// are the same place and a second surface would be an empty bitmap the size
+    /// of the row.
+    func testProseDoesNotSplitForABand() throws {
+        let mounted = mount("some words with [a link](https://example.com) in them")
+        defer { mounted.window.close() }
+
+        let point = try XCTUnwrap(
+            Self.firstLinkPoint(
+                in: MarkdownBlockBuilder.make(
+                    "some words with [a link](https://example.com) in them"
+                ).measure(400)))
+        hover(mounted, at: point)
+
+        XCTAssertEqual(surfaces(mounted).count, 1, "prose split when there was nothing to separate")
+        XCTAssertTrue(
+            mounted.cell.layer?.sublayers?.first is CAShapeLayer,
+            "the band is not at the bottom, where prose can afford to put it")
+    }
+
+    /// A table paints row tints at `.background`, so the band has something to be
+    /// *above* as well as below — which is the case the cut exists for. Splitting
+    /// puts it between the two, rather than under the tints where it would be
+    /// veiled by them.
+    func testATableSplitsAndTakesTheBandBetweenTheHalves() throws {
+        let source = "| h1 | h2 |\n|----|----|\n| plain | [word](https://example.com) |"
+        let mounted = mount(source)
+        defer { mounted.window.close() }
+
+        XCTAssertEqual(surfaces(mounted).count, 1, "a row nobody has hovered should not be split")
+
+        let point = try XCTUnwrap(
+            Self.firstLinkPoint(in: MarkdownBlockBuilder.make(source).measure(400)))
+        hover(mounted, at: point)
+
+        XCTAssertEqual(surfaces(mounted).count, 2, "the table did not split for the band")
+
+        let sublayers = try XCTUnwrap(mounted.cell.layer?.sublayers)
+        XCTAssertEqual(sublayers.count, 3, "expected under, band, over")
+        XCTAssertFalse(sublayers[0] is CAShapeLayer, "nothing is painted under the band")
+        XCTAssertTrue(sublayers[1] is CAShapeLayer, "the band is not between the two surfaces")
+        XCTAssertFalse(sublayers[2] is CAShapeLayer)
+    }
+
+    /// And it folds back. A split that outlived the band it was made for would
+    /// leave every hovered table row carrying a second bitmap for good.
+    func testTheSplitFoldsBackWhenTheBandGoes() throws {
+        let source = "| h1 | h2 |\n|----|----|\n| plain | [word](https://example.com) |"
+        let mounted = mount(source)
+        defer { mounted.window.close() }
+
+        let point = try XCTUnwrap(
+            Self.firstLinkPoint(in: MarkdownBlockBuilder.make(source).measure(400)))
+        hover(mounted, at: point)
+        XCTAssertEqual(surfaces(mounted).count, 2)
+
+        // Rebinding takes the band away outright, with no fade to wait on.
+        mounted.cell.configure(with: MarkdownBlockBuilder.make("plain words").measure(400))
+
+        XCTAssertEqual(surfaces(mounted).count, 1, "the row stayed split after the band went")
+        XCTAssertEqual(mounted.cell.layer?.sublayers?.count, 1)
+    }
+
+    // MARK: - What AppKit no longer maintains
+
     func testASurfaceIsAtTheWindowsBackingScale() throws {
         let mounted = mount("a paragraph of ordinary words")
         defer { mounted.window.close() }

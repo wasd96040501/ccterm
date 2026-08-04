@@ -101,12 +101,25 @@ protocol MeasuredBlock: Sendable {
     /// The plain text a selection between two indices copies as.
     func text(from: Int, to: Int) -> String
 
-    /// The word containing `index` — what a double-click takes.
+    /// The word under `point` — what a double-click takes.
     ///
     /// Where the boundaries are is not this package's business to decide:
     /// `NSAttributedString.doubleClick(at:)` is what `NSTextView` asks, and it
     /// knows about locales, CJK, hyphens and apostrophes.
-    func wordRange(at index: Int) -> Range<Int>
+    ///
+    /// **A point rather than an index**, which is the one place the index space
+    /// is not enough. Line ranges are gapless, so the end of one line and the
+    /// start of the next are the same integer; a click in the blank to the right
+    /// of a line resolves to that integer, and the word *at* it belongs to the
+    /// line below. Only the click knows which side of the boundary it was on.
+    ///
+    /// Nor can `index(at:)` settle it on this method's behalf: the same
+    /// boundary value is what a **drag** to that spot needs, so that ending one
+    /// past the right edge of a line selects through the end of it. `NSTextView`
+    /// answers this by carrying an affinity alongside the index; taking the
+    /// point keeps the same information without a second field on every endpoint
+    /// a selection stores. See `TypesetText`'s § Units for the full argument.
+    func wordRange(at point: CGPoint) -> Range<Int>
 
     /// The character the pointer is **inside**, in block-local coordinates, or
     /// `nil` when it is inside none.
@@ -142,14 +155,16 @@ protocol MeasuredBlock: Sendable {
     /// offset and the lift are the whole of the work.
     func link(at index: Int) -> InlineLink?
 
-    /// The paragraph containing `index` — what a triple-click takes.
+    /// The paragraph under `point` — what a triple-click takes.
     ///
     /// A *paragraph*, not a visual line, so wrapping never splits one. In
     /// verbatim text that comes out as one logical line, because the separator
     /// there is a real newline; in prose a hard break does not end one, which is
     /// what a browser does with a `<br>` inside a `<p>`. Both fall out of
     /// `NSString.paragraphRange(for:)` without a branch.
-    func paragraphRange(at index: Int) -> Range<Int>
+    ///
+    /// Takes a point for the reason given on `wordRange(at:)`.
+    func paragraphRange(at point: CGPoint) -> Range<Int>
 }
 
 extension MeasuredBlock {

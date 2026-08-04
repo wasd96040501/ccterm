@@ -218,6 +218,93 @@ struct TypesetText: @unchecked Sendable {
         return rect(of: index, on: line).contains(point) ? index : nil
     }
 
+    // MARK: - Units
+    //
+    // A word and a paragraph are asked for by **point**, not by index, and the
+    // reason is that an index cannot answer them.
+    //
+    // Line ranges here are contiguous and gapless (see `Line.range`), so the end
+    // of line *n* and the start of line *n+1* are the **same integer**. Clicking
+    // in the blank to the right of a line therefore produces an index whose
+    // character lives on the next line — and a word or paragraph looked up there
+    // is the next line's. That is the whole of the bug this pair exists to
+    // avoid: double-clicking past `alpha beta` took `gamma`, and triple-clicking
+    // past a code line took the line below it.
+    //
+    // The index is not *wrong*, it is **ambiguous**, and the click is the only
+    // thing that knows which side of the boundary it was on. Nor can the
+    // ambiguity be settled inside `index(at:)`, because the boundary value is
+    // what a *drag* needs: a drag ending past the right edge of `beta` has to
+    // select `beta\n`, newline included, which is exactly `NSMaxRange`. One
+    // integer cannot be both, which is why `NSTextView` carries an affinity
+    // beside the index rather than biasing it. Taking the point keeps the same
+    // information without a second field on every stored endpoint.
+    //
+    // This is also the split `characterIndex(at:)` already makes one member
+    // over — a clamped caret index is the wrong input for "what am I on" — so
+    // these two are that same correction, applied where it had been missed.
+
+    /// The word a double-click at `point` takes.
+    func wordRange(at point: CGPoint) -> Range<Int> {
+        guard length > 0 else { return 0..<0 }
+        let word = attributed.doubleClick(at: unitIndex(at: point))
+        return word.lowerBound..<word.upperBound
+    }
+
+    /// The paragraph a triple-click at `point` takes.
+    func paragraphRange(at point: CGPoint) -> Range<Int> {
+        guard length > 0 else { return 0..<0 }
+        let paragraph = (attributed.string as NSString).paragraphRange(
+            for: NSRange(location: unitIndex(at: point), length: 0))
+        return paragraph.lowerBound..<paragraph.upperBound
+    }
+
+    /// The character a unit query should be anchored on — the one the reader is
+    /// pointing at, never the caret position beside it.
+    ///
+    /// Two corrections to `index(at:)`, in order:
+    ///
+    /// 1. **Caret → character.** A click in the right half of a glyph puts the
+    ///    caret *after* it, which is right for a selection endpoint and wrong
+    ///    here: double-clicking the right half of a letter has to take that
+    ///    letter's word. Same step-back `characterIndex(at:)` makes.
+    /// 2. **Off the line boundary.** Still at the line's end means the point was
+    ///    past the last glyph, where the index belongs to the next line. Fall
+    ///    back to this line's last non-blank character — *non-blank* rather than
+    ///    simply one less, because one less is the trailing space of a wrapped
+    ///    line or the newline that ended a verbatim one, and neither is the word
+    ///    the reader was pointing at.
+    private func unitIndex(at point: CGPoint) -> Int {
+        guard length > 0, let position = lineIndex(atY: point.y) else { return 0 }
+        let line = lines[position]
+        let x = point.x - line.origin.x
+
+        let caret = CTLineGetStringIndexForPosition(line.ctLine, CGPoint(x: x, y: 0))
+        guard caret != kCFNotFound else { return line.range.location }
+
+        var index = min(max(caret, line.range.location), NSMaxRange(line.range))
+        if index > line.range.location, CTLineGetOffsetForStringIndex(line.ctLine, index, nil) > x {
+            index -= 1
+        }
+        if index >= NSMaxRange(line.range), let last = lastGlyph(on: line) {
+            index = last
+        }
+        return min(max(index, 0), length - 1)
+    }
+
+    /// The last character on `line` that is not blank, or `nil` for a line that
+    /// is nothing but — a blank line inside a code card, which has no word to
+    /// fall back to and is left at the boundary.
+    ///
+    /// Asked of `NSString` rather than walked here so that a surrogate pair is
+    /// one character rather than two halves.
+    private func lastGlyph(on line: Line) -> Int? {
+        let found = (attributed.string as NSString).rangeOfCharacter(
+            from: CharacterSet.whitespacesAndNewlines.inverted,
+            options: .backwards, range: line.range)
+        return found.location == NSNotFound ? nil : found.location
+    }
+
     /// One character's box, taken from the line already in hand rather than
     /// through `rects(from:to:)` — that walks every line, and this runs on every
     /// mouse-moved event, including over a code block of a few thousand.

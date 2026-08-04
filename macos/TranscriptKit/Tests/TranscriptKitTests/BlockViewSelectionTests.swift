@@ -233,6 +233,92 @@ final class BlockViewSelectionTests: XCTestCase {
         XCTAssertEqual(copiedText(mounted), "one two")
     }
 
+    // MARK: - Clicking past the end of a line
+    //
+    // The blank to the right of a line's last glyph. Line ranges are gapless, so
+    // the caret index there is the *next* line's first character — and a unit
+    // looked up at it used to come back as the next line's word or paragraph.
+    // Hence `wordRange` / `paragraphRange` taking the point rather than an index.
+    //
+    // The drag test at the bottom is the other half of the pair, and the reason
+    // this could not be settled inside `index(at:)`: the same boundary value that
+    // is wrong for a unit lookup is exactly what a drag to that spot needs.
+
+    /// Far right of the first visual line of a paragraph that wraps.
+    private func pastTheEnd(of line: CGRect) -> CGPoint {
+        CGPoint(x: line.maxX + 30, y: line.midY)
+    }
+
+    func testDoubleClickPastAWrappedLineTakesThatLinesLastWord() throws {
+        let mounted = mount("alpha beta gamma delta epsilon zeta eta theta", width: 110)
+        let lines = mounted.block.fullRects()
+        XCTAssertGreaterThan(lines.count, 1, "the text did not wrap, so this proves nothing")
+
+        click(mounted, at: pastTheEnd(of: lines[0]), times: 2)
+        // Not "gamma", which is where the first line's end index points.
+        XCTAssertEqual(copiedText(mounted), "beta")
+    }
+
+    /// The trailing space of a wrapped line is inside its range, so stepping back
+    /// by one lands on blank rather than on a word — which is why the fallback is
+    /// the last *non-blank* character rather than the last one.
+    func testDoubleClickPastACodeLineTakesThatLinesLastWord() throws {
+        let mounted = mount("```\nalpha\nbeta\ngamma\n```")
+        let lines = mounted.block.fullRects()
+
+        click(mounted, at: pastTheEnd(of: lines[1]), times: 2)
+        XCTAssertEqual(copiedText(mounted), "beta")
+    }
+
+    func testTripleClickPastACodeLineTakesThatLine() throws {
+        let mounted = mount("```\nalpha\nbeta\ngamma\n```")
+        let lines = mounted.block.fullRects()
+
+        click(mounted, at: pastTheEnd(of: lines[1]), times: 3)
+        XCTAssertEqual(copiedText(mounted), "beta\n")
+    }
+
+    /// The right half of a word's last glyph. The caret there has already moved
+    /// past the word onto the space after it, so a unit looked up at the caret
+    /// index takes the *space* — which is why the point is converted to the
+    /// character it is on before anything is asked of it.
+    ///
+    /// `NSTextView` behaves the same way: double-clicking anywhere in a word,
+    /// including hard against its trailing edge, takes the word.
+    func testDoubleClickOnAWordsTrailingEdgeStillTakesTheWord() throws {
+        let mounted = mount("alpha beta gamma")
+        // "beta" is 6..<10; the range through 10 includes the space after it, so
+        // the word's own box is the first of the two.
+        let beta = try XCTUnwrap(mounted.block.rects(from: 6, to: 10).first)
+
+        click(mounted, at: CGPoint(x: beta.maxX - 1, y: beta.midY), times: 2)
+        XCTAssertEqual(copiedText(mounted), "beta")
+    }
+
+    /// A click to the *left* of a line takes its first word — the other end of
+    /// the same clamp, and the guard on the caret→character step-back going one
+    /// too far.
+    func testDoubleClickLeftOfALineTakesItsFirstWord() throws {
+        let mounted = mount("```\nalpha\nbeta\ngamma\n```")
+        let lines = mounted.block.fullRects()
+
+        click(mounted, at: CGPoint(x: lines[1].minX - 40, y: lines[1].midY), times: 2)
+        XCTAssertEqual(copiedText(mounted), "beta")
+    }
+
+    /// The constraint that makes the fix a new pair of methods rather than a
+    /// smaller `index(at:)`: a drag ending past the right edge of a line still
+    /// has to reach the end of it, newline included.
+    func testDraggingPastTheEndOfALineStillReachesTheLineEnd() throws {
+        let mounted = mount("```\nalpha\nbeta\ngamma\n```")
+        let lines = mounted.block.fullRects()
+
+        drag(
+            mounted, from: CGPoint(x: lines[1].minX, y: lines[1].midY),
+            to: pastTheEnd(of: lines[1]))
+        XCTAssertEqual(copiedText(mounted), "beta\n")
+    }
+
     // MARK: - Letting go
 
     /// How a selection in one row disappears when the reader starts one in

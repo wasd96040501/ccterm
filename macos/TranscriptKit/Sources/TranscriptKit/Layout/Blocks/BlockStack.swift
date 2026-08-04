@@ -176,24 +176,29 @@ struct BlockStack: Block {
             return child.block.link(at: index - child.base).map { $0.lifted(by: child.base) }
         }
 
-        func wordRange(at index: Int) -> Range<Int> {
-            childRange(at: index) { $0.wordRange(at: $1) }
+        func wordRange(at point: CGPoint) -> Range<Int> {
+            childRange(at: point) { $0.wordRange(at: $1) }
         }
 
-        func paragraphRange(at index: Int) -> Range<Int> {
-            childRange(at: index) { $0.paragraphRange(at: $1) }
+        func paragraphRange(at point: CGPoint) -> Range<Int> {
+            childRange(at: point) { $0.paragraphRange(at: $1) }
         }
 
-        /// Both granularities compose the same way: find whose index it is, ask
+        /// Both granularities compose the same way: find whose point it is, ask
         /// them in their own space, shift what comes back. A word never spans two
         /// blocks, and neither does a paragraph — that is what being a separate
         /// block means.
+        ///
+        /// Decoded by point, and by the same clamping rule as `index(at:)` rather
+        /// than the declining one `characterIndex(at:)` uses: a triple-click in
+        /// the gap between two paragraphs has to take one of them.
         private func childRange(
-            at index: Int, _ ask: (MeasuredBlock, Int) -> Range<Int>
+            at point: CGPoint, _ ask: (MeasuredBlock, CGPoint) -> Range<Int>
         ) -> Range<Int> {
-            guard let position = childIndex(containing: index) else { return index..<index }
+            guard let position = childIndex(atY: point.y) else { return 0..<0 }
             let child = children[position]
-            let range = ask(child.block, index - child.base)
+            let local = CGPoint(x: point.x - child.origin.x, y: point.y - child.origin.y)
+            let range = ask(child.block, local)
             return (range.lowerBound + child.base)..<(range.upperBound + child.base)
         }
 

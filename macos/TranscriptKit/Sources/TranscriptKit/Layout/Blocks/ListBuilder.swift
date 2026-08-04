@@ -202,11 +202,20 @@ enum ListBuilder {
                 content.characterIndex(at: CGPoint(x: point.x - indent, y: point.y))
             }
 
-            // No offset on these three: a marker holds no positions, so the
-            // content's index space is the whole of this one.
+            // A marker holds no positions, so the content's index space is the
+            // whole of this one and nothing lifts. The two that take a point
+            // still take the indent, because that half is geometry — and it is
+            // what puts a double-click in the marker column onto the first word
+            // of the item rather than off the front of it.
             func link(at index: Int) -> InlineLink? { content.link(at: index) }
-            func wordRange(at index: Int) -> Range<Int> { content.wordRange(at: index) }
-            func paragraphRange(at index: Int) -> Range<Int> { content.paragraphRange(at: index) }
+
+            func wordRange(at point: CGPoint) -> Range<Int> {
+                content.wordRange(at: CGPoint(x: point.x - indent, y: point.y))
+            }
+
+            func paragraphRange(at point: CGPoint) -> Range<Int> {
+                content.paragraphRange(at: CGPoint(x: point.x - indent, y: point.y))
+            }
         }
     }
 }

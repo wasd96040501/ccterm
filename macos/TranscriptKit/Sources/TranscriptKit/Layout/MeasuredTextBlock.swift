@@ -53,16 +53,14 @@ extension MeasuredTextBlock {
     /// No offset: `textOrigin` is geometry, and this side is index space.
     func link(at index: Int) -> InlineLink? { text.link(at: index) }
 
-    func wordRange(at index: Int) -> Range<Int> {
-        guard text.length > 0 else { return index..<index }
-        let word = text.attributed.doubleClick(at: min(max(0, index), text.length - 1))
-        return word.lowerBound..<word.upperBound
+    /// Both of these are geometry on the way in, so both take the offset — the
+    /// mirror of `index(at:)` above, where the index-taking versions they
+    /// replace needed none.
+    func wordRange(at point: CGPoint) -> Range<Int> {
+        text.wordRange(at: CGPoint(x: point.x - textOrigin.x, y: point.y - textOrigin.y))
     }
 
-    func paragraphRange(at index: Int) -> Range<Int> {
-        guard text.length > 0 else { return index..<index }
-        let paragraph = (text.attributed.string as NSString).paragraphRange(
-            for: NSRange(location: min(max(0, index), text.length - 1), length: 0))
-        return paragraph.lowerBound..<paragraph.upperBound
+    func paragraphRange(at point: CGPoint) -> Range<Int> {
+        text.paragraphRange(at: CGPoint(x: point.x - textOrigin.x, y: point.y - textOrigin.y))
     }
 }

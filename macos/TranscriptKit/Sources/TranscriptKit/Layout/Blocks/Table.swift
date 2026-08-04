@@ -464,13 +464,14 @@ struct Table: Block {
             return cell.text.link(at: at.character).map { $0.lifted(by: cell.base) }
         }
 
-        func wordRange(at index: Int) -> Range<Int> {
-            guard length > 0 else { return index..<index }
-            let at = position(of: index)
-            let cell = cells[at.row][at.column]
-            guard cell.text.length > 0 else { return cell.base..<cell.base }
-            let word = cell.text.attributed.doubleClick(
-                at: min(at.character, cell.text.length - 1))
+        /// Decoded by point like the two above, and the cell answers in its own
+        /// space. `cell(at:)` clamps, which is what a click in the padding around
+        /// a cell's glyphs needs — unlike `characterIndex(at:)`, this one has to
+        /// resolve.
+        func wordRange(at point: CGPoint) -> Range<Int> {
+            guard let cell = cell(at: point), cell.text.length > 0 else { return 0..<0 }
+            let word = cell.text.wordRange(
+                at: CGPoint(x: point.x - cell.textOrigin.x, y: point.y - cell.textOrigin.y))
             return (cell.base + word.lowerBound)..<(cell.base + word.upperBound)
         }
 
@@ -478,10 +479,12 @@ struct Table: Block {
         /// what a browser does with a `<td>`, and what Numbers and Excel do. The
         /// grid is the structure a reader is pointing at once they have stopped
         /// pointing at glyphs.
-        func paragraphRange(at index: Int) -> Range<Int> {
-            guard length > 0 else { return index..<index }
-            let at = position(of: index)
-            let cell = cells[at.row][at.column]
+        ///
+        /// Which also makes this the one member of the family with no line-end
+        /// ambiguity to settle: the answer is the cell, and a point resolves to a
+        /// cell whether or not it landed on a glyph.
+        func paragraphRange(at point: CGPoint) -> Range<Int> {
+            guard let cell = cell(at: point) else { return 0..<0 }
             return cell.base..<cell.lastIndex
         }
 

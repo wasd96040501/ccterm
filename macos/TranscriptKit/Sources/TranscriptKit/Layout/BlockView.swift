@@ -525,14 +525,20 @@ final class BlockView: NSView {
         // `NSTextView` uses, and the reason a link's text is still selectable.
         pressedLink = block.link(at: convert(event.locationInWindow, from: nil))
 
-        let index = block.index(at: convert(event.locationInWindow, from: nil))
+        let point = convert(event.locationInWindow, from: nil)
         // Which unit a click means is the block's to answer — it owns the text
         // the boundaries are in. All this does is pick the question.
+        //
+        // The **point** goes over for the two that take one, not the index below
+        // it. An index at a line boundary names two places and this side cannot
+        // tell them apart; the block can, and only while it still has the click.
         let range: Range<Int>
         switch event.clickCount {
-        case 2: range = block.wordRange(at: index)
-        case 3...: range = block.paragraphRange(at: index)
-        default: range = index..<index
+        case 2: range = block.wordRange(at: point)
+        case 3...: range = block.paragraphRange(at: point)
+        default:
+            let index = block.index(at: point)
+            range = index..<index
         }
         anchor = range.lowerBound
         focus = range.upperBound
@@ -661,9 +667,9 @@ final class BlockView: NSView {
         window?.makeFirstResponder(self)
 
         if let block {
-            let index = block.index(at: convert(event.locationInWindow, from: nil))
-            if selection?.contains(index) != true {
-                let word = block.wordRange(at: index)
+            let point = convert(event.locationInWindow, from: nil)
+            if selection?.contains(block.index(at: point)) != true {
+                let word = block.wordRange(at: point)
                 anchor = word.lowerBound
                 focus = word.upperBound
                 invalidate()

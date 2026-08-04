@@ -33,13 +33,55 @@ import Foundation
 /// boundary between them would be highlighting the wrong words.
 struct InlineLink: Equatable {
 
-    let url: URL
+    /// Where an activatable run leads.
+    ///
+    /// **Why this is an enum rather than a `URL`.** Everything `BlockView` does
+    /// with a link — the band that fades in under it, the pointing hand, the rule
+    /// that a press is a click only if it neither dragged nor selected — is about
+    /// *an activatable run*, and none of it looks at the destination. A second
+    /// kind of run that wanted all of that and had no address would otherwise
+    /// have to bring a parallel copy of it, keyed on its own attribute, with its
+    /// own hover state and its own idea of what a click is. One more case here
+    /// costs a `switch` at the one place that cares which it is.
+    ///
+    /// `CodeBlock` predicted this shape from the other direction — "a button is
+    /// that shape with a closure where the `URL` is" — and this is the same
+    /// observation with the closure left out: what a `.more` press *does* is the
+    /// host's, not something the run carries.
+    enum Destination: Equatable {
+
+        case url(URL)
+
+        /// The part of a truncated message that is not on screen. Reported by
+        /// `UserMessage`, which draws the run that carries it.
+        case more
+    }
+
+    let destination: Destination
 
     /// The positions this link covers, in the index space of whichever block was
     /// asked. Lifted by each container on the way up, so what reaches the top is
     /// in the row's space — the same space a selection's endpoints are in, which
     /// is what lets one `rects(from:to:)` serve both.
     let range: Range<Int>
+
+    init(destination: Destination, range: Range<Int>) {
+        self.destination = destination
+        self.range = range
+    }
+
+    /// The common case, spelled the way every caller but one wants it.
+    init(url: URL, range: Range<Int>) {
+        self.init(destination: .url(url), range: range)
+    }
+
+    /// The address this run leads to, or `nil` for a destination that has none —
+    /// which is what a hover has to *show*, so the optionality belongs here
+    /// rather than at each of the places that report one.
+    var url: URL? {
+        guard case .url(let url) = destination else { return nil }
+        return url
+    }
 }
 
 extension InlineLink {
@@ -51,6 +93,8 @@ extension InlineLink {
     /// container that can write it wrong, and there is no reason for more than one
     /// copy of two additions.
     func lifted(by base: Int) -> InlineLink {
-        InlineLink(url: url, range: (range.lowerBound + base)..<(range.upperBound + base))
+        InlineLink(
+            destination: destination,
+            range: (range.lowerBound + base)..<(range.upperBound + base))
     }
 }

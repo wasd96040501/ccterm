@@ -133,11 +133,32 @@ public final class TranscriptView: NSView {
     /// view answer below share one tree instead of each building their own.
     private let rowCache = RowCache()
 
-    /// Row `row`'s markdown, parsed and measured at the current content width —
-    /// or handed back from the cache, which is the usual case: `NSTableView` asks
-    /// for a height and then, for the rows it is about to show, a view.
-    private func measuredBlock(forRow row: Int, source: String) -> MeasuredBlock {
-        rowCache.measuredBlock(forRow: row, width: contentWidth) { MarkdownBlockBuilder.make(source) }
+    /// Row `row`'s content, built and measured at the current content width — or
+    /// handed back from the cache, which is the usual case: `NSTableView` asks for
+    /// a height and then, for the rows it is about to show, a view. `nil` for
+    /// content the transcript does not draw itself.
+    ///
+    /// **The one place a content case names a block recipe.** Three callers need
+    /// that mapping — the height answer, the view answer, and the re-measure a
+    /// width change forces — and a second copy of it is how one of them comes to
+    /// be missing a case: not as a failure, but as a row that quietly stops being
+    /// re-measured.
+    private func measuredBlock(forRow row: Int, content: TranscriptRowContent) -> MeasuredBlock? {
+        switch content {
+        case .markdown(let source):
+            return rowCache.measuredBlock(forRow: row, width: contentWidth) {
+                MarkdownBlockBuilder.make(source)
+            }
+
+        case .userMessage(let text):
+            return rowCache.measuredBlock(forRow: row, width: contentWidth) {
+                UserMessage(text)
+            }
+
+        // `.image` has no block type behind it yet; a `.view` row is the host's.
+        case .image, .view:
+            return nil
+        }
     }
 
     /// How tall row `row` is. `.view` rows are the delegate's to measure; the
@@ -146,15 +167,14 @@ public final class TranscriptView: NSView {
     fileprivate func height(ofRow row: Int) -> CGFloat {
         let answer: CGFloat
         switch dataSource?.transcriptView(self, contentForRow: row) {
-        case .markdown(let source):
-            answer = measuredBlock(forRow: row, source: source).size.height
-
         case .view:
             guard let delegate else { return Self.minimumRowHeight }
             answer = delegate.transcriptView(self, heightOfRow: row, width: contentWidth)
 
-        // Neither has a block type behind it yet.
-        case .userMessage, .image, .none:
+        case .some(let content):
+            answer = measuredBlock(forRow: row, content: content)?.size.height ?? 0
+
+        case .none:
             answer = 0
         }
         return max(answer, Self.minimumRowHeight)
@@ -186,53 +206,75 @@ public final class TranscriptView: NSView {
 
         let hosted: NSView
         switch content {
-        case .markdown(let source):
-            // Recycled through the cell it was already installed in, so a row
-            // scrolling back into view rebuilds no constraints. Falls back to a
-            // fresh instance when the pool hands over a cell that was serving a
-            // `.view` row.
-            let markdown = cell.hostedView as? BlockView ?? BlockView()
-            markdown.configure(with: measuredBlock(forRow: row, source: source))
-            // Re-bound on every pass rather than once at construction: the view
-            // is recycled, and `row` is captured only as the fallback for a
-            // lookup that can fail once the view has left the table.
-            markdown.onLinkActivated = { [weak self] view, url in
-                guard let self else { return }
-                let current = self.row(for: view)
-                self.delegate?.transcriptView(
-                    self, didActivate: url, inRow: current >= 0 ? current : row)
-            }
-            markdown.onLinkHovered = { [weak self] view, url, point in
-                guard let self else { return }
-                let current = self.row(for: view)
-                self.delegate?.transcriptView(
-                    self, didHover: url, at: self.convert(point, from: view),
-                    inRow: current >= 0 ? current : row)
-            }
-            // Not `delegate?.transcriptView(…) ?? menu`: optional-chaining a
-            // method that itself returns an optional flattens the two, so a host
-            // answering "show no menu" would be indistinguishable from having no
-            // delegate — and would silently get the default menu instead.
-            markdown.onContextMenu = { [weak self] view, menu in
-                guard let self, let delegate = self.delegate else { return menu }
-                let current = self.row(for: view)
-                return delegate.transcriptView(
-                    self, menu: menu, forRow: current >= 0 ? current : row)
-            }
-            hosted = markdown
+        case .markdown, .userMessage, .image:
+            guard let block = measuredBlock(forRow: row, content: content) else { return nil }
+            hosted = blockView(in: cell, showing: block, forRow: row)
 
         case .view:
             guard let delegate else { return nil }
             configuringCell = cell
             defer { configuringCell = nil }
             hosted = delegate.transcriptView(self, viewForRow: row)
-
-        case .userMessage, .image:
-            return nil
         }
 
         cell.install(hosted, minWidth: minContentWidth, maxWidth: maxContentWidth)
         return cell
+    }
+
+    /// The view a self-drawn row is served through, bound to `block`.
+    ///
+    /// One path for every self-drawn case rather than one per case: what differs
+    /// between a document and a user's bubble is the tree, and the tree is settled
+    /// by the time this runs. A bubble carries no links today, so three of these
+    /// four lines do nothing for it — which is the point. Nothing here has to know
+    /// which case it is serving, so nothing here has to be revisited when another
+    /// one lands.
+    private func blockView(
+        in cell: TranscriptCellView, showing block: MeasuredBlock, forRow row: Int
+    ) -> BlockView {
+        // Recycled through the cell it was already installed in, so a row
+        // scrolling back into view rebuilds no constraints. Falls back to a fresh
+        // instance when the pool hands over a cell that was serving a `.view` row.
+        let view = cell.hostedView as? BlockView ?? BlockView()
+        view.configure(with: block)
+        // Re-bound on every pass rather than once at construction: the view is
+        // recycled, and `row` is captured only as the fallback for a lookup that
+        // can fail once the view has left the table.
+        view.onLinkActivated = { [weak self] view, link in
+            guard let self else { return }
+            let current = self.row(for: view)
+            switch link.destination {
+            case .url(let url):
+                self.delegate?.transcriptView(
+                    self, didActivate: url, inRow: current >= 0 ? current : row)
+
+            // Nothing yet, on purpose. Showing the rest of a message is a
+            // presentation the host owns — a sheet, a panel, a push — and the
+            // delegate requirement that reports this lands with the first host
+            // that has somewhere to put it. Until then the run is drawn, hovers,
+            // and does nothing when pressed.
+            case .more:
+                break
+            }
+        }
+        view.onLinkHovered = { [weak self] view, url, point in
+            guard let self else { return }
+            let current = self.row(for: view)
+            self.delegate?.transcriptView(
+                self, didHover: url, at: self.convert(point, from: view),
+                inRow: current >= 0 ? current : row)
+        }
+        // Not `delegate?.transcriptView(…) ?? menu`: optional-chaining a method
+        // that itself returns an optional flattens the two, so a host answering
+        // "show no menu" would be indistinguishable from having no delegate — and
+        // would silently get the default menu instead.
+        view.onContextMenu = { [weak self] view, menu in
+            guard let self, let delegate = self.delegate else { return menu }
+            let current = self.row(for: view)
+            return delegate.transcriptView(
+                self, menu: menu, forRow: current >= 0 ? current : row)
+        }
+        return view
     }
 
     /// Reports the row leaving the viewport. What goes back into the pool is the
@@ -478,7 +520,7 @@ public final class TranscriptView: NSView {
         measuredContentWidth = width
         guard numberOfRows > 0 else { return }
 
-        reflowVisibleMarkdown()
+        reflowVisibleRows()
 
         // `noteHeightOfRows` re-asks the delegate for every index it is handed,
         // so a full pass is O(rows) — nothing once, a freeze sixty times a
@@ -496,7 +538,7 @@ public final class TranscriptView: NSView {
             withIndexesChanged: IndexSet(integersIn: visible.location..<(visible.location + visible.length)))
     }
 
-    /// Re-measures the markdown rows currently on screen and hands each cell the
+    /// Re-measures the self-drawn rows currently on screen and hands each cell the
     /// result.
     ///
     /// `noteHeightOfRows` above updates a row's *height*; it does not re-run
@@ -505,20 +547,26 @@ public final class TranscriptView: NSView {
     /// old width — with `layerContentsRedrawPolicy` set to `.onSetNeedsDisplay`,
     /// not even repainted, just a stale bitmap stretched wider.
     ///
+    /// Every self-drawn case, not one of them: a case reached through
+    /// `measuredBlock(forRow:content:)` everywhere except here would keep its
+    /// height in step with the width and its glyphs at the old one, which is the
+    /// half of a reflow nothing complains about.
+    ///
     /// Affordable only because of `RowCache`: the height pass that follows asks
     /// for the same rows at the same width and gets these trees back rather than
     /// measuring a second time.
     ///
     /// Off-screen rows need nothing — they are re-measured when they scroll in,
     /// through `viewForRow`.
-    private func reflowVisibleMarkdown() {
+    private func reflowVisibleRows() {
         tableView.enumerateAvailableRowViews { [weak self] rowView, row in
             guard let self,
                 let cell = rowView.view(atColumn: 0) as? TranscriptCellView,
-                let markdown = cell.hostedView as? BlockView,
-                case .markdown(let source) = dataSource?.transcriptView(self, contentForRow: row)
+                let view = cell.hostedView as? BlockView,
+                let content = dataSource?.transcriptView(self, contentForRow: row),
+                let block = measuredBlock(forRow: row, content: content)
             else { return }
-            markdown.remeasured(to: measuredBlock(forRow: row, source: source))
+            view.remeasured(to: block)
         }
     }
 

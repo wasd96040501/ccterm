@@ -41,15 +41,42 @@ struct ShapedText: @unchecked Sendable {
 
     // MARK: - Line breaking
 
-    /// Breaks the text into lines no wider than `width`.
+    /// Breaks the text into lines no wider than `width`, and no more than `limit`
+    /// of them.
     ///
     /// `CTTypesetter` rather than `CTFramesetter` because the line origins are
     /// ours to place: a framesetter hands back a frame in y-up coordinates whose
     /// origins then have to be un-flipped, and it wants a path sized in advance
     /// — which is the one thing not known yet when the height is what is being
     /// computed.
-    func typeset(width: CGFloat) -> TypesetText {
-        guard let typesetter, width > 0 else { return .empty }
+    ///
+    /// ## The limit
+    ///
+    /// **Truncation belongs here and nowhere above.** How many lines a string
+    /// takes is a fact about a *width* — the same message is three lines in a
+    /// wide window and seven in a narrow one — so a caller that cut the string
+    /// short before this point would be answering a question it cannot have
+    /// asked yet, and would be cutting the very characters a copy is taken from.
+    /// This is also the one place that already knows what a line is.
+    ///
+    /// The last line the limit allows is built over the **whole** remainder and
+    /// then truncated with `CTLineCreateTruncatedLine`, so the ellipsis lands
+    /// where Core Text says it fits rather than where arithmetic guesses. Its
+    /// `range` covers that whole remainder, which is Apple's documented behaviour
+    /// and has one consequence worth knowing: a drag onto the last line can copy
+    /// text that is not on screen. Left that way deliberately — for a message the
+    /// reader typed, "copy what I sent" is the right answer, and clamping it
+    /// would mean deriving where the ellipsis cut, which Core Text does not
+    /// report.
+    ///
+    /// **Not for text carrying inline symbols.** A symbol is placed by asking the
+    /// line for the pen at its index, and every index in the hidden tail reports
+    /// the truncation point — so a symbol in the part that was cut would be drawn
+    /// on top of the ellipsis. Nothing passes a limit for such text today
+    /// (`UserMessage` is plain), and this is the constraint to check before
+    /// something does.
+    func typeset(width: CGFloat, limit: Int = .max) -> TypesetText {
+        guard let typesetter, width > 0, limit > 0 else { return .empty }
         let length = attributed.length
 
         var lines: [TypesetText.Line] = []
@@ -57,6 +84,7 @@ struct ShapedText: @unchecked Sendable {
         var start = 0
         var y: CGFloat = 0
         var widest: CGFloat = 0
+        var isTruncated = false
 
         while start < length {
             var count = CTTypesetterSuggestLineBreak(typesetter, start, Double(width))
@@ -65,7 +93,15 @@ struct ShapedText: @unchecked Sendable {
             // line instead — a clipped glyph is a better failure than a hang.
             if count <= 0 { count = 1 }
 
-            let ctLine = CTTypesetterCreateLine(typesetter, CFRange(location: start, length: count))
+            // The last line allowed, with text still to come after it.
+            isTruncated = lines.count == limit - 1 && start + count < length
+            if isTruncated { count = length - start }
+
+            let full = CTTypesetterCreateLine(typesetter, CFRange(location: start, length: count))
+            let ctLine =
+                isTruncated
+                ? CTLineCreateTruncatedLine(full, Double(width), .end, ellipsis(at: start)) ?? full
+                : full
 
             var ascent: CGFloat = 0
             var descent: CGFloat = 0
@@ -101,6 +137,7 @@ struct ShapedText: @unchecked Sendable {
             widest = max(widest, lineWidth)
             y += ascent + descent + leading
             start += count
+            if isTruncated { break }
         }
 
         return TypesetText(
@@ -108,7 +145,24 @@ struct ShapedText: @unchecked Sendable {
             lines: lines,
             symbols: symbols,
             size: CGSize(width: widest, height: y),
-            typesetWidth: width)
+            typesetWidth: width,
+            isTruncated: isTruncated)
+    }
+
+    /// The "…" spliced onto a truncated line, wearing the face and colour the
+    /// text has where it was cut — so the ellipsis reads as part of the sentence
+    /// rather than as something added to it.
+    ///
+    /// Anything that would make the token more than a glyph is dropped: a run
+    /// delegate reserves an advance for artwork that is not in the token, and the
+    /// symbol attribute names artwork nobody will place.
+    private func ellipsis(at index: Int) -> CTLine {
+        var attributes = attributed.attributes(
+            at: min(index, attributed.length - 1), effectiveRange: nil)
+        attributes[kCTRunDelegateAttributeName as NSAttributedString.Key] = nil
+        attributes[.inlineSymbol] = nil
+        return CTLineCreateWithAttributedString(
+            NSAttributedString(string: "\u{2026}", attributes: attributes) as CFAttributedString)
     }
 
     // MARK: - Intrinsic widths

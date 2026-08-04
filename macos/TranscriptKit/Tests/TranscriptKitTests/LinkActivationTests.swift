@@ -27,7 +27,7 @@ final class LinkActivationTests: XCTestCase {
 
     func testLinkIsFoundUnderItsOwnGlyphs() throws {
         let block = measured("[word](https://example.com)")
-        XCTAssertEqual(try block.link(at: onTheLink(block))?.url.absoluteString, "https://example.com")
+        XCTAssertEqual(try block.link(at: onTheLink(block))?.url?.absoluteString, "https://example.com")
     }
 
     /// `index(at:)` clamps — a point past the end of a line resolves to that
@@ -120,9 +120,9 @@ final class LinkActivationTests: XCTestCase {
         let titled = measured(#"[word](https://example.com "Read this")"#)
         let plain = measured("[word](https://example.com)")
         XCTAssertEqual(
-            try titled.link(at: onTheLink(titled))?.url.absoluteString, "https://example.com")
+            try titled.link(at: onTheLink(titled))?.url?.absoluteString, "https://example.com")
         XCTAssertEqual(
-            try plain.link(at: onTheLink(plain))?.url.absoluteString, "https://example.com")
+            try plain.link(at: onTheLink(plain))?.url?.absoluteString, "https://example.com")
     }
 
     /// An image is a reference to a file, and it reports one the same way a link
@@ -130,7 +130,7 @@ final class LinkActivationTests: XCTestCase {
     func testAnImageCarriesItsSource() throws {
         let block = measured("![a diagram](assets/block-tree.png)")
         XCTAssertEqual(
-            try block.link(at: onTheLink(block))?.url.absoluteString, "assets/block-tree.png")
+            try block.link(at: onTheLink(block))?.url?.absoluteString, "assets/block-tree.png")
     }
 
     // MARK: - Press, drag, release
@@ -171,7 +171,9 @@ final class LinkActivationTests: XCTestCase {
         window.orderFront(nil)
 
         let recorder = Recorder()
-        cell.onLinkActivated = { _, url in recorder.urls.append(url) }
+        // What crosses is the run; the address is what this suite is about, so
+        // anything without one is not something these tests can record.
+        cell.onLinkActivated = { _, link in link.url.map { recorder.urls.append($0) } }
         cell.onLinkHovered = { _, url, _ in recorder.hovers.append(url) }
 
         return Mounted(window: window, cell: cell, block: block, recorder: recorder)
@@ -405,10 +407,12 @@ final class LinkActivationTests: XCTestCase {
         mounted.cell.remeasured(to: narrower)
 
         // Against where the run actually is now, not merely against "somewhere
-        // else" — a band that moved to the wrong place would satisfy that.
+        // else" — a band that moved to the wrong place would satisfy that. Plus
+        // the band's own inset, which is the one respect in which it is not the
+        // run's rectangles.
         let after = try XCTUnwrap(
             bands(mounted).first?.path?.boundingBox, "the re-measure dropped the band")
-        let expected = moved.reduce(CGRect.null) { $0.union($1) }
+        let expected = moved.reduce(CGRect.null) { $0.union($1) }.insetBy(dx: -2, dy: -2)
         XCTAssertEqual(after.minX, expected.minX, accuracy: 0.5)
         XCTAssertEqual(after.minY, expected.minY, accuracy: 0.5)
         XCTAssertEqual(after.maxX, expected.maxX, accuracy: 0.5)

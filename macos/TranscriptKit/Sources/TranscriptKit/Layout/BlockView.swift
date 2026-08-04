@@ -30,11 +30,15 @@ final class BlockView: NSView {
     /// index, because a row's index moves under it — the transcript resolves the
     /// current one at the moment of the call.
     ///
+    /// The whole run goes over, not its address: what this view knows is *that an
+    /// activatable run was clicked*, and which kind it was is a question only the
+    /// side holding the host's delegate can act on. See `InlineLink.Destination`.
+    ///
     /// A closure, where §4 of the package's notes asks for a delegate: those two
     /// protocols are the *host's* surface, and this crosses no such boundary —
     /// `TranscriptView` builds these views itself. Handing the view back rather
     /// than capturing it is what keeps the closure from retaining its own owner.
-    var onLinkActivated: ((BlockView, URL) -> Void)?
+    var onLinkActivated: ((BlockView, InlineLink) -> Void)?
 
     /// The link under the pointer changed. `nil` on leaving one.
     ///
@@ -221,10 +225,48 @@ final class BlockView: NSView {
     /// two of them.
     private static let bandColor = NSColor.linkColor.withAlphaComponent(0.08)
 
+    /// The same band while the button is down — twice the hover's weight.
+    ///
+    /// **Not Telegram's own 30%**, and the difference is the interaction model
+    /// rather than taste. `linkHighlightColor` in its day theme is
+    /// `accentColor.withAlphaComponent(0.3)`, and on iOS that one tint carries the
+    /// *whole* gesture: there is no pointer, so nothing precedes the touch and the
+    /// highlight has to announce itself from nothing. Here it steps up from a
+    /// hover that is already showing, and 30% against 8% reads as the row
+    /// flinching rather than as the same band pressed.
+    ///
+    /// So the number is taken from the one Telegram control that has both states —
+    /// the comments strip on a channel post, 8% resting and 16% pressed — which is
+    /// the same *step* rather than the same *value*. One constant if it ever wants
+    /// to be the louder one.
+    private static let pressedBandColor = NSColor.linkColor.withAlphaComponent(0.16)
+
     private static let bandRadius: CGFloat = 4
 
-    /// Telegram's own duration for fading a tinted band over text.
-    private static let bandFade: CFTimeInterval = 0.2
+    /// How far the band reaches past the glyphs it is under, on every side.
+    ///
+    /// Telegram's `LinkHighlightingNode` insets each of its rectangles by `-2`
+    /// before rounding them at 4, and the reason shows up at the ends of a run: a
+    /// band drawn to the ink starts and stops exactly at the first and last stem,
+    /// so the tint reads as clipped by the letters rather than as something behind
+    /// them. Two points is also what keeps a 4-point radius from biting into the
+    /// glyphs at the corners.
+    ///
+    /// Only the band takes it. A selection's rectangles are the line boxes and
+    /// must stay flush — inflating those would make consecutive lines' highlights
+    /// overlap, which is exactly what a selection must not look like.
+    private static let bandInset: CGFloat = 2
+
+    /// Telegram's own duration for taking a tinted band off text —
+    /// `animateAlpha(from: 1.0, to: 0.0, duration: 0.18)` where it drops the
+    /// highlight on a link.
+    ///
+    /// Used in both directions here, where Telegram animates only the way out. It
+    /// has no hover to arrive from: its band appears under a finger that is
+    /// already down, and appearing instantly is right for that. Ours arrives under
+    /// a pointer that merely passed by, and a band that snapped in on every word
+    /// crossed would be the row twitching.
+    private static let bandFade: CFTimeInterval = 0.18
 
     /// Brings the band to where `hovered` says, or takes it away.
     ///
@@ -248,7 +290,7 @@ final class BlockView: NSView {
         // is not travelling, it is somewhere else now.
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        band.path = Self.band(over: rects, radius: Self.bandRadius)
+        band.path = Self.band(over: rects, radius: Self.bandRadius, inset: Self.bandInset)
         band.fillColor = resolvedBandColor()
         CATransaction.commit()
 
@@ -323,11 +365,39 @@ final class BlockView: NSView {
     /// this is the one colour here that has to be re-resolved by hand when the
     /// appearance changes.
     private func resolvedBandColor() -> CGColor {
-        var resolved = Self.bandColor.cgColor
+        let color = isPressed ? Self.pressedBandColor : Self.bandColor
+        var resolved = color.cgColor
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            resolved = Self.bandColor.cgColor
+            resolved = color.cgColor
         }
         return resolved
+    }
+
+    /// Whether the band is showing its pressed tint: the button is down, on the
+    /// run the pointer is on, and the press has not become a drag.
+    ///
+    /// Derived rather than set, from three pieces of state that already exist —
+    /// which is what keeps "pressed" meaning the same thing here as it does in
+    /// `mouseUp`, where the same three decide whether a press was a click.
+    private var isPressed = false
+
+    /// Re-derives the pressed tint and, if it changed, writes it.
+    ///
+    /// **Instantly, unlike every other change to this band.** Telegram animates
+    /// its highlight out and not in, and a press is the same case for a stronger
+    /// reason: feedback that eases in over a fifth of a second is feedback that
+    /// arrives after the finger has left. The fade stays where it belongs, on the
+    /// band's arrival and departure.
+    private func updatePressedState() {
+        let pressed = pressedLink != nil && pressedLink == hovered && selection == nil
+        guard pressed != isPressed else { return }
+        isPressed = pressed
+
+        guard let hoverBand else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        hoverBand.fillColor = resolvedBandColor()
+        CATransaction.commit()
     }
 
     /// One shape over a run's line rectangles.
@@ -347,7 +417,12 @@ final class BlockView: NSView {
     /// not touch — a run ending at the right margin and resuming at the left is
     /// two bands, and drawing it as one would be joining across a gap that is
     /// really there.
-    private static func band(over rects: [CGRect], radius: CGFloat) -> CGPath {
+    ///
+    /// `inset` is applied first, so the bridging below reasons about the same
+    /// rectangles that get drawn: two wrapped lines inflated towards each other
+    /// already overlap, and the bridge fills what the roundings still leave.
+    private static func band(over rects: [CGRect], radius: CGFloat, inset: CGFloat) -> CGPath {
+        let rects = rects.map { $0.insetBy(dx: -inset, dy: -inset) }
         let path = CGMutablePath()
         for rect in rects {
             path.addRoundedRect(in: rect, cornerWidth: radius, cornerHeight: radius)
@@ -543,6 +618,10 @@ final class BlockView: NSView {
         anchor = range.lowerBound
         focus = range.upperBound
         invalidate()
+        // After the selection is set, not before: whether this counts as a press
+        // depends on it — a double-click takes a word, which is a selection, and
+        // is therefore not a press on the link under it.
+        updatePressedState()
     }
 
     /// An I-beam over the whole row, not only over glyphs.
@@ -596,23 +675,43 @@ final class BlockView: NSView {
     private func report(_ link: InlineLink?, at point: CGPoint) {
         guard link != hovered else { return }
         hovered = link
+        // Before the band is brought up, so it arrives wearing the right tint: the
+        // pointer can reach a run with the button already down — sliding off one
+        // link onto another — and the band would otherwise fade in at the hover
+        // weight under a finger that is pressing.
+        updatePressedState()
         updateHoverBand()
+        // The band is drawn for any activatable run; the *address* is reported
+        // only when there is one, so a run with no destination to show reads to
+        // the host exactly like leaving a link.
         onLinkHovered?(self, link?.url, point)
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { pressedLink = nil }
+        // The tint goes back to the hover's on the way out of every path through
+        // here, activation included — the pointer is still on the run, so the band
+        // stays; it is only the press that ended.
+        defer {
+            pressedLink = nil
+            updatePressedState()
+        }
         // `selection` non-nil covers both endings that are not a click: a drag
         // that moved, and a double-click that took a word. Neither should open
         // anything.
         guard let link = pressedLink, selection == nil else { return super.mouseUp(with: event) }
 
-        onLinkActivated?(self, link.url)
+        onLinkActivated?(self, link)
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard let block, anchor != nil else { return super.mouseDragged(with: event) }
         focus = block.index(at: convert(event.locationInWindow, from: nil))
+        // The moment the press selects anything it stops being a click — the rule
+        // `mouseUp` applies — so the tint goes back to the hover's while the
+        // pointer is still down. `pressedLink` itself is left alone: a click that
+        // wobbled a point between down and up selects nothing and must still open
+        // its link.
+        updatePressedState()
         // Lets a drag continue past the edge of the viewport, which matters most
         // on exactly the rows where selection is most wanted — a code block taller
         // than the window.

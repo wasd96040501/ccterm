@@ -1,2 +1,5 @@
 /* Context menu item: copies the selected text in a transcript row. */
 "Copy" = "Copy";
+
+/* Affordance under a user message the transcript had to cut short; asks for the rest of it. */
+"More" = "More";

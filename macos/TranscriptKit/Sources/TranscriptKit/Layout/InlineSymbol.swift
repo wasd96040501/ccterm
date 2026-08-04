@@ -85,6 +85,19 @@ struct InlineSymbol {
             name: "photo",
             canvas: CGSize(width: 18, height: 14),
             alignment: CGRect(x: 0, y: 2.5, width: 18, height: 9))
+
+        /// In front of "More", on a message the transcript had to cut short.
+        ///
+        /// Two chevrons on the diagonal is the shape this wants, and SF Symbols
+        /// has no such glyph: `expand.diagonal` is not on any system this builds
+        /// for (checked, along with every name in `CoreGlyphs` carrying
+        /// "expand", "diagonal" or "outward"). The arrows are the same figure
+        /// with heads on it, and they are the icon macOS itself uses for
+        /// "open this out" — the window control, Quick Look, full screen.
+        static let more = Design(
+            name: "arrow.up.left.and.arrow.down.right",
+            canvas: CGSize(width: 16, height: 15),
+            alignment: CGRect(x: 0, y: 2.5, width: 15.5, height: 9))
     }
 
     let design: Design

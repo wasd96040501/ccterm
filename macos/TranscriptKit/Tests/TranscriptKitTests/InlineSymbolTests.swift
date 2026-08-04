@@ -51,7 +51,7 @@ final class InlineSymbolTests: XCTestCase {
     // artwork publishes — the only place in the package that opens the image.
 
     func testRecordedProportionsMatchTheArtwork() throws {
-        for design in [InlineSymbol.Design.link, .image] {
+        for design in [InlineSymbol.Design.link, .image, .more] {
             let image = try XCTUnwrap(
                 NSImage(systemSymbolName: design.name, accessibilityDescription: nil),
                 "\(design.name) is not a symbol on this system")

@@ -2,6 +2,9 @@ import Foundation
 
 /// One turn in the demo transcript.
 struct DemoMessage {
+
+    /// Who said it. Both are the transcript's to draw — `.userMessage` and
+    /// `.markdown` — so the demo supplies no row views of its own.
     enum Author { case user, assistant }
 
     let author: Author
@@ -34,12 +37,16 @@ extension DemoMessage {
         [
             .user("What shipped in 0.3?"),
             .assistant(releaseNotes),
-            .user("Remind me what actually happens in one runloop iteration."),
+            .user(
+                "Remind me what actually happens in one runloop iteration — I keep having to "
+                    + "re-derive which half of it runs my code and which half is AppKit "
+                    + "flushing, and I want the long version so the bubble has something to "
+                    + "wrap."),
             .assistant(runloopTick),
             .user("How do I pick between a delegate and a Combine publisher?"),
             .assistant(mechanismTable),
             .assistant(measuringARow),
-            .user("And how should I lay a new domain entity out?"),
+            .user(pastedReport),
             .assistant(placingAnEntity),
             .assistant(shortAnswer),
             .user("Show me every list shape at once."),
@@ -57,6 +64,46 @@ extension DemoMessage {
     static func assistant(_ text: String) -> DemoMessage {
         DemoMessage(author: .assistant, text: text)
     }
+
+    /// Long enough to be cut short, which is the only way to see the `More` run
+    /// and the ellipsis above it — and pasted-looking, because that is how a
+    /// message gets long enough for either to matter.
+    ///
+    /// Deliberately holding characters a markdown pass would eat — `**`,
+    /// `Sources/**/*.swift`, `__init__`, a leading `#` — so that the bubble
+    /// showing them verbatim is visible on screen rather than only asserted.
+    fileprivate static let pastedReport = """
+        Here's the whole repro, pasted from the issue — don't fix it yet, I just \
+        want to know which layer it belongs to.
+
+        Steps: open a session with ~400 rows, drag the window's right edge from \
+        1400 to 700 in one motion, then let go. Somewhere in that drag the rows \
+        below the fold stop agreeing with the ones on screen: the first screenful \
+        re-wraps at the new width, but scrolling down lands on rows still laid out \
+        for the old one, and they only correct themselves when they scroll back in. \
+        It reproduces every time on the 14" display and about one time in three on \
+        the external one, which makes me think it's tied to how many rows are \
+        visible rather than to the width itself.
+
+        What I've ruled out: it isn't the parse — I logged the block trees and they \
+        are identical across the drag. It isn't __init__ order either; the same \
+        thing happens on a transcript that was already fully loaded before the drag \
+        started. I grepped Sources/**/*.swift for every noteHeightOfRows call and \
+        there are three, and only one of them runs during a live resize.
+
+        My guess is that the mid-drag pass invalidates only what's on screen — \
+        which is the right call for the frame budget — and that the pass which is \
+        supposed to catch up on mouse-up either doesn't run or runs against a \
+        width that has already moved again. If that's it, the fix is in whoever \
+        owns "the drag ended", not in the layout code, and the test would be a \
+        resize that ends while a row below the fold is still stale.
+
+        # Not urgent
+        Nobody outside the team has hit it. But it's the second bug this month \
+        that comes down to "invalidated the visible rows and meant to catch up \
+        later", so if there's a shape that makes the catch-up impossible to \
+        forget, I'd rather spend the time on that than on this one bug.
+        """
 }
 
 // MARK: - The documents

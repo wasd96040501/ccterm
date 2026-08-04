@@ -69,8 +69,17 @@ struct TypesetText: @unchecked Sendable {
     /// is still valid" from "this text happens to be narrow".
     let typesetWidth: CGFloat
 
+    /// Whether a line limit cut this short — the last line ends in an ellipsis
+    /// and the rest of the string is not on screen.
+    ///
+    /// The answer to "was there more", which only the pass that broke the lines
+    /// can give: `lines.count == limit` is not it, since a string that ends
+    /// exactly on the limit fits.
+    let isTruncated: Bool
+
     static let empty = TypesetText(
-        attributed: NSAttributedString(), lines: [], symbols: [], size: .zero, typesetWidth: 0)
+        attributed: NSAttributedString(), lines: [], symbols: [], size: .zero, typesetWidth: 0,
+        isTruncated: false)
 
     // MARK: - Draw
 

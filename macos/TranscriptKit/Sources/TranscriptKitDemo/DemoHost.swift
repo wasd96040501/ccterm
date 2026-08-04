@@ -96,34 +96,23 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
         messages.count
     }
 
-    /// Assistant turns go through the transcript's own markdown renderer; user
-    /// turns stay host-drawn bubbles. Mixing the two on purpose — they share one
-    /// recycling pool, and a cell handed back from the wrong kind of row is
-    /// exactly the failure that would otherwise only show up in an app.
+    /// Every row is the transcript's to draw — an assistant turn as a markdown
+    /// document, a user turn as a bubble. The demo owns no row views at all, and
+    /// therefore implements neither `heightOfRow` nor `viewForRow`: their default
+    /// implementations trap, and a host that never answers `.view` never reaches
+    /// them.
+    ///
+    /// That both row kinds share one recycling pool is still a real failure mode;
+    /// it is asserted in `UserMessageRowTests` rather than watched here, because
+    /// what it looks like when it goes wrong is a row rendering another row's
+    /// content — which a test can see as readily as an eye can.
     func transcriptView(
         _ transcriptView: TranscriptView, contentForRow row: Int
     ) -> TranscriptRowContent {
         switch messages[row].author {
         case .assistant: return .markdown(messages[row].text)
-        case .user: return .view
+        case .user: return .userMessage(messages[row].text)
         }
-    }
-
-    /// Measured from the model at the width the transcript hands over — never by
-    /// building a view. The bubble's own constraints have to land on the same
-    /// number, or Auto Layout says so out loud.
-    func transcriptView(
-        _ transcriptView: TranscriptView, heightOfRow row: Int, width: CGFloat
-    ) -> CGFloat {
-        MessageBubbleView.height(for: messages[row], width: width)
-    }
-
-    func transcriptView(
-        _ transcriptView: TranscriptView, viewForRow row: Int
-    ) -> NSView {
-        let bubble = transcriptView.makeView(withIdentifier: .bubble) { MessageBubbleView() }
-        bubble.configure(with: messages[row])
-        return bubble
     }
 
     // MARK: - Links
@@ -174,8 +163,4 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
     // returning `nil` suppresses the menu — is assertable, and `ContextMenuTests`
     // asserts it. The demo carries what tests cannot reach (§5), and a menu item
     // that prints to stdout is not that.
-}
-
-extension NSUserInterfaceItemIdentifier {
-    fileprivate static let bubble = NSUserInterfaceItemIdentifier("demo.bubble")
 }

@@ -216,12 +216,44 @@ rebind takes it away are all readable from outside without a hook added for the
 purpose. What still needs eyes is the part no assertion has an opinion on — the
 alpha, whether a wrapped run reads as one band, and the demo's label.
 
-The `.view` bubbles interleaved with them are down to a handful on purpose:
-enough to keep both row kinds sharing one recycling pool, which is where a cell
-handed back from the wrong kind of row would show up, and not so many that they
-crowd out the thing being looked at. The control panel stays regardless — the
-mutation buttons are how scroll anchoring gets checked, and no rendering change
-should cost that.
+The **press** tint is the same shape of claim. That it deepens on mouse-down,
+returns on mouse-up, and gives up the moment the press becomes a drag are all
+assertable and asserted; that the step from 8% to 16% reads as *the same band
+pressed* rather than as the row flinching is not, and is the reason the number is
+Telegram's rather than ours. Its geometry is Telegram's too — each rectangle
+inflated by 2 before it is rounded at 4 — which is what keeps the tint from
+looking clipped by the first and last stem of the run. Both are one constant each
+in `BlockView` if they ever want to be louder.
+
+A user turn is a `.userMessage` row, drawn by the package like the documents
+around it, so **the demo owns no row views at all** — it implements neither
+`heightOfRow` nor `viewForRow`, and what it shows is a host that never has to.
+The `.view` bubbles that used to be interleaved here are gone with it. What they
+guarded — that both row kinds share one recycling pool, where a cell handed back
+from the wrong kind of row would show up — is asserted in `UserMessageRowTests`
+instead, which is the better home for it: the symptom is a row rendering another
+row's content, and a test can see that as readily as an eye can. The control
+panel stays regardless — the mutation buttons are how scroll anchoring gets
+checked, and no rendering change should cost that.
+
+What the bubble needs eyes on is what no assertion has an opinion about: that a
+three-word message reads as a small pill rather than a band with space in it,
+that the gutter the cap leaves is enough to make the row read as one side of a
+conversation, and that the fill against the accent is a tint rather than a block
+of colour. The geometry under all three — hug, cap, right edge, padding — is
+`UserMessageTests`.
+
+The same split runs through **More**, the run under a message the transcript had
+to cut short. That it is a link in the only sense this package has — `link(at:)`
+answers for it, so the band, the pointing hand and the press-is-a-click rule are
+`BlockView`'s existing ones — is asserted on both sides of the seam
+(`UserMessageTests`, `UserMessageRowTests`). What is not, and is the reason the
+demo's script carries one message long enough to trigger it: whether the ellipsis
+and the run under it read as *one* thing the reader can act on, and whether a
+band at the link tint is still legible over an accent-tinted bubble rather than
+over the window. Pressing it does nothing today — on purpose, since where the
+rest of the message goes is the host's, and the delegate requirement lands with
+the first host that has somewhere to put it.
 
 ## 6. How a host is expected to load
 

@@ -38,14 +38,21 @@ final class BlockView: NSView {
 
     /// The link under the pointer changed. `nil` on leaving one.
     ///
-    /// Reported rather than acted on: what a hover *shows* is the host's, and
-    /// this package draws none of it. Fires only when the answer changes, so a
-    /// listener may treat each call as an instruction rather than a sample.
+    /// What the hover *says* is still the host's — an address in a label, a
+    /// preview, nothing at all. What it *looks like on the run* is not, and cannot
+    /// be: only this side knows which rectangles a run occupies. So the band under
+    /// the words is drawn here and the label is reported, which is the line
+    /// between the two halves.
+    ///
+    /// Fires only when the answer changes, so a listener may treat each call as an
+    /// instruction rather than a sample.
     var onLinkHovered: ((BlockView, URL?, CGPoint) -> Void)?
 
-    /// What the last report said, so a pointer sliding along one link is one
-    /// call and not one per mouse-moved event.
-    private var hovered: URL?
+    /// The link the pointer is on. Holds the whole link rather than its address
+    /// so that a pointer sliding along one run is one report and one band, and so
+    /// that the band survives a re-measure — the range still names the same
+    /// characters at any width.
+    private var hovered: InlineLink?
 
     override var isFlipped: Bool { true }
 
@@ -56,18 +63,20 @@ final class BlockView: NSView {
     init() {
         super.init(frame: .zero)
 
-        // Layer-backed, and redrawn only when marked. Scrolling then composites
-        // a rasterised bitmap rather than re-issuing `draw(_:)` for every strip
-        // the clip view exposes, and the only thing that costs a repaint is
-        // something actually saying the content changed.
+        // Layer-backed, and this view's own layer draws **nothing** — it is a
+        // container, and the row is painted by the surfaces hung inside it. See
+        // `SurfaceLayer` for why a row is a stack rather than one bitmap.
         //
-        // The counterpart obligation: AppKit's default policy for a `draw(_:)`
-        // view redraws on resize, and this one explicitly does not — so every
-        // resize that changes what should be on screen has to mark the view
-        // itself. Nothing here is exempt from that, including a width change,
-        // and `invalidate()` is where every one of them goes through.
+        // Rasterised and composited, so scrolling re-issues no drawing at all and
+        // the only thing that costs a repaint is something saying the content
+        // changed. The counterpart obligation: nothing redraws on resize either,
+        // so every resize that changes what should be on screen has to say so —
+        // and `invalidate()` is where all of them go through.
         wantsLayer = true
-        layerContentsRedrawPolicy = .onSetNeedsDisplay
+        layerContentsRedrawPolicy = .never
+
+        surfaces = [SurfaceLayer(playing: PaintItem.Phase.allCases, for: self)]
+        surfaces.forEach { layer?.addSublayer($0) }
 
         // Once, not per `updateTrackingAreas` pass: `.inVisibleRect` is the option
         // that tells AppKit to keep the area's rectangle synchronised with the
@@ -94,6 +103,11 @@ final class BlockView: NSView {
         // as a fresh one.
         anchor = nil
         focus = nil
+        // Same rule, and the band is the part of it that would be *visible* if it
+        // were forgotten: a pooled cell arriving with a highlight over words the
+        // previous document had. Taken away outright rather than faded, because
+        // there is nothing left for a fade to be about.
+        removeHoverBand()
         remeasured(to: block)
     }
 
@@ -112,6 +126,11 @@ final class BlockView: NSView {
         self.block = block
 
         invalidate()
+        // The band is geometry over a range, and the range is the half that does
+        // not depend on the width — so a re-measure does not lose the hover, it
+        // just moves the band to where those same characters are now. This is the
+        // reason a link reports where it is rather than only what it is.
+        updateHoverBand()
     }
 
     /// The one place this view is marked for repaint.
@@ -129,7 +148,216 @@ final class BlockView: NSView {
     /// is none, and the sites read better for saying what they mean rather than
     /// how it is achieved.
     private func invalidate() {
-        needsDisplay = true
+        surfaces.forEach { $0.setNeedsDisplay() }
+    }
+
+    // MARK: - The hover band
+
+    /// The band under the hovered run. Kept as a layer rather than a `PaintItem`
+    /// for one reason: it is the only thing here that changes on its own clock. A
+    /// paint list is a snapshot played synchronously, with no notion of time, so
+    /// fading one in would mean redrawing the row every frame for a fifth of a
+    /// second. As a layer it is interpolated by the render server and this side
+    /// draws nothing at all.
+    ///
+    /// It sits at the **bottom** of the sublayers, which is under the glyphs
+    /// because the row's painting is itself a surface above it — that is the whole
+    /// reason the painting moved onto a surface.
+    ///
+    /// Bottom is enough today, and there is no second drawn surface, because
+    /// nothing a link sits on is opaque. Prose, headings, list items and quotes
+    /// paint nothing at `.background` behind their text at all; a table paints row
+    /// tints there, but they are 2.5–8% black (4–14% white in dark), so a band
+    /// under a table cell is veiled by a few percent rather than hidden. Links do
+    /// not occur inside a code card, which is the one opaque fill here.
+    ///
+    /// If something opaque ever does end up over a link, the fix is to cut the
+    /// stack at `.decoration` and put the band between the two halves — which the
+    /// surfaces already make an addition rather than a redesign. Until then that
+    /// cut would be machinery with nothing to separate.
+    private var hoverBand: CAShapeLayer?
+
+    /// Telegram's hover fill on the one control it tints this way — the comments
+    /// strip on a channel post — is its accent at 8%, and its pressed state 16%.
+    /// This is the same idea against the colour the links themselves are drawn in,
+    /// so the band and the words it sits under move together through light, dark,
+    /// and whatever accent the reader has chosen.
+    ///
+    /// 8% is Telegram's own, on the one control it tints this way — the comments
+    /// strip on a channel post. 12% and 10% were both put on screen on the way to
+    /// keeping it, and both read heavier than the affordance wants to be: a hover
+    /// confirms what the pointer is on, and past a certain weight it starts
+    /// announcing itself the way a selection does.
+    ///
+    /// One number, where Telegram's *comparable* case — the tint behind prose
+    /// links in Instant View, which is this geometry rather than a 42-point strip
+    /// — is 7% light against 13% dark. If the band ever reads faint in dark, that
+    /// near-doubling is the precedent, and this is the constant that would become
+    /// two of them.
+    private static let bandColor = NSColor.linkColor.withAlphaComponent(0.08)
+
+    private static let bandRadius: CGFloat = 4
+
+    /// Telegram's own duration for fading a tinted band over text.
+    private static let bandFade: CFTimeInterval = 0.2
+
+    /// Brings the band to where `hovered` says, or takes it away.
+    ///
+    /// Called on every change of the hovered link and after a re-measure. Both go
+    /// through here so there is one description of what the band should look like
+    /// given the state, rather than one per event that can disagree.
+    private func updateHoverBand() {
+        guard let hovered, let block else { return dismissHoverBand() }
+
+        let rects = block.rects(from: hovered.range.lowerBound, to: hovered.range.upperBound)
+        guard !rects.isEmpty else { return dismissHoverBand() }
+
+        let band = hoverBand ?? makeHoverBand()
+
+        // Geometry never animates. `CAShapeLayer` interpolates a path only between
+        // paths of matching structure, so a link that wraps onto two lines turning
+        // into one that does not would be a morph between shapes with different
+        // subpath counts — undefined, and in practice a lurch. Sliding straight
+        // from one link to the next therefore *cuts* to the new shape while the
+        // opacity stays where it is, which is also what reads correctly: the band
+        // is not travelling, it is somewhere else now.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        band.path = Self.band(over: rects, radius: Self.bandRadius)
+        band.fillColor = resolvedBandColor()
+        CATransaction.commit()
+
+        fade(band, to: 1)
+    }
+
+    /// Fades the band out, and takes the layer away once it is gone — unless a new
+    /// hover arrived while it was fading, which the completion re-checks rather
+    /// than trying to cancel.
+    private func dismissHoverBand() {
+        guard let band = hoverBand else { return }
+        fade(band, to: 0) { [weak self] in
+            guard let self, self.hovered == nil else { return }
+            band.removeFromSuperlayer()
+            self.hoverBand = nil
+        }
+    }
+
+    /// Immediately, with no fade and no completion to race — for the paths where
+    /// the row stops being this row at all.
+    private func removeHoverBand() {
+        hovered = nil
+        hoverBand?.removeFromSuperlayer()
+        hoverBand = nil
+    }
+
+    private func makeHoverBand() -> CAShapeLayer {
+        let band = CAShapeLayer()
+        band.opacity = 0
+        band.contentsScale = window?.backingScaleFactor ?? 2
+        // Below the surfaces, which is below the glyphs.
+        layer?.insertSublayer(band, at: 0)
+        hoverBand = band
+        return band
+    }
+
+    /// The explicit animation is the whole of the movement: implicit actions are
+    /// disabled alongside it so that one write cannot produce two animations that
+    /// disagree about where they started.
+    ///
+    /// `from` is the *presentation* value, so a band interrupted half-way out
+    /// resumes from where it visibly is rather than snapping to full first.
+    private func fade(_ band: CAShapeLayer, to opacity: Float, then: (() -> Void)? = nil) {
+        let from = band.presentation()?.opacity ?? band.opacity
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        CATransaction.setCompletionBlock(then)
+
+        band.opacity = opacity
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = from
+        fade.toValue = opacity
+        fade.duration = Self.bandFade
+        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        band.add(fade, forKey: "opacity")
+
+        CATransaction.commit()
+    }
+
+    /// A `CGColor` is resolved once and stays that way, where the `NSColor`s in a
+    /// paint list are resolved against the appearance current at draw time. So
+    /// this is the one colour here that has to be re-resolved by hand when the
+    /// appearance changes.
+    private func resolvedBandColor() -> CGColor {
+        var resolved = Self.bandColor.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            resolved = Self.bandColor.cgColor
+        }
+        return resolved
+    }
+
+    /// One shape over a run's line rectangles.
+    ///
+    /// Rounded outside, and **continuous** where two lines meet. Rounding each
+    /// line separately would leave a pinch at every join, so a wrapped link would
+    /// read as two stacked pills rather than one band; a bridge across the
+    /// horizontal overlap fills exactly the notch the two roundings leave. Filled
+    /// non-zero, so the overlapping subpaths merge instead of cancelling.
+    ///
+    /// Telegram solves the same problem in `generateRectsImage` by also softening
+    /// the side steps with concave fillets. This is the half that makes the shape
+    /// one shape; the fillets are cosmetic on top of it, and worth adding only if
+    /// the steps actually read badly.
+    ///
+    /// Two lines that do not overlap horizontally get no bridge, because they do
+    /// not touch — a run ending at the right margin and resuming at the left is
+    /// two bands, and drawing it as one would be joining across a gap that is
+    /// really there.
+    private static func band(over rects: [CGRect], radius: CGFloat) -> CGPath {
+        let path = CGMutablePath()
+        for rect in rects {
+            path.addRoundedRect(in: rect, cornerWidth: radius, cornerHeight: radius)
+        }
+        for (upper, lower) in zip(rects, rects.dropFirst()) {
+            let left = max(upper.minX, lower.minX)
+            let right = min(upper.maxX, lower.maxX)
+            guard right > left else { continue }
+            path.addRect(
+                CGRect(
+                    x: left, y: upper.maxY - radius, width: right - left, height: radius * 2))
+        }
+        return path
+    }
+
+    // MARK: - Surfaces
+
+    /// The row's painting, bottom to top. One of these covering every phase is the
+    /// resting state; a decoration that has to sit under the glyphs splits it.
+    private var surfaces: [SurfaceLayer] = []
+
+    /// Sizing is this view's, not autoresizing's: the surfaces are congruent with
+    /// the view by definition, and a mask would express that as an accident of
+    /// what the layer's frame happened to be when it was added.
+    override func layout() {
+        super.layout()
+        // No implicit animation, and none of these should redraw for a size
+        // change alone — a resize that changes what is on screen came through
+        // `remeasured`, which marked them already.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        surfaces.forEach { $0.frame = bounds }
+        CATransaction.commit()
+    }
+
+    /// AppKit keeps its own layer's `contentsScale` in step with the display; a
+    /// layer put there by hand is the owner's to maintain, and a stale one is a
+    /// row that goes soft on the display it did not start on.
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        let scale = window?.backingScaleFactor ?? 2
+        surfaces.forEach { $0.contentsScale = scale }
+        hoverBand?.contentsScale = scale
+        invalidate()
     }
 
     // MARK: - Selection
@@ -221,7 +449,7 @@ final class BlockView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         let link = block?.link(at: point)
         (link == nil ? NSCursor.iBeam : NSCursor.pointingHand).set()
-        report(link?.url, at: point)
+        report(link, at: point)
     }
 
     /// The pointer left the row. Without this the last report would stand after
@@ -244,10 +472,11 @@ final class BlockView: NSView {
         if window == nil { report(nil, at: .zero) }
     }
 
-    private func report(_ url: URL?, at point: CGPoint) {
-        guard url != hovered else { return }
-        hovered = url
-        onLinkHovered?(self, url, point)
+    private func report(_ link: InlineLink?, at point: CGPoint) {
+        guard link != hovered else { return }
+        hovered = link
+        updateHoverBand()
+        onLinkHovered?(self, link?.url, point)
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -289,10 +518,24 @@ final class BlockView: NSView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         invalidate()
+
+        // The one colour a repaint does not fix: it is a resolved `CGColor` on a
+        // layer, not an `NSColor` in a paint list, so nothing re-resolves it.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        hoverBand?.fillColor = resolvedBandColor()
+        CATransaction.commit()
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        guard let block, let ctx = NSGraphicsContext.current?.cgContext else { return }
+    /// Plays `phases` of this row into one surface.
+    ///
+    /// The whole list is collected whatever the slice is. Collecting is a tree
+    /// walk that allocates nothing per item, and the alternative — asking the tree
+    /// for one phase at a time — would mean walking it once per surface and giving
+    /// every block a reason to know which phase it is being asked about. Playing
+    /// is where the slice applies, because that is where the order lives.
+    fileprivate func paint(_ phases: [PaintItem.Phase], in ctx: CGContext, dirty dirtyRect: CGRect) {
+        guard let block else { return }
 
         // Collect, then play. The two steps are what let this view add strokes of
         // its own — a selection band, later a search hit — at a depth the blocks
@@ -322,12 +565,83 @@ final class BlockView: NSView {
             }
         }
 
-        items.paint(in: ctx, dirty: dirtyRect)
+        items.paint(in: ctx, dirty: dirtyRect, phases: phases)
     }
 
     /// Held across draws so the list's storage is allocated once rather than per
     /// repaint. Never read outside `draw(_:)`.
     private var items: [PaintItem] = []
+}
+
+/// One composited surface: the slice of the paint order it plays, and nothing
+/// else.
+///
+/// **Why a row is a stack rather than one bitmap.** CoreAnimation composites a
+/// layer as `backgroundColor → contents → sublayers`, so anything hung inside a
+/// layer lands *above* everything drawn into it. A row that drew all four phases
+/// into one surface would therefore have exactly one place to put an animated
+/// decoration — on top of the glyphs — while `PaintItem.Phase` describes four.
+/// Two orders, and the animated thing stuck at the top of the wrong one.
+///
+/// Splitting the drawing across surfaces is what puts the two orders back into
+/// one: a decoration inserted between two surfaces sits exactly where its phase
+/// says, because the phases below it were drawn into the surface underneath and
+/// the phases above it into the surface over the top.
+///
+/// The resting state is a single surface playing every phase, which is what this
+/// costs when nothing is animating: one `CALayer` object, and the same one bitmap
+/// a row has always had. A second surface is allocated only when something is
+/// actually inserted between — and for the case that wants this first, a link
+/// highlight under prose, the slice below the cut is empty, so there is no second
+/// bitmap even then.
+///
+/// A `CALayer` subclass rather than a delegate: `NSView` is already its own
+/// layer's delegate, and a second delegate relationship on the same object turns
+/// every callback into "which layer is this".
+private final class SurfaceLayer: CALayer {
+
+    /// The phases this surface plays, in paint order. Between them, the surfaces
+    /// of one row cover every phase exactly once.
+    private var phases: [PaintItem.Phase] = []
+
+    /// Weak, and the direction that matters: the view owns its layers, so a
+    /// strong edge back would be a cycle that outlives every row it recycles.
+    private weak var owner: BlockView?
+
+    init(playing phases: [PaintItem.Phase], for owner: BlockView) {
+        self.phases = phases
+        self.owner = owner
+        super.init()
+    }
+
+    /// CoreAnimation copies a layer to build its presentation, and does it through
+    /// this initialiser. Nothing here animates, so the copy never gets read — but
+    /// it is still constructed, and a `super.init(layer:)` that skipped the fields
+    /// would hand back a surface that draws nothing if anything ever did.
+    override init(layer: Any) {
+        if let layer = layer as? SurfaceLayer {
+            phases = layer.phases
+            owner = layer.owner
+        }
+        super.init(layer: layer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("SurfaceLayer is code-only; init(coder:) is unavailable")
+    }
+
+    /// No implicit animations, ever. A surface is congruent with its view, so
+    /// every geometry write it receives is a resize being applied — and a resize
+    /// that eased into place over a quarter second is the row's content sliding
+    /// while the transcript has already committed to the new height.
+    override func action(forKey event: String) -> CAAction? { NSNull() }
+
+    /// The clip is the dirty region CoreAnimation is asking for, which is the
+    /// same permission-to-skip `draw(_:)` used to receive as its `dirtyRect`.
+    override func draw(in ctx: CGContext) {
+        owner?.paint(phases, in: ctx, dirty: ctx.boundingBoxOfClipPath)
+    }
 }
 
 extension BlockView: NSMenuItemValidation {

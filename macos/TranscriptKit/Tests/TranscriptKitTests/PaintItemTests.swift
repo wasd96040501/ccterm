@@ -27,9 +27,12 @@ final class PaintItemTests: XCTestCase {
 
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = graphics
+        // Every phase, because the question here is what wins across the whole
+        // order — slicing it is a surface's business, not the order's.
         items.paint(
             in: graphics.cgContext,
-            dirty: CGRect(x: 0, y: 0, width: side, height: side))
+            dirty: CGRect(x: 0, y: 0, width: side, height: side),
+            phases: PaintItem.Phase.allCases)
         NSGraphicsContext.restoreGraphicsState()
 
         return try XCTUnwrap(rep.colorAt(x: side / 2, y: side / 2))

@@ -92,15 +92,18 @@ final class BlockViewSelectionTests: XCTestCase {
                 pixelsWide: Int(cell.bounds.width), pixelsHigh: Int(cell.bounds.height),
                 bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                 colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
-        let graphics = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: rep))
-
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = graphics
-        // Flipped, to match the coordinates the cell draws in.
-        graphics.cgContext.translateBy(x: 0, y: cell.bounds.height)
-        graphics.cgContext.scaleBy(x: 1, y: -1)
-        cell.draw(cell.bounds)
-        NSGraphicsContext.restoreGraphicsState()
+        // `cacheDisplay`, not `draw(_:)`. A row's painting lives on composited
+        // surfaces inside the view's layer, so `draw(_:)` is not the entry point
+        // to it and calling it directly would rasterise an empty view — which is
+        // what this assertion caught the day the surfaces landed.
+        //
+        // This is also the honest path: `cacheDisplay` is what a snapshot harness
+        // uses, it walks the layer tree (measured — it does pick up sublayers,
+        // including through an enclosing scroll view), and it applies the view's
+        // own flippedness, so the rep's top-left is the cell's and the block's
+        // rectangles index it directly. The rep is deliberately 1× so that a
+        // rectangle in points is a rectangle in pixels.
+        cell.cacheDisplay(in: cell.bounds, to: rep)
 
         return rep
     }

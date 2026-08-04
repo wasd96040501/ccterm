@@ -250,11 +250,13 @@ final class LinkActivationTests: XCTestCase {
 
     // MARK: - What a hover reports
     //
-    // The package draws nothing for a hover; it says which link the pointer is
-    // on and stops there. So what there is to hold is the *report* — that it
-    // arrives, that it says `nil` on the way out, and that it is one call per
-    // link rather than one per mouse-moved event, which is the contract a host
-    // relies on to avoid keeping state of its own.
+    // A hover has two halves. The package says which link the pointer is on and
+    // leaves what to *show* for it to the host — so what there is to hold here is
+    // the *report*: that it arrives, that it says `nil` on the way out, and that
+    // it is one call per link rather than one per mouse-moved event, which is the
+    // contract a host relies on to avoid keeping state of its own.
+    //
+    // The other half — the band drawn under the run — is below.
 
     func testMovingOntoALinkReportsIt() throws {
         let mounted = mount("[word](https://example.com)")
@@ -295,6 +297,134 @@ final class LinkActivationTests: XCTestCase {
             with: event(mounted, at: CGPoint(x: rect.midX, y: rect.midY), .mouseMoved))
         mounted.cell.mouseExited(with: exitEvent(mounted))
         XCTAssertEqual(mounted.hovers.map { $0?.absoluteString }, ["https://example.com", nil])
+    }
+
+    // MARK: - What a hover draws
+    //
+    // Read through the layer tree rather than through any hook added for the
+    // purpose: the band *is* a sublayer, so its presence, its depth and its shape
+    // are all observable from outside, and a test that reached past that would be
+    // asserting the implementation instead of the result.
+
+    /// Every `CAShapeLayer` hung on the cell — which is the band, and nothing
+    /// else. The row's own painting lives on `SurfaceLayer`s.
+    private func bands(_ mounted: Mounted) -> [CAShapeLayer] {
+        (mounted.cell.layer?.sublayers ?? []).compactMap { $0 as? CAShapeLayer }
+    }
+
+    @discardableResult
+    private func hover(_ mounted: Mounted, at point: CGPoint) -> [CAShapeLayer] {
+        mounted.cell.mouseMoved(with: event(mounted, at: point, .mouseMoved))
+        return bands(mounted)
+    }
+
+    /// The claim the whole surface stack exists to make: the band is **under** the
+    /// row's painting. Drawn over it, a 8%-alpha wash would sit on top of the
+    /// glyphs instead of behind them — which is the one thing a sublayer of a
+    /// layer that had been drawn into cannot avoid.
+    func testTheBandSitsUnderTheRowsPainting() throws {
+        let mounted = mount("[word](https://example.com)")
+        defer { mounted.window.close() }
+        XCTAssertTrue(bands(mounted).isEmpty, "a row nobody has hovered carries no band")
+
+        let rect = try XCTUnwrap(mounted.block.fullRects().first)
+        let band = try XCTUnwrap(
+            hover(mounted, at: CGPoint(x: rect.midX, y: rect.midY)).first,
+            "hovering a link drew no band")
+
+        XCTAssertEqual(
+            mounted.cell.layer?.sublayers?.firstIndex { $0 === band }, 0,
+            "the band is not the bottom-most layer, so it is not under the glyphs")
+        XCTAssertEqual(band.opacity, 1)
+    }
+
+    /// The band covers the run, not the row. A path that merely existed would pass
+    /// the test above while highlighting the wrong words.
+    func testTheBandCoversTheRunAndNotItsNeighbours() throws {
+        let mounted = mount("plain words then [word](https://example.com) then more plain words")
+        defer { mounted.window.close() }
+
+        let point = try XCTUnwrap(Self.firstLinkPoint(in: mounted.block))
+        let band = try XCTUnwrap(hover(mounted, at: point).first)
+        let box = try XCTUnwrap(band.path?.boundingBox)
+
+        XCTAssertTrue(box.contains(point), "the band does not cover the point it was summoned by")
+
+        let whole = try XCTUnwrap(mounted.block.fullRects().first)
+        XCTAssertLessThan(
+            box.width, whole.width * 0.9,
+            "the band spans nearly the whole line, so it is not tracking the run")
+    }
+
+    /// The recycling rule, in the one place where forgetting it would be visible:
+    /// a pooled cell arriving with a highlight over words that are no longer there.
+    func testRebindingTakesTheBandAway() throws {
+        let mounted = mount("[word](https://example.com)")
+        defer { mounted.window.close() }
+
+        let rect = try XCTUnwrap(mounted.block.fullRects().first)
+        XCTAssertFalse(hover(mounted, at: CGPoint(x: rect.midX, y: rect.midY)).isEmpty)
+
+        mounted.cell.configure(with: MarkdownBlockBuilder.make("something else").measure(400))
+        XCTAssertTrue(bands(mounted).isEmpty, "a recycled cell kept the previous row's band")
+    }
+
+    /// Leaving takes the band with it. The layer may outlive the fade by a frame —
+    /// it is removed when the animation completes — so what is asserted is that it
+    /// is on its way out, not that it has already gone.
+    func testLeavingTheRowTakesTheBandAway() throws {
+        let mounted = mount("[word](https://example.com)")
+        defer { mounted.window.close() }
+
+        let rect = try XCTUnwrap(mounted.block.fullRects().first)
+        XCTAssertFalse(hover(mounted, at: CGPoint(x: rect.midX, y: rect.midY)).isEmpty)
+
+        mounted.cell.mouseExited(with: exitEvent(mounted))
+        XCTAssertEqual(bands(mounted).first?.opacity ?? 0, 0)
+    }
+
+    /// A re-measure keeps the hover and moves the band to where those same
+    /// characters ended up. This is the payoff of a link reporting *where* it is
+    /// rather than only what it is: the range is the half that does not depend on
+    /// the width, so nothing has to be re-found at the new one.
+    func testAReMeasureMovesTheBandToWhereTheWordsWent() throws {
+        let source = "plain words then some more filler and then [word](https://example.com) at the end"
+        let mounted = mount(source)
+        defer { mounted.window.close() }
+
+        let point = try XCTUnwrap(Self.firstLinkPoint(in: mounted.block))
+        let link = try XCTUnwrap(mounted.block.link(at: point))
+        XCTAssertFalse(hover(mounted, at: point).isEmpty, "hovering the link drew no band")
+
+        let narrower = MarkdownBlockBuilder.make(source).measure(140)
+        let moved = narrower.rects(from: link.range.lowerBound, to: link.range.upperBound)
+        XCTAssertNotEqual(
+            mounted.block.rects(from: link.range.lowerBound, to: link.range.upperBound), moved,
+            "the narrower width left the run exactly where it was, so this proves nothing")
+
+        mounted.cell.remeasured(to: narrower)
+
+        // Against where the run actually is now, not merely against "somewhere
+        // else" — a band that moved to the wrong place would satisfy that.
+        let after = try XCTUnwrap(
+            bands(mounted).first?.path?.boundingBox, "the re-measure dropped the band")
+        let expected = moved.reduce(CGRect.null) { $0.union($1) }
+        XCTAssertEqual(after.minX, expected.minX, accuracy: 0.5)
+        XCTAssertEqual(after.minY, expected.minY, accuracy: 0.5)
+        XCTAssertEqual(after.maxX, expected.maxX, accuracy: 0.5)
+        XCTAssertEqual(after.maxY, expected.maxY, accuracy: 0.5)
+    }
+
+    /// Sweeps for a point that reports a link rather than computing where one
+    /// ought to be — the same reasoning as in `IndexRoundTripTests`.
+    private static func firstLinkPoint(in block: MeasuredBlock) -> CGPoint? {
+        for y in stride(from: 0, to: block.size.height, by: 3) {
+            for x in stride(from: 0, to: block.size.width, by: 3) {
+                let point = CGPoint(x: x, y: y)
+                if block.link(at: point) != nil { return point }
+            }
+        }
+        return nil
     }
 
     /// Prose is not a link, and "still nothing" is not a change worth a call.

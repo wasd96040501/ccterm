@@ -148,23 +148,49 @@ Some of what only the eye catches is *absence*: that `--amend` did not become
 put those side by side, because a regression there reads as ordinary text and no
 assertion elsewhere is looking at it.
 
-**A hover is reported, not drawn** — `transcriptView(_:didHover:at:inRow:)`,
-and the demo's `LinkTooltip` is what puts a label on screen. That split is §4
-applied to something that looked like it wanted to live in here: the transcript
-knows which run the pointer is on and a host cannot, so that is what crosses;
-what the label looks like, whether it follows the pointer, whether it appears at
-all, are the host's.
+**A hover is drawn here and said out there.** The band under the run is the
+transcript's, because only this side knows which rectangles a run occupies — a
+host has no way to ask. The *label* is the host's: what it says, whether it
+follows the pointer, whether it appears at all, reached through
+`transcriptView(_:didHover:at:inRow:)` with the demo's `LinkTooltip` as one
+answer. That is §4 drawn along the line where the knowledge actually is, rather
+than along the one that first looked obvious — an earlier note here said "a
+hover is reported, not drawn", which was right about the label and wrong about
+the run.
 
-It also lands the testable half on the near side. A real hover cannot be
+The band is a `CAShapeLayer`, not a `PaintItem`, and it is the only thing in the
+renderer that changes on its own clock. A paint list is a snapshot played
+synchronously, with no notion of time in it, so fading one in would mean
+repainting the row every frame for a fifth of a second; as a layer it is
+interpolated by the render server and this side draws nothing at all. That is
+also why a row's painting lives on `SurfaceLayer`s rather than in the view's own
+layer: CoreAnimation composites `contents` *below* `sublayers`, so a layer can
+only get under the glyphs if the glyphs are themselves on a surface above it.
+
+Two consequences worth keeping in mind when touching either:
+
+- **A `CGColor` on a layer does not follow the appearance.** The `NSColor`s in a
+  paint list are resolved against whatever is current at draw time and a repaint
+  is the whole fix; the band's fill is resolved once and has to be re-resolved by
+  hand in `viewDidChangeEffectiveAppearance`. Same for `contentsScale`, which
+  AppKit maintains on its own layer and not on ones put there by hand.
+- **`cacheDisplay` does rasterise these layers.** Measured, both directly and
+  nested inside a scroll view rasterised from the outside — so a snapshot of a
+  row does include its surfaces and its band. Worth knowing precisely because the
+  opposite would have been a quiet class of blank-looking snapshots.
+
+The split also lands the testable half on the near side. A real hover cannot be
 provoked from a test — `xctest` never becomes the active application, so a
 tracking area scoped to the key window never arms, and no synthetic event
 substitutes for a pointer resting somewhere; measured, not assumed, after an
 afternoon of trying, and the same reason AppKit's own `addToolTip` is
-unreachable from here. But `mouseMoved` is an ordinary method, so the *report*
-is assertable: that it fires, that it says `nil` on the way out, and that
-sliding along one link is one call rather than seventy-three. What still needs
-eyes is only the demo's label — its material, where it sits, whether it flickers
-while scanning a paragraph.
+unreachable from here. But `mouseMoved` is an ordinary method, so both halves are
+assertable without one: the *report* fires, says `nil` on the way out, and is one
+call per link rather than one per pixel; and the *band* is a sublayer, so that it
+exists, that it is the bottom-most layer, what its path covers, and that a
+rebind takes it away are all readable from outside without a hook added for the
+purpose. What still needs eyes is the part no assertion has an opinion on — the
+alpha, whether a wrapped run reads as one band, and the demo's label.
 
 The `.view` bubbles interleaved with them are down to a handful on purpose:
 enough to keep both row kinds sharing one recycling pool, which is where a cell

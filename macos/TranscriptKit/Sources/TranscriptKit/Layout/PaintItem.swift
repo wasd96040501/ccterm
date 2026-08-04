@@ -131,8 +131,15 @@ extension Array where Element == PaintItem {
     /// fills and then its dividers, both `.background`, and the dividers have to
     /// land on top. Walking the phases costs a handful of passes over a list of
     /// dozens, which is nothing next to one `CTLineDraw`.
-    func paint(in ctx: CGContext, dirty: CGRect) {
-        for phase in PaintItem.Phase.allCases {
+    ///
+    /// `phases` is which slice of the order to play, and exists because a row's
+    /// painting can be split across more than one composited surface — a CALayer
+    /// that has to sit *below* the glyphs cannot be a sublayer of the layer the
+    /// glyphs were drawn into, so the glyphs move to a surface above it and each
+    /// surface plays its own slice. Between them the surfaces of one row cover
+    /// every phase exactly once.
+    func paint(in ctx: CGContext, dirty: CGRect, phases: [PaintItem.Phase]) {
+        for phase in phases {
             for item in self where item.phase == phase {
                 item.primitive.paint(in: ctx, dirty: dirty)
             }

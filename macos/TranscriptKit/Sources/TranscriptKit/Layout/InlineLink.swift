@@ -27,7 +27,11 @@ import Foundation
 /// Two fields, and it stays two: what a hover *shows* and what a click *does* are
 /// the host's, reached through `TranscriptViewDelegate`. This says where a link is
 /// and where it points, and nothing about what to do about it.
-struct InlineLink {
+/// `Equatable` so that "is the pointer still on the link it was on" is one
+/// comparison. Both fields count: two adjacent links to the same page are the
+/// same `url` and different runs, and a highlight that stayed put across the
+/// boundary between them would be highlighting the wrong words.
+struct InlineLink: Equatable {
 
     let url: URL
 

@@ -412,3 +412,57 @@ extension DemoMessage {
         > arrangement, hit testing and selection are the stack's.
         """#
 }
+
+extension DemoMessage {
+
+    /// What the panel's **Stream** button reveals into a row, a few characters
+    /// per frame.
+    ///
+    /// Appended to whatever the row already holds, so what you are watching is a
+    /// document *growing* — which is the case worth watching, and the one
+    /// `MarkdownMemo` exists for. Four things to look at while it runs:
+    ///
+    /// 1. **The blocks above the growing one do not move or flicker.** They are
+    ///    not being re-typeset; they are the previous frame's, handed back by
+    ///    value. If a change here ever breaks that, this is where it shows.
+    /// 2. **Select some text in the row first, then start.** The selection
+    ///    survives — the blocks before the divergence still occupy the same index
+    ///    space. The same drag on a row you then *replace* would not, and should
+    ///    not.
+    /// 3. **Scroll up while it streams.** The viewport holds still. Scroll back
+    ///    to the bottom and it follows the tail again, decided fresh each frame
+    ///    from where the offset is.
+    /// 4. **The list is the expensive shape.** A list is one block, so every
+    ///    arriving character re-typesets all of its items — visible as nothing at
+    ///    all here, and the ceiling worth knowing about.
+    ///
+    /// **No fence and no table in it, on purpose.** Both reflow violently while
+    /// half-written — an unclosed ``` turns everything after it into code, and a
+    /// table's columns resize on every row — so a host streams them by holding
+    /// the incomplete structure back until it seals. That policy is the host's,
+    /// this package has no opinion on it, and the demo has not implemented one:
+    /// what it shows is the shapes that *are* safe to reveal as they grow.
+    static let streamed = #"""
+
+
+        Streaming is `reloadRows(at:)` on a timer. The host changes its model and
+        announces the row; the transcript works out for itself that the source
+        moved, and re-typesets only the blocks that are not the ones it laid out
+        a frame ago.
+
+        ### What it costs
+
+        Three things happen per frame, in ascending order of expense:
+
+        - the source is **parsed** whole, because cmark has no incremental entry
+          point and appending three characters can change what the lines above
+          them mean;
+        - the blocks that changed are **shaped and typeset**, and the ones that
+          did not are looked up by value;
+        - the row is **repainted** whole, which is the next thing to fix and the
+          reason a very long streamed message is still not free.
+
+        None of that is API. The host hands over a string and says which row; the
+        arithmetic of what changed belongs to the side that can see both versions.
+        """#
+}

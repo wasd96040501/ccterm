@@ -16,7 +16,7 @@ final class ControlPanelView: NSVisualEffectView {
 
     /// Fixed rather than derived from the stack, so the host can inset the
     /// transcript by it before anything has laid out.
-    static let height: CGFloat = 128
+    static let height: CGFloat = 162
 
     var onScrollToRow: ((Int, TranscriptView.ScrollPosition) -> Void)?
     var onPrepend: (() -> Void)?
@@ -27,6 +27,11 @@ final class ControlPanelView: NSVisualEffectView {
     var onGrowFirst: (() -> Void)?
     var onRemeasureFirst: (() -> Void)?
 
+    /// Start streaming into this row, or stop whatever is streaming — one
+    /// control, because only one row streams at a time and the button's title
+    /// says which state it is in.
+    var onStream: ((Int) -> Void)?
+
     private let rowField = NSTextField(string: "0")
     private let positions = NSSegmentedControl(
         labels: ["Top", "Center", "Bottom", "Nearest"], trackingMode: .selectOne,
@@ -35,24 +40,32 @@ final class ControlPanelView: NSVisualEffectView {
     private let widthLabel = NSTextField(labelWithString: "720 pt")
     private let statusLabel = NSTextField(labelWithString: "")
 
+    /// Row 1 by default: the first assistant turn, which is the row kind worth
+    /// watching grow. A user turn is one bubble carrying what someone typed and
+    /// arrives whole, so nothing streams into one.
+    private let streamField = NSTextField(string: "1")
+    private lazy var streamButton = button("Stream", #selector(stream))
+
     init() {
         super.init(frame: .zero)
         material = .hudWindow
         blendingMode = .withinWindow
         state = .active
 
-        rowField.formatter = {
-            let formatter = NumberFormatter()
-            formatter.allowsFloats = false
-            return formatter
-        }()
+        for field in [rowField, streamField] {
+            field.formatter = {
+                let formatter = NumberFormatter()
+                formatter.allowsFloats = false
+                return formatter
+            }()
+        }
         positions.selectedSegment = 0
         widthSlider.target = self
         widthSlider.action = #selector(widthChanged)
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
 
-        let rows = NSStackView(views: [scrollRow(), mutationRow(), widthRow()])
+        let rows = NSStackView(views: [scrollRow(), mutationRow(), streamRow(), widthRow()])
         rows.orientation = .vertical
         rows.alignment = .leading
         rows.spacing = 10
@@ -82,6 +95,7 @@ final class ControlPanelView: NSVisualEffectView {
             rows.topAnchor.constraint(equalTo: topAnchor, constant: 14),
             widthSlider.widthAnchor.constraint(equalToConstant: 200),
             rowField.widthAnchor.constraint(equalToConstant: 56),
+            streamField.widthAnchor.constraint(equalToConstant: 56),
         ])
     }
 
@@ -94,6 +108,13 @@ final class ControlPanelView: NSVisualEffectView {
     /// its effect on the scroll offset.
     func setStatus(_ text: String) {
         statusLabel.stringValue = text
+    }
+
+    /// Driven by the host rather than toggled here, because a stream also ends by
+    /// running out of text — and a title kept locally would then say **Stop**
+    /// over a row that had stopped.
+    func setStreaming(_ streaming: Bool) {
+        streamButton.title = streaming ? "Stop" : "Stream"
     }
 
     // MARK: - Rows
@@ -111,6 +132,18 @@ final class ControlPanelView: NSVisualEffectView {
             button("Grow row 0", #selector(growFirst)),
             button("Re-measure row 0", #selector(remeasureFirst)),
             button("Batch", #selector(batch)),
+        ])
+    }
+
+    /// The one control that runs on a clock. Everything else on this panel is a
+    /// single mutation you watch land; this one keeps announcing the same row
+    /// sixty times a second, which is the case the transcript's caching and its
+    /// selection handling both exist for.
+    private func streamRow() -> NSStackView {
+        row([
+            NSTextField(labelWithString: "Stream into row"), streamField, streamButton,
+            NSTextField(
+                labelWithString: "— select some text in it first, and scroll while it runs"),
         ])
     }
 
@@ -157,6 +190,7 @@ final class ControlPanelView: NSVisualEffectView {
 
     @objc private func growFirst() { onGrowFirst?() }
     @objc private func remeasureFirst() { onRemeasureFirst?() }
+    @objc private func stream() { onStream?(streamField.integerValue) }
 
     @objc private func widthChanged() {
         let width = widthSlider.doubleValue.rounded()

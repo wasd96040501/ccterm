@@ -17,6 +17,11 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
     weak var transcript: TranscriptView?
     var onRowCountChange: ((Int) -> Void)?
 
+    /// Whether a row is currently streaming, so the panel's button can say
+    /// **Stop** — including when the stream ended by running out of text rather
+    /// than by being stopped.
+    var onStreamingChange: ((Bool) -> Void)?
+
     // MARK: - Mutations
 
     /// Above the viewport, wherever the viewport is: the case where holding the
@@ -78,6 +83,78 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
         transcript?.removeRows(at: IndexSet(10..<13))
         transcript?.endUpdates()
         reportRowCount()
+    }
+
+    // MARK: - Streaming
+
+    /// The row being streamed into, what it held when the stream started, and
+    /// how much of `DemoMessage.streamed` has been revealed. `nil` when nothing
+    /// is streaming.
+    ///
+    /// The base is captured rather than appended to in place so that "grow by two
+    /// characters" is exact — a frame the timer drops changes when the text
+    /// arrives, never how much of it there is.
+    private var stream: (row: Int, base: String, revealed: Int)?
+
+    private var ticker: Timer?
+
+    /// How many characters a frame reveals. Sixty frames a second at two
+    /// characters each is roughly a fast typist, and slow enough that what the
+    /// panel is for — watching the blocks *above* the growing one stay put — is
+    /// watchable.
+    private static let charactersPerFrame = 2
+
+    /// Starts streaming into `row`, or stops the stream already running.
+    ///
+    /// A row is picked rather than assumed to be the last one, because the two
+    /// interesting cases are different: streaming the tail is what an app does,
+    /// and streaming a row *above the viewport* is where scroll anchoring and a
+    /// growing row meet — the content under the reader must not move while it
+    /// runs.
+    ///
+    /// Assistant turns only. A user turn is what someone typed, verbatim and
+    /// whole — there is no version of it that arrives a token at a time, and
+    /// revealing markdown into one would render the punctuation rather than the
+    /// document, since `.userMessage` is plain text on purpose.
+    func toggleStreaming(row: Int) {
+        guard stream == nil else { return stopStreaming() }
+        guard row >= 0, row < messages.count, messages[row].author == .assistant else { return }
+
+        stream = (row, messages[row].text, 0)
+        // `.common`, or the reveal freezes for as long as a scroll or a drag is
+        // in flight — which is precisely when someone is checking that it doesn't
+        // disturb them.
+        let ticker = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.revealNextFrame() }
+        }
+        RunLoop.main.add(ticker, forMode: .common)
+        self.ticker = ticker
+        onStreamingChange?(true)
+    }
+
+    func stopStreaming() {
+        guard stream != nil else { return }
+        stream = nil
+        ticker?.invalidate()
+        ticker = nil
+        onStreamingChange?(false)
+    }
+
+    /// One frame: grow the row's text and announce it. **The whole of what a
+    /// streaming host does** — change the model, name the row. Everything about
+    /// what changed inside the document is the transcript's to work out, which is
+    /// the design this is here to demonstrate rather than describe.
+    private func revealNextFrame() {
+        guard let stream, stream.row < messages.count else { return stopStreaming() }
+
+        let revealed = min(stream.revealed + Self.charactersPerFrame, DemoMessage.streamed.count)
+        messages[stream.row] = DemoMessage(
+            author: messages[stream.row].author,
+            text: stream.base + DemoMessage.streamed.prefix(revealed))
+        transcript?.reloadRows(at: IndexSet(integer: stream.row))
+
+        self.stream = (stream.row, stream.base, revealed)
+        if revealed == DemoMessage.streamed.count { stopStreaming() }
     }
 
     private func label(_ prefix: String, _ index: Int) -> String {

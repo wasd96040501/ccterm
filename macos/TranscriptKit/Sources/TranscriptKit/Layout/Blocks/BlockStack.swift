@@ -32,14 +32,29 @@ struct BlockStack: Block {
     }
 
     func measure(_ width: CGFloat) -> MeasuredBlock {
+        Self.stack(children.map { $0.measure(width) }, spacing: spacing, width: width)
+    }
+
+    /// Packs children that have **already been measured**, at the width they were
+    /// measured into.
+    ///
+    /// Split out of `measure` for one caller. A row whose document grew by a
+    /// token re-measures only the blocks that actually changed and takes the rest
+    /// back from `MarkdownMemo`, so it arrives here holding a mixture of fresh and
+    /// reused children — and the packing arithmetic, the y cursor and the index
+    /// bases, stays written once rather than a second time over there.
+    ///
+    /// It is also the reason reuse can ignore where a block sat before: every
+    /// origin and every base is assigned in this loop, so a block that moved two
+    /// positions down the document needs nothing done to it.
+    static func stack(_ children: [MeasuredBlock], spacing: CGFloat, width: CGFloat) -> Measured {
         var placed: [Measured.Child] = []
         placed.reserveCapacity(children.count)
 
         var y: CGFloat = 0
         var base = 0
 
-        for child in children {
-            let block = child.measure(width)
+        for block in children {
             if !placed.isEmpty { y += spacing }
             placed.append(Measured.Child(block: block, origin: CGPoint(x: 0, y: y), base: base))
             y += block.size.height

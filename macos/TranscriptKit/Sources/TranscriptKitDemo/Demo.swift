@@ -75,8 +75,10 @@ struct Demo {
         panel.onGrowFirst = { host.growFirstRow() }
         panel.onRemeasureFirst = { host.remeasureFirstRow() }
         panel.onBatch = { host.prependAndRemoveInOneBatch() }
+        panel.onStream = { host.toggleStreaming(row: $0) }
         panel.onMaxContentWidth = { transcript.maxContentWidth = $0 }
         host.onRowCountChange = { panel.setStatus("\($0) rows") }
+        host.onStreamingChange = { panel.setStreaming($0) }
 
         // Lay the tree out before loading, so the table's first — and only —
         // measurement pass runs at the settled content width. Loading first

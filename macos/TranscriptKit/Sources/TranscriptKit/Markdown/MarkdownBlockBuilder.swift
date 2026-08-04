@@ -23,20 +23,67 @@ enum MarkdownBlockBuilder {
     }
 
     static func make(_ document: MarkdownIR.Document, style: MarkdownStyle) -> Block {
-        let body = stack(document.blocks, style: style, spacing: blockSpacing)
-        guard !document.footnotes.isEmpty else { return body }
-        return BlockStack(
-            [body, ThematicBreak(), notes(document.footnotes, style: style)],
-            spacing: blockSpacing)
+        BlockStack(children(of: document).map { make($0, style: style) }, spacing: blockSpacing)
+    }
+
+    /// One of a document's top-level children, named by the IR value it is built
+    /// from.
+    ///
+    /// Two cases rather than one because the footnote section is not a block
+    /// anybody wrote: it is assembled from definitions that were scattered
+    /// through the source, so the thing it is a function of is the notes, not a
+    /// node.
+    ///
+    /// `Hashable`, and the whole reason the IR is (see `MarkdownIR`). This is the
+    /// coordinate `MarkdownMemo` keys on, which is what lets a document that grew
+    /// by a token pay only for the child that changed.
+    enum Child: Hashable {
+        case block(MarkdownIR.BlockNode)
+        case footnotes([MarkdownIR.Document.Footnote])
+    }
+
+    /// What `document` is a stack of, in order.
+    ///
+    /// **The one description of a document's shape.** `make` walks it to build
+    /// one; `MarkdownMemo` walks it to rebuild only the parts that moved. A
+    /// second description would be a document that renders differently depending
+    /// on whether it arrived whole or grew into place.
+    static func children(of document: MarkdownIR.Document) -> [Child] {
+        var children = document.blocks.map(Child.block)
+        if !document.footnotes.isEmpty { children.append(.footnotes(document.footnotes)) }
+        return children
+    }
+
+    static func make(_ child: Child, style: MarkdownStyle) -> Block {
+        switch child {
+        case .block(let node):
+            return block(node, style: style, spacing: blockSpacing)
+        case .footnotes(let footnotes):
+            return notes(footnotes, style: style)
+        }
     }
 
     /// The notes, under a rule at the foot of the document.
+    ///
+    /// Rule and list together as one child rather than two side by side in the
+    /// document's stack: they arrive and leave together, so they are one thing to
+    /// reuse. The nesting costs no geometry — both stacks carry `blockSpacing`,
+    /// so the gaps either side of the rule are the ones a flat stack would have
+    /// produced — and a rule occupies no index space, so nothing about a
+    /// selection running past it changes either.
+    private static func notes(
+        _ footnotes: [MarkdownIR.Document.Footnote], style: MarkdownStyle
+    ) -> Block {
+        BlockStack([ThematicBreak(), list(footnotes, style: style)], spacing: blockSpacing)
+    }
+
+    /// The numbered list the notes render as.
     ///
     /// An ordered list, because that is what it is: a numbered marker column
     /// beside each note's own blocks. `ListBuilder` already settles the column
     /// against the widest marker, so a document with ten notes lines `10.` up
     /// with `9.` without this knowing that is a question.
-    private static func notes(
+    private static func list(
         _ footnotes: [MarkdownIR.Document.Footnote], style: MarkdownStyle
     ) -> Block {
         ListBuilder.make(
@@ -60,7 +107,10 @@ enum MarkdownBlockBuilder {
     /// paragraphs land twelve apart. Copying the *result* rather than that
     /// design's per-block halves is the point — a container that owns its
     /// spacing does not need each child to carry half of every gap.
-    private static let blockSpacing: CGFloat = 12
+    ///
+    /// Not private, because `MarkdownMemo` stacks the children itself and has to
+    /// stack them at the same rhythm this does.
+    static let blockSpacing: CGFloat = 12
 
     /// The gap inside a **tight** list, at every depth: between items, and
     /// between the blocks within one item. `NativeTranscript2` states these as

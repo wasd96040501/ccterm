@@ -140,18 +140,22 @@ public final class TranscriptView: NSView {
     ///
     /// **The one place a content case names a block recipe.** Three callers need
     /// that mapping — the height answer, the view answer, and the re-measure a
-    /// width change forces — and a second copy of it is how one of them comes to
-    /// be missing a case: not as a failure, but as a row that quietly stops being
-    /// re-measured.
+    /// width or a content change forces — and a second copy of it is how one of
+    /// them comes to be missing a case: not as a failure, but as a row that
+    /// quietly stops being re-measured.
+    ///
+    /// Both self-drawn cases hand their **source** to the cache rather than only a
+    /// way to rebuild, which is what lets the cache notice a content change
+    /// instead of being told about one. What differs is the rebuild: a document
+    /// reuses the blocks that did not move (`MarkdownMemo`), a bubble is one block
+    /// and is rebuilt whole.
     private func measuredBlock(forRow row: Int, content: TranscriptRowContent) -> MeasuredBlock? {
         switch content {
         case .markdown(let source):
-            return rowCache.measuredBlock(forRow: row, width: contentWidth) {
-                MarkdownBlockBuilder.make(source)
-            }
+            return rowCache.measuredMarkdown(forRow: row, source: source, width: contentWidth)
 
         case .userMessage(let text):
-            return rowCache.measuredBlock(forRow: row, width: contentWidth) {
+            return rowCache.measuredBlock(forRow: row, source: text, width: contentWidth) {
                 UserMessage(text)
             }
 
@@ -520,7 +524,7 @@ public final class TranscriptView: NSView {
         measuredContentWidth = width
         guard numberOfRows > 0 else { return }
 
-        reflowVisibleRows()
+        rebindVisibleRows(in: nil)
 
         // `noteHeightOfRows` re-asks the delegate for every index it is handed,
         // so a full pass is O(rows) — nothing once, a freeze sixty times a
@@ -538,14 +542,17 @@ public final class TranscriptView: NSView {
             withIndexesChanged: IndexSet(integersIn: visible.location..<(visible.location + visible.length)))
     }
 
-    /// Re-measures the self-drawn rows currently on screen and hands each cell the
-    /// result.
+    /// Re-measures the self-drawn rows on screen — all of them, or the ones in
+    /// `rows` — and hands each cell the result, without rebuilding any views.
+    /// Answers with the rows it handled.
     ///
-    /// `noteHeightOfRows` above updates a row's *height*; it does not re-run
-    /// `viewForRow` for a row that already has a view, so without this the cell
-    /// keeps the tree it was configured with and the text stays wrapped at the
-    /// old width — with `layerContentsRedrawPolicy` set to `.onSetNeedsDisplay`,
-    /// not even repainted, just a stale bitmap stretched wider.
+    /// Two callers, for the two things that change a row's geometry without
+    /// changing which row it is: the content width moving, and the host
+    /// announcing that a row's content changed. Neither re-runs `viewForRow` on
+    /// its own — `noteHeightOfRows` updates a row's *height* and leaves its view
+    /// holding the tree it was configured with, which at
+    /// `layerContentsRedrawPolicy = .never` is not even repainted, just a stale
+    /// bitmap stretched to the new size.
     ///
     /// Every self-drawn case, not one of them: a case reached through
     /// `measuredBlock(forRow:content:)` everywhere except here would keep its
@@ -558,16 +565,53 @@ public final class TranscriptView: NSView {
     ///
     /// Off-screen rows need nothing — they are re-measured when they scroll in,
     /// through `viewForRow`.
-    private func reflowVisibleRows() {
+    ///
+    /// **`remeasured` or `configure`** is the one judgement here, and it is what
+    /// keeps a reader's selection alive through a streaming row. `configure` is
+    /// the recycling entry point: it drops the selection and the hover band,
+    /// because a pooled cell arriving with a highlight over the previous
+    /// document's words is a bug. `remeasured` keeps both, on the grounds that
+    /// the endpoints still name the same characters. That holds exactly when the
+    /// new source **extends** the old one: the blocks before the divergence
+    /// parse the same, so they occupy the same flat index space they did. A
+    /// source that is not an extension gets `configure`, which covers a rewrite,
+    /// a retry, and a row that swapped identity under a `reloadData`.
+    ///
+    /// Not airtight, and worth saying where it gives: an arriving line can
+    /// retroactively change what an *earlier* block is — three dashes turn the
+    /// paragraph above them into a heading, a delimiter row turns one into a
+    /// table — and a table reserves index positions a paragraph does not. The
+    /// selection then covers the wrong characters until the reader clicks again.
+    /// The alternative is dropping every selection on every frame of every
+    /// stream, which is the failure people would actually meet.
+    @discardableResult
+    private func rebindVisibleRows(in rows: IndexSet?) -> IndexSet {
+        var rebound = IndexSet()
         tableView.enumerateAvailableRowViews { [weak self] rowView, row in
-            guard let self,
+            guard let self, rows?.contains(row) ?? true,
                 let cell = rowView.view(atColumn: 0) as? TranscriptCellView,
                 let view = cell.hostedView as? BlockView,
-                let content = dataSource?.transcriptView(self, contentForRow: row),
-                let block = measuredBlock(forRow: row, content: content)
+                let content = dataSource?.transcriptView(self, contentForRow: row)
             else { return }
-            view.remeasured(to: block)
+            // The cache holds the source a row was last built from, so reading it
+            // either side of the measure is what gives both versions. Asked there
+            // rather than by switching over `content` again, which would be the
+            // second copy of the case mapping `measuredBlock(forRow:content:)`
+            // exists to prevent.
+            let previous = rowCache.source(forRow: row)
+            guard let block = measuredBlock(forRow: row, content: content) else { return }
+            // A row nothing had measured yet has no previous source to extend, so
+            // it takes the same path a replacement does.
+            let extended = previous.flatMap { self.rowCache.source(forRow: row)?.hasPrefix($0) } ?? false
+
+            if extended {
+                view.remeasured(to: block)
+            } else {
+                view.configure(with: block)
+            }
+            rebound.insert(row)
         }
+        return rebound
     }
 
     /// The clip has resized and has not yet resized the document view, so the
@@ -824,10 +868,40 @@ public final class TranscriptView: NSView {
     /// re-queried from the data source and re-rendered, keeping row identity.
     /// Heights are re-resolved too — a self-sizing row is re-measured, a
     /// `.view` row is re-asked through the delegate's `heightOfRow`.
+    ///
+    /// **This is also the streaming path**, called once per frame with the one
+    /// row that grew, and three properties are what make that reasonable rather
+    /// than merely possible:
+    ///
+    /// - A row whose markdown is **unchanged** costs a string comparison and
+    ///   nothing else. A host may announce on a timer without checking first.
+    /// - A row whose markdown **grew** re-typesets only the blocks that changed;
+    ///   the settled ones above are handed back from the previous frame. See
+    ///   `MarkdownMemo`.
+    /// - A row whose markdown grew **keeps the reader's selection and the link
+    ///   under the pointer**, because the blocks before the divergence still
+    ///   occupy the same index space. See `rebindVisibleRows(in:)`, which is
+    ///   also where the limits of that are written down.
+    ///
+    /// What a host still owns is *what* to hand over: markdown reflows violently
+    /// while a fence or a table row is half-written — an unclosed ``` turns the
+    /// rest of the message into code — so holding an incomplete structure back
+    /// until it seals is the host's policy to have, and not one this package can
+    /// have on its behalf.
     public func reloadRows(at indexes: IndexSet) {
         mutate(shiftedBy: .none) {
-            rowCache.reload(at: indexes)
-            tableView.reloadData(forRowIndexes: indexes, columnIndexes: IndexSet(integer: 0))
+            // Rows the transcript draws itself are handed their new tree in place
+            // rather than rebuilt, which is what preserves selection and hover.
+            let rebound = rebindVisibleRows(in: indexes)
+            let rest = indexes.subtracting(rebound)
+            if !rest.isEmpty {
+                // Everything the pass above did not take: `.view` rows, rows off
+                // screen, and a row that changed which kind it is. An off-screen
+                // markdown row lands here and costs nothing — there is no view to
+                // rebuild, and its tree is rebuilt from the current source when it
+                // scrolls back in.
+                tableView.reloadData(forRowIndexes: rest, columnIndexes: IndexSet(integer: 0))
+            }
             // `reloadData(forRowIndexes:)` re-asks for the row's view but keeps the
             // height it already has, and changed content is a different height.
             tableView.noteHeightOfRows(withIndexesChanged: indexes)

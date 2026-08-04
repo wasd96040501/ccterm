@@ -255,6 +255,16 @@ over the window. Pressing it does nothing today — on purpose, since where the
 rest of the message goes is the host's, and the delegate requirement lands with
 the first host that has somewhere to put it.
 
+**Streaming is on the panel because none of it is assertable.** A test can prove
+that the blocks above a growing one were not typeset again (`MarkdownGrowthTests`
+reads `CTLine` identity for exactly that) and that a selection survived. It
+cannot see whether the settled text *twitched*, whether the growing paragraph
+reflows in a way that is pleasant to read at 120 characters a second, or whether
+scrolling through a row that is growing under the pointer feels stable. Type a
+row number, press **Stream**, and then: select some text in that row first and
+watch it survive; scroll up and watch the viewport hold; scroll back down and
+watch the tail re-engage.
+
 ## 6. How a host is expected to load
 
 Not a rule about this package's code — a note on how hosts drive it, recorded
@@ -291,6 +301,63 @@ Two properties make that work:
   over several hundred milliseconds while the reader is already reading, and
   the anchoring rules documented on `TranscriptView` hold the content still
   throughout. The two designs are a pair; neither is much use alone.
+
+### Streaming is `reloadRows`, and the increment is derived here
+
+A row whose markdown arrives a token at a time is `reloadRows(at:)` on a frame
+ticker, and there is **no delta API** — the host hands over the whole source
+every time, the same way it does for any other content change.
+
+Not an omission, and worth the four reasons because it is the first thing anyone
+proposes:
+
+- **The data source is a pull model.** `contentForRow` is re-asked on recycling,
+  on a width change, on `reloadData` — so the host holds the whole string
+  regardless. A second, incremental channel would be the same content arriving
+  two ways, and the two disagreeing is a silent wrong render rather than a crash.
+- **Markdown does not compose by appending.** Three arriving characters can turn
+  the six lines above them into a code block; a delimiter row turns the line
+  above it into a table header; a footnote definition renumbers markers earlier
+  in the document. A renderer handed a suffix would have to re-read backwards to
+  an unknowable point, so the delta buys it nothing.
+- **A stream does not only grow.** The authoritative text replaces the streamed
+  text at the end, a retry rewrites it, a held-back fence is released whole. Each
+  is a verb an incremental protocol would have to grow; against a whole source
+  they are all just "this row's content now".
+- **Passing the string is free.** Swift strings are COW; handing over 8 KB is a
+  retain.
+
+So the increment is worked out on this side, by the party that can see both
+versions. `MarkdownMemo` keys every top-level child of the document on the IR
+value it was built from — which is why every `MarkdownIR` value is `Hashable` —
+and hands back the ones that did not change. Because `BlockStack` assigns origins
+and index bases at stacking time, a reused child needs nothing done to it
+wherever it now lands, so this is a **memo, not a diff**: no edit script, no
+block identity, no stable-id scheme of the kind `NativeTranscript2` needed for
+blocks that were themselves rows.
+
+Three costs, and only the middle one is solved:
+
+| | per frame | status |
+|---|---|---|
+| Parse | cmark over the whole source | paid in full — no member of that family has an incremental entry point, and it is the cheapest of the three by an order of magnitude |
+| Shape + typeset | only the blocks that changed | what `MarkdownMemo` is for |
+| Repaint | the row's surfaces, whole | **untouched** — `BlockView.invalidate()` takes no rect |
+
+The repaint is the one left standing, and the reason it was not done with the
+others is that it is not merely plumbing: a streaming row's layer is **growing**,
+and a partial `setNeedsDisplay(_:)` on a layer whose bounds just changed leaves
+the region outside the dirty rect showing the old bitmap under
+`contentsGravity`'s default resize. Whether that reads as stale stretched pixels
+or as nothing at all has to be watched on a screen, which is `make demo-kit`'s
+department and not the suite's. Start there before writing the plumbing.
+
+What stays the host's is *what* to hand over. An unclosed fence turns the rest of
+the message into code and a half-built table resizes its columns on every row, so
+holding an incomplete structure back until it seals is a product policy — some
+hosts want code revealed as it streams. The app answers it in
+`StreamingMarkdownCommit`, one pure function, host-side, and the demo answers it
+by streaming only shapes that are safe to reveal.
 
 This is why the package has no paging protocol, no visible-range observation,
 and no off-main typesetting. That apparatus exists to serve a sliding window

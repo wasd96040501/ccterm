@@ -44,7 +44,12 @@ let package = Package(
         // TranscriptKitDemo`. For the things only hands and eyes catch —
         // scrolling, dragging across the content-width clamp, chrome insets.
         .executableTarget(
-            name: "TranscriptKitDemo", dependencies: ["TranscriptKit", "TranscriptMedia"]),
+            name: "TranscriptKitDemo", dependencies: ["TranscriptKit", "TranscriptMedia"],
+            // `.copy` rather than `.process`: the corpus is a directory the demo
+            // enumerates at runtime, so adding another document to it should cost
+            // no code change — and `.process` flattens the structure that walk
+            // depends on. See `StressCorpus`.
+            resources: [.copy("Corpus")]),
         .target(
             name: "TranscriptKit",
             dependencies: [

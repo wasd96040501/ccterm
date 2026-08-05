@@ -113,7 +113,7 @@ enum ListBuilder {
     }
 
     /// One item: its marker in the settled column, its content in the remainder.
-    private struct Row: Block {
+    private struct Row: Block, @unchecked Sendable {
 
         let marker: Marker
         let markerColumn: CGFloat

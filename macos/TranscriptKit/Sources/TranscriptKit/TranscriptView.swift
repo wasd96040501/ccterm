@@ -18,9 +18,15 @@ import AppKit
 /// drawing them; `.view` rows it forwards to the host's
 /// `TranscriptViewDelegate` (`heightOfRow`, `viewForRow`).
 ///
-/// `NSTableView` asks every row for its height, not just the visible ones.
-/// Hosts absorb that by inserting in batches spread over several main-queue
-/// hops instead of in one call — see §6 of the package's CLAUDE.md.
+/// `NSTableView` asks for the height of **far more rows than are visible**, but
+/// not all of them: measured, a ten-thousand-row reload asked about 305, and the
+/// document height it published was that sample's average extrapolated across the
+/// rest — a non-uniform transcript's scroll range came out four times too small
+/// until scrolling to the tail forced the real numbers out. So the working set is
+/// a few hundred rows, it grows as the reader moves around, and a mutation
+/// re-asks about a few hundred more. Hosts absorb that by inserting in batches
+/// spread over several main-queue hops, or by measuring off the main actor first
+/// (`prepareRows(_:)`) — see §6 of the package's CLAUDE.md.
 ///
 /// Rows drawn by host views recycle: the transcript keeps roughly a
 /// screenful of instances alive and cycles them across rows as the user
@@ -154,6 +160,12 @@ public final class TranscriptView: NSView {
         case .markdown(let source):
             return rowCache.measuredMarkdown(forRow: row, source: source, width: contentWidth)
 
+        // The recipe named here has to be the one
+        // `TranscriptRowContent.measured(width:)` applies, or a prepared row and
+        // an on-demand one answer the same question differently. Held by
+        // `PreparedRowsTests.testPreparedAndOnDemandAgree` rather than by this
+        // comment; a recipe is what the cache wants and a measurement is what a
+        // background task can carry, so the two call sites cannot be one.
         case .userMessage(let text):
             return rowCache.measuredBlock(forRow: row, source: text, width: contentWidth) {
                 UserMessage(text)
@@ -851,6 +863,122 @@ public final class TranscriptView: NSView {
         }
     }
 
+    /// Announces rows newly inserted at `indexes`, taking measurements
+    /// `prepareRows(_:)` already produced off the main actor.
+    ///
+    /// Identical to `insertRows(at:)` in every observable way — same row count
+    /// afterwards, same scroll anchoring, same `rect(ofRow:)` correct on
+    /// return. What differs is only what the call has to compute: `insertRows(at:)`
+    /// parses and typesets each new row inside this call, because `NSTableView`
+    /// sums every row's height before it can lay out and there is no estimate
+    /// to give it. This one finds those answers already in hand.
+    ///
+    /// **The `k`-th entry in `prepared` belongs to the `k`-th smallest index in
+    /// `indexes`.** That pairing is the whole of the correspondence.
+    ///
+    /// ## The one rule
+    ///
+    /// > Between mutating your model and calling this, there must be **no
+    /// > `await`**.
+    ///
+    /// Which reads as: prepare *first*, from the values you are about to insert,
+    /// then mutate and insert together.
+    ///
+    /// ```swift
+    /// let prepared = await transcript.prepareRows(batch.map { .markdown($0.text) })
+    /// // ↓ no suspension point between these two lines ↓
+    /// messages.insert(contentsOf: batch, at: 0)
+    /// transcript.insertRows(at: IndexSet(0..<batch.count), prepared: prepared)
+    /// ```
+    ///
+    /// The reason is `transcriptView(_:contentForRow:)`, which is asked on demand
+    /// and answered from the host's array by index, with nothing cached in
+    /// between. Mutate before the `await` and, for as long as it suspends, the
+    /// table believes in the old row count while the data source answers from the
+    /// new one — so any layout landing in that window (a scroll, a resize, another
+    /// row's `reloadRows`) reads row *n* out of a model where *n* means something
+    /// else. Prepending is where it shows; appending happens to survive it,
+    /// because appending leaves every existing index meaning what it meant.
+    ///
+    /// Two consequences of the same rule, worth stating because they are easy to
+    /// get wrong in the other direction:
+    ///
+    /// - **`prepareRows(_:)` takes contents, not indices**, so that the indices
+    ///   can be computed after the `await` — from the model as it is at that
+    ///   moment, which is the only version of it that is true.
+    /// - **Nothing else about the transcript is off limits during the `await`.**
+    ///   Another row may stream, a message may append and announce itself, the
+    ///   window may resize. None of that invalidates anything here beyond the
+    ///   batch's own width check.
+    ///
+    /// ## Getting it wrong
+    ///
+    /// A host that mutates before the `await` anyway does not corrupt anything.
+    /// A frame drawn inside that window can show a row's neighbour's content, and
+    /// some cached measurements are wasted; on the next read every entry is
+    /// re-validated against the content it is being asked for, so the transcript
+    /// converges on the correct render without being told to. The failure mode is
+    /// a visible glitch and some lost work, not a wrong steady state — which is
+    /// why this is documented rather than asserted.
+    ///
+    /// That last sentence is only true because `seed(_:at:)` compares **whole
+    /// content values** rather than their text. It did not, once: a measurement
+    /// prepared as `.markdown` will file cleanly onto a `.userMessage` row
+    /// carrying the same string, and the entry it writes is consistent enough
+    /// that nothing downstream ever re-measures it. That is a row permanently the
+    /// wrong height, and it is the one way this mechanism can be got wrong
+    /// quietly. See `PreparedRowsTests.testAnEntryWhoseCaseChangedIsNotSeeded`.
+    public func insertRows(at indexes: IndexSet, prepared: PreparedRows) {
+        mutate(shiftedBy: .inserted(indexes)) {
+            // Order as in `insertRows(at:)`, with the seed between the two: the
+            // cache has to have the slots before anything can be written into
+            // them, and both have to happen before the table's call, which lays
+            // out and therefore reads what was written.
+            rowCache.insert(at: indexes)
+            seed(prepared, at: indexes)
+            tableView.insertRows(at: indexes, withAnimation: [])
+        }
+    }
+
+    /// Writes `prepared` into the row cache, one row at a time, keeping only the
+    /// entries that still describe the row they are about to be filed under.
+    ///
+    /// Two checks:
+    ///
+    /// - **The width, once for the batch.** Every entry was measured into the
+    ///   same number, so one comparison settles all of them.
+    /// - **The content, per row**, against the live data source — the whole
+    ///   value, not its text, for the reason on `PreparedRows.Row`. The happy
+    ///   path compares a case and then two `String`s sharing storage, so a batch
+    ///   that is entirely valid pays a pointer comparison per row and nothing
+    ///   else. That is also why `prepareRows(_:)` asks for the *same* string
+    ///   values the data source will later hand back rather than copies of them.
+    ///
+    /// A row that fails either is left unseeded, which is not a special state:
+    /// the `tableView.insertRows` below measures it, exactly as it would have if
+    /// nothing had been prepared at all.
+    ///
+    /// **What each check is worth is not the same, and the difference is worth
+    /// knowing before touching either.** Removing the *width* comparison leaves
+    /// the transcript correct and merely wasteful — the entry is filed with the
+    /// width it was actually measured at, so the row cache's own read-time check
+    /// rejects it. Verified, by deleting it and watching the whole suite stay
+    /// green. Removing the *content* comparison is a different thing: two content
+    /// cases carrying the same text measure to different heights, so a mismatch
+    /// that gets through is filed as a consistent entry that nothing later
+    /// disagrees with. The first is an optimisation; the second is the
+    /// correctness of the mechanism.
+    private func seed(_ prepared: PreparedRows, at indexes: IndexSet) {
+        guard prepared.width == contentWidth else { return }
+        for (offset, row) in indexes.enumerated() {
+            guard let prepared = prepared[offset],
+                let content = dataSource?.transcriptView(self, contentForRow: row),
+                content == prepared.content
+            else { continue }
+            rowCache.seed(prepared.entry, forRow: row)
+        }
+    }
+
     /// Announces rows removed at `indexes` (positions in the pre-mutation
     /// data source). No animation parameter, for the reason on `insertRows`.
     public func removeRows(at indexes: IndexSet) {
@@ -916,6 +1044,130 @@ public final class TranscriptView: NSView {
     public func noteHeightOfRows(withIndexesChanged indexes: IndexSet) {
         mutate(shiftedBy: .none) {
             tableView.noteHeightOfRows(withIndexesChanged: indexes)
+        }
+    }
+
+    // MARK: - Off-main measurement
+
+    /// Measures `contents` off the main actor, ready for
+    /// `insertRows(at:prepared:)`.
+    ///
+    /// **What this is for.** `NSTableView` measures a working set of a few
+    /// hundred rows and extrapolates its scroll range from that sample, so a
+    /// mutation does not cost the whole transcript — but it does cost several
+    /// hundred documents parsed and typeset inside the call, and a
+    /// ten-thousand-row load is twenty of those. Measured: 12.47 s of main
+    /// thread, worst batch 665 ms. Spreading that over main-queue hops (§6)
+    /// divides one freeze into twenty without removing any of the work. This
+    /// removes it — the typesetting happens on the cooperative pool, across every
+    /// core, while the main thread keeps drawing: same transcript, 0.12 s of main
+    /// thread, worst batch 11 ms.
+    ///
+    /// The corollary of the table being lazy is that this **over-measures**: a
+    /// ten-thousand-row load asks for roughly four thousand heights, and a batch
+    /// prepared here measures all ten thousand. Background CPU for main-thread
+    /// latency is still the trade to take, but it is a trade rather than a free
+    /// win, and it is the first thing to look at if preparation ever becomes the
+    /// bottleneck.
+    ///
+    /// **Contents, not indices.** The rows do not exist yet, and the indices they
+    /// will occupy are not knowable until the model is mutated — which happens
+    /// *after* this returns. See `insertRows(at:prepared:)` for why that order is
+    /// the one rule here, and what a host pays for getting it wrong.
+    ///
+    /// **Hand over the same string values the data source will later return.**
+    /// Not copies: the seed compares them, and two `String`s sharing storage
+    /// compare in constant time where two equal ones compare in linear time. In
+    /// practice this is automatic — build the contents from the batch you are
+    /// about to store — and it is the difference between a seed costing a pointer
+    /// comparison per row and one costing a memcmp of the whole transcript.
+    ///
+    /// **`.view` rows pass through.** They occupy their place in the result and
+    /// carry no measurement: a host row's height is the delegate's, and asking
+    /// for it here would mean calling main-actor code from a background task.
+    /// They cost nothing to include, so a host with mixed content hands over the
+    /// whole batch rather than filtering and re-interleaving it.
+    ///
+    /// ## How a host loads a long transcript
+    ///
+    /// Three phases, and the first one is not this method:
+    ///
+    /// ```swift
+    /// // 1. Mount and lay out, then load one screen synchronously. A screenful
+    /// //    is a dozen rows: `reloadData()` measures them in under a
+    /// //    millisecond, and going through a background hop for that would only
+    /// //    push the first paint a frame later.
+    /// root.layoutSubtreeIfNeeded()
+    /// messages = await store.loadTail(count: 20)
+    /// transcript.reloadData()
+    /// transcript.scrollToRow(at: messages.count - 1, scrollPosition: .bottom)
+    ///
+    /// // 2. Then the history, oldest-ward, a chunk at a time.
+    /// while let batch = await store.loadOlder(before: messages.first, count: 500) {
+    ///     let prepared = await transcript.prepareRows(batch.map { .markdown($0.text) })
+    ///     if Task.isCancelled { return }
+    ///
+    ///     messages.insert(contentsOf: batch, at: 0)
+    ///     transcript.insertRows(at: IndexSet(0..<batch.count), prepared: prepared)
+    /// }
+    /// ```
+    ///
+    /// Scroll anchoring is what makes phase 2 invisible: each chunk lands above
+    /// the viewport while the reader is already reading the tail, and rule 2
+    /// holds the content still throughout. The two designs are a pair — neither
+    /// is much use alone.
+    ///
+    /// **Chunk it**, and the reason is not the frame budget — this call blocks no
+    /// frame. It is that a batch is invalidated whole by a resize (see
+    /// `PreparedRows`) and cancelled whole by a session switch, so a chunk is the
+    /// unit of work you are willing to lose. Five hundred rows is a reasonable
+    /// place to start.
+    ///
+    /// **Lay out before preparing.** A transcript that has not been through Auto
+    /// Layout has a content width of zero, and everything measured against it is
+    /// discarded at seed time — the same ordering `reloadData()` asks for, with a
+    /// gentler penalty, since what gets wasted is background work rather than the
+    /// main thread's.
+    ///
+    /// **Cancellation stops the work, not just its result.** Cancel the enclosing
+    /// `Task` — a session switch, a window closing — and the rows still queued
+    /// return nothing rather than being measured for a transcript nobody is
+    /// looking at. What comes back is then a partly empty batch, which is not an
+    /// error state: check `Task.isCancelled` after the `await` and drop it.
+    public func prepareRows(_ contents: [TranscriptRowContent]) async -> PreparedRows {
+        // Read on the main actor and captured, so every row in the batch is
+        // measured into one number — which is what lets the seed validate the
+        // whole batch with a single comparison.
+        let width = contentWidth
+        return await Self.measure(contents, width: width)
+    }
+
+    /// The batch, measured concurrently.
+    ///
+    /// `nonisolated` is the whole point: a `static` member of a `@MainActor` type
+    /// is main-actor isolated by default, and this one must not be — awaiting it
+    /// from `prepareRows` is what hops off.
+    ///
+    /// One child task per row rather than a hand-rolled chunking loop, because
+    /// the cooperative pool already caps the number actually running at the core
+    /// count; the extra tasks queue, and a task is cheaper than the document it
+    /// is holding. Results are gathered by offset rather than in completion
+    /// order, so the batch comes back in the order it was given whatever order it
+    /// finished in.
+    private nonisolated static func measure(
+        _ contents: [TranscriptRowContent], width: CGFloat
+    ) async -> PreparedRows {
+        await withTaskGroup(of: (Int, PreparedRows.Row?).self) { group in
+            for (offset, content) in contents.enumerated() {
+                group.addTask {
+                    guard !Task.isCancelled, let entry = content.entry(width: width)
+                    else { return (offset, nil) }
+                    return (offset, PreparedRows.Row(content: content, entry: entry))
+                }
+            }
+            var rows = [PreparedRows.Row?](repeating: nil, count: contents.count)
+            for await (offset, row) in group { rows[offset] = row }
+            return PreparedRows(rows: rows, width: width)
         }
     }
 

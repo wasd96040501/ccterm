@@ -60,6 +60,28 @@ struct MarkdownMemo {
 
     private var entries: [MarkdownBlockBuilder.Child: Entry] = [:]
 
+    /// `source`, parsed and laid out at `width`, with **nothing** to take from —
+    /// a document arriving whole rather than growing into place.
+    ///
+    /// Written as an empty memo rather than as a call to `MarkdownBlockBuilder`
+    /// so that "measured cold" and "measured after a stream" are one code path
+    /// with a different starting state, instead of two expressions that have to
+    /// be kept agreeing. `TranscriptRowContent.measured(width:)` is the caller,
+    /// and `TranscriptView.prepareRows(_:)` reaches it from a background task —
+    /// which is sound for the reason on `Block`: none of this touches
+    /// main-thread state, and the generation it allocates is discarded here.
+    /// The memo comes back with the measurement rather than being discarded: it
+    /// is the donor the *next* version of this document will take from, and a
+    /// caller that threw it away would be handing the cache an answer with no
+    /// past — see `RowCache.Body`'s note on the case that used to represent that.
+    static func measured(
+        _ source: String, width: CGFloat, style: MarkdownStyle = .default
+    ) -> (memo: MarkdownMemo, measured: MeasuredBlock) {
+        var memo = MarkdownMemo()
+        let measured = memo.measure(source, width: width, style: style)
+        return (memo, measured)
+    }
+
     /// `source`, parsed and laid out at `width`, taking whatever the previous
     /// call left behind.
     mutating func measure(

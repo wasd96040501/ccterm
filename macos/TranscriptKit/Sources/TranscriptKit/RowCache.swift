@@ -32,6 +32,26 @@ import AppKit
 /// call — a stale entry simply re-measures the next time it is asked for.
 /// `TypesetText.typesetWidth` is the same comparison one level down.
 ///
+/// The same property is most of what makes `seed(_:forRow:source:width:)` safe
+/// to expose at all. A measurement computed on another thread, for a row the host
+/// may have renumbered since, is written here without ceremony — because an entry
+/// is believed only as far as its `(source, width)` agrees with what is being
+/// asked for, and a seed that no longer does is indistinguishable from a row
+/// nobody has measured. A late or misplaced measurement costs a re-measure rather
+/// than a wrong render, which is the difference between "the host must announce
+/// mutations before the background work lands" — a rule nobody can hold — and "it
+/// does not matter when it lands".
+///
+/// **Where that stops, and it is worth knowing exactly where.** `(source, width)`
+/// identifies an entry, not the *thing it was measured as*. One string measures to
+/// two different heights depending on which `TranscriptRowContent` case it
+/// arrives in — a bubble takes three quarters of the column — so a measurement
+/// filed under the wrong case is internally consistent and nothing here will ever
+/// object to it. That single gap is closed one level up, by
+/// `TranscriptView.seed(_:at:)` comparing whole content values before it writes,
+/// and it is the only check in that method that is load-bearing rather than
+/// thrift.
+///
 /// ## Why the renumbering lives here
 ///
 /// Every entry is positional — `entries[i]` is row `i`'s — so every mutation that
@@ -46,7 +66,13 @@ import AppKit
 /// source whatever mix of row kinds it holds.
 final class RowCache {
 
-    private struct Entry {
+    /// One row's answer, and everything needed to produce the next one cheaply.
+    ///
+    /// `Sendable`, because this is also what a background task produces: measuring
+    /// off the main actor and measuring on it end at the same value, so there is
+    /// one shape rather than a "prepared" one and a real one. See
+    /// `TranscriptView.prepareRows(_:)`.
+    struct Entry: Sendable {
 
         /// The text this was built from — what the entry is valid against.
         var source: String
@@ -67,7 +93,18 @@ final class RowCache {
     /// on a width change and is simply rebuilt when the text moves. Modelling that
     /// as an enum rather than as two caches keeps one array, one set of
     /// renumbering, and one answer to "has this row's source moved".
-    private enum Body {
+    ///
+    /// **Two cases, and there was briefly a third.** A `seeded` case carried a
+    /// measurement with no recipe behind it, for entries that had crossed an actor
+    /// boundary back when `Block` was not `Sendable`. It was not a third way of
+    /// keeping something — it was *nothing kept*, which is a hole rather than a
+    /// case, and it cost what a hole here costs: every row that arrived from a
+    /// background task re-parsed **and re-shaped** on the first width change,
+    /// instead of only re-breaking its lines. On a ten-thousand-row transcript
+    /// that is the difference between a resize and a freeze. Nine
+    /// `@unchecked Sendable` annotations retired it, in nine files that each
+    /// already carried the identical annotation one type below.
+    enum Body: Sendable {
         case markdown(MarkdownMemo)
         case block(Block)
     }
@@ -123,6 +160,27 @@ final class RowCache {
         entries[row] = Entry(
             source: source, body: .block(block), measured: measured, measuredWidth: width)
         return measured
+    }
+
+    /// Files an entry someone else produced — off the main actor, by
+    /// `TranscriptView.prepareRows(_:)` — as row `row`'s.
+    ///
+    /// A whole `Entry`, recipe included, so a prepared row is **indistinguishable
+    /// from one this cache measured itself**: same donor for the next version of
+    /// its source, same recipe for the next width. Handing over only the
+    /// measurement is what the retired `Body.seeded` case was, and its cost is
+    /// written down there.
+    ///
+    /// **Unconditional on purpose.** Every check that could belong here is
+    /// already somewhere better: that the entry is still *for* this row is checked
+    /// against the live data source by the caller, one row at a time, before it
+    /// gets here; that it is still valid is checked on every read, by the same
+    /// `(source, width)` comparison every other entry faces. So the worst a wrong
+    /// seed can do is cost a re-measure the next time the row is asked about — the
+    /// same cost as no seed at all.
+    func seed(_ entry: Entry, forRow row: Int) {
+        padEntries(through: row)
+        entries[row] = entry
     }
 
     /// The text row `row` was last built from, or `nil` for a row nothing has

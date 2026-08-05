@@ -147,6 +147,15 @@ Three rules, learned the hard way:
   production path, run, and check that *that* test goes red while the others
   stay green. This is the only step that can falsify the harness; skipping it
   means shipping tests whose green is unexplained.
+- **A test that compares two configurations must assert that the two differ.**
+  The same failure as the rule above it, one level up: `PreparedRowsTests`
+  checks that a batch measured at 600 points does not get used at 420 by
+  comparing against a control transcript — and three of its four documents were
+  short enough to wrap identically at both widths, so it stayed green through a
+  break that filed every stale measurement as current. The fix is a line
+  asserting the premise (*these widths really do produce different layouts*),
+  and it belongs next to any assertion whose meaning depends on two inputs not
+  being equivalent.
 
 `settle()` runs **one** pass on purpose. The transcript's width invalidation
 lands inside the pass that changed the width, so nothing is left for a second
@@ -343,9 +352,9 @@ different places. Parity with `NSTableView` (§1) is worth more than protection
 from an ordering a host gets right once, in the ten lines where it mounts.
 
 A long transcript loads by rendering the first screen, then feeding the
-remainder in batches, **one batch per `DispatchQueue.main.async` hop**. Each
-tick typesets a batch small enough to fit the frame budget, so the cost is
-spread across ticks instead of landing in one.
+remainder in batches, **one batch per hop**. Each tick handles a batch small
+enough to fit the frame budget, so the cost is spread across ticks instead of
+landing in one.
 
 Two properties make that work:
 
@@ -358,6 +367,76 @@ Two properties make that work:
   over several hundred milliseconds while the reader is already reading, and
   the anchoring rules documented on `TranscriptView` hold the content still
   throughout. The two designs are a pair; neither is much use alone.
+
+### Past a few thousand rows, spreading the work is not enough
+
+Hops divide one freeze into many; they remove none of it. Measured, ten thousand
+rows of real markdown, five hundred to a batch: **12.47 s of main thread, worst
+batch 665 ms.** Forty dropped frames, twenty times over. The window cannot be
+scrolled or resized throughout.
+
+**What `NSTableView` actually asks for, since the answer here was wrong for a
+while.** It does *not* need every row's height. It measures a working set — a few
+hundred rows — and extrapolates its scroll range from that sample, refining as
+the reader moves. Measured, on ten thousand rows: a `reloadData` asked 305 times;
+with the first 400 rows short and the rest long, the published document height
+came out **four times too small** until scrolling to the tail forced the real
+numbers out. So the table is already doing estimate-then-refine internally, which
+is why adding a second layer of it here would buy nothing (see below), and why a
+ten-thousand-row load asks for roughly four thousand heights rather than ten
+thousand. The corollary is that `prepareRows` **over-measures by about 2.5×** —
+worth knowing, not worth fixing, since background CPU is what is being spent.
+
+So `prepareRows(_:)` + `insertRows(at:prepared:)` measure the batch off the main
+actor first and hand the answers over, leaving the insert a cache seed. Same
+transcript: **0.12 s of main thread, worst batch 11 ms** — inside a frame, so it
+scrolls while it loads. `make demo-kit`'s two **Cold load** buttons are that
+table, live.
+
+Three things are worth knowing before reaching for it:
+
+- **What is async is the *measure*, not the *insert*.** `insertRows` stays
+  synchronous and total, because `transcriptView(_:contentForRow:)` is answered
+  by index with nothing cached in between: suspend between mutating the model and
+  announcing it and, for that window, the table believes the old row count while
+  the data source answers from the new one. An `async insert` would *create* the
+  inconsistency it looks like it avoids. Hence `prepareRows` takes **contents,
+  not indices** — so the indices are computed after the `await`, when they are
+  true.
+- **Getting the order wrong costs work, not correctness — with one exception.**
+  `RowCache` believes an entry only as far as its `(source, width)` matches what
+  is being asked for, so a late or misplaced measurement re-measures rather than
+  rendering wrongly. The exception is the *content case*: one string measures to
+  two heights depending on whether it arrives as `.markdown` or `.userMessage`,
+  and a measurement filed under the wrong case is internally consistent, so
+  nothing downstream ever objects. That is why the seed compares whole
+  `TranscriptRowContent` values. It compared source strings first, and
+  `PreparedRowsTests.testAnEntryWhoseCaseChangedIsNotSeeded` is what caught it.
+- **The floor left standing is the table's own.** The prepared figure grows from
+  1 ms for the first batch to 11 ms for the last, because what remains in the
+  insert is `NSTableView`'s bookkeeping, which is proportional to the rows it
+  already holds. Nothing here can move that off the main thread.
+
+Two adjacent costs this does **not** address, both worth knowing before assuming
+a long transcript is now solved:
+
+- **`RowCache` never evicts.** Ten thousand measured rows is ten thousand typeset
+  documents resident, `CTLine`s and all. Preparing them faster reaches that
+  ceiling sooner rather than raising it.
+- **A resize re-measures the whole working set.** `viewDidEndLiveResize` hands
+  `noteHeightOfRows` every index; the table then re-asks about the few thousand
+  it cares about. Measured on ten thousand rows: **~1.8 s on mouse-up**, 4 450
+  queries at ~0.4 ms each. That is line-breaking from kept recipes — shaping is
+  already reused — so it is close to the floor for doing the work on the main
+  thread at all, and the only real answer is to do it somewhere else.
+  `prepareRows` gives a host no way to help, because the invalidation is the
+  transcript's own. It is the next thing to do here.
+
+  Worth recording because it was nearly mis-attributed: entries that crossed the
+  actor boundary *without their recipe* made the **first** resize after a cold
+  load cost 3.1 s instead of 1.8 s, and only the first — after which they had
+  rebuilt a recipe and behaved like any other row. Carrying the recipe (see
+  `RowCache.Body`) removes that 1.3 s, and removes none of the 1.8 s.
 
 ### Streaming is `reloadRows`, and the increment is derived here
 
@@ -416,8 +495,8 @@ hosts want code revealed as it streams. The app answers it in
 `StreamingMarkdownCommit`, one pure function, host-side, and the demo answers it
 by streaming only shapes that are safe to reveal.
 
-This is why the package has no paging protocol, no visible-range observation,
-and no off-main typesetting. That apparatus exists to serve a sliding window
+This is why the package has no paging protocol and no visible-range observation.
+That apparatus exists to serve a sliding window
 over an unbounded history — Telegram's `ChatHistoryLocation` is the reference
 design, and it earns its complexity on chats with hundreds of thousands of
 messages. A transcript is a bounded document that ends up fully resident, so

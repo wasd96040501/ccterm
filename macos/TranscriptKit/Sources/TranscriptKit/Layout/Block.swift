@@ -24,6 +24,24 @@ import AppKit
 /// it off the main actor and hand the result back, which is why `MeasuredBlock` is
 /// `Sendable`.
 ///
+/// ## Sendable
+///
+/// A recipe crosses the same boundary its product does, and for a strictly
+/// easier reason: everything the argument on `MeasuredBlock` rests on holds
+/// here, minus the `CTLine`s — a `Block` is what exists *before* anything is
+/// broken into lines. Each conformer is `@unchecked Sendable` because it holds
+/// `ShapedText`, `NSFont` and `NSColor`, all immutable once created and
+/// documented thread-safe, and none of which Swift knows that about.
+///
+/// **The point of it is that recipes survive a width change.** `MarkdownMemo`
+/// re-measures from a kept recipe rather than rebuilding, so shaping — the
+/// expensive third of the work — is paid once per document rather than once per
+/// width. Sending a measurement without its recipe would put every row that
+/// arrived from a background task outside that, which is not a small loss: it is
+/// the difference between a resize re-breaking lines and a resize re-shaping the
+/// whole transcript. `RowCache` briefly had a third entry body for exactly that
+/// state, and deleting it is what this conformance is for.
+///
 /// **Space around a block is that block's own business.** Anything wanting room
 /// above or below itself puts that room in the height it measures to and draws
 /// its content lower — the way `ThematicBreak` always has. It is not declared,
@@ -31,7 +49,7 @@ import AppKit
 /// does not know whether it sits in a document, a list item or a table cell, so
 /// it cannot be the one to say how far it should be from its neighbours. What a
 /// container owns is `spacing` — one number, the way `NSStackView` does it.
-protocol Block {
+protocol Block: Sendable {
 
     /// Lays this content out inside `width`.
     func measure(_ width: CGFloat) -> MeasuredBlock

@@ -76,9 +76,12 @@ struct Demo {
         panel.onRemeasureFirst = { host.remeasureFirstRow() }
         panel.onBatch = { host.prependAndRemoveInOneBatch() }
         panel.onStream = { host.toggleStreaming(row: $0) }
+        panel.onColdLoad = { rows, prepared in host.coldLoad(rows: rows, prepared: prepared) }
+        panel.onCancelColdLoad = { host.cancelColdLoad() }
         panel.onMaxContentWidth = { transcript.maxContentWidth = $0 }
         host.onRowCountChange = { panel.setStatus("\($0) rows") }
         host.onStreamingChange = { panel.setStreaming($0) }
+        host.onColdLoadProgress = { panel.setColdLoadStatus($0) }
 
         // Lay the tree out before loading, so the table's first — and only —
         // measurement pass runs at the settled content width. Loading first
@@ -93,6 +96,9 @@ struct Demo {
         root.layoutSubtreeIfNeeded()
         transcript.reloadData()
         panel.setStatus("\(transcript.numberOfRows) rows")
+        // How much distinct material is behind a cold load, so the row count
+        // asked for can be read against how often the corpus repeats.
+        panel.setColdLoadStatus("\(StressCorpus.sectionCount) distinct documents")
 
         window.makeKeyAndOrderFront(nil)
         app.activate(ignoringOtherApps: true)

@@ -21,7 +21,7 @@ import AppKit
 /// children independently and so cannot size a column to the widest cell in it;
 /// column widths are an agreement between siblings, settled here before anything
 /// is laid out, and never visible outside this file.
-struct Table: Block {
+struct Table: Block, @unchecked Sendable {
 
     /// A column's horizontal alignment. GFM's "unspecified" is not a case of its
     /// own — it lays out exactly as leading does, and a distinction that changes

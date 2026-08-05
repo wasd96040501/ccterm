@@ -16,7 +16,7 @@ final class ControlPanelView: NSVisualEffectView {
 
     /// Fixed rather than derived from the stack, so the host can inset the
     /// transcript by it before anything has laid out.
-    static let height: CGFloat = 162
+    static let height: CGFloat = 200
 
     var onScrollToRow: ((Int, TranscriptView.ScrollPosition) -> Void)?
     var onPrepend: (() -> Void)?
@@ -32,6 +32,11 @@ final class ControlPanelView: NSVisualEffectView {
     /// says which state it is in.
     var onStream: ((Int) -> Void)?
 
+    /// Load a transcript of this many rows, with the history either measured off
+    /// the main actor first (`prepared`) or typeset inside the insert.
+    var onColdLoad: ((Int, Bool) -> Void)?
+    var onCancelColdLoad: (() -> Void)?
+
     private let rowField = NSTextField(string: "0")
     private let positions = NSSegmentedControl(
         labels: ["Top", "Center", "Bottom", "Nearest"], trackingMode: .selectOne,
@@ -46,13 +51,18 @@ final class ControlPanelView: NSVisualEffectView {
     private let streamField = NSTextField(string: "1")
     private lazy var streamButton = button("Stream", #selector(stream))
 
+    /// Ten thousand, because that is the number the two buttons beside it stop
+    /// being a matter of taste at. A few hundred rows load acceptably either way.
+    private let coldLoadField = NSTextField(string: "10000")
+    private let coldLoadLabel = NSTextField(labelWithString: "")
+
     init() {
         super.init(frame: .zero)
         material = .hudWindow
         blendingMode = .withinWindow
         state = .active
 
-        for field in [rowField, streamField] {
+        for field in [rowField, streamField, coldLoadField] {
             field.formatter = {
                 let formatter = NumberFormatter()
                 formatter.allowsFloats = false
@@ -62,10 +72,17 @@ final class ControlPanelView: NSVisualEffectView {
         positions.selectedSegment = 0
         widthSlider.target = self
         widthSlider.action = #selector(widthChanged)
-        statusLabel.textColor = .secondaryLabelColor
-        statusLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        for label in [statusLabel, coldLoadLabel] {
+            label.textColor = .secondaryLabelColor
+            // Monospaced digits, or the timings jitter sideways as they update
+            // once a chunk — which reads as the panel being the thing that is
+            // struggling.
+            label.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        }
 
-        let rows = NSStackView(views: [scrollRow(), mutationRow(), streamRow(), widthRow()])
+        let rows = NSStackView(views: [
+            scrollRow(), mutationRow(), streamRow(), coldLoadRow(), widthRow(),
+        ])
         rows.orientation = .vertical
         rows.alignment = .leading
         rows.spacing = 10
@@ -96,6 +113,7 @@ final class ControlPanelView: NSVisualEffectView {
             widthSlider.widthAnchor.constraint(equalToConstant: 200),
             rowField.widthAnchor.constraint(equalToConstant: 56),
             streamField.widthAnchor.constraint(equalToConstant: 56),
+            coldLoadField.widthAnchor.constraint(equalToConstant: 72),
         ])
     }
 
@@ -115,6 +133,13 @@ final class ControlPanelView: NSVisualEffectView {
     /// over a row that had stopped.
     func setStreaming(_ streaming: Bool) {
         streamButton.title = streaming ? "Stop" : "Stream"
+    }
+
+    /// The cold load's running timings. Separate from `setStatus` because the two
+    /// update on different clocks — the row count after every mutation, this
+    /// after every chunk — and one label showing both would flicker between them.
+    func setColdLoadStatus(_ text: String) {
+        coldLoadLabel.stringValue = text
     }
 
     // MARK: - Rows
@@ -145,6 +170,25 @@ final class ControlPanelView: NSVisualEffectView {
             NSTextField(
                 labelWithString: "— select some text in it first, and scroll while it runs"),
         ])
+    }
+
+    /// The two cold loads, side by side on purpose.
+    ///
+    /// Neither button proves anything alone. **Prepared** looks unremarkable
+    /// until you have watched **sync** load the same transcript and found the
+    /// window unable to redraw, scroll or take a selection while it does — and
+    /// the number the timing label prints beside them is the same number in both
+    /// runs, so the comparison is not a matter of impression.
+    private func coldLoadRow() -> NSStackView {
+        let stack = row([
+            NSTextField(labelWithString: "Cold load"), coldLoadField,
+            button("Prepared", #selector(coldLoadPrepared)),
+            button("Sync", #selector(coldLoadSync)),
+            button("Cancel", #selector(cancelColdLoad)),
+            coldLoadLabel,
+        ])
+        stack.setCustomSpacing(16, after: coldLoadField)
+        return stack
     }
 
     private func widthRow() -> NSStackView {
@@ -191,6 +235,10 @@ final class ControlPanelView: NSVisualEffectView {
     @objc private func growFirst() { onGrowFirst?() }
     @objc private func remeasureFirst() { onRemeasureFirst?() }
     @objc private func stream() { onStream?(streamField.integerValue) }
+
+    @objc private func coldLoadPrepared() { onColdLoad?(coldLoadField.integerValue, true) }
+    @objc private func coldLoadSync() { onColdLoad?(coldLoadField.integerValue, false) }
+    @objc private func cancelColdLoad() { onCancelColdLoad?() }
 
     @objc private func widthChanged() {
         let width = widthSlider.doubleValue.rounded()

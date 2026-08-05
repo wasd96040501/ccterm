@@ -6,7 +6,7 @@ import AppKit
 /// visible but holds no text, so it occupies zero positions in the index space.
 /// A drag straight through one selects the paragraphs on either side and picks up
 /// nothing in between — what a reader expects, and what a browser does.
-struct ThematicBreak: Block {
+struct ThematicBreak: Block, @unchecked Sendable {
 
     var thickness: CGFloat = 1
 

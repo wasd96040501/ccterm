@@ -8,7 +8,7 @@ import AppKit
 /// being scattered into a table keyed by node kind somewhere else. Whoever lowers
 /// the text asks `Heading.font(level:)` for the face; nothing else needs to know
 /// what an h2 is.
-struct Heading: Block {
+struct Heading: Block, @unchecked Sendable {
 
     let level: Int
     let text: ShapedText

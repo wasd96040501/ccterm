@@ -56,7 +56,7 @@ import AppKit
 ///   reserves one per cell — an affordance is a place the pointer can be, and
 ///   `MeasuredBlock.length` documents exactly this. It contributes no characters,
 ///   so copying a whole bubble copies the message and not the word "More".
-struct UserMessage: Block {
+struct UserMessage: Block, @unchecked Sendable {
 
     let text: ShapedText
 

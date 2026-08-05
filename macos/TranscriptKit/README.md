@@ -68,15 +68,33 @@ directly on `NSTableView`:
   documents only that `numberOfRows` grows and says nothing about the scroll
   offset. That suits lists whose top is stable; a transcript grows upward, so
   it doesn't.
-- **Cold load is the host's, and needs no API.** A long transcript is loaded by
-  rendering the first screen, then feeding the remainder in batches, one per
-  `DispatchQueue.main.async` hop — each tick typesets a batch small enough to
-  fit the frame budget. Nothing is observed, nothing is scheduled off the main
-  thread, and the package needs no notion of pages or of where rows come from.
+- **Cold load is the host's, in two phases.** A long transcript renders its
+  first screen synchronously, then feeds the remainder in batches, one per hop.
+  Up to a few thousand rows that is the whole story and needs no API: the
+  package observes nothing and needs no notion of pages or of where rows come
+  from.
 
-  Scroll anchoring is what makes this invisible: batches prepend above the
-  viewport over several hundred milliseconds while the reader is already
-  reading, and rule 2 holds the content still throughout.
+  Past that, hops stop being enough — they divide one freeze into many rather
+  than removing it. (`NSTableView` does not ask for every row's height: it
+  measures a working set of a few hundred and extrapolates the rest. But a
+  ten-thousand-row load still walks several thousand of them.) So a batch can be
+  measured off the main actor first:
+
+  ```swift
+  let prepared = await transcript.prepareRows(batch.map { .markdown($0.text) })
+  // no `await` between mutating the model and announcing it
+  messages.insert(contentsOf: batch, at: 0)
+  transcript.insertRows(at: IndexSet(0..<batch.count), prepared: prepared)
+  ```
+
+  What is asynchronous is the **measure**, not the insert — `insertRows` stays
+  synchronous and total, because suspending between the model changing and the
+  transcript hearing about it is what makes the two disagree. Ten thousand rows
+  of real markdown: 12.47 s of main thread the plain way, 0.12 s this way.
+
+  Scroll anchoring is what makes either phase invisible: batches prepend above
+  the viewport while the reader is already reading, and rule 2 holds the content
+  still throughout.
 
 ## Usage sketch
 

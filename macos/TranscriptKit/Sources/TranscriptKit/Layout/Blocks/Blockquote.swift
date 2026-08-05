@@ -21,7 +21,7 @@ import AppKit
 /// what it wraps, and it is the right price: the alternative is asking the
 /// content to publish its own spacing, which is what makes a paragraph
 /// responsible for something only its surroundings can know.
-struct Blockquote: Block {
+struct Blockquote: Block, @unchecked Sendable {
 
     let content: Block
 

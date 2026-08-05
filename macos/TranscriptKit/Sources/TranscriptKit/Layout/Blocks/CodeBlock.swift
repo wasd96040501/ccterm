@@ -17,7 +17,7 @@ import CoreText
 /// waiting on now exists: `MeasuredBlock.link(at:)` is a point query answered by
 /// the block that owns the geometry, and `BlockView` already turns a press into
 /// a click on one. A button is that shape with a closure where the `URL` is.
-struct CodeBlock: Block {
+struct CodeBlock: Block, @unchecked Sendable {
 
     /// The card's body. Monospaced at the body point size — the caller resolves
     /// that, because the size is the surrounding text's and not the card's.

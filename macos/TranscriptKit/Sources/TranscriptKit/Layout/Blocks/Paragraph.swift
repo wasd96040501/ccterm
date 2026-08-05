@@ -12,7 +12,7 @@ import AppKit
 /// two adjacent paragraphs sit `spacing` apart with neither having said
 /// anything. Only the kinds that want *more* than that — headings above
 /// themselves, bordered blocks, rules — add to their own height.
-struct Paragraph: Block {
+struct Paragraph: Block, @unchecked Sendable {
 
     let text: ShapedText
 

@@ -21,7 +21,7 @@ import AppKit
 /// list's marker column widening to fit `10.`, a table's columns sizing to their
 /// widest cell — belongs to the type that wants it, which measures its parts and
 /// settles the number before any stack sees it.
-struct BlockStack: Block {
+struct BlockStack: Block, @unchecked Sendable {
 
     let children: [Block]
     var spacing: CGFloat = 0

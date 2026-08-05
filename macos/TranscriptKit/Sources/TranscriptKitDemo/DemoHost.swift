@@ -84,6 +84,167 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
         reportRowCount()
     }
 
+    // MARK: - Cold load
+
+    /// Loads `total` rows the way a host with a long history is meant to:
+    /// **one screen synchronously, then the rest prepared off the main actor and
+    /// prepended in chunks.**
+    ///
+    /// This is `TranscriptView.prepareRows(_:)`'s doc comment, written out as
+    /// something you can press. What the demo adds is the half no assertion has
+    /// an opinion about: whether the window still *feels* alive while it runs.
+    /// Press this and then drag the window, spin the scroll wheel, select some
+    /// text in the row under the pointer — all of it keeps working, and the
+    /// panel's timing line says why. Press **Cold load (sync)** for the same
+    /// transcript loaded the obvious way and try the same three things.
+    ///
+    /// Three properties are on screen at once here, and only the first is
+    /// assertable:
+    ///
+    /// - Each chunk lands **above** the viewport while the reader sits at the
+    ///   tail, and scroll anchoring holds the content still through every one of
+    ///   them. Watch a line of text, not the scroller.
+    /// - The scroller's knob shrinks in steps as history arrives, because the
+    ///   document really is getting longer — this is not an estimate being
+    ///   corrected, so it never grows back.
+    /// - The main thread's share is bounded by the *seed*, not by the
+    ///   typesetting. That is the number the panel prints.
+    ///
+    /// Measured on an M-series laptop, ten thousand rows, five hundred to a
+    /// chunk — the numbers the two buttons print, so they can be checked rather
+    /// than believed:
+    ///
+    /// | | main thread, total | worst single chunk |
+    /// |---|---|---|
+    /// | **Sync** | 12.47 s | 665 ms |
+    /// | **Prepared** | 0.12 s | 11 ms |
+    ///
+    /// The worst chunk is the interesting column. 665 ms is forty dropped frames
+    /// happening twenty times; 11 ms fits inside a frame, which is why one of
+    /// these can be scrolled through while it loads and the other cannot. Note
+    /// also that the prepared figure *grows* across the load — 1 ms for the first
+    /// chunk, 11 ms for the last — because what is left in the insert is the
+    /// table's own bookkeeping, which is proportional to how many rows it already
+    /// has. That is the next thing to look at if this ever needs to be cheaper,
+    /// and it is not something this package can move off the main thread.
+    func coldLoad(rows total: Int, prepared: Bool) {
+        cancelColdLoad()
+        stopStreaming()
+        let documents = StressCorpus.documents(count: max(total, 0))
+        guard !documents.isEmpty, let transcript else { return }
+
+        // Phase 1 — one screen, synchronously. A dozen rows measure in well under
+        // a millisecond, and routing them through a background hop would only
+        // push the first paint a frame later for no gain. `reloadData()` rather
+        // than an insert because there is nothing yet to insert into.
+        let firstScreen = min(Self.firstScreenRows, documents.count)
+        var pending = documents
+        messages = pending.suffix(firstScreen).map { .assistant($0) }
+        pending.removeLast(firstScreen)
+        transcript.reloadData()
+        transcript.scrollToRow(at: messages.count - 1, scrollPosition: .bottom)
+        reportRowCount()
+
+        // Phase 2 — the history, oldest-ward, a chunk at a time.
+        coldLoadTask = Task { [weak self] in
+            var report = ColdLoadReport(total: documents.count, prepared: prepared)
+            while !pending.isEmpty {
+                guard let self, let transcript = self.transcript, !Task.isCancelled else { return }
+                let chunk = Array(pending.suffix(Self.chunkRows))
+                pending.removeLast(chunk.count)
+
+                // The batch measured off the main actor. The `String`s handed
+                // over are the same instances that go into `messages` below —
+                // not copies — which is what keeps the seed's per-row check a
+                // pointer comparison. See `prepareRows(_:)`.
+                var seeded: PreparedRows?
+                if prepared {
+                    let started = DispatchTime.now()
+                    seeded = await transcript.prepareRows(chunk.map { .markdown($0) })
+                    report.offMain += Self.seconds(since: started)
+                    if Task.isCancelled { return }
+                }
+
+                // ↓↓ No suspension point between mutating the model and
+                //    announcing it. The one rule. ↓↓
+                let started = DispatchTime.now()
+                self.messages.insert(contentsOf: chunk.map { .assistant($0) }, at: 0)
+                let indexes = IndexSet(0..<chunk.count)
+                if let seeded {
+                    transcript.insertRows(at: indexes, prepared: seeded)
+                } else {
+                    transcript.insertRows(at: indexes)
+                }
+                report.record(mainThread: Self.seconds(since: started))
+
+                self.reportRowCount()
+                self.onColdLoadProgress?(report.line(loaded: self.messages.count))
+
+                // One chunk per hop even in the prepared case, and the reason is
+                // not the frame budget — an insert that only seeds does not blow
+                // one. It is that a `Task` that never suspends between chunks
+                // starves the main queue of everything else: without this, the
+                // synchronous run would show no intermediate state at all, and
+                // the two buttons would be much harder to tell apart for the
+                // wrong reason.
+                await Task.yield()
+            }
+            self?.coldLoadTask = nil
+        }
+    }
+
+    func cancelColdLoad() {
+        coldLoadTask?.cancel()
+        coldLoadTask = nil
+    }
+
+    var isColdLoading: Bool { coldLoadTask != nil }
+
+    /// Reported to the panel after every chunk.
+    var onColdLoadProgress: ((String) -> Void)?
+
+    private var coldLoadTask: Task<Void, Never>?
+
+    /// Enough to fill the window at the demo's default size with room to spare.
+    /// The point is that phase 1 is *small*, not that it is exact — a host would
+    /// take this from whatever its store hands back first.
+    private static let firstScreenRows = 20
+
+    /// See `prepareRows(_:)`: the unit of work a resize or a cancellation throws
+    /// away, not a frame-budget number.
+    private static let chunkRows = 500
+
+    private static func seconds(since start: DispatchTime) -> Double {
+        Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1e9
+    }
+
+    /// What the panel prints while a cold load runs.
+    ///
+    /// The main-thread total and the worst single chunk are the two numbers the
+    /// whole exercise is about, and they are kept apart because they fail
+    /// differently: a large total is a slow load, where a large *worst* is a
+    /// visible hitch no matter how good the total is.
+    private struct ColdLoadReport {
+        let total: Int
+        let prepared: Bool
+        var offMain: Double = 0
+        var onMain: Double = 0
+        var worstChunk: Double = 0
+
+        mutating func record(mainThread seconds: Double) {
+            onMain += seconds
+            worstChunk = max(worstChunk, seconds)
+        }
+
+        func line(loaded: Int) -> String {
+            let mode = prepared ? "prepared" : "sync"
+            let off = prepared ? String(format: "  off-main %.2fs", offMain) : ""
+            return String(
+                format: "%@ · %d/%d rows%@  main %.2fs  worst chunk %.0f ms",
+                mode, loaded, total, off, onMain, worstChunk * 1000)
+        }
+    }
+
     // MARK: - Streaming
 
     /// The row being streamed into, what it held when the stream started, and

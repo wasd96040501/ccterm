@@ -1,14 +1,44 @@
-import Foundation
+import AppKit
 
 /// One turn in the demo transcript.
 struct DemoMessage {
 
-    /// Who said it. Both are the transcript's to draw — `.userMessage` and
-    /// `.markdown` — so the demo supplies no row views of its own.
-    enum Author { case user, assistant }
+    /// What the turn is, which is also who draws it. The first two are the
+    /// transcript's — `.userMessage` and `.markdown`; the third is the demo's
+    /// own `.view` row, and the reason the demo now implements `heightOfRow` and
+    /// `viewForRow` where it used to implement neither.
+    enum Content {
+        case user(String)
+        case assistant(String)
 
-    let author: Author
-    let text: String
+        /// Pictures the reader attached, drawn by `ImageGridView`. Addresses
+        /// rather than images: the package has no picture case and will not grow
+        /// one, and what a row of pictures costs — the header read, the decode,
+        /// the cache, the failure — all lives on this side of the seam and all of
+        /// it starts from a URL.
+        case images([URL])
+    }
+
+    let content: Content
+
+    /// The turn's text, or `nil` for a row that has none. Only the control
+    /// panel's grow buttons ask, and only about row 0.
+    var text: String? {
+        switch content {
+        case .user(let text), .assistant(let text): return text
+        case .images: return nil
+        }
+    }
+
+    /// The same turn with more text on the end, or unchanged when there is no
+    /// text to add to.
+    func appending(_ suffix: String) -> DemoMessage {
+        switch content {
+        case .user(let text): return .user("\(text) \(suffix)")
+        case .assistant(let text): return .assistant("\(text) \(suffix)")
+        case .images: return self
+        }
+    }
 }
 
 extension DemoMessage {
@@ -54,15 +84,50 @@ extension DemoMessage {
             .assistant(inlineKitchenSink),
             .user("And the things that only render right by accident?"),
             .assistant(referencesAndNotes),
+
+            // Every branch of `MosaicLayout`, in the order the algorithm reaches
+            // them, because which one runs is decided by the proportions rather
+            // than by the count — two pictures can go through the hand-written
+            // pair rule or through the search, and only the picture's shape says
+            // which. Reading them in a row is how a wrong branch is caught.
+            .user("Here's what the mosaic does with one picture."),
+            .images(DemoImage.group(1)),
+            .user("Two of a kind — equal halves."),
+            .images(DemoImage.group(2, offset: 7)),
+            .user("Two that disagree — the split makes both the same height."),
+            .images(DemoImage.group(2, offset: 4)),
+            .user("Two where one is a 3:1 panorama, so the search runs instead."),
+            .images(DemoImage.group(2, offset: 2)),
+            .user("Three led by a portrait — full height on the left."),
+            .images(DemoImage.group(3, offset: 5)),
+            .user("Three led by a wide one — it takes the top, two share the bottom."),
+            .images(DemoImage.group(3)),
+            .user("Four with a wide leader over a row of three."),
+            .images(DemoImage.group(4, offset: 4)),
+            .user("Four with a tall leader and three stacked beside it."),
+            .images(DemoImage.group(4, offset: 5)),
+            .user("Five, arranged by the line-split search."),
+            .images(DemoImage.group(5, offset: 4)),
+            .user("And seven, which is where the search earns its keep."),
+            .images(DemoImage.group(7)),
+            // The two states that are not a picture: an address that resolves to
+            // nothing, and a remote one whose row was laid out before anything
+            // was known about it and is not re-laid-out afterwards.
+            .user("And the two that are not pictures at all."),
+            .images([DemoImage.missing, DemoImage.remote]),
         ]
     }
 
     static func user(_ text: String) -> DemoMessage {
-        DemoMessage(author: .user, text: text)
+        DemoMessage(content: .user(text))
     }
 
     static func assistant(_ text: String) -> DemoMessage {
-        DemoMessage(author: .assistant, text: text)
+        DemoMessage(content: .assistant(text))
+    }
+
+    static func images(_ urls: [URL]) -> DemoMessage {
+        DemoMessage(content: .images(urls))
     }
 
     /// Long enough to be cut short, which is the only way to see the `More` run

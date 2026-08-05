@@ -14,7 +14,7 @@ import AppKit
 /// Inside is an `NSTableView` in an `NSScrollView`, its content centred.
 ///
 /// `TranscriptView` is that table's data source and delegate. Rows carrying
-/// `.markdown` / `.userMessage` / `.image` it answers itself — measuring and
+/// `.markdown` / `.userMessage` it answers itself — measuring and
 /// drawing them; `.view` rows it forwards to the host's
 /// `TranscriptViewDelegate` (`heightOfRow`, `viewForRow`).
 ///
@@ -159,8 +159,8 @@ public final class TranscriptView: NSView {
                 UserMessage(text)
             }
 
-        // `.image` has no block type behind it yet; a `.view` row is the host's.
-        case .image, .view:
+        // A `.view` row is the host's, block and all.
+        case .view:
             return nil
         }
     }
@@ -210,7 +210,7 @@ public final class TranscriptView: NSView {
 
         let hosted: NSView
         switch content {
-        case .markdown, .userMessage, .image:
+        case .markdown, .userMessage:
             guard let block = measuredBlock(forRow: row, content: content) else { return nil }
             hosted = blockView(in: cell, showing: block, forRow: row)
 
@@ -252,13 +252,9 @@ public final class TranscriptView: NSView {
                 self.delegate?.transcriptView(
                     self, didActivate: url, inRow: current >= 0 ? current : row)
 
-            // Nothing yet, on purpose. Showing the rest of a message is a
-            // presentation the host owns — a sheet, a panel, a push — and the
-            // delegate requirement that reports this lands with the first host
-            // that has somewhere to put it. Until then the run is drawn, hovers,
-            // and does nothing when pressed.
             case .more:
-                break
+                self.delegate?.transcriptView(
+                    self, didActivateMoreInRow: current >= 0 ? current : row)
             }
         }
         view.onLinkHovered = { [weak self] view, url, point in

@@ -127,6 +127,32 @@ public protocol TranscriptViewDelegate: AnyObject {
     /// A link inside a rendered row was activated.
     func transcriptView(_ transcriptView: TranscriptView, didActivate url: URL, inRow row: Int)
 
+    /// The `More` run under a user message the transcript cut short was pressed.
+    ///
+    /// **Where the rest of the message goes is the host's**, and the shape of the
+    /// answer is not a detail this package should pre-empt: a panel, an overlay, a
+    /// window, a push.
+    ///
+    /// The row, and nothing else. Not the message — the host put it in the data
+    /// source, so reading it back from here would be this package answering a
+    /// question about a model it is only borrowing, and would tempt a host into
+    /// previewing the copy the transcript cut rather than the one it owns.
+    ///
+    /// Not a rectangle either, though one was here for a while. It carried the
+    /// bubble's frame so a presentation could grow out of what was pressed, which
+    /// is a real thing to want and the only part of it a host cannot work out for
+    /// itself: `rect(ofRow:)` answers the *row*, and a bubble is three quarters of
+    /// a content width against its trailing edge. But nothing was flying out of it,
+    /// and a parameter kept for a presentation nobody had built cost a downcast at
+    /// the call site to fill in. It comes back the day something animates — with
+    /// the shape of that animation known, rather than guessed at.
+    ///
+    /// Not implementing this leaves the run drawn, hovering and pressable with
+    /// nothing behind it. **None of that is affected by what crosses here**: the
+    /// band, the pointing hand and the press-is-a-click rule are all `BlockView`'s,
+    /// computed from the link's own range, and never leave the package.
+    func transcriptView(_ transcriptView: TranscriptView, didActivateMoreInRow row: Int)
+
     /// The link under the pointer changed — to `url`, or to `nil` on leaving one.
     ///
     /// **Reported, not drawn.** Showing the address is the host's: what it looks
@@ -224,6 +250,10 @@ extension TranscriptViewDelegate {
 
     public func transcriptView(
         _ transcriptView: TranscriptView, didActivate url: URL, inRow row: Int
+    ) {}
+
+    public func transcriptView(
+        _ transcriptView: TranscriptView, didActivateMoreInRow row: Int
     ) {}
 
     public func transcriptView(

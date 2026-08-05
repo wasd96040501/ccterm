@@ -1,5 +1,6 @@
 import AppKit
 import TranscriptKit
+import TranscriptMedia
 
 /// Data source and delegate for the demo: the script in `DemoMessage.swift`,
 /// plus the mutations the control panel drives.
@@ -28,7 +29,7 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
     /// content still is the whole point.
     func prepend(_ count: Int) {
         let inserted = (0..<count).map { index in
-            DemoMessage(author: .assistant, text: label("▲ prepended", index))
+            DemoMessage.assistant(label("▲ prepended", index))
         }
         messages.insert(contentsOf: inserted, at: 0)
         transcript?.insertRows(at: IndexSet(0..<count))
@@ -38,7 +39,7 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
     /// Below everything: the case where the answer depends on where the reader is
     /// — at the end it follows, anywhere else it doesn't move.
     func append() {
-        messages.append(DemoMessage(author: .user, text: label("▼ appended", 0)))
+        messages.append(.user(label("▼ appended", 0)))
         transcript?.insertRows(at: IndexSet(integer: messages.count - 1))
         reportRowCount()
     }
@@ -55,9 +56,8 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
     /// mutation that has no index set to shift, only geometry to compensate for.
     func growFirstRow() {
         guard !messages.isEmpty else { return }
-        let grown = String(repeating: "This row keeps growing. ", count: 6)
-        messages[0] = DemoMessage(
-            author: messages[0].author, text: "\(messages[0].text) \(grown)")
+        messages[0] = messages[0].appending(
+            String(repeating: "This row keeps growing. ", count: 6))
         transcript?.reloadRows(at: IndexSet(integer: 0))
     }
 
@@ -65,9 +65,8 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
     /// public path to it, and the one a hosted view uses when it grows itself.
     func remeasureFirstRow() {
         guard !messages.isEmpty else { return }
-        let grown = String(repeating: "Re-measured, not re-rendered. ", count: 4)
-        messages[0] = DemoMessage(
-            author: messages[0].author, text: "\(messages[0].text) \(grown)")
+        messages[0] = messages[0].appending(
+            String(repeating: "Re-measured, not re-rendered. ", count: 4))
         transcript?.noteHeightOfRows(withIndexesChanged: IndexSet(integer: 0))
     }
 
@@ -112,15 +111,18 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
     /// growing row meet — the content under the reader must not move while it
     /// runs.
     ///
-    /// Assistant turns only. A user turn is what someone typed, verbatim and
-    /// whole — there is no version of it that arrives a token at a time, and
-    /// revealing markdown into one would render the punctuation rather than the
-    /// document, since `.userMessage` is plain text on purpose.
+    /// Assistant turns only, which the pattern match is what enforces. A user
+    /// turn is what someone typed, verbatim and whole — there is no version of it
+    /// that arrives a token at a time, and revealing markdown into one would
+    /// render the punctuation rather than the document, since `.userMessage` is
+    /// plain text on purpose. A picture row has no text to reveal at all.
     func toggleStreaming(row: Int) {
         guard stream == nil else { return stopStreaming() }
-        guard row >= 0, row < messages.count, messages[row].author == .assistant else { return }
+        guard row >= 0, row < messages.count,
+            case .assistant(let base) = messages[row].content
+        else { return }
 
-        stream = (row, messages[row].text, 0)
+        stream = (row, base, 0)
         // `.common`, or the reveal freezes for as long as a scroll or a drag is
         // in flight — which is precisely when someone is checking that it doesn't
         // disturb them.
@@ -148,9 +150,8 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
         guard let stream, stream.row < messages.count else { return stopStreaming() }
 
         let revealed = min(stream.revealed + Self.charactersPerFrame, DemoMessage.streamed.count)
-        messages[stream.row] = DemoMessage(
-            author: messages[stream.row].author,
-            text: stream.base + DemoMessage.streamed.prefix(revealed))
+        messages[stream.row] = .assistant(
+            stream.base + DemoMessage.streamed.prefix(revealed))
         transcript?.reloadRows(at: IndexSet(integer: stream.row))
 
         self.stream = (stream.row, stream.base, revealed)
@@ -173,24 +174,65 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
         messages.count
     }
 
-    /// Every row is the transcript's to draw — an assistant turn as a markdown
-    /// document, a user turn as a bubble. The demo owns no row views at all, and
-    /// therefore implements neither `heightOfRow` nor `viewForRow`: their default
-    /// implementations trap, and a host that never answers `.view` never reaches
-    /// them.
-    ///
-    /// That both row kinds share one recycling pool is still a real failure mode;
-    /// it is asserted in `UserMessageRowTests` rather than watched here, because
-    /// what it looks like when it goes wrong is a row rendering another row's
-    /// content — which a test can see as readily as an eye can.
+    /// Text rows are the transcript's to draw — an assistant turn as a markdown
+    /// document, a user turn as a bubble. Pictures are the demo's, through the
+    /// one case the vocabulary keeps for exactly that.
     func transcriptView(
         _ transcriptView: TranscriptView, contentForRow row: Int
     ) -> TranscriptRowContent {
-        switch messages[row].author {
-        case .assistant: return .markdown(messages[row].text)
-        case .user: return .userMessage(messages[row].text)
+        switch messages[row].content {
+        case .assistant(let text): return .markdown(text)
+        case .user(let text): return .userMessage(text)
+        case .images: return .view
         }
     }
+
+    // MARK: - The picture row
+
+    /// Asked of every picture row in the transcript on every content-width
+    /// change, so it runs the mosaic and builds nothing. `ImageGridView` computes
+    /// it from the same layout it will later draw, which is what keeps the height
+    /// reserved here and the height drawn there from drifting apart.
+    func transcriptView(
+        _ transcriptView: TranscriptView, heightOfRow row: Int, width: CGFloat
+    ) -> CGFloat {
+        guard case .images(let urls) = messages[row].content else { return 0 }
+        return ImageGridView.height(for: urls, width: width)
+    }
+
+    /// Recycled through the transcript's pool, and re-bound completely — the
+    /// pictures **and** the closure, since a recycled instance is still carrying
+    /// the row it was serving a moment ago in both.
+    func transcriptView(
+        _ transcriptView: TranscriptView, viewForRow row: Int
+    ) -> NSView {
+        let grid = transcriptView.makeView(withIdentifier: .imageGrid) { ImageGridView() }
+        guard case .images(let urls) = messages[row].content else { return grid }
+        grid.configure(with: urls)
+        grid.onActivate = { [weak grid] index, tile in
+            guard let grid, index < urls.count else { return }
+            MediaOverlayWindow.present(
+                ImagePreviewView(url: urls[index]),
+                from: grid.convert(tile, to: transcriptView),
+                // Taken here rather than inside the overlay, because it has to be
+                // taken while the tile is still the thing on screen.
+                sourceSnapshot: grid.snapshot(ofTile: index),
+                in: transcriptView)
+        }
+        return grid
+    }
+
+    // MARK: - The rest of a long message
+    //
+    // Deliberately not implemented, the way the context menu above is not. The
+    // transcript reports `didActivateMoreInRow:` and its default is a no-op,
+    // so what the demo shows is a host that has not decided where the rest of a
+    // cut-short message goes: the run is drawn, it hovers, it takes a press, and
+    // nothing opens.
+    //
+    // That is the state worth having on screen while the *picture* preview is
+    // being read, because the two would open the same overlay and only one of
+    // them is being looked at.
 
     // MARK: - Links
 
@@ -240,4 +282,11 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
     // returning `nil` suppresses the menu — is assertable, and `ContextMenuTests`
     // asserts it. The demo carries what tests cannot reach (§5), and a menu item
     // that prints to stdout is not that.
+}
+
+extension NSUserInterfaceItemIdentifier {
+
+    /// Centralised rather than spelled at the call site: a typo in a literal is a
+    /// silently un-recycled row, where a typo here does not compile.
+    static let imageGrid = NSUserInterfaceItemIdentifier("DemoImageGrid")
 }

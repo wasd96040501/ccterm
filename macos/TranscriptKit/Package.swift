@@ -22,7 +22,15 @@ let package = Package(
     // nothing in here can point at.
     platforms: [.macOS(.v12)],
     products: [
-        .library(name: "TranscriptKit", targets: ["TranscriptKit"])
+        .library(name: "TranscriptKit", targets: ["TranscriptKit"]),
+        // Separate product, not a folder inside the other one. `TranscriptKit`'s
+        // §4 turns on a boundary — the package draws rows and owns none of the
+        // presentation around them — and a boundary both sides can `import`
+        // across is not one. Two
+        // products make the arrow single-direction and the compiler the thing
+        // that holds it: `TranscriptMedia` depends on `TranscriptKit`, and
+        // nothing in `TranscriptKit` can name a window, an overlay or a grid.
+        .library(name: "TranscriptMedia", targets: ["TranscriptMedia"]),
     ],
     dependencies: [
         // Apple's CommonMark/GFM parser (cmark-gfm underneath). Pinned exactly:
@@ -35,7 +43,8 @@ let package = Package(
         // Opens a real window with a transcript in it: `swift run
         // TranscriptKitDemo`. For the things only hands and eyes catch —
         // scrolling, dragging across the content-width clamp, chrome insets.
-        .executableTarget(name: "TranscriptKitDemo", dependencies: ["TranscriptKit"]),
+        .executableTarget(
+            name: "TranscriptKitDemo", dependencies: ["TranscriptKit", "TranscriptMedia"]),
         .target(
             name: "TranscriptKit",
             dependencies: [
@@ -43,6 +52,15 @@ let package = Package(
             ],
             resources: [.process("Resources")]
         ),
+        // What a transcript host needs and `TranscriptKit` deliberately refuses:
+        // rows built out of pictures, and the overlay a picture or a cut-short
+        // message opens into. Both are presentation with product decisions in
+        // them — how a group of images packs, how dark the mask is, what a
+        // preview's face is — which is exactly the material §4 keeps out of the
+        // renderer. Kept in this package rather than in the app so the demo and
+        // the app get the same components, and so they stay buildable without an
+        // Xcode project.
+        .target(name: "TranscriptMedia", dependencies: ["TranscriptKit"]),
         // `swift test`. Kept in the package rather than folded into the app's
         // Xcode test target so the package stays buildable and testable on its
         // own — the point of it being a package.

@@ -55,10 +55,13 @@ public protocol MediaOverlayContent: NSView {
 /// left to the responder chain:
 ///
 /// - **Escape** goes through a local event monitor, not the window's `keyDown`.
-///   `MessagePreviewView` puts a selectable `NSTextView` on screen; a text view
-///   that has first responder swallows escape in `interpretKeyEvents` and hands
-///   nothing back up, so the window is never asked. A monitor sees the key before
-///   dispatch and is indifferent to who is focused.
+///   A content that puts a selectable `NSTextView` on screen — which the rest of
+///   a cut-short message will, whenever it is built — takes first responder, and
+///   a text view swallows escape in `interpretKeyEvents` and hands nothing back
+///   up, so the window is never asked. A monitor sees the key before dispatch and
+///   is indifferent to who is focused. Kept although the only content today is an
+///   image view, because the failure it avoids is silent and the monitor costs a
+///   line.
 /// - **A click outside** is `mouseDown` on the mask, which is exactly the region
 ///   that means "outside" — no hit-test arithmetic, and it stays right as the
 ///   content resizes.

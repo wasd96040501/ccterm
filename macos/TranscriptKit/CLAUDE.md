@@ -308,8 +308,9 @@ answer — the block already holds the whole string and already does the cutting
 so ignoring the cap for one row and re-measuring is a few lines — and it is a bad
 one: a five-hundred-line paste unfolds under the reader, and collapsing it again
 means scrolling back to find the affordance. One press, one navigation. The rest
-of a long message belongs on a surface of its own, which is `TranscriptMedia`'s
-`MessagePreviewView`.
+of a long message belongs on a surface of its own, and nothing in this repository
+builds that surface yet — §7 records what was learned by building one and taking
+it out again.
 
 **Streaming is on the panel because none of it is assertable.** A test can prove
 that the blocks above a growing one were not typeset again (`MarkdownGrowthTests`
@@ -505,23 +506,78 @@ What lives there today, and the claim each one makes:
   minimises and hides with the window whose transcript opened it and needs no
   focus grab to stay in the right place. Theirs is right for an app-global
   viewer; this is right for a panel over a document.
-- **`ImagePreviewView`** / **`MessagePreviewView`** — the two things that open
-  into it, both answering one requirement: given the space, what rectangle do
-  you want.
+- **`ImagePreviewView`** — what opens into it, answering the one requirement
+  `MediaOverlayContent` asks: given the space, what rectangle do you want.
 
-`MessagePreviewView` deliberately does **not** mount a second `TranscriptView`
-with one uncollapsed row, which would have been fewer lines and would have
-inherited the typography exactly. A row is painted onto `SurfaceLayer`s sized to
-the row and split by paint phase, not by height; with the line cap removed, a
-pasted file's row is as tall as the file and its backing store goes with it.
-`NSTextView` lays out by visible range, so length stops being a question, and
-selection, find and copy arrive rather than being re-earned. The two renderers
-agree without sharing code because `UserMessage` is plain text on purpose.
+### The layout pass opens files, and that is allowed to stand
 
-Its face is larger than the transcript's and is **not** derived from it. A row in
-a list is read in passing at a size chosen against its neighbours; a column alone
-on a darkened screen is read at length. Two problems, two constants — a delta
-would tie them together and neither would be right.
+`heightOfRow` → `ImageGridView.height` → `MediaImageStore.size(of:)`, and on a
+cache miss that last step opens the file. Synchronous I/O inside a layout pass,
+which the project rules otherwise forbid. Kept deliberately, so here is the
+measurement rather than a claim:
+
+| on this machine, settled files | median | p90 |
+|---|---|---|
+| `open` + read 4 KB, **no ImageIO at all** | 350 µs | 400 µs |
+| `CGImageSourceCreateWithURL` | 295 µs | 360 µs |
+| `CGImageSourceCopyPropertiesAtIndex` | 63 µs | 68 µs |
+| `size(of:)`, cold | **~400 µs** | ~480 µs |
+| `size(of:)`, warm (a `[URL: CGSize]` read) | 0.1 µs | — |
+
+The control line is the one that matters: **the cost is touching the filesystem,
+not ImageIO.** `CopyProperties` is 63 µs and is flat in the file — an 8 KB PNG and
+a 1.9 MB JPEG measure the same — so the "header only, flat in the picture's size"
+claim in `MediaImageStore` is right. What that comment's 0.19 ms understates is
+that its loop re-measured one URL; in production each URL takes the cold path
+exactly once, and once is 0.4 ms.
+
+And it is once per **row in the transcript**, not per row on screen:
+`NSTableView` needs the document height, so `heightOfRow` is asked of every row at
+reload. Probed on the demo — 11 picture rows, all 11 measured before anything was
+scrolled.
+
+So the bill is *every picture in the transcript* × 0.4 ms, in one pass, on the
+main thread. The demo is ~26 pictures ≈ 10 ms, a frame and a bit. The judgement
+call is that a real transcript does not hold enough pictures for the next order of
+magnitude, and that is the whole of why nothing was built.
+
+**If it ever does**, the fix is not a cache — it is already cached — it is moving
+the read off the pass: a `prepare(_ urls:)` on the store that a host calls when the
+*message* arrives, long before layout, leaving `size(of:)` a warm dictionary read.
+Not "answer `fallbackSize` on a miss and re-lay-out when it lands", which would
+undo the property above that a picture row's shape is settled before anything is
+fetched and never revised under a reader.
+
+`MediaOverlayContent` keeps its one requirement despite having one implementer,
+and that is not the same call as the `inkFrame` one above. There the value was
+threaded through a seam **no consumer had reached for**; here the shell genuinely
+has to ask its content how big it wants to be, and inlining the question fuses a
+window into an image view. A seam whose question is real survives having one
+answer.
+
+**A second content was built here and taken out.** `MessagePreviewView` — the
+rest of a cut-short user message, on the same darkened surface — worked, and
+nothing ever opened it: the transcript reports `didActivateMoreInRow:`, the demo
+deliberately does not implement it (§5), and the app is not wired at all. So it
+was a finished component with no caller, which is §3's rule, and it went the same
+way `inkFrame` did. Three things from it worth having when it comes back:
+
+- **Do not mount a second `TranscriptView` with one uncollapsed row**, which is
+  fewer lines and inherits the typography exactly. A row is painted onto
+  `SurfaceLayer`s sized to the row and split by paint phase, not by height; with
+  the line cap removed, a pasted file's row is as tall as the file and its backing
+  store goes with it. `NSTextView` lays out by visible range, so length stops
+  being a question, and selection, find and copy arrive rather than being
+  re-earned. The two renderers agree without sharing code because `UserMessage` is
+  plain text on purpose.
+- **Its face is larger than the transcript's and is not derived from it.** A row
+  in a list is read in passing at a size chosen against its neighbours; a column
+  alone on a darkened screen is read at length. Two problems, two constants — a
+  delta would tie them together and neither would be right.
+- **Measure it in a throwaway layout stack.** `widthTracksTextView` overwrites
+  whatever `containerSize` was set, so asking a configured text view how tall it
+  wants to be answers one line. A separate `NSLayoutManager` +
+  `NSTextContainer` fixed at the target width is what gives the real height.
 
 The same reasoning that put the image case out of the vocabulary is the reasoning
 that fills this target. When something new arrives that seems to need a renderer

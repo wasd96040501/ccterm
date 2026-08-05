@@ -86,6 +86,13 @@ public final class ImageGridView: NSView {
     /// Telegram's `animateAlpha(from: 0, to: 1, duration: 0.2)`.
     private static let fadeDuration: CFTimeInterval = 0.2
 
+    /// Every property this view writes on a hand-made layer, silenced. One
+    /// dictionary for the tile and its mask alike, because the two are the same
+    /// kind of layer and the rule that applies to one applies to the other.
+    private static let noImplicitAnimations: [String: CAAction] = [
+        "contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "path": NSNull(),
+    ]
+
     /// The mark a tile carries when there is nothing to show — a broken address,
     /// a file that is not there, bytes that are not a picture.
     private static let fallbackSymbol = "photo"
@@ -212,10 +219,19 @@ public final class ImageGridView: NSView {
             // A sublayer added by hand runs implicit animations where a view's
             // backing layer does not. Left on, a cached picture would cross-fade
             // into place on every recycle and a resize would animate every tile.
-            tile.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
+            tile.actions = Self.noImplicitAnimations
             tile.contentsGravity = .resizeAspectFill
             tile.masksToBounds = true
-            tile.mask = CAShapeLayer()
+            // **And the mask is a hand-made layer too**, which the rule above
+            // applies to just as much — it was missed once. `CAShapeLayer.path`
+            // is animatable, so a mask left with its defaults interpolates from
+            // the shape it was carrying to the new one over a quarter second:
+            // the tile snaps to its new frame while the crop wipes across it.
+            // Visible on every recycled row whose tile changed shape, which is
+            // most of them while scrolling.
+            let mask = CAShapeLayer()
+            mask.actions = Self.noImplicitAnimations
+            tile.mask = mask
             host.addSublayer(tile)
             tileLayers.append(tile)
         }

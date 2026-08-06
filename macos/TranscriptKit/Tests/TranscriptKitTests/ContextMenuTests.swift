@@ -191,20 +191,20 @@ final class ContextMenuTests: XCTestCase {
     /// A data source of markdown rows, recording what the menu hook was asked.
     private final class MarkdownHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate {
         let rows: [String]
+        let ids: [UUID]
         var askedForRows: [Int] = []
         var answer: (NSMenu) -> NSMenu?
 
         init(rows: [String], answer: @escaping (NSMenu) -> NSMenu? = { $0 }) {
             self.rows = rows
+            ids = rows.map { _ in UUID() }
             self.answer = answer
         }
 
         func numberOfRows(in transcriptView: TranscriptView) -> Int { rows.count }
 
-        func transcriptView(
-            _ transcriptView: TranscriptView, contentForRow row: Int
-        ) -> TranscriptRowContent {
-            .markdown(rows[row])
+        func transcriptView(_ transcriptView: TranscriptView, rowAt row: Int) -> TranscriptRow {
+            TranscriptRow(id: ids[row], content: .markdown(rows[row]))
         }
 
         func transcriptView(

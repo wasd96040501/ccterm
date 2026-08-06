@@ -247,6 +247,7 @@ private final class UserMessageHost: NSObject, TranscriptViewDataSource, Transcr
     static let markdownMarker = "\u{0}markdown"
 
     private let messages: [String]
+    private let ids: [UUID]
 
     private(set) var heightWidths: [CGFloat] = []
     private(set) var viewCalls = 0
@@ -254,19 +255,20 @@ private final class UserMessageHost: NSObject, TranscriptViewDataSource, Transcr
 
     init(messages: [String]) {
         self.messages = messages
+        ids = messages.map { _ in UUID() }
         super.init()
     }
 
     func numberOfRows(in transcriptView: TranscriptView) -> Int { messages.count }
 
-    func transcriptView(
-        _ transcriptView: TranscriptView, contentForRow row: Int
-    ) -> TranscriptRowContent {
+    func transcriptView(_ transcriptView: TranscriptView, rowAt row: Int) -> TranscriptRow {
+        let content: TranscriptRowContent
         switch messages[row] {
-        case Self.hostRowMarker: return .view
-        case Self.markdownMarker: return .markdown("# A document")
-        default: return .userMessage(messages[row])
+        case Self.hostRowMarker: content = .view
+        case Self.markdownMarker: content = .markdown("# A document")
+        default: content = .userMessage(messages[row])
         }
+        return TranscriptRow(id: ids[row], content: content)
     }
 
     func transcriptView(

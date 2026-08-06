@@ -108,20 +108,25 @@ private final class MarkdownHost: NSObject, TranscriptViewDataSource, Transcript
 
     private let sources: [String]
 
+    /// Minted rather than derived from the row number, which nothing in this
+    /// package should model even where the fixture never mutates.
+    private let ids: [UUID]
+
     private(set) var heightWidths: [CGFloat] = []
     private(set) var viewCalls = 0
 
     init(sources: [String]) {
         self.sources = sources
+        ids = sources.map { _ in UUID() }
         super.init()
     }
 
     func numberOfRows(in transcriptView: TranscriptView) -> Int { sources.count }
 
-    func transcriptView(
-        _ transcriptView: TranscriptView, contentForRow row: Int
-    ) -> TranscriptRowContent {
-        sources[row] == Self.hostRowMarker ? .view : .markdown(sources[row])
+    func transcriptView(_ transcriptView: TranscriptView, rowAt row: Int) -> TranscriptRow {
+        TranscriptRow(
+            id: ids[row],
+            content: sources[row] == Self.hostRowMarker ? .view : .markdown(sources[row]))
     }
 
     func transcriptView(

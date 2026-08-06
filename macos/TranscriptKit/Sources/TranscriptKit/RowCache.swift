@@ -7,18 +7,27 @@ import AppKit
 /// scratch — twice per row per screen, and again for every row on every width
 /// change.
 ///
-/// ## Keyed on the source, not on a call
+/// ## Keyed on the row's identity, valid against its content
 ///
-/// An entry is valid against the markdown it was built from, so the cache
-/// notices a content change itself rather than being told about one. Three
-/// consequences, all of which are the point:
+/// Two different questions, answered by two different halves of `TranscriptRow`,
+/// and keeping them apart is what this file is for.
+///
+/// **The key is the host's identity** (`TranscriptRow.ID`). A row keeps its
+/// entry through every insertion and removal above it, through a reorder, and
+/// through a `reloadData` — because none of those change who it is. Nothing here
+/// has to be told that rows moved.
+///
+/// **The value is believed only as far as its `(content, width)` still matches
+/// what is being asked for**, so the cache notices a content change itself rather
+/// than being told about one. Three consequences, all of which are the point:
 ///
 /// - **`reloadRows` on a row whose content did not move is a true no-op.** No
 ///   re-parse, no re-typeset, nothing marked dirty. A host driving a stream off a
 ///   frame ticker can announce every frame without first working out whether it
-///   has anything to announce — and the check itself is a pointer comparison,
-///   since two strings sharing storage compare in constant time and a data source
-///   handing back the value it already held is exactly that case.
+///   has anything to announce — and the check itself is a case comparison and
+///   then a pointer comparison, since two strings sharing storage compare in
+///   constant time and a data source handing back the value it already held is
+///   exactly that case.
 /// - **A content change that nobody announced still renders correctly**, whenever
 ///   something next asks. There is no ordering left to get wrong, which is §4's
 ///   rule about contracts living in the API's shape rather than in prose.
@@ -32,38 +41,50 @@ import AppKit
 /// call — a stale entry simply re-measures the next time it is asked for.
 /// `TypesetText.typesetWidth` is the same comparison one level down.
 ///
-/// The same property is most of what makes `seed(_:forRow:source:width:)` safe
-/// to expose at all. A measurement computed on another thread, for a row the host
-/// may have renumbered since, is written here without ceremony — because an entry
-/// is believed only as far as its `(source, width)` agrees with what is being
-/// asked for, and a seed that no longer does is indistinguishable from a row
-/// nobody has measured. A late or misplaced measurement costs a re-measure rather
-/// than a wrong render, which is the difference between "the host must announce
-/// mutations before the background work lands" — a rule nobody can hold — and "it
-/// does not matter when it lands".
+/// **The whole content, not its source text.** One string measures to two
+/// different heights depending on which `TranscriptRowContent` case it arrives in
+/// — a bubble takes three quarters of the column — so an entry validated on text
+/// alone would serve a bubble's measurement to a document that happens to hold
+/// the same words, and the entry it wrote is internally consistent, so nothing
+/// downstream would ever object. That is the one way this mechanism can produce a
+/// *persistent* wrong height rather than a wasted re-measure, and comparing whole
+/// values costs nothing extra: the case is checked first.
 ///
-/// **Where that stops, and it is worth knowing exactly where.** `(source, width)`
-/// identifies an entry, not the *thing it was measured as*. One string measures to
-/// two different heights depending on which `TranscriptRowContent` case it
-/// arrives in — a bubble takes three quarters of the column — so a measurement
-/// filed under the wrong case is internally consistent and nothing here will ever
-/// object to it. That single gap is closed one level up, by
-/// `TranscriptView.seed(_:at:)` comparing whole content values before it writes,
-/// and it is the only check in that method that is load-bearing rather than
-/// thrift.
+/// ## What the identity deleted
 ///
-/// ## Why the renumbering lives here
+/// This was a positional array — `entries[i]` was row *i*'s — spliced in lockstep
+/// with every mutation that renumbered rows, from `insert(at:)` and `remove(at:)`
+/// that lived here for exactly that purpose. The invariant read: *a single missed
+/// shift shows up as a row rendering another row's content, only under some
+/// orderings, long after the mutation.* Keying on identity does not make that
+/// invariant easier to hold, it removes the thing it was about.
 ///
-/// Every entry is positional — `entries[i]` is row `i`'s — so every mutation that
-/// renumbers rows has to renumber these too, and a single missed one shows up as
-/// a row rendering another row's content, only under some orderings, long after
-/// the mutation. Keeping both in one file is what makes that invariant something
-/// a reader can check in one sitting rather than something spread across the
-/// public methods of a thousand-line view.
+/// Three further guards went with it, all of which existed to compensate for a
+/// key that moved: a generation counter to invalidate everything a `reloadData`
+/// renumbered, a per-row content check performed at the landing site of a
+/// background measurement to catch one that had been filed under a row that had
+/// since moved, and the batch-wide pairing between an `IndexSet` and an ordered
+/// array of results. What is left is the `(content, width)` comparison above,
+/// which was always here and is the cache's own question about its own validity.
 ///
-/// Entries are `nil` for rows never asked about and for rows the transcript does
-/// not draw itself (`.view`), so the array stays index-aligned with the data
-/// source whatever mix of row kinds it holds.
+/// ## What the identity cost
+///
+/// A dictionary does not shrink when rows go away, where the array did so for
+/// free. `keep(_:)` is the answer, called by the transcript on the two mutations
+/// that can orphan an entry — and it costs a walk of the data source where the
+/// array cost a memmove: measured, removing three rows from ten thousand goes
+/// from 0.7 ms to 5.1 ms. `TranscriptView.sweepCache()` is where that trade is
+/// written down.
+///
+/// What it buys back is larger than what it costs. `reloadData` is no longer a
+/// full discard, so a reorder is free where it used to re-typeset the whole
+/// transcript; and nothing has to be spliced per insert, which on a
+/// ten-thousand-row prepared load took the worst batch from 10.0 ms to 1.5 ms and
+/// made it flat rather than growing.
+///
+/// That is bounded growth, not eviction. **Nothing here evicts a live row**, so a
+/// transcript that is fully read is a transcript fully typeset in memory. That
+/// was true of the array too and is recorded in §6.
 final class RowCache {
 
     /// One row's answer, and everything needed to produce the next one cheaply.
@@ -74,25 +95,26 @@ final class RowCache {
     /// `TranscriptView.prepareRows(_:)`.
     struct Entry: Sendable {
 
-        /// The text this was built from — what the entry is valid against.
-        var source: String
+        /// What this was built from — what the entry is valid against. The whole
+        /// content rather than its text, for the reason above.
+        var content: TranscriptRowContent
 
-        /// How it rebuilds when that text moves.
+        /// How it rebuilds when that content moves.
         var body: Body
 
         var measured: MeasuredBlock
         var measuredWidth: CGFloat
     }
 
-    /// What an entry keeps between versions of its source, which is the one thing
+    /// What an entry keeps between versions of its content, which is the one thing
     /// that differs between the self-drawn cases.
     ///
     /// A document is many blocks and grows a token at a time, so what is worth
     /// keeping is the blocks that did not change. A user's bubble is one block and
     /// arrives whole, so what is worth keeping is the recipe — which costs nothing
     /// on a width change and is simply rebuilt when the text moves. Modelling that
-    /// as an enum rather than as two caches keeps one array, one set of
-    /// renumbering, and one answer to "has this row's source moved".
+    /// as an enum rather than as two caches keeps one store and one answer to "has
+    /// this row's content moved".
     ///
     /// **Two cases, and there was briefly a third.** A `seeded` case carried a
     /// measurement with no recipe behind it, for entries that had crossed an actor
@@ -109,126 +131,115 @@ final class RowCache {
         case block(Block)
     }
 
-    private var entries: [Entry?] = []
+    private var entries: [TranscriptRow.ID: Entry] = [:]
 
-    /// Row `row`'s markdown, laid out at `width` — handed back untouched when
-    /// neither has moved, which is the usual case: `NSTableView` asks for a
-    /// height and then, for the rows it is about to show, a view.
+    /// `row`'s markdown, laid out at `width` — handed back untouched when neither
+    /// the content nor the width has moved, which is the usual case:
+    /// `NSTableView` asks for a height and then, for the rows it is about to show,
+    /// a view.
     ///
-    /// A source that moved re-typesets only the blocks that changed; see
+    /// A content that moved re-typesets only the blocks that changed; see
     /// `MarkdownMemo`, which is the whole of why this case has an entry point of
     /// its own.
-    func measuredMarkdown(forRow row: Int, source: String, width: CGFloat) -> MeasuredBlock {
-        padEntries(through: row)
-        if let entry = entries[row], entry.source == source, entry.measuredWidth == width {
+    ///
+    /// `source` is `row.content`'s payload, unwrapped by the caller that already
+    /// pattern-matched to get here. It is what the memo takes; `row.content` is
+    /// what the entry is keyed and validated on, and the two are not
+    /// interchangeable — see the note on comparing whole values above.
+    func measuredMarkdown(for row: TranscriptRow, source: String, width: CGFloat) -> MeasuredBlock {
+        if let entry = entries[row.id], entry.content == row.content, entry.measuredWidth == width {
             return entry.measured
         }
 
         var memo: MarkdownMemo
-        if case .markdown(let previous)? = entries[row]?.body {
+        if case .markdown(let previous)? = entries[row.id]?.body {
             memo = previous
         } else {
             memo = MarkdownMemo()
         }
         let measured = memo.measure(source, width: width)
-        entries[row] = Entry(
-            source: source, body: .markdown(memo), measured: measured, measuredWidth: width)
+        entries[row.id] = Entry(
+            content: row.content, body: .markdown(memo), measured: measured, measuredWidth: width)
         return measured
     }
 
-    /// Row `row`'s tree for any other case the transcript draws itself: one
-    /// recipe for the whole source, re-measured when the width moves and rebuilt
-    /// when the source does.
+    /// `row`'s tree for any other case the transcript draws itself: one recipe for
+    /// the whole content, re-measured when the width moves and rebuilt when the
+    /// content does.
     ///
     /// `build` is a closure rather than a value so that a hit costs nothing — the
     /// shaping it would perform is the expensive half, and on a hit it must not
     /// happen at all.
     func measuredBlock(
-        forRow row: Int, source: String, width: CGFloat, build: () -> Block
+        for row: TranscriptRow, width: CGFloat, build: () -> Block
     ) -> MeasuredBlock {
-        padEntries(through: row)
-        if let entry = entries[row], entry.source == source, case .block(let block) = entry.body {
+        if let entry = entries[row.id], entry.content == row.content,
+            case .block(let block) = entry.body
+        {
             if entry.measuredWidth == width { return entry.measured }
             let measured = block.measure(width)
-            entries[row] = Entry(
-                source: source, body: .block(block), measured: measured, measuredWidth: width)
+            entries[row.id] = Entry(
+                content: row.content, body: .block(block), measured: measured, measuredWidth: width)
             return measured
         }
 
         let block = build()
         let measured = block.measure(width)
-        entries[row] = Entry(
-            source: source, body: .block(block), measured: measured, measuredWidth: width)
+        entries[row.id] = Entry(
+            content: row.content, body: .block(block), measured: measured, measuredWidth: width)
         return measured
     }
 
-    /// Files an entry someone else produced — off the main actor, by
-    /// `TranscriptView.prepareRows(_:)` — as row `row`'s.
+    /// Files entries someone else produced — off the main actor, by
+    /// `TranscriptView.prepareRows(_:)`.
     ///
-    /// A whole `Entry`, recipe included, so a prepared row is **indistinguishable
-    /// from one this cache measured itself**: same donor for the next version of
-    /// its source, same recipe for the next width. Handing over only the
-    /// measurement is what the retired `Body.seeded` case was, and its cost is
-    /// written down there.
+    /// Whole `Entry` values, recipe included, so a prepared row is
+    /// **indistinguishable from one this cache measured itself**: same donor for
+    /// the next version of its content, same recipe for the next width. Handing
+    /// over only the measurement is what the retired `Body.seeded` case was, and
+    /// its cost is written down there.
     ///
-    /// **Unconditional on purpose.** Every check that could belong here is
-    /// already somewhere better: that the entry is still *for* this row is checked
-    /// against the live data source by the caller, one row at a time, before it
-    /// gets here; that it is still valid is checked on every read, by the same
-    /// `(source, width)` comparison every other entry faces. So the worst a wrong
-    /// seed can do is cost a re-measure the next time the row is asked about — the
-    /// same cost as no seed at all.
-    func seed(_ entry: Entry, forRow row: Int) {
-        padEntries(through: row)
-        entries[row] = entry
+    /// **Unconditional, and now that is a structural fact rather than a choice.**
+    /// There is no slot to land in wrongly: an entry arrives under the identity it
+    /// was measured for, and if the row it names has changed since, the
+    /// `(content, width)` comparison every read performs rejects it exactly as it
+    /// would reject any other stale entry. The worst a late batch can do is cost a
+    /// re-measure, which is the same cost as no batch at all. The positional
+    /// version of this method took an index and had to re-ask the data source what
+    /// lived there before it dared write.
+    func merge(_ prepared: [TranscriptRow.ID: Entry]) {
+        entries.merge(prepared) { _, new in new }
     }
 
-    /// The text row `row` was last built from, or `nil` for a row nothing has
+    /// The text `id`'s row was last built from, or `nil` for a row nothing has
     /// asked about.
     ///
-    /// One caller, and a narrow question: whether the source a row is about to be
+    /// One caller, and a narrow question: whether the content a row is about to be
     /// rebound with *extends* the one it is already showing, which is what decides
     /// whether the reader's selection in it still names the same characters. See
     /// `TranscriptView.rebindVisibleRows(in:)`.
-    func source(forRow row: Int) -> String? {
-        guard row >= 0, row < entries.count else { return nil }
-        return entries[row]?.source
+    func source(for id: TranscriptRow.ID) -> String? {
+        entries[id]?.content.source
     }
 
-    /// Makes `entries[row]` addressable, filling anything short of it with `nil`.
+    // MARK: - Bounding
+
+    /// Drops every entry whose row is no longer in the data source.
     ///
-    /// The array is built lazily and `NSTableView` asks about rows in whatever
-    /// order it tiles, so the first question can be about row 40 of an array that
-    /// is still empty.
-    private func padEntries(through row: Int) {
-        guard row >= entries.count else { return }
-        entries.append(contentsOf: repeatElement(nil, count: row - entries.count + 1))
+    /// The dictionary's replacement for what the array got from `remove(at:)`.
+    /// Called by the transcript from `removeRows` and `reloadData` — the two
+    /// mutations after which an id may name nothing — and deliberately *not* from
+    /// `insertRows` or `reloadRows`, which can only add or change rows.
+    ///
+    /// Keeping rather than removing, because the caller knows which rows exist and
+    /// not which ones stopped existing: a `removeRows` reaches the transcript after
+    /// the host has already mutated, so the departed rows can no longer be asked
+    /// about.
+    func keep(_ live: Set<TranscriptRow.ID>) {
+        entries = entries.filter { live.contains($0.key) }
     }
 
-    // MARK: - Renumbering
-
-    func reloadAll() {
+    func removeAll() {
         entries.removeAll(keepingCapacity: true)
-    }
-
-    /// Positions in the post-insertion data, as `TranscriptView.insertRows` takes
-    /// them. `IndexSet` iterates ascending, which is the order that keeps each
-    /// index meaning what it meant when the caller wrote it.
-    ///
-    /// An index past the end needs no placeholder: the rows before it were never
-    /// built either, and the array grows into them the first time one is asked
-    /// for.
-    func insert(at indexes: IndexSet) {
-        for index in indexes where index <= entries.count {
-            entries.insert(nil, at: index)
-        }
-    }
-
-    /// Positions in the pre-removal data, as `TranscriptView.removeRows` takes
-    /// them — so descending, or each removal would shift the ones still to come.
-    func remove(at indexes: IndexSet) {
-        for index in indexes.reversed() where index < entries.count {
-            entries.remove(at: index)
-        }
     }
 }

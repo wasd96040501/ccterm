@@ -238,16 +238,25 @@ private final class GrowingHost: NSObject, TranscriptViewDataSource {
 
     var sources: [String]
 
+    /// Fixed at construction, so rewriting `sources[row]` is a row whose *content*
+    /// moved rather than a different row — which is the whole subject of this
+    /// file. A host that minted a fresh identity per frame would make every
+    /// assertion below about reuse fail, and correctly.
+    private let ids: [UUID]
+
     init(sources: [String]) {
         self.sources = sources
+        ids = sources.map { _ in UUID() }
         super.init()
     }
 
     func numberOfRows(in transcriptView: TranscriptView) -> Int { sources.count }
 
-    func transcriptView(
-        _ transcriptView: TranscriptView, contentForRow row: Int
-    ) -> TranscriptRowContent {
+    func transcriptView(_ transcriptView: TranscriptView, rowAt row: Int) -> TranscriptRow {
+        TranscriptRow(id: ids[row], content: content(forRow: row))
+    }
+
+    private func content(forRow row: Int) -> TranscriptRowContent {
         .markdown(sources[row])
     }
 }

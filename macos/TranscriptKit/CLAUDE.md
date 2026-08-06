@@ -387,8 +387,8 @@ ten-thousand-row load asks for roughly four thousand heights rather than ten
 thousand. The corollary is that `prepareRows` **over-measures by about 2.5×** —
 worth knowing, not worth fixing, since background CPU is what is being spent.
 
-So `prepareRows(_:)` + `insertRows(at:prepared:)` measure the batch off the main
-actor first and hand the answers over, leaving the insert a cache seed. Same
+So `prepareRows(_:)` + `insertRows(at:warming:)` measure the batch off the main
+actor first and hand the answers over, leaving the insert a cache merge. Same
 transcript: **0.12 s of main thread, worst batch 11 ms** — inside a frame, so it
 scrolls while it loads. `make demo-kit`'s two **Cold load** buttons are that
 table, live.
@@ -396,26 +396,48 @@ table, live.
 Three things are worth knowing before reaching for it:
 
 - **What is async is the *measure*, not the *insert*.** `insertRows` stays
-  synchronous and total, because `transcriptView(_:contentForRow:)` is answered
-  by index with nothing cached in between: suspend between mutating the model and
+  synchronous and total, because `transcriptView(_:rowAt:)` is answered by index
+  with nothing cached in between: suspend between mutating the model and
   announcing it and, for that window, the table believes the old row count while
   the data source answers from the new one. An `async insert` would *create* the
-  inconsistency it looks like it avoids. Hence `prepareRows` takes **contents,
-  not indices** — so the indices are computed after the `await`, when they are
-  true.
-- **Getting the order wrong costs work, not correctness — with one exception.**
-  `RowCache` believes an entry only as far as its `(source, width)` matches what
-  is being asked for, so a late or misplaced measurement re-measures rather than
-  rendering wrongly. The exception is the *content case*: one string measures to
+  inconsistency it looks like it avoids. That rule is `NSTableView`'s and applies
+  to a plain insert too.
+- **Nothing else needs holding.** A batch is keyed on `TranscriptRow.ID`, so
+  where its rows end up is not preparation's business: insert, remove, reload or
+  resize the transcript while a batch is in flight and the batch is still filed
+  correctly when it lands. This was not true when the batch was paired with an
+  `IndexSet` by position — a prepend during the `await` discarded the whole
+  batch, and a prepend is what loading history *is*. `insertRows(at:warming:)`
+  is one call rather than a separate `warm(_:)` for a different reason: warming
+  after the insert is a silent no-op, and fusing them makes that unwritable (§4).
+- **The one thing a wrong case still costs.** `RowCache` believes an entry only
+  as far as its `(content, width)` matches, so a stale or misdirected measurement
+  re-measures rather than rendering wrongly — except that one string measures to
   two heights depending on whether it arrives as `.markdown` or `.userMessage`,
-  and a measurement filed under the wrong case is internally consistent, so
-  nothing downstream ever objects. That is why the seed compares whole
-  `TranscriptRowContent` values. It compared source strings first, and
-  `PreparedRowsTests.testAnEntryWhoseCaseChangedIsNotSeeded` is what caught it.
-- **The floor left standing is the table's own.** The prepared figure grows from
-  1 ms for the first batch to 11 ms for the last, because what remains in the
-  insert is `NSTableView`'s bookkeeping, which is proportional to the rows it
-  already holds. Nothing here can move that off the main thread.
+  and an entry filed under the wrong case is internally consistent, so nothing
+  downstream objects. That is why the comparison is on whole
+  `TranscriptRowContent` values rather than their text.
+  `PreparedRowsTests.testAMeasurementPreparedAsTheWrongCaseIsNotUsed` covers both
+  directions, and had to: it checked only one for a while and stayed green
+  through a break of exactly this comparison, because the other direction happens
+  to be caught by a pattern match instead.
+- **The floor left standing is small and flat.** Measured on synthetic documents
+  rather than the demo's corpus, so read the two columns against each other and
+  not against the table above — ten thousand rows in batches of five hundred,
+  positional cache against identity-keyed, same machine, same run:
+  **119 ms of main thread against 31 ms**, worst batch **10.0 ms against
+  2.5 ms**, and — the part worth the A/B — the positional figure *grew* across the
+  load (2.3 → 10.0 ms) where the keyed one is flat (1.4 → 1.5 ms). That growth was
+  recorded here for one commit as `NSTableView`'s bookkeeping being proportional
+  to the rows it already held. It was not: it was this package splicing an array
+  of `numberOfRows` elements on every insert. **An unexplained number attributed
+  to the framework is usually one of ours.**
+
+  What the identity cost instead is `removeRows` and `reloadData`, which now walk
+  the data source to find which entries are orphaned: 0.7 ms → **5.1 ms** for a
+  removal from ten thousand rows. Under a frame, on an operation that already
+  re-tiles everything below it, and rare in a transcript — see
+  `TranscriptView.sweepCache()`.
 
 Two adjacent costs this does **not** address, both worth knowing before assuming
 a long transcript is now solved:

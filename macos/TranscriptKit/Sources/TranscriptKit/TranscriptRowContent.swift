@@ -28,15 +28,16 @@ import AppKit
 /// task to measure. Nothing here is reference type, so the conformance costs
 /// no `unchecked`.
 ///
-/// `Equatable` because that is what identifies a prepared measurement: the seed
-/// behind `insertRows(at:prepared:)` has to decide whether the row it is about
-/// to file a measurement under is still the row that measurement was made for,
-/// and **the payload alone does not answer that.** The same string is a
-/// different height as a document than as a bubble — a bubble is measured into
-/// three quarters of the column — so comparing sources would let a measurement
-/// of one cross into a row of the other, silently and permanently. Comparing the
-/// whole value costs the same: the case is checked first, and equal payloads in
-/// the ordinary case are two `String`s sharing storage.
+/// `Equatable` because that is what a cached measurement is valid against:
+/// `RowCache` believes an entry only as far as its content still matches what is
+/// being asked for, and **the payload alone does not answer that.** The same
+/// string is a different height as a document than as a bubble — a bubble is
+/// measured into three quarters of the column — so comparing sources would let a
+/// measurement of one serve a row of the other, and the entry that writes is
+/// internally consistent, so nothing downstream ever objects: a row permanently
+/// the wrong height rather than a wasted re-measure. Comparing the whole value
+/// costs the same: the case is checked first, and equal payloads in the ordinary
+/// case are two `String`s sharing storage.
 public enum TranscriptRowContent: Sendable, Equatable {
 
     /// One complete markdown document rendered as a single row.
@@ -77,11 +78,12 @@ extension TranscriptRowContent {
     /// The text a self-drawn row's cached tree is **valid against** — `nil` for
     /// `.view`, which the transcript does not draw and therefore does not key.
     ///
-    /// One accessor rather than a `switch` at each site because there are now
-    /// three: the row cache's validity check, the seed that
-    /// `insertRows(at:prepared:)` performs, and `prepareRows(_:)` labelling what
-    /// it measured. A missing case in any of them is a row that silently stops
-    /// being re-measured.
+    /// One accessor rather than a `switch` at each site, and the sites are far
+    /// enough apart that a second copy of the mapping would drift: what a row
+    /// cache entry reports as the text it was built from, and what
+    /// `rebindVisibleRows(in:)` compares to decide whether a reader's selection
+    /// still names the same characters. A missing case in either is a row that
+    /// silently stops being re-measured.
     var source: String? {
         switch self {
         case .markdown(let source), .userMessage(let source): return source
@@ -121,14 +123,14 @@ extension TranscriptRowContent {
         case .markdown(let source):
             let (memo, measured) = MarkdownMemo.measured(source, width: width)
             return RowCache.Entry(
-                source: source, body: .markdown(memo), measured: measured, measuredWidth: width)
+                content: self, body: .markdown(memo), measured: measured, measuredWidth: width)
 
-        // The same recipe `TranscriptView.measuredBlock(forRow:content:)` hands
-        // the cache — see the note there.
+        // The same recipe `TranscriptView.measuredBlock(for:)` hands the cache —
+        // see the note there.
         case .userMessage(let text):
             let block = UserMessage(text)
             return RowCache.Entry(
-                source: text, body: .block(block), measured: block.measure(width),
+                content: self, body: .block(block), measured: block.measure(width),
                 measuredWidth: width)
 
         case .view:

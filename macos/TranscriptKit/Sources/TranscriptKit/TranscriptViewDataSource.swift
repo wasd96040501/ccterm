@@ -17,14 +17,24 @@ public protocol TranscriptViewDataSource: AnyObject {
     /// The current number of rows in the transcript.
     func numberOfRows(in transcriptView: TranscriptView) -> Int
 
-    /// Which kind of content the given row holds.
+    /// Which row sits at `row`, and what it holds.
     ///
     /// Called on demand, possibly repeatedly and in any order, for rows far
     /// outside the viewport as readily as visible ones — the implementation
     /// must be side-effect free and cheap. In particular it must not build or
     /// recycle views; that is
     /// `TranscriptViewDelegate.transcriptView(_:viewForRow:)`'s job.
-    func transcriptView(
-        _ transcriptView: TranscriptView, contentForRow row: Int
-    ) -> TranscriptRowContent
+    ///
+    /// Answering both halves at once is deliberate, and `TranscriptRow` says
+    /// why. What this side owes is that `id` names the same row for as long as
+    /// that row exists — the measurement cache is keyed on it, and an identity
+    /// that moves costs the reuse rather than the correctness.
+    ///
+    /// **No default implementation**, though there is an obvious one: `row`
+    /// itself. It would compile everywhere and be wrong everywhere a transcript
+    /// mutates, since every insert renumbers every row below it and hands every
+    /// cached measurement to the wrong document. A requirement a host must
+    /// answer costs one line at the one place it is written; a default that is
+    /// silently wrong costs an afternoon.
+    func transcriptView(_ transcriptView: TranscriptView, rowAt row: Int) -> TranscriptRow
 }

@@ -120,13 +120,16 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
     /// | **Prepared** | 0.12 s | 11 ms |
     ///
     /// The worst chunk is the interesting column. 665 ms is forty dropped frames
-    /// happening twenty times; 11 ms fits inside a frame, which is why one of
-    /// these can be scrolled through while it loads and the other cannot. Note
-    /// also that the prepared figure *grows* across the load — 1 ms for the first
-    /// chunk, 11 ms for the last — because what is left in the insert is the
-    /// table's own bookkeeping, which is proportional to how many rows it already
-    /// has. That is the next thing to look at if this ever needs to be cheaper,
-    /// and it is not something this package can move off the main thread.
+    /// happening twenty times; a handful of milliseconds fits inside a frame,
+    /// which is why one of these can be scrolled through while it loads and the
+    /// other cannot.
+    ///
+    /// The prepared figure used to *grow* across the load, and no longer does —
+    /// watch the panel and it should stay put from the first chunk to the
+    /// twentieth. That growth was the row cache being a positional array spliced
+    /// on every insert; keyed on row identity there is nothing to splice. What is
+    /// left is `NSTableView`'s own bookkeeping, which this package cannot move off
+    /// the main thread.
     func coldLoad(rows total: Int, prepared: Bool) {
         cancelColdLoad()
         stopStreaming()
@@ -150,17 +153,21 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
             var report = ColdLoadReport(total: documents.count, prepared: prepared)
             while !pending.isEmpty {
                 guard let self, let transcript = self.transcript, !Task.isCancelled else { return }
-                let chunk = Array(pending.suffix(Self.chunkRows))
-                pending.removeLast(chunk.count)
+                let documents = Array(pending.suffix(Self.chunkRows))
+                pending.removeLast(documents.count)
 
-                // The batch measured off the main actor. The `String`s handed
-                // over are the same instances that go into `messages` below —
-                // not copies — which is what keeps the seed's per-row check a
-                // pointer comparison. See `prepareRows(_:)`.
-                var seeded: PreparedRows?
+                // The turns are built **before** anything is measured, because a
+                // turn's identity is what a measurement is filed under: these are
+                // the same values that go into `messages` below, so the ids match
+                // and the `String`s are the same instances rather than copies —
+                // which keeps the cache's per-read content check a pointer
+                // comparison. See `prepareRows(_:)`.
+                let chunk = documents.map { DemoMessage.assistant($0) }
+                var warmed: PreparedRows?
                 if prepared {
                     let started = DispatchTime.now()
-                    seeded = await transcript.prepareRows(chunk.map { .markdown($0) })
+                    warmed = await transcript.prepareRows(
+                        chunk.map { TranscriptRow(id: $0.id, content: .markdown($0.text ?? "")) })
                     report.offMain += Self.seconds(since: started)
                     if Task.isCancelled { return }
                 }
@@ -168,10 +175,10 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
                 // ↓↓ No suspension point between mutating the model and
                 //    announcing it. The one rule. ↓↓
                 let started = DispatchTime.now()
-                self.messages.insert(contentsOf: chunk.map { .assistant($0) }, at: 0)
+                self.messages.insert(contentsOf: chunk, at: 0)
                 let indexes = IndexSet(0..<chunk.count)
-                if let seeded {
-                    transcript.insertRows(at: indexes, prepared: seeded)
+                if let warmed {
+                    transcript.insertRows(at: indexes, warming: warmed)
                 } else {
                     transcript.insertRows(at: indexes)
                 }
@@ -338,14 +345,19 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
     /// Text rows are the transcript's to draw — an assistant turn as a markdown
     /// document, a user turn as a bubble. Pictures are the demo's, through the
     /// one case the vocabulary keeps for exactly that.
-    func transcriptView(
-        _ transcriptView: TranscriptView, contentForRow row: Int
-    ) -> TranscriptRowContent {
-        switch messages[row].content {
-        case .assistant(let text): return .markdown(text)
-        case .user(let text): return .userMessage(text)
-        case .images: return .view
+    ///
+    /// The identity is the turn's own `UUID`, handed over untouched. That is the
+    /// whole of what a host owes here: it already knows which turn is which, and
+    /// nothing else can.
+    func transcriptView(_ transcriptView: TranscriptView, rowAt row: Int) -> TranscriptRow {
+        let message = messages[row]
+        let content: TranscriptRowContent
+        switch message.content {
+        case .assistant(let text): content = .markdown(text)
+        case .user(let text): content = .userMessage(text)
+        case .images: content = .view
         }
+        return TranscriptRow(id: message.id, content: content)
     }
 
     // MARK: - The picture row

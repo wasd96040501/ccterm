@@ -20,7 +20,17 @@ final class RecordingHost: NSObject, TranscriptViewDataSource, TranscriptViewDel
     /// walking the tree.
     final class ProbeView: NSView {}
 
-    private(set) var heights: [CGFloat]
+    /// One row: a height, and an identity that survives the mutators below.
+    ///
+    /// The identity is minted here rather than derived from the index, which is
+    /// the same thing a real host owes — a row that keeps its number through an
+    /// insertion above it would be a row the transcript re-measures for no reason.
+    struct Row {
+        let id = UUID()
+        var height: CGFloat
+    }
+
+    private(set) var rows: [Row]
 
     /// The `width` argument of every `heightOfRow` call, in order.
     private(set) var heightWidths: [CGFloat] = []
@@ -30,7 +40,7 @@ final class RecordingHost: NSObject, TranscriptViewDataSource, TranscriptViewDel
     private(set) var removals: [Int] = []
 
     init(rowCount: Int, rowHeight: CGFloat = 40) {
-        heights = Array(repeating: rowHeight, count: rowCount)
+        rows = (0..<rowCount).map { _ in Row(height: rowHeight) }
         super.init()
     }
 
@@ -44,34 +54,32 @@ final class RecordingHost: NSObject, TranscriptViewDataSource, TranscriptViewDel
     // MARK: - Model mutations
 
     func insertRows(_ count: Int, at index: Int, height: CGFloat = 40) {
-        heights.insert(contentsOf: Array(repeating: height, count: count), at: index)
+        rows.insert(contentsOf: (0..<count).map { _ in Row(height: height) }, at: index)
     }
 
     func removeRows(at indexes: IndexSet) {
-        for index in indexes.sorted(by: >) { heights.remove(at: index) }
+        for index in indexes.sorted(by: >) { rows.remove(at: index) }
     }
 
     func setHeight(_ height: CGFloat, forRow row: Int) {
-        heights[row] = height
+        rows[row].height = height
     }
 
     // MARK: - Data source and delegate
 
     func numberOfRows(in transcriptView: TranscriptView) -> Int {
-        heights.count
+        rows.count
     }
 
-    func transcriptView(
-        _ transcriptView: TranscriptView, contentForRow row: Int
-    ) -> TranscriptRowContent {
-        .view
+    func transcriptView(_ transcriptView: TranscriptView, rowAt row: Int) -> TranscriptRow {
+        TranscriptRow(id: rows[row].id, content: .view)
     }
 
     func transcriptView(
         _ transcriptView: TranscriptView, heightOfRow row: Int, width: CGFloat
     ) -> CGFloat {
         heightWidths.append(width)
-        return heights[row]
+        return rows[row].height
     }
 
     func transcriptView(

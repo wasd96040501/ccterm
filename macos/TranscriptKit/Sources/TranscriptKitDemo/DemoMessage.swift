@@ -19,7 +19,20 @@ struct DemoMessage {
         case images([URL])
     }
 
+    /// Who this turn is, for as long as it exists — what the transcript files its
+    /// measurement under, through `TranscriptRow`.
+    ///
+    /// A `UUID` rather than the turn's index, because an index is not an identity:
+    /// **Prepend 5** renumbers every row below it, and a transcript keyed on the
+    /// old numbers would hand each row its neighbour's layout.
+    let id: UUID
+
     let content: Content
+
+    init(id: UUID = UUID(), content: Content) {
+        self.id = id
+        self.content = content
+    }
 
     /// The turn's text, or `nil` for a row that has none. Only the control
     /// panel's grow buttons ask, and only about row 0.
@@ -32,10 +45,21 @@ struct DemoMessage {
 
     /// The same turn with more text on the end, or unchanged when there is no
     /// text to add to.
+    ///
+    /// **Keeps `id`.** This is the streaming path — one frame's growth — and a
+    /// host that minted a fresh identity here would be telling the transcript that
+    /// every frame is a different row. What that looks like is the reason to say
+    /// it: nothing renders wrongly. Every lookup misses, so each frame re-parses
+    /// and re-typesets the whole document instead of reusing the blocks that did
+    /// not change, and the reader's selection is dropped sixty times a second
+    /// because a row with no previous version cannot have extended it. A bug whose
+    /// only symptom is that something is slower than it should be is one nobody
+    /// finds by looking.
     func appending(_ suffix: String) -> DemoMessage {
         switch content {
-        case .user(let text): return .user("\(text) \(suffix)")
-        case .assistant(let text): return .assistant("\(text) \(suffix)")
+        case .user(let text): return DemoMessage(id: id, content: .user("\(text) \(suffix)"))
+        case .assistant(let text):
+            return DemoMessage(id: id, content: .assistant("\(text) \(suffix)"))
         case .images: return self
         }
     }

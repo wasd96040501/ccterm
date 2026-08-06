@@ -158,83 +158,31 @@ final class RowCache {
 
     private var entries: [TranscriptRow.ID: Entry] = [:]
 
-    /// `row`'s markdown, laid out at `width` — handed back untouched when neither
-    /// the content nor the width has moved, which is the usual case:
-    /// `NSTableView` asks for a height and then, for the rows it is about to show,
-    /// a view.
+    /// `row`, laid out at `width` — handed back untouched when neither the content
+    /// nor the width has moved, which is the usual case: `NSTableView` asks for a
+    /// height and then, for the rows it is about to show, a view. `nil` for content
+    /// the transcript does not draw itself.
     ///
-    /// A content that moved re-typesets only the blocks that changed; see
-    /// `MarkdownMemo`, which is the whole of why this case has an entry point of
-    /// its own.
+    /// **One entry point for every self-drawn case, and nothing here knows which
+    /// case it is serving.** What differs between a document and a bubble is what
+    /// the rebuild takes from the previous version, and that lives with the
+    /// content, in `TranscriptRowContent.entry(width:reusing:)` — which is also
+    /// what `prepareRows(_:)` calls on a background task, so there is one
+    /// description of how a row is built rather than one per thread.
     ///
-    /// `source` is `row.content`'s payload, unwrapped by the caller that already
-    /// pattern-matched to get here. It is what the memo takes; `row.content` is
-    /// what the entry is keyed and validated on, and the two are not
-    /// interchangeable — see the note on comparing whole values above.
-    func measuredMarkdown(for row: TranscriptRow, source: String, width: CGFloat) -> MeasuredBlock {
-        if let entry = entries[row.id], entry.content == row.content, entry.measuredWidth == width {
-            return entry.measured
-        }
-
-        // The one place that decides which of the memo's two entry points a row
-        // takes, and the whole decision is "can this prove the source did not
-        // move".
+    /// This is therefore the whole of the cache's own logic: *is what I have still
+    /// what is being asked for, and if not, hand the stale entry to the rebuild so
+    /// it can take what it likes.* Deciding whether the previous entry is any use
+    /// is the rebuild's business — it compares content itself, and the worst a
+    /// useless donor costs is a rebuild.
+    func measured(for row: TranscriptRow, width: CGFloat) -> MeasuredBlock? {
         let previous = entries[row.id]
-        var memo: MarkdownMemo
-        let measured: MeasuredBlock
-
-        if case .markdown(let donor)? = previous?.body {
-            memo = donor
-            if previous?.content == row.content {
-                // Only the width can have moved — the early return above covers
-                // the case where neither did. Equal content cannot parse into
-                // different children, so reading the source again would be work
-                // with a provably known answer: 60% of what a width change used
-                // to cost, spent recovering an order the memo can simply keep.
-                measured = memo.remeasure(width: width)
-            } else {
-                // The streaming path. The source has to be read, and `MarkdownMemo`
-                // is what keeps that affordable — the donor above is the previous
-                // version, and only the blocks that actually changed are laid out.
-                measured = memo.measure(source, width: width)
-            }
-        } else {
-            // Nothing to take from: a row nobody has measured, or one that was a
-            // bubble until now. There is no previous version to be unchanged from.
-            memo = MarkdownMemo()
-            measured = memo.measure(source, width: width)
+        if let previous, previous.content == row.content, previous.measuredWidth == width {
+            return previous.measured
         }
-
-        entries[row.id] = Entry(
-            content: row.content, body: .markdown(memo), measured: measured, measuredWidth: width)
-        return measured
-    }
-
-    /// `row`'s tree for any other case the transcript draws itself: one recipe for
-    /// the whole content, re-measured when the width moves and rebuilt when the
-    /// content does.
-    ///
-    /// `build` is a closure rather than a value so that a hit costs nothing — the
-    /// shaping it would perform is the expensive half, and on a hit it must not
-    /// happen at all.
-    func measuredBlock(
-        for row: TranscriptRow, width: CGFloat, build: () -> Block
-    ) -> MeasuredBlock {
-        if let entry = entries[row.id], entry.content == row.content,
-            case .block(let block) = entry.body
-        {
-            if entry.measuredWidth == width { return entry.measured }
-            let measured = block.measure(width)
-            entries[row.id] = Entry(
-                content: row.content, body: .block(block), measured: measured, measuredWidth: width)
-            return measured
-        }
-
-        let block = build()
-        let measured = block.measure(width)
-        entries[row.id] = Entry(
-            content: row.content, body: .block(block), measured: measured, measuredWidth: width)
-        return measured
+        guard let entry = row.content.entry(width: width, reusing: previous) else { return nil }
+        entries[row.id] = entry
+        return entry.measured
     }
 
     /// Files entries someone else produced — off the main actor, by

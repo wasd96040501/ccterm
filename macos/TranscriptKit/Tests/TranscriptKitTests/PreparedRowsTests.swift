@@ -107,8 +107,8 @@ final class PreparedRowsTests: XCTestCase {
     ]
 
     /// A user's turn, long enough to wrap inside the bubble's three-quarter
-    /// column. The other case the transcript draws itself, and the only one whose
-    /// recipe is spelled twice — see `testPreparedAndOnDemandAgree`.
+    /// column. The other case the transcript draws itself, and the one that takes
+    /// the other branch through the rebuild — see `testPreparedAndOnDemandAgree`.
     private static let userTurn =
         SourceHost.userTurnPrefix
         + "What I actually typed, at enough length that the bubble wraps and its "
@@ -154,23 +154,28 @@ final class PreparedRowsTests: XCTestCase {
 
     // MARK: - The answer does not depend on where it was measured
 
-    /// The property two comments in the package point at by name: a row prepared
-    /// on a background task and the same row measured on demand come out
-    /// identical. Both call sites reach `TranscriptRowContent.entry(width:)`
-    /// through different paths — one through `RowCache`'s miss, one directly —
-    /// and a disagreement between them would not fail, it would show up as a row
-    /// whose height changes the first time anything re-measures it.
+    /// A row prepared on a background task and the same row measured on demand
+    /// come out identical. A disagreement between them would not fail, it would
+    /// show up as a row whose height changes the first time anything re-measures
+    /// it.
+    ///
+    /// **This used to hold two spellings in step and now holds one against
+    /// itself**, because there is one: both paths reach
+    /// `TranscriptRowContent.entry(width:reusing:)`, the prepared one with `nil`
+    /// and the on-demand one through `RowCache`'s miss with whatever it had. Which
+    /// makes this weaker than it was and still worth keeping — what it now covers
+    /// is that passing a *previous entry* does not change the answer, only what it
+    /// cost to reach, and that is a property of every reuse path in the package.
     func testPreparedAndOnDemandAgree() async {
         let (control, controlHost) = mount([Self.sources[0]])
         let (subject, subjectHost) = mount([Self.sources[0]])
         XCTAssertFalse(controlHost.rowCalls.isEmpty, "the control never laid out")
         XCTAssertFalse(subjectHost.rowCalls.isEmpty, "the subject never laid out")
 
-        // **Both** self-drawn cases, because they reach their recipe by
-        // different routes: a document through `MarkdownMemo`, a bubble through
-        // a `build` closure the cache holds. Only one of those routes is shared
-        // with `prepareRows`, so a suite of documents alone would leave the
-        // bubble's two spellings free to drift.
+        // **Both** self-drawn cases, because they take different branches
+        // through the rebuild — a document keeps its blocks in a `MarkdownMemo`,
+        // a bubble keeps the one block whole — and a suite of documents alone
+        // would never enter the second.
         let batch = (Array(Self.sources.dropFirst()) + [Self.userTurn]).map(SourceHost.Row.init)
 
         controlHost.rows.insert(contentsOf: batch, at: 0)
@@ -241,8 +246,8 @@ final class PreparedRowsTests: XCTestCase {
         // cases, or this test would pass against a cache that checked nothing.
         for source in [Self.userTurn, Self.sources[1]] {
             XCTAssertNotEqual(
-                TranscriptRowContent.markdown(source).entry(width: 600)?.measured.size.height,
-                TranscriptRowContent.userMessage(source).entry(width: 600)?.measured.size.height,
+                TranscriptRowContent.markdown(source).entry(width: 600, reusing: nil)?.measured.size.height,
+                TranscriptRowContent.userMessage(source).entry(width: 600, reusing: nil)?.measured.size.height,
                 "this source measures the same either way, so it cannot detect a wrong case")
         }
 
@@ -519,7 +524,7 @@ final class PreparedRowsTests: XCTestCase {
         // Measured at 600 …
         let prepared = await subject.transcript.prepareRows(batch.map(\.described))
         let heightsAt600 = batch.compactMap {
-            TranscriptRowContent.markdown($0.source).entry(width: 600)?.measured.size.height
+            TranscriptRowContent.markdown($0.source).entry(width: 600, reusing: nil)?.measured.size.height
         }
         // … and inserted at 420.
         subject.setContentWidth(420)
@@ -534,7 +539,7 @@ final class PreparedRowsTests: XCTestCase {
         subject.settle()
 
         let heightsAt420 = batch.compactMap {
-            TranscriptRowContent.markdown($0.source).entry(width: 420)?.measured.size.height
+            TranscriptRowContent.markdown($0.source).entry(width: 420, reusing: nil)?.measured.size.height
         }
         XCTAssertEqual(heightsAt600.count, batch.count)
         for (index, pair) in zip(heightsAt600, heightsAt420).enumerated() {
@@ -683,10 +688,11 @@ private final class SourceHost: NSObject, TranscriptViewDataSource, TranscriptVi
     static let hostDrawn = "\u{0}host-drawn"
 
     /// Prefix marking a source as a user's turn rather than a document — the
-    /// other case the transcript draws itself, and the one whose recipe is named
-    /// in two places (`TranscriptRowContent.entry(width:)` and the `build`
-    /// closure in `TranscriptView.measuredBlock(for:)`). A suite of `.markdown`
-    /// rows alone cannot see those two drift apart.
+    /// other case the transcript draws itself, and the one a suite of `.markdown`
+    /// rows alone would never exercise. Its recipe was once spelled in two places
+    /// and is now spelled in one (`TranscriptRowContent.entry(width:reusing:)`),
+    /// but it still takes a different branch through the reuse than a document
+    /// does: a bubble keeps its block, a document keeps its blocks.
     static let userTurnPrefix = "\u{1}"
 
     static let hostRowHeight: CGFloat = 77

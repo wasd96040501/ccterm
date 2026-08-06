@@ -91,9 +91,19 @@ extension TranscriptRowContent {
         }
     }
 
-    /// This content built and measured from nothing, at `width` — **the cold
-    /// path**, and the only description of it. `nil` for `.view`, which is the
-    /// host's to draw and the host's to measure.
+    /// This content built and measured at `width`, taking whatever `previous`
+    /// still has to offer. `nil` for `.view`, which is the host's to draw and the
+    /// host's to measure.
+    ///
+    /// **The one place a content case names a recipe**, and that is the whole
+    /// point of it being here rather than at either of its callers. There were two
+    /// copies once — this one, and a `switch` in `TranscriptView` that told
+    /// `RowCache` how to rebuild each case — and they had to stay in step for a
+    /// reason with no symptom: they answer the same question about the same row,
+    /// on two threads, so a disagreement does not fail, it shows up much later as
+    /// a row whose height changes the first time something re-measures it. A
+    /// second copy is also how one of them comes to be missing a case: not as a
+    /// build error, but as a row that quietly stops being re-measured.
     ///
     /// A whole `RowCache.Entry`, not just its measurement: what a row costs is
     /// the recipe *and* the answer, and a caller that produced only the answer
@@ -101,34 +111,72 @@ extension TranscriptRowContent {
     /// width. That was a real state here once, and the note on `RowCache.Body`
     /// records what it cost.
     ///
-    /// Two callers on two threads: a row-cache miss reaches the same expressions
-    /// through `RowCache`, and `prepareRows(_:)` calls this directly on a
-    /// background task. They have to agree exactly, because they answer the same
-    /// question about the same row — and a disagreement does not fail, it shows
-    /// up as a row whose height changes the first time something re-measures it.
-    /// `PreparedRowsTests.testPreparedAndOnDemandAgree` is what holds that.
+    /// ## What `previous` is for
+    ///
+    /// Both self-drawn cases keep something between versions, and what they keep
+    /// is what differs between them — a document keeps the blocks that did not
+    /// change, a bubble keeps its recipe. Passing the previous entry in, rather
+    /// than having two entry points for "cold" and "warm", is what makes the cold
+    /// path *literally* the warm path with nothing to take from: `nil` is not a
+    /// second expression that happens to agree today.
+    ///
+    /// `previous` is a hint and never a truth. Its content is compared against
+    /// `self` here, so an entry belonging to an older version of the row
+    /// contributes its pieces and nothing else; handing over the wrong one costs a
+    /// rebuild, not a wrong answer.
+    ///
+    /// ## Threads
     ///
     /// Pure and free of main-thread state: Core Text is thread-safe, fonts and
     /// colours are stored rather than resolved (they resolve against the
     /// appearance current at *draw* time), and nothing here consults
     /// `NSFontManager` or any other main-thread singleton. That is the property
     /// `Block` and `MeasuredBlock`'s `Sendable` conformances both rest on, and
-    /// the one to preserve.
-    func entry(width: CGFloat) -> RowCache.Entry? {
+    /// the one to preserve. `TranscriptView.prepareRows(_:)` calls this on a
+    /// background task with no previous entry to take from; `RowCache` calls it on
+    /// the main actor with one.
+    func entry(width: CGFloat, reusing previous: RowCache.Entry?) -> RowCache.Entry? {
         switch self {
-        // Not `MarkdownBlockBuilder.make(source).measure(width)`, though it
-        // produces the identical stack: routing through the memo means the cold
-        // path is *literally* the streaming path with no previous generation to
-        // take from, rather than a second expression that happens to agree today.
         case .markdown(let source):
-            let (memo, measured) = MarkdownMemo.measured(source, width: width)
+            var memo: MarkdownMemo
+            let measured: MeasuredBlock
+            if case .markdown(let donor)? = previous?.body {
+                memo = donor
+                if previous?.content == self {
+                    // Only the width can have moved. Equal content cannot parse
+                    // into different children, so reading the source again would
+                    // be work with a provably known answer: 60% of what a width
+                    // change used to cost, spent recovering an order the memo can
+                    // simply keep.
+                    measured = memo.remeasure(width: width)
+                } else {
+                    // The streaming path. The source has to be read, and
+                    // `MarkdownMemo` is what keeps that affordable — the donor is
+                    // the previous version, and only the blocks that actually
+                    // changed are laid out.
+                    measured = memo.measure(source, width: width)
+                }
+            } else {
+                // Nothing to take from: a row nobody has measured, one that was a
+                // bubble until now, or a background task preparing rows that do
+                // not exist yet. Not `MarkdownBlockBuilder.make(source).measure`,
+                // though it produces the identical stack — routing through the
+                // memo is what makes this the branch above with an empty donor.
+                (memo, measured) = MarkdownMemo.measured(source, width: width)
+            }
             return RowCache.Entry(
                 content: self, body: .markdown(memo), measured: measured, measuredWidth: width)
 
-        // The same recipe `TranscriptView.measuredBlock(for:)` hands the cache —
-        // see the note there.
         case .userMessage(let text):
-            let block = UserMessage(text)
+            // One block, and it does not depend on the width — so a previous one
+            // is reused whole and only the measure re-runs. A text that moved has
+            // nothing reusable in it; the bubble is rebuilt.
+            let block: Block
+            if case .block(let donor)? = previous?.body, previous?.content == self {
+                block = donor
+            } else {
+                block = UserMessage(text)
+            }
             return RowCache.Entry(
                 content: self, body: .block(block), measured: block.measure(width),
                 measuredWidth: width)

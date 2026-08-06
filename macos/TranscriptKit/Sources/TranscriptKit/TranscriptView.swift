@@ -151,38 +151,19 @@ public final class TranscriptView: NSView {
     /// a height and then, for the rows it is about to show, a view. `nil` for
     /// content the transcript does not draw itself.
     ///
-    /// **The one place a content case names a block recipe.** Three callers need
-    /// that mapping — the height answer, the view answer, and the re-measure a
-    /// width or a content change forces — and a second copy of it is how one of
-    /// them comes to be missing a case: not as a failure, but as a row that
-    /// quietly stops being re-measured.
+    /// Three callers — the height answer, the view answer, and the rebind a width
+    /// or a content change forces — and the only thing this adds over calling the
+    /// cache directly is `contentWidth`, which is the transcript's to know.
     ///
-    /// Both self-drawn cases hand the whole `TranscriptRow` to the cache rather
-    /// than only a way to rebuild: the identity is what the entry is filed under
-    /// and the content is what it is believed against, which is what lets the
-    /// cache notice a content change instead of being told about one. What differs
-    /// is the rebuild: a document reuses the blocks that did not move
-    /// (`MarkdownMemo`), a bubble is one block and is rebuilt whole.
+    /// The whole `TranscriptRow` goes to the cache rather than only a way to
+    /// rebuild: the identity is what the entry is filed under and the content is
+    /// what it is believed against, which is what lets the cache notice a content
+    /// change instead of being told about one. **Nothing here names a recipe** —
+    /// which case gets built how lives on the case, in
+    /// `TranscriptRowContent.entry(width:reusing:)`, so that the background path
+    /// and this one cannot describe a row differently.
     private func measuredBlock(for row: TranscriptRow) -> MeasuredBlock? {
-        switch row.content {
-        case .markdown(let source):
-            return rowCache.measuredMarkdown(for: row, source: source, width: contentWidth)
-
-        // The recipe named here has to be the one
-        // `TranscriptRowContent.entry(width:)` applies, or a prepared row and an
-        // on-demand one answer the same question differently. Held by
-        // `PreparedRowsTests.testPreparedAndOnDemandAgree` rather than by this
-        // comment; a recipe is what the cache wants and a measurement is what a
-        // background task can carry, so the two call sites cannot be one.
-        case .userMessage(let text):
-            return rowCache.measuredBlock(for: row, width: contentWidth) {
-                UserMessage(text)
-            }
-
-        // A `.view` row is the host's, block and all.
-        case .view:
-            return nil
-        }
+        rowCache.measured(for: row, width: contentWidth)
     }
 
     /// How tall row `row` is. `.view` rows are the delegate's to measure; the
@@ -581,7 +562,7 @@ public final class TranscriptView: NSView {
     /// bitmap stretched to the new size.
     ///
     /// Every self-drawn case, not one of them: a case reached through
-    /// `measuredBlock(forRow:content:)` everywhere except here would keep its
+    /// `measuredBlock(for:)` everywhere except here would keep its
     /// height in step with the width and its glyphs at the old one, which is the
     /// half of a reflow nothing complains about.
     ///
@@ -622,8 +603,8 @@ public final class TranscriptView: NSView {
             // The cache holds the source a row was last built from, so reading it
             // either side of the measure is what gives both versions. Asked there
             // rather than by switching over the content again, which would be the
-            // second copy of the case mapping `measuredBlock(for:)` exists to
-            // prevent. Keyed on the identity, so a row that was renumbered under
+            // second copy of a mapping that lives on the content case. Keyed
+            // on the identity, so a row that was renumbered under
             // this pass still finds its own previous version rather than its
             // neighbour's.
             let previous = rowCache.source(for: described.id)
@@ -1560,7 +1541,12 @@ public final class TranscriptView: NSView {
         await withTaskGroup(of: (TranscriptRow.ID, RowCache.Entry)?.self) { group in
             for row in rows {
                 group.addTask {
-                    guard !Task.isCancelled, let entry = row.content.entry(width: width)
+                    // Nothing to take from, and stated rather than defaulted: a
+                    // row being prepared does not exist yet, so there is no
+                    // previous version of it anywhere — which is the one thing
+                    // that makes this call safe off the main actor.
+                    guard !Task.isCancelled,
+                        let entry = row.content.entry(width: width, reusing: nil)
                     else { return nil }
                     return (row.id, entry)
                 }

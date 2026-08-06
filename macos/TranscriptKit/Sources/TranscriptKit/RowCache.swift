@@ -104,6 +104,31 @@ final class RowCache {
 
         var measured: MeasuredBlock
         var measuredWidth: CGFloat
+
+        /// This entry laid out at a different width, from what it already holds.
+        ///
+        /// **No source, and therefore no parse and no shaping** — the recipe is
+        /// the whole input. That is what makes this the thing a background task
+        /// can be handed: `MeasuredBlock`, `Block` and `MarkdownMemo` are all
+        /// `Sendable`, and none of this touches main-thread state.
+        ///
+        /// The content is carried through untouched. It is not an input to the
+        /// work — it is what the answer will be checked against when it lands, by
+        /// whoever files it.
+        func remeasured(at width: CGFloat) -> Entry {
+            switch body {
+            case .markdown(var memo):
+                let measured = memo.remeasure(width: width)
+                return Entry(
+                    content: content, body: .markdown(memo), measured: measured,
+                    measuredWidth: width)
+
+            case .block(let block):
+                return Entry(
+                    content: content, body: .block(block), measured: block.measure(width),
+                    measuredWidth: width)
+            }
+        }
     }
 
     /// What an entry keeps between versions of its content, which is the one thing
@@ -231,6 +256,51 @@ final class RowCache {
     /// lived there before it dared write.
     func merge(_ prepared: [TranscriptRow.ID: Entry]) {
         entries.merge(prepared) { _, new in new }
+    }
+
+    // MARK: - Re-measuring elsewhere
+
+    /// Every entry that was measured into some width other than `width`, with the
+    /// identity it is filed under.
+    ///
+    /// What a width change actually invalidates, and it is much less than the
+    /// transcript: **only rows something has already asked about have an entry at
+    /// all**, so a ten-thousand-row transcript the reader has scrolled a fifth of
+    /// hands back two thousand rather than ten. Rows nobody has measured need
+    /// nothing done — the first question about one is answered at whatever the
+    /// width is then.
+    ///
+    /// Handed out as whole `Entry` values so the work can happen off the main
+    /// actor; `Entry.remeasured(at:)` is what is done to each, and
+    /// `merge(remeasured:)` is where they come back.
+    func entries(measuredAtWidthOtherThan width: CGFloat) -> [(id: TranscriptRow.ID, entry: Entry)] {
+        entries.compactMap { $0.value.measuredWidth == width ? nil : ($0.key, $0.value) }
+    }
+
+    /// Files re-measurements taken elsewhere, keeping the ones whose row still
+    /// wants what they were made from.
+    ///
+    /// **Both checks here are thrift, and it is worth knowing that before
+    /// touching either.** Deleting them leaves the transcript correct: an entry
+    /// filed under a row whose content has since moved is rejected by the same
+    /// `(content, width)` comparison every read performs, and re-measured on the
+    /// spot. Verified by deleting each and watching the whole suite stay green.
+    /// What they buy is not writing entries that are certain to be rejected — a
+    /// row a `reloadRows` changed during the window, a row a reader scrolled into
+    /// and so re-measured on demand, an id a `reloadData` swept away.
+    ///
+    /// That the *correctness* of a background re-measure needs nothing here is the
+    /// property the whole design rests on, so it is worth stating positively:
+    /// entries have no positions, so an insert or a removal cannot move one; and
+    /// an entry is believed only as far as it matches what is being asked for, so
+    /// the worst a stale batch can do is waste the work that produced it.
+    func merge(remeasured: [(id: TranscriptRow.ID, entry: Entry)], at width: CGFloat) {
+        for item in remeasured {
+            guard let current = entries[item.id], current.content == item.entry.content,
+                current.measuredWidth != width
+            else { continue }
+            entries[item.id] = item.entry
+        }
     }
 
     /// The text `id`'s row was last built from, or `nil` for a row nothing has

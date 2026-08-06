@@ -454,14 +454,42 @@ a long transcript is now solved:
   has been measured before; a row reaching a width for the first time pays a full
   build either way.
 
-  The number that says what to do next: replacing every height answer with a
-  constant — measuring nothing at all — brings the same resize to **11–18 ms**.
+  The number that said what to do next: replacing every height answer with a
+  constant — measuring nothing at all — brought the same resize to **11–18 ms**.
   So `NSTableView`'s own tile, the visible-row rebind and everything else in the
   mouse-up path together are about 1% of it, and **measuring is the other 99%**.
-  Moving that measurement off the main actor is therefore worth close to all of
-  the remaining second, which no amount of making it cheaper in place can match.
   `prepareRows` gives a host no way to help, because the invalidation is the
-  transcript's own.
+  transcript's own — so the transcript does it itself, in
+  `beginRemeasuringOffscreenRows(at:)`.
+
+  **Where that landed.** Mouse-up now costs **17–44 ms** on the same ten thousand
+  rows: the rows on screen are re-measured inside the pass that changed the
+  width, and everything else is handed to the cooperative pool and published in
+  one go when it is all in. Three numbers make the shape of it clear:
+
+  | | |
+  |---|---|
+  | rows a width change actually invalidates | **300 / 700 / 1 100** of 10 000 |
+  | that batch, measured across every core | **46 / 118 / 167 ms** |
+  | main thread once it lands | **~0 ms** — every re-ask is a cache hit |
+
+  The first row is why this is affordable at all: only a row something has
+  already asked about has an entry, so a reader who has walked a long transcript
+  end to end still leaves nine tenths of it unmeasured, and an unmeasured row is
+  answered at whatever the width is when it is finally asked about. The batch is
+  the transcript's *history*, not its length.
+
+  The window that leaves — a tenth of a second or so during which a row scrolled
+  into gets its glyphs at the new width and its rectangle from the old one, since
+  `NSTableView` caches heights and its `heightOfRow` takes no width — is left
+  standing on purpose. Two mechanisms were designed for it and neither was built:
+  measuring a screen's margin synchronously on mouse-up, which pays main thread
+  to guess which rows the reader will want; and self-healing from `viewForRow` by
+  invalidating on the next tick, which is targeted but costs a frame at the wrong
+  height, and cannot be done inline — `noteHeightOfRows` from inside the table's
+  own layout re-enters it, and the recorded symptom was one pass measuring at two
+  different widths. At 50–170 ms neither earns itself. If the window ever grows,
+  the self-heal is the one to build.
 
   Worth recording because it was nearly mis-attributed twice. Entries that
   crossed the actor boundary *without their recipe* made the **first** resize

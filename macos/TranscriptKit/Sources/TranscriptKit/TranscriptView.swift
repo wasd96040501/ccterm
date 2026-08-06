@@ -534,21 +534,31 @@ public final class TranscriptView: NSView {
         guard numberOfRows > 0 else { return }
 
         rebindVisibleRows(in: nil)
+        noteHeightOfVisibleRows()
 
-        // `noteHeightOfRows` re-asks the delegate for every index it is handed,
-        // so a full pass is O(rows) — nothing once, a freeze sixty times a
-        // second through a drag. Mid-drag only the rows on screen are
-        // re-measured, and the offsets that shifts settle on mouse-up.
-        guard inLiveResize else {
-            hasStaleOffscreenHeights = false
-            tableView.noteHeightOfRows(withIndexesChanged: IndexSet(0..<numberOfRows))
+        // Mid-drag the rows on screen are the whole job: the reader is looking at
+        // them, and the rest is re-measured once the drag ends rather than sixty
+        // times inside it.
+        guard !inLiveResize else {
+            hasStaleOffscreenHeights = true
             return
         }
-        hasStaleOffscreenHeights = true
+        beginRemeasuringOffscreenRows(at: width)
+    }
+
+    /// Invalidates the heights of the rows on screen, which is cheap and is what
+    /// keeps the viewport correct while everything else is still catching up.
+    ///
+    /// Goes to the table directly for the same reason `contentWidthDidChange`
+    /// does: this runs from the clip's frame-change notification, inside the
+    /// scroll view's own tile, and anchoring there would write a scroll offset
+    /// from inside the layout producing it.
+    private func noteHeightOfVisibleRows() {
         let visible = tableView.rows(in: tableView.visibleRect)
         guard visible.length > 0 else { return }
         tableView.noteHeightOfRows(
-            withIndexesChanged: IndexSet(integersIn: visible.location..<(visible.location + visible.length)))
+            withIndexesChanged: IndexSet(
+                integersIn: visible.location..<(visible.location + visible.length)))
     }
 
     /// Re-measures the self-drawn rows on screen — all of them, or the ones in
@@ -642,6 +652,126 @@ public final class TranscriptView: NSView {
         super.viewDidEndLiveResize()
         guard hasStaleOffscreenHeights, numberOfRows > 0 else { return }
         hasStaleOffscreenHeights = false
+        beginRemeasuringOffscreenRows(at: contentWidth)
+    }
+
+    // MARK: - Re-measuring a width change off the main actor
+
+    /// The re-measure in flight, or `nil`.
+    ///
+    /// Held for two reasons, and neither is correctness. A second width change
+    /// cancels the first, so the loser stops burning cores for an answer that
+    /// would be rejected anyway — measured against the alternative, letting it run
+    /// costs the work and nothing else, because `finishRemeasuring` drops a batch
+    /// whose width has been superseded and `RowCache` would reject the entries
+    /// even if it did not. And it is what a test waits on: the correction lands on
+    /// a later turn, and there is no honest way to know it has except to wait for
+    /// the thing that publishes it.
+    private(set) var remeasuring: Task<Void, Never>?
+
+    /// Re-measures everything a width change invalidated, off the main actor, and
+    /// publishes the answers in one pass when they are all in.
+    ///
+    /// **Why this is not `prepareRows` pointed at a resize.** That one is the
+    /// host's to call, so the `await` lands at the host's own call site. A resize
+    /// has no host call site — it is the transcript's own invalidation, arriving
+    /// through `viewDidEndLiveResize` — so the transcript has to own a `Task`, and
+    /// that `Task` spans main-actor turns during which the host may do anything at
+    /// all. What makes that safe is that the answers are filed by identity and
+    /// checked against the content they were made from: see
+    /// `RowCache.merge(remeasured:at:)`, where every way it can go stale is
+    /// enumerated, and every one of them costs the work rather than the render.
+    ///
+    /// **Nothing is invalidated until the answers are in.** Calling
+    /// `noteHeightOfRows` first would make the table re-ask immediately and
+    /// measure the whole working set on the main thread, which is the freeze this
+    /// exists to remove. So the rows off screen keep heights from the old width
+    /// for as long as this takes, and the visible ones are already correct —
+    /// `contentWidthDidChange` re-measures those synchronously, every frame of the
+    /// drag and again on mouse-up.
+    ///
+    /// **What that window costs, precisely.** A row scrolled into while this runs
+    /// gets its glyphs at the new width, because `viewForRow` misses the cache and
+    /// re-measures on demand — but its *rectangle* is the table's own cached
+    /// number from the old width, and the table has no reason to re-ask, since its
+    /// `heightOfRow` takes no width. New glyphs in an old rect, until this lands.
+    /// It is confined to rows the table has already measured: one it has not is
+    /// asked about on the spot and comes out right. Whether that window is short
+    /// enough to be beneath noticing is not something an assertion can answer —
+    /// `make demo-kit` on ten thousand rows is where it gets looked at.
+    private func beginRemeasuringOffscreenRows(at width: CGFloat) {
+        remeasuring?.cancel()
+
+        let stale = rowCache.entries(measuredAtWidthOtherThan: width)
+        guard !stale.isEmpty else {
+            // Nothing was ever measured, so there is nothing to prepare from and
+            // nothing to wait for. The table's own re-ask does the work, exactly
+            // as it did before any of this existed.
+            remeasuring = nil
+            tableView.noteHeightOfRows(withIndexesChanged: IndexSet(0..<numberOfRows))
+            return
+        }
+
+        remeasuring = Task { [weak self] in
+            let remeasured = await Self.remeasure(stale, at: width)
+            guard !Task.isCancelled, let self else { return }
+            self.finishRemeasuring(remeasured, at: width)
+        }
+    }
+
+    /// The stale entries, re-measured concurrently.
+    ///
+    /// `nonisolated` for the reason `measure(_:width:)` is: a `static` member of a
+    /// `@MainActor` type is isolated by default and this one must not be. What
+    /// crosses is `RowCache.Entry`, which is `Sendable` and carries its own
+    /// recipe — so this is line-breaking and nothing else. No parse, no shaping,
+    /// no data source.
+    private nonisolated static func remeasure(
+        _ stale: [(id: TranscriptRow.ID, entry: RowCache.Entry)], at width: CGFloat
+    ) async -> [(id: TranscriptRow.ID, entry: RowCache.Entry)] {
+        await withTaskGroup(of: (id: TranscriptRow.ID, entry: RowCache.Entry)?.self) { group in
+            for item in stale {
+                group.addTask {
+                    guard !Task.isCancelled else { return nil }
+                    return (item.id, item.entry.remeasured(at: width))
+                }
+            }
+            var results: [(id: TranscriptRow.ID, entry: RowCache.Entry)] = []
+            results.reserveCapacity(stale.count)
+            for await result in group {
+                guard let result else { continue }
+                results.append(result)
+            }
+            return results
+        }
+    }
+
+    /// Files the batch and tells the table, in that order and in one turn.
+    ///
+    /// One `noteHeightOfRows` over everything rather than over the rows that were
+    /// re-measured: the table's working set is its own business, and a row it
+    /// wants that this batch did not cover is one that was never measured — which
+    /// is answered correctly on the spot.
+    ///
+    /// Unanchored, like every other width change (§2 puts a resize outside both
+    /// anchoring rules), so the content settles where the new width puts it.
+    ///
+    /// **Everything this method decides is thrift.** Publishing a superseded
+    /// batch, or one whose rows have moved on, is self-correcting: the entries
+    /// carry the width they were measured at, so the very next read rejects them
+    /// and measures again, inside the same pass — no frame is drawn wrong. The
+    /// merge is likewise an optimisation and not a correctness step, since the
+    /// `noteHeightOfRows` below makes the table re-ask and a row with no usable
+    /// entry is simply measured then. Which is the whole point, and also why no
+    /// assertion can see it: with the merge removed the transcript is still
+    /// right, it is just measuring the working set on the main thread again — the
+    /// freeze this exists to remove. The evidence for it is a measurement, in §6.
+    private func finishRemeasuring(
+        _ remeasured: [(id: TranscriptRow.ID, entry: RowCache.Entry)], at width: CGFloat
+    ) {
+        remeasuring = nil
+        guard width == contentWidth, numberOfRows > 0 else { return }
+        rowCache.merge(remeasured: remeasured, at: width)
         tableView.noteHeightOfRows(withIndexesChanged: IndexSet(0..<numberOfRows))
     }
 

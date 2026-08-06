@@ -1,5 +1,6 @@
 import AppKit
-import TranscriptKit
+
+@testable import TranscriptKit
 
 /// An off-screen window with a `TranscriptView` filling it, plus the two calls
 /// that make AppKit do the work it would do on screen.
@@ -53,11 +54,13 @@ final class MountedTranscript {
     /// Runs `passes` rounds of "flush layout, draw what needs drawing, drain the
     /// main queue".
     ///
-    /// One round is enough, and that is itself the property worth noticing: the
-    /// transcript's width invalidation lands *within* the pass that changed the
-    /// width, so nothing is left over for a second round to settle. A change here
-    /// that needs `passes: 2` has moved work onto a later tick — which is a
-    /// visible frame at the old geometry, not a test detail.
+    /// One round is enough for everything the transcript does *inside* the pass
+    /// that provoked it, which is everything except one thing: a width change
+    /// re-measures the rows off screen on a background task and publishes them on
+    /// a later turn, so a test that changed the width and wants the whole
+    /// transcript settled uses `settleWidthChange()` instead. Reaching for
+    /// `passes: 2` anywhere else means work moved onto a later tick — a visible
+    /// frame at the old geometry, not a test detail.
     ///
     /// A parameter rather than a loop-until-quiet so the count stays at the call
     /// site instead of hiding in here.
@@ -67,6 +70,22 @@ final class MountedTranscript {
             window.displayIfNeeded()
             RunLoop.current.run(until: Date(timeIntervalSinceNow: 0))
         }
+    }
+
+    /// Settles, then waits for the off-main re-measure a width change starts, then
+    /// settles again.
+    ///
+    /// The `Task` is ordinary production state — the transcript holds it to cancel
+    /// a superseded batch — so this waits on the real thing rather than polling or
+    /// sleeping, and there is no seam here that exists for the test.
+    ///
+    /// Two settles because the batch is started by the first pass and its result
+    /// is published into the second. A test that wants to look *during* the window
+    /// calls `settle()` and does not call this.
+    func settleWidthChange() async {
+        settle()
+        await transcript.remeasuring?.value
+        settle()
     }
 
     /// Resizes the window's content area, the way dragging its edge would —

@@ -260,8 +260,8 @@ final class RowCache {
 
     // MARK: - Re-measuring elsewhere
 
-    /// Every entry that was measured into some width other than `width`, with the
-    /// identity it is filed under.
+    /// Every entry that was measured into some width other than `width`, under the
+    /// identity it is filed by.
     ///
     /// What a width change actually invalidates, and it is much less than the
     /// transcript: **only rows something has already asked about have an entry at
@@ -272,9 +272,16 @@ final class RowCache {
     ///
     /// Handed out as whole `Entry` values so the work can happen off the main
     /// actor; `Entry.remeasured(at:)` is what is done to each, and
-    /// `merge(remeasured:)` is where they come back.
-    func entries(measuredAtWidthOtherThan width: CGFloat) -> [(id: TranscriptRow.ID, entry: Entry)] {
-        entries.compactMap { $0.value.measuredWidth == width ? nil : ($0.key, $0.value) }
+    /// `merge(remeasured:at:)` is where they come back.
+    ///
+    /// **A dictionary rather than a list, because the caller reorders it and then
+    /// strikes entries off.** Which row each one belongs to is the transcript's
+    /// question, not this store's — it walks its rows outward from the viewport and
+    /// claims entries out of this by identity as it passes them, so the rows nearest
+    /// the reader are measured first and the walk stops as soon as this is empty.
+    /// See `TranscriptView.staleRowsOutwardFromViewport(at:)`.
+    func entries(measuredAtWidthOtherThan width: CGFloat) -> [TranscriptRow.ID: Entry] {
+        entries.filter { $0.value.measuredWidth != width }
     }
 
     /// Files re-measurements taken elsewhere, keeping the ones whose row still

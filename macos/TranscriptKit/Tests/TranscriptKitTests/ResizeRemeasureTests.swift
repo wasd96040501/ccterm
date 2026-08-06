@@ -18,16 +18,25 @@ import XCTest
 /// whether a row scrolled into during it reads as wrong — is `make demo-kit`'s,
 /// on ten thousand rows.
 ///
-/// **Two of the mechanism's parts are deliberately not covered, because nothing
-/// can cover them.** Deleting the merge, or letting a superseded batch publish,
-/// leaves this file green — the transcript stays correct either way, since
-/// `noteHeightOfRows` makes the table re-ask and `RowCache` rejects anything
-/// stale on read. What those parts buy is that the re-asking is answered from
-/// cache instead of by measuring the working set on the main thread, which is a
-/// difference only a measurement can see (§6 has it). Tried, so that nobody
-/// re-derives it: breaks that stay green here are `finishRemeasuring`'s width
-/// guard, its merge, the cancellation of a superseded batch, and the content
-/// comparison inside `RowCache.merge(remeasured:at:)`.
+/// **Several of the mechanism's parts are deliberately not covered, because
+/// nothing can cover them.** Deleting the merge, or letting a superseded batch
+/// publish, leaves this file green — the transcript stays correct either way,
+/// since `noteHeightOfRows` makes the table re-ask and `RowCache` rejects
+/// anything stale on read. What those parts buy is that the re-asking is answered
+/// from cache instead of by measuring on the main thread, which is a difference
+/// only a measurement can see (§6 has it). Tried, so that nobody re-derives it:
+/// breaks that stay green here are `publish(_:at:)`'s width guard, its merge, the
+/// cancellation of a superseded batch, and the content comparison inside
+/// `RowCache.merge(remeasured:at:)`.
+///
+/// Two more joined that list when publishing became progressive, and they are the
+/// two that cost the most to get wrong. Widening a batch's invalidation from *its
+/// own rows* to the whole transcript stays green here and costs 2 466 ms in a
+/// single main-thread call on ten thousand rows; queueing every row into the task
+/// group at once instead of a core count at a time stays green here and stops the
+/// batching working at all. Both are in `publish(_:at:)` and `inFlightLimit`, with
+/// the measurements next to them, because a comment is the only place they can
+/// live.
 @MainActor
 final class ResizeRemeasureTests: XCTestCase {
 
@@ -199,6 +208,132 @@ final class ResizeRemeasureTests: XCTestCase {
         XCTAssertEqual(rects(subject.transcript), rects(control.transcript))
     }
 
+    // MARK: - Where it starts, and what it does to the viewport
+
+    /// The rows are re-measured outward from what the reader is looking at.
+    ///
+    /// Read off the order the data source was asked in, which is what the walk
+    /// does and the only trace it leaves: it asks each row who it is until it has
+    /// claimed every stale entry, so its calls are the last `rowCount` of them and
+    /// the order they arrive in is the order the rows will be corrected in.
+    ///
+    /// **Provoked through `maxContentWidth` rather than by resizing the window**,
+    /// and the reason is what a test can see rather than what is realistic: a
+    /// window resize lays the table out again before the pass returns, so the walk
+    /// stops being the last thing in `rowCalls`. Both reach
+    /// `contentWidthDidChange()` by the same line.
+    ///
+    /// **From the tail**, so that "starts at the viewport" and "starts at row 0"
+    /// are different answers — the walk then runs down to row 0 with one side
+    /// exhausted from the outset. `testTheWalkInterleavesBothSides` is the other
+    /// half, where both sides have rows.
+    func testTheWalkStartsAtTheViewportAndWorksOutward() {
+        let (subject, host) = mount(width: Self.wide)
+        XCTAssertFalse(host.rowCalls.isEmpty, "the subject never laid out")
+
+        subject.transcript.scrollToRow(at: Self.rowCount - 1, scrollPosition: .bottom)
+        subject.settle()
+        host.forgetRowCalls()
+
+        subject.transcript.maxContentWidth = Self.narrow
+        XCTAssertNotNil(subject.transcript.remeasuring, "no re-measure was started")
+
+        // Every row exactly once — a walk that dropped rows would leave them
+        // measured at the old width for good, which nothing downstream would
+        // object to: they would simply be re-measured on demand, one main-thread
+        // row at a time, for as long as the reader kept scrolling.
+        let walk = Array(host.rowCalls.suffix(Self.rowCount))
+        XCTAssertEqual(walk.sorted(), Array(0..<Self.rowCount), "the walk did not cover every row")
+
+        let first = walk[0]
+        XCTAssertGreaterThan(first, 0, "the walk started at the top, not at the viewport")
+        XCTAssertEqual(
+            walk, Array(first..<Self.rowCount) + Array((0..<first).reversed()),
+            "the walk did not run outward from the viewport")
+    }
+
+    /// With rows on both sides of the viewport, the walk alternates between them
+    /// rather than finishing one side first.
+    ///
+    /// Asserted as "it goes above the viewport before it reaches the last row",
+    /// which is the cheapest thing that a one-side-at-a-time walk cannot do. The
+    /// obvious assertion — that distance from the viewport never decreases — is
+    /// worse than useless here: it needs the viewport, and inferring that from the
+    /// walk itself makes a walk that ran to the end and came back look like a very
+    /// wide viewport followed by one side. Tried, and it passed against exactly the
+    /// bug it was written for.
+    func testTheWalkInterleavesBothSides() {
+        let (subject, host) = mount(width: Self.wide)
+        XCTAssertFalse(host.rowCalls.isEmpty, "the subject never laid out")
+
+        subject.transcript.scrollToRow(at: Self.rowCount / 2, scrollPosition: .center)
+        subject.settle()
+        host.forgetRowCalls()
+
+        subject.transcript.maxContentWidth = Self.narrow
+        XCTAssertNotNil(subject.transcript.remeasuring, "no re-measure was started")
+
+        let walk = Array(host.rowCalls.suffix(Self.rowCount))
+        XCTAssertEqual(walk.sorted(), Array(0..<Self.rowCount), "the walk did not cover every row")
+        // The rows on screen come first, so this is the topmost of them — and
+        // anything below it in the walk is a row above the viewport.
+        let firstVisible = walk[0]
+        XCTAssertGreaterThan(firstVisible, 0, "the walk started at the top, not at the viewport")
+        XCTAssertLessThan(
+            firstVisible, Self.rowCount - 1,
+            "the viewport reached the tail, so only one side has rows")
+
+        let goesAbove = walk.firstIndex { $0 < firstVisible }
+        let reachesTheEnd = walk.firstIndex(of: Self.rowCount - 1)
+        XCTAssertNotNil(goesAbove)
+        XCTAssertNotNil(reachesTheEnd)
+        XCTAssertLessThan(
+            goesAbove ?? .max, reachesTheEnd ?? .max,
+            "the walk finished one side before starting the other: \(walk)")
+    }
+
+    /// A correction landing on a later turn does not move what the reader is
+    /// looking at.
+    ///
+    /// The synchronous half of a width change cannot anchor — §2 says why — so the
+    /// content does settle somewhere new when the width moves. What must not happen
+    /// is that it settles *again* every time a batch of off-screen rows comes in,
+    /// which is what the reader would meet as the page stepping under them while
+    /// they read.
+    func testTheDeferredCorrectionsHoldTheViewportStill() async {
+        let (subject, host) = mount(width: Self.wide)
+        XCTAssertFalse(host.rowCalls.isEmpty, "the subject never laid out")
+
+        // Mid-transcript, so there are stale rows *above* the viewport — the ones
+        // whose heights move the content. At the tail there would be none.
+        subject.transcript.scrollToRow(at: Self.rowCount / 2, scrollPosition: .center)
+        subject.settle()
+
+        subject.setContentWidth(Self.narrow)
+        subject.settle()
+        let settled = viewport(of: subject)
+
+        await subject.settleWidthChange()
+
+        let corrected = viewport(of: subject)
+        XCTAssertEqual(corrected.row, settled.row, "the viewport landed on a different row")
+        XCTAssertEqual(
+            corrected.offsetIntoRow, settled.offsetIntoRow, accuracy: 0.5,
+            "the viewport moved within the row it was on")
+    }
+
+    /// Which row the viewport starts on, and how far into it — `sampledAnchor()`'s
+    /// question, asked from outside through the geometry AppKit publishes.
+    private func viewport(of transcript: MountedTranscript) -> (row: Int, offsetIntoRow: CGFloat) {
+        let visible = transcript.scrollView.documentVisibleRect
+        for row in 0..<transcript.transcript.numberOfRows {
+            let rect = transcript.transcript.rect(ofRow: row)
+            guard rect.maxY > visible.minY else { continue }
+            return (row, visible.minY - rect.minY)
+        }
+        return (transcript.transcript.numberOfRows - 1, 0)
+    }
+
     /// Rows removed while the batch is in flight take their answers with them, and
     /// what is left is still right.
     func testARemovalDuringTheWindowLandsCorrectly() async {
@@ -236,6 +371,10 @@ private final class ResizeHost: NSObject, TranscriptViewDataSource, TranscriptVi
     private var rows: [Row]
 
     private(set) var rowCalls: [Int] = []
+
+    /// Drops what has been recorded so far, so that a test can read one pass's
+    /// calls rather than every pass since it mounted.
+    func forgetRowCalls() { rowCalls = [] }
 
     /// The sources, as a test edits them — the identities underneath stay put,
     /// which is what a real host owes and what makes a rewrite a content change

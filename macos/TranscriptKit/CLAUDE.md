@@ -464,8 +464,8 @@ a long transcript is now solved:
 
   **Where that landed.** Mouse-up now costs **17–44 ms** on the same ten thousand
   rows: the rows on screen are re-measured inside the pass that changed the
-  width, and everything else is handed to the cooperative pool and published in
-  one go when it is all in. Three numbers make the shape of it clear:
+  width, and everything else is handed to the cooperative pool. Three numbers
+  make the shape of it clear:
 
   | | |
   |---|---|
@@ -479,17 +479,62 @@ a long transcript is now solved:
   answered at whatever the width is when it is finally asked about. The batch is
   the transcript's *history*, not its length.
 
-  The window that leaves — a tenth of a second or so during which a row scrolled
-  into gets its glyphs at the new width and its rectangle from the old one, since
-  `NSTableView` caches heights and its `heightOfRow` takes no width — is left
-  standing on purpose. Two mechanisms were designed for it and neither was built:
-  measuring a screen's margin synchronously on mouse-up, which pays main thread
-  to guess which rows the reader will want; and self-healing from `viewForRow` by
-  invalidating on the next tick, which is targeted but costs a frame at the wrong
-  height, and cannot be done inline — `noteHeightOfRows` from inside the table's
-  own layout re-enters it, and the recorded symptom was one pass measuring at two
-  different widths. At 50–170 ms neither earns itself. If the window ever grows,
-  the self-heal is the one to build.
+  **What the batch leaves is a window, and it grows with the history.** During it
+  a row scrolled into gets its glyphs at the new width and its rectangle from the
+  old one, since `NSTableView` caches heights and its `heightOfRow` takes no
+  width. At 300–1 100 rows that is 50–170 ms and beneath noticing. On a
+  transcript whose history really is the whole thing — a prepared cold load warms
+  every entry, so a width change invalidates all ten thousand — it is **eight
+  seconds**, and one batch at the end means eight seconds of it.
+
+  So the correction is **published as it is produced**, and the rows are ordered
+  **outward from the viewport**. Neither is an optimisation of the total; both
+  shorten the only window a reader can meet, which is the time to correct the
+  next screenful, and that does not grow with the transcript.
+
+  | ten thousand rows, every one of them measured | |
+  |---|---|
+  | the walk that puts them in viewport order | **12–34 ms**, one `rowAt` per row |
+  | first correction lands | **~190 ms** after the width change |
+  | batches, and main thread across all of them | **77**, totalling **0.41 s** |
+  | the largest single hop | **13 ms** |
+  | the whole run | **8.3 s** on the pool |
+
+  **Two ways to get this wrong, both measured, both invisible to every test.**
+
+  - *Invalidating the whole transcript per batch.* `noteHeightOfRows` is not a
+    note — the table re-asks inside the call, and with only the first seventy
+    rows corrected the other 9 930 missed the cache and were measured on the main
+    thread: **2 466 ms in one call**, worse than the freeze this replaced. Each
+    batch invalidates its own rows; one full invalidation at the end, when
+    everything is in the cache, costs **8–27 ms** and catches any row whose
+    number moved meanwhile.
+  - *Queueing every row into the task group at once.* `prepareRows` does exactly
+    that, on the reasoning that the pool runs only core-count many and the rest
+    are cheap task objects. That reasoning misses a group whose parent has to
+    interleave main-actor hops: the parent is itself a job on the pool, so ten
+    thousand runnable children starve it. Measured, it collected **78 results in
+    10.8 s** and the remaining 9 900 in the 90 ms after the last child finished —
+    the batching did nothing whatsoever. A sliding window of `activeProcessorCount`
+    fixes it, and tightens the ordering as a side effect.
+
+  **What paces the batches is the cost of applying one, not a clock.** A row
+  count is the wrong currency (a paragraph against a four-hundred-line fence); a
+  fixed slice is better and still wrong, because applying a batch is work
+  proportional to the transcript on a main thread whose speed depends on the rest
+  of the machine — one publish measured 5 ms quiet and 15 ms loaded. At a fixed
+  8 ms slice that was **609 publishes and 1.9 s** of main thread. Collecting for
+  twenty times what the last batch cost to apply pins the share at about 5%
+  wherever it runs; on a quiet machine that is the ~100 ms interval the table
+  above was taken at.
+
+  Left standing on purpose, still: a row that scrolls in *during* the window and
+  whose correction has not arrived. Self-healing from `viewForRow` is targeted
+  but costs a frame at the wrong height, and cannot be done inline —
+  `noteHeightOfRows` from inside the table's own layout re-enters it, and the
+  recorded symptom was one pass measuring at two different widths. Ordering
+  outward from the viewport is what made it not worth building; if the window
+  ever grows back, that is the one to build.
 
   Worth recording because it was nearly mis-attributed twice. Entries that
   crossed the actor boundary *without their recipe* made the **first** resize

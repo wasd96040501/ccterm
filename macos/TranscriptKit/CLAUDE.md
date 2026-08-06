@@ -445,20 +445,33 @@ a long transcript is now solved:
 - **`RowCache` never evicts.** Ten thousand measured rows is ten thousand typeset
   documents resident, `CTLine`s and all. Preparing them faster reaches that
   ceiling sooner rather than raising it.
-- **A resize re-measures the whole working set.** `viewDidEndLiveResize` hands
-  `noteHeightOfRows` every index; the table then re-asks about the few thousand
-  it cares about. Measured on ten thousand rows: **~1.8 s on mouse-up**, 4 450
-  queries at ~0.4 ms each. That is line-breaking from kept recipes — shaping is
-  already reused — so it is close to the floor for doing the work on the main
-  thread at all, and the only real answer is to do it somewhere else.
-  `prepareRows` gives a host no way to help, because the invalidation is the
-  transcript's own. It is the next thing to do here.
+- **A resize re-measures the whole working set, and that is nearly all of it.**
+  `viewDidEndLiveResize` hands `noteHeightOfRows` every index; the table then
+  re-asks about the few thousand it cares about. Measured on ten thousand rows of
+  real corpus, three successive mouse-up resizes: **1.7 / 2.0 / 1.9 s** before
+  `MarkdownMemo.remeasure(width:)` existed, **1.3 / 1.3 / 0.9 s** with it. The
+  gap widens across the three because the width-only path only helps a row that
+  has been measured before; a row reaching a width for the first time pays a full
+  build either way.
 
-  Worth recording because it was nearly mis-attributed: entries that crossed the
-  actor boundary *without their recipe* made the **first** resize after a cold
-  load cost 3.1 s instead of 1.8 s, and only the first — after which they had
-  rebuilt a recipe and behaved like any other row. Carrying the recipe (see
-  `RowCache.Body`) removes that 1.3 s, and removes none of the 1.8 s.
+  The number that says what to do next: replacing every height answer with a
+  constant — measuring nothing at all — brings the same resize to **11–18 ms**.
+  So `NSTableView`'s own tile, the visible-row rebind and everything else in the
+  mouse-up path together are about 1% of it, and **measuring is the other 99%**.
+  Moving that measurement off the main actor is therefore worth close to all of
+  the remaining second, which no amount of making it cheaper in place can match.
+  `prepareRows` gives a host no way to help, because the invalidation is the
+  transcript's own.
+
+  Worth recording because it was nearly mis-attributed twice. Entries that
+  crossed the actor boundary *without their recipe* made the **first** resize
+  after a cold load cost 3.1 s, and only the first — after which they had rebuilt
+  a recipe and behaved like any other row; carrying the recipe (see
+  `RowCache.Body`) removed that. And the parse a width change was running was
+  once treated as cheap on the strength of `MarkdownMemo`'s own cost ordering,
+  which is written about *streaming*: with shaping reused, parsing is not the
+  cheapest item left but the largest, 60% against line-breaking's 32% and 2% for
+  looking children up.
 
 ### Streaming is `reloadRows`, and the increment is derived here
 

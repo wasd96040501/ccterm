@@ -151,13 +151,35 @@ final class RowCache {
             return entry.measured
         }
 
+        // The one place that decides which of the memo's two entry points a row
+        // takes, and the whole decision is "can this prove the source did not
+        // move".
+        let previous = entries[row.id]
         var memo: MarkdownMemo
-        if case .markdown(let previous)? = entries[row.id]?.body {
-            memo = previous
+        let measured: MeasuredBlock
+
+        if case .markdown(let donor)? = previous?.body {
+            memo = donor
+            if previous?.content == row.content {
+                // Only the width can have moved — the early return above covers
+                // the case where neither did. Equal content cannot parse into
+                // different children, so reading the source again would be work
+                // with a provably known answer: 60% of what a width change used
+                // to cost, spent recovering an order the memo can simply keep.
+                measured = memo.remeasure(width: width)
+            } else {
+                // The streaming path. The source has to be read, and `MarkdownMemo`
+                // is what keeps that affordable — the donor above is the previous
+                // version, and only the blocks that actually changed are laid out.
+                measured = memo.measure(source, width: width)
+            }
         } else {
+            // Nothing to take from: a row nobody has measured, or one that was a
+            // bubble until now. There is no previous version to be unchanged from.
             memo = MarkdownMemo()
+            measured = memo.measure(source, width: width)
         }
-        let measured = memo.measure(source, width: width)
+
         entries[row.id] = Entry(
             content: row.content, body: .markdown(memo), measured: measured, measuredWidth: width)
         return measured

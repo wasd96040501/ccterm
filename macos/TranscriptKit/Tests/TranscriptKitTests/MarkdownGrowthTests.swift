@@ -168,6 +168,70 @@ final class MarkdownGrowthTests: XCTestCase {
         XCTAssertFalse(before?.line === after?.line)
     }
 
+    /// A resized row is the row it would have been if that width had been the
+    /// first one.
+    ///
+    /// The same claim as `testAGrownRowMatchesOneBuiltOutright`, one axis over,
+    /// and it is what earns the width-only path: reaching a width by resizing
+    /// skips the parse entirely, so it is a *second* way of laying a document out
+    /// and has to arrive at the first way's answer. What it could get wrong is
+    /// order — the memo stores its children in a dictionary, and the list that
+    /// says which comes first was, until this path existed, recovered by parsing.
+    ///
+    /// Asserted against the memo rather than through the transcript because the
+    /// transcript's content width is derived from its bounds and its clamps, so
+    /// "the same width" is not a number a test can state on both sides.
+    func testAResizedDocumentMatchesOneLaidOutAtThatWidth() {
+        var resized = MarkdownMemo()
+        _ = resized.measure(Self.opening, width: 700)
+        let viaResize = resized.remeasure(width: 320)
+
+        var outright = MarkdownMemo()
+        let viaSource = outright.measure(Self.opening, width: 320)
+
+        // The premise: 700 and 320 really do lay this document out differently,
+        // or every assertion below would hold against a path that ignored width.
+        var unchanged = MarkdownMemo()
+        XCTAssertNotEqual(unchanged.measure(Self.opening, width: 700).size, viaSource.size)
+
+        XCTAssertEqual(viaResize.size, viaSource.size)
+        XCTAssertEqual(viaResize.length, viaSource.length)
+        XCTAssertEqual(
+            viaResize.text(from: 0, to: viaResize.length),
+            viaSource.text(from: 0, to: viaSource.length))
+    }
+
+    /// A row that is resized and *then* grows still re-reads its source.
+    ///
+    /// The direction the width-only path can be broken in, and the only one that
+    /// is a wrong render rather than wasted work: whether the source moved is what
+    /// picks between the two entry points, and a row that answered "it did not"
+    /// wrongly would serve the previous version of itself, laid out at the current
+    /// width — internally consistent, and therefore never corrected.
+    ///
+    /// Interleaved on purpose. Growing twice, or resizing twice, exercises one
+    /// path each; the bug lives at the join.
+    func testAWidthChangeBetweenGrowthsDoesNotServeAStaleParse() {
+        let tail = "\n\nAnd a paragraph that arrived after the resize."
+        mount([Self.opening, Self.opening + tail], width: 700)
+        XCTAssertGreaterThan(mounted.transcript.rect(ofRow: 0).height, 0)
+
+        // A width change first, so row 0's memo is one the width-only path wrote.
+        mounted.setContentWidth(320)
+        mounted.settle()
+
+        grow(0, by: tail)
+
+        // Row 1 has held the grown source all along, at the same width.
+        XCTAssertEqual(
+            mounted.transcript.rect(ofRow: 0).height, mounted.transcript.rect(ofRow: 1).height,
+            "the resized row served its pre-growth document")
+        let grown = blockView(ofRow: 0)?.block
+        XCTAssertEqual(grown?.length, blockView(ofRow: 1)?.block?.length)
+        XCTAssertEqual(
+            grown?.text(from: 0, to: grown?.length ?? 0).hasSuffix("after the resize."), true)
+    }
+
     // MARK: - Selection
 
     /// A reader selecting text in a row that is still streaming keeps it. The

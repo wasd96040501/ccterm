@@ -430,9 +430,94 @@ Strings live in `Localizable.xcstrings`. Source language is English; `zh-Hans` i
 
   If a one-off artifact does land in the worktree, `rm -rf` it before staging — never let `git add -A` decide. As a safety net, `/tmp` style scratch dirs (e.g. `xcresult/`, `tmp_*/`) belong in `.gitignore`.
 - **Waiting for a PR**: run `scripts/wait-for-pr.sh <pr#>` with `run_in_background: true`. It blocks until a terminal state (`READY` / `CHECKS_FAILED` / `CONFLICT` / `REVIEW_CHANGES_REQUESTED` / `MERGED` / `CLOSED` / `TIMEOUT` / `NO_CHECKS`) and prints a one-line summary + JSON. Never foreground-poll `gh pr checks` / `gh pr view` in a sleep loop.
-- **Syncing a branch with `main`**: always use `git merge origin/main` (or `gh pr update-branch`). **Never `git rebase`** — rebase rewrites the PR branch's history, which breaks the GitHub review thread, invalidates existing review comments' line anchors, and forces every collaborator to reset their local branch. Conflict resolution happens on a merge commit instead. The squash-merge at the end collapses these merge commits anyway, so the `main` branch's history stays linear.
 - **Squash-merging a PR**: always pass an explicit message (`gh pr merge <#> --squash --subject "…" --body "$(cat <<'EOF' … EOF)"`). The default GitHub message is the PR title + a list of every individual commit on the branch — noisy and unhelpful in `git log`. Write a clean single-purpose subject + body that mirror the PR description.
 - **Killing the app**: only kill Debug builds of `ccterm`. Never kill a Release build — that is the user's daily-driver instance and may hold unsaved session state. Before any `kill` / `pkill` / `killall ccterm`, confirm the target PID belongs to a Debug build (e.g. `ps -o command= -p <pid>` shows a path under `macos/build/` / `DerivedData/`, not `/Applications/`). If you cannot prove it is Debug, do not kill it — ask the user.
+
+## PR workflow — branch first, PR last, local CI in between
+
+### Start from `origin/main`, on a branch that says what it is
+
+A worktree arrives on whatever branch created it, and that name is a session id
+(`worktree-splendid-yawning-plum`) rather than a statement about the work. Before
+the first edit:
+
+```bash
+git fetch origin
+git checkout -b <semantic-name> origin/main    # e.g. transcript-cross-row-selection
+```
+
+Branching from `origin/main` means the diff is against what is actually merged;
+and a name that describes the change is what the reviewer reads first, before the
+title and long before the diff.
+
+**Commit as you go.** The bar is *one complete semantic change* — a fix and the
+test that proves it, a refactor that leaves the suite green — not "the PR is
+finished". The squash merge collapses them anyway, so granularity costs nothing
+and buys a `git diff HEAD~1` that still means something an hour later.
+
+### History is append-only
+
+Three rules, on **every** branch, not only on `main`:
+
+- **Integrate with `git merge`, never `git rebase`.** A branch that has fallen
+  behind catches up with `git merge origin/main` (or `gh pr update-branch`).
+  Rebasing replays every commit onto a tree it was never written against, so an
+  eleven-commit branch pays eleven conflict resolutions for one divergence, each
+  replayed commit is a commit nobody ever tested, and on a PR it breaks the review
+  thread and the line anchors of existing comments.
+- **Never collapse a branch's commits into one.** Not with `reset --soft`, not
+  with `rebase -i`. The squash merge at the end already produces one commit on
+  `main`; squashing beforehand destroys the branch's own history for nothing.
+- **Never `git push --force`, on any branch.** A force-push discards commits
+  another session, another machine, or a reviewer may already hold. If a push
+  is rejected, `git merge origin/<branch>` and push again.
+
+### Open the PR when the change is ready to merge
+
+**Pushing a branch is free** — `test.yml` and `fmt.yml` run on `push` only for
+`main`, so a branch with no PR fires no workflow at all. Push as often as you
+like; it is off-machine backup at no cost.
+
+**Opening the PR is what arms CI, and it stays armed.** From that moment every
+push is a `pull_request: synchronize` event and buys another full run — the app
+build and test job alone is budgeted 25 minutes on a macOS runner. A PR opened
+when the work starts and pushed to six times costs six runs, of which the first
+five reviewed a tree nobody was reading yet.
+
+This is **not** an argument for one big commit — how often you commit and push
+is a separate decision from when the PR exists, and only the second is metered.
+It is also **not** a reason to reach for a draft PR: the workflows carry no
+`draft` guard, so a draft bills exactly like any other PR.
+
+### The gates
+
+CI runs three on every PR — `make fmt-check`, `make test-unit`, `make test-kit`
+— and **all three must pass locally before you open the PR.** No "let CI tell
+me": opening a known-red PR wastes CI minutes, pollutes history with style-fix
+commits, and forces the reviewer to wait for a second cycle. `make fmt` is the
+auto-fix counterpart of `make fmt-check`.
+
+A test failure is a real bug — never silence one with a skip to make CI green.
+Re-run every gate after every fix, not just the one that failed: `make fmt` can
+touch files the tests build.
+
+**A red check that ran no steps is a billing failure, not a code failure.** When
+the account's payments lapse every job goes red within seconds having executed
+nothing, and the annotation says so — `gh run view <id>` puts it under
+ANNOTATIONS. Read the annotation, not the colour. A job that **ran** and failed
+is a real failure: read the log, fix it, and never merge past it.
+
+If CI is red on a pushed PR despite local-green, don't push speculative
+"maybe-this-fixes-it" commits — pull the failing log (`gh run download <run>
+--dir /tmp/<name>`), reproduce locally, push the verified fix.
+
+### Squash-merge divergence: never reuse a branch name
+
+Squash-merging rewrites history, so the local branch and `origin/main` diverge
+immediately and `git push` on the old name is rejected. After a merge the branch
+is spent: `git fetch origin`, `git checkout -B <fresh-name> origin/main`, delete
+the old one locally and on the remote. Never `git pull` to "fix" the divergence —
+that merges the pre-squash commits back in and the PR diff becomes unreadable.
 
 ## Engineering principles
 

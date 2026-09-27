@@ -59,6 +59,33 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertIdentical(mounted.area.activeViewController, mounted.probes[0])
     }
 
+    /// The selection slides to a pressed tab, as the control's own press slides
+    /// it — the bar takes the mouse over, so it has to ask for that. Setting
+    /// `selectedSegment` plainly lands it in one frame; measured against the
+    /// control's accessibility press, which moves through two dozen.
+    func testPressingATabSlidesTheSelectionThere() throws {
+        guard #available(macOS 27.0, *) else { throw XCTSkip("the tab role is macOS 27's") }
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            throw XCTSkip("Reduce Motion is on: the selection moves without sliding, by design")
+        }
+        let mounted = mount(tabs: 3)
+        defer { mounted.window.close() }
+        let bar = mounted.area.activeGroup.tabBar
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.5))
+
+        bar.mouseDown(with: mouse(.leftMouseDown, at: center(of: bar, tab: 0), in: bar))
+        bar.mouseUp(with: mouse(.leftMouseUp, at: center(of: bar, tab: 0), in: bar))
+        var states: [[NSRect]] = []
+        for _ in 0..<30 {
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0 / 60))
+            let geometry = layerFrames(of: try XCTUnwrap(bar.layer))
+            if states.last != geometry { states.append(geometry) }
+        }
+
+        XCTAssertEqual(bar.selectedSegment, 0, "premise: the press selected the tab")
+        XCTAssertGreaterThan(states.count, 5, "the selection jumped instead of sliding")
+    }
+
     func testTheTabsFillTheBarWithoutGapsOrOverlaps() throws {
         let mounted = mount(tabs: 3)
         defer { mounted.window.close() }
@@ -502,6 +529,12 @@ final class EditorAreaTests: XCTestCase {
         window.contentView?.layoutSubtreeIfNeeded()
         window.displayIfNeeded()
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0))
+    }
+
+    /// Where every layer under `layer` is on screen right now: the presentation
+    /// frame, whatever is moving it.
+    private func layerFrames(of layer: CALayer) -> [NSRect] {
+        [(layer.presentation() ?? layer).frame] + (layer.sublayers ?? []).flatMap { layerFrames(of: $0) }
     }
 
     private func center(of bar: EditorTabBar, tab: Int) -> NSPoint {

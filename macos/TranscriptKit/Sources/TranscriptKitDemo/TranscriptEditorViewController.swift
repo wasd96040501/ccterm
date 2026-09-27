@@ -100,12 +100,16 @@ final class TranscriptEditorViewController: NSViewController {
     }
 
     /// The find bar over the transcript. A stack so that hiding the bar gives its
-    /// height back: a stack view detaches a hidden arranged view.
+    /// height back: a stack view detaches a hidden arranged view — and, inside an
+    /// animation group, slides it in and out at its full height while the
+    /// transcript follows, which is how Xcode's find bar comes and goes.
+    /// Clipped, so the bar slides from under the edge above rather than over it.
     private lazy var stack: NSStackView = {
         let stack = NSStackView(views: [findBar, transcript])
         stack.orientation = .vertical
         stack.spacing = 0
         stack.alignment = .width
+        stack.clipsToBounds = true
         return stack
     }()
 
@@ -161,7 +165,7 @@ final class TranscriptEditorViewController: NSViewController {
         switch action {
         case .showFindInterface:
             let wasHidden = findBar.isHidden
-            findBar.isHidden = false
+            setFindBarHidden(false)
             findBar.beginEditing()
             // Hiding ended the find; the query stayed, as it does in Xcode.
             if wasHidden, !findBar.searchString.isEmpty { searchStringDidChange() }
@@ -169,7 +173,7 @@ final class TranscriptEditorViewController: NSViewController {
             guard !findBar.searchString.isEmpty else { return }
             if findBar.isHidden {
                 // ⌘G with the bar closed brings the find back where it was.
-                findBar.isHidden = false
+                setFindBarHidden(false)
                 searchStringDidChange()
             } else if action == .nextMatch {
                 transcript.findNext()
@@ -177,11 +181,26 @@ final class TranscriptEditorViewController: NSViewController {
                 transcript.findPrevious()
             }
         case .hideFindInterface:
-            findBar.isHidden = true
+            setFindBarHidden(true)
             transcript.endFind()
             view.window?.makeFirstResponder(nil)
         default:
             break
+        }
+    }
+
+    /// Slides the bar in or out — the stack's own animation — or, with Reduce
+    /// Motion on or no window to animate in, just shows or hides it.
+    private func setFindBarHidden(_ hidden: Bool) {
+        guard findBar.isHidden != hidden else { return }
+        guard view.window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            findBar.isHidden = hidden
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.allowsImplicitAnimation = true
+            findBar.isHidden = hidden
+            stack.layoutSubtreeIfNeeded()
         }
     }
 

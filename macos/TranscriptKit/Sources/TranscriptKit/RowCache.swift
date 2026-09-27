@@ -82,12 +82,40 @@ import AppKit
 /// ten-thousand-row prepared load took the worst batch from 10.0 ms to 1.5 ms and
 /// made it flat rather than growing.
 ///
-/// That is bounded growth, not eviction. **Nothing here evicts a live row**, so a
-/// transcript that is fully read is a transcript fully typeset in memory. That
-/// was true of the array too and is recorded in §6.
+/// ## Heights for every row, trees for a few
+///
+/// An entry is two things of very different sizes: the row's **height**, a
+/// number, and its **tree** — the recipe and the typeset lines it was measured
+/// from. Measured on the demo's corpus, a tree is about **470 KB** of Core Text
+/// (`CTRun`s, glyph advances, `CTLine`s, the typesetter behind them), roughly 87
+/// bytes per character of source. This cache used to keep the tree of every row
+/// it had ever measured, so a ten-thousand-row prepared load held all ten
+/// thousand: **4.6 GB**, freed only when the transcript went.
+///
+/// The table needs a height for every row; it needs a tree only for the rows it
+/// is drawing. So every entry keeps its height for as long as its row lives, and
+/// the trees are held **up to `residentBudget`**, least recently drawn first to
+/// go. A row whose tree went is typeset again the next time something asks to
+/// draw it — one row's cost, on a row scrolling into view, which is what
+/// `NSTableView` pays for every row it shows anyway.
+///
+/// What an evicted row gives up is the recipe, and with it three things that were
+/// free while it was resident: a width change rebuilds it from its source rather
+/// than re-breaking its lines (off the main actor — see
+/// `Entry.remeasured(at:)`), a stream into it starts with no donor, and a find
+/// builds it on the pool and drops it again. Each is bounded by the rows that
+/// have been evicted, none of them runs on the main thread, and together they are
+/// the price of the transcript's memory being a constant rather than its length.
+///
+/// **What is "recently drawn"** is the tree being asked for by `measured(for:width:)`
+/// — the view, the rebind, a find scrolling to a hit. A height question does not
+/// count, and neither does a prepared batch landing: both are about rows nobody
+/// is looking at, so what they build is filed as the first thing to evict rather
+/// than pushing out the rows on screen.
 final class RowCache {
 
-    /// One row's answer, and everything needed to produce the next one cheaply.
+    /// One row's answer, and — while it is resident — everything needed to produce
+    /// the next one cheaply.
     ///
     /// `Sendable`, because this is also what a background task produces: measuring
     /// off the main actor and measuring on it end at the same value, so there is
@@ -99,34 +127,71 @@ final class RowCache {
         /// content rather than its text, for the reason above.
         var content: TranscriptRowContent
 
-        /// How it rebuilds when that content moves.
-        var body: Body
-
-        var measured: MeasuredBlock
         var measuredWidth: CGFloat
+
+        /// The height `tree` measured to at `measuredWidth` — kept when the tree is
+        /// not, which is what lets the table be answered about every row while only
+        /// a few of them are typeset.
+        var height: CGFloat
+
+        /// The recipe and the typeset lines, or `nil` once evicted.
+        var tree: Tree?
+
+        /// A tree: how the row rebuilds when its content moves, and what it drew.
+        struct Tree: Sendable {
+            var body: Body
+            var measured: MeasuredBlock
+        }
+
+        init(content: TranscriptRowContent, body: Body, measured: MeasuredBlock, measuredWidth: CGFloat) {
+            self.content = content
+            self.measuredWidth = measuredWidth
+            self.height = measured.size.height
+            self.tree = Tree(body: body, measured: measured)
+        }
+
+        var body: Body? { tree?.body }
+        var measured: MeasuredBlock? { tree?.measured }
+
+        /// This entry with only its height left.
+        var evicted: Entry {
+            var entry = self
+            entry.tree = nil
+            return entry
+        }
 
         /// This entry laid out at a different width, from what it already holds.
         ///
-        /// **No source, and therefore no parse and no shaping** — the recipe is
-        /// the whole input. That is what makes this the thing a background task
-        /// can be handed: `MeasuredBlock`, `Block` and `MarkdownMemo` are all
-        /// `Sendable`, and none of this touches main-thread state.
+        /// **While resident: no source, and therefore no parse and no shaping** —
+        /// the recipe is the whole input. That is what makes this the thing a
+        /// background task can be handed: `MeasuredBlock`, `Block` and
+        /// `MarkdownMemo` are all `Sendable`, and none of this touches main-thread
+        /// state.
+        ///
+        /// **Evicted, it is rebuilt from the content** — parse and shape as well —
+        /// and comes back evicted again, so correcting a height does not quietly
+        /// make every row resident. Both happen here, on whatever thread calls
+        /// this, which is the pool: the tree is released where it was built.
         ///
         /// The content is carried through untouched. It is not an input to the
         /// work — it is what the answer will be checked against when it lands, by
         /// whoever files it.
         func remeasured(at width: CGFloat) -> Entry {
-            switch body {
-            case .markdown(var memo):
+            switch tree?.body {
+            case .markdown(var memo)?:
                 let measured = memo.remeasure(width: width)
                 return Entry(
                     content: content, body: .markdown(memo), measured: measured,
                     measuredWidth: width)
 
-            case .block(let block):
+            case .block(let block)?:
                 return Entry(
                     content: content, body: .block(block), measured: block.measure(width),
                     measuredWidth: width)
+
+            case nil:
+                guard let rebuilt = content.entry(width: width, reusing: nil) else { return self }
+                return rebuilt.evicted
             }
         }
     }
@@ -151,12 +216,81 @@ final class RowCache {
     /// that is the difference between a resize and a freeze. Nine
     /// `@unchecked Sendable` annotations retired it, in nine files that each
     /// already carried the identical annotation one type below.
+    ///
+    /// An evicted entry (`Entry.tree == nil`) is that hole again, on purpose and
+    /// with the difference that made the first one a freeze removed: its rebuild
+    /// runs on the pool (`Entry.remeasured(at:)`), and only for the rows that did
+    /// not fit in `residentBudget` rather than for every row that arrived prepared.
     enum Body: Sendable {
         case markdown(MarkdownMemo)
         case block(Block)
     }
 
     private var entries: [TranscriptRow.ID: Entry] = [:]
+
+    // MARK: - What stays resident
+
+    /// How much source text the resident trees may cover, in UTF-8 bytes.
+    ///
+    /// A budget in source rather than in bytes of tree, because the source is
+    /// what is in hand before anything is built — `prepareRows(_:)` decides which
+    /// trees to keep before measuring — and the two are close to proportional:
+    /// about 87 bytes of tree per character, measured on the demo's corpus, so
+    /// this is in the order of 45 MB. A screenful of prose is a few thousand
+    /// characters, so this is tens of screens of scrollback kept typeset.
+    static let residentBudget = 512 * 1024
+
+    /// What a row costs beyond its characters — the stack, the typesetter, the
+    /// line array — so that a thousand one-word rows are not counted as free.
+    static let rowOverhead = 512
+
+    /// When each resident tree was last asked to be drawn; the eviction order.
+    /// `0` is "never": a tree built only to answer a height, or landed from a
+    /// prepared batch.
+    private var lastDrawn: [TranscriptRow.ID: UInt64] = [:]
+    private var clock: UInt64 = 0
+    private var residentCost = 0
+
+    static func cost(of content: TranscriptRowContent) -> Int {
+        (content.source?.utf8.count ?? 0) + rowOverhead
+    }
+
+    /// Files `entry` under `id`, keeping the resident accounting in step.
+    private func store(_ entry: Entry, for id: TranscriptRow.ID, drawnAt stamp: UInt64?) {
+        if let previous = entries[id], previous.tree != nil {
+            residentCost -= Self.cost(of: previous.content)
+        }
+        entries[id] = entry
+        if entry.tree != nil {
+            residentCost += Self.cost(of: entry.content)
+            lastDrawn[id] = stamp ?? lastDrawn[id] ?? 0
+        } else {
+            lastDrawn[id] = nil
+        }
+    }
+
+    /// Drops trees, least recently drawn first, until what is left fits — or down
+    /// to three quarters of the budget, so that a row built at the edge does not
+    /// evict one row per call.
+    ///
+    /// **Released off the main thread.** Tearing down a few hundred typeset rows is
+    /// tens of thousands of Core Text objects, and doing that inside the insert that
+    /// pushed the budget over would put back the main-thread cost `prepareRows`
+    /// exists to remove. They are immutable and were built on the pool to begin
+    /// with, so ending there is sound.
+    private func evictIfNeeded(sparing spared: TranscriptRow.ID? = nil) {
+        guard residentCost > Self.residentBudget else { return }
+        let target = Self.residentBudget * 3 / 4
+        var released: [Entry.Tree] = []
+        for (id, _) in lastDrawn.sorted(by: { $0.value < $1.value }) {
+            guard residentCost > target else { break }
+            guard id != spared, let entry = entries[id], let tree = entry.tree else { continue }
+            released.append(tree)
+            store(entry.evicted, for: id, drawnAt: nil)
+        }
+        guard !released.isEmpty else { return }
+        Task.detached(priority: .utility) { withExtendedLifetime(released) {} }
+    }
 
     /// `row`, laid out at `width` — handed back untouched when neither the content
     /// nor the width has moved, which is the usual case: `NSTableView` asks for a
@@ -175,14 +309,42 @@ final class RowCache {
     /// it can take what it likes.* Deciding whether the previous entry is any use
     /// is the rebuild's business — it compares content itself, and the worst a
     /// useless donor costs is a rebuild.
+    ///
+    /// **This is the question that marks a tree as drawn**, and so the one that
+    /// decides what eviction keeps. An evicted row is rebuilt here from its
+    /// content, with no donor — one row's cost, on a row something is about to draw.
     func measured(for row: TranscriptRow, width: CGFloat) -> MeasuredBlock? {
+        clock += 1
         let previous = entries[row.id]
-        if let previous, previous.content == row.content, previous.measuredWidth == width {
-            return previous.measured
+        if let previous, previous.content == row.content, previous.measuredWidth == width,
+            let measured = previous.measured
+        {
+            lastDrawn[row.id] = clock
+            return measured
         }
         guard let entry = row.content.entry(width: width, reusing: previous) else { return nil }
-        entries[row.id] = entry
+        store(entry, for: row.id, drawnAt: clock)
+        evictIfNeeded(sparing: row.id)
         return entry.measured
+    }
+
+    /// How tall `row` is at `width`, answered from the height an entry keeps when
+    /// its tree is gone — so asking about every row in the transcript, which
+    /// `NSTableView` does on a reload, builds only the rows nothing has measured.
+    ///
+    /// What it does build is filed as never drawn: a height is asked of rows far
+    /// from the viewport, and the tree it took to answer is the first to go. A row
+    /// that was resident keeps its place in the order — a streaming row re-measured
+    /// here is one the reader is looking at.
+    func height(for row: TranscriptRow, width: CGFloat) -> CGFloat? {
+        let previous = entries[row.id]
+        if let previous, previous.content == row.content, previous.measuredWidth == width {
+            return previous.height
+        }
+        guard let entry = row.content.entry(width: width, reusing: previous) else { return nil }
+        store(entry, for: row.id, drawnAt: nil)
+        evictIfNeeded(sparing: row.id)
+        return entry.height
     }
 
     /// Files entries someone else produced — off the main actor, by
@@ -202,8 +364,17 @@ final class RowCache {
     /// re-measure, which is the same cost as no batch at all. The positional
     /// version of this method took an index and had to re-ask the data source what
     /// lived there before it dared write.
+    ///
+    /// Filed as never drawn: a prepared batch is history arriving above the
+    /// reader, and letting it push out the rows on screen would be exactly
+    /// backwards. Most of a large batch arrives evicted already —
+    /// `TranscriptView.prepareRows(_:)` keeps a tree only for as many rows as the
+    /// budget holds, and releases the rest on the pool.
     func merge(_ prepared: [TranscriptRow.ID: Entry]) {
-        entries.merge(prepared) { _, new in new }
+        for (id, entry) in prepared {
+            store(entry, for: id, drawnAt: nil)
+        }
+        evictIfNeeded()
     }
 
     // MARK: - Re-measuring elsewhere
@@ -254,8 +425,9 @@ final class RowCache {
             guard let current = entries[item.id], current.content == item.entry.content,
                 current.measuredWidth != width
             else { continue }
-            entries[item.id] = item.entry
+            store(item.entry, for: item.id, drawnAt: nil)
         }
+        evictIfNeeded()
     }
 
     /// The text `id`'s row was last built from, or `nil` for a row nothing has
@@ -290,7 +462,9 @@ final class RowCache {
     /// `nil` for a row nothing has measured, and that stays the caller's problem
     /// rather than being solved here by measuring one: the caller is walking every
     /// row in the transcript, and a parse per miss on the main thread is the freeze
-    /// `prepareRows(_:)` exists to have removed.
+    /// `prepareRows(_:)` exists to have removed. An evicted row answers `nil` the
+    /// same way, and a find reading it does not count as drawing it — a walk over
+    /// the whole transcript must not reorder what stays resident.
     func cachedMeasured(for row: TranscriptRow, width: CGFloat?) -> MeasuredBlock? {
         guard let entry = entries[row.id], entry.content == row.content,
             width.map({ $0 == entry.measuredWidth }) ?? true
@@ -313,9 +487,15 @@ final class RowCache {
     /// about.
     func keep(_ live: Set<TranscriptRow.ID>) {
         entries = entries.filter { live.contains($0.key) }
+        lastDrawn = lastDrawn.filter { live.contains($0.key) }
+        residentCost = lastDrawn.keys.reduce(0) { total, id in
+            total + (entries[id].map { Self.cost(of: $0.content) } ?? 0)
+        }
     }
 
     func removeAll() {
         entries.removeAll(keepingCapacity: true)
+        lastDrawn.removeAll(keepingCapacity: true)
+        residentCost = 0
     }
 }

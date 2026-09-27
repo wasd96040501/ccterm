@@ -282,8 +282,8 @@ them:
 Captures are `*SnapshotTests`, written to `/tmp/transcriptkit-screenshots/`, and
 skipped by `make test-kit` unless named — `make test-kit FILTER=<Class>`. They
 assert premises, not pixels: they are for reading, like the demo, but without a
-window taking over the screen. `FindPresentationSnapshotTests` and
-`EditorAreaSnapshotTests` are the two. A pixel *assertion* is not a snapshot — it
+window taking over the screen. `FindPresentationSnapshotTests`,
+`EditorAreaSnapshotTests` and `CodeBlockSnapshotTests` are the three. A pixel *assertion* is not a snapshot — it
 runs in the default suite like any other test, and reads `WindowCapture.bitmap`.
 
 ### What the suite can't check: `make demo-kit`
@@ -618,9 +618,17 @@ Three things are worth knowing before reaching for it:
 Two adjacent costs this does **not** address, both worth knowing before assuming
 a long transcript is now solved:
 
-- **`RowCache` never evicts.** Ten thousand measured rows is ten thousand typeset
-  documents resident, `CTLine`s and all. Preparing them faster reaches that
-  ceiling sooner rather than raising it.
+- **`RowCache` keeps every height and only a budget of trees.** It used to keep
+  every tree too, and a tree is ~470 KB of Core Text on the demo's corpus — ten
+  thousand prepared rows came to **4.6 GB**. Now each row keeps its height for as
+  long as it lives, the typeset trees are held up to `RowCache.residentBudget`
+  (512 KB of source, ~45 MB) least recently drawn first to go, and
+  `prepareRows` keeps a tree only for the tail of a batch that fits the budget:
+  the same load is **~130 MB**, most of which is the host's own strings. An
+  evicted row is typeset again when something draws it, rebuilt from source on
+  the pool when the width changes, and built and dropped by a find — none of
+  that on the main thread. See `RowCache`'s "Heights for every row, trees for a
+  few".
 - **A resize re-measures the whole working set, and that is nearly all of it.**
   `viewDidEndLiveResize` hands `noteHeightOfRows` every index; the table then
   re-asks about the few thousand it cares about. Measured on ten thousand rows of
@@ -783,8 +791,9 @@ This is why the package has no paging protocol and no visible-range observation.
 That apparatus exists to serve a sliding window
 over an unbounded history — Telegram's `ChatHistoryLocation` is the reference
 design, and it earns its complexity on chats with hundreds of thousands of
-messages. A transcript is a bounded document that ends up fully resident, so
-the same apparatus buys nothing here. Should a genuinely unbounded source turn
+messages. A transcript is a bounded document whose rows' heights end up fully
+resident — the trees behind them are what `RowCache` bounds (§6) — so the same
+apparatus buys nothing here. Should a genuinely unbounded source turn
 up, adding visible-range observation back is pure addition — don't add it
 before then (§3).
 
@@ -900,9 +909,9 @@ beneath noticing, the direction is to walk from the viewport and wrap — and to
 accept that the current hit's ordinal then shifts as the part above it fills in.
 
 **A tree built to search is used and dropped.** Filing it in `RowCache` looks like
-thrift and is a change of behaviour: the cache never evicts (§6), so one ⌘F over a
-transcript nobody has read would leave every row in it typeset and resident. A
-search should not quietly spend the memory of having read the whole thing. What
+thrift and is a change of behaviour: the cache holds only a budget of trees (§6),
+so one ⌘F over a transcript nobody has read would push every row through it and
+evict the rows on screen to make room for rows nobody is looking at. What
 outlives the tree is the range, and the one row a reader jumps to is re-measured on
 arrival.
 

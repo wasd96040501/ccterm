@@ -246,8 +246,8 @@ final class PreparedRowsTests: XCTestCase {
         // cases, or this test would pass against a cache that checked nothing.
         for source in [Self.userTurn, Self.sources[1]] {
             XCTAssertNotEqual(
-                TranscriptRowContent.markdown(source).entry(width: 600, reusing: nil)?.measured.size.height,
-                TranscriptRowContent.userMessage(source).entry(width: 600, reusing: nil)?.measured.size.height,
+                TranscriptRowContent.markdown(source).entry(width: 600, reusing: nil)?.height,
+                TranscriptRowContent.userMessage(source).entry(width: 600, reusing: nil)?.height,
                 "this source measures the same either way, so it cannot detect a wrong case")
         }
 
@@ -524,7 +524,7 @@ final class PreparedRowsTests: XCTestCase {
         // Measured at 600 …
         let prepared = await subject.transcript.prepareRows(batch.map(\.described))
         let heightsAt600 = batch.compactMap {
-            TranscriptRowContent.markdown($0.source).entry(width: 600, reusing: nil)?.measured.size.height
+            TranscriptRowContent.markdown($0.source).entry(width: 600, reusing: nil)?.height
         }
         // … and inserted at 420.
         subject.setContentWidth(420)
@@ -539,7 +539,7 @@ final class PreparedRowsTests: XCTestCase {
         subject.settle()
 
         let heightsAt420 = batch.compactMap {
-            TranscriptRowContent.markdown($0.source).entry(width: 420, reusing: nil)?.measured.size.height
+            TranscriptRowContent.markdown($0.source).entry(width: 420, reusing: nil)?.height
         }
         XCTAssertEqual(heightsAt600.count, batch.count)
         for (index, pair) in zip(heightsAt600, heightsAt420).enumerated() {

@@ -1,9 +1,9 @@
-.PHONY: build release install dmg clean fmt fmt-check test-unit js-bundles logs icon appkit-doc help
+.PHONY: build release install dmg clean fmt fmt-check test-unit test-kit demo-kit js-bundles logs icon appkit-doc help
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
 SWIFT_FORMAT := swift-format
-SWIFT_SRC := macos/ccterm macos/cctermTests macos/AgentSDK/Sources
+SWIFT_SRC := macos/ccterm macos/cctermTests macos/AgentSDK/Sources macos/TranscriptKit/Sources macos/TranscriptKit/Tests
 PREFIX ?= /Applications
 
 # JSCore bundles — compiled from js/ on demand. Outputs are gitignored; the
@@ -32,6 +32,35 @@ install: release ## Install Release build to $(PREFIX) (default: /Applications)
 
 test-unit: js-bundles ## Run unit tests (cctermTests) — fast, parallel-safe
 	./macos/scripts/test-unit.sh "$(FILTER)"
+
+# TranscriptKit is a standalone package, so its tests run under `swift test`
+# rather than through the app's Xcode test target. Separate entry point on
+# purpose: the package must stay testable without the app.
+#
+# `*SnapshotTests` are skipped unless named: they write window-server captures
+# for someone to look at, and assert nothing a merge should wait on — the same
+# split the app's `test-unit` makes.
+test-kit: ## Run TranscriptKit's package tests (FILTER=SomeTests; snapshots only when named)
+	@cd macos/TranscriptKit && \
+		if [ -n "$(FILTER)" ]; then swift test --filter "$(FILTER)"; \
+		else swift test --skip SnapshotTests; fi
+
+# The package's demo app — a real window over real markdown documents. Rendering
+# has no other check: a probe can assert a row's height, not whether the
+# document in it looks like a document. Runs in the foreground; Ctrl-C or close
+# the window to stop it.
+#
+# The `-isysroot` is what makes it look like a current Mac app. AppKit picks its
+# appearance by the SDK a binary records having been linked against, and
+# SwiftPM's link records the deployment target (12.0) there instead: it calls
+# the toolchain's `swiftc` directly, with no `SDKROOT`, and hands clang the SDK
+# as `--sysroot` — which clang does not read the SDK's version from. `-isysroot`
+# it does. Measured with `vtool -show-build`: sdk 12.0 without, the installed SDK's version with.
+demo-kit: ## Run TranscriptKit's demo app
+	@cd macos/TranscriptKit && swift run \
+		-Xswiftc -Xclang-linker -Xswiftc -isysroot \
+		-Xswiftc -Xclang-linker -Xswiftc "$$(xcrun --sdk macosx --show-sdk-path)" \
+		TranscriptKitDemo
 
 logs: ## Stream unified logs for THIS worktree's build product only (CONFIG=debug|release CATEGORY=Foo LEVEL=info|debug)
 	@CONFIG="$(CONFIG)" CATEGORY="$(CATEGORY)" LEVEL="$(LEVEL)" ./macos/scripts/logs.sh

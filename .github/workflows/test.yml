@@ -100,3 +100,31 @@ jobs:
           path: /tmp/ccterm-utest-*/result.xcresult
           if-no-files-found: ignore
           retention-days: 7
+
+  # TranscriptKit is a standalone package: `swift test`, no Xcode project, no
+  # submodules, no JS bundles. Its own job rather than a step in `test` so it
+  # doesn't queue behind the app build — and so a red result names the package
+  # instead of the app.
+  test-kit:
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain info
+        run: |
+          xcodebuild -version
+          swift --version
+
+      # Package.resolved is gitignored, so the key rides Package.swift (where
+      # the dependency pin lives) plus the package's sources.
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: macos/TranscriptKit/.build
+          key: kit-${{ runner.os }}-${{ runner.arch }}-pkg${{ hashFiles('macos/TranscriptKit/Package.swift') }}-src${{ hashFiles('macos/TranscriptKit/Sources/**/*.swift', 'macos/TranscriptKit/Tests/**/*.swift') }}
+          restore-keys: |
+            kit-${{ runner.os }}-${{ runner.arch }}-pkg${{ hashFiles('macos/TranscriptKit/Package.swift') }}-
+
+      - name: Run package tests
+        run: make test-kit

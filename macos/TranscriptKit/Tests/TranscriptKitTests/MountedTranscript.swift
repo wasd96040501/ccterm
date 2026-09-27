@@ -1,0 +1,169 @@
+import AppKit
+
+@testable import TranscriptKit
+
+/// An off-screen window with a `TranscriptView` filling it, plus the two calls
+/// that make AppKit do the work it would do on screen.
+///
+/// **Deliberately without logic.** Build a window, mount, flush layout, drain
+/// the runloop — no branches, no derived numbers, no helper that computes what a
+/// test ought to expect. Every expected value is written in the test that
+/// asserts it. A harness with nothing to get wrong needs no verification of its
+/// own, which is cheaper than verifying one that does.
+///
+/// What this can and cannot see: the window never becomes key, so anything
+/// gated on key-window or first-responder state (tracking areas, focus ring,
+/// cursor rects) is out of reach. Geometry, row bookkeeping, and how many times
+/// the transcript asked its delegate for what are all in reach, and that is what
+/// this package's tests are about.
+@MainActor
+final class MountedTranscript {
+
+    let window: NSWindow
+    let transcript = TranscriptView()
+
+    init(size: NSSize) {
+        // A window needs the shared application to exist first; `.prohibited`
+        // keeps `swift test` from putting anything in the Dock or taking focus.
+        NSApplication.shared.setActivationPolicy(.prohibited)
+
+        window = UnconstrainedWindow(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.titled, .resizable],
+            backing: .buffered,
+            defer: false)
+        // After init, because init is where AppKit puts a new window on a screen
+        // — and on a screen too small for it, shrinks it to fit. Measured on CI: a
+        // 1024×768 runner display handed the scroll tests a viewport 78 points
+        // shorter than they asked for, and every offset they asserted moved with
+        // it. Set here, and kept by `UnconstrainedWindow`, the size is the one
+        // asked for on any machine.
+        window.setFrame(
+            window.frameRect(
+                forContentRect: NSRect(origin: NSPoint(x: -30_000, y: -30_000), size: size)),
+            display: false)
+        window.alphaValue = 0.01
+
+        let root = NSView()
+        window.contentView = root
+        transcript.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(transcript)
+        NSLayoutConstraint.activate([
+            transcript.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            transcript.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            transcript.topAnchor.constraint(equalTo: root.topAnchor),
+            transcript.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+        ])
+
+        // Ordered front, not made key: an `NSTableView` off any window skips
+        // work a mounted one does, and `orderFront` on a window 30 000 points
+        // off-screen steals nothing.
+        window.orderFront(nil)
+    }
+
+    /// Runs `passes` rounds of "flush layout, draw what needs drawing, drain the
+    /// main queue".
+    ///
+    /// One round is enough for everything the transcript does *inside* the pass
+    /// that provoked it, which is everything except one thing: a width change
+    /// re-measures the rows off screen on a background task and publishes them on
+    /// a later turn, so a test that changed the width and wants the whole
+    /// transcript settled uses `settleWidthChange()` instead. Reaching for
+    /// `passes: 2` anywhere else means work moved onto a later tick — a visible
+    /// frame at the old geometry, not a test detail.
+    ///
+    /// A parameter rather than a loop-until-quiet so the count stays at the call
+    /// site instead of hiding in here.
+    func settle(passes: Int = 1) {
+        for _ in 0..<passes {
+            window.contentView?.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0))
+        }
+    }
+
+    /// Settles, then waits for the off-main re-measure a width change starts, then
+    /// settles again.
+    ///
+    /// The `Task` is ordinary production state — the transcript holds it to cancel
+    /// a superseded batch — so this waits on the real thing rather than polling or
+    /// sleeping, and there is no seam here that exists for the test.
+    ///
+    /// Two settles because the batch is started by the first pass and its result
+    /// is published into the second. A test that wants to look *during* the window
+    /// calls `settle()` and does not call this.
+    func settleWidthChange() async {
+        settle()
+        await transcript.remeasuring?.value
+        settle()
+    }
+
+    /// Settles, then waits for the walk `find(_:)` starts, then settles again.
+    ///
+    /// The sibling of `settleWidthChange()` above, waiting on the same kind of
+    /// ordinary production state for the same reason: a find publishes across
+    /// several turns, and the only honest way to know they have all landed is to
+    /// wait for the thing that publishes them.
+    func settleFind() async {
+        settle()
+        await transcript.finding?.value
+        settle()
+    }
+
+    /// Resizes the window's content area, the way dragging its edge would —
+    /// minus live resize, which no synthesized event reproduces.
+    func setContentWidth(_ width: CGFloat) {
+        guard let root = window.contentView else { return }
+        window.setContentSize(NSSize(width: width, height: root.bounds.height))
+    }
+
+    /// The transcript's scroll view, found in the mounted tree.
+    ///
+    /// A lookup, not logic. The transcript keeps its scroller to itself, and a
+    /// test asking "where is the viewport" has nowhere to read that but AppKit's
+    /// own public surface — `documentVisibleRect` and the clip's bounds. Which is
+    /// the better place to read it anyway: those are the numbers the window
+    /// draws from, not a second opinion the transcript publishes.
+    var scrollView: NSScrollView {
+        transcript.descendants(ofType: NSScrollView.self)[0]
+    }
+
+    /// Scrolls the way a wheel or a drag would, neither of which can be
+    /// synthesized into an off-screen window.
+    func scroll(toY y: CGFloat) {
+        let clip = scrollView.contentView
+        clip.scroll(to: NSPoint(x: clip.bounds.minX, y: y))
+        scrollView.reflectScrolledClipView(clip)
+    }
+
+    func teardown() {
+        window.orderOut(nil)
+        window.contentView = nil
+    }
+}
+
+extension NSView {
+
+    /// Every descendant of type `V`, in tree order.
+    func descendants<V: NSView>(ofType type: V.Type) -> [V] {
+        var found: [V] = []
+        for subview in subviews {
+            if let match = subview as? V { found.append(match) }
+            found.append(contentsOf: subview.descendants(ofType: type))
+        }
+        return found
+    }
+}
+
+/// A window AppKit does not move back onto a screen.
+///
+/// `orderFront` constrains a titled window's frame to the screen it lands on,
+/// which is right for a window someone will look at and wrong for one a test
+/// mounts: the size is the test's input. Returning the frame unchanged is the
+/// documented hook for exactly that.
+private final class UnconstrainedWindow: NSWindow {
+
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        frameRect
+    }
+}

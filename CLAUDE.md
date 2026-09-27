@@ -296,8 +296,12 @@ make fmt         # Format code (xcstrings, ...)
 
 ## Tests
 
-**Unit tests only** — one target, `cctermTests`. Two kinds of tests
-live there:
+**Unit tests only.** The app's tests live in one target, `cctermTests`
+(`make test-unit`); `macos/TranscriptKit` is a standalone package and
+carries its own (`make test-kit` → `swift test`), so that it stays
+testable without the app. Both are merge gates.
+
+Two kinds of tests live in `cctermTests`:
 
 - **Logic tests** (default) — bridge dispatch, history parsing, block
   builder, `Session` / `SessionRuntime` state transitions. Run on every PR.
@@ -338,7 +342,11 @@ as the merge gate; `xcresult` artifacts upload on failure.
 Two workflows run on every PR:
 
 - **`fmt.yml`** — `make fmt-check` (swift-format + xcstrings).
-- **`test.yml`** — `make test-unit`. This is the merge gate.
+- **`test.yml`** — two jobs, both merge gates. `test` runs `make test-unit`
+  (the app). `test-kit` runs `make test-kit` (the TranscriptKit package) in
+  a separate job: it needs no submodules, no Go, no JS bundles and no Xcode
+  project, so it finishes in seconds instead of queueing behind the app
+  build — and a red result names the package rather than the app.
 
 ### Build cache
 

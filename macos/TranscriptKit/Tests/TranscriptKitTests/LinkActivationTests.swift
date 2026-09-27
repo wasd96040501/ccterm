@@ -1,0 +1,445 @@
+import AppKit
+import XCTest
+
+@testable import TranscriptKit
+
+/// Finding a link under a point, and turning a press on one into an activation.
+///
+/// Two halves, and the seam between them is the interesting part. The block tree
+/// answers *where* a link is — every container forwarding the point into its own
+/// space, which is the thing that used to be re-projected by hand — and
+/// `BlockView` decides *whether a press was a click*, which is state and
+/// therefore the view's.
+@MainActor
+final class LinkActivationTests: XCTestCase {
+
+    private func measured(_ source: String, width: CGFloat = 400) -> MeasuredBlock {
+        MarkdownBlockBuilder.make(source).measure(width)
+    }
+
+    /// A point on the ink of a block whose whole content is one link.
+    private func onTheLink(_ block: MeasuredBlock) throws -> CGPoint {
+        let rect = try XCTUnwrap(block.fullRects().first)
+        return CGPoint(x: rect.midX, y: rect.midY)
+    }
+
+    // MARK: - Where the link is
+
+    func testLinkIsFoundUnderItsOwnGlyphs() throws {
+        let block = measured("[word](https://example.com)")
+        XCTAssertEqual(try block.link(at: onTheLink(block))?.url?.absoluteString, "https://example.com")
+    }
+
+    /// `index(at:)` clamps — a point past the end of a line resolves to that
+    /// line's last character — so without the containment check every click to
+    /// the right of a link would open it.
+    func testNoLinkInTheEmptySpaceBesideOne() throws {
+        let block = measured("[word](https://example.com)")
+        let rect = try XCTUnwrap(block.fullRects().first)
+        XCTAssertNil(block.link(at: CGPoint(x: rect.maxX + 60, y: rect.midY)))
+        XCTAssertNil(block.link(at: CGPoint(x: rect.midX, y: rect.maxY + 40)))
+    }
+
+    func testPlainTextHasNoLink() throws {
+        let block = measured("just words")
+        XCTAssertNil(block.link(at: try onTheLink(block)))
+    }
+
+    // MARK: - Every container forwards it
+    //
+    // Each of these puts the link behind a different offset. A container that
+    // forgot to subtract its own would answer `nil`, or — worse — answer for the
+    // wrong run.
+
+    func testBlockquoteForwardsThePoint() throws {
+        let block = measured("> [word](https://example.com)")
+        XCTAssertNotNil(block.link(at: try onTheLink(block)))
+    }
+
+    func testListItemForwardsThePointPastItsMarker() throws {
+        let block = measured("- [word](https://example.com)")
+        XCTAssertNotNil(block.link(at: try onTheLink(block)))
+    }
+
+    func testNestedContainersCompose() throws {
+        let block = measured("> - [word](https://example.com)")
+        XCTAssertNotNil(block.link(at: try onTheLink(block)))
+    }
+
+    /// A table's rectangles are cell bands rather than runs of glyphs, so the
+    /// point is taken just inside the cell's leading padding — which is where the
+    /// link's own glyph sits.
+    func testTableCellForwardsThePoint() throws {
+        let block = measured("| h |\n|---|\n| [word](https://example.com) |")
+        let cell = try XCTUnwrap(block.fullRects().last)
+        XCTAssertNotNil(block.link(at: CGPoint(x: cell.minX + 10, y: cell.midY)))
+    }
+
+    /// A list marker is furniture: it holds no link, and a point on it is left of
+    /// the content entirely.
+    func testMarkerColumnHoldsNoLink() throws {
+        let block = measured("- [word](https://example.com)")
+        let rect = try XCTUnwrap(block.fullRects().first)
+        XCTAssertNil(block.link(at: CGPoint(x: 1, y: rect.midY)))
+    }
+
+    // MARK: - Pointing at nothing
+    //
+    // `characterIndex(at:)` is the half of the split that may decline, and the
+    // contract that keeps a click to the right of a link from opening it. Its
+    // counterpart `index(at:)` clamps, so asserting the two against the same point
+    // is what shows they are answering different questions rather than one being a
+    // convenience over the other.
+
+    func testPointingBesideTheTextIsPointingAtNothing() throws {
+        let block = measured("[word](https://example.com)")
+        let rect = try XCTUnwrap(block.fullRects().first)
+        let beside = CGPoint(x: rect.maxX + 60, y: rect.midY)
+
+        XCTAssertNil(block.characterIndex(at: beside))
+        // The same point still has to resolve for a caret — a drag that ends out
+        // here selects to the end of the line rather than selecting nothing.
+        XCTAssertGreaterThan(block.index(at: beside), 0)
+    }
+
+    func testPointingBelowTheTextIsPointingAtNothing() throws {
+        let block = measured("[word](https://example.com)")
+        let rect = try XCTUnwrap(block.fullRects().first)
+        XCTAssertNil(block.characterIndex(at: CGPoint(x: rect.midX, y: rect.maxY + 40)))
+    }
+
+    // MARK: - What a link carries
+
+    /// The destination and where it sits — no title. A markdown title —
+    /// `[a](b "title")` — is parsed and dropped: what to *show* for a link is the
+    /// host's, reached through the delegate, and a second string riding along here
+    /// would be this package deciding for it. The range is not a third thing of
+    /// that kind; it is the location of the thing that was found, which a query
+    /// that locates something owes its caller.
+    func testALinkCarriesItsDestinationAlone() throws {
+        let titled = measured(#"[word](https://example.com "Read this")"#)
+        let plain = measured("[word](https://example.com)")
+        XCTAssertEqual(
+            try titled.link(at: onTheLink(titled))?.url?.absoluteString, "https://example.com")
+        XCTAssertEqual(
+            try plain.link(at: onTheLink(plain))?.url?.absoluteString, "https://example.com")
+    }
+
+    /// An image is a reference to a file, and it reports one the same way a link
+    /// reports a page — which is what makes its standing-in glyph identifiable.
+    func testAnImageCarriesItsSource() throws {
+        let block = measured("![a diagram](assets/block-tree.png)")
+        XCTAssertEqual(
+            try block.link(at: onTheLink(block))?.url?.absoluteString, "assets/block-tree.png")
+    }
+
+    // MARK: - Press, drag, release
+
+    private struct Mounted {
+        let window: NSWindow
+        let cell: BlockView
+        let block: MeasuredBlock
+        var activated: [URL] { recorder.urls }
+        var hovers: [URL?] { recorder.hovers }
+        let recorder: Recorder
+    }
+
+    private final class Recorder {
+        var urls: [URL] = []
+        var hovers: [URL?] = []
+    }
+
+    private func mount(_ source: String, width: CGFloat = 400) -> Mounted {
+        NSApplication.shared.setActivationPolicy(.prohibited)
+
+        let block = MarkdownBlockBuilder.make(source).measure(width)
+        let size = CGSize(width: width, height: block.size.height)
+        let window = NSWindow(
+            contentRect: NSRect(origin: NSPoint(x: -30_000, y: -30_000), size: size),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        window.alphaValue = 0.01
+        // `close()` below would otherwise release it while this test still holds
+        // one — `NSWindow` defaults this to `true`, which predates ARC and means
+        // an over-release that surfaces as a segfault inside some later test's
+        // runloop turn rather than here.
+        window.isReleasedWhenClosed = false
+
+        let cell = BlockView()
+        cell.frame = NSRect(origin: .zero, size: size)
+        window.contentView?.addSubview(cell)
+        cell.configure(with: block)
+        window.orderFront(nil)
+
+        let recorder = Recorder()
+        // What crosses is the run; the address is what this suite is about, so
+        // anything without one is not something these tests can record.
+        cell.onLinkActivated = { _, link in link.url.map { recorder.urls.append($0) } }
+        cell.onLinkHovered = { _, url, _ in recorder.hovers.append(url) }
+
+        return Mounted(window: window, cell: cell, block: block, recorder: recorder)
+    }
+
+    private func event(
+        _ mounted: Mounted, at point: CGPoint, _ type: NSEvent.EventType, clicks: Int = 1
+    ) -> NSEvent {
+        NSEvent.mouseEvent(
+            with: type, location: mounted.cell.convert(point, to: nil), modifierFlags: [],
+            timestamp: 0, windowNumber: mounted.window.windowNumber, context: nil,
+            eventNumber: 0, clickCount: clicks, pressure: 1)!
+    }
+
+    func testClickOnALinkActivatesIt() throws {
+        let mounted = mount("[word](https://example.com)")
+        let point = try onTheLink(mounted.block)
+
+        mounted.cell.mouseDown(with: event(mounted, at: point, .leftMouseDown))
+        mounted.cell.mouseUp(with: event(mounted, at: point, .leftMouseUp))
+
+        XCTAssertEqual(mounted.activated.map(\.absoluteString), ["https://example.com"])
+        mounted.window.close()
+    }
+
+    func testClickBesideALinkActivatesNothing() throws {
+        let mounted = mount("[word](https://example.com)")
+        let rect = try XCTUnwrap(mounted.block.fullRects().first)
+        let point = CGPoint(x: rect.maxX + 60, y: rect.midY)
+
+        mounted.cell.mouseDown(with: event(mounted, at: point, .leftMouseDown))
+        mounted.cell.mouseUp(with: event(mounted, at: point, .leftMouseUp))
+
+        XCTAssertTrue(mounted.activated.isEmpty)
+        mounted.window.close()
+    }
+
+    /// A link's text stays selectable. The press starts on the link, the drag
+    /// takes a range, and the release opens nothing.
+    func testDraggingFromALinkSelectsInsteadOfActivating() throws {
+        let mounted = mount("[a long enough link to drag across](https://example.com)")
+        let rect = try XCTUnwrap(mounted.block.fullRects().first)
+        let from = CGPoint(x: rect.minX + 4, y: rect.midY)
+        let to = CGPoint(x: rect.midX, y: rect.midY)
+
+        mounted.cell.mouseDown(with: event(mounted, at: from, .leftMouseDown))
+        mounted.cell.mouseDragged(with: event(mounted, at: to, .leftMouseDragged))
+        mounted.cell.mouseUp(with: event(mounted, at: to, .leftMouseUp))
+
+        XCTAssertTrue(mounted.activated.isEmpty)
+        mounted.window.close()
+    }
+
+    /// Double-clicking a word inside a link takes the word, the way it does
+    /// anywhere else — the second click must not also open it.
+    func testDoubleClickTakesTheWordInsteadOfActivating() throws {
+        let mounted = mount("[word](https://example.com)")
+        let point = try onTheLink(mounted.block)
+
+        mounted.cell.mouseDown(with: event(mounted, at: point, .leftMouseDown, clicks: 2))
+        mounted.cell.mouseUp(with: event(mounted, at: point, .leftMouseUp, clicks: 2))
+
+        XCTAssertTrue(mounted.activated.isEmpty)
+        mounted.window.close()
+    }
+
+    /// `mouseEvent(with:…)` rejects the enter/exit types — AppKit builds those
+    /// through a different factory, and they carry a tracking number rather than
+    /// a click count.
+    private func exitEvent(_ mounted: Mounted) -> NSEvent {
+        NSEvent.enterExitEvent(
+            with: .mouseExited, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: mounted.window.windowNumber, context: nil, eventNumber: 0,
+            trackingNumber: 0, userData: nil)!
+    }
+
+    // MARK: - What a hover reports
+    //
+    // A hover has two halves. The package says which link the pointer is on and
+    // leaves what to *show* for it to the host — so what there is to hold here is
+    // the *report*: that it arrives, that it says `nil` on the way out, and that
+    // it is one call per link rather than one per mouse-moved event, which is the
+    // contract a host relies on to avoid keeping state of its own.
+    //
+    // The other half — the band drawn under the run — is below.
+
+    func testMovingOntoALinkReportsIt() throws {
+        let mounted = mount("[word](https://example.com)")
+        defer { mounted.window.close() }
+        let rect = try XCTUnwrap(mounted.block.fullRects().first)
+
+        mounted.cell.mouseMoved(
+            with: event(mounted, at: CGPoint(x: rect.midX, y: rect.midY), .mouseMoved))
+        XCTAssertEqual(mounted.hovers.map { $0?.absoluteString }, ["https://example.com"])
+
+        mounted.cell.mouseMoved(
+            with: event(mounted, at: CGPoint(x: rect.maxX + 60, y: rect.midY), .mouseMoved))
+        XCTAssertEqual(mounted.hovers.map { $0?.absoluteString }, ["https://example.com", nil])
+    }
+
+    /// The contract that lets a host treat every call as an instruction: sliding
+    /// along one link is one report, not one per pixel.
+    func testSlidingAlongOneLinkReportsOnce() throws {
+        let mounted = mount("[a long enough link to slide along](https://example.com)")
+        defer { mounted.window.close() }
+        let rect = try XCTUnwrap(mounted.block.fullRects().first)
+
+        for offset in stride(from: rect.minX + 4, to: rect.maxX - 4, by: 3) {
+            mounted.cell.mouseMoved(
+                with: event(mounted, at: CGPoint(x: offset, y: rect.midY), .mouseMoved))
+        }
+        XCTAssertEqual(mounted.hovers.count, 1)
+    }
+
+    /// Leaving through an edge produces no further move inside the view, so the
+    /// exit is what takes the report back.
+    func testLeavingTheRowReportsNothingUnderThePointer() throws {
+        let mounted = mount("[word](https://example.com)")
+        defer { mounted.window.close() }
+        let rect = try XCTUnwrap(mounted.block.fullRects().first)
+
+        mounted.cell.mouseMoved(
+            with: event(mounted, at: CGPoint(x: rect.midX, y: rect.midY), .mouseMoved))
+        mounted.cell.mouseExited(with: exitEvent(mounted))
+        XCTAssertEqual(mounted.hovers.map { $0?.absoluteString }, ["https://example.com", nil])
+    }
+
+    // MARK: - What a hover draws
+    //
+    // Read through the layer tree rather than through any hook added for the
+    // purpose: the band *is* a sublayer, so its presence, its depth and its shape
+    // are all observable from outside, and a test that reached past that would be
+    // asserting the implementation instead of the result.
+
+    /// Every `CAShapeLayer` hung on the cell — which is the band, and nothing
+    /// else. The row's own painting lives on `SurfaceLayer`s.
+    private func bands(_ mounted: Mounted) -> [CAShapeLayer] {
+        (mounted.cell.layer?.sublayers ?? []).compactMap { $0 as? CAShapeLayer }
+    }
+
+    @discardableResult
+    private func hover(_ mounted: Mounted, at point: CGPoint) -> [CAShapeLayer] {
+        mounted.cell.mouseMoved(with: event(mounted, at: point, .mouseMoved))
+        return bands(mounted)
+    }
+
+    /// The claim the whole surface stack exists to make: the band is **under** the
+    /// row's painting. Drawn over it, a 8%-alpha wash would sit on top of the
+    /// glyphs instead of behind them — which is the one thing a sublayer of a
+    /// layer that had been drawn into cannot avoid.
+    func testTheBandSitsUnderTheRowsPainting() throws {
+        let mounted = mount("[word](https://example.com)")
+        defer { mounted.window.close() }
+        XCTAssertTrue(bands(mounted).isEmpty, "a row nobody has hovered carries no band")
+
+        let rect = try XCTUnwrap(mounted.block.fullRects().first)
+        let band = try XCTUnwrap(
+            hover(mounted, at: CGPoint(x: rect.midX, y: rect.midY)).first,
+            "hovering a link drew no band")
+
+        XCTAssertEqual(
+            mounted.cell.layer?.sublayers?.firstIndex { $0 === band }, 0,
+            "the band is not the bottom-most layer, so it is not under the glyphs")
+        XCTAssertEqual(band.opacity, 1)
+    }
+
+    /// The band covers the run, not the row. A path that merely existed would pass
+    /// the test above while highlighting the wrong words.
+    func testTheBandCoversTheRunAndNotItsNeighbours() throws {
+        let mounted = mount("plain words then [word](https://example.com) then more plain words")
+        defer { mounted.window.close() }
+
+        let point = try XCTUnwrap(Self.firstLinkPoint(in: mounted.block))
+        let band = try XCTUnwrap(hover(mounted, at: point).first)
+        let box = try XCTUnwrap(band.path?.boundingBox)
+
+        XCTAssertTrue(box.contains(point), "the band does not cover the point it was summoned by")
+
+        let whole = try XCTUnwrap(mounted.block.fullRects().first)
+        XCTAssertLessThan(
+            box.width, whole.width * 0.9,
+            "the band spans nearly the whole line, so it is not tracking the run")
+    }
+
+    /// The recycling rule, in the one place where forgetting it would be visible:
+    /// a pooled cell arriving with a highlight over words that are no longer there.
+    func testRebindingTakesTheBandAway() throws {
+        let mounted = mount("[word](https://example.com)")
+        defer { mounted.window.close() }
+
+        let rect = try XCTUnwrap(mounted.block.fullRects().first)
+        XCTAssertFalse(hover(mounted, at: CGPoint(x: rect.midX, y: rect.midY)).isEmpty)
+
+        mounted.cell.configure(with: MarkdownBlockBuilder.make("something else").measure(400))
+        XCTAssertTrue(bands(mounted).isEmpty, "a recycled cell kept the previous row's band")
+    }
+
+    /// Leaving takes the band with it. The layer may outlive the fade by a frame —
+    /// it is removed when the animation completes — so what is asserted is that it
+    /// is on its way out, not that it has already gone.
+    func testLeavingTheRowTakesTheBandAway() throws {
+        let mounted = mount("[word](https://example.com)")
+        defer { mounted.window.close() }
+
+        let rect = try XCTUnwrap(mounted.block.fullRects().first)
+        XCTAssertFalse(hover(mounted, at: CGPoint(x: rect.midX, y: rect.midY)).isEmpty)
+
+        mounted.cell.mouseExited(with: exitEvent(mounted))
+        XCTAssertEqual(bands(mounted).first?.opacity ?? 0, 0)
+    }
+
+    /// A re-measure keeps the hover and moves the band to where those same
+    /// characters ended up. This is the payoff of a link reporting *where* it is
+    /// rather than only what it is: the range is the half that does not depend on
+    /// the width, so nothing has to be re-found at the new one.
+    func testAReMeasureMovesTheBandToWhereTheWordsWent() throws {
+        let source = "plain words then some more filler and then [word](https://example.com) at the end"
+        let mounted = mount(source)
+        defer { mounted.window.close() }
+
+        let point = try XCTUnwrap(Self.firstLinkPoint(in: mounted.block))
+        let link = try XCTUnwrap(mounted.block.link(at: point))
+        XCTAssertFalse(hover(mounted, at: point).isEmpty, "hovering the link drew no band")
+
+        let narrower = MarkdownBlockBuilder.make(source).measure(140)
+        let moved = narrower.rects(from: link.range.lowerBound, to: link.range.upperBound)
+        XCTAssertNotEqual(
+            mounted.block.rects(from: link.range.lowerBound, to: link.range.upperBound), moved,
+            "the narrower width left the run exactly where it was, so this proves nothing")
+
+        mounted.cell.remeasured(to: narrower)
+
+        // Against where the run actually is now, not merely against "somewhere
+        // else" — a band that moved to the wrong place would satisfy that. Plus
+        // the band's own inset, which is the one respect in which it is not the
+        // run's rectangles.
+        let after = try XCTUnwrap(
+            bands(mounted).first?.path?.boundingBox, "the re-measure dropped the band")
+        let expected = moved.reduce(CGRect.null) { $0.union($1) }.insetBy(dx: -2, dy: -2)
+        XCTAssertEqual(after.minX, expected.minX, accuracy: 0.5)
+        XCTAssertEqual(after.minY, expected.minY, accuracy: 0.5)
+        XCTAssertEqual(after.maxX, expected.maxX, accuracy: 0.5)
+        XCTAssertEqual(after.maxY, expected.maxY, accuracy: 0.5)
+    }
+
+    /// Sweeps for a point that reports a link rather than computing where one
+    /// ought to be — the same reasoning as in `IndexRoundTripTests`.
+    private static func firstLinkPoint(in block: MeasuredBlock) -> CGPoint? {
+        for y in stride(from: 0, to: block.size.height, by: 3) {
+            for x in stride(from: 0, to: block.size.width, by: 3) {
+                let point = CGPoint(x: x, y: y)
+                if block.link(at: point) != nil { return point }
+            }
+        }
+        return nil
+    }
+
+    /// Prose is not a link, and "still nothing" is not a change worth a call.
+    func testProseReportsNothingAtAll() throws {
+        let mounted = mount("just words with no link in them at all")
+        defer { mounted.window.close() }
+        let rect = try XCTUnwrap(mounted.block.fullRects().first)
+
+        mounted.cell.mouseMoved(
+            with: event(mounted, at: CGPoint(x: rect.midX, y: rect.midY), .mouseMoved))
+        XCTAssertTrue(mounted.hovers.isEmpty)
+    }
+
+}

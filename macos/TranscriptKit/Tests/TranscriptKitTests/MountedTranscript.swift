@@ -1,4 +1,5 @@
 import AppKit
+import XCTest
 
 @testable import TranscriptKit
 
@@ -118,13 +119,25 @@ final class MountedTranscript {
     /// Queued rather than sent, because a press that selects is tracked to its
     /// release inside `mouseDown`, by a loop that *pulls* the events after it. The
     /// release is always there, so a test cannot leave a loop waiting.
-    func press(_ view: NSView, with down: NSEvent, then rest: [NSEvent] = []) {
+    ///
+    /// And the queue is the application's, not this window's, so a gesture that
+    /// was not tracked would stay in it and be pulled by the next test's press —
+    /// which then selects with another test's pointer. So the press asserts that
+    /// its gesture was used up, which is where such a failure has to be named.
+    func press(
+        _ view: NSView, with down: NSEvent, then rest: [NSEvent] = [],
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
         let up = NSEvent.mouseEvent(
             with: .leftMouseUp, location: down.locationInWindow, modifierFlags: [],
             timestamp: 0, windowNumber: window.windowNumber, context: nil,
             eventNumber: 0, clickCount: down.clickCount, pressure: 0)!
         for event in rest + [up] { NSApp.postEvent(event, atStart: false) }
         view.mouseDown(with: down)
+        let left = NSApp.nextEvent(
+            matching: [.leftMouseDragged, .leftMouseUp, .periodic, .scrollWheel],
+            until: .distantPast, inMode: .default, dequeue: true)
+        XCTAssertNil(left, "the press was not tracked to its release", file: file, line: line)
     }
 
     /// What Edit ▸ Copy puts on the pasteboard: the action sent up the responder

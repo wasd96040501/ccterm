@@ -2385,7 +2385,7 @@ public final class TranscriptView: NSView {
             timeout: NSEvent.foreverDuration, mode: .eventTracking
         ) { event, stop in
             guard let event else { return }
-            print("TDIAG event \(event.type.rawValue) loc=\(event.type == .periodic ? .zero : event.locationInWindow) buttons=\(NSEvent.pressedMouseButtons)")  // DIAG
+            print("TDIAG event \(event.type.rawValue) loc=\(event.type == .periodic ? .zero : event.locationInWindow) wn=\(event.windowNumber) mine=\(window.windowNumber) samewin=\(event.window === window) cg=\(event.cgEvent?.location ?? .zero)")  // DIAG
             switch event.type {
             case .leftMouseDragged: pointer = event
             // Scrolls by how far past the edge the pointer is, so the reader sets

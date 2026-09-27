@@ -32,6 +32,7 @@ enum TestWindow {
             backing: .buffered,
             defer: false)
         window.isReleasedWhenClosed = false
+        print("DIAG window init frame=\(window.frame) number=\(window.windowNumber)")  // DIAG
         park(window, contentSize: size)
         window.orderFront(nil)
         return window

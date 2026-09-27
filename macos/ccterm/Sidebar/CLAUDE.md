@@ -1,6 +1,6 @@
 # Sidebar
 
-The source-list history sidebar, built on `NSOutlineView` (AppKit by exception — gives folder drag-and-drop via `pasteboardWriterForItem` / `validateDrop` / `acceptDrop` and built-in `expandItem` / `collapseItem` animations). Post-refactor the responsibilities are split three ways; the table below is the map.
+The source-list history sidebar, built on `NSOutlineView` (AppKit by exception — gives folder drag-and-drop via `pasteboardWriterForItem` / `validateDrop` / `acceptDrop` and built-in `expandItem` / `collapseItem` animations). The table below is the map.
 
 | Component | Type | Responsibility |
 |---|---|---|

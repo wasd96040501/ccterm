@@ -9,7 +9,7 @@ import XCTest
 /// boundary with the right pending `id`, and that the runtime pops the entry
 /// off `pendingPermissions` once a decision has been delivered. We build the
 /// SAME `Handlers` the body builds and invoke each closure (per
-/// `cctermTests/CLAUDE.md` § What goes here — drive the underlying method the
+/// `cctermTests/CLAUDE.md` — drive the underlying method the
 /// button invokes), so a regression that swaps Allow-once ↔ Allow-always,
 /// drops the deny reason, loses the `updatedInput` payload, or routes a
 /// handler to the wrong card's `id` trips here.

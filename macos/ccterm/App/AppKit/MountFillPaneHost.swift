@@ -28,8 +28,8 @@ import SwiftUI
 /// resting bar, a toolbar slot) is regime-B — `sizingOptions =
 /// [.intrinsicContentSize]` + position-only constraints — and deliberately
 /// does NOT route through here; its container is sized by something else and
-/// it *wants* the content to drive its own size. See `CLAUDE.md` §
-/// "Embedding SwiftUI in AppKit: host sizing" and
+/// it *wants* the content to drive its own size. See
+/// `Content/Chat/CLAUDE.md` § "SwiftUI hosts: two sizing regimes" and
 /// `ChatSessionViewController.restingBarHost`.
 @MainActor
 @discardableResult

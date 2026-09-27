@@ -32,9 +32,9 @@ ccterm/
 │   │   │   ├── Chat/         # Chat VCs, InputBar, NewSessionConfigurator, Completion
 │   │   │   │   ├── NativeTranscript2/        # NSTableView-based transcript (production)
 │   │   │   │   └── NativeTranscript2Bridge/  # MessageEntry → Block translation, history backfill
-│   │   │   ├── TranscriptDemo/   # Offline demos and stress harness (DEBUG)
+│   │   │   ├── Archive/
 │   │   │   ├── Settings/
-│   │   │   └── LogViewer/
+│   │   │   └── TranscriptDemo/, PermissionCardsDemo/, PermissionSessionDemo/   # DEBUG demos + stress harness
 │   │   ├── Models/
 │   │   ├── Services/         # Session/ (Session, SessionRuntime, SessionManager, Worktree), Logging/
 │   │   ├── Extensions/

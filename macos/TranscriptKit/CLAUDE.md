@@ -228,9 +228,6 @@ them:
 - **Press a left button through `NSApp.sendEvent`.** It can make the window key.
   `EditorAreaTests` exercises the area's event monitor with an other-mouse-down,
   which the monitor watches and which activates nothing.
-- **Click a middle button.** `NSEvent.mouseEvent` cannot set `buttonNumber`, and an
-  event built from a `CGEvent` has no window. Middle-click-to-close is checked in
-  `make demo-kit`.
 - **Click a segment of an `NSSegmentedControl` laid out by constraints.** The same
   synthesized press lands when the frame is set by hand, and always on a cell-based
   control; on this one the action is never sent. And a momentary control's
@@ -1145,7 +1142,7 @@ EditorAreaViewController      NSSplitViewController — the divider, which edito
 - **The tab bar is `NSSegmentedControl` in `.tabs` role** (macOS 27), at `.large`:
   that is the capsule track Xcode's editor tabs are, drawn by the system in both
   appearances. `EditorTabBar` adds only what a segmented control lacks — hover
-  close at the tab's leading edge, middle-click close, pinning's look, drag, a
+  close at the tab's leading edge, pinning's look, drag, a
   context menu — and draws no pixel of a tab.
 - **The delegate is AppKit-shaped**: `EditorAreaViewControllerDelegate` has
   `editorArea(_:didActivate:)` and `editorArea(_:willClose:)`, both defaulted. The

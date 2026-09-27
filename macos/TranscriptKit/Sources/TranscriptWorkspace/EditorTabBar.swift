@@ -35,7 +35,7 @@ protocol EditorTabBarDelegate: AnyObject {
 /// without the glass. What is added sits on top of it:
 ///
 /// - **A close button over the hovered tab**, at its leading edge where Xcode puts
-///   it, and never over a pinned one. A middle click closes too.
+///   it, and never over a pinned one.
 /// - **Pinning**, which is only presentation here: a pinned tab has a pin for an
 ///   image and is as wide as its title, where every other tab shares what is
 ///   left. Which tabs are pinned, and that they come first, is the group's.
@@ -272,16 +272,6 @@ final class EditorTabBar: NSSegmentedControl, NSDraggingSource {
 
     override func mouseUp(with event: NSEvent) {
         pressedIndex = nil
-    }
-
-    /// A middle click closes the tab under it, as it does in every tabbed Mac app
-    /// that has tabs to close.
-    override func otherMouseUp(with event: NSEvent) {
-        guard event.buttonNumber == 2,
-            let index = tabIndex(at: convert(event.locationInWindow, from: nil)),
-            !items[index].isPinned
-        else { return super.otherMouseUp(with: event) }
-        delegate?.tabBar(self, didCloseTabAt: index)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {

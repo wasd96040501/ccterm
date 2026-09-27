@@ -725,6 +725,14 @@ final class EditorAreaTests: XCTestCase {
             area.activeGroup.addTabViewItem(NSTabViewItem(viewController: probe))
         }
         settle(window)
+        // AppKit sends `viewDidAppear` on a later turn of the run loop than the one
+        // that put the view in the window — not from layout or display, measured —
+        // and the area only starts following the reader there. One turn of
+        // `settle` delivers it on a fast machine and not on a slow one, so a test
+        // that clicked straight away passed here and failed on CI. Waiting for the
+        // selected tab to appear waits for the area, which appears in the same
+        // pass. The selected tab, which is the last one added.
+        wait(for: [probes[probes.count - 1].appeared], timeout: 5)
         return Mounted(window: window, area: area, recorder: recorder, probes: probes)
     }
 
@@ -829,7 +837,15 @@ private final class ProbeViewController: NSViewController {
     override func viewDidAppear() {
         super.viewDidAppear()
         sizesAtAppearance.append(view.frame.size)
+        appeared.fulfill()
     }
+
+    /// Fulfilled the first time the view appears, and left fulfilled after.
+    let appeared: XCTestExpectation = {
+        let appeared = XCTestExpectation(description: "appeared")
+        appeared.assertForOverFulfill = false
+        return appeared
+    }()
 }
 
 /// Logs `start`, one `<width> live|still` per frame change, and `end`.

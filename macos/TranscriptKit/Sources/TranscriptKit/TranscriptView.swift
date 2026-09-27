@@ -246,6 +246,9 @@ public final class TranscriptView: NSView {
         // instance when the pool hands over a cell that was serving a `.view` row.
         let view = cell.hostedView as? BlockView ?? BlockView()
         view.configure(with: block)
+        // Its part of the selection — the row may have scrolled out mid-selection
+        // and be coming back, or be a new row landing inside one.
+        view.selectedRange = selection?.range(inRow: row, length: block.length)
         // Re-bound on every pass rather than once at construction: the view is
         // recycled, and `row` is captured only as the fallback for a lookup that
         // can fail once the view has left the table.
@@ -273,8 +276,11 @@ public final class TranscriptView: NSView {
         // that itself returns an optional flattens the two, so a host answering
         // "show no menu" would be indistinguishable from having no delegate — and
         // would silently get the default menu instead.
-        view.onContextMenu = { [weak self] view, menu in
-            guard let self, let delegate = self.delegate else { return menu }
+        view.onContextMenu = { [weak self] view, menu, event in
+            guard let self else { return menu }
+            // Before the host sees the menu: what it acts on is decided here.
+            self.selectForContextMenu(with: event)
+            guard let delegate = self.delegate else { return menu }
             let current = self.row(for: view)
             return delegate.transcriptView(
                 self, menu: menu, forRow: current >= 0 ? current : row)
@@ -347,7 +353,8 @@ public final class TranscriptView: NSView {
         let table = TranscriptTableView()
         table.headerView = nil
         table.backgroundColor = .clear
-        // No selection API on the transcript, so no selection to draw.
+        // Rows are never selected — text is, and each row draws its own part of
+        // that (see Selection) — so the table has no selection to draw.
         table.selectionHighlightStyle = .none
         // Rows are measured edge to edge, so the gap between two of them is the
         // table's to add — see `rowSpacing`.
@@ -427,7 +434,7 @@ public final class TranscriptView: NSView {
             self, selector: #selector(clipViewBoundsDidChange),
             name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
         findOverlay.rows = { [weak self] in self?.findRowsOnScreen() ?? [] }
-        tableView.didTile = { [weak self] in self?.setNeedsFindLayout() }
+        tableView.transcript = self
     }
 
     deinit {
@@ -613,14 +620,16 @@ public final class TranscriptView: NSView {
     ///
     /// **`remeasured` or `configure`** is the one judgement here, and it is what
     /// keeps a reader's selection alive through a streaming row. `configure` is
-    /// the recycling entry point: it drops the selection and the hover band,
-    /// because a pooled cell arriving with a highlight over the previous
-    /// document's words is a bug. `remeasured` keeps both, on the grounds that
-    /// the endpoints still name the same characters. That holds exactly when the
-    /// new source **extends** the old one: the blocks before the divergence
-    /// parse the same, so they occupy the same flat index space they did. A
-    /// source that is not an extension gets `configure`, which covers a rewrite,
-    /// a retry, and a row that swapped identity under a `reloadData`.
+    /// the recycling entry point: it drops the hover band, because a pooled cell
+    /// arriving with a highlight over the previous document's words is a bug.
+    /// `remeasured` keeps it, on the grounds that the indices still name the same
+    /// characters. That holds exactly when the new source **extends** the old
+    /// one: the blocks before the divergence parse the same, so they occupy the
+    /// same flat index space they did. A source that is not an extension gets
+    /// `configure`, which covers a rewrite, a retry, and a row that swapped
+    /// identity under a `reloadData` — and if an end of the selection is in that
+    /// row, the selection goes too: its index names text that is not there any
+    /// more.
     ///
     /// Not airtight, and worth saying where it gives: an arriving line can
     /// retroactively change what an *earlier* block is — three dashes turn the
@@ -632,6 +641,7 @@ public final class TranscriptView: NSView {
     @discardableResult
     private func rebindVisibleRows(in rows: IndexSet?) -> IndexSet {
         var rebound = IndexSet()
+        let selected = selection
         tableView.enumerateAvailableRowViews { [weak self] rowView, row in
             guard let self, rows?.contains(row) ?? true,
                 let cell = rowView.view(atColumn: 0) as? TranscriptCellView,
@@ -656,9 +666,13 @@ public final class TranscriptView: NSView {
                 view.remeasured(to: block)
             } else {
                 view.configure(with: block)
+                if selection?.ends(in: described.id) == true { selection = nil }
             }
+            view.selectedRange = selection?.range(inRow: row, length: block.length)
             rebound.insert(row)
         }
+        // Rows handled before the selection was dropped still show their part.
+        if selection != selected { pushSelection() }
         // Either way the glyphs may have moved without the row's height changing,
         // which no re-tile would report.
         if !rebound.isEmpty { setNeedsFindLayout() }
@@ -1308,15 +1322,23 @@ public final class TranscriptView: NSView {
     private func sweepCache() {
         guard let dataSource else {
             rowCache.removeAll()
+            keepSelection([:])
             return
         }
         let count = dataSource.numberOfRows(in: self)
         var live = Set<TranscriptRow.ID>(minimumCapacity: count)
+        // The selection's two ends, found by identity on the same walk — a
+        // removal or a reload says which rows are left, not where they went.
+        let ends = selection.map { [$0.anchor.id, $0.focus.id] } ?? []
+        var located: [TranscriptRow.ID: Int] = [:]
         for row in 0..<count {
-            live.insert(dataSource.transcriptView(self, rowAt: row).id)
+            let id = dataSource.transcriptView(self, rowAt: row).id
+            live.insert(id)
+            if !ends.isEmpty, ends.contains(id) { located[id] = row }
         }
         rowCache.keep(live)
         keepFind(live)
+        keepSelection(located)
     }
 
     /// Announces rows newly inserted at `indexes` (positions in the
@@ -2308,6 +2330,228 @@ public final class TranscriptView: NSView {
         self.find = find
     }
 
+    // MARK: - Selection
+    //
+    // A selection runs from a position in one row to a position in another, so it
+    // is held here, where rows have identities and outlive their views, rather
+    // than on the views — which is `NSTableView`'s split, the table holding the
+    // selection and handing each row view its `isSelected`. A press on a
+    // `BlockView` goes up the responder chain to the table, like any mouse event
+    // a view does not take, and the view draws what it is handed
+    // (`selectedRange`); nothing about it is on the public surface.
+    //
+    // The responder is the table, the scroll view's document view, the way it is
+    // an `NSTextView` and not its scroll view: it takes first responder on a
+    // press, answers Copy, and drops the selection when the focus moves on —
+    // how a selection in one transcript goes away when the reader starts one in
+    // another. Keyboard handling stays exactly what it was, because the row view
+    // that used to hold the focus passed every key up to this same table.
+    //
+    // What it costs where the transcript is hot: nothing, until something is
+    // selected. A row bound (`viewForRow`, `rebindVisibleRows`) reads its part —
+    // arithmetic on four integers — and an insert renumbers two. Only a press or a
+    // drag walks anything, and only when the focus moved: it walks the row views
+    // on screen, repainting those whose part changed.
+
+    /// The reader's selection, or a caret after a click, or `nil`.
+    private var selection: TextSelection?
+
+    /// A press, and everything until the button comes back up. The one way into a
+    /// selection made with the mouse, reached from a row or from the table
+    /// between rows through the responder chain.
+    ///
+    /// A tracking loop — `NSTextView`'s shape, and `NSTableView`'s — rather than
+    /// drags dispatched to whichever view was pressed, because the focus is a
+    /// function of two things: where the pointer is **and where the content is**.
+    /// Either can move without the other, so the loop re-reads the focus on
+    /// both: a drag moves the pointer; a periodic event scrolls the content under
+    /// a pointer held past an edge, at a steady rate whether or not the mouse
+    /// moves; and a scroll wheel does it at the reader's.
+    ///
+    /// Nothing between the press and the release is dispatched to a view, so no
+    /// view has to outlive its row for the gesture to finish.
+    fileprivate func trackSelection(from event: NSEvent) {
+        beginSelection(with: event)
+        guard let window, selection != nil else { return }
+
+        // The press that started this, then each drag: where the pointer is in the
+        // window, which is what autoscroll and the focus are both worked out from.
+        var pointer = event
+        NSEvent.startPeriodicEvents(afterDelay: Self.autoscrollDelay, withPeriod: Self.autoscrollPeriod)
+        defer { NSEvent.stopPeriodicEvents() }
+        window.trackEvents(
+            matching: [.leftMouseDragged, .leftMouseUp, .periodic, .scrollWheel],
+            timeout: NSEvent.foreverDuration, mode: .eventTracking
+        ) { event, stop in
+            guard let event else { return }
+            switch event.type {
+            case .leftMouseDragged: pointer = event
+            // Scrolls by how far past the edge the pointer is, so the reader sets
+            // the speed by where they hold it; inside the viewport, nothing moved.
+            case .periodic: guard tableView.autoscroll(with: pointer) else { return }
+            case .scrollWheel: scrollView.scrollWheel(with: event)
+            default:
+                stop.pointee = true
+                return
+            }
+            extendSelection(to: pointer)
+        }
+    }
+
+    /// How soon a pointer held past an edge starts scrolling, and how often it
+    /// scrolls again: a frame, so the rows arriving move as a scroll does.
+    private static let autoscrollDelay: TimeInterval = 0.1
+    private static let autoscrollPeriod: TimeInterval = 1.0 / 60
+
+    /// Moves the selection's focus to what is under `pointer` now.
+    private func extendSelection(to pointer: NSEvent) {
+        guard var selection, let hit = selectionHit(at: pointer) else { return }
+        selection.focus = .init(row: hit.row, id: hit.id, index: hit.block?.index(at: hit.point) ?? 0)
+        guard selection != self.selection else { return }
+        select(selection)
+    }
+
+    /// Starts a selection at a press: a caret, or — for a double- or triple-click
+    /// — the word or paragraph under it. Which unit that is, is the block's to
+    /// answer, and the **point** goes over for the two that take one: an index at
+    /// a line boundary names two places, and only the point can tell them apart.
+    private func beginSelection(with event: NSEvent) {
+        window?.makeFirstResponder(tableView)
+        guard let hit = selectionHit(at: event) else { return select(nil) }
+        let range: Range<Int>
+        switch (hit.block, event.clickCount) {
+        case (let block?, 2): range = block.wordRange(at: hit.point)
+        case (let block?, 3...): range = block.paragraphRange(at: hit.point)
+        case (let block?, _):
+            let index = block.index(at: hit.point)
+            range = index..<index
+        case (nil, _): range = 0..<0
+        }
+        select(TextSelection(row: hit.row, id: hit.id, range: range))
+    }
+
+    /// What a right-click acts on, settled before its menu is shown.
+    ///
+    /// Two things, and both are why this is not a pure getter. **The focus** moves
+    /// to the selection's responder, because a menu item with a `nil` target
+    /// dispatches from the window's first responder, not from the view the menu
+    /// came from — right-clicking a row nobody has clicked would otherwise
+    /// validate Copy against whatever held the focus. And **the word under the
+    /// pointer** is selected, unless the click landed inside the selection, which
+    /// is then what the reader is pointing at. `NSTextView` and WebKit both do
+    /// this; the alternative is a menu whose only item is greyed out.
+    ///
+    /// Inside is tested in the index space rather than geometrically, which is
+    /// `NSTextView`'s test too — and for a table, whose selection is a rectangle,
+    /// the endpoints are what a copy would be taken from.
+    fileprivate func selectForContextMenu(with event: NSEvent) {
+        window?.makeFirstResponder(tableView)
+        guard let hit = selectionHit(at: event), let block = hit.block else { return }
+        if selection?.contains(row: hit.row, index: block.index(at: hit.point)) == true { return }
+        select(TextSelection(row: hit.row, id: hit.id, range: block.wordRange(at: hit.point)))
+    }
+
+    /// The row under `event` and the point in its block's own coordinates.
+    ///
+    /// Clamped rather than failing: above the rows is the start of the first and
+    /// below them the end of the last — `NSTextView`'s answer past its first and
+    /// last lines — so a drag that leaves the rows selects to the end, and the
+    /// block clamps a point beside its text the same way.
+    /// Worked out from the table's geometry, not from a view, so a row with no
+    /// view on screen answers as well as one with — and a drag keeps working when
+    /// the view it started on has been recycled. `block` is `nil` for a `.view`
+    /// row, whose content has no positions: the selection passes through it.
+    private func selectionHit(
+        at event: NSEvent
+    ) -> (row: Int, id: TranscriptRow.ID, block: MeasuredBlock?, point: CGPoint)? {
+        guard numberOfRows > 0, let dataSource else { return nil }
+        let point = tableView.convert(event.locationInWindow, from: nil)
+        let row = tableView.row(at: NSPoint(x: tableView.bounds.midX, y: point.y))
+        let above = row < 0 && point.y < 0
+        let clamped = row >= 0 ? row : above ? 0 : numberOfRows - 1
+
+        let described = dataSource.transcriptView(self, rowAt: clamped)
+        // The block is drawn from the cell's top edge, centred at the content
+        // width — `TranscriptCellView`'s arrangement.
+        let cell = tableView.frameOfCell(atColumn: 0, row: clamped)
+        let local =
+            row >= 0
+            ? CGPoint(x: point.x - (cell.midX - contentWidth / 2), y: point.y - cell.minY)
+            : above ? .zero : CGPoint(x: contentWidth, y: cell.height)
+        return (
+            clamped, described.id,
+            described.content == .view ? nil : measuredBlock(for: described), local
+        )
+    }
+
+    /// Makes `selection` the selection and shows it.
+    private func select(_ selection: TextSelection?) {
+        self.selection = selection
+        pushSelection()
+    }
+
+    /// Hands every row view on screen its part of the selection. A view whose
+    /// part did not change is not repainted (`BlockView.selectedRange`), so a drag
+    /// inside one row repaints that row alone.
+    private func pushSelection() {
+        tableView.enumerateAvailableRowViews { rowView, row in
+            guard let view = (rowView.view(atColumn: 0) as? TranscriptCellView)?.hostedView as? BlockView,
+                let block = view.block
+            else { return }
+            view.selectedRange = selection?.range(inRow: row, length: block.length)
+        }
+    }
+
+    /// Finds the selection's rows again after a removal or a reload, or drops it
+    /// when a row one of its ends was in has gone.
+    ///
+    /// Runs inside the mutation, before the table has been told — so it shows
+    /// nothing unless the selection went. A selection that survived is still
+    /// correct in every view on screen: what each shows is its part of the same
+    /// text, whatever number its row now has.
+    private func keepSelection(_ rows: [TranscriptRow.ID: Int]) {
+        guard let selection else { return }
+        self.selection = selection.relocated(to: rows)
+        if self.selection == nil { pushSelection() }
+    }
+
+    /// The table stopped being first responder.
+    fileprivate func selectionDidResign() {
+        guard selection != nil else { return }
+        select(nil)
+    }
+
+    /// Whether Copy has anything to copy.
+    fileprivate var canCopySelection: Bool {
+        selection.map { !$0.isEmpty } ?? false
+    }
+
+    /// Copies the selection as plain text, a blank line between rows.
+    ///
+    /// A row the selection covers that nothing has measured — it can run through
+    /// rows the reader dragged past without the table ever asking about — is
+    /// built for this and dropped, not filed: the same rule as a find's walk, for
+    /// the same reason (`RowCache` never evicts). The flat index space depends on
+    /// the content and not the width, so a tree measured at any width answers.
+    /// `.view` rows contribute nothing; their content is the host's.
+    fileprivate func copySelection() {
+        guard let selection, !selection.isEmpty, let dataSource else { return }
+        var parts: [String] = []
+        for row in selection.rows where row < numberOfRows {
+            let described = dataSource.transcriptView(self, rowAt: row)
+            guard
+                let block = rowCache.cachedMeasured(for: described, width: nil)
+                    ?? described.content.entry(width: contentWidth, reusing: nil)?.measured,
+                let range = selection.range(inRow: row, length: block.length)
+            else { continue }
+            let text = block.text(from: range.lowerBound, to: range.upperBound)
+            if !text.isEmpty { parts.append(text) }
+        }
+        guard !parts.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(parts.joined(separator: "\n\n"), forType: .string)
+    }
+
     // MARK: - Scroll anchoring
 
     /// How a mutation renumbers the rows the anchor is expressed in.
@@ -2350,6 +2594,13 @@ public final class TranscriptView: NSView {
         defer { NSAnimationContext.endGrouping() }
 
         beginAnchoring()
+        // Before `body`, not after it like the anchor: the table may ask for a
+        // new row's view inside its own call, and that view's part of the
+        // selection is read against these indices. A removal is renumbered by
+        // identity instead, in the sweep `removeRows` runs inside `body`.
+        if case .inserted(let indexes) = shift {
+            selection = selection?.shifted(byRowsInserted: indexes)
+        }
         body()
         switch shift {
         case .none: break
@@ -2599,8 +2850,8 @@ private final class OverlayScrollView: NSScrollView {
     }
 }
 
-/// The transcript's table, and the one thing it adds: saying when it has placed
-/// its rows.
+/// The transcript's table, and the two things it adds: saying when it has placed
+/// its rows, and being the responder for the selection.
 ///
 /// A find's overlay lights matches where the rows are, and the table moves rows
 /// without telling anyone — a height noted, a row inserted above, a width change
@@ -2608,17 +2859,48 @@ private final class OverlayScrollView: NSScrollView {
 /// `layout()` is where row views take it, so both report; the overlay sits later
 /// in the scroll view's subviews than the clip holding this table, so a layout pass
 /// reaches it after the rows have moved rather than before.
+///
+/// The selection's half is `NSTextView`'s shape: the document view holds the focus
+/// and answers Copy. Every piece of it is forwarded to the transcript, which holds
+/// the selection; see its `// MARK: - Selection`.
 private final class TranscriptTableView: NSTableView {
 
-    var didTile: (() -> Void)?
+    /// Weak, like `TableViewAdapter`'s: the transcript owns this table.
+    weak var transcript: TranscriptView?
 
     override func tile() {
         super.tile()
-        didTile?()
+        transcript?.setNeedsFindLayout()
     }
 
     override func layout() {
         super.layout()
-        didTile?()
+        transcript?.setNeedsFindLayout()
+    }
+
+    /// Every press that selects: one on a row's text, passed up the chain by its
+    /// `BlockView`, and one no row took — the margins beside the content, the gap
+    /// between two rows, a host row that does not handle the mouse, which starts
+    /// from the nearest position as a press in `NSTextView`'s margin does.
+    ///
+    /// `super` is not called: its tracking loop selects table rows, which the
+    /// transcript never shows. The transcript's loop takes the gesture instead.
+    override func mouseDown(with event: NSEvent) {
+        transcript?.trackSelection(from: event)
+    }
+
+    override func resignFirstResponder() -> Bool {
+        guard super.resignFirstResponder() else { return false }
+        transcript?.selectionDidResign()
+        return true
+    }
+
+    @objc func copy(_ sender: Any?) {
+        transcript?.copySelection()
+    }
+
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        guard item.action == #selector(copy(_:)) else { return super.validateUserInterfaceItem(item) }
+        return transcript?.canCopySelection ?? false
     }
 }

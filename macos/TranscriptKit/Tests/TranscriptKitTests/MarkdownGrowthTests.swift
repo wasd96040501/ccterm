@@ -242,12 +242,13 @@ final class MarkdownGrowthTests: XCTestCase {
         guard let view = blockView(ofRow: 0) else { return XCTFail("no row to select in") }
 
         sweep(view, atY: 4)
-        let selected = copiedText(view)
+        let selected = mounted.copy()
         XCTAssertEqual(selected, "Heading")
 
         grow(0, by: " It just got longer.")
 
-        XCTAssertEqual(copiedText(view), selected)
+        XCTAssertEqual(mounted.copy(), selected)
+        XCTAssertNotNil(view.selectedRange, "the text is still selected but no longer drawn so")
     }
 
     /// The other branch, and the reason the first one cannot simply always
@@ -259,13 +260,14 @@ final class MarkdownGrowthTests: XCTestCase {
         guard let view = blockView(ofRow: 0) else { return XCTFail("no row to select in") }
 
         sweep(view, atY: 4)
-        XCTAssertEqual(copiedText(view), "Heading")
+        XCTAssertEqual(mounted.copy(), "Heading")
 
         host.sources[0] = "# Something else entirely\n\nWith nothing in common."
         mounted.transcript.reloadRows(at: IndexSet(integer: 0))
         mounted.settle()
 
-        XCTAssertNil(copiedText(view))
+        XCTAssertNil(mounted.copy())
+        XCTAssertNil(view.selectedRange)
     }
 
     // MARK: - Driving a selection
@@ -273,10 +275,11 @@ final class MarkdownGrowthTests: XCTestCase {
     /// Far outside the block on either side, at a given height — every block
     /// clamps a stray point to its nearest position, so this selects a whole line
     /// without the test having to know where any glyph sits. Same sweep
-    /// `BlockViewSelectionTests` uses.
+    /// `SelectionTests` uses.
     private func sweep(_ view: BlockView, atY y: CGFloat) {
-        view.mouseDown(with: event(view, at: CGPoint(x: -500, y: y), .leftMouseDown))
-        view.mouseDragged(with: event(view, at: CGPoint(x: 5_000, y: y), .leftMouseDragged))
+        mounted.press(
+            view, with: event(view, at: CGPoint(x: -500, y: y), .leftMouseDown),
+            then: [event(view, at: CGPoint(x: 5_000, y: y), .leftMouseDragged)])
     }
 
     private func event(_ view: BlockView, at point: CGPoint, _ type: NSEvent.EventType) -> NSEvent {
@@ -284,15 +287,6 @@ final class MarkdownGrowthTests: XCTestCase {
             with: type, location: view.convert(point, to: nil), modifierFlags: [],
             timestamp: 0, windowNumber: mounted.window.windowNumber, context: nil,
             eventNumber: 0, clickCount: 1, pressure: 1)!
-    }
-
-    /// Cleared first, because `copy(_:)` writes nothing when there is no
-    /// selection — without the clear, "nothing was copied" and "the last copy is
-    /// still there" would read the same.
-    private func copiedText(_ view: BlockView) -> String? {
-        NSPasteboard.general.clearContents()
-        view.copy(nil)
-        return NSPasteboard.general.string(forType: .string)
     }
 }
 

@@ -1,0 +1,50 @@
+/* Tab context menu item, and the close button's accessibility label. */
+"Close Tab" = "关闭标签页";
+
+/* Tab context menu item: closes every unpinned tab but the one clicked. */
+"Close Other Tabs" = "关闭其他标签页";
+
+/* Tab context menu item. */
+"Pin Tab" = "固定标签页";
+
+/* Tab context menu item. */
+"Unpin Tab" = "取消固定标签页";
+
+/* Accessibility label of the pin a pinned tab shows. */
+"Pinned" = "已固定";
+
+/* Tab context menu item when there is one editor: opens a second editor on the right with this tab in it. */
+"Move to New Editor on Right" = "移到右侧新编辑器";
+
+/* Tab context menu item in the left of two editors. */
+"Move to Editor on Right" = "移到右侧编辑器";
+
+/* Tab context menu item in the right of two editors. */
+"Move to Editor on Left" = "移到左侧编辑器";
+
+/* Shown in an editor that has no tabs. */
+"No Editor" = "无编辑器";
+
+/* Placeholder of the find bar's field. */
+"Find" = "查找";
+
+/* Find bar button that closes it. */
+"Done" = "完成";
+
+/* Accessibility label of the find bar's button that empties the field. */
+"Clear" = "清除";
+
+/* Accessibility label of the find bar's arrow to the previous match. */
+"Previous" = "上一个";
+
+/* Accessibility label of the find bar's arrow to the next match. */
+"Next" = "下一个";
+
+/* Find bar count when the query matches nothing. */
+"No matches" = "无匹配项";
+
+/* Find bar count for a single match. */
+"1 match" = "1 个匹配项";
+
+/* Find bar count for several matches. */
+"%lld matches" = "%lld 个匹配项";

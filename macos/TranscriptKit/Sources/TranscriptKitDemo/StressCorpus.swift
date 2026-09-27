@@ -3,7 +3,7 @@ import Foundation
 /// A transcript of arbitrary length, built out of the real markdown in
 /// `Corpus/`.
 ///
-/// What the cold-load buttons on the control panel feed the transcript. The
+/// What the cold-load buttons on the tool palette feed the transcript. The
 /// documents are cut from Swift Evolution proposals and chapters of *The Swift
 /// Programming Language* (see `Corpus/ATTRIBUTION.md`) rather than generated,
 /// because the number the demo is showing off — how long an insert holds the

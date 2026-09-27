@@ -3,7 +3,7 @@ import TranscriptKit
 import TranscriptMedia
 
 /// Data source and delegate for the demo: the script in `DemoMessage.swift`,
-/// plus the mutations the control panel drives.
+/// plus the mutations the tool palette drives.
 ///
 /// Every mutation is the same two lines a real host writes — change the model,
 /// then announce the change — and each announcement is deliberately the

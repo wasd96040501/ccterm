@@ -31,6 +31,12 @@ let package = Package(
         // that holds it: `TranscriptMedia` depends on `TranscriptKit`, and
         // nothing in `TranscriptKit` can name a window, an overlay or a grid.
         .library(name: "TranscriptMedia", targets: ["TranscriptMedia"]),
+        // The editor area a transcript is shown in: side-by-side editors, tabs,
+        // the find bar an editor carries. Its own product for the same reason as
+        // the one above, and with a stronger edge — it depends on nothing in this
+        // package. A tab holds any `NSViewController`, so the split can never
+        // reach into a transcript, and the compiler is what says so.
+        .library(name: "TranscriptWorkspace", targets: ["TranscriptWorkspace"]),
     ],
     dependencies: [
         // Apple's CommonMark/GFM parser (cmark-gfm underneath). Pinned exactly:
@@ -44,7 +50,8 @@ let package = Package(
         // TranscriptKitDemo`. For the things only hands and eyes catch —
         // scrolling, dragging across the content-width clamp, chrome insets.
         .executableTarget(
-            name: "TranscriptKitDemo", dependencies: ["TranscriptKit", "TranscriptMedia"],
+            name: "TranscriptKitDemo",
+            dependencies: ["TranscriptKit", "TranscriptMedia", "TranscriptWorkspace"],
             // `.copy` rather than `.process`: the corpus is a directory the demo
             // enumerates at runtime, so adding another document to it should cost
             // no code change — and `.process` flattens the structure that walk
@@ -66,9 +73,13 @@ let package = Package(
         // the app get the same components, and so they stay buildable without an
         // Xcode project.
         .target(name: "TranscriptMedia", dependencies: ["TranscriptKit"]),
+        // No dependencies, on purpose: see the product above.
+        .target(name: "TranscriptWorkspace", resources: [.process("Resources")]),
         // `swift test`. Kept in the package rather than folded into the app's
         // Xcode test target so the package stays buildable and testable on its
-        // own — the point of it being a package.
-        .testTarget(name: "TranscriptKitTests", dependencies: ["TranscriptKit"]),
+        // own — the point of it being a package. One target for the whole
+        // package, so every test mounts through the one harness.
+        .testTarget(
+            name: "TranscriptKitTests", dependencies: ["TranscriptKit", "TranscriptWorkspace"]),
     ]
 )

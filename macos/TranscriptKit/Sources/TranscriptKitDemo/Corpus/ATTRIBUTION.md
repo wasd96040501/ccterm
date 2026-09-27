@@ -17,7 +17,7 @@ Two sources, so the mix is not one author's habits:
 Proposals bring tables, blockquotes and dense inline links; the book's chapters
 bring headings every few paragraphs and very long code fences. Between them a
 row's cost varies by more than an order of magnitude, which is what makes the
-chunk timings on the control panel mean anything.
+chunk timings on the tool palette mean anything.
 
 Unmodified — `StressCorpus` splits them at `##` boundaries at runtime rather than
 the files being pre-cut, so re-fetching a newer copy is a download and nothing

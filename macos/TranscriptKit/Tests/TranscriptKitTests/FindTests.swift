@@ -557,6 +557,58 @@ final class FindTests: XCTestCase {
 
         XCTAssertEqual(mounted.transcript.numberOfFindMatches, 1)
     }
+    /// The dimming stops at the transcript's edge. The overlay is taller than the
+    /// viewport on purpose — rows arriving from past the edge are lit before they
+    /// are seen — so without a clip the extra reaches whatever the host put above
+    /// the transcript: a find bar, a tab bar. Read from the composited window,
+    /// since a clip is what the window server applies and a frame does not show.
+    func testTheDimmingStaysInsideTheTranscript() async throws {
+        let window = TestWindow.make(contentSize: NSSize(width: 600, height: 400))
+        defer { window.close() }
+        window.appearance = NSAppearance(named: .aqua)
+        let root = NSView()
+        window.contentView = root
+        let chrome = WhiteView()
+        let transcript = TranscriptView()
+        let host = FindHost(sources: ["A paragraph that mentions Claude."])
+        // The host's bar goes in first and the transcript over it, which is the
+        // order a stack view or a plain `addSubview` sequence gives.
+        for view in [chrome, transcript] as [NSView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            root.addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            chrome.topAnchor.constraint(equalTo: root.topAnchor),
+            chrome.heightAnchor.constraint(equalToConstant: 60),
+            transcript.topAnchor.constraint(equalTo: chrome.bottomAnchor),
+            transcript.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+        ])
+        for view in [chrome, transcript] as [NSView] {
+            view.leadingAnchor.constraint(equalTo: root.leadingAnchor).isActive = true
+            view.trailingAnchor.constraint(equalTo: root.trailingAnchor).isActive = true
+        }
+        transcript.dataSource = host
+        transcript.delegate = host
+        root.layoutSubtreeIfNeeded()
+        transcript.reloadData()
+        root.layoutSubtreeIfNeeded()
+
+        transcript.find("claude")
+        await transcript.finding?.value
+        root.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
+        XCTAssertEqual(transcript.numberOfFindMatches, 1, "premise: the find is up")
+        let overlay = transcript.descendants(ofType: FindOverlayView.self)[0]
+        XCTAssertGreaterThan(
+            overlay.convert(overlay.bounds, to: nil).maxY, transcript.convert(transcript.bounds, to: nil).maxY,
+            "premise: the overlay reaches past the transcript's top")
+
+        let pixels = try await WindowCapture.bitmap(of: chrome)
+        let brightness = try XCTUnwrap(
+            pixels.colorAt(x: 300, y: 30)?.usingColorSpace(.deviceRGB)?.brightnessComponent)
+        XCTAssertGreaterThan(brightness, 0.97, "the find dimmed the host's bar above the transcript")
+    }
+
     // MARK: - A find follows the transcript
 
     /// A find replaces the previous one's count straight away, rather than leaving
@@ -907,5 +959,13 @@ private final class FindableRowView: NSView, TranscriptFindHighlighting {
 
     func drawCharacters(in range: Range<Int>) {
         drawn.append(range)
+    }
+}
+
+/// A plain white bar: the host's chrome, in the only colour the dimming shows on.
+private final class WhiteView: NSView {
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.white.setFill()
+        dirtyRect.fill()
     }
 }

@@ -16,8 +16,8 @@ final class TranscriptViewGeometryTests: XCTestCase {
     }
 
     /// Window width and clamp are the numbers the demo was checked by eye at, so
-    /// a disagreement here means the off-screen mount and a real window differ —
-    /// not that the transcript is wrong.
+    /// a disagreement here means the test mount and a real window differ — not
+    /// that the transcript is wrong.
     private static let windowSize = NSSize(width: 1100, height: 720)
     private static let maxContentWidth: CGFloat = 720
     /// What one 40pt row costs in the document: its own height plus the gap the
@@ -30,6 +30,12 @@ final class TranscriptViewGeometryTests: XCTestCase {
         mounted.transcript.dataSource = host
         mounted.transcript.delegate = host
         mounted.transcript.maxContentWidth = Self.maxContentWidth
+        // Mount, lay out, then load — `CLAUDE.md` §6. Loading first measures every
+        // row at a width of zero and again at the real one. That order passed
+        // here for as long as the mount sat thirty thousand points off screen,
+        // where AppKit put the first measure off until layout; a window the
+        // window server composites asks at once, the way the demo's does.
+        mounted.settle()
         mounted.transcript.reloadData()
         mounted.settle()
         return (mounted, host)

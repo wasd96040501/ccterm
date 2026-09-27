@@ -22,20 +22,14 @@ final class BlockViewSelectionTests: XCTestCase {
     }
 
     private func mount(_ source: String, width: CGFloat = 400) -> Mounted {
-        NSApplication.shared.setActivationPolicy(.prohibited)
-
         let block = MarkdownBlockBuilder.make(source).measure(width)
         let size = CGSize(width: width, height: block.size.height)
-        let window = NSWindow(
-            contentRect: NSRect(origin: NSPoint(x: -30_000, y: -30_000), size: size),
-            styleMask: [.titled], backing: .buffered, defer: false)
-        window.alphaValue = 0.01
+        let window = TestWindow.make(contentSize: size)
 
         let cell = BlockView()
         cell.frame = NSRect(origin: .zero, size: size)
         window.contentView?.addSubview(cell)
         cell.configure(with: block)
-        window.orderFront(nil)
 
         return Mounted(window: window, cell: cell, block: block)
     }
@@ -78,34 +72,11 @@ final class BlockViewSelectionTests: XCTestCase {
                 title: "Copy", action: #selector(BlockView.copy(_:)), keyEquivalent: "c"))
     }
 
-    /// Renders the cell as it stands.
-    ///
-    /// `draw(_:)` directly rather than `cacheDisplay(in:to:)`: the cell is
-    /// layer-backed with `.onSetNeedsDisplay`, so the caching path hands back
-    /// whatever the layer already holds — for a view that has never been on
-    /// screen, nothing at all.
-    private func render(_ mounted: Mounted) throws -> NSBitmapImageRep {
-        let cell = mounted.cell
-        let rep = try XCTUnwrap(
-            NSBitmapImageRep(
-                bitmapDataPlanes: nil,
-                pixelsWide: Int(cell.bounds.width), pixelsHigh: Int(cell.bounds.height),
-                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
-        // `cacheDisplay`, not `draw(_:)`. A row's painting lives on composited
-        // surfaces inside the view's layer, so `draw(_:)` is not the entry point
-        // to it and calling it directly would rasterise an empty view — which is
-        // what this assertion caught the day the surfaces landed.
-        //
-        // This is also the honest path: `cacheDisplay` is what a snapshot harness
-        // uses, it walks the layer tree (measured — it does pick up sublayers,
-        // including through an enclosing scroll view), and it applies the view's
-        // own flippedness, so the rep's top-left is the cell's and the block's
-        // rectangles index it directly. The rep is deliberately 1× so that a
-        // rectangle in points is a rectangle in pixels.
-        cell.cacheDisplay(in: cell.bounds, to: rep)
-
-        return rep
+    /// The cell as the window server composited it — see
+    /// `WindowCapture.bitmap(of:)`. One pixel per point with the rep's top-left at
+    /// the cell's, so the block's rectangles index it directly.
+    private func render(_ mounted: Mounted) async throws -> NSBitmapImageRep {
+        try await WindowCapture.bitmap(of: mounted.cell)
     }
 
     /// How many pixels inside `rect` differ between two renders.
@@ -352,12 +323,12 @@ final class BlockViewSelectionTests: XCTestCase {
     /// under that fill and was never seen. Now the band is `.decoration` and the
     /// card is `.background`, so it lands between the card and the glyphs — and
     /// the card has no idea.
-    func testTheBandIsVisibleInsideACodeCard() throws {
+    func testTheBandIsVisibleInsideACodeCard() async throws {
         let mounted = mount("```swift\nlet x = 1\n```")
 
-        let before = try render(mounted)
+        let before = try await render(mounted)
         sweep(mounted, atY: 20)
-        let after = try render(mounted)
+        let after = try await render(mounted)
 
         let band = try XCTUnwrap(mounted.block.rects(from: 0, to: mounted.block.length).first)
         XCTAssertTrue(canCopy(mounted), "the sweep selected nothing, so this proves nothing")
@@ -379,12 +350,12 @@ final class BlockViewSelectionTests: XCTestCase {
     /// `.background` is free — the cell appends after the whole walk, so within
     /// any one tier its band already lands last. Below `.content` is not: tag the
     /// band `.content` or `.overlay` and the glyphs disappear under it.
-    func testTheGlyphsStayOnTopOfTheBand() throws {
+    func testTheGlyphsStayOnTopOfTheBand() async throws {
         let mounted = mount("```swift\nlet x = 1\n```")
 
-        let before = try render(mounted)
+        let before = try await render(mounted)
         sweep(mounted, atY: 20)
-        let after = try render(mounted)
+        let after = try await render(mounted)
 
         let band = try XCTUnwrap(mounted.block.rects(from: 0, to: mounted.block.length).first)
         let inkBefore = inkPixels(before, in: band)
@@ -396,12 +367,12 @@ final class BlockViewSelectionTests: XCTestCase {
     }
 
     /// And nothing outside the band moves.
-    func testTheBandLeavesEverythingOutsideItAlone() throws {
+    func testTheBandLeavesEverythingOutsideItAlone() async throws {
         let mounted = mount("```swift\nlet x = 1\n```")
 
-        let before = try render(mounted)
+        let before = try await render(mounted)
         sweep(mounted, atY: 20)
-        let after = try render(mounted)
+        let after = try await render(mounted)
 
         let band = try XCTUnwrap(mounted.block.rects(from: 0, to: mounted.block.length).first)
         let belowTheBand = CGRect(

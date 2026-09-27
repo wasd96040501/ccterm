@@ -134,6 +134,8 @@ final class MountedTranscript {
             eventNumber: 0, clickCount: down.clickCount, pressure: 0)!
         for event in rest + [up] { NSApp.postEvent(event, atStart: false) }
         // DIAG (temporary)
+        setvbuf(stdout, nil, _IOLBF, 0)
+        print("DIAG press \(file):\(line)")
         let clip = scrollView.contentView
         clip.postsBoundsChangedNotifications = true
         var moves: [NSPoint] = []

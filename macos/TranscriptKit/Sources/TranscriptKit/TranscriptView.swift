@@ -2372,6 +2372,7 @@ public final class TranscriptView: NSView {
     /// view has to outlive its row for the gesture to finish.
     fileprivate func trackSelection(from event: NSEvent) {
         beginSelection(with: event)
+        print("TDIAG begin loc=\(event.locationInWindow) clicks=\(event.clickCount) sel=\(String(describing: selection))")  // DIAG
         guard let window, selection != nil else { return }
 
         // The press that started this, then each drag: where the pointer is in the
@@ -2384,6 +2385,7 @@ public final class TranscriptView: NSView {
             timeout: NSEvent.foreverDuration, mode: .eventTracking
         ) { event, stop in
             guard let event else { return }
+            print("TDIAG event \(event.type.rawValue) loc=\(event.type == .periodic ? .zero : event.locationInWindow) buttons=\(NSEvent.pressedMouseButtons)")  // DIAG
             switch event.type {
             case .leftMouseDragged: pointer = event
             // Scrolls by how far past the edge the pointer is, so the reader sets
@@ -2395,6 +2397,7 @@ public final class TranscriptView: NSView {
                 return
             }
             extendSelection(to: pointer)
+            print("TDIAG after \(String(describing: selection))")  // DIAG
         }
     }
 

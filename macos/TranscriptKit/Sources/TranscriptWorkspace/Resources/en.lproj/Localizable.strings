@@ -1,0 +1,50 @@
+/* Tab context menu item, and the close button's accessibility label. */
+"Close Tab" = "Close Tab";
+
+/* Tab context menu item: closes every unpinned tab but the one clicked. */
+"Close Other Tabs" = "Close Other Tabs";
+
+/* Tab context menu item. */
+"Pin Tab" = "Pin Tab";
+
+/* Tab context menu item. */
+"Unpin Tab" = "Unpin Tab";
+
+/* Accessibility label of the pin a pinned tab shows. */
+"Pinned" = "Pinned";
+
+/* Tab context menu item when there is one editor: opens a second editor on the right with this tab in it. */
+"Move to New Editor on Right" = "Move to New Editor on Right";
+
+/* Tab context menu item in the left of two editors. */
+"Move to Editor on Right" = "Move to Editor on Right";
+
+/* Tab context menu item in the right of two editors. */
+"Move to Editor on Left" = "Move to Editor on Left";
+
+/* Shown in an editor that has no tabs. */
+"No Editor" = "No Editor";
+
+/* Placeholder of the find bar's field. */
+"Find" = "Find";
+
+/* Find bar button that closes it. */
+"Done" = "Done";
+
+/* Accessibility label of the find bar's button that empties the field. */
+"Clear" = "Clear";
+
+/* Accessibility label of the find bar's arrow to the previous match. */
+"Previous" = "Previous";
+
+/* Accessibility label of the find bar's arrow to the next match. */
+"Next" = "Next";
+
+/* Find bar count when the query matches nothing. */
+"No matches" = "No matches";
+
+/* Find bar count for a single match. */
+"1 match" = "1 match";
+
+/* Find bar count for several matches. */
+"%lld matches" = "%lld matches";

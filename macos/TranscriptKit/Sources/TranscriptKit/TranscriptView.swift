@@ -313,6 +313,10 @@ public final class TranscriptView: NSView {
         // overlapping title bar — silently reverting the insets the host set to
         // clear its own overlays, one resize later.
         scroll.automaticallyAdjustsContentInsets = false
+        // The find overlay floats here and is taller than the viewport on purpose
+        // (see `FindOverlayView`); unclipped, its dimming spills onto whatever the
+        // host put above or below the transcript — a find bar, a tab bar.
+        scroll.clipsToBounds = true
         scroll.translatesAutoresizingMaskIntoConstraints = false
         return scroll
     }()
@@ -538,11 +542,21 @@ public final class TranscriptView: NSView {
     /// clip's frame-change notification, inside the scroll view's tile, and
     /// restoring an anchor there would write a scroll offset from inside the very
     /// layout that is producing it.
+    ///
+    /// What it does keep from `mutate` is the suppressed animation. Mid-drag AppKit
+    /// animates nothing anyway; any other width change — a second editor opening
+    /// beside this one, a zoom — otherwise slides the rows on screen to their new
+    /// heights over a fifth of a second, with their glyphs already laid out for the
+    /// new width: text that visibly squashes and springs back.
     private func contentWidthDidChange() {
         let width = contentWidth
         guard width != measuredContentWidth else { return }
         measuredContentWidth = width
         guard numberOfRows > 0 else { return }
+
+        NSAnimationContext.beginGrouping()
+        suppressImplicitAnimation()
+        defer { NSAnimationContext.endGrouping() }
 
         rebindVisibleRows(in: nil)
         noteHeightOfVisibleRows()
@@ -2352,7 +2366,9 @@ public final class TranscriptView: NSView {
     /// Turns layer animations off for the animation grouping the caller has opened.
     ///
     /// Load-bearing for anchoring, and the reason is worth stating because no
-    /// assertion can catch a regression here. In a layer-backed window — which any
+    /// geometry assertion can catch a regression here — only the layers'
+    /// `animationKeys()` can, which is what `ResizeRemeasureTests` reads for the
+    /// width-change path. In a layer-backed window — which any
     /// `NSVisualEffectView` in the tree makes it — the row geometry a mutation
     /// changes is an animatable property, so the rows slide to their new positions
     /// over a quarter second while the compensating scroll offset is written

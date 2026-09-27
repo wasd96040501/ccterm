@@ -26,21 +26,14 @@ final class ContextMenuTests: XCTestCase {
     }
 
     private func mount(_ source: String, width: CGFloat = 400) -> Mounted {
-        NSApplication.shared.setActivationPolicy(.prohibited)
-
         let block = MarkdownBlockBuilder.make(source).measure(width)
         let size = CGSize(width: width, height: block.size.height)
-        let window = NSWindow(
-            contentRect: NSRect(origin: NSPoint(x: -30_000, y: -30_000), size: size),
-            styleMask: [.titled], backing: .buffered, defer: false)
-        window.alphaValue = 0.01
-        window.isReleasedWhenClosed = false
+        let window = TestWindow.make(contentSize: size)
 
         let cell = BlockView()
         cell.frame = NSRect(origin: .zero, size: size)
         window.contentView?.addSubview(cell)
         cell.configure(with: block)
-        window.orderFront(nil)
 
         return Mounted(window: window, cell: cell, block: block)
     }

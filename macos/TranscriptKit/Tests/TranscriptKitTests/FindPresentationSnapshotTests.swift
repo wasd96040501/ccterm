@@ -60,7 +60,7 @@ final class FindPresentationSnapshotTests: XCTestCase {
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             mounted.window.appearance = NSAppearance(named: appearance)
             mounted.settle()
-            await WindowCapture.waitForFrames(
+            try await WindowCapture.waitForFrames(
                 of: mounted.window, spanning: FindIndicatorView.popDuration)
             let url = try await WindowCapture.capture(
                 mounted.window, named: "FindPresentation-\(name)")

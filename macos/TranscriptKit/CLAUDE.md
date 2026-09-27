@@ -127,7 +127,7 @@ without the app — which is most of the reason it is a package.
 
 Almost nothing here is testable as pure logic. `NSTableView` only asks its
 data source and delegate anything when it lays out, so a test mounts a real
-`TranscriptView` in an off-screen window (`MountedTranscript`) and asserts
+`TranscriptView` in a real window (`MountedTranscript`, over `TestWindow`) and asserts
 on geometry and on **what the transcript asked for**: the widths passed to
 `heightOfRow`, how many times, how many views were built rather than
 recycled. That second kind catches more than the first — a wrong width or a
@@ -157,16 +157,41 @@ Three rules, learned the hard way:
   and it belongs next to any assertion whose meaning depends on two inputs not
   being equivalent.
 
+### One harness: a window the window server composites
+
+Every test mounts through `TestWindow.make`, and there is no other way in. The
+window is **really on screen**: parked hanging off the bottom-left corner of the
+main display with a single point showing, opaque — so the window server composites
+all of it, and what a test reads is what a reader would see. It is never made key
+and the process runs with the `.prohibited` activation policy, so the person at the
+machine keeps the focus and the frontmost application never changes — measured,
+not hoped for. A suite run can go on while you work.
+
+It replaced two harnesses, and the reasons are the rules:
+
+- **Not thirty thousand points off.** The old mount lived there, and "off-screen"
+  was a different machine from the one a reader has. AppKit deferred the first
+  measure until layout there, so `reloadData()` before the first layout passed;
+  composited, the table asks at once, exactly as the demo's does, and the geometry
+  tests failed until they mounted, laid out, *then* loaded (§6). A harness whose
+  window is not composited tests an ordering no host can rely on.
+- **Not `cacheDisplay`.** It redraws a view in-process and sets up AppKit's drawing
+  state on the way — which is how it drew correctly through a bug that left rows in
+  the wrong appearance on screen. A pixel assertion reads
+  `WindowCapture.bitmap(of:)`: the composited window, cropped to the view, one pixel
+  per point. `testTheDimmingStaysInsideTheTranscript` is the kind of thing only this
+  sees — a clip is applied by the window server, and no frame shows one missing.
+
 **The mount's size is the test's, on every machine.** `NSWindow`'s initialiser
 puts a new window on a screen — and on one too small for it, shrinks it — so the
-harness sets the frame again after init, thirty thousand points off, and
-`constrainFrameRect(_:to:)` returns it unchanged so `orderFront` cannot pull it
-back. Until that, "off-screen" was only true of the comment: the window sat on the
-developer's display at alpha 0.01, and the first CI run — a 1024×768 runner — gave
-the scroll tests a viewport 78 points short. Anything else a test reads from the
-machine is the same kind of input: SF Symbol metrics snap to the main screen's
-pixel grid, so `InlineSymbolTests` checks its recorded numbers only on the 2x
-screen they were recorded on.
+harness sets the frame again after init, and `constrainFrameRect(_:to:)` returns it
+unchanged so `orderFront` cannot pull it back. Without that, the first CI run — a
+1024×768 runner — gave the scroll tests a viewport 78 points short. Assigning a
+`contentViewController` sizes the window to the controller's view, so a test that
+does that parks the window again afterwards (`TestWindow.park`). Anything else a
+test reads from the machine is the same kind of input: SF Symbol metrics snap to the
+main screen's pixel grid, so `InlineSymbolTests` checks its recorded numbers only on
+the 2x screen they were recorded on.
 
 `settle()` runs **one** pass on purpose. The transcript's width invalidation
 lands inside the pass that changed the width, so nothing is left for a second
@@ -174,30 +199,49 @@ round to settle — a change that starts needing `passes: 2` has pushed work
 onto a later tick, which is a visible frame at the old geometry, not a test
 detail.
 
-### What `cacheDisplay` can't show: `WindowCapture`
+### Capturing: `WindowCapture`
 
-`cacheDisplay` redraws a view in-process. Anything the window server composes —
-a material, a layer's shadow, what CoreAnimation actually drew rather than what a
-redraw would — is either flat or absent in it, and it sets up AppKit's drawing
-state on the way, which is how it hid the surface bug above. `WindowCapture`
-takes the window as composited instead, through ScreenCaptureKit:
-`SCShareableContent.currentProcess` (macOS 14.4) lists this process's own windows
-without asking for Screen Recording, and `SCContentFilter(desktopIndependentWindow:)`
-captures one whole.
+Through ScreenCaptureKit: `SCShareableContent.currentProcess` (macOS 14.4) lists
+this process's own windows without asking for Screen Recording, and
+`SCContentFilter(desktopIndependentWindow:)` captures one whole. Two things about it
+were learned by it failing, both reproduced outside XCTest:
 
-The window server only captures a window that overlaps a display — thirty
-thousand points off fails with `-3811` — but one point is enough for the whole
-window to come back. So a capture parks the window hanging off the bottom-left
-corner of its screen with a single point showing, opaque, waits two frames of that
-display's link for the commit to be composited, and takes it. Nothing is made key
-and the application is never activated: the person at the machine keeps the
-focus, which was measured (the frontmost application never changed) rather than
-hoped for.
+- **A capture fails transiently** — `-3811`, or an invalid transition — on a window
+  just ordered in, or fired straight after another capture, though the window is
+  already listed on screen. So a capture orders the window front, waits two frames
+  of its display's link for the commit to be composited, and retries a failed
+  attempt up to thirty times, two frames apart.
+- **A frame wait has a deadline.** A display that presents no frames — a locked
+  screen, a sleeping one — would otherwise hang the suite; it was ten minutes the
+  first time. After five seconds the wait throws `XCTSkip` instead, which says what
+  happened rather than failing a test that could not run.
+
+What a test still cannot do on this harness, all measured, so nobody re-derives
+them:
+
+- **Start a real drag.** `beginDraggingSession` from a test process begins, never
+  ends, and stays attached to the real pointer until the person at the machine next
+  lets go of a button — dropping into whatever is under it. So `EditorTabBar` splits
+  a tab leaving the bar into `dragWillBegin(tabAt:)` / `dragDidEnd()`, which the
+  real session calls and a test calls directly, and destinations are handed a
+  `StubDraggingInfo` through the same `NSDraggingDestination` methods AppKit calls.
+  A drag *along* the bar starts no session — it is mouse events, which a test sends
+  to `mouseDown` / `mouseDragged` / `mouseUp` like any others.
+- **Press a left button through `NSApp.sendEvent`.** It can make the window key.
+  `EditorAreaTests` exercises the area's event monitor with an other-mouse-down,
+  which the monitor watches and which activates nothing.
+- **Click a segment of an `NSSegmentedControl` laid out by constraints.** The same
+  synthesized press lands when the frame is set by hand, and always on a cell-based
+  control; on this one the action is never sent. And a momentary control's
+  `selectedSegment` does not keep a value written from outside. `FindBarViewTests`
+  presses the segments the way VoiceOver does, through their accessibility elements.
 
 Captures are `*SnapshotTests`, written to `/tmp/transcriptkit-screenshots/`, and
 skipped by `make test-kit` unless named — `make test-kit FILTER=<Class>`. They
 assert premises, not pixels: they are for reading, like the demo, but without a
-window taking over the screen. `FindPresentationSnapshotTests` is the first.
+window taking over the screen. `FindPresentationSnapshotTests` and
+`EditorAreaSnapshotTests` are the two. A pixel *assertion* is not a snapshot — it
+runs in the default suite like any other test, and reads `WindowCapture.bitmap`.
 
 ### What the suite can't check: `make demo-kit`
 
@@ -205,6 +249,23 @@ Run from the repo root, like everything else here — `make test-kit` and
 `make demo-kit` are the package's two entry points, and both just wrap
 `swift test` / `swift run TranscriptKitDemo` in this directory. The demo runs
 in the foreground; close the window to stop it.
+
+The window is an editor area (§9): each tab is one transcript with its own host,
+its own find bar and its own stream, and a second editor opens on the right
+(⌃⌘T). The tools float in glass at the bottom centre: a round toggle, and beside
+it a capsule showing one section at a time (Editors, Scroll, Mutate, Stream, Cold
+Load, Content Width). The toggle, or ⌥⌘T, folds the capsule into it. Every tool
+acts on the **active** editor's selected tab.
+
+The palette is built the way AppKit builds a toolbar, and is worth copying rather
+than re-deriving: its buttons are **nil-targeted actions, the same selectors as
+the menu items**, so a tool and its menu item are one command with one
+implementation; they are enabled by the window controller's one
+`validateUserInterfaceItem(_:)`, asked on every window update the way a toolbar
+asks for its items; and a command that carries a value is sent with the palette as
+its sender and reads the value off it, as `changeColor(_:)` reads an
+`NSColorPanel`. Folding is a stack view hiding an arranged view inside an
+animation group, with both pieces of glass in one `NSGlassEffectContainerView`.
 
 A test can assert a row's height, the width it was measured at, and how many
 views got built instead of recycled. It cannot assert that the document in
@@ -297,7 +358,7 @@ that never has to implement one. What they guarded — that both row kinds share
 one recycling pool, where a cell handed back from the wrong kind of row would
 show up — is asserted in `UserMessageRowTests` instead, which is the better home
 for it: the symptom is a row rendering another row's content, and a test can see
-that as readily as an eye can. The control panel stays regardless — the mutation
+that as readily as an eye can. The tool palette stays regardless — the mutation
 buttons are how scroll anchoring gets checked, and no rendering change should
 cost that.
 
@@ -364,7 +425,7 @@ of a long message belongs on a surface of its own, and nothing in this repositor
 builds that surface yet — §8 records what was learned by building one and taking
 it out again.
 
-**Streaming is on the panel because none of it is assertable.** A test can prove
+**Streaming is on the palette because none of it is assertable.** A test can prove
 that the blocks above a growing one were not typeset again (`MarkdownGrowthTests`
 reads `CTLine` identity for exactly that) and that a selection survived. It
 cannot see whether the settled text *twitched*, whether the growing paragraph
@@ -387,6 +448,15 @@ arrives and then visibly settles. `NSTableView` has exactly this behaviour
 whenever the host's row height depends on width; the app's `NativeTranscript2`
 answers it the same way, by building its scroll view unbound and binding the
 data source after the layout pass (`TranscriptScrollViewFactory`).
+
+**In a view controller, "laid out" means `viewDidAppear`, not `viewWillAppear`** —
+the root `CLAUDE.md`'s "Size before content". The demo's tabs loaded in
+`viewWillAppear` for a while, on the theory that a tab first gets a width when it
+is first selected. It does not get one there: the view is 0×0 and not yet in the
+window. So every row was measured at zero and corrected afterwards, and in an
+editor opened on the right the rows that had been drawn from the zero-width pass
+came out squashed or stretched. `EditorAreaTests.testATabAppearsAtItsFinalSizeAndNotBefore`
+pins the premise.
 
 This stays the host's job. The transcript could defer its own binding until it
 has a width, and that was tried: it costs a state the host cannot see, mutations
@@ -692,8 +762,9 @@ built. So the search runs where the trees are.
 
 **Why the find bar is not.** What a reader is told — the wording, whether a
 still-climbing total is qualified, where the field sits, what ⌘G is bound to — is
-product, and the demo's toolbar search (`DemoToolbarController`) is one answer to
-it rather than this package's. What crosses is the count, because it is the only part a host renders.
+product, and the find bar over each of the demo's transcripts
+(`TranscriptWorkspace`'s `FindBarView`, §9) is one answer to it rather than this
+package's. What crosses is the count, because it is the only part a host renders.
 Not the hits: a position in one is an index into a tree the host has never seen,
 and there is nothing to do with one but hand it straight back.
 
@@ -917,7 +988,7 @@ it has no business owning". Bad three times over: AppKit contains the word nowhe
 (zero hits across its headers, and no framework is named for it), "chrome" means
 the framing *around* content where the largest file here arranges the content
 itself, and this codebase had already spent the word on the host bars a transcript
-scrolls under — `contentInsets`, `ControlPanelView`, `LinkTooltip`. Worst of all
+scrolls under — `contentInsets`, the demo's tool palette, `LinkTooltip`. Worst of all
 its boundary was "host-side things", which is wide enough to admit anything: the
 grab-bag the project rules forbid, arriving under a spelling they don't list.
 
@@ -1057,3 +1128,102 @@ that fills this target. When something new arrives that seems to need a renderer
 change, the first question is whether it is a picture-shaped problem: presentation
 with product decisions in it, and a model the renderer would have to borrow. If
 so it belongs here, and costs the renderer nothing.
+
+## 9. Editors side by side: `TranscriptWorkspace`
+
+A third target and product: an IDE-shaped area of up to two editors, left and
+right, each with its own tabs — what the demo is built on, and what a host with
+more than one transcript open can mount. **It depends on nothing in this package**,
+not even `TranscriptKit`, and that is the point of its being a target: a tab holds
+any `NSViewController`, and the compiler guarantees the split cannot reach into
+what it holds. The transcript does not know it is in a tab, and nothing in it
+changed for this except two bugs this made visible (below).
+
+```
+EditorAreaViewController      NSSplitViewController — the divider, which editor is active
+└─ EditorGroupViewController  one per editor — its tab bar, and an NSTabViewController
+   └─ NSViewController        one per tab — anything; never looked inside
+```
+
+**Everything structural is AppKit's, and the choices are the whole design.**
+
+- **The split is an `NSSplitViewController`.** Dragging, the cursor, minimum
+  widths and accessibility come with it — and so does something that matters for
+  a transcript: *a divider drag is a live resize.* Measured, every view under it
+  gets `viewWillStartLiveResize()` / `viewDidEndLiveResize()` and reports
+  `inLiveResize` throughout, exactly as a window-edge drag does. So §6's
+  "mid-drag, only the rows on screen" applies to the divider with nothing here
+  knowing it exists. `EditorAreaTests` asserts it.
+- **The tabs are an `NSTabViewController`** in `.unspecified` style, so a tab is
+  an `NSTabViewItem` carrying a child view controller, **whose view is not loaded
+  until its tab is first selected** and is out of the window whenever another tab
+  is. Ten tabs cost one on-screen editor. A tab's label is the item's, which
+  follows its view controller's `title`, and the bar follows the label by KVO.
+- **The tab bar is built from what `NSSegmentedControl`'s `.tabs` role is made
+  of**, because its segments cannot move and Xcode's drag moves a tab. The track is
+  `secondarySystemFill`, the selected tab an `NSGlassEffectView` inset 2 points in
+  its tab; measured against the control in the demo, the selected tab matches it
+  pixel for pixel — glass edges, icon and title, and their colour — and the system
+  colours and the glass carry the dark appearance and an inactive window. It
+  replaced the segmented control only for the drag: measure against the control
+  before changing how a tab looks.
+- **A tab is a view placed by two constraints**, its leading edge and its width, one
+  view per tab identity so a reorder moves views instead of relabelling them. A
+  slide animates the two constants through their animators, which lays the tab out
+  again on every frame. `animator().frame` looked like the obvious call and is
+  wrong here: on a layer-backed view it animates the layer and lays the content out
+  once, at the final size, so a tab changing width showed its glass at the end
+  width at once and its title jumping ahead and sliding back.
+- **The delegate is AppKit-shaped**: `EditorAreaViewControllerDelegate` has
+  `editorArea(_:didActivate:)` and `editorArea(_:willClose:)`, both defaulted. The
+  second is the `prepareForRemoval()` hook the project rules ask of a container —
+  a tab's owner stops its stream or its load there, before the view controller
+  leaves the tree.
+
+**Behaviour, Xcode's unless noted.** A new tab selects itself. Closing the selected
+tab selects the one after it. The last tab of the right editor closes that editor;
+the last tab of the only editor leaves it empty, never gone. Pinned tabs come first,
+as wide as their titles, with no close button, and survive Close Other Tabs; the
+first `numberOfPinnedTabs` items *are* the pinned ones — a count, not a flag per
+tab, because the invariant is the order. Along its bar a dragged tab stays in the
+bar under the pointer, and a neighbour whose middle its edge passes slides into the
+place it left, never across the pinned boundary; let go, it settles into its own.
+Dragged far enough above or below, it leaves as a drag session carrying a capsule
+of its title, and the tabs it left close up. Over a bar the tabs part where it
+would drop, and it drops into the gap; dropped on the other editor's content it
+goes to the end;
+dropped on the trailing half of its own editor's content it opens a new editor on
+the right (refused for an editor's only tab — that would move the same layout
+over). **Which editor is active follows the reader**: the one last clicked
+anywhere inside, by a local event monitor that only looks, or the one holding the
+first responder, by KVO — two signals, because a click on a transcript's margin
+moves no focus and Tab moves focus without a click.
+
+**What a tab's owner has to route itself.** ⌘F is not a responder-chain action a
+view controller answers: measured, `performTextFinderAction:` is answered by
+`NSTextView` (the field editor) and by nothing on the way up from a transcript. So
+the demo's Find menu targets its window controller, which sends it to the active
+editor's tab. That is a host's answer and belongs in the host.
+
+**The find bar**, `FindBarView`, is a view and a delegate: it reports the query and
+`NSTextFinder.Action`s and is told the count, and knows nothing about what it finds
+in. Xcode's Aa, Contains/Begins With and the replace toggle are **not there**,
+because `find(_:)` takes no options (§7, §3) — controls that do nothing are worse
+than none. Return and ⇧Return step, Escape and Done hide, the count reads
+"No matches" / "1 match" / "N matches", and the arrows are enabled only with
+something to step to.
+
+**Two transcript bugs that editors made visible**, fixed in the transcript and
+tested there — neither is the workspace's to work around:
+
+- A width change that is not a drag — an editor opening beside this one — let
+  AppKit animate the visible rows to their new heights, with glyphs already laid
+  out for the new width: text that squashed and sprang back. The width path now
+  opens `mutate`'s suppressed animation group
+  (`ResizeRemeasureTests.testAWidthChangeOutsideADragDoesNotAnimateTheRows`, which
+  reads the layers' `animationKeys()`).
+- The find overlay is taller than the viewport on purpose, and nothing clipped it,
+  so its dimming spilled over whatever sat above the transcript — the find bar and
+  the tab bar. Invisible while the search field lived in the window's toolbar. The
+  scroll view clips now (`FindTests.testTheDimmingStaysInsideTheTranscript`, a pixel
+  read from the composited window).

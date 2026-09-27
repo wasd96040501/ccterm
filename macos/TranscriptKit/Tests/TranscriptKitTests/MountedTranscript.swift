@@ -2,8 +2,8 @@ import AppKit
 
 @testable import TranscriptKit
 
-/// An off-screen window with a `TranscriptView` filling it, plus the two calls
-/// that make AppKit do the work it would do on screen.
+/// A `TestWindow` with a `TranscriptView` filling it, plus the two calls that
+/// make AppKit do the work it would do on screen.
 ///
 /// **Deliberately without logic.** Build a window, mount, flush layout, drain
 /// the runloop — no branches, no derived numbers, no helper that computes what a
@@ -23,26 +23,7 @@ final class MountedTranscript {
     let transcript = TranscriptView()
 
     init(size: NSSize) {
-        // A window needs the shared application to exist first; `.prohibited`
-        // keeps `swift test` from putting anything in the Dock or taking focus.
-        NSApplication.shared.setActivationPolicy(.prohibited)
-
-        window = UnconstrainedWindow(
-            contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.titled, .resizable],
-            backing: .buffered,
-            defer: false)
-        // After init, because init is where AppKit puts a new window on a screen
-        // — and on a screen too small for it, shrinks it to fit. Measured on CI: a
-        // 1024×768 runner display handed the scroll tests a viewport 78 points
-        // shorter than they asked for, and every offset they asserted moved with
-        // it. Set here, and kept by `UnconstrainedWindow`, the size is the one
-        // asked for on any machine.
-        window.setFrame(
-            window.frameRect(
-                forContentRect: NSRect(origin: NSPoint(x: -30_000, y: -30_000), size: size)),
-            display: false)
-        window.alphaValue = 0.01
+        window = TestWindow.make(contentSize: size)
 
         let root = NSView()
         window.contentView = root
@@ -54,11 +35,6 @@ final class MountedTranscript {
             transcript.topAnchor.constraint(equalTo: root.topAnchor),
             transcript.bottomAnchor.constraint(equalTo: root.bottomAnchor),
         ])
-
-        // Ordered front, not made key: an `NSTableView` off any window skips
-        // work a mounted one does, and `orderFront` on a window 30 000 points
-        // off-screen steals nothing.
-        window.orderFront(nil)
     }
 
     /// Runs `passes` rounds of "flush layout, draw what needs drawing, drain the
@@ -129,7 +105,7 @@ final class MountedTranscript {
     }
 
     /// Scrolls the way a wheel or a drag would, neither of which can be
-    /// synthesized into an off-screen window.
+    /// synthesized into a window that is never key.
     func scroll(toY y: CGFloat) {
         let clip = scrollView.contentView
         clip.scroll(to: NSPoint(x: clip.bounds.minX, y: y))
@@ -152,18 +128,5 @@ extension NSView {
             found.append(contentsOf: subview.descendants(ofType: type))
         }
         return found
-    }
-}
-
-/// A window AppKit does not move back onto a screen.
-///
-/// `orderFront` constrains a titled window's frame to the screen it lands on,
-/// which is right for a window someone will look at and wrong for one a test
-/// mounts: the size is the test's input. Returning the frame unchanged is the
-/// documented hook for exactly that.
-private final class UnconstrainedWindow: NSWindow {
-
-    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
-        frameRect
     }
 }

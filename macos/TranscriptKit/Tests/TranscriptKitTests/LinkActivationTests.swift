@@ -150,25 +150,14 @@ final class LinkActivationTests: XCTestCase {
     }
 
     private func mount(_ source: String, width: CGFloat = 400) -> Mounted {
-        NSApplication.shared.setActivationPolicy(.prohibited)
-
         let block = MarkdownBlockBuilder.make(source).measure(width)
         let size = CGSize(width: width, height: block.size.height)
-        let window = NSWindow(
-            contentRect: NSRect(origin: NSPoint(x: -30_000, y: -30_000), size: size),
-            styleMask: [.titled], backing: .buffered, defer: false)
-        window.alphaValue = 0.01
-        // `close()` below would otherwise release it while this test still holds
-        // one — `NSWindow` defaults this to `true`, which predates ARC and means
-        // an over-release that surfaces as a segfault inside some later test's
-        // runloop turn rather than here.
-        window.isReleasedWhenClosed = false
+        let window = TestWindow.make(contentSize: size)
 
         let cell = BlockView()
         cell.frame = NSRect(origin: .zero, size: size)
         window.contentView?.addSubview(cell)
         cell.configure(with: block)
-        window.orderFront(nil)
 
         let recorder = Recorder()
         // What crosses is the run; the address is what this suite is about, so

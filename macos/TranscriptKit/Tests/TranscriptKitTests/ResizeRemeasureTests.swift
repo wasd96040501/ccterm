@@ -109,6 +109,31 @@ final class ResizeRemeasureTests: XCTestCase {
             "these two widths lay a row out identically, so nothing here can detect a stale one")
     }
 
+    /// A width change that is not a drag — an editor opening beside this one, a
+    /// zoom — puts the rows on screen at their new heights at once. Animated, the
+    /// row views slide into place over a fifth of a second while the glyphs are
+    /// already laid out for the new width, which reads as the text being squashed.
+    func testAWidthChangeOutsideADragDoesNotAnimateTheRows() {
+        let (subject, host) = mount(width: Self.wide)
+        XCTAssertFalse(host.rowCalls.isEmpty, "the transcript never laid out")
+        let before = subject.transcript.rect(ofRow: 0).height
+
+        subject.setContentWidth(Self.narrow)
+        subject.settle()
+
+        XCTAssertNotEqual(
+            subject.transcript.rect(ofRow: 0).height, before, "premise: the rows changed height")
+        let rowViews =
+            subject.scrollView.documentView?.subviews.compactMap {
+                $0 as? NSTableRowView
+            } ?? []
+        XCTAssertFalse(rowViews.isEmpty, "premise: there are rows on screen")
+        let animated = rowViews.filter { !($0.layer?.animationKeys() ?? []).isEmpty }
+        XCTAssertEqual(
+            animated.count, 0,
+            "rows animating into place: \(animated.map { $0.layer?.animationKeys() ?? [] })")
+    }
+
     // MARK: - The window
 
     /// The rows on screen are correct immediately; the rows off screen are

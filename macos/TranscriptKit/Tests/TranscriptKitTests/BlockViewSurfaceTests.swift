@@ -29,23 +29,14 @@ final class BlockViewSurfaceTests: XCTestCase {
     }
 
     private func mount(_ source: String, width: CGFloat = 400) -> Mounted {
-        NSApplication.shared.setActivationPolicy(.prohibited)
-
         let block = MarkdownBlockBuilder.make(source).measure(width)
-        let window = NSWindow(
-            contentRect: NSRect(x: -30_000, y: -30_000, width: width, height: block.size.height),
-            styleMask: [.titled], backing: .buffered, defer: false)
-        window.alphaValue = 0.01
-        // As in the other mounts here: `NSWindow` predates ARC and defaults to
-        // releasing itself on close, which would over-release the reference this
-        // test still holds.
-        window.isReleasedWhenClosed = false
+        let window = TestWindow.make(
+            contentSize: NSSize(width: width, height: block.size.height))
 
         let cell = BlockView()
         cell.frame = NSRect(x: 0, y: 0, width: width, height: block.size.height)
         window.contentView?.addSubview(cell)
         cell.configure(with: block)
-        window.orderFront(nil)
         cell.layoutSubtreeIfNeeded()
         cell.display()
 
@@ -171,18 +162,21 @@ final class BlockViewSurfaceTests: XCTestCase {
     /// The row's painting reaches the surface at all — which is the claim the move
     /// off `draw(_:)` rests on, and the one that would fail silently as a blank
     /// row rather than as an error.
-    func testTheRowsPaintingReachesTheSurface() throws {
+    func testTheRowsPaintingReachesTheSurface() async throws {
         let mounted = mount("a paragraph of ordinary words")
         defer { mounted.window.close() }
 
-        let cell = mounted.cell
-        let rep = try XCTUnwrap(cell.bitmapImageRepForCachingDisplay(in: cell.bounds))
-        cell.cacheDisplay(in: cell.bounds, to: rep)
-
+        // Read off the window server rather than redrawn: a composited window is
+        // opaque everywhere, so ink is what is darker than the window behind it.
+        let rep = try await WindowCapture.bitmap(of: mounted.cell)
         var inked = 0
         for y in stride(from: 0, to: rep.pixelsHigh, by: 2) {
             for x in stride(from: 0, to: rep.pixelsWide, by: 2) {
-                if let colour = rep.colorAt(x: x, y: y), colour.alphaComponent > 0.1 { inked += 1 }
+                if let colour = rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB),
+                    colour.brightnessComponent < 0.5
+                {
+                    inked += 1
+                }
             }
         }
         XCTAssertGreaterThan(inked, 0, "the row rasterised to nothing at all")

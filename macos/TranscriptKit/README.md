@@ -151,3 +151,34 @@ func transcriptView(_ tv: TranscriptView, viewForRow row: Int) -> NSView {
 // That view later opened a disclosure and is now taller:
 transcript.noteHeightOfRows(withIndexesChanged: [transcript.row(for: cell)])
 ```
+
+## Editors side by side: `TranscriptWorkspace`
+
+A second product in this package, independent of `TranscriptKit` — it imports
+nothing from it. Up to two editors, left and right, each with its own tabs, in
+Xcode's shape: a draggable divider, tabs that reorder by dragging and move between
+editors, pinned tabs, and a find bar (`FindBarView`) to put over whatever a tab
+shows. A tab holds any `NSViewController`; the area never looks inside it.
+
+```swift
+let area = EditorAreaViewController()        // an NSSplitViewController
+area.delegate = self
+window.contentViewController = area
+
+// A tab is an NSTabViewItem; its label follows the view controller's title.
+area.activeGroup.addTabViewItem(NSTabViewItem(viewController: transcriptTab))
+area.addGroup(with: NSTabViewItem(viewController: otherTab))   // opens on the right
+
+// EditorAreaViewControllerDelegate
+func editorArea(_ area: EditorAreaViewController, didActivate viewController: NSViewController?) {
+    // the editor the reader is working in changed — aim window commands here
+}
+func editorArea(_ area: EditorAreaViewController, willClose viewController: NSViewController) {
+    // stop what the tab was running, before it leaves the tree
+}
+```
+
+Dragging the divider is a live resize for everything under it, so a
+`TranscriptView` in a tab re-measures only its visible rows until the drag ends —
+with nothing in either package knowing about the other. `CLAUDE.md` §9 has the
+design and the measurements behind it.

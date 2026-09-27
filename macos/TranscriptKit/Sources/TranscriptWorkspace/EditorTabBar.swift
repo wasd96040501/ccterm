@@ -24,37 +24,38 @@ protocol EditorTabBarDelegate: AnyObject {
     ) -> Int?
 }
 
-/// An editor's row of tabs: AppKit's own segmented control in its tab role — the
-/// capsule track with the selected tab raised out of it that Xcode's editor
-/// tabs are — plus the four things a segmented control does not do.
+/// An editor's row of tabs, the way Xcode's are: a capsule track with the
+/// selected tab raised out of it in glass, and tabs that move under the pointer.
 ///
-/// **The control draws everything a tab looks like.** On macOS 27
-/// `NSSegmentedControl.Role.tabs` at `.large` is that capsule, in both
-/// appearances and in an inactive window, so no pixel of a tab is drawn here.
-/// Earlier systems get the ordinary segmented control, which is the same shape
-/// without the glass. What is added sits on top of it:
+/// **Built from system parts.** The track is `secondarySystemFill` and the
+/// selected tab is an `NSGlassEffectView` — measured against `NSSegmentedControl`
+/// in its macOS 27 tabs role, which is the same two things: equal to a grey level
+/// in both appearances, the glass taking care of an inactive window. What is
+/// drawn here is only where each tab goes. A segmented control cannot be the bar
+/// because its segments cannot move: Xcode's drag moves a tab.
 ///
-/// - **A close button over the hovered tab**, at its leading edge where Xcode puts
-///   it, and never over a pinned one.
-/// - **Pinning**, which is only presentation here: a pinned tab has a pin for an
-///   image and is as wide as its title, where every other tab shares what is
-///   left. Which tabs are pinned, and that they come first, is the group's.
-/// - **Dragging.** Within a bar a dragged tab moves as the pointer crosses its
-///   neighbours, so the bar itself shows where it will land. Over another editor's
-///   bar a line marks the gap it would drop into — a live move there would empty
-///   the editor the drag started from, and so remove the view the drag is coming
-///   from, while it is still in flight.
-/// - **A context menu per tab**, asked of the delegate.
+/// **A drag, as Xcode's goes** (measured frame by frame off Xcode's own bar):
 ///
-/// The mouse is taken over rather than passed to `super`. The control's own
-/// tracking loop keeps every event until the button comes up, so a drag could
-/// never start from inside it. A tab is selected on mouse-down instead — which
-/// is when Xcode and Safari select one — and the action is still sent, so
-/// accessibility's press and keyboard selection arrive at the same place.
+/// - **Within the bar** the tab stays in it, under the pointer, and a neighbour
+///   whose middle it crosses slides into the place it left. Let go, it slides
+///   into its own. No drag session: the mouse events are enough, and a session's
+///   image would be a second copy of the tab.
+/// - **Out of the bar**, far enough above or below it, the tab leaves as a drag
+///   session carrying a small capsule of its title, and the tabs it left close up.
+/// - **Over a bar** — another editor's, or its own again — the tabs open a gap
+///   where it would drop, and it drops into the gap.
+///
+/// Only the drag moves anything. A tab added, closed or selected lands at once.
+///
+/// The tabs are tracked by identity, not position: a view per `Item.id`, so a
+/// reorder moves views instead of relabelling them in place, and the dragged tab
+/// is still the dragged tab after its index changes under it.
 @MainActor
-final class EditorTabBar: NSSegmentedControl, NSDraggingSource {
+final class EditorTabBar: NSView, NSDraggingSource {
 
     struct Item: Equatable {
+        /// Which tab this is, through moves.
+        var id: ObjectIdentifier
         var title: String
         var image: NSImage?
         var toolTip: String?
@@ -64,18 +65,26 @@ final class EditorTabBar: NSSegmentedControl, NSDraggingSource {
     weak var delegate: EditorTabBarDelegate?
 
     private(set) var items: [Item] = []
+    private(set) var selectedIndex: Int?
 
     /// The tab under the pointer, which is the one the close button is over.
     private(set) var hoveredIndex: Int?
 
-    /// The tab being dragged out of this bar, followed through the moves a drag
-    /// within the bar makes. `nil` when no drag started here.
-    private(set) var draggedIndex: Int?
+    /// The tab being dragged out of this bar, wherever it has got to. `nil` when
+    /// no drag started here, and once the tab has left for another bar.
+    var draggedIndex: Int? {
+        draggedID.flatMap { id in items.firstIndex { $0.id == id } }
+    }
+
+    /// Whether the dragged tab has left the bar as a drag session.
+    private(set) var isDraggedTabOut = false
+
+    /// Where a tab dragged over this bar would drop: the gap opened for it.
+    private(set) var gapIndex: Int?
 
     let closeButton: NSButton = TabCloseButton()
 
-    /// Where a tab dragged in from another bar would drop.
-    let insertionIndicator = NSView()
+    static let height: CGFloat = 28
 
     /// The bar a drag in flight started from, held until the session ends.
     ///
@@ -85,26 +94,24 @@ final class EditorTabBar: NSSegmentedControl, NSDraggingSource {
     /// keeps its source alive, so this does.
     private static var inFlight: EditorTabBar?
 
+    private var tabViews: [ObjectIdentifier: EditorTabView] = [:]
+    private var draggedID: ObjectIdentifier?
+
     private var pressedIndex: Int?
     private var pressLocation: NSPoint = .zero
+    /// Where along the dragged tab the pointer holds it, and where the pointer is.
+    private var grabOffset: CGFloat = 0
+    private var pointerX: CGFloat = 0
+
+    /// The size the tabs were last placed for.
+    private var placedSize: NSSize?
 
     /// How far a press has to travel before it is a drag rather than a click.
     private static let dragThreshold: CGFloat = 4
 
-    /// Measured against the control as drawn: the track's inset from the
-    /// control's edges, which segments start inside.
-    private static let trackInset: CGFloat = 2
-
     init() {
         super.init(frame: .zero)
-        if #available(macOS 27.0, *) {
-            role = .tabs
-        }
-        trackingMode = .selectOne
-        controlSize = .large
-        segmentDistribution = .fillEqually
-        target = self
-        action = #selector(segmentSelected)
+        wantsLayer = true
         registerForDraggedTypes([.editorTab])
 
         closeButton.bezelStyle = .smallSquare
@@ -123,12 +130,6 @@ final class EditorTabBar: NSSegmentedControl, NSDraggingSource {
         closeButton.action = #selector(closeHovered)
         closeButton.isHidden = true
         addSubview(closeButton)
-
-        insertionIndicator.wantsLayer = true
-        insertionIndicator.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
-        insertionIndicator.layer?.cornerRadius = 1
-        insertionIndicator.isHidden = true
-        addSubview(insertionIndicator)
     }
 
     @available(*, unavailable)
@@ -136,87 +137,164 @@ final class EditorTabBar: NSSegmentedControl, NSDraggingSource {
         fatalError("code-only")
     }
 
-    // MARK: - Content
+    override var isFlipped: Bool { true }
 
-    /// Rebuilds the segments. Idempotent: every segment is rewritten, so nothing
-    /// a previous configuration set survives into this one.
-    func configure(items: [Item], selectedIndex: Int?) {
-        self.items = items
-        segmentCount = items.count
-        let font = NSFont.systemFont(ofSize: NSFont.systemFontSize(for: controlSize))
-        for (index, item) in items.enumerated() {
-            setLabel(item.title, forSegment: index)
-            setImage(
-                item.isPinned
-                    ? NSImage(
-                        systemSymbolName: "pin.fill",
-                        accessibilityDescription: String(localized: "Pinned", bundle: .module))
-                    : item.image,
-                forSegment: index)
-            setToolTip(item.toolTip ?? item.title, forSegment: index)
-            // Zero is "size me with the others".
-            setWidth(
-                item.isPinned ? Self.pinnedWidth(for: item.title, font: font) : 0,
-                forSegment: index)
-        }
-        selectedSegment = selectedIndex ?? -1
-        if let hovered = hoveredIndex, hovered >= items.count { hoveredIndex = nil }
-        needsLayout = true
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: Self.height)
     }
 
-    /// As wide as its title and pin, and no wider: a pinned tab is kept for
-    /// reaching, not for reading at length.
-    private static func pinnedWidth(for title: String, font: NSFont) -> CGFloat {
-        ceil((title as NSString).size(withAttributes: [.font: font]).width) + 44
+    // MARK: - The track
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        let fill: NSColor
+        if #available(macOS 14.0, *) {
+            fill = .secondarySystemFill
+        } else {
+            fill = NSColor.labelColor.withAlphaComponent(0.078)
+        }
+        layer?.backgroundColor = fill.cgColor
+        layer?.cornerRadius = bounds.height / 2
+    }
+
+    // MARK: - Content
+
+    /// Shows `items`, the one at `selectedIndex` selected. Idempotent. A change
+    /// made while a drag is going on is the drag's, and slides; any other lands.
+    func configure(items: [Item], selectedIndex: Int?) {
+        self.items = items
+        self.selectedIndex = selectedIndex
+        let kept = Set(items.map(\.id))
+        for (id, view) in tabViews where !kept.contains(id) {
+            view.removeFromSuperview()
+            tabViews[id] = nil
+        }
+        for (index, item) in items.enumerated() {
+            let view = tabViews[item.id] ?? makeTabView(for: item.id)
+            view.configure(with: item, isSelected: index == selectedIndex)
+        }
+        if let hovered = hoveredIndex, hovered >= items.count { hoveredIndex = nil }
+        placeTabs(animated: draggedID != nil || gapIndex != nil)
+    }
+
+    private func makeTabView(for id: ObjectIdentifier) -> EditorTabView {
+        let view = EditorTabView()
+        addSubview(view, positioned: .below, relativeTo: closeButton)
+        tabViews[id] = view
+        return view
+    }
+
+    private func tabView(at index: Int) -> EditorTabView? {
+        tabViews[items[index].id]
     }
 
     // MARK: - Geometry
 
-    /// The rectangle segment `index` occupies, in this view's coordinates.
+    /// Left to right over the bar, a rect for each of `indices`; `gap` puts an
+    /// empty place the width of an unpinned tab before the `gap`-th of them.
     ///
-    /// Arithmetic rather than a query, because the control publishes none: a
-    /// pinned segment is the width it was given, and the rest share what is left
-    /// equally — which is `fillEqually`'s definition, applied here the same way.
-    func rect(forTabAt index: Int) -> NSRect {
-        guard index >= 0, index < segmentCount else { return .zero }
-        let track = bounds.insetBy(dx: Self.trackInset, dy: 0)
-        let fixed = (0..<segmentCount).map { width(forSegment: $0) }
-        let flexible = fixed.filter { $0 == 0 }.count
-        let share = flexible > 0 ? max(0, track.width - fixed.reduce(0, +)) / CGFloat(flexible) : 0
-        var x = track.minX
-        for segment in 0..<index {
-            x += fixed[segment] == 0 ? share : fixed[segment]
+    /// A pinned tab is as wide as its title and the rest share what is left. The
+    /// tabs run end to end of the track, as the segmented control's segments do:
+    /// the margin is inside each tab, around its glass.
+    private func slots(for indices: [Int], gap: Int? = nil) -> [NSRect] {
+        let fixed = indices.map { items[$0].isPinned ? Self.pinnedWidth(for: items[$0].title) : 0 }
+        let flexible = fixed.filter { $0 == 0 }.count + (gap == nil ? 0 : 1)
+        let share = flexible > 0 ? max(0, bounds.width - fixed.reduce(0, +)) / CGFloat(flexible) : 0
+        var x = bounds.minX
+        var rects: [NSRect] = []
+        for (position, width) in fixed.enumerated() {
+            if position == gap { x += share }
+            let width = width == 0 ? share : width
+            rects.append(NSRect(x: x, y: bounds.minY, width: width, height: bounds.height))
+            x += width
         }
-        let width = fixed[index] == 0 ? share : fixed[index]
-        return NSRect(x: x, y: bounds.minY, width: width, height: bounds.height)
+        return rects
+    }
+
+    /// Where the tab at `index` rests, with no drag going on.
+    func rect(forTabAt index: Int) -> NSRect {
+        guard items.indices.contains(index) else { return .zero }
+        return slots(for: Array(items.indices))[index]
     }
 
     /// The tab under `point`, or `nil` off every tab.
     func tabIndex(at point: NSPoint) -> Int? {
-        (0..<segmentCount).first { rect(forTabAt: $0).contains(point) }
+        items.indices.first { rect(forTabAt: $0).contains(point) }
     }
 
-    /// The gap nearest to `point`, as the index a tab dropped there would take.
-    func insertionIndex(at point: NSPoint) -> Int {
-        (0..<segmentCount).filter { rect(forTabAt: $0).midX < point.x }.count
+    /// The tabs in the bar, which a tab dragged out of it is not.
+    private var shownIndices: [Int] {
+        items.indices.filter { !(isDraggedTabOut && $0 == draggedIndex) }
     }
+
+    /// The gap nearest to `point` among the tabs in the bar, as the index a tab
+    /// dropped there would take.
+    private func insertionIndex(at point: NSPoint) -> Int {
+        slots(for: shownIndices).filter { $0.midX < point.x }.count
+    }
+
+    /// As wide as its title and pin, and no wider: a pinned tab is kept for
+    /// reaching, not for reading at length.
+    private static func pinnedWidth(for title: String) -> CGFloat {
+        ceil((title as NSString).size(withAttributes: [.font: EditorTabView.font]).width) + 44
+    }
+
+    // MARK: - Placing the tabs
 
     override func layout() {
         super.layout()
+        guard bounds.size != placedSize else { return }
+        placeTabs(animated: false)
+    }
+
+    /// Where the tab in hand is: under the pointer, held where it was picked up,
+    /// and kept on the track.
+    private func heldFrame(in slot: NSRect) -> NSRect {
+        var frame = slot
+        frame.origin.x = min(max(pointerX - grabOffset, bounds.minX), bounds.maxX - slot.width)
+        return frame
+    }
+
+    /// Puts every tab where it goes now: at rest, bent by a drag. The tab in hand
+    /// follows the pointer and never animates; the rest slide when `animated`,
+    /// except a tab new to the bar, which lands where it goes.
+    private func placeTabs(animated: Bool) {
+        placedSize = bounds.size
+        let shown = shownIndices
+        var moves: [(EditorTabView, NSRect)] = []
+        for (index, slot) in zip(shown, slots(for: shown, gap: gapIndex)) {
+            guard let view = tabView(at: index) else { continue }
+            view.isHidden = false
+            if index == draggedIndex {
+                view.frame = heldFrame(in: slot)
+            } else if animated, view.frame != .zero {
+                moves.append((view, slot))
+            } else {
+                view.frame = slot
+            }
+        }
+        if isDraggedTabOut, let dragged = draggedIndex { tabView(at: dragged)?.isHidden = true }
+        if !moves.isEmpty {
+            NSAnimationContext.runAnimationGroup { context in
+                if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { context.duration = 0 }
+                for (view, frame) in moves { view.animator().frame = frame }
+            }
+        }
         placeCloseButton()
     }
 
     private func placeCloseButton() {
-        guard let hovered = hoveredIndex, hovered < items.count, !items[hovered].isPinned,
-            draggedIndex == nil
+        guard let hovered = hoveredIndex, items.indices.contains(hovered), !items[hovered].isPinned,
+            draggedID == nil, let tab = tabView(at: hovered)
         else {
             closeButton.isHidden = true
             return
         }
-        let tab = rect(forTabAt: hovered)
+        // 8 points into the glass, which is 2 into the tab.
         let side: CGFloat = 16
         closeButton.frame = NSRect(
-            x: tab.minX + 8, y: tab.midY - side / 2, width: side, height: side)
+            x: tab.frame.minX + 10, y: tab.frame.midY - side / 2, width: side, height: side)
         closeButton.isHidden = false
     }
 
@@ -255,29 +333,72 @@ final class EditorTabBar: NSSegmentedControl, NSDraggingSource {
         delegate?.tabBar(self, didCloseTabAt: hovered)
     }
 
-    // MARK: - Pressing and dragging
+    // MARK: - Pressing and dragging within the bar
 
+    /// Selects on mouse-down, which is when Xcode and Safari select a tab.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         guard let index = tabIndex(at: point) else { return }
         pressedIndex = index
         pressLocation = point
-        guard index != selectedSegment else { return }
-        selectedSegment = index
-        segmentSelected()
+        select(index)
+    }
+
+    private func select(_ index: Int) {
+        guard index != selectedIndex else { return }
+        delegate?.tabBar(self, didSelectTabAt: index)
+    }
+
+    // MARK: Accessibility — a tab group of radio buttons, one per tab
+
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .tabGroup }
+
+    /// A tab pressed through accessibility, as VoiceOver presses one.
+    fileprivate func press(_ tab: EditorTabView) {
+        guard let index = items.indices.first(where: { tabView(at: $0) === tab }) else { return }
+        select(index)
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let pressed = pressedIndex else { return }
         let point = convert(event.locationInWindow, from: nil)
-        guard hypot(point.x - pressLocation.x, point.y - pressLocation.y) > Self.dragThreshold
-        else { return }
-        pressedIndex = nil
-        beginDragging(tabAt: pressed, with: event)
+        if draggedID == nil {
+            guard let pressed = pressedIndex, let view = tabView(at: pressed),
+                hypot(point.x - pressLocation.x, point.y - pressLocation.y) > Self.dragThreshold
+            else { return }
+            draggedID = items[pressed].id
+            grabOffset = pressLocation.x - view.frame.minX
+            // Over its neighbours as it passes them.
+            addSubview(view, positioned: .below, relativeTo: closeButton)
+        }
+        guard let dragged = draggedIndex, !isDraggedTabOut else { return }
+        // Far enough above or below, it has left the bar.
+        guard abs(point.y - bounds.midY) <= bounds.height else {
+            pressedIndex = nil
+            beginDraggingSession(tabAt: dragged, with: event)
+            return
+        }
+        pointerX = point.x
+        // Past every tab whose middle its edge has crossed: the leading edge for a
+        // tab before it, the trailing edge for one after. Held on the track, it
+        // can reach either end.
+        let rests = slots(for: Array(items.indices))
+        let held = heldFrame(in: rests[dragged])
+        let target = items.indices.filter { index in
+            index < dragged ? rests[index].midX < held.minX : index > dragged && rests[index].midX < held.maxX
+        }.count
+        if target != dragged {
+            _ = delegate?.tabBar(self, moveTabAt: dragged, of: self, to: target)
+        }
+        placeTabs(animated: true)
     }
 
+    /// Let go within the bar: the tab slides into its place.
     override func mouseUp(with event: NSEvent) {
         pressedIndex = nil
+        guard draggedID != nil, !isDraggedTabOut else { return }
+        draggedID = nil
+        placeTabs(animated: true)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -287,42 +408,67 @@ final class EditorTabBar: NSSegmentedControl, NSDraggingSource {
         return delegate?.tabBar(self, menuForTabAt: index)
     }
 
-    @objc private func segmentSelected() {
-        guard selectedSegment >= 0 else { return }
-        delegate?.tabBar(self, didSelectTabAt: selectedSegment)
-    }
+    // MARK: - Dragging out of the bar
 
-    private func beginDragging(tabAt index: Int, with event: NSEvent) {
-        let tab = rect(forTabAt: index)
+    private func beginDraggingSession(tabAt index: Int, with event: NSEvent) {
+        let image = Self.dragImage(for: items[index])
+        let point = convert(event.locationInWindow, from: nil)
         let item = NSDraggingItem(pasteboardWriter: EditorTabDrag())
-        item.setDraggingFrame(tab, contents: snapshot(of: tab))
+        item.setDraggingFrame(
+            NSRect(
+                x: point.x - image.size.width / 2, y: point.y - image.size.height / 2,
+                width: image.size.width, height: image.size.height),
+            contents: image)
         dragWillBegin(tabAt: index)
         beginDraggingSession(with: [item], event: event, source: self)
     }
 
-    /// The bar's half of a drag starting: which tab is in flight, and no close
-    /// button while it is. Kept apart from the session, which is the window
-    /// server's — the bar's state is everything a destination reads, and it is
-    /// the same whether the pointer or a test is moving it.
+    /// The bar's half of a tab leaving it as a drag session: the tab is out, and
+    /// the tabs it left close up. Kept apart from the session, which is the
+    /// window server's — the bar's state is everything a destination reads, and
+    /// it is the same whether the pointer or a test is moving it.
     func dragWillBegin(tabAt index: Int) {
-        draggedIndex = index
-        placeCloseButton()
+        draggedID = items[index].id
+        isDraggedTabOut = true
         Self.inFlight = self
+        placeTabs(animated: true)
     }
 
-    /// The bar's half of a drag ending, however it ended.
+    /// The bar's half of a drag ending, however it ended. A tab still here comes
+    /// back into its place.
     func dragDidEnd() {
-        draggedIndex = nil
-        placeCloseButton()
+        draggedID = nil
+        isDraggedTabOut = false
         Self.inFlight = nil
+        placeTabs(animated: true)
     }
 
-    private func snapshot(of rect: NSRect) -> NSImage? {
-        guard let rep = bitmapImageRepForCachingDisplay(in: rect) else { return nil }
-        cacheDisplay(in: rect, to: rep)
-        let image = NSImage(size: rect.size)
-        image.addRepresentation(rep)
-        return image
+    /// What follows the pointer out of the bar: the tab's title and image in a
+    /// small capsule, which is what Xcode's drag carries rather than the tab.
+    private static func dragImage(for item: Item) -> NSImage {
+        let font = EditorTabView.font
+        let title = item.title as NSString
+        let titleSize = title.size(withAttributes: [.font: font])
+        let icon = item.image.map { $0.withSymbolConfiguration(.init(paletteColors: [.labelColor])) ?? $0 }
+        let (height, padding, spacing, side): (CGFloat, CGFloat, CGFloat, CGFloat) = (26, 12, 5, 16)
+        let width = ceil(2 * padding + (icon == nil ? 0 : side + spacing) + titleSize.width)
+        return NSImage(size: NSSize(width: width, height: height), flipped: false) { rect in
+            let capsule = NSBezierPath(
+                roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: (height - 1) / 2, yRadius: (height - 1) / 2)
+            NSColor.controlBackgroundColor.setFill()
+            capsule.fill()
+            NSColor.separatorColor.setStroke()
+            capsule.stroke()
+            var x = padding
+            if let icon {
+                icon.draw(in: NSRect(x: x, y: (height - side) / 2, width: side, height: side))
+                x += side + spacing
+            }
+            title.draw(
+                at: NSPoint(x: x, y: (height - titleSize.height) / 2),
+                withAttributes: [.font: font, .foregroundColor: NSColor.labelColor])
+            return true
+        }
     }
 
     // MARK: NSDraggingSource
@@ -345,53 +491,160 @@ final class EditorTabBar: NSSegmentedControl, NSDraggingSource {
         draggingUpdated(sender)
     }
 
+    /// A tab over the bar opens a gap where it would drop.
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard let source = sender.draggingSource as? EditorTabBar,
-            let dragged = source.draggedIndex
-        else { return [] }
-        let point = convert(sender.draggingLocation, from: nil)
-
-        guard source !== self else {
-            // Live: the tab moves as soon as the pointer is over another one.
-            let target = tabIndex(at: point) ?? (point.x < bounds.midX ? 0 : segmentCount - 1)
-            if target != dragged,
-                let landed = delegate?.tabBar(self, moveTabAt: dragged, of: self, to: target)
-            {
-                draggedIndex = landed
-            }
-            return .move
+        guard let source = sender.draggingSource as? EditorTabBar, source.draggedIndex != nil else {
+            return []
         }
-
-        showInsertionIndicator(at: insertionIndex(at: point))
+        let gap = insertionIndex(at: convert(sender.draggingLocation, from: nil))
+        if gap != gapIndex {
+            gapIndex = gap
+            placeTabs(animated: true)
+        }
         return .move
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
-        insertionIndicator.isHidden = true
-    }
-
-    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        insertionIndicator.isHidden = true
-        guard let source = sender.draggingSource as? EditorTabBar,
-            let dragged = source.draggedIndex
-        else { return false }
-        // Already where it belongs: a drag within the bar moved it on the way.
-        guard source !== self else { return true }
-        let index = insertionIndex(at: convert(sender.draggingLocation, from: nil))
-        return delegate?.tabBar(self, moveTabAt: dragged, of: source, to: index) != nil
+        closeGap()
     }
 
     override func concludeDragOperation(_ sender: NSDraggingInfo?) {
-        insertionIndicator.isHidden = true
+        closeGap()
     }
 
-    private func showInsertionIndicator(at index: Int) {
-        let x =
-            index < segmentCount
-            ? rect(forTabAt: index).minX
-            : rect(forTabAt: segmentCount - 1).maxX
-        insertionIndicator.frame = NSRect(x: x - 1, y: 4, width: 2, height: bounds.height - 8)
-        insertionIndicator.isHidden = false
+    /// Drops the tab into the gap: the gap closes as the tab takes its place, so
+    /// nothing moves. One from this bar is back in it from here on.
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let source = sender.draggingSource as? EditorTabBar, let dragged = source.draggedIndex
+        else {
+            closeGap()
+            return false
+        }
+        let gap = gapIndex ?? insertionIndex(at: convert(sender.draggingLocation, from: nil))
+        gapIndex = nil
+        if source === self {
+            draggedID = nil
+            isDraggedTabOut = false
+        }
+        let moved = delegate?.tabBar(self, moveTabAt: dragged, of: source, to: gap) != nil
+        placeTabs(animated: true)
+        return moved
+    }
+
+    private func closeGap() {
+        guard gapIndex != nil else { return }
+        gapIndex = nil
+        placeTabs(animated: true)
+    }
+}
+
+/// One tab: its image and title, and the glass it sits in while selected.
+///
+/// Not hit by the mouse — the bar takes every event, since a press on a tab is
+/// the start of a drag the bar runs.
+@MainActor
+private final class EditorTabView: NSView {
+
+    /// The tabs-role segmented control's, at `.large`.
+    static let font = NSFont.systemFont(ofSize: 13)
+
+    private let background: NSView = {
+        if #available(macOS 26.0, *) {
+            return NSGlassEffectView()
+        }
+        let box = NSBox()
+        box.boxType = .custom
+        box.fillColor = .controlBackgroundColor
+        box.borderColor = .separatorColor
+        box.borderWidth = 0.5
+        return box
+    }()
+
+    private let imageView: NSImageView = {
+        let view = NSImageView()
+        view.symbolConfiguration = .init(pointSize: 13, weight: .regular)
+        // The segmented control's image is the title's colour, not a lighter one.
+        view.contentTintColor = .labelColor
+        return view
+    }()
+
+    private let label: NSTextField = {
+        let label = NSTextField(labelWithString: "")
+        label.font = EditorTabView.font
+        label.lineBreakMode = .byTruncatingTail
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return label
+    }()
+
+    private var isSelected = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        addSubview(background)
+        let content = NSStackView(views: [imageView, label])
+        content.orientation = .horizontal
+        // 4 points from the symbol's ink to the title's, as measured on the
+        // segmented control; the symbol's image carries 2 of them on its side.
+        content.spacing = 2
+        content.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(content)
+        // Room at the leading edge for the close button, and as much at the other.
+        let inset: CGFloat = 28
+        let centre = content.centerXAnchor.constraint(equalTo: centerXAnchor)
+        centre.priority = .defaultHigh
+        NSLayoutConstraint.activate([
+            centre,
+            content.centerYAnchor.constraint(equalTo: centerYAnchor),
+            content.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: inset),
+            content.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -inset),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("code-only")
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    /// The glass stands 2 points in from every edge of the tab, and draws half a
+    /// point past its frame — so it shows 1.5 points in, as the segmented
+    /// control's selected segment does.
+    override func layout() {
+        super.layout()
+        background.frame = bounds.insetBy(dx: 2, dy: 2)
+        if #available(macOS 26.0, *), let glass = background as? NSGlassEffectView {
+            glass.cornerRadius = background.frame.height / 2
+        } else {
+            (background as? NSBox)?.cornerRadius = background.frame.height / 2
+        }
+    }
+
+    func configure(with item: EditorTabBar.Item, isSelected: Bool) {
+        self.isSelected = isSelected
+        background.isHidden = !isSelected
+        label.stringValue = item.title
+        imageView.image =
+            item.isPinned
+            ? NSImage(
+                systemSymbolName: "pin.fill",
+                accessibilityDescription: String(localized: "Pinned", bundle: .module))
+            : item.image
+        imageView.isHidden = imageView.image == nil
+        toolTip = item.toolTip ?? item.title
+        setAccessibilityLabel(item.title)
+    }
+
+    // MARK: Accessibility — a tab is a radio button in the bar's group
+
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .radioButton }
+    override func accessibilityValue() -> Any? { NSNumber(value: isSelected) }
+
+    override func accessibilityPerformPress() -> Bool {
+        guard let bar = superview as? EditorTabBar else { return false }
+        bar.press(self)
+        return true
     }
 }
 

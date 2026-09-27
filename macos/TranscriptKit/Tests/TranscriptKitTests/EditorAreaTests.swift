@@ -27,9 +27,9 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertIdentical(
             mounted.recorder.activated.last ?? nil, mounted.probes[2],
             "the delegate was not told which tab became active")
-        XCTAssertEqual(group.tabBar.segmentCount, 3, "the bar does not show every tab")
-        XCTAssertEqual(group.tabBar.selectedSegment, 2)
-        XCTAssertEqual(group.tabBar.label(forSegment: 1), "Tab 1")
+        XCTAssertEqual(group.tabBar.items.count, 3, "the bar does not show every tab")
+        XCTAssertEqual(group.tabBar.selectedIndex, 2)
+        XCTAssertEqual(group.tabBar.items[1].title, "Tab 1")
     }
 
     /// The performance claim, and the isolation one: one tab's view in the
@@ -55,7 +55,7 @@ final class EditorAreaTests: XCTestCase {
         bar.mouseUp(with: mouse(.leftMouseUp, at: center(of: bar, tab: 0), in: bar))
 
         XCTAssertEqual(mounted.area.activeGroup.selectedTabViewItemIndex, 0)
-        XCTAssertEqual(bar.selectedSegment, 0)
+        XCTAssertEqual(bar.selectedIndex, 0)
         XCTAssertIdentical(mounted.area.activeViewController, mounted.probes[0])
     }
 
@@ -70,7 +70,7 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertGreaterThan(bar.bounds.width, 300, "premise: the bar was laid out")
         XCTAssertEqual(rects[0].maxX, rects[1].minX, accuracy: 0.5)
         XCTAssertEqual(rects[1].maxX, rects[2].minX, accuracy: 0.5)
-        XCTAssertEqual(rects[2].maxX, bar.bounds.maxX - 2, accuracy: 0.5)
+        XCTAssertEqual(rects[2].maxX, bar.bounds.maxX, accuracy: 0.5)
         XCTAssertLessThan(
             rects[0].width, rects[1].width, "a pinned tab should be narrower than the rest")
     }
@@ -81,7 +81,7 @@ final class EditorAreaTests: XCTestCase {
 
         mounted.area.activeGroup.tabViewItems[0].label = "Renamed"
 
-        XCTAssertEqual(mounted.area.activeGroup.tabBar.label(forSegment: 0), "Renamed")
+        XCTAssertEqual(mounted.area.activeGroup.tabBar.items[0].title, "Renamed")
     }
 
     // MARK: - Closing
@@ -375,21 +375,78 @@ final class EditorAreaTests: XCTestCase {
 
     // MARK: - Dragging
 
-    func testDraggingATabAcrossItsNeighboursMovesItAsItGoes() throws {
+    /// Xcode's drag within a bar: no drag session, the tab stays in the bar under
+    /// the pointer, and a neighbour whose middle it passes moves into the place
+    /// it left — the move made as it goes, not on release.
+    func testDraggingATabAcrossItsNeighboursMovesItAsItGoes() async throws {
         let mounted = mount(tabs: 3)
         defer { mounted.window.close() }
         let group = mounted.area.activeGroup
         let bar = group.tabBar
+        let start = center(of: bar, tab: 0)
+        // Held by its middle, just short of the last tab's: its trailing edge is
+        // past the middles of both neighbours.
+        let end = NSPoint(x: bar.rect(forTabAt: 2).midX - 10, y: start.y)
 
-        bar.dragWillBegin(tabAt: 0)
-        let over = StubDraggingInfo(source: bar, at: center(of: bar, tab: 2), in: bar)
-        XCTAssertEqual(bar.draggingUpdated(over), .move)
+        bar.mouseDown(with: mouse(.leftMouseDown, at: start, in: bar))
+        bar.mouseDragged(with: mouse(.leftMouseDragged, at: end, in: bar))
 
         XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 1", "Tab 2", "Tab 0"])
         XCTAssertEqual(bar.draggedIndex, 2, "the bar lost track of the tab it is dragging")
-        XCTAssertTrue(bar.performDragOperation(over))
-        bar.dragDidEnd()
+        XCTAssertFalse(bar.isDraggedTabOut, "a drag along the bar left it")
+        let held = try tabView(titled: "Tab 0", in: bar)
+        XCTAssertEqual(held.frame.midX, end.x, accuracy: 0.5, "the tab is not under the pointer")
+
+        // The neighbours slide into the places the tab passed over.
+        try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.5)
+        XCTAssertEqual(try tabView(titled: "Tab 1", in: bar).frame, bar.rect(forTabAt: 0))
+        XCTAssertEqual(try tabView(titled: "Tab 2", in: bar).frame, bar.rect(forTabAt: 1))
+
+        bar.mouseUp(with: mouse(.leftMouseUp, at: end, in: bar))
+
+        XCTAssertNil(bar.draggedIndex)
         XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 1", "Tab 2", "Tab 0"])
+        try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.5)
+        XCTAssertEqual(held.frame, bar.rect(forTabAt: 2), "let go, the tab did not settle in its place")
+    }
+
+    /// The tab stops at the end of the track, and from there it has passed every
+    /// neighbour — the ends are places a drag can reach.
+    func testATabDraggedPastEitherEndOfTheBarTakesThatEnd() throws {
+        let mounted = mount(tabs: 3)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        let bar = group.tabBar
+        let start = center(of: bar, tab: 0)
+
+        bar.mouseDown(with: mouse(.leftMouseDown, at: start, in: bar))
+        bar.mouseDragged(
+            with: mouse(.leftMouseDragged, at: NSPoint(x: bar.bounds.maxX + 50, y: start.y), in: bar))
+        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 1", "Tab 2", "Tab 0"])
+        XCTAssertEqual(try tabView(titled: "Tab 0", in: bar).frame.maxX, bar.bounds.maxX, accuracy: 0.5)
+
+        bar.mouseDragged(
+            with: mouse(.leftMouseDragged, at: NSPoint(x: bar.bounds.minX - 50, y: start.y), in: bar))
+        bar.mouseUp(with: mouse(.leftMouseUp, at: NSPoint(x: bar.bounds.minX - 50, y: start.y), in: bar))
+        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 0", "Tab 1", "Tab 2"])
+    }
+
+    func testAPressThatBarelyMovesSelectsAndDoesNotDrag() throws {
+        let mounted = mount(tabs: 3)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        let bar = group.tabBar
+        var point = center(of: bar, tab: 0)
+
+        bar.mouseDown(with: mouse(.leftMouseDown, at: point, in: bar))
+        point.x += 3
+        bar.mouseDragged(with: mouse(.leftMouseDragged, at: point, in: bar))
+        XCTAssertNil(bar.draggedIndex, "a hand that shook started a drag")
+        bar.mouseUp(with: mouse(.leftMouseUp, at: point, in: bar))
+
+        XCTAssertEqual(group.selectedTabViewItemIndex, 0, "premise: the press landed")
+        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 0", "Tab 1", "Tab 2"])
+        XCTAssertEqual(try tabView(titled: "Tab 0", in: bar).frame, bar.rect(forTabAt: 0))
     }
 
     func testADraggedTabStaysOutOfThePinnedTabs() throws {
@@ -399,13 +456,71 @@ final class EditorAreaTests: XCTestCase {
         let bar = group.tabBar
         group.setTabPinned(true, at: 0)
         settle(mounted.window)
+        let start = center(of: bar, tab: 2)
 
-        bar.dragWillBegin(tabAt: 2)
-        _ = bar.draggingUpdated(StubDraggingInfo(source: bar, at: center(of: bar, tab: 0), in: bar))
-        bar.dragDidEnd()
+        bar.mouseDown(with: mouse(.leftMouseDown, at: start, in: bar))
+        bar.mouseDragged(
+            with: mouse(.leftMouseDragged, at: NSPoint(x: bar.bounds.minX, y: start.y), in: bar))
+        bar.mouseUp(with: mouse(.leftMouseUp, at: NSPoint(x: bar.bounds.minX, y: start.y), in: bar))
 
         XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 0", "Tab 2", "Tab 1"])
         XCTAssertEqual(group.numberOfPinnedTabs, 1)
+    }
+
+    /// Out of the bar, the tab goes with the drag session and the tabs it left
+    /// close up; back from a drag that dropped nowhere, it takes its place again.
+    func testATabDraggedOutOfTheBarLeavesNoHole() async throws {
+        let mounted = mount(tabs: 3)
+        defer { mounted.window.close() }
+        let bar = mounted.area.activeGroup.tabBar
+        let dragged = try tabView(titled: "Tab 1", in: bar)
+        let last = try tabView(titled: "Tab 2", in: bar)
+        let rest = last.frame
+
+        bar.dragWillBegin(tabAt: 1)
+        try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.5)
+
+        XCTAssertTrue(dragged.isHidden, "the tab stayed in the bar as well as in the drag")
+        XCTAssertEqual(try tabView(titled: "Tab 0", in: bar).frame.maxX, last.frame.minX, accuracy: 0.5)
+        XCTAssertEqual(last.frame.maxX, bar.bounds.maxX, accuracy: 0.5, "the tabs did not close up")
+
+        bar.dragDidEnd()
+        try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.5)
+
+        XCTAssertFalse(dragged.isHidden)
+        XCTAssertEqual(dragged.frame, bar.rect(forTabAt: 1))
+        XCTAssertEqual(last.frame, rest)
+    }
+
+    /// Over a bar, the tabs part where the tab would drop, and close again when
+    /// it leaves without dropping.
+    func testATabOverTheOtherEditorsBarOpensAGapWhereItWouldDrop() async throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        let left = mounted.area.activeGroup
+        let right = try XCTUnwrap(
+            mounted.area.addGroup(
+                with: NSTabViewItem(viewController: ProbeViewController(title: "Right"))))
+        settle(mounted.window)
+        let resting = try tabView(titled: "Right", in: right.tabBar)
+        let rest = resting.frame
+
+        left.tabBar.dragWillBegin(tabAt: 0)
+        var point = center(of: right.tabBar, tab: 0)
+        point.x -= rest.width / 4
+        _ = right.tabBar.draggingUpdated(StubDraggingInfo(source: left.tabBar, at: point, in: right.tabBar))
+        try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.5)
+
+        XCTAssertEqual(right.tabBar.gapIndex, 0)
+        XCTAssertEqual(resting.frame.minX, rest.midX, accuracy: 0.5, "no gap opened before the tab")
+        XCTAssertEqual(resting.frame.maxX, rest.maxX, accuracy: 0.5)
+
+        right.tabBar.draggingExited(nil)
+        left.tabBar.dragDidEnd()
+        try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.5)
+
+        XCTAssertNil(right.tabBar.gapIndex)
+        XCTAssertEqual(resting.frame, rest, "the gap stayed open after the tab left")
     }
 
     func testDroppingATabOnTheOtherEditorsBarMovesItToTheGap() throws {
@@ -424,7 +539,7 @@ final class EditorAreaTests: XCTestCase {
         point.x -= right.tabBar.rect(forTabAt: 0).width / 4
         let drop = StubDraggingInfo(source: left.tabBar, at: point, in: right.tabBar)
         XCTAssertEqual(right.tabBar.draggingUpdated(drop), .move)
-        XCTAssertFalse(right.tabBar.insertionIndicator.isHidden, "no mark where it would drop")
+        XCTAssertEqual(right.tabBar.gapIndex, 0, "no gap where it would drop")
         XCTAssertEqual(left.tabViewItems.count, 2, "a drag over another bar moved the tab early")
 
         XCTAssertTrue(right.tabBar.performDragOperation(drop))
@@ -433,7 +548,7 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertEqual(right.tabViewItems.map(\.label), ["Tab 0", "Right"])
         XCTAssertEqual(left.tabViewItems.map(\.label), ["Tab 1"])
         XCTAssertIdentical(mounted.area.activeViewController, dragged)
-        XCTAssertTrue(right.tabBar.insertionIndicator.isHidden)
+        XCTAssertNil(right.tabBar.gapIndex)
         XCTAssertEqual(dragged.loads, 1)
     }
 
@@ -591,6 +706,12 @@ final class EditorAreaTests: XCTestCase {
     private func center(of bar: EditorTabBar, tab: Int) -> NSPoint {
         let rect = bar.rect(forTabAt: tab)
         return NSPoint(x: rect.midX, y: rect.midY)
+    }
+
+    /// A tab's view, found the way VoiceOver finds it: by the title it is labelled
+    /// with. Where it is on screen, as against where it rests (`rect(forTabAt:)`).
+    private func tabView(titled title: String, in bar: EditorTabBar) throws -> NSView {
+        try XCTUnwrap(bar.subviews.first { $0.accessibilityLabel() == title }, "no tab titled \(title)")
     }
 
     private func mouse(_ type: NSEvent.EventType, at point: NSPoint, in view: NSView) -> NSEvent {

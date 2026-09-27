@@ -233,8 +233,8 @@ public final class EditorGroupViewController: NSViewController {
         tabBar.configure(
             items: tabViewItems.enumerated().map { index, item in
                 EditorTabBar.Item(
-                    title: item.label, image: item.image, toolTip: item.toolTip,
-                    isPinned: isTabPinned(at: index))
+                    id: ObjectIdentifier(item), title: item.label, image: item.image,
+                    toolTip: item.toolTip, isPinned: isTabPinned(at: index))
             },
             selectedIndex: tabViewItems.isEmpty ? nil : selectedTabViewItemIndex)
         let empty = tabViewItems.isEmpty

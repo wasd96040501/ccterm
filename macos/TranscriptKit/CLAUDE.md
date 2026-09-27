@@ -163,6 +163,31 @@ round to settle — a change that starts needing `passes: 2` has pushed work
 onto a later tick, which is a visible frame at the old geometry, not a test
 detail.
 
+### What `cacheDisplay` can't show: `WindowCapture`
+
+`cacheDisplay` redraws a view in-process. Anything the window server composes —
+a material, a layer's shadow, what CoreAnimation actually drew rather than what a
+redraw would — is either flat or absent in it, and it sets up AppKit's drawing
+state on the way, which is how it hid the surface bug above. `WindowCapture`
+takes the window as composited instead, through ScreenCaptureKit:
+`SCShareableContent.currentProcess` (macOS 14.4) lists this process's own windows
+without asking for Screen Recording, and `SCContentFilter(desktopIndependentWindow:)`
+captures one whole.
+
+The window server only captures a window that overlaps a display — thirty
+thousand points off fails with `-3811` — but one point is enough for the whole
+window to come back. So a capture parks the window hanging off the bottom-left
+corner of its screen with a single point showing, opaque, waits two frames of that
+display's link for the commit to be composited, and takes it. Nothing is made key
+and the application is never activated: the person at the machine keeps the
+focus, which was measured (the frontmost application never changed) rather than
+hoped for.
+
+Captures are `*SnapshotTests`, written to `/tmp/transcriptkit-screenshots/`, and
+skipped by `make test-kit` unless named — `make test-kit FILTER=<Class>`. They
+assert premises, not pixels: they are for reading, like the demo, but without a
+window taking over the screen. `FindPresentationSnapshotTests` is the first.
+
 ### What the suite can't check: `make demo-kit`
 
 Run from the repo root, like everything else here — `make test-kit` and
@@ -220,6 +245,13 @@ Two consequences worth keeping in mind when touching either:
   is the whole fix; the band's fill is resolved once and has to be re-resolved by
   hand in `viewDidChangeEffectiveAppearance`. Same for `contentsScale`, which
   AppKit maintains on its own layer and not on ones put there by hand.
+- **"Whatever is current" is the process's, inside a surface.** `draw(_:)` gets
+  the view's effective appearance made current by AppKit; a sublayer's
+  `draw(in:)` is CoreAnimation's call and gets nothing, so `SurfaceLayer` makes
+  it current itself. Without that a window or view given an appearance of its own
+  drew its rows in the system's — black prose on a dark window — and nothing
+  in-process showed it, because `cacheDisplay` goes through AppKit and sets the
+  appearance on the way. The first window-server capture did (below).
 - **`cacheDisplay` does rasterise these layers.** Measured, both directly and
   nested inside a scroll view rasterised from the outside — so a snapshot of a
   row does include its surfaces and its band. Worth knowing precisely because the
@@ -674,7 +706,10 @@ re-read before anyone proposes it again:
   arbitrary range on demand, which fits `NSTextView`'s layout manager and not a
   table of recycled rows.
 
-So the vocabulary is taken and the machinery is not, which is §2's standing shape.
+So the vocabulary is taken and the machinery is not, which is §2's standing shape. The
+*look* is taken too — see "How a find looks" below — and so is the shape of what a
+content view is asked: `TranscriptFindHighlighting` is `NSTextFinderClient`'s
+`rects(forCharacterRange:)` and `drawCharacters(in:forContentView:)`, nothing more.
 
 **A hit is a range, and that is what makes the rest cheap.** The flat index space
 is a function of a row's content and no part of it depends on the width — the same
@@ -768,12 +803,22 @@ the walk is matching at.
 matches are is `transcriptView(_:findMatchesOf:inRow:)`, on the delegate next to
 `heightOfRow` and answered the same way — from the model, for any row, never by
 building a view; `NSTableViewDelegate`'s `typeSelectStringFor:` is the precedent.
-Showing them is `TranscriptFindHighlighting.setFindMatches(_:current:)`, adopted by
-the row's view, which the transcript calls after every `viewForRow` and whenever the
-find changes. The transcript's own `BlockView` adopts the same protocol, so there is
-one path that tells a row about a find, whoever drew it. The ranges are in the
-host's own index space; the transcript counts them into the total and the ordinals,
-compares them to know which is current, and hands them back — nothing else. A hit in
+Showing them is `TranscriptFindHighlighting`, adopted by the row's view, and it asks
+only what `NSTextFinder` asks of a content view: where a range is drawn, and its
+glyphs drawn again on their own. The transcript does all the drawing — the dimming,
+the lit matches, the current one's bubble — so a host's row looks exactly like the
+transcript's, and a host writes no highlight, no colour and no appearance handling.
+The transcript's own `BlockView` adopts the same protocol, so there is one path that
+presents a find, whoever drew the row. The ranges are in the host's own index space;
+the transcript counts them into the total and the ordinals, compares them to know
+which is current, and hands them back — nothing else.
+
+An earlier shape had the row draw its own highlights, told `setFindMatches(_:current:)`
+after every bind. It worked, and it made every host implement a highlight, pick its
+colours and get dark mode right — three things a host has no reason to have an
+opinion on, and the first two it could only get subtly different from the
+transcript's. It also could not have produced the dimming: that is drawn *over*
+rows and between them, which no row can do. A hit in
 a `.view` row is scrolled to by its row's nearest edge, since its geometry is the
 host's. What was not added: a protocol for the host to *search* through (it already
 has its model), a rectangle query for scrolling to a hit inside a tall host view, or
@@ -786,15 +831,61 @@ callback means *this is the find's state now*, and a state a host is only someti
 told about is one it has to track twice. Both were invisible to a suite that had
 already verified every hit, every rectangle and every ordinal.
 
-The rest is what no assertion has an opinion about: whether a band reads as a hit
-rather than as a selection, whether the current one is distinguishable at a glance,
-and whether both survive the light↔dark flip. That last one is not hypothetical:
-`NSColor.findHighlightColor` is AppKit's own answer and is right in light and wrong
-in dark — it is one bright yellow chosen to sit under *dark* glyphs, and a
-transcript in dark mode draws near-white ones. Rendered, the word inside the band
-all but disappeared. Dark takes a low-alpha warm overlay instead, the shape VS Code
-and Xcode use, which tints the background rather than replacing it and leaves the
-glyphs at the contrast they already had.
+### How a find looks
+
+AppKit's own, measured rather than recalled: an `NSTextView` with an incremental
+find bar, captured through the window server (§5) in both appearances. **Light**
+dims the content to 18% black — white comes out at 209 — and cuts every match out
+of it. **Dark** does not dim at all, and outlines every match with a one-pixel white
+rule instead. In **both**, the match the reader is on is a yellow bubble
+(`findHighlightColor`) a little larger than its line, lifted by a shadow, with its
+characters drawn again in black — in dark mode too, where the row's own are
+near-white. The rule is drawn in light as well, where it vanishes against a white
+page and is what keeps a match on a dark card — a code block, a bubble — from
+reading as a hole into the window. Corners are rounded at 3 as Safari's are; the
+text view's are square. That is the whole of the style, and `FindOverlayView` is
+where it lives.
+
+An earlier version drew hits as bands under the glyphs, inside each row, with a
+warm low-alpha tint for dark mode because `findHighlightColor` under near-white
+glyphs hid the word. The bubble answers the same problem the way AppKit does —
+by drawing the characters again, dark — which is why the protocol asks a row to
+draw its glyphs: that is the only way a bubble can put *dark* ones on its yellow
+over a row that draws light ones.
+
+**Where it is drawn is what makes it hold still.** The dimming covers rows and the
+gaps between them, so it cannot be a row's; it is one view over the viewport. But a
+view over the viewport that is moved *to* the rows on every scroll event is always
+at risk of drawing a frame late — the swimming highlight — and AppKit can scroll
+without the main thread's help. So the overlay is a **floating subview of the scroll
+view, floating on the horizontal axis only**: `addFloatingSubview(_:for:)`, the
+slot NSTableView's floating group rows use. AppKit keeps it above the document and
+below the scroller, and carries it through every vertical scroll exactly as it
+carries the rows — its coordinates are the document's. A lit match cannot leave its
+text during a scroll; what the overlay has to keep up with is only what is *under*
+it — which rows are on screen, where their matches are — and it covers the visible
+rect with half a screen to spare either way, so a row arriving from past the edge is
+lit before it is seen. `FindTests` asserts the property directly: scroll the clip,
+lay nothing out, and the lit rectangle is still on the text.
+
+**It reads the rows; nothing is pushed to them.** The overlay asks, at layout, for
+the rows on screen and their matches — a question rather than a stored list, the
+way a table asks its data source — and every reason to ask again reaches
+`needsLayout`: the table re-tiling (`TranscriptTableView` reports `tile()` and
+`layout()`), a row view arriving or leaving, a row rebound to new content, the find
+changing, the clip moving. The overlay sits after the clip in the scroll view's
+subviews, so a layout pass reaches it after the rows have moved rather than before.
+A recycled view has nothing stale to carry, because it was never handed anything.
+
+**The pop plays when the reader moves, not when the layout does.** The bubble grows
+and settles once when the current match changes — the find indicator's bounce, how
+the eye finds where it has been taken — and not on a scroll or a streamed row that
+lays the same match out again. Reduce Motion turns it off.
+
+What still needs eyes is what no assertion has an opinion about — that the
+dimming reads as AppKit's, the rule on a dark card, the black characters landing on
+the row's — and `FindPresentationSnapshotTests` captures exactly that in both
+appearances.
 
 ## 8. The other side of the seam: `TranscriptMedia`
 

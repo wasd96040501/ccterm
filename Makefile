@@ -36,9 +36,14 @@ test-unit: js-bundles ## Run unit tests (cctermTests) — fast, parallel-safe
 # TranscriptKit is a standalone package, so its tests run under `swift test`
 # rather than through the app's Xcode test target. Separate entry point on
 # purpose: the package must stay testable without the app.
-test-kit: ## Run TranscriptKit's package tests (FILTER=SomeTests)
+#
+# `*SnapshotTests` are skipped unless named: they write window-server captures
+# for someone to look at, and assert nothing a merge should wait on — the same
+# split the app's `test-unit` makes.
+test-kit: ## Run TranscriptKit's package tests (FILTER=SomeTests; snapshots only when named)
 	@cd macos/TranscriptKit && \
-		if [ -n "$(FILTER)" ]; then swift test --filter "$(FILTER)"; else swift test; fi
+		if [ -n "$(FILTER)" ]; then swift test --filter "$(FILTER)"; \
+		else swift test --skip SnapshotTests; fi
 
 # The package's demo app — a real window over real markdown documents. Rendering
 # has no other check: a probe can assert a row's height, not whether the

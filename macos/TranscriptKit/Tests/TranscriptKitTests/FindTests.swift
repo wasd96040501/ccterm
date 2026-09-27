@@ -199,20 +199,42 @@ final class FindTests: XCTestCase {
         return host
     }
 
-    /// What a row currently draws. The only way to assert a highlight actually
-    /// reached the screen without reaching into the view for state it keeps to
-    /// itself — and `cacheDisplay` does rasterise the surfaces a row paints onto.
+    /// The find as it is on screen: the overlay the transcript presents it in.
+    private var overlay: FindOverlayView {
+        mounted.transcript.descendants(ofType: FindOverlayView.self)[0]
+    }
+
+    /// Where matches are lit, in window coordinates — nothing while the overlay is
+    /// hidden, which is what a reader sees then.
+    private func litRects() -> [NSRect] {
+        overlay.isHidden ? [] : overlay.litRects.map { overlay.convert($0, to: nil) }
+    }
+
+    /// Where the current match's bubbles are, in window coordinates.
+    private func raisedRects() -> [NSRect] {
+        overlay.isHidden ? [] : overlay.indicators.map { $0.convert($0.bounds, to: nil) }
+    }
+
+    /// Where a row's own view says `range` is drawn, in window coordinates — what
+    /// every lit rectangle is checked against, so no expected position is worked
+    /// out here.
     ///
     /// Found through `row(for:)` rather than by position in the tree: cells are
     /// recycled, so tree order is row order only until something scrolls.
-    private func pixels(ofRow row: Int) throws -> Data {
+    private func rects(of range: Range<Int>, inRow row: Int) throws -> [NSRect] {
         let view = try XCTUnwrap(
-            mounted.transcript.descendants(ofType: BlockView.self)
-                .first { mounted.transcript.row(for: $0) == row },
+            mounted.transcript.descendants(ofType: NSView.self)
+                .first { $0 is TranscriptFindHighlighting && mounted.transcript.row(for: $0) == row }
+                as? NSView & TranscriptFindHighlighting,
             "row \(row) has no view on screen")
-        let rep = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
-        view.cacheDisplay(in: view.bounds, to: rep)
-        return try XCTUnwrap(rep.tiffRepresentation)
+        return view.rects(forCharacterRange: range).map { view.convert($0, to: nil) }
+    }
+
+    /// Where `word` first occurs in `text`, as a range in the flat index space a
+    /// plain paragraph shares with its source.
+    private func range(of word: String, in text: String) -> Range<Int> {
+        let found = (text as NSString).range(of: word)
+        return found.lowerBound..<found.upperBound
     }
 
     func testAFindCountsEveryMatchAndCompletes() async {
@@ -240,19 +262,61 @@ final class FindTests: XCTestCase {
         XCTAssertEqual(host.findReports.last?.isComplete, true)
     }
 
-    /// The visible half. Asserted as a change to what the row draws, against a
-    /// control row that matched nothing — so a pass means the highlight landed on
-    /// the row that matched and only there.
-    func testAMatchedRowRepaintsAndAnUnmatchedOneDoesNot() async throws {
+    /// The visible half: the match is lit exactly where its row draws those
+    /// characters, and nowhere else — the row beside it matched nothing and has
+    /// nothing lit.
+    func testAMatchIsLitWhereItsCharactersAreDrawn() async throws {
         mount(["a needle here", "nothing at all"])
-        let matchedBefore = try pixels(ofRow: 0)
-        let unmatchedBefore = try pixels(ofRow: 1)
+        XCTAssertEqual(litRects(), [], "premise: nothing is lit before a find")
 
         mounted.transcript.find("needle")
         await mounted.settleFind()
 
-        XCTAssertNotEqual(try pixels(ofRow: 0), matchedBefore, "the hit was not drawn")
-        XCTAssertEqual(try pixels(ofRow: 1), unmatchedBefore, "a row with no hit was repainted")
+        let needle = try rects(of: 2..<8, inRow: 0)
+        XCTAssertFalse(needle.isEmpty, "premise: the row places the match somewhere")
+        XCTAssertEqual(litRects(), needle)
+    }
+
+    /// The match the reader is on is raised over its characters, and the bubble
+    /// goes where they go.
+    func testTheCurrentMatchIsRaisedAndFollowsFindNext() async throws {
+        mount(["needle one", "needle two"])
+        mounted.transcript.find("needle")
+        await mounted.settleFind()
+        XCTAssertEqual(mounted.transcript.indexOfSelectedFindMatch, 0)
+
+        let first = try rects(of: 0..<6, inRow: 0)
+        XCTAssertEqual(raisedRects().count, first.count)
+        XCTAssertTrue(zip(raisedRects(), first).allSatisfy { $0.contains($1) })
+
+        mounted.transcript.findNext()
+        mounted.settle()
+        let second = try rects(of: 0..<6, inRow: 1)
+        XCTAssertEqual(raisedRects().count, second.count)
+        XCTAssertTrue(zip(raisedRects(), second).allSatisfy { $0.contains($1) })
+        XCTAssertFalse(
+            raisedRects().contains { $0.intersects(first[0]) }, "the old bubble stayed up")
+    }
+
+    /// The overlay lies in the document's coordinates, so a scroll carries every
+    /// lit match with its text before anything has laid out again — which is what
+    /// keeps a find from swimming under a reader who is scrolling through it.
+    func testALitMatchMovesWithItsTextBeforeAnythingLaysOut() async throws {
+        let filler = String(repeating: "filler ", count: 200)
+        mount(["a needle here\n\n" + filler, filler, filler])
+        mounted.transcript.find("needle")
+        await mounted.settleFind()
+        let before = litRects()
+        XCTAssertEqual(before, try rects(of: 2..<8, inRow: 0))
+
+        let clip = mounted.scrollView.contentView
+        clip.scroll(to: NSPoint(x: 0, y: clip.bounds.minY + 40))
+        mounted.scrollView.reflectScrolledClipView(clip)
+
+        // No settle: nothing has laid out since the scroll.
+        let after = try rects(of: 2..<8, inRow: 0)
+        XCTAssertNotEqual(after, before, "premise: the text moved on screen")
+        XCTAssertEqual(litRects(), after)
     }
 
     /// Every move the reader makes reaches the delegate, because the position and
@@ -278,16 +342,16 @@ final class FindTests: XCTestCase {
 
     func testEndingAFindTakesTheHighlightsAway() async throws {
         mount(["a needle here"])
-        let before = try pixels(ofRow: 0)
-
         mounted.transcript.find("needle")
         await mounted.settleFind()
-        XCTAssertNotEqual(try pixels(ofRow: 0), before, "premise: something was drawn")
+        XCTAssertFalse(litRects().isEmpty, "premise: something was lit")
+        XCTAssertFalse(raisedRects().isEmpty, "premise: something was raised")
 
         mounted.transcript.endFind()
         mounted.settle()
 
-        XCTAssertEqual(try pixels(ofRow: 0), before)
+        XCTAssertEqual(litRects(), [])
+        XCTAssertEqual(raisedRects(), [])
         XCTAssertEqual(mounted.transcript.numberOfFindMatches, 0)
     }
 
@@ -410,9 +474,8 @@ final class FindTests: XCTestCase {
             "the selected hit's row is not on screen")
     }
 
-    /// A row that leaves the viewport and comes back is a recycled cell, and
-    /// `configure` clears its hits along with everything else it must not carry
-    /// over — so the transcript has to hand them back on the way in.
+    /// A row that leaves the viewport and comes back is a recycled cell — possibly
+    /// another row's — and is lit again on the way in, where its characters are.
     func testARowScrolledAwayAndBackKeepsItsHighlight() async throws {
         // Each row a screenful, so scrolling to the last one takes the first out of
         // the viewport entirely.
@@ -421,42 +484,36 @@ final class FindTests: XCTestCase {
 
         mounted.transcript.find("needle")
         await mounted.settleFind()
-        let highlighted = try pixels(ofRow: 0)
+        XCTAssertEqual(litRects(), try rects(of: 2..<8, inRow: 0))
 
         mounted.transcript.scrollToRow(at: 7, scrollPosition: .top)
         mounted.settle()
+        XCTAssertEqual(litRects(), [], "premise: the row really left the screen")
         mounted.transcript.scrollToRow(at: 0, scrollPosition: .top)
         mounted.settle()
 
-        XCTAssertEqual(try pixels(ofRow: 0), highlighted)
-        // The premise: without the find, that row draws something else — otherwise
-        // the comparison above holds for a row that was never highlighted at all.
-        mounted.transcript.endFind()
-        mounted.settle()
-        XCTAssertNotEqual(try pixels(ofRow: 0), highlighted)
+        XCTAssertEqual(litRects(), try rects(of: 2..<8, inRow: 0))
     }
 
     /// The index space a hit is stated in does not depend on the width, so a
-    /// resize moves every highlight to where those characters are now and loses
-    /// none of them.
+    /// resize lights every match where its characters are now and loses none.
     func testHighlightsSurviveAWidthChange() async throws {
-        mount(["a needle in a paragraph long enough that narrowing it rewraps the line"])
+        let text = "a paragraph long enough that narrowing it rewraps the line, and a needle"
+        mount([text])
+        let needle = range(of: "needle", in: text)
 
         mounted.transcript.find("needle")
         await mounted.settleFind()
-        let wide = try pixels(ofRow: 0)
+        let wide = try rects(of: needle, inRow: 0)
+        XCTAssertEqual(litRects(), wide)
 
         mounted.setContentWidth(360)
         await mounted.settleWidthChange()
 
         XCTAssertEqual(mounted.transcript.numberOfFindMatches, 1)
-        XCTAssertNotEqual(try pixels(ofRow: 0), wide, "premise: the row really did rewrap")
-        // And the highlight is still there: taking the find away changes what the
-        // row draws at the new width too.
-        let found = try pixels(ofRow: 0)
-        mounted.transcript.endFind()
-        mounted.settle()
-        XCTAssertNotEqual(try pixels(ofRow: 0), found)
+        let narrow = try rects(of: needle, inRow: 0)
+        XCTAssertNotEqual(narrow, wide, "premise: the rewrap really did move the match")
+        XCTAssertEqual(litRects(), narrow)
     }
 
     /// Removing a row drops its hits at the sweep that drops its measurement,
@@ -532,10 +589,9 @@ final class FindTests: XCTestCase {
 
         XCTAssertEqual(mounted.transcript.numberOfFindMatches, 2)
         XCTAssertEqual(host.findReports.last?.matches, 2)
-        let unhighlighted = try pixels(ofRow: 0)
-        mounted.transcript.endFind()
-        mounted.settle()
-        XCTAssertEqual(try pixels(ofRow: 0), unhighlighted, "row 0 still draws its old hit")
+        XCTAssertEqual(
+            litRects(), try rects(of: 0..<6, inRow: 1) + rects(of: 8..<14, inRow: 1),
+            "row 0 is still lit at its old hit, or row 1's new ones are not")
     }
 
     /// The streaming case: a row that grows a match while a find is up has it
@@ -691,8 +747,8 @@ final class FindTests: XCTestCase {
     // MARK: - A host's own rows
 
     /// A `.view` row takes part through the delegate and its view: its matches
-    /// are counted into the total and the ordinals, and its view is told which
-    /// ranges to draw and which one is current.
+    /// are counted into the total and the ordinals, lit where its view says they
+    /// are, and the current one is raised with the characters its view draws.
     func testAHostsViewRowIsSearchedCountedAndHighlighted() async throws {
         mount(
             FindHost(
@@ -705,20 +761,30 @@ final class FindTests: XCTestCase {
 
         let view = try XCTUnwrap(
             mounted.transcript.descendants(ofType: FindableRowView.self).first)
-        XCTAssertEqual(view.matches, [2..<8, 15..<21])
-        XCTAssertNil(view.current)
+        let hosted = try rects(of: 2..<8, inRow: 1) + rects(of: 15..<21, inRow: 1)
+        XCTAssertTrue(
+            hosted.allSatisfy(litRects().contains), "the host's matches were not lit")
 
         mounted.transcript.findNext()
+        mounted.settle()
         XCTAssertEqual(mounted.transcript.indexOfSelectedFindMatch, 1)
-        XCTAssertEqual(view.current, 2..<8)
+        XCTAssertEqual(raisedRects().count, 1)
+        XCTAssertTrue(raisedRects().first?.contains(hosted[0]) ?? false)
+        XCTAssertEqual(view.drawn.last, 2..<8, "the bubble did not draw the host's characters")
+
         mounted.transcript.findNext()
-        XCTAssertEqual(view.current, 15..<21)
+        mounted.settle()
+        XCTAssertTrue(raisedRects().first?.contains(hosted[1]) ?? false)
+        XCTAssertEqual(view.drawn.last, 15..<21)
+
         mounted.transcript.findNext()
+        mounted.settle()
         XCTAssertEqual(mounted.transcript.indexOfSelectedFindMatch, 3)
-        XCTAssertNil(view.current)
+        XCTAssertFalse(raisedRects().contains { $0.intersects(hosted[0].union(hosted[1])) })
 
         mounted.transcript.endFind()
-        XCTAssertEqual(view.matches, [])
+        mounted.settle()
+        XCTAssertEqual(litRects(), [])
     }
 
     /// A host that answers nothing leaves its rows out, and its views are still
@@ -819,18 +885,27 @@ private final class FindHost: NSObject, TranscriptViewDataSource, TranscriptView
     }
 }
 
-/// A host's row view that adopts the find protocol and keeps what it was told,
-/// which is all a test needs to know it was told.
+/// A host's row view that adopts the find protocol: it says where its characters
+/// are and keeps what it was asked to draw, which is all a test needs to know it
+/// took part.
 @MainActor
 private final class FindableRowView: NSView, TranscriptFindHighlighting {
 
     static let identifier = NSUserInterfaceItemIdentifier("FindTests.row")
 
-    private(set) var matches: [Range<Int>] = []
-    private(set) var current: Range<Int>?
+    private(set) var drawn: [Range<Int>] = []
 
-    func setFindMatches(_ matches: [Range<Int>], current: Range<Int>?) {
-        self.matches = matches
-        self.current = current
+    /// Ten points a character along one line. Any geometry will do, as long as
+    /// the transcript lights what this says.
+    func rects(forCharacterRange range: Range<Int>) -> [NSRect] {
+        [
+            NSRect(
+                x: CGFloat(range.lowerBound) * 10, y: 10,
+                width: CGFloat(range.count) * 10, height: 20)
+        ]
+    }
+
+    func drawCharacters(in range: Range<Int>) {
+        drawn.append(range)
     }
 }

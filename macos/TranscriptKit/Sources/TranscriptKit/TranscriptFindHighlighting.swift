@@ -1,36 +1,46 @@
 import AppKit
 
-/// A view that draws a find's matches — adopted by a `.view` row's view so that a
-/// find reaches the rows the host draws, not only the ones the transcript does.
+/// A view whose find matches the transcript can show — adopted by a `.view` row's
+/// view so that a find reaches the rows the host draws, not only the ones the
+/// transcript does.
 ///
-/// **One requirement, and it is the display half only.** Where the matches are is
-/// asked of the delegate, through
+/// **The two questions `NSTextFinderClient` asks of a content view, and nothing
+/// else.** Where the matches are is asked of the delegate, through
 /// `TranscriptViewDelegate.transcriptView(_:findMatchesOf:inRow:)`, because a find
 /// counts every row and most rows have no view — the same split `heightOfRow` and
-/// `viewForRow` draw. This is what happens once a row does have one: the
-/// transcript hands back the ranges the delegate reported, and says which of them
-/// the reader is on. The view never searches and never keeps the answer anywhere
-/// but on screen.
+/// `viewForRow` draw. This is what the transcript needs once a row does have one:
+/// where a match is drawn, and its characters drawn again on their own. With those
+/// two it presents the find the way AppKit's own find bar does — the content
+/// dimmed, every match lit through it, the one the reader is on raised in yellow —
+/// the same for every row, whoever drew it. The view never draws a highlight of its
+/// own, never searches, and keeps nothing about the find.
 ///
-/// The transcript's own rows adopt it too, which is the reason it exists as a
-/// protocol rather than a delegate callback: there is one path that tells a row
-/// about the find, whoever drew the row. `UITextSearching`'s
-/// `decorate(foundTextRange:document:usingStyle:)` is the same idea, pushed one
-/// range at a time; a row is small enough to be handed all of them at once.
+/// The transcript's own rows adopt it too, which is why it is a protocol rather
+/// than a delegate callback: one path presents a find, whoever drew the row.
+///
+/// The ranges are in the index space the delegate reported them in, which is the
+/// host's own; the transcript hands them back unexamined.
 @MainActor
 public protocol TranscriptFindHighlighting: AnyObject {
 
-    /// Shows `matches` as found text, and `current` — one of them, or `nil` — as
-    /// the one the reader is on. An empty array clears whatever was shown.
+    /// Where the characters in `range` are drawn, in this view's coordinate
+    /// system — one rectangle per line they occupy.
     ///
-    /// Called after every `viewForRow` that returns this view, so a recycled
-    /// instance never carries the previous row's matches; and again whenever the
-    /// find changes while the row is on screen — once per slice of a long walk,
-    /// with the same arguments more often than not. So it has to be **idempotent,
-    /// and cheap when nothing moved**: compare, and redraw only on a change.
+    /// `NSTextFinderClient.rects(forCharacterRange:)`. The transcript lights these
+    /// through its dimming and raises the current match's in yellow, so they want
+    /// to be the line's height rather than the glyphs' ink: a selection's
+    /// rectangles, not a hit-test's.
+    func rects(forCharacterRange range: Range<Int>) -> [NSRect]
+
+    /// Draws the glyphs for the characters in `range` — the glyphs alone, with no
+    /// background, selection or decoration — into the current graphics context,
+    /// which is set up in this view's coordinate system as it is for `draw(_:)`.
     ///
-    /// The ranges are in the index space the delegate reported them in, which is
-    /// the host's own; the transcript compares them for equality and counts them,
-    /// and nothing else.
-    func setFindMatches(_ matches: [Range<Int>], current: Range<Int>?)
+    /// `NSTextFinderClient.drawCharacters(in:forContentView:)`, for the find
+    /// indicator: the current match is drawn again on the indicator's yellow. The
+    /// transcript recolours what this draws to the indicator's text colour, so
+    /// the glyphs may come in whatever colour they normally have — which is also
+    /// why nothing but glyphs belongs here: a background drawn along with them
+    /// would come out as a solid block.
+    func drawCharacters(in range: Range<Int>)
 }

@@ -132,12 +132,6 @@ final class BlockView: NSView, TranscriptFindHighlighting {
         // previous document had. Taken away outright rather than faded, because
         // there is nothing left for a fade to be about.
         removeHoverBand()
-        // And the same rule again, one the transcript restores immediately after
-        // for a row a live find covers. Dropped here rather than left to the
-        // caller: a recycled cell showing the previous row's hits is the visible
-        // half of the same bug, and this is the one place that can be sure.
-        findRanges = []
-        currentFindRange = nil
         remeasured(to: block)
     }
 
@@ -188,64 +182,47 @@ final class BlockView: NSView, TranscriptFindHighlighting {
 
     // MARK: - Find
 
-    /// The hits in this row, and which one the reader is on.
+    /// Where a hit is, for the transcript to light it — the tree's own answer,
+    /// in this view's coordinates because the block is drawn from its origin.
     ///
-    /// Not derived here, because they are not this view's to work out: what
-    /// matched is a property of a search over the whole transcript, and a row is
-    /// told. What the view does own is that they are *ranges* — so they survive a
-    /// re-measure untouched, for the same reason the selection does, and a window
-    /// dragged narrower moves every highlight to where those characters are now
-    /// without anything being recomputed.
-    private var findRanges: [Range<Int>] = []
-    private var currentFindRange: Range<Int>?
-
-    /// Takes the hits for this row — the transcript's own rows answer the same
-    /// protocol a host's `.view` rows do, so one path tells every row on screen
-    /// about a find. Idempotent, and cheap when nothing moved, which matters
-    /// because the transcript publishes a find in slices and calls this on every
-    /// visible row for each one: a repaint per slice would be a screenful of
-    /// surfaces redrawn a dozen times for a search that changed nothing on screen.
-    func setFindMatches(_ ranges: [Range<Int>], current: Range<Int>?) {
-        guard ranges != findRanges || current != currentFindRange else { return }
-        findRanges = ranges
-        currentFindRange = current
-        invalidate()
+    /// The same rectangles a selection band is built from, which is what makes
+    /// them the right shape here: a line's height, so a lit hit reads as a band
+    /// of the line rather than a box around the ink.
+    func rects(forCharacterRange range: Range<Int>) -> [NSRect] {
+        block?.rects(from: range.lowerBound, to: range.upperBound) ?? []
     }
 
-    /// The current hit, and every other one — one hue at two weights, the way the
-    /// hover band and its pressed state are.
+    /// Plays this row's glyphs — only its glyphs — clipped to where `range` is,
+    /// for the find indicator to draw on its yellow.
     ///
-    /// **Dynamic, and that is the whole of what these two constants are about.**
-    /// `NSColor.findHighlightColor` is AppKit's own answer here — "the bubble that
-    /// shows inline search result values", the yellow Safari and Xcode put under
-    /// the match you are on — and it is right in light and wrong in dark, because
-    /// it does not follow the appearance: it is one bright yellow chosen to be read
-    /// against *dark* glyphs, and a transcript in dark mode draws near-white ones.
-    /// Rendered, the word inside the band all but disappeared.
-    ///
-    /// So dark takes the shape VS Code and Xcode take instead: a low-alpha warm
-    /// overlay that composites the background *up* toward amber rather than
-    /// replacing it, leaving the glyphs at the contrast they already had. Same
-    /// idea as the hover band one file over — tint what is there, do not paint over
-    /// it — and the reason the numbers differ between appearances at all is that
-    /// one band sits under dark text and the other under light.
-    ///
-    /// This resolves per draw rather than per build, which costs nothing here:
-    /// blocks store `NSColor`s and `viewDidChangeEffectiveAppearance` already
-    /// repaints, so a light↔dark flip moves these with everything else.
-    private static let currentFindColor = NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor.systemYellow.withAlphaComponent(0.45)
-            : NSColor.findHighlightColor
-    }
+    /// The paint list rather than a second way of drawing text: it is the only
+    /// description of where each line sits, so the characters land on the
+    /// indicator exactly where they are in the row. Fills and strokes are left
+    /// out — a code card's background or a quote's bar would otherwise come out of
+    /// the indicator's recolouring as a solid block — and the clip is the hit's
+    /// rectangles, so the rest of each line stays behind.
+    func drawCharacters(in range: Range<Int>) {
+        guard let block, let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let rects = rects(forCharacterRange: range)
+        guard
+            let dirty = rects.reduce(
+                nil,
+                { (union: CGRect?, rect) in
+                    union?.union(rect) ?? rect
+                })
+        else { return }
 
-    /// The weight that reads as *also here* rather than as *this one*. Low enough
-    /// not to compete with the current hit for the eye, high enough to be countable
-    /// at a glance down a screenful.
-    private static let findColor = NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor.systemYellow.withAlphaComponent(0.2)
-            : NSColor.findHighlightColor.withAlphaComponent(0.4)
+        var items: [PaintItem] = []
+        block.paint(at: .zero, dirty: dirty, into: &items)
+        let glyphs = items.filter {
+            if case .text = $0.primitive { return true }
+            return false
+        }
+
+        ctx.saveGState()
+        ctx.clip(to: rects)
+        glyphs.paint(in: ctx, dirty: dirty, phases: PaintItem.Phase.all)
+        ctx.restoreGState()
     }
 
     // MARK: - The hover band
@@ -891,23 +868,11 @@ final class BlockView: NSView, TranscriptFindHighlighting {
         guard let block else { return }
 
         // Collect, then play. The two steps are what let this view add strokes of
-        // its own — a selection band, later a search hit — at a depth the blocks
+        // its own — a selection band — at a depth the blocks
         // decide, without reaching into any block's drawing. It appends an item
         // with a phase; the player puts it where that phase says.
         items.removeAll(keepingCapacity: true)
         block.paint(at: .zero, dirty: dirtyRect, into: &items)
-
-        // Before the selection, so that a reader who selects a word that is also a
-        // hit sees the selection — the two tie inside `.decoration`, where order of
-        // emission settles it, and the selection is the one they are doing right
-        // now. Nothing else about the pair needs deciding: matches never overlap
-        // each other, so within this loop there is no order to get wrong.
-        for range in findRanges {
-            let color = range == currentFindRange ? Self.currentFindColor : Self.findColor
-            for rect in block.rects(from: range.lowerBound, to: range.upperBound) {
-                items.append(.fill(rect, color, phase: .decoration))
-            }
-        }
 
         if let selection {
             // Indices in, geometry out — and the block that owns the index space
@@ -1007,8 +972,19 @@ private final class SurfaceLayer: CALayer {
 
     /// The clip is the dirty region CoreAnimation is asking for, which is the
     /// same permission-to-skip `draw(_:)` used to receive as its `dirtyRect`.
+    ///
+    /// **Under the row's appearance, made current by hand.** A paint list holds
+    /// dynamic `NSColor`s and resolves them against `NSAppearance.current` as it
+    /// plays. `draw(_:)` would have had AppKit set that to the view's effective
+    /// appearance; a sublayer's `draw(in:)` is CoreAnimation's call, and gets
+    /// whatever the process's is — so a window or a view given an appearance of its
+    /// own drew its rows in the system's. The first window-server capture of a dark
+    /// window showed it: black prose and a light code card on a dark background.
     override func draw(in ctx: CGContext) {
-        owner?.paint(phases, in: ctx, dirty: ctx.boundingBoxOfClipPath)
+        guard let owner else { return }
+        owner.effectiveAppearance.performAsCurrentDrawingAppearance {
+            owner.paint(phases, in: ctx, dirty: ctx.boundingBoxOfClipPath)
+        }
     }
 }
 

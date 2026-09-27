@@ -222,13 +222,11 @@ public final class TranscriptView: NSView {
             hosted = delegate.transcriptView(self, viewForRow: row)
         }
 
-        // After the bind, never inside it, and for both kinds of row: a recycled
-        // view arrives carrying whatever it last showed — `configure` clears a
-        // self-drawn row's hits the way it clears its selection, and a host's view
-        // has no reason to know a find exists — so every row entering the viewport
-        // is told what it has now.
-        bindFind(hosted, to: described)
         cell.install(hosted, minWidth: minContentWidth, maxWidth: maxContentWidth)
+        // A row arriving is a row the find may have matches in. Nothing is handed
+        // to the view — the overlay asks every row on screen where its matches are
+        // when it next lays out, so a recycled view has nothing stale to carry.
+        setNeedsFindLayout()
         return cell
     }
 
@@ -288,6 +286,7 @@ public final class TranscriptView: NSView {
     /// cell, but what the host has work to stop on is the view it supplied — so
     /// that is what it hears about.
     fileprivate func didRemove(_ rowView: NSTableRowView, forRow row: Int) {
+        setNeedsFindLayout()
         guard let cell = rowView.view(atColumn: 0) as? TranscriptCellView,
             let hosted = cell.hostedView,
             // A self-drawn row's view is the transcript's own. Reporting it
@@ -340,8 +339,8 @@ public final class TranscriptView: NSView {
     /// `.bottom` leaves the half gap showing below the row.
     private static let rowSpacing: CGFloat = 14
 
-    private lazy var tableView: NSTableView = {
-        let table = NSTableView()
+    private lazy var tableView: TranscriptTableView = {
+        let table = TranscriptTableView()
         table.headerView = nil
         table.backgroundColor = .clear
         // No selection API on the transcript, so no selection to draw.
@@ -368,6 +367,15 @@ public final class TranscriptView: NSView {
 
     private static let columnIdentifier = NSUserInterfaceItemIdentifier("TranscriptKit.column")
 
+    /// A find's presentation — the dimming, the lit matches, the current one's
+    /// bubble. Mounted once, as a floating subview of the scroll view, and hidden
+    /// while no find is up. See `FindOverlayView`.
+    private let findOverlay: FindOverlayView = {
+        let overlay = FindOverlayView()
+        overlay.isHidden = true
+        return overlay
+    }()
+
     /// Answers the table's data source and delegate callbacks on the
     /// transcript's behalf, so that AppKit's table protocols stay off the
     /// package's public surface — and so a host can't be handed the transcript
@@ -382,6 +390,7 @@ public final class TranscriptView: NSView {
 
         // Hierarchy.
         scrollView.documentView = tableView
+        scrollView.addFloatingSubview(findOverlay, for: .horizontal)
         addSubview(scrollView)
 
         // Constraints.
@@ -407,6 +416,14 @@ public final class TranscriptView: NSView {
         NotificationCenter.default.addObserver(
             self, selector: #selector(clipViewFrameDidChange),
             name: NSView.frameDidChangeNotification, object: scrollView.contentView)
+
+        // A find's overlay covers what is on screen; see `placeFindOverlay()`.
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(clipViewBoundsDidChange),
+            name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
+        findOverlay.rows = { [weak self] in self?.findRowsOnScreen() ?? [] }
+        tableView.didTile = { [weak self] in self?.setNeedsFindLayout() }
     }
 
     deinit {
@@ -625,14 +642,12 @@ public final class TranscriptView: NSView {
                 view.remeasured(to: block)
             } else {
                 view.configure(with: block)
-                // Only this branch loses them, and it loses them correctly: the
-                // hits were found in text this row may no longer hold. Re-bound
-                // rather than left empty, because `bindFind` is what decides that —
-                // it shows what is filed only for the content it was found in.
-                bindFind(view, to: described)
             }
             rebound.insert(row)
         }
+        // Either way the glyphs may have moved without the row's height changing,
+        // which no re-tile would report.
+        if !rebound.isEmpty { setNeedsFindLayout() }
         return rebound
     }
 
@@ -646,6 +661,11 @@ public final class TranscriptView: NSView {
     /// two different widths.
     @objc private func clipViewFrameDidChange(_ notification: Notification) {
         contentWidthDidChange()
+        placeFindOverlay()
+    }
+
+    @objc private func clipViewBoundsDidChange(_ notification: Notification) {
+        placeFindOverlay()
     }
 
     public override func viewDidEndLiveResize() {
@@ -1708,6 +1728,11 @@ public final class TranscriptView: NSView {
     /// Highlights every occurrence of `query` and selects the first at or after
     /// the reader, replacing any find already up. An empty query ends one.
     ///
+    /// Shown the way AppKit's find bar shows an incremental search — the content
+    /// dimmed, every match lit through it, the selected one raised in yellow —
+    /// by the transcript, over every row. The host draws nothing; see
+    /// `FindOverlayView`.
+    ///
     /// Case, diacritics and width are folded, so `cafe` finds `Café` and a
     /// half-width `ｱ` finds `ア` — what a reader typing into a find bar means, and
     /// what `NSTextView`'s own find does. There is no options parameter until
@@ -1723,8 +1748,9 @@ public final class TranscriptView: NSView {
     /// reason.
     ///
     /// **`.view` rows are searched by their host**, through the delegate's
-    /// `transcriptView(_:findMatchesOf:inRow:)`, and shown by their view through
-    /// `TranscriptFindHighlighting`. A host that implements neither leaves them out.
+    /// `transcriptView(_:findMatchesOf:inRow:)`, and located and drawn again by
+    /// their view through `TranscriptFindHighlighting`. A host that implements
+    /// neither leaves them out.
     ///
     /// **A find follows the transcript.** Rows inserted are searched — a walk that
     /// had finished resumes for them — and rows `reloadRows(at:)` announces are
@@ -2123,38 +2149,66 @@ public final class TranscriptView: NSView {
         scrollClip(toUnobscuredMinY: (minY + maxY - visible.height) / 2)
     }
 
-    /// Hands `view` the hits its row has, and says which is current — or none, for
-    /// a row the find has nothing filed for at the content it holds now.
+    /// Shows the find as it stands now, or takes it away.
     ///
-    /// Called wherever a view is bound to a row, because a recycled view must not
-    /// keep the previous row's highlights: `BlockView.configure` drops them along
-    /// with everything else, and a host's view is told outright.
-    private func bindFind(_ view: NSView, to row: TranscriptRow) {
-        guard let view = view as? TranscriptFindHighlighting else { return }
-        guard let find, let filed = find.matches[row.id], filed.content == row.content else {
-            return view.setFindMatches([], current: nil)
-        }
-        let current = find.selection.flatMap { $0.row == row.id ? $0.range : nil }
-        view.setFindMatches(filed.ranges, current: current)
+    /// Called wherever the find changes — its matches, its selection, its end.
+    /// Every other reason the overlay has to look again is a row moving under it,
+    /// and those reach `setNeedsFindLayout()` on their own.
+    private func rebindFind() {
+        findOverlay.isHidden = find == nil
+        placeFindOverlay()
+        setNeedsFindLayout()
     }
 
-    /// Hands every row on screen its hits again, without touching the trees they
-    /// are showing.
+    /// Keeps the overlay over what is on screen: the clip's bounds, which are in
+    /// the document's coordinates and so in the overlay's, with half a screen to
+    /// spare either way.
     ///
-    /// Separate from `rebindVisibleRows(in:)`, which is the same walk over the same
-    /// cells, because that one re-measures each row and decides between `configure`
-    /// and `remeasured` — it exists for content and geometry moving. A find moves
-    /// neither: going through it to publish a highlight would re-measure a
-    /// screenful and drop the reader's selection every time the count ticked up.
-    private func rebindFind() {
+    /// The overlay moves with the document on its own — AppKit carries a floating
+    /// subview through a scroll the way it carries the rows — so this is not what
+    /// keeps a lit match on its text. It is what keeps the *dimming* reaching the
+    /// edge of the viewport as the reader travels further than the spare half
+    /// screen, and what brings rows that have scrolled in under the overlay.
+    ///
+    /// A scroll inside the spare half screen changes nothing here: the rows it
+    /// brings in report themselves as they arrive (`setNeedsFindLayout()`), so
+    /// the overlay is not laid out — and its shade not redrawn — once per wheel
+    /// event for nothing.
+    private func placeFindOverlay() {
+        guard find != nil else { return }
+        let visible = scrollView.contentView.bounds
+        guard !findOverlay.frame.contains(visible) || findOverlay.frame.width != visible.width
+        else { return }
+        findOverlay.frame = visible.insetBy(dx: 0, dy: -visible.height / 2)
+        findOverlay.needsLayout = true
+    }
+
+    /// Asks the overlay to read the rows on screen again, if a find is up.
+    fileprivate func setNeedsFindLayout() {
+        guard find != nil else { return }
+        findOverlay.needsLayout = true
+    }
+
+    /// The rows on screen that have matches, as the overlay asks for them.
+    ///
+    /// Filed matches are shown only for the content they were found in, so a row
+    /// whose text has moved on since is lit nowhere rather than at ranges that name
+    /// other characters now.
+    private func findRowsOnScreen() -> [FindOverlayView.Row] {
+        guard let find, let dataSource else { return [] }
+        var rows: [FindOverlayView.Row] = []
         tableView.enumerateAvailableRowViews { [weak self] rowView, row in
             guard let self,
                 let cell = rowView.view(atColumn: 0) as? TranscriptCellView,
-                let view = cell.hostedView,
-                let described = dataSource?.transcriptView(self, rowAt: row)
+                let view = cell.hostedView as? NSView & TranscriptFindHighlighting
             else { return }
-            bindFind(view, to: described)
+            let described = dataSource.transcriptView(self, rowAt: row)
+            guard let filed = find.matches[described.id], filed.content == described.content
+            else { return }
+            let current = find.selection.flatMap { $0.row == described.id ? $0.range : nil }
+            rows.append(.init(id: described.id, view: view, matches: filed.ranges, current: current))
         }
+        return rows
     }
 
     /// Searches again the rows `reloadRows(at:)` announced changed — the ones the
@@ -2526,5 +2580,29 @@ private final class OverlayScrollView: NSScrollView {
     override var scrollerStyle: NSScroller.Style {
         get { .overlay }
         set { super.scrollerStyle = .overlay }
+    }
+}
+
+/// The transcript's table, and the one thing it adds: saying when it has placed
+/// its rows.
+///
+/// A find's overlay lights matches where the rows are, and the table moves rows
+/// without telling anyone — a height noted, a row inserted above, a width change
+/// re-tiling everything. `tile()` is where it works out the new geometry and
+/// `layout()` is where row views take it, so both report; the overlay sits later
+/// in the scroll view's subviews than the clip holding this table, so a layout pass
+/// reaches it after the rows have moved rather than before.
+private final class TranscriptTableView: NSTableView {
+
+    var didTile: (() -> Void)?
+
+    override func tile() {
+        super.tile()
+        didTile?()
+    }
+
+    override func layout() {
+        super.layout()
+        didTile?()
     }
 }

@@ -222,6 +222,26 @@ round to settle — a change that starts needing `passes: 2` has pushed work
 onto a later tick, which is a visible frame at the old geometry, not a test
 detail.
 
+**One pass is not a wait for AppKit's own later turns**, and CI is where that
+shows. Two cases, both measured there and not reproducible on a fast machine:
+
+- **The window server lists a window a turn or more after `orderFront`.** A press
+  that selects is tracked to its release inside `mouseDown`, so a test queues the
+  rest of the gesture (`MountedTranscript.press`), and a mouse event comes back out
+  of the application's queue *rebuilt from its global location* — against a
+  window the server does not list yet, from an origin of zero. 97 drags in 100
+  posted straight after `orderFront` arrived hundreds of points off; the selection
+  tests failed a different one each run. `TestWindow.make` returns once the window
+  is listed, and `press` asserts its gesture was used up, so a gesture left in the
+  queue fails where it was posted rather than in the next test to pull it.
+- **`viewDidAppear` arrives on a later turn than the one that put the view in the
+  window** — not from layout, not from display. `EditorAreaViewController` starts
+  following clicks and focus there, so `EditorAreaTests` waits for the selected
+  tab's appearance before clicking.
+
+The shape of both: when a test depends on something AppKit or the window server
+does *later*, wait for that thing, not for a pass that usually covers it.
+
 ### Capturing: `WindowCapture`
 
 Through ScreenCaptureKit: `SCShareableContent.currentProcess` (macOS 14.4) lists

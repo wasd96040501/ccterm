@@ -132,16 +132,19 @@ final class EditorTabBar: NSView, NSDraggingSource {
 
         closeButton.bezelStyle = .smallSquare
         closeButton.isBordered = false
-        // Xcode's cross, 8 points in the middle of the circle. At 10 points medium
-        // the symbol's cross is 8 points with a point to spare on every side of
-        // its image (measured), so centring the image centres the cross — which
-        // the symbol's own alignment rect, a text baseline's, does not.
+        // Safari's: a 12-point disc with the cross cut out of it, which at 12 points
+        // regular the symbol is (measured, ink and cross both). Centring its image
+        // centres the disc — which the symbol's own alignment rect, a text
+        // baseline's, does not.
         let cross = NSImage(
-            systemSymbolName: "xmark", accessibilityDescription: String(localized: "Close Tab", bundle: .module)
-        )?.withSymbolConfiguration(.init(pointSize: 10, weight: .medium))
+            systemSymbolName: "xmark.circle.fill",
+            accessibilityDescription: String(localized: "Close Tab", bundle: .module)
+        )?.withSymbolConfiguration(.init(pointSize: 12, weight: .regular))
         cross?.alignmentRect = NSRect(origin: .zero, size: cross?.size ?? .zero)
         closeButton.image = cross
-        closeButton.contentTintColor = .secondaryLabelColor
+        // Safari's measures 80% of the ink, a shade under a label's 85%; the label
+        // colour is the system's, and follows the appearance.
+        closeButton.contentTintColor = .labelColor
         closeButton.target = self
         closeButton.action = #selector(closeHovered)
         closeButton.isHidden = true
@@ -216,9 +219,12 @@ final class EditorTabBar: NSView, NSDraggingSource {
     }
 
     /// Puts the tab over its neighbours, to pass over them. Re-adding a view is
-    /// how AppKit reorders one, and it takes the view's constraints with it.
+    /// how AppKit reorders one, and it takes the constraints to the bar with it —
+    /// but not the width, which is the view's own and would stay to fight the new
+    /// one.
     private func raise(_ id: ObjectIdentifier) {
         guard let tab = tabs[id] else { return }
+        tab.width.isActive = false
         tab.view.removeFromSuperview()
         attach(
             tab.view, as: id,
@@ -329,7 +335,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
                 }
             }
         }
-        placeCloseButton()
+        showHover()
     }
 
     private func place(_ tab: Tab, at frame: NSRect) {
@@ -337,18 +343,24 @@ final class EditorTabBar: NSView, NSDraggingSource {
         tab.width.constant = frame.width
     }
 
-    private func placeCloseButton() {
-        guard let hovered = hoveredIndex, items.indices.contains(hovered), !items[hovered].isPinned,
-            draggedID == nil
-        else {
+    /// The hovered tab lights up and shows its close button, Safari's way; no tab
+    /// does while one is being dragged.
+    private func showHover() {
+        let hovered = draggedID == nil ? hoveredIndex.flatMap { items.indices.contains($0) ? $0 : nil } : nil
+        for (index, item) in items.enumerated() {
+            tabs[item.id]?.view.isHovered = index == hovered
+        }
+        guard let hovered, !items[hovered].isPinned else {
             closeButton.isHidden = true
             return
         }
-        // 8 points into the glass, which is 2 into the tab.
-        let side: CGFloat = 16
+        // On the centre of the glass's leading end, as Safari's sits on its
+        // capsule's: the glass is a capsule 2 points in from the tab, so its end is
+        // a half circle centred half the tab's height in from the tab's edge.
+        let side: CGFloat = 18
         let tab = rect(forTabAt: hovered)
         closeButton.frame = NSRect(
-            x: tab.minX + 10, y: tab.midY - side / 2, width: side, height: side)
+            x: tab.minX + tab.height / 2 - side / 2, y: tab.midY - side / 2, width: side, height: side)
         closeButton.isHidden = false
     }
 
@@ -379,7 +391,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
     private func setHoveredIndex(_ index: Int?) {
         guard index != hoveredIndex else { return }
         hoveredIndex = index
-        placeCloseButton()
+        showHover()
     }
 
     @objc private func closeHovered() {
@@ -613,6 +625,22 @@ private final class EditorTabView: NSView {
         return box
     }()
 
+    /// The hover: a capsule the glass's size, over it on the selected tab and on
+    /// the track on any other. Measured off Safari, black at about 4% over the
+    /// track and 2% over the glass; the system's fills one step apart carry both,
+    /// and the dark appearance.
+    private let hoverFill: NSBox = {
+        let box = NSBox()
+        box.boxType = .custom
+        box.borderWidth = 0
+        box.isHidden = true
+        return box
+    }()
+
+    var isHovered = false {
+        didSet { hoverFill.isHidden = !isHovered }
+    }
+
     private let imageView: NSImageView = {
         let view = NSImageView()
         view.symbolConfiguration = .init(pointSize: 13, weight: .regular)
@@ -634,6 +662,7 @@ private final class EditorTabView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         addSubview(background)
+        addSubview(hoverFill)
         let content = NSStackView(views: [imageView, label])
         content.orientation = .horizontal
         // 4 points from the symbol's ink to the title's, as measured on the
@@ -642,14 +671,19 @@ private final class EditorTabView: NSView {
         content.translatesAutoresizingMaskIntoConstraints = false
         addSubview(content)
         // Room at the leading edge for the close button, and as much at the other.
+        // Short of required: a tab squeezed narrower than the two, as a new one is
+        // before it is placed, clips its content rather than breaking the layout.
         let inset: CGFloat = 28
         let centre = content.centerXAnchor.constraint(equalTo: centerXAnchor)
         centre.priority = .defaultHigh
+        let leading = content.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: inset)
+        let trailing = content.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -inset)
+        leading.priority = .required - 1
+        trailing.priority = .required - 1
         NSLayoutConstraint.activate([
             centre,
             content.centerYAnchor.constraint(equalTo: centerYAnchor),
-            content.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: inset),
-            content.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -inset),
+            leading, trailing,
         ])
     }
 
@@ -666,6 +700,8 @@ private final class EditorTabView: NSView {
     override func layout() {
         super.layout()
         background.frame = bounds.insetBy(dx: 2, dy: 2)
+        hoverFill.frame = background.frame
+        hoverFill.cornerRadius = background.frame.height / 2
         if #available(macOS 26.0, *), let glass = background as? NSGlassEffectView {
             glass.cornerRadius = background.frame.height / 2
         } else {
@@ -676,6 +712,7 @@ private final class EditorTabView: NSView {
     func configure(with item: EditorTabBar.Item, isSelected: Bool) {
         self.isSelected = isSelected
         background.isHidden = !isSelected
+        hoverFill.fillColor = isSelected ? .tabHoverOverGlass : .tabHover
         label.stringValue = item.title
         imageView.image =
             item.isPinned
@@ -701,17 +738,17 @@ private final class EditorTabView: NSView {
     }
 }
 
-/// The close button's glyph, with the circle Xcode puts behind it while the
-/// pointer is over it.
+/// The close button: Safari's disc, in a halo while the pointer is over it and a
+/// deeper one while it is pressed.
 ///
-/// The circle is `tertiarySystemFill`: measured against Xcode's in the light
-/// appearance — 16 points across, black at 4.7% over the tab — and the system
-/// colour carries the dark value. It is the layer's background, which draws
-/// under the glyph.
+/// Safari's halo is the tab's own hover fill, 20 points across its 30-point
+/// capsule, and it does not change on a press; the press is ours, one step deeper
+/// in the same family of system fills. Drawn under the glyph in `draw(_:)`, where
+/// a button reads its cell's highlight.
 private final class TabCloseButton: NSButton {
 
     private var isPointerInside = false {
-        didSet { updateCircle() }
+        didSet { needsDisplay = true }
     }
 
     override func updateTrackingAreas() {
@@ -732,32 +769,33 @@ private final class TabCloseButton: NSButton {
         isPointerInside = false
     }
 
-    override func layout() {
-        super.layout()
-        updateCircle()
+    override func draw(_ dirtyRect: NSRect) {
+        if let halo: NSColor = isHighlighted ? .tabPressed : isPointerInside ? .tabHover : nil {
+            halo.setFill()
+            NSBezierPath(ovalIn: bounds).fill()
+        }
+        super.draw(dirtyRect)
+    }
+}
+
+extension NSColor {
+
+    /// A tab, or the close button, under the pointer.
+    fileprivate static var tabHover: NSColor {
+        if #available(macOS 14.0, *) { return .tertiarySystemFill }
+        return NSColor.labelColor.withAlphaComponent(0.047)
     }
 
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        updateCircle()
+    /// The selected tab under the pointer: over the glass, a step lighter, as Safari's.
+    fileprivate static var tabHoverOverGlass: NSColor {
+        if #available(macOS 14.0, *) { return .quaternarySystemFill }
+        return NSColor.labelColor.withAlphaComponent(0.027)
     }
 
-    private func updateCircle() {
-        wantsLayer = true
-        layer?.cornerRadius = bounds.height / 2
-        guard isPointerInside else {
-            layer?.backgroundColor = nil
-            return
-        }
-        let fill: NSColor
-        if #available(macOS 14.0, *) {
-            fill = .tertiarySystemFill
-        } else {
-            fill = NSColor.labelColor.withAlphaComponent(0.047)
-        }
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = fill.cgColor
-        }
+    /// The close button pressed.
+    fileprivate static var tabPressed: NSColor {
+        if #available(macOS 14.0, *) { return .systemFill }
+        return NSColor.labelColor.withAlphaComponent(0.098)
     }
 }
 

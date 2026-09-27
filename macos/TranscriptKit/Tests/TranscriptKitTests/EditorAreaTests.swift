@@ -122,11 +122,12 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertIdentical(mounted.recorder.closed.first, mounted.probes[1])
     }
 
-    /// Under the pointer, the close button sits in Xcode's circle: measured off
-    /// Xcode's own tab bar in the light appearance, black at about 4.7% over the
-    /// tab (232 → 221); in the dark one, the same in white. Read as composited,
-    /// between a point inside the circle clear of the glyph and a corner outside it.
-    func testTheCloseButtonUnderThePointerSitsInXcodesCircle() async throws {
+    /// Under the pointer, the close button sits in a halo of the tab's hover fill,
+    /// as Safari's does — black at about 4.7% in the light appearance, white in the
+    /// dark — and a press deepens it a step, to about 9.8%. Read as composited at
+    /// one point inside the halo clear of the disc, over the hovered tab with the
+    /// pointer off the button, on it, and pressing it.
+    func testTheCloseButtonHasAHaloUnderThePointerAndADeeperOneWhilePressed() async throws {
         let mounted = mount(tabs: 2)
         defer { mounted.window.close() }
         let bar = mounted.area.activeGroup.tabBar
@@ -135,37 +136,43 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertFalse(button.isHidden, "premise: the close button is over the hovered tab")
         let point = button.convert(NSPoint(x: button.bounds.midX, y: button.bounds.midY), to: nil)
 
-        /// Inside the circle beside the glyph, and outside it in a corner, 0–255.
-        func greys() async throws -> (inside: CGFloat, outside: CGFloat) {
+        /// Grey 0–255 a point and a half in from the button's leading edge, on its
+        /// middle line: inside the halo, outside the disc.
+        func grey() async throws -> CGFloat {
             try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.2)
             let rep = try await WindowCapture.bitmap(of: button)
-            func grey(_ x: Int, _ y: Int) throws -> CGFloat {
-                let color = try XCTUnwrap(rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
-                return (color.redComponent + color.greenComponent + color.blueComponent) / 3 * 255
-            }
-            return (try grey(3, 8), try grey(0, 0))
+            let color = try XCTUnwrap(rep.colorAt(x: 1, y: rep.pixelsHigh / 2)?.usingColorSpace(.sRGB))
+            return (color.redComponent + color.greenComponent + color.blueComponent) / 3 * 255
         }
 
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             mounted.window.appearance = NSAppearance(named: appearance)
+            let ink: CGFloat = name == "light" ? 0 : 255
             button.mouseExited(with: mouse(.mouseMoved, at: point, in: button))
-            let away = try await greys()
-            XCTAssertEqual(away.inside, away.outside, accuracy: 2, "\(name): a circle without the pointer")
+            let away = try await grey()
 
             button.mouseEntered(with: mouse(.mouseMoved, at: point, in: button))
-            let over = try await greys()
-            // Solve `inside = outside + (ink - outside) * alpha` for the overlay's alpha.
-            let ink: CGFloat = name == "light" ? 0 : 255
-            let alpha = (over.inside - over.outside) / (ink - over.outside)
-            XCTAssertEqual(alpha, 0.047, accuracy: 0.015, "\(name): not Xcode's circle — \(over)")
+            let hovered = try await grey()
+            // Solve `over = away + (ink - away) * alpha` for the halo's alpha.
+            XCTAssertEqual(
+                (hovered - away) / (ink - away), 0.047, accuracy: 0.015,
+                "\(name): not the hover halo — \(away) → \(hovered)")
+
+            button.highlight(true)
+            let pressed = try await grey()
+            button.highlight(false)
+            XCTAssertEqual(
+                (pressed - away) / (ink - away), 0.098, accuracy: 0.015,
+                "\(name): the press does not deepen it — \(away) → \(pressed)")
         }
     }
 
-    /// The cross is Xcode's — 8 points — and at the circle's centre, read off the
-    /// composited window at its own resolution: a half-point error is a single
-    /// pixel there, and would blur away at one pixel per point. A symbol placed by
-    /// its alignment rect, a text baseline's, sat half a point left and low.
-    func testTheCloseCrossIsXcodesSizeAndAtTheCircleCentre() async throws {
+    /// The disc is Safari's — 12 points — centred in the button, and the button on
+    /// the centre of the glass's leading end. Read off the composited window at its
+    /// own resolution: a half-point error is a single pixel there, and would blur
+    /// away at one pixel per point. A symbol placed by its alignment rect, a text
+    /// baseline's, sat half a point left and low.
+    func testTheCloseDiscIsSafarisSizeAndOnTheCentreOfTheTabsEnd() async throws {
         let mounted = mount(tabs: 2)
         defer { mounted.window.close() }
         let window = mounted.window
@@ -173,37 +180,85 @@ final class EditorAreaTests: XCTestCase {
         let button = bar.closeButton
         bar.mouseMoved(with: mouse(.mouseMoved, at: center(of: bar, tab: 0), in: bar))
         XCTAssertFalse(button.isHidden, "premise: the close button is over the hovered tab")
+        let tab = bar.rect(forTabAt: 0)
+        XCTAssertEqual(button.frame.midX, tab.minX + tab.height / 2, "not on the centre of the glass's end")
+        XCTAssertEqual(button.frame.midY, tab.midY)
 
-        try await WindowCapture.waitForFrames(of: window, spanning: 0.2)
-        let image = try await WindowCapture.image(of: window)
-        // The backing scale, not the capture's width over the frame's: a capture
-        // can come back a few pixels wider than the frame, and a scale of 2.004
-        // crops a 33-pixel square around a 32-pixel button.
-        let scale = window.backingScaleFactor
-        let inWindow = button.convert(button.bounds, to: nil)
-        let crop = CGRect(
-            x: inWindow.minX * scale, y: (window.frame.height - inWindow.maxY) * scale,
-            width: inWindow.width * scale, height: inWindow.height * scale)
-        XCTAssertEqual(crop, crop.integral, "premise: the button is on whole pixels")
-        let rep = NSBitmapImageRep(cgImage: try XCTUnwrap(image.cropping(to: crop)))
-        func grey(_ x: Int, _ y: Int) -> CGFloat {
-            let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
-            return ((color?.redComponent ?? 0) + (color?.greenComponent ?? 0) + (color?.blueComponent ?? 0)) / 3
-        }
-        // Ink: at least a quarter darker than the tab behind it.
-        let background = grey(0, 0)
-        let ink = (0..<rep.pixelsHigh).flatMap { y in
-            (0..<rep.pixelsWide).filter { background - grey($0, y) > 0.25 }.map { (x: $0, y: y) }
-        }
-        let xs = ink.map(\.x)
-        let ys = ink.map(\.y)
-        let (minX, maxX) = (try XCTUnwrap(xs.min(), "premise: the cross was drawn"), xs.max() ?? 0)
-        let (minY, maxY) = (ys.min() ?? 0, ys.max() ?? 0)
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            window.appearance = NSAppearance(named: appearance)
+            try await WindowCapture.waitForFrames(of: window, spanning: 0.2)
+            let image = try await WindowCapture.image(of: window)
+            // The backing scale, not the capture's width over the frame's: a capture
+            // can come back a few pixels wider than the frame, and a scale of 2.004
+            // crops a 37-pixel square around a 36-pixel button.
+            let scale = window.backingScaleFactor
+            let inWindow = button.convert(button.bounds, to: nil)
+            let crop = CGRect(
+                x: inWindow.minX * scale, y: (window.frame.height - inWindow.maxY) * scale,
+                width: inWindow.width * scale, height: inWindow.height * scale)
+            XCTAssertEqual(crop, crop.integral, "premise: the button is on whole pixels")
+            let rep = NSBitmapImageRep(cgImage: try XCTUnwrap(image.cropping(to: crop)))
+            func grey(_ x: Int, _ y: Int) -> CGFloat {
+                let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
+                return ((color?.redComponent ?? 0) + (color?.greenComponent ?? 0) + (color?.blueComponent ?? 0)) / 3
+            }
+            // Ink: at least a quarter darker than the tab behind it in the light
+            // appearance, lighter in the dark — a disc that stayed dark there is one
+            // whose colour stopped following the appearance.
+            let background = grey(0, 0)
+            let sign: CGFloat = name == "light" ? 1 : -1
+            let ink = (0..<rep.pixelsHigh).flatMap { y in
+                (0..<rep.pixelsWide).filter { sign * (background - grey($0, y)) > 0.25 }.map { (x: $0, y: y) }
+            }
+            let xs = ink.map(\.x)
+            let ys = ink.map(\.y)
+            let (minX, maxX) = (try XCTUnwrap(xs.min(), "\(name): the disc was not drawn"), xs.max() ?? 0)
+            let (minY, maxY) = (ys.min() ?? 0, ys.max() ?? 0)
 
-        XCTAssertEqual(CGFloat(maxX - minX + 1) / scale, 8, accuracy: 0.5, "not Xcode's 8-point cross")
-        XCTAssertEqual(CGFloat(maxY - minY + 1) / scale, 8, accuracy: 0.5, "not Xcode's 8-point cross")
-        XCTAssertEqual(CGFloat(minX + maxX + 1) / 2, CGFloat(rep.pixelsWide) / 2, "off centre horizontally")
-        XCTAssertEqual(CGFloat(minY + maxY + 1) / 2, CGFloat(rep.pixelsHigh) / 2, "off centre vertically")
+            XCTAssertEqual(CGFloat(maxX - minX + 1) / scale, 12, accuracy: 0.5, "\(name): not Safari's 12-point disc")
+            XCTAssertEqual(CGFloat(maxY - minY + 1) / scale, 12, accuracy: 0.5, "\(name): not Safari's 12-point disc")
+            XCTAssertEqual(
+                CGFloat(minX + maxX + 1) / 2, CGFloat(rep.pixelsWide) / 2, accuracy: 0.5,
+                "\(name): off centre horizontally")
+            XCTAssertEqual(
+                CGFloat(minY + maxY + 1) / 2, CGFloat(rep.pixelsHigh) / 2, accuracy: 0.5,
+                "\(name): off centre vertically")
+        }
+    }
+
+    /// A tab under the pointer lights up as Safari's do: a capsule of fill the
+    /// glass's size, about 4.7% over the track on a tab that is not selected and a
+    /// step lighter, 2.7%, over the glass of the one that is. Read as composited, at
+    /// a point inside the capsule clear of the title, before and after.
+    func testAHoveredTabLightsUp() async throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        let bar = mounted.area.activeGroup.tabBar
+        XCTAssertEqual(bar.selectedIndex, 1, "premise: the second tab is the selected one")
+
+        /// Grey at the trailing end of a tab's capsule, where no title reaches.
+        func grey(atTab index: Int) async throws -> CGFloat {
+            try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.2)
+            let rep = try await WindowCapture.bitmap(of: bar)
+            let tab = bar.rect(forTabAt: index)
+            let color = try XCTUnwrap(
+                rep.colorAt(x: Int(tab.maxX - 10), y: Int(tab.midY))?.usingColorSpace(.sRGB))
+            return (color.redComponent + color.greenComponent + color.blueComponent) / 3 * 255
+        }
+
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            mounted.window.appearance = NSAppearance(named: appearance)
+            let ink: CGFloat = name == "light" ? 0 : 255
+            for (index, expected) in [(0, 0.047), (1, 0.027)] {
+                bar.mouseExited(with: mouse(.mouseMoved, at: .zero, in: bar))
+                let away = try await grey(atTab: index)
+                bar.mouseMoved(with: mouse(.mouseMoved, at: center(of: bar, tab: index), in: bar))
+                let over = try await grey(atTab: index)
+                XCTAssertEqual(
+                    (over - away) / (ink - away), expected, accuracy: 0.012,
+                    "\(name), tab \(index): not the hover fill — \(away) → \(over)")
+            }
+        }
     }
 
     func testClosingTheSelectedTabSelectsTheOneAfterIt() throws {

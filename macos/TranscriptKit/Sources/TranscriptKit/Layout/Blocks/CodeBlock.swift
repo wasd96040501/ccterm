@@ -8,10 +8,15 @@ import CoreText
 /// padding inside the card, the padding outside it, the chip. None of it is
 /// stated anywhere else, and none of it is announced to whatever is stacking it.
 ///
-/// **The chrome is an overlay.** The badge reserves no vertical space, so a long
-/// first line passes underneath it rather than being pushed down or wrapped
-/// early. Its opaque chip is what keeps it legible when that happens, which is
-/// why the chip is filled rather than drawn as text alone.
+/// **The chip costs no row, and covers no code.** It sits in the card's
+/// top-trailing corner and reserves no vertical space; a first line long enough
+/// to reach it wraps short of it instead of running underneath —
+/// `ShapedText.typeset(width:limit:excluding:)`, which is TextKit's exclusion
+/// path. Only a line that would actually meet the chip is affected: a short first
+/// line keeps its width and the card keeps its height, and a long one costs the
+/// wrap it would have cost anyway a few characters earlier. A header row naming
+/// the language would buy the same legibility with a line of height on every
+/// card, most of which have nothing near the corner.
 ///
 /// No copy button yet. It belongs here, next to the badge, and the layer it was
 /// waiting on now exists: `MeasuredBlock.link(at:)` is a point query answered by
@@ -28,9 +33,17 @@ struct CodeBlock: Block, @unchecked Sendable {
     /// sits does, and that is all `measure` computes.
     let badge: TypesetText?
 
-    /// `#F5F5F7` light / `#2A2A2E` dark — one elevation tier above the window
-    /// background in either mode, so the card reads as a raised surface.
-    var backgroundColor: NSColor = dynamic(dark: 0x2A2A2E, light: 0xF5F5F7)
+    /// `tertiarySystemFill` — a translucent tier, darker than the page in light
+    /// mode and lighter in dark, **whatever the page is.**
+    ///
+    /// Relative on purpose. The transcript draws no background of its own, so
+    /// the card sits on the window's material or on whatever a host put behind
+    /// it, and the colour of that is not known here. An opaque card was: it
+    /// was `#F5F5F7`, chosen to sit a tier above a window background of about
+    /// `#ECECEC` — and the window it met was `#F1F2F2`, which left four levels
+    /// between them and a card that read as a smudge. A fill is composited over
+    /// whatever it lands on, so its contrast is the same on every page.
+    var backgroundColor: NSColor = tertiaryFill
 
     /// The "structural" corner tier — data, code, grids. A tight curve reads as
     /// engineering; the soft tier belongs to chat bubbles.
@@ -47,7 +60,9 @@ struct CodeBlock: Block, @unchecked Sendable {
     var badgeInset: CGFloat = 8
     var badgeCornerRadius: CGFloat = 4
     var badgeHorizontalPadding: CGFloat = 6
-    var badgeBackgroundColor: NSColor = dynamic(dark: 0x3E3E43, light: 0xE1E1E3)
+    /// The same fill again, over the card's: one tier further from the page than
+    /// the card is, in either mode, for the reason `backgroundColor` gives.
+    var badgeBackgroundColor: NSColor = tertiaryFill
 
     /// The point size the chip's text is set at. Not a property of the card —
     /// whoever typesets `badge` decides it — but stated here so the one caller
@@ -60,26 +75,49 @@ struct CodeBlock: Block, @unchecked Sendable {
     }
 
     func measure(_ width: CGFloat) -> MeasuredBlock {
-        let text = text.typeset(width: max(1, width - horizontalPadding * 2))
+        let textWidth = max(1, width - horizontalPadding * 2)
+        let cardTop = outerPadding
+        let textOrigin = CGPoint(x: horizontalPadding, y: cardTop + verticalPadding)
+
+        // The chip is placed first because the text depends on it and it depends
+        // on nothing but the width: it is the corner the first line wraps short
+        // of, carried into the text's own coordinates with a gap on its leading
+        // side.
+        let badge = placedBadge(width: width, cardTop: cardTop, textWidth: textWidth)
+        let text = text.typeset(
+            width: textWidth,
+            excluding: badge.map {
+                CGRect(
+                    x: $0.rect.minX - badgeInset - textOrigin.x, y: $0.rect.minY - textOrigin.y,
+                    width: $0.rect.width + badgeInset, height: $0.rect.height)
+            })
 
         let card = CGRect(
-            x: 0, y: outerPadding,
+            x: 0, y: cardTop,
             width: width, height: verticalPadding * 2 + text.size.height)
 
         return Measured(
             text: text,
-            textOrigin: CGPoint(x: horizontalPadding, y: card.minY + verticalPadding),
+            textOrigin: textOrigin,
             size: CGSize(width: width, height: card.height + outerPadding * 2),
             card: card,
             cornerRadius: cornerRadius,
             backgroundColor: backgroundColor,
-            badge: placedBadge(width: width, cardTop: card.minY))
+            badge: badge)
     }
 
     /// Where the chip goes. The chip's text arrived typeset — all that is left
     /// is arithmetic against a width, which is why this is the only part of the
     /// chip still on the `measure` path.
-    private func placedBadge(width: CGFloat, cardTop: CGFloat) -> Measured.Badge? {
+    ///
+    /// Left out when it would take more than half the line beside it: the first
+    /// line wraps short of the chip, and on a card that narrow the chip would be
+    /// deciding the code's layout rather than labelling it.
+    private func placedBadge(
+        width: CGFloat, cardTop: CGFloat, textWidth: CGFloat
+    )
+        -> Measured.Badge?
+    {
         guard let badge, let line = badge.lines.first else { return nil }
         let ascent = line.ascent
         let descent = line.descent
@@ -91,8 +129,7 @@ struct CodeBlock: Block, @unchecked Sendable {
             y: cardTop + badgeInset,
             width: chipWidth,
             height: (ascent + descent).rounded(.up) + 4)
-        // Nowhere to put it without crowding the body's own left padding.
-        guard rect.minX >= horizontalPadding else { return nil }
+        guard rect.minX - badgeInset - horizontalPadding >= textWidth / 2 else { return nil }
 
         return Measured.Badge(
             text: badge,
@@ -107,14 +144,14 @@ struct CodeBlock: Block, @unchecked Sendable {
             backgroundColor: badgeBackgroundColor)
     }
 
-    private static func dynamic(dark: Int, light: Int) -> NSColor {
-        NSColor(name: nil) { appearance in
-            let hex = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
-            return NSColor(
-                srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
-                green: CGFloat((hex >> 8) & 0xFF) / 255,
-                blue: CGFloat(hex & 0xFF) / 255,
-                alpha: 1)
+    /// `NSColor.tertiarySystemFill`, which arrived in macOS 14 — this package
+    /// reaches back to 12, where the same fill is spelled out: black over a
+    /// light page, white over a dark one, at the alpha the system uses.
+    private static var tertiaryFill: NSColor {
+        if #available(macOS 14.0, *) { return .tertiarySystemFill }
+        return NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(white: 1, alpha: 0.047) : NSColor(white: 0, alpha: 0.047)
         }
     }
 
@@ -142,9 +179,11 @@ struct CodeBlock: Block, @unchecked Sendable {
         let badge: Badge?
 
         /// The card is `.background`, the code is `.content`, the chip is
-        /// `.overlay` — which is what makes the chip sit over a long first line
-        /// while a selection band sits under the glyphs and over the card, with
-        /// none of the three knowing about the others.
+        /// `.overlay` — so a selection band sits under the glyphs and over the
+        /// card, with none of the three knowing about the others. No code runs
+        /// under the chip any more (`measure` wraps it short), but a selection
+        /// band can reach past the end of a wrapped first line, and the chip
+        /// stays above that.
         func paint(at origin: CGPoint, dirty: CGRect, into list: inout [PaintItem]) {
             list.append(
                 .fill(

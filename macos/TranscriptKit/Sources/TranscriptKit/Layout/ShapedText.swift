@@ -75,7 +75,25 @@ struct ShapedText: @unchecked Sendable {
     /// on top of the ellipsis. Nothing passes a limit for such text today
     /// (`UserMessage` is plain), and this is the constraint to check before
     /// something does.
-    func typeset(width: CGFloat, limit: Int = .max) -> TypesetText {
+    ///
+    /// ## The exclusion
+    ///
+    /// A rectangle, in the text's own coordinates, that no glyph may enter —
+    /// `NSTextContainer.exclusionPaths`, cut down to the one shape anything here
+    /// needs: a box hung off the trailing edge, like a code card's language chip.
+    /// A line whose box meets it and whose ink would reach it is broken again at
+    /// the exclusion's leading edge, and the rest flows on to the next line.
+    ///
+    /// Every other line is broken exactly as it would be without one, and a line
+    /// that stops short of the box keeps its full width — so text that never
+    /// reaches the chip costs nothing, not even a narrower first line. Only the
+    /// lines that could meet it pay one extra `CTLine`, to learn how tall they are
+    /// before deciding.
+    func typeset(
+        width: CGFloat, limit: Int = .max, excluding exclusion: CGRect? = nil
+    )
+        -> TypesetText
+    {
         guard let typesetter, width > 0, limit > 0 else { return .empty }
         let length = attributed.length
 
@@ -86,12 +104,33 @@ struct ShapedText: @unchecked Sendable {
         var widest: CGFloat = 0
         var isTruncated = false
 
-        while start < length {
-            var count = CTTypesetterSuggestLineBreak(typesetter, start, Double(width))
+        func suggestedBreak(from start: Int, width: CGFloat) -> Int {
             // A width too narrow for even one glyph reports a break of zero,
             // which would spin here forever. Force progress and overflow the
             // line instead — a clipped glyph is a better failure than a hang.
-            if count <= 0 { count = 1 }
+            max(1, CTTypesetterSuggestLineBreak(typesetter, start, Double(width)))
+        }
+
+        while start < length {
+            var breakWidth = width
+            var count = suggestedBreak(from: start, width: width)
+
+            if let exclusion, exclusion.minX > 0, exclusion.minX < width, y < exclusion.maxY {
+                let probe = CTTypesetterCreateLine(
+                    typesetter, CFRange(location: start, length: count))
+                var ascent: CGFloat = 0
+                var descent: CGFloat = 0
+                var leading: CGFloat = 0
+                // Ink, not advance: trailing spaces — and the newline that ends
+                // every line of a code block — reach nothing.
+                let ink =
+                    CGFloat(CTLineGetTypographicBounds(probe, &ascent, &descent, &leading))
+                    - CGFloat(CTLineGetTrailingWhitespaceWidth(probe))
+                if y + ascent + descent + leading > exclusion.minY, ink > exclusion.minX {
+                    breakWidth = exclusion.minX
+                    count = suggestedBreak(from: start, width: breakWidth)
+                }
+            }
 
             // The last line allowed, with text still to come after it.
             isTruncated = lines.count == limit - 1 && start + count < length
@@ -100,7 +139,8 @@ struct ShapedText: @unchecked Sendable {
             let full = CTTypesetterCreateLine(typesetter, CFRange(location: start, length: count))
             let ctLine =
                 isTruncated
-                ? CTLineCreateTruncatedLine(full, Double(width), .end, ellipsis(at: start)) ?? full
+                ? CTLineCreateTruncatedLine(full, Double(breakWidth), .end, ellipsis(at: start))
+                    ?? full
                 : full
 
             var ascent: CGFloat = 0

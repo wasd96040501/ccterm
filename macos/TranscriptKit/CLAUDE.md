@@ -282,8 +282,8 @@ them:
 Captures are `*SnapshotTests`, written to `/tmp/transcriptkit-screenshots/`, and
 skipped by `make test-kit` unless named — `make test-kit FILTER=<Class>`. They
 assert premises, not pixels: they are for reading, like the demo, but without a
-window taking over the screen. `FindPresentationSnapshotTests` and
-`EditorAreaSnapshotTests` are the two. A pixel *assertion* is not a snapshot — it
+window taking over the screen. `FindPresentationSnapshotTests`,
+`EditorAreaSnapshotTests` and `CodeBlockSnapshotTests` are the three. A pixel *assertion* is not a snapshot — it
 runs in the default suite like any other test, and reads `WindowCapture.bitmap`.
 
 ### What the suite can't check: `make demo-kit`

@@ -273,7 +273,12 @@ final class ToolPaletteView: NSView {
         if #available(macOS 26.0, *) {
             let effect = NSGlassEffectView()
             effect.cornerRadius = height / 2
+            // `#available` is a run-time check and the symbol still has to be in
+            // the SDK being compiled against: Swift 6.4 is the first to ship with
+            // one that has it (Xcode 27), and CI builds with Xcode 26.
+            #if compiler(>=6.4)
             if #available(macOS 27.0, *) { effect.effectIsInteractive = true }
+            #endif
             effect.contentView = content
             glass = effect
         } else {

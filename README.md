@@ -1,3 +1,5 @@
+<img src="design/icon/preview.png" width="128" alt="CCTerm icon">
+
 # CCTerm
 
 A native macOS app for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — a real Mac client instead of a terminal tab.

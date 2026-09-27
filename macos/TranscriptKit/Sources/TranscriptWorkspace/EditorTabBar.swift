@@ -94,7 +94,19 @@ final class EditorTabBar: NSView, NSDraggingSource {
     /// keeps its source alive, so this does.
     private static var inFlight: EditorTabBar?
 
-    private var tabViews: [ObjectIdentifier: EditorTabView] = [:]
+    /// A tab's view and the two constraints that place it: where along the bar
+    /// it starts, and how wide it is. A slide animates the two constants, which
+    /// lays the tab out again on every frame — so its glass and its title follow
+    /// its width as it changes, instead of being carried at the final width.
+    private struct Tab {
+        let view: EditorTabView
+        let leading: NSLayoutConstraint
+        let width: NSLayoutConstraint
+    }
+
+    private var tabs: [ObjectIdentifier: Tab] = [:]
+    /// Tabs made since the tabs were last placed, which land where they go.
+    private var unplaced: Set<ObjectIdentifier> = []
     private var draggedID: ObjectIdentifier?
 
     private var pressedIndex: Int?
@@ -166,27 +178,50 @@ final class EditorTabBar: NSView, NSDraggingSource {
         self.items = items
         self.selectedIndex = selectedIndex
         let kept = Set(items.map(\.id))
-        for (id, view) in tabViews where !kept.contains(id) {
-            view.removeFromSuperview()
-            tabViews[id] = nil
+        for (id, tab) in tabs where !kept.contains(id) {
+            tab.view.removeFromSuperview()
+            tabs[id] = nil
         }
         for (index, item) in items.enumerated() {
-            let view = tabViews[item.id] ?? makeTabView(for: item.id)
-            view.configure(with: item, isSelected: index == selectedIndex)
+            if tabs[item.id] == nil {
+                attach(EditorTabView(), as: item.id)
+                unplaced.insert(item.id)
+            }
+            tabs[item.id]?.view.configure(with: item, isSelected: index == selectedIndex)
         }
         if let hovered = hoveredIndex, hovered >= items.count { hoveredIndex = nil }
         placeTabs(animated: draggedID != nil || gapIndex != nil)
     }
 
-    private func makeTabView(for id: ObjectIdentifier) -> EditorTabView {
-        let view = EditorTabView()
+    /// Adds `view` as the tab `id`, over the tabs already there and under the
+    /// close button, where it was if it was placed before.
+    private func attach(_ view: EditorTabView, as id: ObjectIdentifier, at frame: NSRect = .zero) {
+        view.translatesAutoresizingMaskIntoConstraints = false
         addSubview(view, positioned: .below, relativeTo: closeButton)
-        tabViews[id] = view
-        return view
+        let tab = Tab(
+            view: view,
+            leading: view.leadingAnchor.constraint(equalTo: leadingAnchor, constant: frame.minX),
+            width: view.widthAnchor.constraint(equalToConstant: frame.width))
+        NSLayoutConstraint.activate([
+            tab.leading, tab.width,
+            view.topAnchor.constraint(equalTo: topAnchor),
+            view.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+        tabs[id] = tab
     }
 
-    private func tabView(at index: Int) -> EditorTabView? {
-        tabViews[items[index].id]
+    /// Puts the tab over its neighbours, to pass over them. Re-adding a view is
+    /// how AppKit reorders one, and it takes the view's constraints with it.
+    private func raise(_ id: ObjectIdentifier) {
+        guard let tab = tabs[id] else { return }
+        tab.view.removeFromSuperview()
+        attach(
+            tab.view, as: id,
+            at: NSRect(x: tab.leading.constant, y: 0, width: tab.width.constant, height: 0))
+    }
+
+    private func tab(at index: Int) -> Tab? {
+        tabs[items[index].id]
     }
 
     // MARK: - Geometry
@@ -242,10 +277,10 @@ final class EditorTabBar: NSView, NSDraggingSource {
 
     // MARK: - Placing the tabs
 
+    /// A new size places the tabs for it, before the pass lays them out.
     override func layout() {
+        if bounds.size != placedSize { placeTabs(animated: false) }
         super.layout()
-        guard bounds.size != placedSize else { return }
-        placeTabs(animated: false)
     }
 
     /// Where the tab in hand is: under the pointer, held where it was picked up,
@@ -262,39 +297,49 @@ final class EditorTabBar: NSView, NSDraggingSource {
     private func placeTabs(animated: Bool) {
         placedSize = bounds.size
         let shown = shownIndices
-        var moves: [(EditorTabView, NSRect)] = []
+        var slides: [(Tab, NSRect)] = []
         for (index, slot) in zip(shown, slots(for: shown, gap: gapIndex)) {
-            guard let view = tabView(at: index) else { continue }
-            view.isHidden = false
+            guard let tab = tab(at: index) else { continue }
+            tab.view.isHidden = false
             if index == draggedIndex {
-                view.frame = heldFrame(in: slot)
-            } else if animated, view.frame != .zero {
-                moves.append((view, slot))
+                place(tab, at: heldFrame(in: slot))
+            } else if animated, !unplaced.contains(items[index].id) {
+                slides.append((tab, slot))
             } else {
-                view.frame = slot
+                place(tab, at: slot)
             }
         }
-        if isDraggedTabOut, let dragged = draggedIndex { tabView(at: dragged)?.isHidden = true }
-        if !moves.isEmpty {
+        unplaced.removeAll()
+        if isDraggedTabOut, let dragged = draggedIndex { tab(at: dragged)?.view.isHidden = true }
+        if !slides.isEmpty {
             NSAnimationContext.runAnimationGroup { context in
                 if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { context.duration = 0 }
-                for (view, frame) in moves { view.animator().frame = frame }
+                for (tab, frame) in slides {
+                    tab.leading.animator().constant = frame.minX
+                    tab.width.animator().constant = frame.width
+                }
             }
         }
         placeCloseButton()
     }
 
+    private func place(_ tab: Tab, at frame: NSRect) {
+        tab.leading.constant = frame.minX
+        tab.width.constant = frame.width
+    }
+
     private func placeCloseButton() {
         guard let hovered = hoveredIndex, items.indices.contains(hovered), !items[hovered].isPinned,
-            draggedID == nil, let tab = tabView(at: hovered)
+            draggedID == nil
         else {
             closeButton.isHidden = true
             return
         }
         // 8 points into the glass, which is 2 into the tab.
         let side: CGFloat = 16
+        let tab = rect(forTabAt: hovered)
         closeButton.frame = NSRect(
-            x: tab.frame.minX + 10, y: tab.frame.midY - side / 2, width: side, height: side)
+            x: tab.minX + 10, y: tab.midY - side / 2, width: side, height: side)
         closeButton.isHidden = false
     }
 
@@ -356,20 +401,19 @@ final class EditorTabBar: NSView, NSDraggingSource {
 
     /// A tab pressed through accessibility, as VoiceOver presses one.
     fileprivate func press(_ tab: EditorTabView) {
-        guard let index = items.indices.first(where: { tabView(at: $0) === tab }) else { return }
+        guard let index = items.indices.first(where: { self.tab(at: $0)?.view === tab }) else { return }
         select(index)
     }
 
     override func mouseDragged(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         if draggedID == nil {
-            guard let pressed = pressedIndex, let view = tabView(at: pressed),
+            guard let pressed = pressedIndex, let tab = tab(at: pressed),
                 hypot(point.x - pressLocation.x, point.y - pressLocation.y) > Self.dragThreshold
             else { return }
             draggedID = items[pressed].id
-            grabOffset = pressLocation.x - view.frame.minX
-            // Over its neighbours as it passes them.
-            addSubview(view, positioned: .below, relativeTo: closeButton)
+            grabOffset = pressLocation.x - tab.leading.constant
+            raise(items[pressed].id)
         }
         guard let dragged = draggedIndex, !isDraggedTabOut else { return }
         // Far enough above or below, it has left the bar.

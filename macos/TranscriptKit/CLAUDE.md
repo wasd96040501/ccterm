@@ -222,9 +222,11 @@ them:
 - **Start a real drag.** `beginDraggingSession` from a test process begins, never
   ends, and stays attached to the real pointer until the person at the machine next
   lets go of a button — dropping into whatever is under it. So `EditorTabBar` splits
-  its drag into `dragWillBegin(tabAt:)` / `dragDidEnd()`, which the real session
-  calls and a test calls directly, and destinations are handed a
+  a tab leaving the bar into `dragWillBegin(tabAt:)` / `dragDidEnd()`, which the
+  real session calls and a test calls directly, and destinations are handed a
   `StubDraggingInfo` through the same `NSDraggingDestination` methods AppKit calls.
+  A drag *along* the bar starts no session — it is mouse events, which a test sends
+  to `mouseDown` / `mouseDragged` / `mouseUp` like any others.
 - **Press a left button through `NSApp.sendEvent`.** It can make the window key.
   `EditorAreaTests` exercises the area's event monitor with an other-mouse-down,
   which the monitor watches and which activates nothing.
@@ -1157,11 +1159,21 @@ EditorAreaViewController      NSSplitViewController — the divider, which edito
   until its tab is first selected** and is out of the window whenever another tab
   is. Ten tabs cost one on-screen editor. A tab's label is the item's, which
   follows its view controller's `title`, and the bar follows the label by KVO.
-- **The tab bar is `NSSegmentedControl` in `.tabs` role** (macOS 27), at `.large`:
-  that is the capsule track Xcode's editor tabs are, drawn by the system in both
-  appearances. `EditorTabBar` adds only what a segmented control lacks — hover
-  close at the tab's leading edge, pinning's look, drag, a
-  context menu — and draws no pixel of a tab.
+- **The tab bar is built from what `NSSegmentedControl`'s `.tabs` role is made
+  of**, because its segments cannot move and Xcode's drag moves a tab. The track is
+  `secondarySystemFill`, the selected tab an `NSGlassEffectView` inset 2 points in
+  its tab; measured against the control in the demo, the selected tab matches it
+  pixel for pixel — glass edges, icon and title, and their colour — and the system
+  colours and the glass carry the dark appearance and an inactive window. It
+  replaced the segmented control only for the drag: measure against the control
+  before changing how a tab looks.
+- **A tab is a view placed by two constraints**, its leading edge and its width, one
+  view per tab identity so a reorder moves views instead of relabelling them. A
+  slide animates the two constants through their animators, which lays the tab out
+  again on every frame. `animator().frame` looked like the obvious call and is
+  wrong here: on a layer-backed view it animates the layer and lays the content out
+  once, at the final size, so a tab changing width showed its glass at the end
+  width at once and its title jumping ahead and sliding back.
 - **The delegate is AppKit-shaped**: `EditorAreaViewControllerDelegate` has
   `editorArea(_:didActivate:)` and `editorArea(_:willClose:)`, both defaulted. The
   second is the `prepareForRemoval()` hook the project rules ask of a container —
@@ -1173,9 +1185,13 @@ tab selects the one after it. The last tab of the right editor closes that edito
 the last tab of the only editor leaves it empty, never gone. Pinned tabs come first,
 as wide as their titles, with no close button, and survive Close Other Tabs; the
 first `numberOfPinnedTabs` items *are* the pinned ones — a count, not a flag per
-tab, because the invariant is the order. A dragged tab reorders live within its bar,
-never crossing the pinned boundary; dropped on the other editor's bar it lands in
-the gap a line marks; dropped on the other editor's content it goes to the end;
+tab, because the invariant is the order. Along its bar a dragged tab stays in the
+bar under the pointer, and a neighbour whose middle its edge passes slides into the
+place it left, never across the pinned boundary; let go, it settles into its own.
+Dragged far enough above or below, it leaves as a drag session carrying a capsule
+of its title, and the tabs it left close up. Over a bar the tabs part where it
+would drop, and it drops into the gap; dropped on the other editor's content it
+goes to the end;
 dropped on the trailing half of its own editor's content it opens a new editor on
 the right (refused for an editor's only tab — that would move the same layout
 over). **Which editor is active follows the reader**: the one last clicked

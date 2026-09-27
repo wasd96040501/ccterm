@@ -75,6 +75,23 @@ final class EditorAreaTests: XCTestCase {
             rects[0].width, rects[1].width, "a pinned tab should be narrower than the rest")
     }
 
+    /// A second editor opening halves the bar, and its tabs go with it.
+    func testTheTabsFollowTheBarWhenItResizes() throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        let bar = mounted.area.activeGroup.tabBar
+        let before = bar.bounds.width
+
+        _ = try XCTUnwrap(
+            mounted.area.addGroup(
+                with: NSTabViewItem(viewController: ProbeViewController(title: "Right"))))
+        settle(mounted.window)
+
+        XCTAssertLessThan(bar.bounds.width, before * 0.75, "premise: the bar got narrower")
+        XCTAssertEqual(try tabView(titled: "Tab 1", in: bar).frame.maxX, bar.bounds.maxX, accuracy: 0.5)
+        XCTAssertEqual(try tabView(titled: "Tab 0", in: bar).frame, bar.rect(forTabAt: 0))
+    }
+
     func testRenamingATabRedrawsTheBar() throws {
         let mounted = mount(tabs: 2)
         defer { mounted.window.close() }
@@ -431,6 +448,32 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 0", "Tab 1", "Tab 2"])
     }
 
+    /// A tab that lands while another is still sliding — a new tab added as a
+    /// dropped one settles — leaves every tab where it now goes, not where the
+    /// slide was heading.
+    func testATabAddedWhileAnotherSettlesLeavesEveryTabInItsPlace() async throws {
+        let mounted = mount(tabs: 3)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        let bar = group.tabBar
+        let start = center(of: bar, tab: 0)
+        let end = NSPoint(x: bar.rect(forTabAt: 2).midX - 10, y: start.y)
+        bar.mouseDown(with: mouse(.leftMouseDown, at: start, in: bar))
+        bar.mouseDragged(with: mouse(.leftMouseDragged, at: end, in: bar))
+        bar.mouseUp(with: mouse(.leftMouseUp, at: end, in: bar))
+        XCTAssertNotEqual(
+            try tabView(titled: "Tab 0", in: bar).frame, bar.rect(forTabAt: 2),
+            "premise: the dropped tab is still settling")
+
+        group.addTabViewItem(NSTabViewItem(viewController: ProbeViewController(title: "Tab 3")))
+        try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.5)
+
+        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 1", "Tab 2", "Tab 0", "Tab 3"])
+        for (index, title) in ["Tab 1", "Tab 2", "Tab 0", "Tab 3"].enumerated() {
+            XCTAssertEqual(try tabView(titled: title, in: bar).frame, bar.rect(forTabAt: index), title)
+        }
+    }
+
     func testAPressThatBarelyMovesSelectsAndDoesNotDrag() throws {
         let mounted = mount(tabs: 3)
         defer { mounted.window.close() }
@@ -711,7 +754,8 @@ final class EditorAreaTests: XCTestCase {
     /// A tab's view, found the way VoiceOver finds it: by the title it is labelled
     /// with. Where it is on screen, as against where it rests (`rect(forTabAt:)`).
     private func tabView(titled title: String, in bar: EditorTabBar) throws -> NSView {
-        try XCTUnwrap(bar.subviews.first { $0.accessibilityLabel() == title }, "no tab titled \(title)")
+        bar.layoutSubtreeIfNeeded()
+        return try XCTUnwrap(bar.subviews.first { $0.accessibilityLabel() == title }, "no tab titled \(title)")
     }
 
     private func mouse(_ type: NSEvent.EventType, at point: NSPoint, in view: NSView) -> NSEvent {

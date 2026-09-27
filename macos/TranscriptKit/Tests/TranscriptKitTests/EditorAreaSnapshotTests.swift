@@ -106,8 +106,9 @@ private final class SnapshotPage: NSViewController, TranscriptViewDataSource,
         transcript.maxContentWidth = 620
     }
 
-    override func viewWillAppear() {
-        super.viewWillAppear()
+    /// Mounted and laid out by now, which `viewWillAppear` is not — §6.
+    override func viewDidAppear() {
+        super.viewDidAppear()
         guard transcript.numberOfRows == 0 else { return }
         view.layoutSubtreeIfNeeded()
         transcript.reloadData()

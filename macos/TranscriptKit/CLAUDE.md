@@ -438,6 +438,15 @@ whenever the host's row height depends on width; the app's `NativeTranscript2`
 answers it the same way, by building its scroll view unbound and binding the
 data source after the layout pass (`TranscriptScrollViewFactory`).
 
+**In a view controller, "laid out" means `viewDidAppear`, not `viewWillAppear`** —
+the root `CLAUDE.md`'s "Size before content". The demo's tabs loaded in
+`viewWillAppear` for a while, on the theory that a tab first gets a width when it
+is first selected. It does not get one there: the view is 0×0 and not yet in the
+window. So every row was measured at zero and corrected afterwards, and in an
+editor opened on the right the rows that had been drawn from the zero-width pass
+came out squashed or stretched. `EditorAreaTests.testATabAppearsAtItsFinalSizeAndNotBefore`
+pins the premise.
+
 This stays the host's job. The transcript could defer its own binding until it
 has a width, and that was tried: it costs a state the host cannot see, mutations
 that silently do nothing while in it, and a `numberOfRows` answered from two

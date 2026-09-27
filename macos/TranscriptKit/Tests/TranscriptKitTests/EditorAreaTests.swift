@@ -190,6 +190,38 @@ final class EditorAreaTests: XCTestCase {
 
     // MARK: - Two editors
 
+    /// The premise a tab's content loads on: it has no size in `viewWillAppear`
+    /// and its final one in `viewDidAppear` — for a tab opened with a new editor
+    /// and for one moved into a new editor, the two paths that size a tab's view
+    /// from nothing. A transcript's host loads at `viewDidAppear` for exactly
+    /// this; loading at `viewWillAppear` measured every row at a width of zero
+    /// (root `CLAUDE.md`, "Size before content").
+    func testATabAppearsAtItsFinalSizeAndNotBefore() async throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        let right = ProbeViewController(title: "Right")
+        mounted.area.addGroup(with: NSTabViewItem(viewController: right))
+        let moved = mounted.probes[1]
+        mounted.area.removeGroup(mounted.area.groups[1])
+        settle(mounted.window)
+        mounted.area.moveTabToOtherGroup(at: 1, of: mounted.area.groups[0])
+
+        for _ in 0..<10 where moved.sizesAtAppearance.count < 2 || right.sizesAtAppearance.isEmpty {
+            settle(mounted.window)
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        settle(mounted.window)
+
+        XCTAssertEqual(right.sizesAtAppearance.count, 1, "premise: the new editor's tab appeared")
+        XCTAssertEqual(right.sizeBeforeAppearance, .zero, "the view had a size before appearing")
+        XCTAssertEqual(right.sizesAtAppearance.first, right.view.frame.size)
+        XCTAssertEqual(moved.sizesAtAppearance.count, 2, "premise: the moved tab appeared again")
+        XCTAssertEqual(moved.sizesAtAppearance.last, moved.view.frame.size)
+        XCTAssertEqual(
+            moved.view.frame.width, frame(of: mounted.area.groups[1]).width, accuracy: 1,
+            "premise: the tab is in the new, halved editor")
+    }
+
     func testASecondEditorOpensOnTheRightAtHalfTheWidth() throws {
         let mounted = mount(tabs: 1)
         defer { mounted.window.close() }
@@ -513,6 +545,11 @@ private final class ProbeViewController: NSViewController {
     let probe = LiveResizeProbe()
     let field = NSTextField(string: "")
     private(set) var loads = 0
+    /// The view's size each time it appeared — what a view controller that loads
+    /// on appearance would load at.
+    private(set) var sizesAtAppearance: [NSSize] = []
+    /// The view's size the first time it was about to appear.
+    private(set) var sizeBeforeAppearance: NSSize?
 
     init(title: String) {
         super.init(nibName: nil, bundle: nil)
@@ -533,6 +570,16 @@ private final class ProbeViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         loads += 1
+    }
+
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        if sizeBeforeAppearance == nil { sizeBeforeAppearance = view.frame.size }
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        sizesAtAppearance.append(view.frame.size)
     }
 }
 

@@ -86,11 +86,12 @@ final class TranscriptEditorViewController: NSViewController {
         }
     }
 
-    /// Mount, lay out, then load — `TranscriptKit` §6. A tab's view is loaded the
-    /// first time it is selected, which is also the first time it has a width, so
-    /// this is where the one measuring pass can run at the real one.
-    override func viewWillAppear() {
-        super.viewWillAppear()
+    /// Mount, lay out, then load — `TranscriptKit` §6. Here and not in
+    /// `viewWillAppear()`: there the view is not in the window yet and has no
+    /// frame (measured: 0×0 under an `NSTabViewController`), so a load there
+    /// measures every row at a width of zero and again at the real one.
+    override func viewDidAppear() {
+        super.viewDidAppear()
         guard !hasLoaded else { return }
         hasLoaded = true
         view.layoutSubtreeIfNeeded()

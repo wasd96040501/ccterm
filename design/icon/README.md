@@ -27,6 +27,11 @@ Glass rim, and the Dark, Clear and Tinted appearances. The results go to
 `out/review.png`, alongside the size ladder (256 → 16 px). Look at that sheet
 before committing.
 
+It also rewrites the two tracked images: `preview.png` (shown in the READMEs)
+and `social-preview.png`, the repo's 1280 × 640 GitHub social preview.
+GitHub has no API for the social preview, so after an icon change upload the
+new PNG by hand under Settings → General → Social preview.
+
 How the document is put together:
 
 - **Background = the document's `linear-gradient` fill**, not a layer, so the

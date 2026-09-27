@@ -10,6 +10,7 @@ import { join, resolve } from "node:path"
 import { Resvg } from "@resvg/resvg-js"
 import { compose, SHIP } from "./design"
 import { flatPNG, hasIctool, ictoolRender, imageEl, RENDITIONS, writeIconDoc } from "./icon-doc"
+import { SOCIAL, socialPNG } from "./social"
 
 const ROOT = resolve(import.meta.dir, "../../..")
 const ICON = join(ROOT, "macos/ccterm/AppIcon.icon")
@@ -31,6 +32,8 @@ if (!hasIctool()) {
 for (const r of RENDITIONS) ictoolRender(ICON, join(OUT, `render-${r}.png`), r)
 // Tracked, for the README.
 ictoolRender(ICON, resolve(import.meta.dir, "../preview.png"), "Default", 512)
+// Tracked; uploaded by hand as the GitHub social preview.
+writeFileSync(SOCIAL, socialPNG())
 
 // Review sheet. Rows 1–2: every rendition on a light and a dark desktop.
 // Row 3: Default downsampled to where the icon is actually seen — Dock

@@ -5,7 +5,8 @@
   "scripts": {
     "sheet": "bun run src/explore/sheet.ts",
     "build": "bun run src/build.ts",
-    "variants": "bun run src/variants.ts"
+    "variants": "bun run src/variants.ts",
+    "social": "bun run src/social.ts"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2"

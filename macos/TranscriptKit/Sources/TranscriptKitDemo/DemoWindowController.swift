@@ -5,10 +5,11 @@ import TranscriptWorkspace
 /// The demo's window: an editor area — two editors at most, each with tabs, each
 /// tab a transcript of its own — with the tool palette floating over it.
 ///
-/// **The one place that knows what a command means.** The menu's commands and the
-/// palette's controls all arrive here and are aimed at the active editor, which
-/// the area reports as the reader moves between editors. Nothing below this
-/// knows a palette exists, and the palette knows no editor.
+/// **The one place that knows what a command means.** The menu's items and the
+/// palette's controls are the same nil-targeted actions, arriving here up the
+/// responder chain and aimed at the active editor, which the area reports as the
+/// reader moves between editors. `validateUserInterfaceItem(_:)` answers for both.
+/// Nothing below this knows a palette exists, and the palette knows no editor.
 @MainActor
 final class DemoWindowController: NSWindowController {
 
@@ -31,7 +32,6 @@ final class DemoWindowController: NSWindowController {
 
         area.delegate = self
         window.contentViewController = WorkspaceRootViewController(area: area, palette: palette)
-        wirePalette()
 
         area.activeGroup.addTabViewItem(makeTab())
         area.activeGroup.addTabViewItem(makeTab())
@@ -103,6 +103,41 @@ final class DemoWindowController: NSWindowController {
 
     @objc func toggleTools(_ sender: Any?) {
         palette.isCollapsed.toggle()
+        refreshPalette()
+    }
+
+    // MARK: - Transcript commands, for the active editor
+
+    /// Scrolls to the row the palette is set to.
+    @objc func scrollToRow(_ sender: ToolPaletteView) {
+        let target = sender.scrollTarget
+        activeEditor?.transcript.scrollToRow(at: target.row, scrollPosition: target.position)
+    }
+
+    @objc func prependRows(_ sender: Any?) { activeEditor?.host.prepend(5) }
+    @objc func appendRow(_ sender: Any?) { activeEditor?.host.append() }
+    @objc func removeTopRows(_ sender: Any?) { activeEditor?.host.removeTop(3) }
+    @objc func growFirstRow(_ sender: Any?) { activeEditor?.host.growFirstRow() }
+    @objc func remeasureFirstRow(_ sender: Any?) { activeEditor?.host.remeasureFirstRow() }
+    @objc func batchMutation(_ sender: Any?) { activeEditor?.host.prependAndRemoveInOneBatch() }
+
+    /// Streams into the palette's row, or stops the stream running.
+    @objc func toggleStreaming(_ sender: ToolPaletteView) {
+        activeEditor?.host.toggleStreaming(row: sender.streamRow)
+    }
+
+    @objc func coldLoadPrepared(_ sender: ToolPaletteView) {
+        activeEditor?.host.coldLoad(rows: sender.coldLoadRowCount, prepared: true)
+    }
+
+    @objc func coldLoadSync(_ sender: ToolPaletteView) {
+        activeEditor?.host.coldLoad(rows: sender.coldLoadRowCount, prepared: false)
+    }
+
+    @objc func cancelColdLoad(_ sender: Any?) { activeEditor?.host.cancelColdLoad() }
+
+    @objc func changeMaxContentWidth(_ sender: ToolPaletteView) {
+        activeEditor?.transcript.maxContentWidth = sender.maxContentWidth
     }
 
     /// The Find menu, aimed at the active editor. Targeted here rather than sent
@@ -116,43 +151,16 @@ final class DemoWindowController: NSWindowController {
 
     // MARK: - The palette
 
-    private func wirePalette() {
-        palette.onNewTab = { [weak self] in self?.newTab(nil) }
-        palette.onCloseTab = { [weak self] in self?.closeTab(nil) }
-        palette.onTogglePin = { [weak self] in self?.togglePinnedTab(nil) }
-        palette.onAddEditor = { [weak self] in self?.addEditorOnRight(nil) }
-        palette.onCloseEditor = { [weak self] in self?.closeEditor(nil) }
-        palette.onScrollToRow = { [weak self] row, position in
-            self?.activeEditor?.transcript.scrollToRow(at: row, scrollPosition: position)
-        }
-        palette.onPrepend = { [weak self] in self?.activeEditor?.host.prepend(5) }
-        palette.onAppend = { [weak self] in self?.activeEditor?.host.append() }
-        palette.onRemoveTop = { [weak self] in self?.activeEditor?.host.removeTop(3) }
-        palette.onGrowFirst = { [weak self] in self?.activeEditor?.host.growFirstRow() }
-        palette.onRemeasureFirst = { [weak self] in self?.activeEditor?.host.remeasureFirstRow() }
-        palette.onBatch = { [weak self] in self?.activeEditor?.host.prependAndRemoveInOneBatch() }
-        palette.onStream = { [weak self] in self?.activeEditor?.host.toggleStreaming(row: $0) }
-        palette.onColdLoad = { [weak self] rows, prepared in
-            self?.activeEditor?.host.coldLoad(rows: rows, prepared: prepared)
-        }
-        palette.onCancelColdLoad = { [weak self] in self?.activeEditor?.host.cancelColdLoad() }
-        palette.onMaxContentWidth = { [weak self] in self?.activeEditor?.transcript.maxContentWidth = $0 }
-    }
-
     private func refreshPalette() {
         let group = area.activeGroup
         let editor = activeEditor
         palette.configure(
             with: ToolPaletteView.Status(
-                title: editor?.title ?? "",
-                rows: editor?.rowCount ?? 0,
                 isStreaming: editor?.isStreaming ?? false,
                 coldLoad: editor?.coldLoadStatus ?? "",
                 maxContentWidth: editor?.transcript.maxContentWidth ?? 720,
                 isPinned: group.selectedTabViewItemIndex >= 0
-                    && group.isTabPinned(at: group.selectedTabViewItemIndex),
-                canAddEditor: area.groups.count < 2,
-                hasEditor: editor != nil))
+                    && group.isTabPinned(at: group.selectedTabViewItemIndex)))
     }
 }
 
@@ -171,23 +179,26 @@ extension DemoWindowController: EditorAreaViewControllerDelegate {
     }
 }
 
-extension DemoWindowController: NSMenuItemValidation {
+/// One validation for a command wherever it is issued from — a menu item or a
+/// palette button — which is what makes them one command.
+extension DemoWindowController: NSUserInterfaceValidations {
 
-    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        switch menuItem.action {
+    func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        switch item.action {
         case #selector(performFindAction(_:)):
-            return activeEditor?.validateFindItem(menuItem) ?? false
-        case #selector(closeTab(_:)), #selector(togglePinnedTab(_:)):
-            return activeEditor != nil
+            return activeEditor?.validateFindItem(item) ?? false
         case #selector(showNextTab(_:)), #selector(showPreviousTab(_:)):
             return area.activeGroup.tabViewItems.count > 1
         case #selector(addEditorOnRight(_:)):
             return area.groups.count < 2
         case #selector(toggleTools(_:)):
-            menuItem.title = palette.isCollapsed ? "Show Tools" : "Hide Tools"
+            (item as? NSMenuItem)?.title = palette.isCollapsed ? "Show Tools" : "Hide Tools"
+            return true
+        case #selector(newTab(_:)), #selector(closeEditor(_:)):
             return true
         default:
-            return true
+            // Everything else acts on the active editor's tab.
+            return activeEditor != nil
         }
     }
 }

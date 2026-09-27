@@ -250,11 +250,20 @@ in the foreground; close the window to stop it.
 
 The window is an editor area (§9): each tab is one transcript with its own host,
 its own find bar and its own stream, and a second editor opens on the right
-(⌃⌘T). The tools float at the bottom centre — one row at a time, picked by the
-section switch (Editors, Scroll, Mutate, Stream, Cold Load, Width) — and fold down
-to a single button, from the palette or with ⌥⌘T, so they cover nothing while
-reading. Every tool acts on the **active** editor's selected tab, and the status on
-the palette names which one that is.
+(⌃⌘T). The tools float in glass at the bottom centre: a round toggle, and beside
+it a capsule showing one section at a time (Editors, Scroll, Mutate, Stream, Cold
+Load, Content Width). The toggle, or ⌥⌘T, folds the capsule into it. Every tool
+acts on the **active** editor's selected tab.
+
+The palette is built the way AppKit builds a toolbar, and is worth copying rather
+than re-deriving: its buttons are **nil-targeted actions, the same selectors as
+the menu items**, so a tool and its menu item are one command with one
+implementation; they are enabled by the window controller's one
+`validateUserInterfaceItem(_:)`, asked on every window update the way a toolbar
+asks for its items; and a command that carries a value is sent with the palette as
+its sender and reads the value off it, as `changeColor(_:)` reads an
+`NSColorPanel`. Folding is a stack view hiding an arranged view inside an
+animation group, with both pieces of glass in one `NSGlassEffectContainerView`.
 
 A test can assert a row's height, the width it was measured at, and how many
 views got built instead of recycled. It cannot assert that the document in

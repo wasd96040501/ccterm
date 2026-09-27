@@ -1,121 +1,140 @@
 import AppKit
 import TranscriptKit
 
-/// The demo's controls, floating at the bottom centre of the window over
-/// whichever editor is under them, and folded away to one small button when
-/// they are not wanted.
+/// The demo's controls, floating in glass at the bottom centre of the window:
+/// a round toggle, and beside it a capsule holding one section of tools at a time.
 ///
-/// **One section at a time.** The controls fall into six groups — the editor
-/// area's tabs and splits, scrolling, mutations, streaming, cold load, content
-/// width — and only the one picked in the palette's own switcher is shown, so the
-/// palette is two short rows however many controls there are. What it used to be
-/// was a bar two hundred points tall across the whole window: every control at
-/// once, and a fifth of the transcript gone for them.
+/// **Commands go up the responder chain, the way a menu's do.** Every control is
+/// nil-targeted at the same selectors the menu bar uses, so a tool and its menu
+/// item are one command with one implementation and one validation — the window
+/// controller's `validateUserInterfaceItem(_:)`, asked for these buttons on every
+/// window update exactly as a toolbar asks for its items. A command that carries
+/// a value (a row, a count, a width) is sent with the palette as its sender and
+/// reads the value off it: `NSColorPanel`'s `changeColor(_:)` shape.
 ///
-/// **It acts on the active editor**, and says which one in its status line. It
-/// never touches an editor: every control reports intent through a closure, the
-/// window controller decides what it means, and what is shown comes back
-/// through `configure(with:)`.
+/// **Folding is a stack view hiding an arranged view inside an animation group**,
+/// AppKit's own way to animate a layout change. The two pieces of glass share an
+/// `NSGlassEffectContainerView`, so as the capsule collapses toward the toggle the
+/// glass flows into it rather than vanishing beside it. Reduce Motion makes it a
+/// cut.
+///
+/// What is shown about the active editor comes down through `configure(with:)`;
+/// the palette holds no state about editors of its own.
 @MainActor
 final class ToolPaletteView: NSView {
 
-    /// What the palette shows about the active editor. Handed over whole, so a
-    /// configuration never depends on the one before it.
+    /// What the palette's controls show about the active editor. Enabling is not
+    /// here — that is validation's, the same answer the menu gets.
     struct Status {
-        var title: String
-        var rows: Int
         var isStreaming: Bool
         var coldLoad: String
         var maxContentWidth: CGFloat
         var isPinned: Bool
-        var canAddEditor: Bool
-        var hasEditor: Bool
     }
 
-    var onNewTab: (() -> Void)?
-    var onCloseTab: (() -> Void)?
-    var onTogglePin: (() -> Void)?
-    var onAddEditor: (() -> Void)?
-    var onCloseEditor: (() -> Void)?
-    var onScrollToRow: ((Int, TranscriptView.ScrollPosition) -> Void)?
-    var onPrepend: (() -> Void)?
-    var onAppend: (() -> Void)?
-    var onRemoveTop: (() -> Void)?
-    var onGrowFirst: (() -> Void)?
-    var onRemeasureFirst: (() -> Void)?
-    var onBatch: (() -> Void)?
-    /// Start streaming into this row, or stop whatever is streaming.
-    var onStream: ((Int) -> Void)?
-    /// Load this many rows, measured off the main actor first (`true`) or inside
-    /// the insert.
-    var onColdLoad: ((Int, Bool) -> Void)?
-    var onCancelColdLoad: (() -> Void)?
-    var onMaxContentWidth: ((CGFloat) -> Void)?
+    // MARK: - What a command reads off its sender
 
-    /// Folded to the show button. View-private state: nothing outside needs to
-    /// know, beyond the menu item that flips it.
+    /// The row and position the Scroll section is set to.
+    var scrollTarget: (row: Int, position: TranscriptView.ScrollPosition) {
+        let positions: [TranscriptView.ScrollPosition] = [.top, .center, .bottom, .nearestEdge]
+        return (rowField.integerValue, positions[max(0, scrollPositions.selectedSegment)])
+    }
+
+    /// The row the Stream section streams into.
+    var streamRow: Int { streamField.integerValue }
+
+    /// How many rows the Cold Load section loads.
+    var coldLoadRowCount: Int { coldLoadField.integerValue }
+
+    /// The width the Width section's slider is at.
+    var maxContentWidth: CGFloat { widthSlider.doubleValue.rounded() }
+
+    // MARK: - Folding
+
+    /// Folded to the toggle alone. Animated unless Reduce Motion is on.
     var isCollapsed = false {
         didSet {
-            panel.isHidden = isCollapsed
-            showButton.isHidden = !isCollapsed
+            guard isCollapsed != oldValue else { return }
+            toggle.state = isCollapsed ? .off : .on
+            let apply = { self.capsule.isHidden = self.isCollapsed }
+            guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, window != nil else {
+                return apply()
+            }
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.3
+                context.allowsImplicitAnimation = true
+                apply()
+                layoutSubtreeIfNeeded()
+            }
         }
     }
 
+    // MARK: - Sections
+
     private enum Section: Int, CaseIterable {
-        case workspace, scroll, mutate, stream, load, width
+        case editors, scroll, mutate, stream, load, width
 
         var title: String {
             switch self {
-            case .workspace: "Editors"
+            case .editors: "Editors"
             case .scroll: "Scroll"
             case .mutate: "Mutate"
             case .stream: "Stream"
             case .load: "Cold Load"
-            case .width: "Width"
+            case .width: "Content Width"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .editors: "rectangle.split.2x1"
+            case .scroll: "arrow.up.and.down.text.horizontal"
+            case .mutate: "plus.forwardslash.minus"
+            case .stream: "text.append"
+            case .load: "tray.and.arrow.down"
+            case .width: "arrow.left.and.right.text.vertical"
             }
         }
     }
 
     // MARK: - Controls
 
+    private lazy var toggle: NSButton = {
+        let button = NSButton(
+            image: Self.symbol("slider.horizontal.3", "Tools"), target: nil,
+            action: #selector(DemoWindowController.toggleTools(_:)))
+        button.setButtonType(.pushOnPushOff)
+        button.state = .on
+        button.isBordered = false
+        button.toolTip = "Hide Tools (⌥⌘T)"
+        return button
+    }()
+
     private lazy var sections: NSSegmentedControl = {
         let control = NSSegmentedControl(
-            labels: Section.allCases.map(\.title), trackingMode: .selectOne, target: self,
-            action: #selector(sectionChanged))
-        control.controlSize = .small
-        control.selectedSegment = Section.workspace.rawValue
+            images: Section.allCases.map { Self.symbol($0.symbol, $0.title) },
+            trackingMode: .selectOne, target: self, action: #selector(sectionChanged))
+        for section in Section.allCases {
+            control.setToolTip(section.title, forSegment: section.rawValue)
+        }
+        control.selectedSegment = Section.editors.rawValue
         return control
     }()
 
-    private lazy var statusLabel: NSTextField = {
-        let label = NSTextField(labelWithString: "")
-        // Monospaced digits, or the count jitters sideways as rows arrive.
-        label.font = .monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
-        label.textColor = .secondaryLabelColor
-        label.lineBreakMode = .byTruncatingTail
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return label
-    }()
-
-    private lazy var hideButton = symbolButton(
-        "chevron.down", label: "Hide Tools", action: #selector(collapse))
-
-    private lazy var pinButton = button("Pin Tab", #selector(togglePin))
-    private lazy var addEditorButton = button("Add Editor on Right", #selector(addEditor))
-    private lazy var streamButton = button("Stream", #selector(stream))
-    private lazy var rowField = numberField("0", width: 56)
+    private lazy var pinButton = command("Pin Tab", #selector(DemoWindowController.togglePinnedTab(_:)))
+    private lazy var streamButton = forwarded("Stream", #selector(DemoWindowController.toggleStreaming(_:)))
+    private lazy var rowField = numberField("0", width: 52)
     /// Row 1: the first assistant turn, which is the row kind worth watching grow.
-    private lazy var streamField = numberField("1", width: 56)
+    private lazy var streamField = numberField("1", width: 52)
     /// Ten thousand, because that is where the two loads stop being a matter of taste.
-    private lazy var coldLoadField = numberField("10000", width: 72)
-    private lazy var coldLoadLabel = statusText()
-    private lazy var widthLabel = statusText()
+    private lazy var coldLoadField = numberField("10000", width: 68)
+    private lazy var coldLoadLabel = secondaryText()
+    private lazy var widthLabel = secondaryText()
 
-    private lazy var positions: NSSegmentedControl = {
+    private lazy var scrollPositions: NSSegmentedControl = {
         let control = NSSegmentedControl(
             labels: ["Top", "Center", "Bottom", "Nearest"], trackingMode: .selectOne,
             target: nil, action: nil)
-        control.controlSize = .small
         control.selectedSegment = 0
         return control
     }()
@@ -124,67 +143,80 @@ final class ToolPaletteView: NSView {
         let slider = NSSlider(
             value: 720, minValue: 320, maxValue: 1200, target: self,
             action: #selector(widthChanged))
-        slider.controlSize = .small
+        slider.widthAnchor.constraint(equalToConstant: 180).isActive = true
         return slider
     }()
 
+    /// One per `Section`, in its order; only the selected one is shown.
     private lazy var sectionRows: [NSStackView] = [
         row([
-            button("New Tab", #selector(newTab)), button("Close Tab", #selector(closeTab)),
-            pinButton, addEditorButton, button("Close Editor", #selector(closeEditor)),
+            command("New Tab", #selector(DemoWindowController.newTab(_:))),
+            command("Close Tab", #selector(DemoWindowController.closeTab(_:))),
+            pinButton,
+            command("Split Right", #selector(DemoWindowController.addEditorOnRight(_:))),
+            command("Close Editor", #selector(DemoWindowController.closeEditor(_:))),
         ]),
         row([
-            NSTextField(labelWithString: "Row"), rowField, positions,
-            button("Scroll to Row", #selector(scrollToRow)),
+            label("Row"), rowField, scrollPositions,
+            forwarded("Scroll", #selector(DemoWindowController.scrollToRow(_:))),
         ]),
         row([
-            button("Prepend 5", #selector(prepend)), button("Append 1", #selector(append)),
-            button("Remove Top 3", #selector(removeTop)), button("Grow Row 0", #selector(growFirst)),
-            button("Re-measure Row 0", #selector(remeasureFirst)),
-            button("Batch", #selector(batch)),
+            command("Prepend 5", #selector(DemoWindowController.prependRows(_:))),
+            command("Append", #selector(DemoWindowController.appendRow(_:))),
+            command("Remove 3", #selector(DemoWindowController.removeTopRows(_:))),
+            command("Grow", #selector(DemoWindowController.growFirstRow(_:))),
+            command("Re-measure", #selector(DemoWindowController.remeasureFirstRow(_:))),
+            command("Batch", #selector(DemoWindowController.batchMutation(_:))),
         ]),
-        row([NSTextField(labelWithString: "Row"), streamField, streamButton]),
+        row([label("Row"), streamField, streamButton]),
         row([
-            coldLoadField, button("Prepared", #selector(coldLoadPrepared)),
-            button("Sync", #selector(coldLoadSync)), button("Cancel", #selector(cancelColdLoad)),
+            coldLoadField,
+            forwarded("Prepared", #selector(DemoWindowController.coldLoadPrepared(_:))),
+            forwarded("Sync", #selector(DemoWindowController.coldLoadSync(_:))),
+            command("Cancel", #selector(DemoWindowController.cancelColdLoad(_:))),
             coldLoadLabel,
         ]),
-        row([NSTextField(labelWithString: "Max content width"), widthSlider, widthLabel]),
+        row([widthSlider, widthLabel]),
     ]
 
-    private lazy var header = row([sections, statusLabel, hideButton])
-
-    private lazy var content: NSStackView = {
-        let stack = NSStackView(views: [header] + sectionRows)
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
-        return stack
+    /// The capsule: the section switch, then the section.
+    private lazy var capsule: NSView = {
+        let divider = NSBox()
+        divider.boxType = .separator
+        let stack = NSStackView(views: [sections, divider] + sectionRows)
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 12
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 16)
+        stack.setCustomSpacing(10, after: sections)
+        divider.heightAnchor.constraint(equalToConstant: 20).isActive = true
+        return Self.glass(around: stack, height: Self.height)
     }()
 
-    private lazy var panel: NSView = Self.material(around: content, cornerRadius: 16)
-
-    private lazy var showButton: NSView = {
-        let button = NSButton(
-            title: "Tools",
-            image: NSImage(
-                systemSymbolName: "slider.horizontal.3", accessibilityDescription: nil)!,
-            target: self, action: #selector(expand))
-        button.imagePosition = .imageLeading
-        button.isBordered = false
-        button.controlSize = .small
-        let stack = NSStackView(views: [button])
-        stack.edgeInsets = NSEdgeInsets(top: 6, left: 12, bottom: 6, right: 12)
-        let material = Self.material(around: stack, cornerRadius: 14)
-        material.isHidden = true
-        return material
+    private lazy var toggleGlass: NSView = {
+        let glass = Self.glass(around: toggle, height: Self.height)
+        toggle.widthAnchor.constraint(equalTo: toggle.heightAnchor).isActive = true
+        return glass
     }()
+
+    private static let height: CGFloat = 44
+
+    // MARK: - Life cycle
 
     init() {
         super.init(frame: .zero)
-        configureHierarchy()
-        configureConstraints()
+        let row = NSStackView(views: [toggleGlass, capsule])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 12
+        let container = Self.glassContainer(around: row)
+        addSubview(container)
+        NSLayoutConstraint.activate([
+            container.leadingAnchor.constraint(equalTo: leadingAnchor),
+            container.trailingAnchor.constraint(equalTo: trailingAnchor),
+            container.topAnchor.constraint(equalTo: topAnchor),
+            container.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
         sectionChanged()
     }
 
@@ -193,83 +225,107 @@ final class ToolPaletteView: NSView {
         fatalError("code-only")
     }
 
-    private func configureHierarchy() {
-        for view in [panel, showButton] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(view)
-        }
+    /// Validated on every window update, as a toolbar validates its items — so a
+    /// tool is enabled exactly when its menu item is.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didUpdateNotification, object: nil)
+        guard let window else { return }
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(windowDidUpdate), name: NSWindow.didUpdateNotification,
+            object: window)
     }
 
-    private func configureConstraints() {
-        var constraints: [NSLayoutConstraint] = []
-        for view in [panel, showButton] {
-            constraints += [
-                view.centerXAnchor.constraint(equalTo: centerXAnchor),
-                view.bottomAnchor.constraint(equalTo: bottomAnchor),
-                view.topAnchor.constraint(greaterThanOrEqualTo: topAnchor),
-                view.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor),
-            ]
+    @objc private func windowDidUpdate(_ notification: Notification) {
+        guard !capsule.isHidden else { return }
+        for control in sectionRows[sections.selectedSegment].arrangedSubviews {
+            guard let button = control as? CommandButton,
+                let action = button.target === self ? forwardedActions[button.tag] : button.action
+            else { continue }
+            let target = receiver(of: action)
+            button.isEnabled =
+                (target as? NSUserInterfaceValidations)?.validateUserInterfaceItem(button) ?? (target != nil)
         }
-        // The header runs the width of the widest section, so the palette does not
-        // change width as sections are switched only because the status did.
-        constraints.append(statusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 160))
-        NSLayoutConstraint.activate(constraints)
-    }
-
-    /// Clicks pass through wherever the palette draws nothing — the palette's own
-    /// view spans the larger of its two states.
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        let hit = super.hitTest(point)
-        return hit === self ? nil : hit
-    }
-
-    /// Glass where the system has it, the HUD material where it does not.
-    private static func material(around content: NSView, cornerRadius: CGFloat) -> NSView {
-        content.translatesAutoresizingMaskIntoConstraints = false
-        if #available(macOS 26.0, *) {
-            let glass = NSGlassEffectView()
-            glass.cornerRadius = cornerRadius
-            glass.contentView = content
-            return glass
-        }
-        let effect = NSVisualEffectView()
-        effect.material = .hudWindow
-        effect.blendingMode = .withinWindow
-        effect.state = .active
-        effect.wantsLayer = true
-        effect.layer?.cornerRadius = cornerRadius
-        effect.layer?.masksToBounds = true
-        effect.addSubview(content)
-        NSLayoutConstraint.activate([
-            content.leadingAnchor.constraint(equalTo: effect.leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: effect.trailingAnchor),
-            content.topAnchor.constraint(equalTo: effect.topAnchor),
-            content.bottomAnchor.constraint(equalTo: effect.bottomAnchor),
-        ])
-        return effect
     }
 
     // MARK: - Showing
 
     func configure(with status: Status) {
-        statusLabel.stringValue =
-            status.hasEditor
-            ? "\(status.title) · \(status.rows) rows\(status.isStreaming ? " · streaming" : "")"
-            : "No editor"
         streamButton.title = status.isStreaming ? "Stop" : "Stream"
         coldLoadLabel.stringValue = status.coldLoad
         widthSlider.doubleValue = status.maxContentWidth
         widthLabel.stringValue = "\(Int(status.maxContentWidth)) pt"
         pinButton.title = status.isPinned ? "Unpin Tab" : "Pin Tab"
-        addEditorButton.isEnabled = status.canAddEditor
-        for row in sectionRows.dropFirst() {
-            for case let control as NSControl in row.arrangedSubviews {
-                control.isEnabled = status.hasEditor
-            }
-        }
+        toggle.toolTip = isCollapsed ? "Show Tools (⌥⌘T)" : "Hide Tools (⌥⌘T)"
     }
 
     // MARK: - Building
+
+    private static func symbol(_ name: String, _ description: String) -> NSImage {
+        NSImage(systemSymbolName: name, accessibilityDescription: description)!
+            .withSymbolConfiguration(.init(pointSize: 15, weight: .regular))!
+    }
+
+    /// A capsule of glass around `content`; the HUD material before macOS 26.
+    private static func glass(around content: NSView, height: CGFloat) -> NSView {
+        content.translatesAutoresizingMaskIntoConstraints = false
+        let glass: NSView
+        if #available(macOS 26.0, *) {
+            let effect = NSGlassEffectView()
+            effect.cornerRadius = height / 2
+            if #available(macOS 27.0, *) { effect.effectIsInteractive = true }
+            effect.contentView = content
+            glass = effect
+        } else {
+            let effect = NSVisualEffectView()
+            effect.material = .hudWindow
+            effect.blendingMode = .withinWindow
+            effect.state = .active
+            effect.wantsLayer = true
+            effect.layer?.cornerRadius = height / 2
+            effect.layer?.masksToBounds = true
+            effect.addSubview(content)
+            pin(content, to: effect)
+            glass = effect
+        }
+        glass.heightAnchor.constraint(equalToConstant: height).isActive = true
+        return glass
+    }
+
+    /// What lets the two pieces of glass flow into each other as the capsule
+    /// folds; a plain view before macOS 26, where there is nothing to merge.
+    private static func glassContainer(around content: NSView) -> NSView {
+        content.translatesAutoresizingMaskIntoConstraints = false
+        let container: NSView
+        if #available(macOS 26.0, *) {
+            let glass = NSGlassEffectContainerView()
+            glass.spacing = 8
+            glass.contentView = content
+            container = glass
+        } else {
+            container = NSView()
+            container.addSubview(content)
+            pin(content, to: container)
+        }
+        container.translatesAutoresizingMaskIntoConstraints = false
+        return container
+    }
+
+    private static func pin(_ content: NSView, to container: NSView) {
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            content.topAnchor.constraint(equalTo: container.topAnchor),
+            content.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+    }
+
+    /// An accessory bar's button: the title alone, with the bezel appearing under
+    /// the pointer — the glass is already the bar's background.
+    private static func style(_ button: NSButton) {
+        button.bezelStyle = .accessoryBarAction
+        button.showsBorderOnlyWhileMouseInside = true
+    }
 
     private func row(_ views: [NSView]) -> NSStackView {
         let stack = NSStackView(views: views)
@@ -279,26 +335,51 @@ final class ToolPaletteView: NSView {
         return stack
     }
 
-    private func button(_ title: String, _ action: Selector) -> NSButton {
-        let button = NSButton(title: title, target: self, action: action)
-        button.bezelStyle = .rounded
-        button.controlSize = .small
+    /// A command with no value: nil-targeted, straight up the chain.
+    private func command(_ title: String, _ action: Selector) -> NSButton {
+        let button = CommandButton(title: title, target: nil, action: action)
+        Self.style(button)
         return button
     }
 
-    private func symbolButton(_ symbol: String, label: String, action: Selector) -> NSButton {
-        let button = NSButton(
-            image: NSImage(systemSymbolName: symbol, accessibilityDescription: label)!,
-            target: self, action: action)
-        button.isBordered = false
-        button.toolTip = label
+    /// A command that carries a value: sent by the palette, which the receiver
+    /// reads the value off.
+    private func forwarded(_ title: String, _ action: Selector) -> NSButton {
+        let button = CommandButton(title: title, target: self, action: #selector(forward(_:)))
+        Self.style(button)
+        button.tag = forwardedActions.count
+        forwardedActions.append(action)
         return button
+    }
+
+    private var forwardedActions: [Selector] = []
+
+    @objc private func forward(_ sender: NSButton) {
+        NSApp.sendAction(forwardedActions[sender.tag], to: nil, from: self)
+    }
+
+    /// Who a command sent from here would reach: the first object up this
+    /// window's responder chain that implements it. This window's and not the key
+    /// window's, which `NSApp.target(forAction:)` would ask — a click here makes
+    /// this window key first, so this is the chain the command travels.
+    private func receiver(of action: Selector) -> NSResponder? {
+        var responder = window?.firstResponder
+        while let current = responder, !current.responds(to: action) {
+            responder = current.nextResponder
+        }
+        return responder
+    }
+
+    private func label(_ text: String) -> NSTextField {
+        let label = NSTextField(labelWithString: text)
+        label.textColor = .secondaryLabelColor
+        return label
     }
 
     private func numberField(_ value: String, width: CGFloat) -> NSTextField {
         let field = NSTextField(string: value)
-        field.controlSize = .small
-        field.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        field.bezelStyle = .roundedBezel
+        field.alignment = .right
         let formatter = NumberFormatter()
         formatter.allowsFloats = false
         field.formatter = formatter
@@ -306,14 +387,14 @@ final class ToolPaletteView: NSView {
         return field
     }
 
-    private func statusText() -> NSTextField {
+    private func secondaryText() -> NSTextField {
         let label = NSTextField(labelWithString: "")
-        label.font = .monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
+        label.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         label.textColor = .secondaryLabelColor
         return label
     }
 
-    // MARK: - Actions
+    // MARK: - Local actions
 
     @objc private func sectionChanged() {
         for (index, row) in sectionRows.enumerated() {
@@ -321,40 +402,14 @@ final class ToolPaletteView: NSView {
         }
     }
 
-    @objc private func collapse() { isCollapsed = true }
-    @objc private func expand() { isCollapsed = false }
-
-    @objc private func newTab() { onNewTab?() }
-    @objc private func closeTab() { onCloseTab?() }
-    @objc private func togglePin() { onTogglePin?() }
-    @objc private func addEditor() { onAddEditor?() }
-    @objc private func closeEditor() { onCloseEditor?() }
-
-    @objc private func scrollToRow() {
-        let position: TranscriptView.ScrollPosition =
-            switch positions.selectedSegment {
-            case 0: .top
-            case 1: .center
-            case 2: .bottom
-            default: .nearestEdge
-            }
-        onScrollToRow?(rowField.integerValue, position)
-    }
-
-    @objc private func prepend() { onPrepend?() }
-    @objc private func append() { onAppend?() }
-    @objc private func removeTop() { onRemoveTop?() }
-    @objc private func growFirst() { onGrowFirst?() }
-    @objc private func remeasureFirst() { onRemeasureFirst?() }
-    @objc private func batch() { onBatch?() }
-    @objc private func stream() { onStream?(streamField.integerValue) }
-    @objc private func coldLoadPrepared() { onColdLoad?(coldLoadField.integerValue, true) }
-    @objc private func coldLoadSync() { onColdLoad?(coldLoadField.integerValue, false) }
-    @objc private func cancelColdLoad() { onCancelColdLoad?() }
-
     @objc private func widthChanged() {
-        let width = widthSlider.doubleValue.rounded()
-        widthLabel.stringValue = "\(Int(width)) pt"
-        onMaxContentWidth?(width)
+        widthLabel.stringValue = "\(Int(maxContentWidth)) pt"
+        NSApp.sendAction(#selector(DemoWindowController.changeMaxContentWidth(_:)), to: nil, from: self)
     }
 }
+
+/// A palette button, declared validatable. It already has the `action` and `tag`
+/// validation asks about — every `NSControl` does — and lacks only the
+/// declaration, which is what lets the window controller's one
+/// `validateUserInterfaceItem(_:)` answer for it as it does for the menu item.
+private final class CommandButton: NSButton, NSValidatedUserInterfaceItem {}

@@ -20,7 +20,7 @@ import XCTest
 ///   it back. A 1024×768 CI display once handed the scroll tests a viewport 78
 ///   points short.
 ///
-/// No logic beyond that sequence (`CLAUDE.md` §5): what goes in the window is
+/// No logic beyond that sequence (this directory's `CLAUDE.md`): what goes in the window is
 /// the test's business.
 @MainActor
 enum TestWindow {

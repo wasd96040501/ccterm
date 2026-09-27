@@ -1,91 +1,88 @@
 # Chat UI
 
-How the chat pane is assembled. There is **no ViewModel** — AppKit VCs coordinate the pieces: `DetailRouterViewController` is the router/owner (one child VC per selection), `TranscriptSwapCoordinator` owns the transcript-swap mechanism, and `ChatSessionViewController` owns *what the pane shows* (scrims, resting bar, permission card). The SwiftUI building blocks below don't know about each other. Dependencies reach every child as one `DetailContext` value (`App/AppKit/DetailContext.swift` — `model` + the four services `sessionManager` / `recentProjects` / `inputDraftStore` / `syntaxEngine`); `injectDetailEnvironment(_:)` injects the four services (not `model`) into the SwiftUI environment.
+How the chat pane is assembled. There is **no ViewModel**: AppKit VCs coordinate the pieces. `DetailRouterViewController` routes (one child VC per selection), `TranscriptSwapCoordinator` owns the transcript swap, and `ChatSessionViewController` owns *what the pane shows* (scrims, resting bar, permission card). The hosted SwiftUI building blocks don't know about each other. Every detail child gets its dependencies as one `DetailContext` (`App/AppKit/DetailContext.swift`: `model` + `sessionManager` / `recentProjects` / `inputDraftStore` / `syntaxEngine`); `injectDetailEnvironment(_:)` puts the four services (not `model`) into the SwiftUI environment.
 
-| Component | Type | Instances | Responsibility |
-|---|---|---|---|
-| `MainWindowController` | NSWindowController | 1 | Owns the main NSWindow, NSToolbar (project chip + transcript search field). |
-| `MainSplitViewController` | NSSplitViewController | 1 | Sidebar item (`SidebarViewController`) + detail item (`DetailRouterViewController`). `init` builds a `SidebarContext` and a `DetailContext` and passes each as one argument. |
-| `MainSelectionModel` | `@Observable` | 1 | Shared selection / draft state — `selection: MainSelection` (typed: `.none` / `.newSession` / `.session(id)` / `.archive` / `.demo`), `draftSessionId`, attach + pill rects. Production writes go through `select(_:)`, which sets the `@Observable` value **and** synchronously notifies the structural owner (`selectionObserver` = the router) so the detail-side transition lands in the same source phase. SwiftUI consumers still observe `selection` for content re-render. |
-| `SidebarViewController` | NSViewController (NSOutlineView, source-list) | 1 | History list / drag-and-drop / group ordering — see [Sidebar/CLAUDE.md](../../Sidebar/CLAUDE.md). |
-| `DetailRouterViewController` | NSViewController | 1 | The detail-slot router. Sole structural observer of `MainSelectionModel` (registers as `selectionObserver`, driven synchronously from `select(_:)`); mounts exactly one `DetailRouterChild` VC per selection (swap only on cross-kind, crossfade for "fresh content"), settles its frame, then drives the transcript / landing child's `present(sessionId:)` in the same source phase. Owns the window-lifetime app→detail signals (`NotificationService.onActivateSession`, launch-failure alert). Routing: `.session/.none` → `ChatSessionViewController`, `.session`-draft → `DraftSessionLandingViewController`, `.newSession` → `ComposeSessionViewController`, `.archive` → `ArchiveViewController`, `.demo` → demo VCs (DEBUG). |
-| `ChatSessionViewController` | NSViewController (`DetailRouterChild`) | 1 | Owns *what the pane shows* — mounts AppKit `TranscriptTopScrimView` / `TranscriptBottomScrimView` for top/bottom fades (hitTest passthrough so the table below sees clicks + cursor rects), hosts the SwiftUI chat resting bar in `restingBarHost: NSHostingView<ChatComposeHostRoot>` (bottom-anchored to the bar's height — **always**, never full-bleed), and floats the permission card in a separate full-pane `permissionCardHost` (`PassthroughHostingView`) layered on top. Does **not** own the transcript directly — it lazily builds `TranscriptSwapCoordinator` on first `present` and delegates attach to it (the scroll is inserted `.below topScrim`). Does **not** observe `MainSelectionModel`; the router drives attach via `present(sessionId:)`. Mounted for `.session(_)` / `.none`. |
-| `TranscriptSwapCoordinator` | `@MainActor final class` | per chat VC | Owns the transcript-swap state machine and is the **single owner** of `currentSession`: builds / binds / anchors (`scrollToTail`) / crossfades / tears down the `Transcript2ScrollView` and re-creates the per-attach `Transcript2SheetPresenter` + turn-usage + `isRunning` sinks on every swap. See "Transcript swap ordering". |
-| `DraftSessionLandingViewController` | NSViewController (`DetailRouterChild`) | 1 | Full-pane landing page for a `.session(_)` whose `Session` is still in `.draft` phase (the `/new` / `/clear` page before first send). Binds the draft id via `present(sessionId:)`; mounted via `mountFillPaneHost` (regime-A `sizingOptions = []`). On first send the session promotes `.draft → .active` and the router swaps in `ChatSessionViewController`. |
-| `ComposeSessionViewController` | NSViewController | 1 | Full-pane VC for `.newSession` only. Hosts the SwiftUI compose card (`ComposeSessionView` → `NewSessionConfigurator` + `InputBarChrome`) via `NSHostingController` (`sizingOptions = []`). Lazy-allocates `MainSelectionModel.draftSessionId`; promotes the draft → real session on submit (shared `submitSessionInput`). Full-bleed with no transcript behind it, so it has none of the chat VC's bar-host hit-test gymnastics — the split is what fixed the "fast sidebar switch swallows transcript clicks" bug. |
-| `PermissionCardOverlay` | View | per chat VC | The permission card. Hosted in `ChatSessionViewController.permissionCardHost`; reads `session.pendingPermissions.first`. See "Permission card host". |
-| `InputBarView2` | View | per-session | Pure UI (text field + send/stop button); `onSubmit` / `onStop` / `isRunning` are injected. No longer hosts a running pill — the indicator lives inside the transcript. |
-| `Transcript2SheetPresenter` | `@MainActor final class` | per-attach | Observes `Transcript2Controller.pendingUserBubbleSheet` / `pendingImagePreview` and opens AppKit-native sheets (`view.window?.beginSheet`) whose `contentViewController` is `NSHostingController(rootView: UserBubbleSheetView / ImagePreviewSheetView)`. Production VC reinstantiates it per session attach; demo VCs each own one for their lifetime. Replaces the deleted SwiftUI bridge's `.sheet(item:)` bindings. |
+| Component | Type | Responsibility |
+|---|---|---|
+| `MainWindowController` | NSWindowController | The main window and its `NSToolbar` (project chip + transcript `NSSearchToolbarItem`). |
+| `MainSplitViewController` | NSSplitViewController | Sidebar item + detail item; `init` builds a `SidebarContext` and a `DetailContext`. |
+| `MainSelectionModel` | `@Observable` | `selection: MainSelection` (`.none` / `.newSession` / `.session(id)` / `.archive` / `.demo`), `draftSessionId`, attach + pill rects. Writes go through `select(_:)`, which updates the value **and synchronously** notifies its one structural observer (the router), so the detail transition lands in the same source phase as the click. |
+| `SidebarViewController` | NSViewController | See [Sidebar/CLAUDE.md](../../Sidebar/CLAUDE.md). |
+| `DetailRouterViewController` | NSViewController | Sole structural observer of `MainSelectionModel`. Mounts one `DetailRouterChild` per selection (swaps only on a cross-kind change; crossfades only for "fresh content"), settles the child's frame, then calls its `present(sessionId:)` in the same source phase. Routes `.session`/`.none` → `ChatSessionViewController`, draft `.session` → `DraftSessionLandingViewController`, `.newSession` → `ComposeSessionViewController`, `.archive` → `ArchiveViewController`, `.demo` → demo VCs (DEBUG). Owns window-lifetime app→detail signals (`NotificationService.onActivateSession`, launch-failure alert). Defers only its *first* apply to the first framed `viewDidLayout`. |
+| `ChatSessionViewController` | `DetailRouterChild` | Owns what the pane shows: AppKit `TranscriptTopScrimView` / `TranscriptBottomScrimView` (hitTest passthrough), the SwiftUI resting bar in `restingBarHost`, and the permission card in `permissionCardHost`. Lazily builds `TranscriptSwapCoordinator` on first `present` and delegates attach to it. Does **not** observe `MainSelectionModel`. |
+| `TranscriptSwapCoordinator` | `@MainActor final class`, per chat VC | The swap state machine and the **single owner** of `currentSession`. Builds / binds / anchors / crossfades / tears down the `Transcript2ScrollView`, and re-creates the per-attach `Transcript2SheetPresenter` + turn-usage + `isRunning` sinks. |
+| `DraftSessionLandingViewController` | `DetailRouterChild` | Full-pane landing for a `.session` still in `.draft` phase (`/new`, `/clear`). Mounted via `mountFillPaneHost`. On first send the session promotes and the router swaps in `ChatSessionViewController`. |
+| `ComposeSessionViewController` | NSViewController | `.newSession` only. Hosts `ComposeSessionView` (`NewSessionConfigurator` + `InputBarChrome`) full-bleed via `mountFillPaneHost`; lazily allocates `draftSessionId`; promotes on submit via `submitSessionInput`. Kept separate from the chat VC so it carries none of the bar-host hit-test rules. |
+| `PermissionCardOverlay` | SwiftUI | Reads `session.pendingPermissions.first`; hosted in `permissionCardHost`. |
+| `InputBarView2` | SwiftUI | Text field + send/stop; `onSubmit` / `onStop` / `isRunning` injected. The running indicator lives in the transcript, not here. |
+| `Transcript2SheetPresenter` | `@MainActor final class`, per attach | Observes `Transcript2Controller.pendingUserBubbleSheet` / `pendingImagePreview`; opens AppKit sheets hosting `UserBubbleSheetView` / `ImagePreviewSheetView`. |
 
 ## Ownership graph
 
 ```
-AppDelegate (NSApplicationDelegate)
+AppDelegate
 ├── appState: AppState
 │   ├── sessionManager: SessionManager
-│   │   └── sessions: [String: Session]
-│   │         └── each Session owns:
-│   │             ├── phase: .draft(SessionDraft) | .active(SessionRuntime)
-│   │             ├── controller: Transcript2Controller     ← render-side state
-│   │             └── bridge:     Transcript2EntryBridge    ← always wired to runtime
+│   │   └── sessions: [String: Session]   (phase .draft/.active, controller, bridge)
 │   └── syntaxEngine: SyntaxHighlightEngine
 ├── searchBus: TranscriptSearchBus
 ├── selectionModel: MainSelectionModel
 └── mainWindowController: MainWindowController
-    ├── NSToolbar (project chip + transcript search NSSearchField)
+    ├── NSToolbar (project chip + transcript search field)
     └── MainSplitViewController
-        ├── Sidebar item → SidebarViewController (NSOutlineView)
-        └── Detail item → DetailRouterViewController   ← sole structural observer; one child VC per selection
-            ├── .session(_) / .none → ChatSessionViewController   (owns "what the pane shows")
-            │   ├── swapCoordinator: TranscriptSwapCoordinator     ← single owner of currentSession + the swap
-            │   │   ├── transcriptScroll: Transcript2ScrollView (AppKit-native; session.controller drives blocks)
-            │   │   └── transcriptSheetPresenter + isRunning sink (setLoading) + turn-usage sink (per attach)
-            │   ├── topScrim: TranscriptTopScrimView (AppKit, hitTest passthrough)
-            │   ├── bottomScrim: TranscriptBottomScrimView (AppKit, attach/pill cutouts)
-            │   ├── restingBarHost: NSHostingView<ChatComposeHostRoot>  (bottom-anchored, chat resting bar)
-            │   └── permissionCardHost: PassthroughHostingView (full-pane, click-through, permission card overlay)
-            ├── .session(_) when draft → DraftSessionLandingViewController  (mountFillPaneHost, regime-A)
-            ├── .newSession → ComposeSessionViewController
-            │   └── NSHostingController<ComposeSessionView>  (full-bleed compose card)
-            └── .archive → ArchiveViewController
+        ├── Sidebar → SidebarViewController
+        └── Detail  → DetailRouterViewController
+            ├── .session / .none   → ChatSessionViewController
+            │   ├── swapCoordinator: TranscriptSwapCoordinator
+            │   │   └── Transcript2ScrollView + per-attach sheet presenter / sinks
+            │   ├── topScrim, bottomScrim          (AppKit, hitTest passthrough)
+            │   ├── restingBarHost                 (NSHostingView, regime B)
+            │   └── permissionCardHost             (PassthroughHostingView, regime A)
+            ├── .session (draft)   → DraftSessionLandingViewController
+            ├── .newSession        → ComposeSessionViewController
+            └── .archive           → ArchiveViewController
 ```
 
 ## Data flow
 
-- **History load** — `TranscriptSwapCoordinator.attachSession(_:)` runs (from `ChatSessionViewController.present(sessionId:)`, itself called by the router) → `manager.prepareDraftSession(sessionId)` returns a `Session` (controller + bridge already exist and are wired to the runtime) → `session.loadHistory()` runs (`.notLoaded` starts the reverse-streaming `TranscriptBackfillPipeline`; `.loading` / `.loaded` are idempotent no-ops) → for cold loads, the pipeline builds blocks off-main and applies them straight to the controller (the tail page as `.append`, older pages as `.prepend`), bypassing the bridge → `NativeTranscript2` diff-renders. For re-entry, blocks are already in the controller from the continuous bridge — `TranscriptScrollViewFactory.make` builds an *unbound* scroll/clip/table shell; the host's `view.layoutSubtreeIfNeeded()` sizes the scroll view to its real width without driving any `heightOfRow` queries (no `dataSource` is wired yet); then `TranscriptScrollViewFactory.bindData` binds the table to the coordinator, and `controller.scrollToTail()`'s internal `tableView.layoutSubtreeIfNeeded()` is what fires the first (and only) row tile, at the final settled width. The deferred bind is what keeps each block from being typeset at 460pt / 720pt / 780pt in a single tick — guarded by `TranscriptReentryLayoutCacheTests` (factory direct) and `TranscriptHostReentryLayoutCacheTests` (real `ChatSessionViewController.present(sessionId:)` → `attachSession` end-to-end, plus the demo VC).
-- **Running-state rendering** — `Session.isRunning` is `@Observable` (forwards to `runtime?.isRunning ?? false`). SwiftUI tracks it automatically for the input bar (send ↔ stop swap). For the trailing `.loadingPill` row, `TranscriptSwapCoordinator.startRunningObservation(for:)` (re-armed per attach) listens via `withObservationTracking` and calls `Transcript2Controller.setLoading(_:)` on every flip. The pill row is the controller's responsibility (not the bridge's) — the bridge stays focused on entry-driven content.
-- **Incoming messages** — CLI pushes a message → `SessionRuntime.receive` updates `messages` and fires `onMessagesChange` → `Session.wireRuntimeMessagesSink` closure dispatches first to `bridge.apply`, then to the optional `session.onMessagesChange` external observer. The bridge is wired once at `Session.init` and survives view mount/dismount — events flow into the controller continuously, even for sessions the user is not currently viewing.
-- **Session switch** — `SidebarViewController` calls `model.select(.session(id))` → `MainSelectionModel.select(_:)` synchronously notifies its sole structural observer, `DetailRouterViewController.selectionDidChange(to:)` → `applySelection`. The router installs the correct child VC kind (swap only on a cross-kind change), runs `view.layoutSubtreeIfNeeded()` to settle the child's frame, then calls `ChatSessionViewController.present(sessionId:)`, which delegates to `TranscriptSwapCoordinator.attachSession` — **synchronously in the same source phase as the click** (no async observation hop, no deferred-attach flush). The coordinator builds the incoming `Transcript2ScrollView` via `TranscriptScrollViewFactory.make` (unbound shell), inserts it (via the VC's `insertScroll` seam) `.below topScrim` — i.e. *in front of* the still-mounted outgoing scroll view — settles geometry with `layoutSubtreeIfNeeded`, `bindData`s the new `NSTableView` to `session.controller.coordinator`, `scrollToTail`s (the first tile, at the final width), then **dismantles the outgoing scroll view last** — all wrapped in `CATransaction.setDisableActions(true)` + `allowsImplicitAnimation = false`. Building the incoming transcript before dropping the outgoing one means the swap never flashes a blank pane (the previous teardown-then-build shape did). Warm re-entry picks up whatever block state accumulated while detached; the router defers only its *first* apply to the first framed `viewDidLayout`. See "Transcript swap ordering" for the A→B→A flush-before-bind invariant.
-- **Draft → real session** — entering the New Session tab mounts `ComposeSessionViewController`, whose `viewDidLoad` lazily allocates a `draftSessionId` on `MainSelectionModel`. The user's first message (via the shared `submitSessionInput`) triggers `session.draft?.setCwd(home)` / `setWorktree` / `setSourceBranch` then `session.send(text)`, flips `selection` to `.session(_)` (which makes the router swap in `ChatSessionViewController`), and clears `draftSessionId`. `session.send` constructs a `SessionRuntime` via `SessionRuntime.fromDraft(...)`, copies the draft's config / title verbatim, queues the user input, runs `wireRuntimeMessagesSink(runtime)` to install the bridge-then-external multiplex closure on the new runtime, flips `phase = .active(runtime)`, kicks off bootstrap, and fires `onPromoted`. The manager's `refreshRecords()` hook is registered there, so the sidebar surfaces the new session immediately. Because `select(_:)` is **synchronous**, the swap-in of `ChatSessionViewController` tears `ComposeSessionViewController` (and its hosted `InputBarView2`) down in the **same source phase** as the send — SwiftUI never re-evaluates the bar's body afterward, so `InputBarView2.handleSend` clears the persisted draft **imperatively** (a direct `InputDraftStore.clear(draftKey)` before `onSubmit`) instead of relying on the reactive `.onChange(of: text) → scheduleDraftSave` clear, which the teardown would otherwise swallow.
+- **Session switch** — sidebar click → `model.select(.session(id))` → router `selectionDidChange(to:)` → install child → `view.layoutSubtreeIfNeeded()` → `ChatSessionViewController.present(sessionId:)` → `TranscriptSwapCoordinator.attachSession`, all **synchronously in the click's source phase** (no observation hop). Attach follows the transcript's deferred-bind contract — build an unbound shell, settle layout, `bindData`, `scrollToTail` — see [NativeTranscript2 §2.19](NativeTranscript2/CLAUDE.md).
+- **History load** — `attachSession` → `manager.prepareDraftSession(id)` → `session.loadHistory()` (`.notLoaded` starts `TranscriptBackfillPipeline`; `.loading` / `.loaded` are no-ops). A cold load applies blocks straight to the controller, bypassing the bridge. Warm re-entry finds blocks already there, because the bridge runs for every session whether or not it is mounted.
+- **Incoming messages** — `SessionRuntime.receive` → `onMessagesChange` → `bridge.apply` → controller. Wired once at `Session.init`; see [Services/Session/CLAUDE.md](../../Services/Session/CLAUDE.md).
+- **Running state** — `Session.isRunning` is `@Observable`. The input bar tracks it directly; the transcript's `.loadingPill` row is driven by `TranscriptSwapCoordinator.startRunningObservation(for:)` (re-armed per attach) calling `Transcript2Controller.setLoading(_:)`. The pill is the controller's job, not the bridge's.
+- **Draft → real session** — `ComposeSessionViewController` allocates `draftSessionId`; first submit sets draft config (`session.draft?.setCwd` / `setWorktree` / `setSourceBranch`), calls `session.send(text)` (promotes to `.active`, see the Session doc), selects `.session(_)` and clears `draftSessionId`. Because `select(_:)` is synchronous, the compose VC and its `InputBarView2` are torn down in the same source phase as the send — so `InputBarView2.handleSend` clears the persisted draft **imperatively** (`InputDraftStore.clear(draftKey)` before `onSubmit`); a reactive `.onChange` clear would never run.
 
 ## Transcript swap ordering
 
-`TranscriptSwapCoordinator` owns the swap state machine and is the **single owner** of `currentSession` — the idempotent short-circuit, the outgoing-session capture, the assignment, and the clear all live there. The VC and the coordinator must never both hold `currentSession`: an in-flight crossfade reads the parked outgoing session while the live one is bound, and a second owner would desync them.
+`TranscriptSwapCoordinator` alone holds `currentSession` (idempotent short-circuit, outgoing capture, assignment, clear). The VC must never hold it too: a crossfade reads the parked outgoing session while the incoming one is bound, and a second owner desyncs them.
 
-Load-bearing ordering (the most fragile in the app):
+- **Flush the parked outgoing scroll before building the incoming one.** `attachSession` calls `finishTranscriptFadeOut()` first. `TranscriptScrollViewFactory.dismantle` does a blanket `removeObserver(coordinator)`; on A→B→A the outgoing and incoming scroll share a coordinator, so a deferred teardown would strip the fresh scroll's observers. A→B→C collapses the same way.
+- **Build in front, drop last, inside one disabled transaction.** Insert the incoming scroll `.below topScrim` (above the outgoing one), make it live (typeset, bound, at tail), then dismantle the outgoing one — never the reverse, or the pane flashes blank. Wrap in `CATransaction.setDisableActions(true)` + `allowsImplicitAnimation = false`.
+- **The crossfade is opacity-only, outside that transaction**, and runs only for the router's "fresh content" entry with a live window. Headless and warm re-entry stay synchronous.
 
-- **A→B→A re-entry: flush the parked outgoing scroll BEFORE building/binding the incoming one.** `TranscriptScrollViewFactory.dismantle` calls a blanket `removeObserver(coordinator)`; if the outgoing scroll for the *same* session is still mid-crossfade when you re-enter it, deferring its teardown would rip the `frameDidChange` / live-scroll observers off the freshly-bound incoming scroll (same coordinator). `attachSession` calls `finishTranscriptFadeOut()` synchronously at its head to avoid this. A rapid A→B→C collapses the same way.
-- **Build in front, drop last, under one disabled transaction.** The incoming scroll is mounted on top of the outgoing one and the outgoing is dismantled *after* the incoming is live (typeset + bound + scrolled to tail) — never the reverse — so no blank-pane flash. The structural swap runs inside `CATransaction.setDisableActions(true)` + `NSAnimationContext.allowsImplicitAnimation = false`.
-- **Crossfade is opacity-only and rides outside the disabled transaction.** A same-session-swap crossfade animates only `alphaValue`; the build → settle → bind → `scrollToTail` is synchronous (the §2.19 single-width contract is untouched). Crossfade only on the router's "fresh content" first entry and only with a live window — headless / warm-re-entry stays on the synchronous path.
+## SwiftUI hosts: two sizing regimes
 
-## Permission card host
+Every SwiftUI view in the detail pane sits in an AppKit host, and each host is one of two shapes. Choosing the wrong one either collapses the window or swallows transcript clicks.
 
-`permissionCardHost` is a `PassthroughHostingView` hosting `PermissionCardOverlay`, **regime A** (`sizingOptions = []` + four-edge pin) — NOT regime B/B″. Regime A publishes no `fittingSize`, so a full-pane card host can't leak a size up into the window's constraint solver and collapse the window; the four-edge pin makes layout drive it from the pane. Load-bearing details:
+| | Regime A — fills a pane | Regime B — subordinate component |
+|---|---|---|
+| Examples | Compose, draft landing, archive (`mountFillPaneHost`), `permissionCardHost` | `restingBarHost` |
+| `sizingOptions` | `[]` | `[.intrinsicContentSize]` |
+| Constraints | four-edge pin — the container sizes the host | position + width only (centerX, bottom, width cap `BlockStyle.maxLayoutWidth + 2 * detailHorizontalInset` @high, `leading >=`) — the content sizes its height |
+| Why | Default options publish the body's small `fittingSize`, which leaks up the split into the window's solver and collapses the window | The host must be only as tall as the bar so the transcript above keeps its clicks |
 
-- **`PassthroughHostingView` must suppress cursor + tracking rects, not just `hitTest → nil`.** A plain full-pane `NSHostingView` registers a default arrow-cursor rect over its whole bounds, occluding the transcript's I-beam across the entire pane *even when click-through*. The override `resetCursorRects()` no-ops it (SwiftUI's interactive elements use their own `NSTrackingArea(.cursorUpdate)`, unaffected); `hitTest` maps the transparent-background `self` case to `nil` so AppKit keeps searching siblings.
-- **Z-order: added AFTER `restingBarHost` in `loadView`** so it floats on top; the transcript scroll is (re)inserted `.below topScrim` on every attach, beneath every overlay sibling.
-- **The card's bottom inset is `chatBottomInset` (36).** The card host is the full pane, so its geometry is fixed — the card animates in place and never pumps the bottom-anchored bar host's intrinsic height. `ChatRestingBar` (`InputBarChrome.swift`) is therefore "just the bar": no permission-card ZStack, no body-level `.animation`.
+- **Use `mountFillPaneHost`** (`App/AppKit/MountFillPaneHost.swift`) for any new fill-pane child — it is the one copy of the regime-A recipe (`NSHostingController`, `sizingOptions = []`, `addChild`, four-edge pin).
+- **A full-pane host over the transcript must be a `PassthroughHostingView`.** `hitTest → nil` alone isn't enough: a plain `NSHostingView` registers an arrow cursor rect over its whole bounds, hiding the transcript's I-beam even when clicks pass through. `PassthroughHostingView` no-ops `resetCursorRects()` and maps its transparent background to `nil` in `hitTest`.
+- **Z-order in `ChatSessionViewController.loadView`:** `permissionCardHost` is added after `restingBarHost`, so it floats on top; the transcript scroll is re-inserted `.below topScrim` on every attach. The card sits at `chatBottomInset` (36) inside its own full-pane host, so it never changes the bar host's height — `ChatRestingBar` is just the bar.
+
+Merge gates (run on CI): `AppKitSwiftUIBoundaryTests` (regime-A no-collapse, A/B over `sizingOptions`), `HostedComponentCenteringTests` (regime-B centering, width cap, shrink-to-fit, bottom anchor), `DetailRouterLayoutDiagnosticsTests` (archive through the real router). When adding one:
+
+- Assert regime-A on the child's published `fittingSize.height ≈ 0`. An off-screen window runs no live autosize pass, so its **frame** never collapses and a window-height assertion proves nothing.
+- Mount in a large window (≥ ~1100×760, `minSize` strictly between the collapse target and the window height) so a partial collapse can't hide under the min clamp.
+- Demonstrate the bad regime with a test-local throwaway host; never change a production VC's `sizingOptions` from a test.
 
 ## Rules
 
-- Views never mutate session running / status / message state directly. All writes go through `Session` methods (which dispatch on phase under the hood).
-- Draft-only setters (`setCwd` / `setWorktree` / `setOriginPath` / `setSourceBranch` / `setPluginDirectories`) are reached through `session.draft?` — non-nil only while the session is still in `.draft` phase. Calls after promotion are silently no-op (the `draft?` is nil).
-- Runtime-mutable setters (`setModel` / `setEffort` / `setPermissionMode` / `setFastMode` / `setAdditionalDirectories`) are called as `session.setX(...)` regardless of phase; the façade routes to the draft or the runtime as appropriate.
-- The UI only reads `@Observable` properties on the session; it never holds its own copy.
-- A new piece of session runtime state means adding an `@Observable` field on `SessionRuntime` AND a forwarding accessor on `Session` — views read it via `session.X`.
-- Cross-view coordination uses closures injected from `ChatSessionViewController` (e.g. `onSubmit`, `onAttachRect` / `onPillRect` on `InputBarChrome`). Don't introduce a new ViewModel layer.
-
-## See also
-
-- [NativeTranscript2/CLAUDE.md](NativeTranscript2/CLAUDE.md) — the transcript renderer (layouts, diff, tool rendering).
-- [Services/Session/CLAUDE.md](../../Services/Session/CLAUDE.md) — `Session` / `SessionRuntime` / `SessionDraft` internals and how state reaches the UI.
+- Views never mutate session state directly; all writes go through `Session` methods.
+- Draft-only setters (`setCwd` / `setWorktree` / `setOriginPath` / `setSourceBranch` / `setPluginDirectories`) are reached via `session.draft?` and are no-ops after promotion. Runtime-mutable setters (`setModel` / `setEffort` / `setPermissionMode` / `setFastMode` / `setAdditionalDirectories`) are `session.setX(...)` in any phase.
+- The UI reads `@Observable` session properties and keeps no copies. New runtime state = an `@Observable` field on `SessionRuntime` + a forwarder on `Session`.
+- Cross-view coordination uses closures injected from `ChatSessionViewController` (`onSubmit`, `onAttachRect` / `onPillRect` on `InputBarChrome`). Don't add a ViewModel layer.

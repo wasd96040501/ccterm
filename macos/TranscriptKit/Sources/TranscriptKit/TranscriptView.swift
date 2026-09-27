@@ -26,7 +26,7 @@ import AppKit
 /// a few hundred rows, it grows as the reader moves around, and a mutation
 /// re-asks about a few hundred more. Hosts absorb that by inserting in batches
 /// spread over several main-queue hops, or by measuring off the main actor first
-/// (`prepareRows(_:)`) — see §6 of the package's CLAUDE.md.
+/// (`prepareRows(_:)`) — see §5 of the package's CLAUDE.md.
 ///
 /// Rows drawn by host views recycle: the transcript keeps roughly a
 /// screenful of instances alive and cycles them across rows as the user

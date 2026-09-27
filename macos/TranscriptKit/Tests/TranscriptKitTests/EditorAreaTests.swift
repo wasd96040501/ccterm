@@ -296,7 +296,7 @@ final class EditorAreaTests: XCTestCase {
     /// and for one moved into a new editor, the two paths that size a tab's view
     /// from nothing. A transcript's host loads at `viewDidAppear` for exactly
     /// this; loading at `viewWillAppear` measured every row at a width of zero
-    /// (root `CLAUDE.md`, "Size before content").
+    /// (`macos/CLAUDE.md`, "Size before content").
     func testATabAppearsAtItsFinalSizeAndNotBefore() async throws {
         let mounted = mount(tabs: 2)
         defer { mounted.window.close() }

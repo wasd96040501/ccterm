@@ -30,7 +30,7 @@ final class TranscriptViewGeometryTests: XCTestCase {
         mounted.transcript.dataSource = host
         mounted.transcript.delegate = host
         mounted.transcript.maxContentWidth = Self.maxContentWidth
-        // Mount, lay out, then load — `CLAUDE.md` §6. Loading first measures every
+        // Mount, lay out, then load — the package `CLAUDE.md` §5. Loading first measures every
         // row at a width of zero and again at the real one. That order passed
         // here for as long as the mount sat thirty thousand points off screen,
         // where AppKit put the first measure off until layout; a window the

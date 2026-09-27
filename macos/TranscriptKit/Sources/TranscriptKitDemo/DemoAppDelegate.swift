@@ -25,7 +25,7 @@ final class DemoAppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// The demo is its one window: closing it quits, as `CLAUDE.md` §5 says it
+    /// The demo is its one window: closing it quits, as its `CLAUDE.md` says it
     /// does. Without this `NSApplication` keeps running with nothing on screen,
     /// which is its default for an app that could open another.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

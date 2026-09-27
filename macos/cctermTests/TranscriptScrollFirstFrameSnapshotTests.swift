@@ -397,8 +397,8 @@ final class TranscriptScrollFirstFrameSnapshotTests: XCTestCase {
     // MARK: - Test 4: CLAUDE.md tick model verification
 
     /// **Finding:** the tick model in
-    /// `NativeTranscript2/CLAUDE.md §1.2` (and the corollary in the root
-    /// CLAUDE.md) is **misleading**. It claims:
+    /// `NativeTranscript2/CLAUDE.md §1.2` (and the corollary in
+    /// `macos/CLAUDE.md`) is **misleading**. It claims:
     ///
     ///   > `view.layoutSubtreeIfNeeded()` runs autolayout NOW, but it
     ///   > does not force every AppKit subsystem. NSTableView's row

@@ -2548,7 +2548,10 @@ public final class TranscriptView: NSView {
     /// A row the selection covers that nothing has measured — it can run through
     /// rows the reader dragged past without the table ever asking about — is
     /// built for this and dropped, not filed: the same rule as a find's walk, for
-    /// the same reason (`RowCache` never evicts). The flat index space depends on
+    /// the same reason: filing it would push the rows on screen out of `RowCache`'s
+    /// resident budget to make room for rows nobody is looking at. That includes a
+    /// row whose tree the budget already evicted, which reads as unmeasured here and
+    /// is rebuilt the same way. The flat index space depends on
     /// the content and not the width, so a tree measured at any width answers.
     /// `.view` rows contribute nothing; their content is the host's.
     fileprivate func copySelection() {

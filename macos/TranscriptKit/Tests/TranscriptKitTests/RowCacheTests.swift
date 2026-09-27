@@ -169,6 +169,45 @@ final class RowCacheTests: XCTestCase {
         XCTAssertEqual(mounted.transcript.rect(ofRow: 0), rect)
     }
 
+    /// A selection across more rows than the budget holds typeset still copies
+    /// every one of them: a row whose tree was evicted is built for the copy and
+    /// dropped, like a row nothing has measured.
+    func testACopyAcrossEvictedRowsTakesEveryRow() throws {
+        let mounted = MountedTranscript(size: NSSize(width: Self.width, height: 400))
+        defer { mounted.teardown() }
+        let host = Host(rows: Self.rows(80, fraction: 64))
+        mounted.transcript.dataSource = host
+        mounted.transcript.delegate = host
+        mounted.settle()
+        mounted.transcript.reloadData()
+        mounted.settle()
+        XCTAssertGreaterThan(
+            Self.totalCost(host.rows), RowCache.residentBudget,
+            "premise: the transcript is more than the budget holds")
+        let first = try XCTUnwrap(blockView(ofRow: 0, in: mounted), "premise: row 0 is on screen")
+
+        // Pressed at the start of the first row and dragged far below every row,
+        // which the transcript clamps to the end of the last.
+        func event(_ type: NSEvent.EventType, at point: CGPoint) -> NSEvent {
+            NSEvent.mouseEvent(
+                with: type, location: first.convert(point, to: nil), modifierFlags: [],
+                timestamp: 0, windowNumber: mounted.window.windowNumber, context: nil,
+                eventNumber: 0, clickCount: 1, pressure: 1)!
+        }
+        mounted.press(
+            first, with: event(.leftMouseDown, at: CGPoint(x: -500, y: 4)),
+            then: [event(.leftMouseDragged, at: CGPoint(x: 5_000, y: 1_000_000))])
+
+        let copied = try XCTUnwrap(mounted.copy(), "nothing was copied")
+        var searched = copied.startIndex..<copied.endIndex
+        for index in host.rows.indices {
+            guard let found = copied.range(of: "Row \(index) says", range: searched) else {
+                return XCTFail("row \(index) is missing from the copy, or out of order")
+            }
+            searched = found.upperBound..<copied.endIndex
+        }
+    }
+
     private func blockView(ofRow row: Int, in mounted: MountedTranscript) -> BlockView? {
         mounted.transcript.descendants(ofType: BlockView.self)
             .first { mounted.transcript.row(for: $0) == row }

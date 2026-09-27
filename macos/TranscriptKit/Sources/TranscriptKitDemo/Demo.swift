@@ -17,11 +17,11 @@ struct Demo {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
 
-        // Held by this scope, which outlives the app.
-        let windowController = DemoWindowController()
-        app.mainMenu = makeMainMenu()
-        windowController.showWindow(nil)
-        app.activate(ignoringOtherApps: true)
+        // Held by this scope, which outlives the app — `NSApplication.delegate` is
+        // weak. Everything else is built in `applicationDidFinishLaunching(_:)`;
+        // see there for why not here.
+        let appDelegate = DemoAppDelegate()
+        app.delegate = appDelegate
         app.run()
     }
 
@@ -34,7 +34,7 @@ struct Demo {
     /// carrying `copy:` and no target, is what turns it into a chain dispatch that
     /// reaches the selected row. An app with a normal Edit menu gets ⌘C for free.
     @MainActor
-    private static func makeMainMenu() -> NSMenu {
+    static func makeMainMenu() -> NSMenu {
         let main = NSMenu()
 
         let appMenu = NSMenu()

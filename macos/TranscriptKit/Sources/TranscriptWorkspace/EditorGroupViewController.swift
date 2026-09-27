@@ -191,14 +191,17 @@ public final class EditorGroupViewController: NSViewController {
         tabs.insertTabViewItem(item, at: index)
         if pinned { numberOfPinnedTabs += 1 }
         tabs.selectedTabViewItemIndex = index
-        // The bar shows an item's label and image, so a change to either has to
-        // reach it — without this, setting a label after adding the tab would
-        // be a property that silently does nothing.
+        // The bar shows an item's label, image and tooltip, so a change to any of
+        // them has to reach it — without this, setting a label after adding the
+        // tab would be a property that silently does nothing.
         itemObservations[ObjectIdentifier(item)] = [
             item.observe(\.label) { [weak self] _, _ in
                 MainActor.assumeIsolated { self?.reloadTabBar() }
             },
             item.observe(\.image) { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.reloadTabBar() }
+            },
+            item.observe(\.toolTip) { [weak self] _, _ in
                 MainActor.assumeIsolated { self?.reloadTabBar() }
             },
         ]

@@ -30,6 +30,7 @@ final class DemoWindowController: NSWindowController {
         window.contentMinSize = NSSize(width: 520, height: 320)
         super.init(window: window)
 
+        window.delegate = self
         area.delegate = self
         window.contentViewController = WorkspaceRootViewController(area: area, palette: palette)
 
@@ -179,6 +180,18 @@ extension DemoWindowController: EditorAreaViewControllerDelegate {
     }
 }
 
+extension DemoWindowController: NSWindowDelegate {
+
+    /// Closing the window closes every tab in it first, through the same path a
+    /// tab's close button takes — so each one stops its stream and its load in
+    /// `prepareForClose()` rather than running on behind a window that is gone.
+    func windowWillClose(_ notification: Notification) {
+        for group in area.groups.reversed() {
+            area.removeGroup(group)
+        }
+    }
+}
+
 /// One validation for a command wherever it is issued from — a menu item or a
 /// palette button — which is what makes them one command.
 extension DemoWindowController: NSUserInterfaceValidations {
@@ -194,6 +207,14 @@ extension DemoWindowController: NSUserInterfaceValidations {
         case #selector(toggleTools(_:)):
             (item as? NSMenuItem)?.title = palette.isCollapsed ? "Show Tools" : "Hide Tools"
             return true
+        case #selector(togglePinnedTab(_:)):
+            // The palette's button is retitled by `refreshPalette()`; the menu item
+            // is asked here, as it opens.
+            let group = area.activeGroup
+            let index = group.selectedTabViewItemIndex
+            (item as? NSMenuItem)?.title =
+                index >= 0 && group.isTabPinned(at: index) ? "Unpin Tab" : "Pin Tab"
+            return activeEditor != nil
         case #selector(newTab(_:)), #selector(closeEditor(_:)):
             return true
         default:

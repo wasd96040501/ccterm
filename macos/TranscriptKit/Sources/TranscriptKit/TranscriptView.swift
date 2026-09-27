@@ -177,7 +177,9 @@ public final class TranscriptView: NSView {
             answer = delegate.transcriptView(self, heightOfRow: row, width: contentWidth)
 
         case .some(let described):
-            answer = measuredBlock(for: described)?.size.height ?? 0
+            // The height alone, which the cache keeps for every row — not the
+            // tree, which it keeps only for the rows being drawn.
+            answer = rowCache.height(for: described, width: contentWidth) ?? 0
 
         case .none:
             answer = 0
@@ -1601,11 +1603,26 @@ public final class TranscriptView: NSView {
     /// is holding. Results are collected in whatever order they finish, because
     /// each carries the identity it belongs to — the positional version of this
     /// had to gather by offset to keep the batch in the order it was given.
+    ///
+    /// **Only the last `RowCache.residentBudget` worth of rows keep their tree**;
+    /// the rest are measured, keep their height, and release the tree in the same
+    /// child task that built it. The cache would evict them on arrival anyway —
+    /// doing it here keeps a batch of history from ever being resident all at once,
+    /// and keeps tearing it down off the main thread. The last rows rather than the
+    /// first because a batch is usually a prepend, and its last rows are the ones
+    /// that land against what the reader is looking at.
     private nonisolated static func measure(
         _ rows: [TranscriptRow], width: CGFloat
     ) async -> PreparedRows {
-        await withTaskGroup(of: (TranscriptRow.ID, RowCache.Entry)?.self) { group in
-            for row in rows {
+        var budget = RowCache.residentBudget
+        var keepsTree = [Bool](repeating: false, count: rows.count)
+        for index in rows.indices.reversed() {
+            budget -= RowCache.cost(of: rows[index].content)
+            guard budget >= 0 else { break }
+            keepsTree[index] = true
+        }
+        return await withTaskGroup(of: (TranscriptRow.ID, RowCache.Entry)?.self) { group in
+            for (row, keepsTree) in zip(rows, keepsTree) {
                 group.addTask {
                     // Nothing to take from, and stated rather than defaulted: a
                     // row being prepared does not exist yet, so there is no
@@ -1614,7 +1631,7 @@ public final class TranscriptView: NSView {
                     guard !Task.isCancelled,
                         let entry = row.content.entry(width: width, reusing: nil)
                     else { return nil }
-                    return (row.id, entry)
+                    return (row.id, keepsTree ? entry : entry.evicted)
                 }
             }
             var entries = [TranscriptRow.ID: RowCache.Entry](minimumCapacity: rows.count)
@@ -1904,10 +1921,10 @@ public final class TranscriptView: NSView {
     /// is built.
     ///
     /// **A tree built here is used and dropped, not filed.** Handing it to
-    /// `RowCache` looks like thrift and is a change of behaviour: the cache never
-    /// evicts, so a find over a transcript nothing has read would leave every row in
-    /// it typeset and resident — a search silently spending the memory of having
-    /// read the whole thing. What a hit actually needs is its range, which outlives
+    /// `RowCache` looks like thrift and is a change of behaviour: a find over a
+    /// transcript nothing has read would push every row it passed through the
+    /// resident budget, evicting the rows the reader has on screen to make room for
+    /// rows nobody is looking at. What a hit actually needs is its range, which outlives
     /// the tree, and the one row the reader jumps to is re-measured on arrival for a
     /// fraction of a frame.
     private nonisolated static func match(

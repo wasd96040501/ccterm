@@ -107,6 +107,10 @@ final class EditorTabBar: NSView, NSDraggingSource {
     private var tabs: [ObjectIdentifier: Tab] = [:]
     /// Tabs made since the tabs were last placed, which land where they go.
     private var unplaced: Set<ObjectIdentifier> = []
+    /// Where each tab was last sent, so placing the tabs twice in one event — a
+    /// reorder drag does, once through the move's `configure` and once after it —
+    /// leaves a slide already heading there alone instead of restarting it.
+    private var destinations: [ObjectIdentifier: NSRect] = [:]
     private var draggedID: ObjectIdentifier?
 
     private var pressedIndex: Int?
@@ -181,6 +185,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
         for (id, tab) in tabs where !kept.contains(id) {
             tab.view.removeFromSuperview()
             tabs[id] = nil
+            destinations[id] = nil
         }
         for (index, item) in items.enumerated() {
             if tabs[item.id] == nil {
@@ -300,13 +305,17 @@ final class EditorTabBar: NSView, NSDraggingSource {
         var slides: [(Tab, NSRect)] = []
         for (index, slot) in zip(shown, slots(for: shown, gap: gapIndex)) {
             guard let tab = tab(at: index) else { continue }
+            let id = items[index].id
             tab.view.isHidden = false
             if index == draggedIndex {
                 place(tab, at: heldFrame(in: slot))
-            } else if animated, !unplaced.contains(items[index].id) {
-                slides.append((tab, slot))
+                destinations[id] = nil
+            } else if animated, !unplaced.contains(id) {
+                if destinations[id] != slot { slides.append((tab, slot)) }
+                destinations[id] = slot
             } else {
                 place(tab, at: slot)
+                destinations[id] = slot
             }
         }
         unplaced.removeAll()

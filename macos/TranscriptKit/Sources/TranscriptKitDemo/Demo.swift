@@ -43,9 +43,15 @@ struct Demo {
 
         let panel = ControlPanelView()
         panel.translatesAutoresizingMaskIntoConstraints = false
-        // After the panel exists, because the Find items target it. Copy still
+
+        // The find bar is the toolbar's search item. Held by this scope, which
+        // outlives the app: the toolbar keeps its delegate weakly.
+        let toolbar = DemoToolbarController()
+        window.toolbar = toolbar.toolbar
+        window.toolbarStyle = .unified
+        // After the toolbar exists, because the Find items target it. Copy still
         // targets nothing and walks the chain — see below.
-        app.mainMenu = makeMainMenu(find: panel)
+        app.mainMenu = makeMainMenu(find: toolbar)
 
         root.addSubview(transcript)
         root.addSubview(panel)
@@ -81,21 +87,15 @@ struct Demo {
         panel.onColdLoad = { rows, prepared in host.coldLoad(rows: rows, prepared: prepared) }
         panel.onCancelColdLoad = { host.cancelColdLoad() }
         panel.onMaxContentWidth = { transcript.maxContentWidth = $0 }
-        panel.onFind = { transcript.find($0) }
-        panel.onFindNext = { transcript.findNext() }
-        panel.onFindPrevious = { transcript.findPrevious() }
+        toolbar.onFind = { transcript.find($0) }
+        toolbar.onFindNext = { transcript.findNext() }
+        toolbar.onFindPrevious = { transcript.findPrevious() }
         host.onFindChange = { matches, isComplete in
-            guard matches > 0 else {
-                return panel.setFindStatus(isComplete ? "no matches" : "")
-            }
-            // The ordinal is one-based for a reader and zero-based in the API, and
-            // the qualifier stays on until the walk finishes — a total that is
-            // still climbing should not be presented as a total. No selection
-            // reads as a dash rather than as "1": the walk has not reached the
-            // reader yet, or the hit they were on went away, and in neither case
-            // is any match the current one.
-            let position = transcript.indexOfSelectedFindMatch.map { "\($0 + 1)" } ?? "–"
-            panel.setFindStatus("\(position) of \(matches)\(isComplete ? "" : " so far")")
+            // Only a finished walk is shown. A count climbing under the typing is
+            // noise, and a resumed walk — a row streamed in, a row appended —
+            // reports incomplete for a moment before settling where it was.
+            guard isComplete else { return }
+            toolbar.setFindCount(selected: transcript.indexOfSelectedFindMatch, of: matches)
         }
         host.onRowCountChange = { panel.setStatus("\($0) rows") }
         host.onStreamingChange = { panel.setStreaming($0) }
@@ -138,7 +138,7 @@ struct Demo {
     /// package needs *no* wiring for this: an app that has a normal Edit menu
     /// (any nib-based app, and any SwiftUI shell) gets ⌘C for free.
     @MainActor
-    private static func makeMainMenu(find panel: ControlPanelView) -> NSMenu {
+    private static func makeMainMenu(find toolbar: DemoToolbarController) -> NSMenu {
         let main = NSMenu()
 
         let appItem = NSMenuItem()
@@ -165,12 +165,12 @@ struct Demo {
         // host's, which is the arrangement §4 is about.
         editMenu.addItem(.separator())
         for (title, key, action) in [
-            ("Find…", "f", #selector(ControlPanelView.focusFind)),
-            ("Find Next", "g", #selector(ControlPanelView.findNext)),
-            ("Find Previous", "G", #selector(ControlPanelView.findPrevious)),
+            ("Find…", "f", #selector(DemoToolbarController.beginFind)),
+            ("Find Next", "g", #selector(DemoToolbarController.findNext)),
+            ("Find Previous", "G", #selector(DemoToolbarController.findPrevious)),
         ] {
             let item = editMenu.addItem(withTitle: title, action: action, keyEquivalent: key)
-            item.target = panel
+            item.target = toolbar
         }
 
         editItem.submenu = editMenu

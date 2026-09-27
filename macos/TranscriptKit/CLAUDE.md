@@ -649,8 +649,8 @@ built. So the search runs where the trees are.
 
 **Why the find bar is not.** What a reader is told — the wording, whether a
 still-climbing total is qualified, where the field sits, what ⌘G is bound to — is
-product, and the demo's `ControlPanelView` is one answer to it rather than this
-package's. What crosses is the count, because it is the only part a host renders.
+product, and the demo's toolbar search (`DemoToolbarController`) is one answer to
+it rather than this package's. What crosses is the count, because it is the only part a host renders.
 Not the hits: a position in one is an index into a tree the host has never seen,
 and there is nothing to do with one but hand it straight back.
 

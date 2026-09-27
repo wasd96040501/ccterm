@@ -44,8 +44,18 @@ test-kit: ## Run TranscriptKit's package tests (FILTER=SomeTests)
 # has no other check: a probe can assert a row's height, not whether the
 # document in it looks like a document. Runs in the foreground; Ctrl-C or close
 # the window to stop it.
+#
+# The `-isysroot` is what makes it look like a current Mac app. AppKit picks its
+# appearance by the SDK a binary records having been linked against, and
+# SwiftPM's link records the deployment target (12.0) there instead: it calls
+# the toolchain's `swiftc` directly, with no `SDKROOT`, and hands clang the SDK
+# as `--sysroot` — which clang does not read the SDK's version from. `-isysroot`
+# it does. Measured with `vtool -show-build`: sdk 12.0 without, the installed SDK's version with.
 demo-kit: ## Run TranscriptKit's demo app
-	@cd macos/TranscriptKit && swift run TranscriptKitDemo
+	@cd macos/TranscriptKit && swift run \
+		-Xswiftc -Xclang-linker -Xswiftc -isysroot \
+		-Xswiftc -Xclang-linker -Xswiftc "$$(xcrun --sdk macosx --show-sdk-path)" \
+		TranscriptKitDemo
 
 logs: ## Stream unified logs for THIS worktree's build product only (CONFIG=debug|release CATEGORY=Foo LEVEL=info|debug)
 	@CONFIG="$(CONFIG)" CATEGORY="$(CATEGORY)" LEVEL="$(LEVEL)" ./macos/scripts/logs.sh

@@ -133,30 +133,7 @@ final class MountedTranscript {
             timestamp: 0, windowNumber: window.windowNumber, context: nil,
             eventNumber: 0, clickCount: down.clickCount, pressure: 0)!
         for event in rest + [up] { NSApp.postEvent(event, atStart: false) }
-        // DIAG (temporary)
-        setvbuf(stdout, nil, _IOLBF, 0)
-        let server =
-            (CGWindowListCopyWindowInfo([.optionIncludingWindow], CGWindowID(window.windowNumber))
-            as? [[String: Any]])?.first?[kCGWindowBounds as String] ?? "none"
-        print(
-            "DIAG press \(file):\(line) appkit=\(window.frame) server=\(server) "
-                + "screens=\(NSScreen.screens.map(\.frame))")
-        let clip = scrollView.contentView
-        clip.postsBoundsChangedNotifications = true
-        var moves: [NSPoint] = []
-        let token = NotificationCenter.default.addObserver(
-            forName: NSView.boundsDidChangeNotification, object: clip, queue: nil
-        ) { _ in MainActor.assumeIsolated { moves.append(clip.bounds.origin) } }
-        let before = clip.bounds.origin
-        let start = Date()
         view.mouseDown(with: down)
-        print(
-            "DIAG \(file):\(line) before=\(before) moves=\(moves) after=\(clip.bounds.origin) "
-                + "doc=\(scrollView.documentView?.frame.size ?? .zero) clip=\(clip.bounds.size) "
-                + "window=\(window.frame) mouse=\(NSEvent.mouseLocation) "
-                + "elapsed=\(Date().timeIntervalSince(start)) "
-                + "down=\(down.locationInWindow) rest=\(rest.map { $0.type == .periodic ? "tick" : "\($0.type.rawValue)@\($0.locationInWindow)" })")
-        NotificationCenter.default.removeObserver(token)
         let left = NSApp.nextEvent(
             matching: [.leftMouseDragged, .leftMouseUp, .periodic, .scrollWheel],
             until: .distantPast, inMode: .default, dequeue: true)

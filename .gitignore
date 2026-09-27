@@ -50,5 +50,5 @@ macos/ccterm/Resources/*.js
 macos/scripts/.stress_corpus_cache/
 xcresult/
 
-# App-icon master, regenerated from the SVG by `make icon` (feed to Icon Composer)
-design/icon/AppIcon-foreground-1024.png
+# App-icon review renders (`make icon` / design/icon `bun run sheet|variants`)
+design/icon/out/

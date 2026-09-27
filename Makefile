@@ -83,16 +83,11 @@ dmg: ## Create DMG installer (usage: make dmg APP=/path/to/ccterm.app)
 		ccterm.dmg \
 		"$(APP)"
 
-# App-icon master for Icon Composer (macOS Tahoe / Liquid Glass): a 1024px
-# TRANSPARENT foreground PNG (black star + wand, no white square, no shadow).
-# Drop the output into Icon Composer, set its background to white there, and
-# save AppIcon.icon — the system supplies the rounding, margin, and shadow.
-ICON_SRC := design/icon/AppIcon-foreground.svg
-ICON_OUT ?= design/icon/AppIcon-foreground-1024.png
-icon: ## Generate the transparent app-icon master for Icon Composer (ICON_OUT=path)
-	cd js && bun install --frozen-lockfile && \
-		bun run scripts/render-svg.ts ../$(ICON_SRC) ../$(ICON_OUT) 1024
-	@echo "master → $(ICON_OUT)  (drop into Icon Composer; bg = white there)"
+# App icon: design/icon/src/design.ts is the source of truth. This regenerates
+# macos/ccterm/AppIcon.icon (Icon Composer document, SVG layers) from it and,
+# with Xcode 26+, renders every system appearance to design/icon/out/review.png.
+icon: ## Regenerate AppIcon.icon from design/icon (+ review renders in design/icon/out)
+	cd design/icon && bun install --frozen-lockfile && bun run build
 
 fmt: ## Format Swift sources and localization strings
 	$(SWIFT_FORMAT) format --parallel --in-place --recursive $(SWIFT_SRC)

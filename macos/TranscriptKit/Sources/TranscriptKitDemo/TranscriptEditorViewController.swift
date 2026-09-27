@@ -33,6 +33,10 @@ final class TranscriptEditorViewController: NSViewController {
 
     private var hasLoaded = false
 
+    /// Whether the find bar is showing, or on its way in. The bar's `isHidden`
+    /// lags behind this while it slides out.
+    private var isFindBarShown = false
+
     /// Pending removal of the count after the query changed. See `searchStringDidChange`.
     private var countHide: Timer?
 
@@ -99,32 +103,29 @@ final class TranscriptEditorViewController: NSViewController {
         update(rowCount: transcript.numberOfRows)
     }
 
-    /// The find bar over the transcript. A stack so that hiding the bar gives its
-    /// height back: a stack view detaches a hidden arranged view — and, inside an
-    /// animation group, slides it in and out at its full height while the
-    /// transcript follows, which is how Xcode's find bar comes and goes.
-    /// Clipped, so the bar slides from under the edge above rather than over it.
-    private lazy var stack: NSStackView = {
-        let stack = NSStackView(views: [findBar, transcript])
-        stack.orientation = .vertical
-        stack.spacing = 0
-        stack.alignment = .width
-        stack.clipsToBounds = true
-        return stack
-    }()
+    /// The find bar's top against the view's: zero shows it, minus its height
+    /// tucks it under the edge above, with the transcript taking the room back.
+    private lazy var findBarTop = findBar.topAnchor.constraint(equalTo: view.topAnchor)
 
     private func configureHierarchy() {
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stack)
+        // Clipped, so the tucked-away bar is not drawn over what is above.
+        view.clipsToBounds = true
+        for subview in [transcript, findBar] {
+            subview.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(subview)
+        }
     }
 
     private func configureConstraints() {
-        transcript.setContentHuggingPriority(.defaultLow, for: .vertical)
+        findBarTop.constant = -findBar.fittingSize.height
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: view.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            findBarTop,
+            findBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            findBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            transcript.topAnchor.constraint(equalTo: findBar.bottomAnchor),
+            transcript.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            transcript.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            transcript.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
     }
 
@@ -164,16 +165,16 @@ final class TranscriptEditorViewController: NSViewController {
     private func perform(_ action: NSTextFinder.Action) {
         switch action {
         case .showFindInterface:
-            let wasHidden = findBar.isHidden
-            setFindBarHidden(false)
+            let wasShown = isFindBarShown
+            setFindBarShown(true)
             findBar.beginEditing()
             // Hiding ended the find; the query stayed, as it does in Xcode.
-            if wasHidden, !findBar.searchString.isEmpty { searchStringDidChange() }
+            if !wasShown, !findBar.searchString.isEmpty { searchStringDidChange() }
         case .nextMatch, .previousMatch:
             guard !findBar.searchString.isEmpty else { return }
-            if findBar.isHidden {
+            if !isFindBarShown {
                 // ⌘G with the bar closed brings the find back where it was.
-                setFindBarHidden(false)
+                setFindBarShown(true)
                 searchStringDidChange()
             } else if action == .nextMatch {
                 transcript.findNext()
@@ -181,7 +182,7 @@ final class TranscriptEditorViewController: NSViewController {
                 transcript.findPrevious()
             }
         case .hideFindInterface:
-            setFindBarHidden(true)
+            setFindBarShown(false)
             transcript.endFind()
             view.window?.makeFirstResponder(nil)
         default:
@@ -189,18 +190,20 @@ final class TranscriptEditorViewController: NSViewController {
         }
     }
 
-    /// Slides the bar in or out — the stack's own animation — or, with Reduce
-    /// Motion on or no window to animate in, just shows or hides it.
-    private func setFindBarHidden(_ hidden: Bool) {
-        guard findBar.isHidden != hidden else { return }
-        guard view.window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
-            findBar.isHidden = hidden
-            return
-        }
+    /// Slides the bar in or out: its top constraint, through the animator. Only
+    /// that moves — the bar's contents and the transcript's are laid out as
+    /// ever, the transcript just gets taller or shorter. Hidden once tucked away,
+    /// so its field is out of the key view loop.
+    private func setFindBarShown(_ shown: Bool) {
+        isFindBarShown = shown
+        if shown { findBar.isHidden = false }
         NSAnimationContext.runAnimationGroup { context in
-            context.allowsImplicitAnimation = true
-            findBar.isHidden = hidden
-            stack.layoutSubtreeIfNeeded()
+            if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { context.duration = 0 }
+            findBarTop.animator().constant = shown ? 0 : -findBar.fittingSize.height
+        } completionHandler: { [weak self] in
+            // Unless it was shown again before it got there.
+            guard let self, !self.isFindBarShown else { return }
+            self.findBar.isHidden = true
         }
     }
 

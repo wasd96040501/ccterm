@@ -134,14 +134,7 @@ final class EditorTabBar: NSSegmentedControl, NSDraggingSource {
 
     /// Rebuilds the segments. Idempotent: every segment is rewritten, so nothing
     /// a previous configuration set survives into this one.
-    ///
-    /// When only the selection moved, it slides there as it does under a click.
-    /// When the tabs themselves changed it cannot: the control animates its
-    /// selection and its frame, and nothing about its segments (measured on
-    /// macOS 27: a segment added, removed or resized lands in one frame, inside
-    /// an animation group or not).
     func configure(items: [Item], selectedIndex: Int?) {
-        let selectionOnly = items == self.items
         self.items = items
         segmentCount = items.count
         let font = NSFont.systemFont(ofSize: NSFont.systemFontSize(for: controlSize))
@@ -160,24 +153,9 @@ final class EditorTabBar: NSSegmentedControl, NSDraggingSource {
                 item.isPinned ? Self.pinnedWidth(for: item.title, font: font) : 0,
                 forSegment: index)
         }
-        select(selectedIndex ?? -1, animated: selectionOnly)
+        selectedSegment = selectedIndex ?? -1
         if let hovered = hoveredIndex, hovered >= items.count { hoveredIndex = nil }
         needsLayout = true
-    }
-
-    /// The one place the selection is set. Animated the way the control animates
-    /// it — an animation group around the change — unless Reduce Motion is on or
-    /// there is no window to animate in.
-    private func select(_ index: Int, animated: Bool) {
-        guard index != selectedSegment else { return }
-        guard animated, window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
-            selectedSegment = index
-            return
-        }
-        NSAnimationContext.runAnimationGroup { context in
-            context.allowsImplicitAnimation = true
-            selectedSegment = index
-        }
     }
 
     /// As wide as its title and pin, and no wider: a pinned tab is kept for
@@ -279,7 +257,7 @@ final class EditorTabBar: NSSegmentedControl, NSDraggingSource {
         pressedIndex = index
         pressLocation = point
         guard index != selectedSegment else { return }
-        select(index, animated: true)
+        selectedSegment = index
         segmentSelected()
     }
 

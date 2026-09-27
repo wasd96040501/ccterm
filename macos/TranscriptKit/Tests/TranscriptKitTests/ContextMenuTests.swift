@@ -6,13 +6,14 @@ import XCTest
 /// The right-click menu: what the transcript puts in it, what it does to the
 /// selection on the way, and how a host's items get in beside its own.
 ///
-/// Two halves, mounted differently on purpose. The first drives `BlockView`
-/// directly, because everything it asserts is one row's business and a table
-/// around it would only be scenery. The second mounts a real transcript, because
-/// the only thing left to check there is the *wiring* — that the host is asked
-/// about the row it clicked, and that its answer is what gets shown.
+/// Mounted in a real transcript throughout: the selection a right-click acts on is
+/// the transcript's, and so is the responder Copy is validated against. The
+/// host's half is checked twice — once on a row's view directly, where the only
+/// question is how its proposal composes with an answer, and once through the
+/// delegate, where the question is the *wiring*: that the host is asked about the
+/// row it clicked, and that its answer is what gets shown.
 ///
-/// `menu(for:)` is an ordinary method, so both halves are reachable without a
+/// `menu(for:)` is an ordinary method, so everything here is reachable without a
 /// pointer — the same reason `mouseMoved` is testable while a real hover is not.
 @MainActor
 final class ContextMenuTests: XCTestCase {
@@ -20,22 +21,18 @@ final class ContextMenuTests: XCTestCase {
     // MARK: - Harness
 
     private struct Mounted {
-        let window: NSWindow
+        let transcript: MountedTranscript
+        let host: MarkdownHost
         let cell: BlockView
         let block: MeasuredBlock
+        var window: NSWindow { transcript.window }
     }
 
-    private func mount(_ source: String, width: CGFloat = 400) -> Mounted {
-        let block = MarkdownBlockBuilder.make(source).measure(width)
-        let size = CGSize(width: width, height: block.size.height)
-        let window = TestWindow.make(contentSize: size)
-
-        let cell = BlockView()
-        cell.frame = NSRect(origin: .zero, size: size)
-        window.contentView?.addSubview(cell)
-        cell.configure(with: block)
-
-        return Mounted(window: window, cell: cell, block: block)
+    private func mount(_ source: String) throws -> Mounted {
+        let host = MarkdownHost(rows: [source])
+        let transcript = mountTranscript(host)
+        let cell = try XCTUnwrap(transcript.transcript.descendants(ofType: BlockView.self).first)
+        return Mounted(transcript: transcript, host: host, cell: cell, block: try XCTUnwrap(cell.block))
     }
 
     private func rightClick(_ mounted: Mounted, at point: CGPoint) -> NSMenu? {
@@ -52,12 +49,6 @@ final class ContextMenuTests: XCTestCase {
         }
     }
 
-    private func copiedText(_ mounted: Mounted) -> String? {
-        NSPasteboard.general.clearContents()
-        mounted.cell.copy(nil)
-        return NSPasteboard.general.string(forType: .string)
-    }
-
     /// The x of each of three equal words on one line, so a test can point at
     /// "the first word" without knowing where a glyph landed.
     private func word(_ nth: Int, in mounted: Mounted) throws -> CGPoint {
@@ -68,22 +59,20 @@ final class ContextMenuTests: XCTestCase {
     // MARK: - What the transcript puts in it
 
     func testTheMenuCarriesCopy() throws {
-        let mounted = mount("alpha beta gamma")
-        defer { mounted.window.close() }
+        let mounted = try mount("alpha beta gamma")
+        defer { mounted.transcript.teardown() }
 
         let menu = try XCTUnwrap(rightClick(mounted, at: try word(1, in: mounted)))
         let copy = try XCTUnwrap(menu.items.first)
-        XCTAssertEqual(copy.action, #selector(BlockView.copy(_:)))
+        XCTAssertEqual(copy.action, #selector(NSText.copy(_:)))
         // A `nil` target is not a detail — it is the whole dispatch mechanism.
-        // Pointed at the view directly, the item would bypass the responder
-        // chain and `validateMenuItem` with it.
+        // Pointed at a view directly, the item would bypass the responder chain
+        // and validation with it.
         XCTAssertNil(copy.target)
     }
 
     /// Stands in for whatever else in a window can hold focus — an input bar,
-    /// another row. A window with only the cell in it makes the cell its initial
-    /// first responder on `orderFront`, which would let the test below pass
-    /// without the production code doing anything.
+    /// another transcript.
     private final class FocusableView: NSView {
         override var acceptsFirstResponder: Bool { true }
     }
@@ -92,16 +81,16 @@ final class ContextMenuTests: XCTestCase {
     /// responder, so right-clicking a row nobody has clicked has to move focus
     /// first — otherwise Copy validates against whatever still held it.
     func testRightClickTakesTheFirstResponder() throws {
-        let mounted = mount("alpha beta gamma")
-        defer { mounted.window.close() }
+        let mounted = try mount("alpha beta gamma")
+        defer { mounted.transcript.teardown() }
 
         let elsewhere = FocusableView(frame: NSRect(x: 0, y: 0, width: 10, height: 10))
         mounted.window.contentView?.addSubview(elsewhere)
         mounted.window.makeFirstResponder(elsewhere)
-        XCTAssertTrue(mounted.window.firstResponder === elsewhere, "focus never left the cell")
+        XCTAssertTrue(mounted.window.firstResponder === elsewhere, "focus never left the transcript")
 
         _ = rightClick(mounted, at: try word(1, in: mounted))
-        XCTAssertTrue(mounted.window.firstResponder === mounted.cell)
+        XCTAssertTrue(mounted.transcript.canCopy, "Copy is not validated against the selection")
     }
 
     // MARK: - What it does to the selection
@@ -109,44 +98,70 @@ final class ContextMenuTests: XCTestCase {
     /// Without this, right-clicking prose would show a menu whose only item is
     /// greyed out. `NSTextView` and WebKit both take the word instead.
     func testRightClickWithNothingSelectedTakesTheWordUnderIt() throws {
-        let mounted = mount("alpha beta gamma")
-        defer { mounted.window.close() }
+        let mounted = try mount("alpha beta gamma")
+        defer { mounted.transcript.teardown() }
 
         _ = rightClick(mounted, at: try word(1, in: mounted))
-        XCTAssertEqual(copiedText(mounted), "beta")
+        XCTAssertEqual(mounted.transcript.copy(), "beta")
     }
 
     /// The click landed on what the reader had already selected, so that is what
     /// they are pointing at — narrowing it to one word would be the surprise.
     func testRightClickInsideASelectionKeepsIt() throws {
-        let mounted = mount("alpha beta gamma")
-        defer { mounted.window.close() }
+        let mounted = try mount("alpha beta gamma")
+        defer { mounted.transcript.teardown() }
 
         let line = try XCTUnwrap(mounted.block.fullRects().first)
         drag(mounted, from: CGPoint(x: -500, y: line.midY), to: CGPoint(x: 5_000, y: line.midY))
-        XCTAssertEqual(copiedText(mounted), "alpha beta gamma")
+        XCTAssertEqual(mounted.transcript.copy(), "alpha beta gamma")
 
         _ = rightClick(mounted, at: try word(1, in: mounted))
-        XCTAssertEqual(copiedText(mounted), "alpha beta gamma")
+        XCTAssertEqual(mounted.transcript.copy(), "alpha beta gamma")
+    }
+
+    /// And inside a selection that runs across rows, whichever row the click is in.
+    func testRightClickInsideASelectionAcrossRowsKeepsIt() throws {
+        let host = MarkdownHost(rows: ["alpha one", "beta two", "gamma three"])
+        let mounted = mountTranscript(host)
+        defer { mounted.teardown() }
+        let cells = mounted.transcript.descendants(ofType: BlockView.self)
+            .sorted { mounted.transcript.row(for: $0) < mounted.transcript.row(for: $1) }
+        XCTAssertEqual(cells.count, 3)
+
+        cells[0].mouseDown(with: CGPoint(x: -500, y: 4), .leftMouseDown, in: mounted.window)
+        cells[0].mouseDragged(
+            with: NSEvent.mouseEvent(
+                with: .leftMouseDragged, location: cells[2].convert(CGPoint(x: 5_000, y: 4), to: nil),
+                modifierFlags: [], timestamp: 0, windowNumber: mounted.window.windowNumber,
+                context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!)
+        let selected = mounted.copy()
+        XCTAssertEqual(selected, "alpha one\n\nbeta two\n\ngamma three")
+
+        _ = cells[1].menu(
+            for: NSEvent.mouseEvent(
+                with: .rightMouseDown, location: cells[1].convert(CGPoint(x: 4, y: 4), to: nil),
+                modifierFlags: [], timestamp: 0, windowNumber: mounted.window.windowNumber,
+                context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!)
+        XCTAssertEqual(mounted.copy(), selected)
     }
 
     func testRightClickOutsideASelectionMovesToTheWordUnderIt() throws {
-        let mounted = mount("alpha beta gamma")
-        defer { mounted.window.close() }
+        let mounted = try mount("alpha beta gamma")
+        defer { mounted.transcript.teardown() }
 
         // Double-click takes "alpha"; the right-click then lands two words away.
         mounted.cell.mouseDown(with: try word(0, in: mounted), .leftMouseDown, in: mounted.window, clicks: 2)
-        XCTAssertEqual(copiedText(mounted), "alpha")
+        XCTAssertEqual(mounted.transcript.copy(), "alpha")
 
         _ = rightClick(mounted, at: try word(2, in: mounted))
-        XCTAssertEqual(copiedText(mounted), "gamma")
+        XCTAssertEqual(mounted.transcript.copy(), "gamma")
     }
 
     // MARK: - How the host gets in
 
     func testWithNoHostWiredTheTranscriptsOwnMenuShows() throws {
-        let mounted = mount("alpha beta gamma")
-        defer { mounted.window.close() }
+        let mounted = try mount("alpha beta gamma")
+        defer { mounted.transcript.teardown() }
 
         let menu = try XCTUnwrap(rightClick(mounted, at: try word(1, in: mounted)))
         XCTAssertEqual(menu.items.count, 1)
@@ -156,11 +171,11 @@ final class ContextMenuTests: XCTestCase {
     /// what comes back is what shows — which is what lets the two sets compose
     /// rather than one replacing the other.
     func testTheHostsAnswerIsWhatShows() throws {
-        let mounted = mount("alpha beta gamma")
-        defer { mounted.window.close() }
+        let mounted = try mount("alpha beta gamma")
+        defer { mounted.transcript.teardown() }
 
         var proposed: [String] = []
-        mounted.cell.onContextMenu = { _, menu in
+        mounted.cell.onContextMenu = { _, menu, _ in
             proposed = menu.items.map(\.title)
             menu.addItem(NSMenuItem(title: "Quote", action: nil, keyEquivalent: ""))
             return menu
@@ -172,10 +187,10 @@ final class ContextMenuTests: XCTestCase {
     }
 
     func testTheHostCanSuppressTheMenuEntirely() throws {
-        let mounted = mount("alpha beta gamma")
-        defer { mounted.window.close() }
+        let mounted = try mount("alpha beta gamma")
+        defer { mounted.transcript.teardown() }
 
-        mounted.cell.onContextMenu = { _, _ in nil }
+        mounted.cell.onContextMenu = { _, _, _ in nil }
         XCTAssertNil(rightClick(mounted, at: try word(1, in: mounted)))
     }
 
@@ -208,7 +223,12 @@ final class ContextMenuTests: XCTestCase {
         }
     }
 
+    /// Hosts held here, because the transcript holds its data source weakly and
+    /// the harness above hands back only the mount.
+    private var hosts: [MarkdownHost] = []
+
     private func mountTranscript(_ host: MarkdownHost) -> MountedTranscript {
+        hosts.append(host)
         let mounted = MountedTranscript(size: NSSize(width: 400, height: 600))
         mounted.transcript.dataSource = host
         mounted.transcript.delegate = host

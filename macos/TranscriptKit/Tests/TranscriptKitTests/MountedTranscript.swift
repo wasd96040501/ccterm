@@ -112,6 +112,30 @@ final class MountedTranscript {
         scrollView.reflectScrolledClipView(clip)
     }
 
+    /// What Edit ▸ Copy puts on the pasteboard: the action sent up the responder
+    /// chain from the window's first responder, which is where a menu item with a
+    /// `nil` target starts. `NSApp.sendAction` would start from the *key* window,
+    /// and this one never is.
+    ///
+    /// Cleared first, because a copy with nothing selected writes nothing — without
+    /// the clear, "nothing was copied" and "the last copy is still there" read the
+    /// same.
+    func copy() -> String? {
+        NSPasteboard.general.clearContents()
+        window.firstResponder?.tryToPerform(#selector(NSText.copy(_:)), with: nil)
+        return NSPasteboard.general.string(forType: .string)
+    }
+
+    /// Whether Edit ▸ Copy would be enabled: the first responder that answers
+    /// `copy(_:)`, asked the way AppKit asks it.
+    var canCopy: Bool {
+        let item = NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        guard let responder = window.firstResponder, responder.responds(to: item.action) else {
+            return false
+        }
+        return (responder as? NSUserInterfaceValidations)?.validateUserInterfaceItem(item) ?? true
+    }
+
     func teardown() {
         window.orderOut(nil)
         window.contentView = nil

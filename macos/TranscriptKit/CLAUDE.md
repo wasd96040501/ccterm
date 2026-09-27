@@ -112,6 +112,21 @@ Extending it meant editing it. Three rules keep that from happening again:
   `.view` rows never reach the hook: a host-drawn row already has a view of the
   host's own, and AppKit finds a menu by asking the view under the pointer, so
   the hook exists precisely where that option does not.
+
+  **Selection** runs across rows and has no API at all — a host sees it only
+  through Copy. It is the transcript's (`TextSelection`, held by row identity
+  and renumbered by every mutation like the scroll anchor), and each `BlockView`
+  is handed its own part to draw, the way `NSTableView` sets `isSelected` on a
+  row view. The responder is the table, the document view, as an `NSTextView`
+  is: it takes the focus on a press, answers `copy:`, and drops the selection
+  when the focus moves on. A row reports presses and drags through `onSelect`, a
+  closure rather than the responder chain, and that is measured, not taste: a
+  drag that autoscrolls leaves the pressed view in the table's reuse pool, out
+  of the window, still receiving the drag, and the chain from there leads
+  nowhere (`SelectionTests.testADragKeepsSelectingAfterItsRowHasScrolledAway`
+  goes red without it). Nothing is selected, nothing is paid: binding a row
+  reads its part from four integers, and a drag repaints only the rows whose
+  part changed.
 - **Ordering contracts live in the API shape, not in prose.** `dataSource`
   deliberately does not refresh on assignment; the host has to call
   `reloadData()`, so "wire it up, then load" cannot be got wrong by accident.
@@ -795,7 +810,7 @@ content view is asked: `TranscriptFindHighlighting` is `NSTextFinderClient`'s
 
 **A hit is a range, and that is what makes the rest cheap.** The flat index space
 is a function of a row's content and no part of it depends on the width — the same
-invariant `BlockView`'s selection rests on. So a resize moves every highlight to
+invariant the selection rests on. So a resize moves every highlight to
 where those characters are now with nothing recomputed, and a hit survives
 insertions above it because it is filed under `TranscriptRow.ID` like everything
 else here.

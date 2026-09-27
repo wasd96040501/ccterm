@@ -1,23 +1,19 @@
 import AppKit
 
 /// The view a self-drawn row is served through: holds one measured block, plays
-/// what it paints, and owns the selection in it.
+/// what it paints, and draws the part of the selection that falls in it.
 ///
 /// It owns no layout — the block arrived already measured at the width the
-/// transcript committed to — and no styling. What it does own is the three things
-/// a block cannot: a place in the view hierarchy, the `dirtyRect` that lets the
-/// block skip what cannot be seen, and **state**.
+/// transcript committed to — and no styling. What it does own is the things a
+/// block cannot: a place in the view hierarchy, the `dirtyRect` that lets the
+/// block skip what cannot be seen, and the pointer's state — the hover, the press.
 ///
-/// That last one is the reason selection lives here rather than on the block. A
-/// measured block is a derived value: `heightOfRow` builds one, `viewForRow`
-/// builds another, and a width change throws them all away. State hung on
-/// something that gets rebuilt disappears with it. A view has identity and a
-/// lifetime, and is what AppKit puts `selectedRanges` on for the same reason.
-///
-/// **Selection here is one row's.** A drag that leaves this cell stops at its
-/// edge, and a selection in another row is another cell's business — each drops
-/// its own when it stops being the first responder, which is all the coordination
-/// there is.
+/// **The selection is not one of them.** It runs across rows, so it is the
+/// transcript's (`TextSelection`): this view reports the presses and drags that
+/// make one (`onSelect`) and is handed back its own part to draw
+/// (`selectedRange`), the way `NSTableView` sets `isSelected` on a row view. A
+/// view is recycled the moment its row scrolls away, and a selection spanning
+/// rows is always partly off screen — state kept here would go with it.
 ///
 /// `isFlipped` is true so that the y-down arithmetic every block is written in
 /// matches the context it draws into, rather than being un-flipped at each of
@@ -71,7 +67,31 @@ final class BlockView: NSView, TranscriptFindHighlighting {
     /// everyone.
     ///
     /// Same closure-not-delegate reasoning as the two above.
-    var onContextMenu: ((BlockView, NSMenu) -> NSMenu?)?
+    ///
+    /// The event goes over too, because what the menu acts on is decided on the
+    /// way: a right-click outside the selection takes the word under the pointer,
+    /// and the selection is the transcript's to change.
+    var onContextMenu: ((BlockView, NSMenu, NSEvent) -> NSMenu?)?
+
+    /// A press or a drag in this row, for the transcript to turn into a selection.
+    ///
+    /// The event rather than a range, because a drag leaves this row and what is
+    /// under the pointer then is only the transcript's to answer. And a closure
+    /// rather than `super` up the responder chain, which would otherwise be the
+    /// AppKit way to hand a mouse event on: a drag that autoscrolls can take this
+    /// view's row off screen and the view out of the table, still receiving the
+    /// drag, and the chain from a view the table has let go of leads nowhere.
+    var onSelect: ((NSEvent) -> Void)?
+
+    /// The part of the selection in this row, set by the transcript whenever it
+    /// changes and whenever this view is bound to a row. Positions in the block's
+    /// flat index space; `nil` when none of the row is selected.
+    var selectedRange: Range<Int>? {
+        didSet {
+            guard selectedRange != oldValue else { return }
+            invalidate()
+        }
+    }
 
     /// The link the pointer is on. Holds the whole link rather than its address
     /// so that a pointer sliding along one run is one report and one band, and so
@@ -122,11 +142,13 @@ final class BlockView: NSView, TranscriptFindHighlighting {
     /// from the row it was serving a moment ago, because the block is the
     /// entirety of its state.
     func configure(with block: MeasuredBlock) {
-        // A different document: the old endpoints indexed text that is no longer
-        // here. This is the recycling rule — a pooled cell must arrive as empty
-        // as a fresh one.
-        anchor = nil
-        focus = nil
+        // A different document: the old range indexed text that is no longer
+        // here, and a press on the old one's link must not open it on release.
+        // This is the recycling rule — a pooled cell must arrive as empty as a
+        // fresh one. What *this* row's part of the selection is, the transcript
+        // says next.
+        selectedRange = nil
+        pressedLink = nil
         // Same rule, and the band is the part of it that would be *visible* if it
         // were forgotten: a pooled cell arriving with a highlight over words the
         // previous document had. Taken away outright rather than faded, because
@@ -139,9 +161,9 @@ final class BlockView: NSView, TranscriptFindHighlighting {
     ///
     /// Separate from `configure` for one reason: it keeps the selection. The flat
     /// index space is a function of the document's content and no part of it
-    /// depends on the width — the invariant stated below — so the endpoints still
-    /// name the characters they named before, and dropping them would lose a
-    /// reader's selection every time the window edge moved.
+    /// depends on the width, so the range still names the characters it named
+    /// before, and dropping it would lose a reader's selection every time the
+    /// window edge moved.
     ///
     /// Marking is not optional here. A surface redraws only when told to, so a
     /// resize alone repaints nothing and the old lines would simply be stretched
@@ -434,7 +456,7 @@ final class BlockView: NSView, TranscriptFindHighlighting {
     /// arrives after the finger has left. The fade stays where it belongs, on the
     /// band's arrival and departure.
     private func updatePressedState() {
-        let pressed = pressedLink != nil && pressedLink == hovered && selection == nil
+        let pressed = pressedLink != nil && pressedLink == hovered && selectedRange == nil
         guard pressed != isPressed else { return }
         isPressed = pressed
 
@@ -595,74 +617,33 @@ final class BlockView: NSView, TranscriptFindHighlighting {
         invalidate()
     }
 
-    // MARK: - Selection
+    // MARK: - Pressing and dragging
     //
-    // The state is two indices and it lives **here**, not on the block. A
-    // measured block is a derived value: `heightOfRow` builds one, `viewForRow`
-    // builds another, and a width change throws them all away and rebuilds. State
-    // hung on something that gets rebuilt disappears without anyone noticing. A
-    // view, by contrast, has identity and a lifetime, receives the mouse events,
-    // and is what AppKit puts `selectedRanges` on for the same reason.
+    // What a press *selects* is the transcript's to decide (`onSelect`); what it
+    // means for a link under it is this view's, because the link, the band and the
+    // pointer are.
     //
-    // The indices survive a re-measure, which is why nothing has to be restored
-    // after one: the flat index space is a function of the document's content, and
-    // no part of it depends on the width the document was laid out at.
-
-    /// Where the drag started, and where it is now. Kept apart rather than as one
-    /// range because a drag runs in either direction and the anchor is the end
-    /// that does not move.
-    private var anchor: Int?
-    private var focus: Int?
+    // No `acceptsFirstResponder` here, deliberately: the responder that owns the
+    // selection, and copies it, is the transcript's table. Were this view to
+    // accept, the window would make it first responder on every click — pulling
+    // focus off the table, and with it the selection, before this press could
+    // start the next one.
 
     /// The link the current press started on, if it started on one.
     private var pressedLink: InlineLink?
 
-    private var selection: Range<Int>? {
-        guard let anchor, let focus, anchor != focus else { return nil }
-        return min(anchor, focus)..<max(anchor, focus)
-    }
-
-    override var acceptsFirstResponder: Bool { true }
-
-    /// Clears on losing focus, which is also how a selection in one row goes away
-    /// when the reader starts one in another: each cell drops its own when it
-    /// stops being the first responder. No coordinator, and nothing in this
-    /// package knows that two rows exist at once — `NSTextField` gets rid of its
-    /// selection the same way.
-    override func resignFirstResponder() -> Bool {
-        anchor = nil
-        focus = nil
-        invalidate()
-        return super.resignFirstResponder()
-    }
-
     override func mouseDown(with event: NSEvent) {
         guard let block else { return super.mouseDown(with: event) }
-        window?.makeFirstResponder(self)
 
         // Remembered, not acted on. A press on a link is only a click if it does
         // not become a drag and does not select anything — the same rule
         // `NSTextView` uses, and the reason a link's text is still selectable.
         pressedLink = block.link(at: convert(event.locationInWindow, from: nil))
 
-        let point = convert(event.locationInWindow, from: nil)
-        // Which unit a click means is the block's to answer — it owns the text
-        // the boundaries are in. All this does is pick the question.
-        //
-        // The **point** goes over for the two that take one, not the index below
-        // it. An index at a line boundary names two places and this side cannot
-        // tell them apart; the block can, and only while it still has the click.
-        let range: Range<Int>
-        switch event.clickCount {
-        case 2: range = block.wordRange(at: point)
-        case 3...: range = block.paragraphRange(at: point)
-        default:
-            let index = block.index(at: point)
-            range = index..<index
-        }
-        anchor = range.lowerBound
-        focus = range.upperBound
-        invalidate()
+        // The transcript picks the unit the click count means and hands this row
+        // its part back synchronously, so it is in `selectedRange` by the next
+        // line.
+        onSelect?(event)
         // After the selection is set, not before: whether this counts as a press
         // depends on it — a double-click takes a word, which is a selection, and
         // is therefore not a press on the link under it.
@@ -740,36 +721,26 @@ final class BlockView: NSView, TranscriptFindHighlighting {
             pressedLink = nil
             updatePressedState()
         }
-        // `selection` non-nil covers both endings that are not a click: a drag
-        // that moved, and a double-click that took a word. Neither should open
-        // anything.
-        guard let link = pressedLink, selection == nil else { return super.mouseUp(with: event) }
+        // A selected range covers both endings that are not a click: a drag that
+        // moved, and a double-click that took a word. Neither should open
+        // anything. A drag that moved on into the next row still leaves this one
+        // selected to its end, so it counts too.
+        guard let link = pressedLink, selectedRange == nil else {
+            return super.mouseUp(with: event)
+        }
 
         onLinkActivated?(self, link)
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let block, anchor != nil else { return super.mouseDragged(with: event) }
-        focus = block.index(at: convert(event.locationInWindow, from: nil))
+        guard onSelect != nil else { return super.mouseDragged(with: event) }
+        onSelect?(event)
         // The moment the press selects anything it stops being a click — the rule
         // `mouseUp` applies — so the tint goes back to the hover's while the
         // pointer is still down. `pressedLink` itself is left alone: a click that
         // wobbled a point between down and up selects nothing and must still open
         // its link.
         updatePressedState()
-        // Lets a drag continue past the edge of the viewport, which matters most
-        // on exactly the rows where selection is most wanted — a code block taller
-        // than the window.
-        autoscroll(with: event)
-        invalidate()
-    }
-
-    @objc func copy(_ sender: Any?) {
-        guard let block, let selection else { return }
-        let text = block.text(from: selection.lowerBound, to: selection.upperBound)
-        guard !text.isEmpty else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
     }
 
     // MARK: - The context menu
@@ -787,52 +758,26 @@ final class BlockView: NSView, TranscriptFindHighlighting {
     /// the menu had already been built, and everything below would be a click
     /// late.
     ///
-    /// Two things have to happen before the menu exists, and both are the reason
-    /// this is not a pure getter:
-    ///
-    /// 1. **Take first responder.** A menu item with a `nil` target dispatches
-    ///    through the responder chain from the *window's first responder* — not
-    ///    from the view the menu came from. Right-clicking a row nobody has
-    ///    clicked yet would otherwise validate Copy against whatever still held
-    ///    focus, and grey it out over a perfectly good selection.
-    ///
-    /// 2. **Select the word under the pointer**, unless the click landed inside
-    ///    a selection that already exists — in which case that selection is what
-    ///    the reader is pointing at and taking it away would be the surprise.
-    ///    `NSTextView` and WebKit both do exactly this, and the alternative is a
-    ///    menu whose only item is greyed out, which is a menu worth not showing.
-    ///
-    /// Containment is tested in the index space rather than geometrically. That
-    /// is `NSTextView`'s test too, and it is the right one here for a reason of
-    /// our own: a table's selection is a rectangle, so "between the endpoints"
-    /// and "inside the highlight" genuinely differ, and the endpoints are what
-    /// the copy would be taken from.
+    /// What the menu acts on is settled on the way, by the transcript
+    /// (`onContextMenu` carries the event for it): the word under the pointer is
+    /// selected unless the click landed inside the selection, and the selection's
+    /// responder takes the focus so Copy validates against it. The selection is
+    /// the transcript's, so both halves are too — see
+    /// `TranscriptView.selectForContextMenu(with:)`.
     override func menu(for event: NSEvent) -> NSMenu? {
-        window?.makeFirstResponder(self)
-
-        if let block {
-            let point = convert(event.locationInWindow, from: nil)
-            if selection?.contains(block.index(at: point)) != true {
-                let word = block.wordRange(at: point)
-                anchor = word.lowerBound
-                focus = word.upperBound
-                invalidate()
-            }
-        }
-
         let menu = NSMenu()
         // `nil` target on purpose: that is what sends it up the responder chain
-        // to this view's `copy(_:)`, and what routes validation back through
-        // `validateMenuItem`. A key equivalent is left off because a context
-        // menu conventionally carries none — the Edit menu is where ⌘C is
-        // advertised.
+        // from the first responder to the `copy(_:)` of the selection's owner,
+        // and what routes validation back through it. A key equivalent is left
+        // off because a context menu conventionally carries none — the Edit menu
+        // is where ⌘C is advertised.
         menu.addItem(
             NSMenuItem(
                 title: String(localized: "Copy", bundle: .module),
-                action: #selector(copy(_:)), keyEquivalent: ""))
+                action: #selector(NSText.copy(_:)), keyEquivalent: ""))
 
         guard let onContextMenu else { return menu }
-        return onContextMenu(self, menu)
+        return onContextMenu(self, menu, event)
     }
 
     /// Light ↔ dark flip, or the view joining a different appearance context.
@@ -874,7 +819,7 @@ final class BlockView: NSView, TranscriptFindHighlighting {
         items.removeAll(keepingCapacity: true)
         block.paint(at: .zero, dirty: dirtyRect, into: &items)
 
-        if let selection {
+        if let selection = selectedRange {
             // Indices in, geometry out — and the block that owns the index space
             // is the one that decides what lies between two points, which is how a
             // table hands back a rectangle here rather than everything in reading
@@ -985,16 +930,5 @@ private final class SurfaceLayer: CALayer {
         owner.effectiveAppearance.performAsCurrentDrawingAppearance {
             owner.paint(phases, in: ctx, dirty: ctx.boundingBoxOfClipPath)
         }
-    }
-}
-
-extension BlockView: NSMenuItemValidation {
-
-    /// Greys out Copy when there is nothing selected. ⌘C reaches this view
-    /// because it is the first responder while its selection exists, so the
-    /// standard menu item needs no wiring beyond the two methods.
-    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        guard menuItem.action == #selector(copy(_:)) else { return true }
-        return selection != nil
     }
 }

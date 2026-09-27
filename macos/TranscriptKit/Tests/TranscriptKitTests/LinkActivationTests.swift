@@ -136,9 +136,11 @@ final class LinkActivationTests: XCTestCase {
     // MARK: - Press, drag, release
 
     private struct Mounted {
-        let window: NSWindow
+        let transcript: MountedTranscript
+        let host: OneRowHost
         let cell: BlockView
         let block: MeasuredBlock
+        var window: NSWindow { transcript.window }
         var activated: [URL] { recorder.urls }
         var hovers: [URL?] { recorder.hovers }
         let recorder: Recorder
@@ -149,15 +151,34 @@ final class LinkActivationTests: XCTestCase {
         var hovers: [URL?] = []
     }
 
-    private func mount(_ source: String, width: CGFloat = 400) -> Mounted {
-        let block = MarkdownBlockBuilder.make(source).measure(width)
-        let size = CGSize(width: width, height: block.size.height)
-        let window = TestWindow.make(contentSize: size)
+    /// One markdown row, answered to a real transcript.
+    private final class OneRowHost: NSObject, TranscriptViewDataSource {
+        let row: TranscriptRow
 
-        let cell = BlockView()
-        cell.frame = NSRect(origin: .zero, size: size)
-        window.contentView?.addSubview(cell)
-        cell.configure(with: block)
+        init(_ source: String) {
+            row = TranscriptRow(id: UUID(), content: .markdown(source))
+        }
+
+        func numberOfRows(in transcriptView: TranscriptView) -> Int { 1 }
+
+        func transcriptView(_ transcriptView: TranscriptView, rowAt row: Int) -> TranscriptRow {
+            self.row
+        }
+    }
+
+    /// In a transcript rather than on its own, because whether a press was a click
+    /// turns on whether it selected anything — and the selection is the
+    /// transcript's.
+    private func mount(_ source: String, width: CGFloat = 400) -> Mounted {
+        let host = OneRowHost(source)
+        let transcript = MountedTranscript(size: NSSize(width: width, height: 400))
+        transcript.transcript.dataSource = host
+        transcript.settle()
+        transcript.transcript.reloadData()
+        transcript.settle()
+
+        let cell = transcript.transcript.descendants(ofType: BlockView.self)[0]
+        let block = cell.block!
 
         let recorder = Recorder()
         // What crosses is the run; the address is what this suite is about, so
@@ -165,7 +186,8 @@ final class LinkActivationTests: XCTestCase {
         cell.onLinkActivated = { _, link in link.url.map { recorder.urls.append($0) } }
         cell.onLinkHovered = { _, url, _ in recorder.hovers.append(url) }
 
-        return Mounted(window: window, cell: cell, block: block, recorder: recorder)
+        return Mounted(
+            transcript: transcript, host: host, cell: cell, block: block, recorder: recorder)
     }
 
     private func event(

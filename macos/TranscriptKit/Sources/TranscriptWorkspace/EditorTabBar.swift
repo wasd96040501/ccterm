@@ -22,10 +22,17 @@ protocol EditorTabBarDelegate: AnyObject {
         _ tabBar: EditorTabBar, moveTabAt index: Int, of source: EditorTabBar,
         to destination: Int
     ) -> Int?
+
+    /// What the tab at `index` shows once it has been pulled out of the bar: its
+    /// content as it is now, or `nil` to go on showing the tab. `NSTableView`'s
+    /// `dragImageForRows(with:tableColumns:event:offset:)`, asked of the party
+    /// that holds the content; the bar frames it.
+    func tabBar(_ tabBar: EditorTabBar, draggingImageForTabAt index: Int) -> NSImage?
 }
 
-/// An editor's row of tabs, the way Xcode's are: a capsule track with the
-/// selected tab raised out of it in glass, and tabs that move under the pointer.
+/// An editor's row of tabs: a capsule track with the selected tab raised out of
+/// it in glass, as Xcode's are, and tabs that light up and move under the
+/// pointer as Safari's do.
 ///
 /// **Built from system parts.** The track is `secondarySystemFill` and the
 /// selected tab is an `NSGlassEffectView` — measured against `NSSegmentedControl`
@@ -34,16 +41,20 @@ protocol EditorTabBarDelegate: AnyObject {
 /// drawn here is only where each tab goes. A segmented control cannot be the bar
 /// because its segments cannot move: Xcode's drag moves a tab.
 ///
-/// **A drag, as Xcode's goes** (measured frame by frame off Xcode's own bar):
+/// **A drag, as Safari's goes** (measured frame by frame off Xcode's bar and
+/// Safari's):
 ///
 /// - **Within the bar** the tab stays in it, under the pointer, and a neighbour
-///   whose middle it crosses slides into the place it left. Let go, it slides
-///   into its own. No drag session: the mouse events are enough, and a session's
-///   image would be a second copy of the tab.
+///   whose middle it crosses slides into the place it left. Pulled across the
+///   bar it gives, less the further it goes, so it stays on the track until the
+///   pull is meant. Let go, it slides into its own place. No drag session: the
+///   mouse events are enough, and a session's image would be a second copy of
+///   the tab.
 /// - **Out of the bar**, far enough above or below it, the tab leaves as a drag
-///   session carrying a small capsule of its title, and the tabs it left close up.
-/// - **Over a bar** — another editor's, or its own again — the tabs open a gap
-///   where it would drop, and it drops into the gap.
+///   session, looking as it did in the bar, and turns into a small picture of its
+///   content on the way; the tabs it left close up.
+/// - **Over a bar** — another editor's, or its own again — it is a tab again, the
+///   tabs open a gap where it would drop, and it drops into the gap.
 ///
 /// Only the drag moves anything. A tab added, closed or selected lands at once.
 ///
@@ -94,14 +105,16 @@ final class EditorTabBar: NSView, NSDraggingSource {
     /// keeps its source alive, so this does.
     private static var inFlight: EditorTabBar?
 
-    /// A tab's view and the two constraints that place it: where along the bar
-    /// it starts, and how wide it is. A slide animates the two constants, which
-    /// lays the tab out again on every frame — so its glass and its title follow
-    /// its width as it changes, instead of being carried at the final width.
+    /// A tab's view and the constraints that place it: where along the bar it
+    /// starts, how wide it is, and how far below the bar's top — which is only
+    /// ever not zero under a pull. A slide animates the constants, which lays the
+    /// tab out again on every frame — so its glass and its title follow its width
+    /// as it changes, instead of being carried at the final width.
     private struct Tab {
         let view: EditorTabView
         let leading: NSLayoutConstraint
         let width: NSLayoutConstraint
+        let top: NSLayoutConstraint
     }
 
     private var tabs: [ObjectIdentifier: Tab] = [:]
@@ -117,7 +130,11 @@ final class EditorTabBar: NSView, NSDraggingSource {
     private var pressLocation: NSPoint = .zero
     /// Where along the dragged tab the pointer holds it, and where the pointer is.
     private var grabOffset: CGFloat = 0
-    private var pointerX: CGFloat = 0
+    private var pointer: NSPoint = .zero
+
+    /// The content the dragged tab turns into once the session has carried it
+    /// off, until it has.
+    private var pendingThumbnail: NSImage?
 
     /// The size the tabs were last placed for.
     private var placedSize: NSSize?
@@ -209,11 +226,11 @@ final class EditorTabBar: NSView, NSDraggingSource {
         let tab = Tab(
             view: view,
             leading: view.leadingAnchor.constraint(equalTo: leadingAnchor, constant: frame.minX),
-            width: view.widthAnchor.constraint(equalToConstant: frame.width))
+            width: view.widthAnchor.constraint(equalToConstant: frame.width),
+            top: view.topAnchor.constraint(equalTo: topAnchor, constant: frame.minY))
         NSLayoutConstraint.activate([
-            tab.leading, tab.width,
-            view.topAnchor.constraint(equalTo: topAnchor),
-            view.bottomAnchor.constraint(equalTo: bottomAnchor),
+            tab.leading, tab.width, tab.top,
+            view.heightAnchor.constraint(equalTo: heightAnchor),
         ])
         tabs[id] = tab
     }
@@ -228,7 +245,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
         tab.view.removeFromSuperview()
         attach(
             tab.view, as: id,
-            at: NSRect(x: tab.leading.constant, y: 0, width: tab.width.constant, height: 0))
+            at: NSRect(x: tab.leading.constant, y: tab.top.constant, width: tab.width.constant, height: 0))
     }
 
     private func tab(at index: Int) -> Tab? {
@@ -280,6 +297,15 @@ final class EditorTabBar: NSView, NSDraggingSource {
         slots(for: shownIndices).filter { $0.midX < point.x }.count
     }
 
+    /// The place a tab dropped at `gap` would take: between the tabs either
+    /// side of the gap, or the track's end.
+    private func gapRect(at gap: Int) -> NSRect {
+        let rects = slots(for: shownIndices, gap: gap)
+        let minX = gap > 0 && gap <= rects.count ? rects[gap - 1].maxX : bounds.minX
+        let maxX = gap < rects.count ? rects[gap].minX : bounds.maxX
+        return NSRect(x: minX, y: bounds.minY, width: maxX - minX, height: bounds.height)
+    }
+
     /// As wide as its title and pin, and no wider: a pinned tab is kept for
     /// reaching, not for reading at length.
     private static func pinnedWidth(for title: String) -> CGFloat {
@@ -295,11 +321,22 @@ final class EditorTabBar: NSView, NSDraggingSource {
     }
 
     /// Where the tab in hand is: under the pointer, held where it was picked up,
-    /// and kept on the track.
+    /// and kept on the track — along it; across it, it gives to a pull less and
+    /// less the further it goes, so that leaving the bar is a pull that has to be
+    /// meant.
     private func heldFrame(in slot: NSRect) -> NSRect {
         var frame = slot
-        frame.origin.x = min(max(pointerX - grabOffset, bounds.minX), bounds.maxX - slot.width)
+        frame.origin.x = min(max(pointer.x - grabOffset, bounds.minX), bounds.maxX - slot.width)
+        frame.origin.y += Self.resistance(pointer.y - pressLocation.y, over: slot.height)
         return frame
+    }
+
+    /// How far a pull of `distance` moves what it pulls, against a resistance that
+    /// never lets it reach `limit`: `UIScrollView`'s rubber band, which has the
+    /// same job past the end of its content.
+    private static func resistance(_ distance: CGFloat, over limit: CGFloat) -> CGFloat {
+        let pulled = (1 - 1 / (abs(distance) * 0.55 / limit + 1)) * limit
+        return distance < 0 ? -pulled : pulled
     }
 
     /// Puts every tab where it goes now: at rest, bent by a drag. The tab in hand
@@ -332,6 +369,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
                 for (tab, frame) in slides {
                     tab.leading.animator().constant = frame.minX
                     tab.width.animator().constant = frame.width
+                    tab.top.animator().constant = frame.minY
                 }
             }
         }
@@ -341,6 +379,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
     private func place(_ tab: Tab, at frame: NSRect) {
         tab.leading.constant = frame.minX
         tab.width.constant = frame.width
+        tab.top.constant = frame.minY
     }
 
     /// The hovered tab lights up and shows its close button, Safari's way; no tab
@@ -443,7 +482,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
             beginDraggingSession(tabAt: dragged, with: event)
             return
         }
-        pointerX = point.x
+        pointer = point
         // Past every tab whose middle its edge has crossed: the leading edge for a
         // tab before it, the trailing edge for one after. Held on the track, it
         // can reach either end.
@@ -458,7 +497,8 @@ final class EditorTabBar: NSView, NSDraggingSource {
         placeTabs(animated: true)
     }
 
-    /// Let go within the bar: the tab slides into its place.
+    /// Let go within the bar: the tab slides into its place, and back up into
+    /// the track from a pull that did not take it out.
     override func mouseUp(with event: NSEvent) {
         pressedIndex = nil
         guard draggedID != nil, !isDraggedTabOut else { return }
@@ -475,15 +515,13 @@ final class EditorTabBar: NSView, NSDraggingSource {
 
     // MARK: - Dragging out of the bar
 
+    /// Pulled out, the tab leaves as it looks where it is, and turns into its
+    /// content on the way (`draggingSession(_:movedTo:)`).
     private func beginDraggingSession(tabAt index: Int, with event: NSEvent) {
-        let image = Self.dragImage(for: items[index])
-        let point = convert(event.locationInWindow, from: nil)
+        guard let glass = tab(at: index)?.view.frame.insetBy(dx: 2, dy: 2) else { return }
         let item = NSDraggingItem(pasteboardWriter: EditorTabDrag())
-        item.setDraggingFrame(
-            NSRect(
-                x: point.x - image.size.width / 2, y: point.y - image.size.height / 2,
-                width: image.size.width, height: image.size.height),
-            contents: image)
+        item.setDraggingFrame(glass, contents: Self.dragImage(for: items[index], size: glass.size))
+        pendingThumbnail = delegate?.tabBar(self, draggingImageForTabAt: index).map(Self.thumbnail(of:))
         dragWillBegin(tabAt: index)
         beginDraggingSession(with: [item], event: event, source: self)
     }
@@ -508,30 +546,74 @@ final class EditorTabBar: NSView, NSDraggingSource {
         placeTabs(animated: true)
     }
 
-    /// What follows the pointer out of the bar: the tab's title and image in a
-    /// small capsule, which is what Xcode's drag carries rather than the tab.
-    private static func dragImage(for item: Item) -> NSImage {
+    /// The tab as a drag carries it: a capsule of `size` with its image and title
+    /// in the middle — while it leaves the bar, and over a bar it could drop into.
+    private static func dragImage(for item: Item, size: NSSize) -> NSImage {
         let font = EditorTabView.font
-        let title = item.title as NSString
-        let titleSize = title.size(withAttributes: [.font: font])
         let icon = item.image.map { $0.withSymbolConfiguration(.init(paletteColors: [.labelColor])) ?? $0 }
-        let (height, padding, spacing, side): (CGFloat, CGFloat, CGFloat, CGFloat) = (26, 12, 5, 16)
-        let width = ceil(2 * padding + (icon == nil ? 0 : side + spacing) + titleSize.width)
-        return NSImage(size: NSSize(width: width, height: height), flipped: false) { rect in
-            let capsule = NSBezierPath(
-                roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: (height - 1) / 2, yRadius: (height - 1) / 2)
+        let (spacing, side): (CGFloat, CGFloat) = (4, 16)
+        return NSImage(size: size, flipped: false) { rect in
+            let radius = (rect.height - 1) / 2
+            let capsule = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: radius, yRadius: radius)
             NSColor.controlBackgroundColor.setFill()
             capsule.fill()
             NSColor.separatorColor.setStroke()
             capsule.stroke()
-            var x = padding
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineBreakMode = .byTruncatingTail
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: font, .foregroundColor: NSColor.labelColor, .paragraphStyle: paragraph,
+            ]
+            let title = item.title as NSString
+            let room = rect.width - 2 * rect.height - (icon == nil ? 0 : side + spacing)
+            let titleSize = title.size(withAttributes: attributes)
+            let titleWidth = min(ceil(titleSize.width), max(0, room))
+            var x = rect.midX - (titleWidth + (icon == nil ? 0 : side + spacing)) / 2
             if let icon {
-                icon.draw(in: NSRect(x: x, y: (height - side) / 2, width: side, height: side))
+                icon.draw(in: NSRect(x: x, y: rect.midY - side / 2, width: side, height: side))
                 x += side + spacing
             }
             title.draw(
-                at: NSPoint(x: x, y: (height - titleSize.height) / 2),
-                withAttributes: [.font: font, .foregroundColor: NSColor.labelColor])
+                in: NSRect(x: x, y: rect.midY - titleSize.height / 2, width: titleWidth, height: titleSize.height),
+                withAttributes: attributes)
+            return true
+        }
+    }
+
+    /// Content as Safari carries a page pulled out of its bar: small — 112 points
+    /// across, measured — its top, in a thin frame, over a soft shadow. The
+    /// shadow is drawn into the image, so the image is larger than the frame by
+    /// the room it needs.
+    private static func thumbnail(of content: NSImage) -> NSImage {
+        let width: CGFloat = 112
+        let aspect = content.size.width > 0 ? content.size.height / content.size.width : 0
+        let card = NSRect(x: 0, y: 0, width: width, height: round(width * min(max(aspect, 0.5), 0.75)))
+        let margin: CGFloat = 10
+        let size = NSSize(width: card.width + 2 * margin, height: card.height + 2 * margin)
+        return NSImage(size: size, flipped: false) { _ in
+            let frame = card.offsetBy(dx: margin, dy: margin)
+            let outline = NSBezierPath(roundedRect: frame, xRadius: 6, yRadius: 6)
+            NSGraphicsContext.saveGraphicsState()
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.25)
+            shadow.shadowBlurRadius = 8
+            shadow.shadowOffset = NSSize(width: 0, height: -2)
+            shadow.set()
+            NSColor.windowBackgroundColor.setFill()
+            outline.fill()
+            NSGraphicsContext.restoreGraphicsState()
+            NSGraphicsContext.saveGraphicsState()
+            outline.addClip()
+            // Filling the width, from the top down.
+            let scale = frame.width / max(content.size.width, 1)
+            let drawn = NSSize(width: frame.width, height: content.size.height * scale)
+            content.draw(
+                in: NSRect(x: frame.minX, y: frame.maxY - drawn.height, width: drawn.width, height: drawn.height))
+            NSGraphicsContext.restoreGraphicsState()
+            NSColor.separatorColor.setStroke()
+            let border = NSBezierPath(roundedRect: frame.insetBy(dx: 0.25, dy: 0.25), xRadius: 6, yRadius: 6)
+            border.lineWidth = 0.5
+            border.stroke()
             return true
         }
     }
@@ -544,16 +626,54 @@ final class EditorTabBar: NSView, NSDraggingSource {
         context == .withinApplication ? .move : []
     }
 
+    /// Once it is on its way, the tab turns into its content, under the pointer.
+    /// Changed through the session, so it is the source's image: a bar it passes
+    /// over turns it back into a tab, and AppKit restores this when it leaves.
+    func draggingSession(_ session: NSDraggingSession, movedTo screenPoint: NSPoint) {
+        guard let thumbnail = pendingThumbnail else { return }
+        pendingThumbnail = nil
+        session.enumerateDraggingItems(
+            options: [], for: nil, classes: [NSPasteboardItem.self], searchOptions: [:]
+        ) { item, _, _ in
+            let size = thumbnail.size
+            item.setDraggingFrame(
+                NSRect(
+                    x: screenPoint.x - size.width / 2, y: screenPoint.y - size.height / 2,
+                    width: size.width, height: size.height),
+                contents: thumbnail)
+        }
+    }
+
     func draggingSession(
         _ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation
     ) {
+        pendingThumbnail = nil
         dragDidEnd()
     }
 
     // MARK: NSDraggingDestination
 
+    /// A tab over the bar is a tab again, the size of the place it would take.
+    /// A destination's change to the image lasts while the drag is over it: AppKit
+    /// takes it off on the way out.
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        draggingUpdated(sender)
+        let operation = draggingUpdated(sender)
+        guard let source = sender.draggingSource as? EditorTabBar, let dragged = source.draggedIndex,
+            let gap = gapIndex
+        else { return operation }
+        let point = convert(sender.draggingLocation, from: nil)
+        let size = gapRect(at: gap).insetBy(dx: 2, dy: 2).size
+        let image = Self.dragImage(for: source.items[dragged], size: size)
+        sender.enumerateDraggingItems(
+            options: [], for: self, classes: [NSPasteboardItem.self], searchOptions: [:]
+        ) { item, _, _ in
+            item.setDraggingFrame(
+                NSRect(
+                    x: point.x - size.width / 2, y: point.y - size.height / 2,
+                    width: size.width, height: size.height),
+                contents: image)
+        }
+        return operation
     }
 
     /// A tab over the bar opens a gap where it would drop.

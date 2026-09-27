@@ -88,7 +88,9 @@ public final class EditorGroupViewController: NSViewController {
     }
 
     private func configureHierarchy() {
-        for subview in [tabBar, separator, tabs.view, emptyLabel] {
+        // The bar over the content: a tab pulled down out of it passes over what
+        // is under it.
+        for subview in [separator, tabs.view, emptyLabel, tabBar] {
             subview.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(subview)
         }
@@ -370,6 +372,20 @@ extension EditorGroupViewController: EditorTabBarDelegate {
 
     func tabBar(_ tabBar: EditorTabBar, menuForTabAt index: Int) -> NSMenu? {
         menu(forTabAt: index)
+    }
+
+    /// The tab's content as it is on screen, which only the selected tab's is —
+    /// and a tab being dragged was selected by the press that picked it up.
+    func tabBar(_ tabBar: EditorTabBar, draggingImageForTabAt index: Int) -> NSImage? {
+        guard tabViewItems.indices.contains(index), let viewController = tabViewItems[index].viewController,
+            viewController.isViewLoaded, viewController.view.window != nil
+        else { return nil }
+        let view = viewController.view
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        let image = NSImage(size: view.bounds.size)
+        image.addRepresentation(rep)
+        return image
     }
 
     func tabBar(

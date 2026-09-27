@@ -1232,17 +1232,29 @@ EditorAreaViewController      NSSplitViewController — the divider, which edito
   a tab's owner stops its stream or its load there, before the view controller
   leaves the tree.
 
-**Behaviour, Xcode's unless noted.** A new tab selects itself. Closing the selected
+**Behaviour, Xcode's unless noted.** An editor with one tab shows no bar,
+as Safari does not: a bar is for choosing between tabs. A new tab selects itself. Closing the selected
 tab selects the one after it. The last tab of the right editor closes that editor;
 the last tab of the only editor leaves it empty, never gone. Pinned tabs come first,
 as wide as their titles, with no close button, and survive Close Other Tabs; the
 first `numberOfPinnedTabs` items *are* the pinned ones — a count, not a flag per
-tab, because the invariant is the order. Along its bar a dragged tab stays in the
-bar under the pointer, and a neighbour whose middle its edge passes slides into the
-place it left, never across the pinned boundary; let go, it settles into its own.
-Dragged far enough above or below, it leaves as a drag session carrying a capsule
-of its title, and the tabs it left close up. Over a bar the tabs part where it
-would drop, and it drops into the gap; dropped on the other editor's content it
+tab, because the invariant is the order. The pointer is Safari's: a tab under it
+lights up in the next system fill down, and shows its close button — Safari's
+disc, on the centre of the tab's leading end — which sits in a halo under the
+pointer and, where Safari's does not change, deepens a step while pressed. Along
+its bar a dragged tab stays in the bar under the pointer, and a neighbour whose
+middle its edge passes slides into the place it left, never across the pinned
+boundary; let go, it settles into its own. Pulled across the bar, the tab gives
+on a rubber band (`UIScrollView`'s curve) and springs back if let go; pulled far
+enough, it leaves as a drag session, starts as the tab, and turns into a small
+picture of its content — the group's view, drawn by `cacheDisplay` and framed by
+the bar — while the tabs it left close up. Over a bar it turns back into a tab,
+the tabs part where it would drop, and it drops into the gap. Both changes of
+image go through the session's own `enumerateDraggingItems`, the source's on the
+first move and the destination's on entering, and AppKit takes a destination's
+change off when the drag leaves: nothing tracks which one is showing. What no test
+can reach is how either change animates — a real session cannot be started from
+one (§5), so that part is the demo's. Dropped on the other editor's content it
 goes to the end;
 dropped on the trailing half of its own editor's content it opens a new editor on
 the right (refused for an editor's only tab — that would move the same layout

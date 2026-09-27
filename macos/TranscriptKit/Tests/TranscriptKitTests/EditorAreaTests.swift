@@ -577,6 +577,60 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertEqual(try tabView(titled: "Tab 0", in: bar).frame, bar.rect(forTabAt: 0))
     }
 
+    /// Pulled across the bar, a tab gives, and less than the pointer moves — the
+    /// further, the less — so that it stays in the bar until the pull is meant;
+    /// let go, it goes back up into its place.
+    func testATabPulledAcrossTheBarGivesLessAndLessAndSpringsBack() async throws {
+        let mounted = mount(tabs: 3)
+        defer { mounted.window.close() }
+        let bar = mounted.area.activeGroup.tabBar
+        let start = center(of: bar, tab: 0)
+        let tab = try tabView(titled: "Tab 0", in: bar)
+        let rest = bar.rect(forTabAt: 0)
+
+        bar.mouseDown(with: mouse(.leftMouseDown, at: start, in: bar))
+        var given: [CGFloat] = []
+        for pull: CGFloat in [-12, 12, 24] {
+            let point = NSPoint(x: start.x, y: start.y + pull)
+            bar.mouseDragged(with: mouse(.leftMouseDragged, at: point, in: bar))
+            XCTAssertEqual(bar.draggedIndex, 0, "premise: the pull is a drag")
+            XCTAssertFalse(bar.isDraggedTabOut, "a pull of \(pull) took the tab out of the bar")
+            bar.layoutSubtreeIfNeeded()
+            let moved = tab.frame.minY - rest.minY
+            XCTAssertEqual(moved.sign, pull.sign, "a pull of \(pull) moved the tab the other way, or not at all")
+            XCTAssertGreaterThan(abs(moved), 0, "a pull of \(pull) did not move the tab")
+            XCTAssertLessThan(abs(moved), abs(pull) / 2, "a pull of \(pull) met no resistance")
+            given.append(abs(moved))
+        }
+        XCTAssertLessThan(given[2] - given[1], given[1], "a longer pull gave as much again")
+        XCTAssertEqual(tab.frame.minX, rest.minX, accuracy: 0.5, "a pull straight down moved the tab along")
+
+        bar.mouseUp(with: mouse(.leftMouseUp, at: NSPoint(x: start.x, y: start.y + 24), in: bar))
+        try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.5)
+        XCTAssertEqual(tab.frame, rest, "let go, the tab did not go back into its place")
+    }
+
+    /// A tab pulled out turns into its content: the group hands over the selected
+    /// tab's view as drawn, at its size, and nothing for a tab whose view is not
+    /// on screen.
+    func testAPulledOutTabIsDrawnAsItsContent() throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        let view = mounted.probes[1].view
+        XCTAssertEqual(group.selectedTabViewItemIndex, 1, "premise: the second tab is the one on screen")
+
+        let image = try XCTUnwrap(group.tabBar(group.tabBar, draggingImageForTabAt: 1), "no image")
+        XCTAssertEqual(image.size, view.bounds.size)
+        let rep = try XCTUnwrap(image.representations.first as? NSBitmapImageRep)
+        let drawn = (0..<rep.pixelsHigh).contains { y in
+            (0..<rep.pixelsWide).contains { (rep.colorAt(x: $0, y: y)?.alphaComponent ?? 0) > 0 }
+        }
+        XCTAssertTrue(drawn, "the image is blank")
+
+        XCTAssertNil(group.tabBar(group.tabBar, draggingImageForTabAt: 0), "a tab not on screen was drawn")
+    }
+
     func testADraggedTabStaysOutOfThePinnedTabs() throws {
         let mounted = mount(tabs: 3)
         defer { mounted.window.close() }

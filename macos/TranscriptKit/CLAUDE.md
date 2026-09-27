@@ -112,6 +112,29 @@ Extending it meant editing it. Three rules keep that from happening again:
   `.view` rows never reach the hook: a host-drawn row already has a view of the
   host's own, and AppKit finds a menu by asking the view under the pointer, so
   the hook exists precisely where that option does not.
+
+  **Selection** runs across rows and has no API at all — a host sees it only
+  through Copy. It is the transcript's (`TextSelection`, held by row identity
+  and renumbered by every mutation like the scroll anchor), and each `BlockView`
+  is handed its own part to draw, the way `NSTableView` sets `isSelected` on a
+  row view. The responder is the table, the document view, as an `NSTextView`
+  is: it takes the focus on a press, answers `copy:`, and drops the selection
+  when the focus moves on. A press on a row goes up the responder chain to it,
+  and the transcript tracks the gesture to the release in **a tracking loop**,
+  `NSTextView`'s shape: the focus depends on where the pointer is *and* where
+  the content is, so it is re-read on a drag, on a periodic tick that scrolls
+  under a pointer held past an edge, and on a scroll wheel.
+
+  That replaced drags dispatched to the pressed view, and the reason is worth
+  keeping. Dispatched drags only arrive while the hand moves, so autoscroll
+  stalled the moment it stopped and ran at the speed of the mouse rather than
+  of the pointer's distance past the edge, and a wheel moved the content with
+  nothing re-reading the focus. It also needed a closure to reach the
+  transcript, because the pressed view could be in the reuse pool by then —
+  a loop pulls its events, so no view has to outlive its row. Nothing is
+  selected, nothing is paid: binding a row reads its part from four integers,
+  and the loop walks the rows on screen only when the focus moved, repainting
+  those whose part changed.
 - **Ordering contracts live in the API shape, not in prose.** `dataSource`
   deliberately does not refresh on assignment; the host has to call
   `reloadData()`, so "wire it up, then load" cannot be got wrong by accident.
@@ -198,6 +221,26 @@ lands inside the pass that changed the width, so nothing is left for a second
 round to settle — a change that starts needing `passes: 2` has pushed work
 onto a later tick, which is a visible frame at the old geometry, not a test
 detail.
+
+**One pass is not a wait for AppKit's own later turns**, and CI is where that
+shows. Two cases, both measured there and not reproducible on a fast machine:
+
+- **The window server lists a window a turn or more after `orderFront`.** A press
+  that selects is tracked to its release inside `mouseDown`, so a test queues the
+  rest of the gesture (`MountedTranscript.press`), and a mouse event comes back out
+  of the application's queue *rebuilt from its global location* — against a
+  window the server does not list yet, from an origin of zero. 97 drags in 100
+  posted straight after `orderFront` arrived hundreds of points off; the selection
+  tests failed a different one each run. `TestWindow.make` returns once the window
+  is listed, and `press` asserts its gesture was used up, so a gesture left in the
+  queue fails where it was posted rather than in the next test to pull it.
+- **`viewDidAppear` arrives on a later turn than the one that put the view in the
+  window** — not from layout, not from display. `EditorAreaViewController` starts
+  following clicks and focus there, so `EditorAreaTests` waits for the selected
+  tab's appearance before clicking.
+
+The shape of both: when a test depends on something AppKit or the window server
+does *later*, wait for that thing, not for a pass that usually covers it.
 
 ### Capturing: `WindowCapture`
 
@@ -804,7 +847,7 @@ content view is asked: `TranscriptFindHighlighting` is `NSTextFinderClient`'s
 
 **A hit is a range, and that is what makes the rest cheap.** The flat index space
 is a function of a row's content and no part of it depends on the width — the same
-invariant `BlockView`'s selection rests on. So a resize moves every highlight to
+invariant the selection rests on. So a resize moves every highlight to
 where those characters are now with nothing recomputed, and a hit survives
 insertions above it because it is filed under `TranscriptRow.ID` like everything
 else here.

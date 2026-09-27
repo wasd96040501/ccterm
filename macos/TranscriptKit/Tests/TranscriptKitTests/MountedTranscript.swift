@@ -1,4 +1,5 @@
 import AppKit
+import XCTest
 
 @testable import TranscriptKit
 
@@ -110,6 +111,57 @@ final class MountedTranscript {
         let clip = scrollView.contentView
         clip.scroll(to: NSPoint(x: clip.bounds.minX, y: y))
         scrollView.reflectScrolledClipView(clip)
+    }
+
+    /// A press on `view`, and the rest of its gesture — `rest`, then a release —
+    /// queued first, the way the window server has them waiting behind the press.
+    ///
+    /// Queued rather than sent, because a press that selects is tracked to its
+    /// release inside `mouseDown`, by a loop that *pulls* the events after it. The
+    /// release is always there, so a test cannot leave a loop waiting.
+    ///
+    /// And the queue is the application's, not this window's, so a gesture that
+    /// was not tracked would stay in it and be pulled by the next test's press —
+    /// which then selects with another test's pointer. So the press asserts that
+    /// its gesture was used up, which is where such a failure has to be named.
+    func press(
+        _ view: NSView, with down: NSEvent, then rest: [NSEvent] = [],
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let up = NSEvent.mouseEvent(
+            with: .leftMouseUp, location: down.locationInWindow, modifierFlags: [],
+            timestamp: 0, windowNumber: window.windowNumber, context: nil,
+            eventNumber: 0, clickCount: down.clickCount, pressure: 0)!
+        for event in rest + [up] { NSApp.postEvent(event, atStart: false) }
+        view.mouseDown(with: down)
+        let left = NSApp.nextEvent(
+            matching: [.leftMouseDragged, .leftMouseUp, .periodic, .scrollWheel],
+            until: .distantPast, inMode: .default, dequeue: true)
+        XCTAssertNil(left, "the press was not tracked to its release", file: file, line: line)
+    }
+
+    /// What Edit ▸ Copy puts on the pasteboard: the action sent up the responder
+    /// chain from the window's first responder, which is where a menu item with a
+    /// `nil` target starts. `NSApp.sendAction` would start from the *key* window,
+    /// and this one never is.
+    ///
+    /// Cleared first, because a copy with nothing selected writes nothing — without
+    /// the clear, "nothing was copied" and "the last copy is still there" read the
+    /// same.
+    func copy() -> String? {
+        NSPasteboard.general.clearContents()
+        window.firstResponder?.tryToPerform(#selector(NSText.copy(_:)), with: nil)
+        return NSPasteboard.general.string(forType: .string)
+    }
+
+    /// Whether Edit ▸ Copy would be enabled: the first responder that answers
+    /// `copy(_:)`, asked the way AppKit asks it.
+    var canCopy: Bool {
+        let item = NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        guard let responder = window.firstResponder, responder.responds(to: item.action) else {
+            return false
+        }
+        return (responder as? NSUserInterfaceValidations)?.validateUserInterfaceItem(item) ?? true
     }
 
     func teardown() {

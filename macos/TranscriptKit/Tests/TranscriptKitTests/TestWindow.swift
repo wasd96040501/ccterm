@@ -1,4 +1,5 @@
 import AppKit
+import XCTest
 
 /// The one way a test here puts a view in a window: a real window the window
 /// server composites, which never takes the focus.
@@ -34,7 +35,35 @@ enum TestWindow {
         window.isReleasedWhenClosed = false
         park(window, contentSize: size)
         window.orderFront(nil)
+        waitUntilListed(window)
         return window
+    }
+
+    /// Returns once the window server lists `window`, which it does a turn or
+    /// more after `orderFront` — on CI, not yet on the line after it.
+    ///
+    /// Until then the window has no position outside this process, and that is
+    /// not only a question for a capture. A mouse event posted to the
+    /// application's queue comes back out of it rebuilt from its global location,
+    /// and against a window the server does not list it is worked out from an
+    /// origin of zero: measured on CI, 97 drags in 100 posted straight after
+    /// `orderFront` arrived hundreds of points from where they were posted, and
+    /// none of 100 posted after a run-loop turn did. A turn happens to be enough
+    /// there; the listing is what was missing, so it is what is waited for.
+    ///
+    /// Asked of the server each turn, because it posts nothing when it lists a
+    /// window. Occlusion is posted, but only reaches `.visible` while a display
+    /// is awake, and this has to hold on a locked machine too.
+    private static func waitUntilListed(_ window: NSWindow) {
+        let deadline = Date(timeIntervalSinceNow: 5)
+        while (CGWindowListCopyWindowInfo([.optionIncludingWindow], CGWindowID(window.windowNumber))
+            as? [[String: Any]])?.isEmpty ?? true
+        {
+            guard Date() < deadline else {
+                return XCTFail("the window server never listed the test window")
+            }
+            RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
+        }
     }
 
     /// Hangs the window off the main screen's bottom-left corner, one point

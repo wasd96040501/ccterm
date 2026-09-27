@@ -191,6 +191,16 @@ struct BlockStack: Block, @unchecked Sendable {
             return child.block.link(at: index - child.base).map { $0.lifted(by: child.base) }
         }
 
+        /// Every child's hits, lifted into this space — reading order, because
+        /// the children are already in it.
+        func ranges(of query: String) -> [Range<Int>] {
+            children.flatMap { child in
+                child.block.ranges(of: query).map {
+                    ($0.lowerBound + child.base)..<($0.upperBound + child.base)
+                }
+            }
+        }
+
         func wordRange(at point: CGPoint) -> Range<Int> {
             childRange(at: point) { $0.wordRange(at: $1) }
         }

@@ -160,6 +160,66 @@ struct TypesetText: @unchecked Sendable {
         return slice.string.filter { $0 != InlineSymbol.placeholder }
     }
 
+    // MARK: - Find
+
+    /// What counts as the same text. Folded three ways, which is what a reader
+    /// typing into a find bar means and what `NSTextView`'s own find does:
+    /// `Cafe` finds `café`, `ABC` finds `abc`, and a half-width `ｱ` finds `ア`.
+    ///
+    /// ICU underneath, which is the same engine Blink searches a page with — so
+    /// the cases nobody wants to write by hand (Turkish `i`, Greek final sigma,
+    /// composed against decomposed accents) are already right.
+    private static let findOptions: NSString.CompareOptions = [
+        .caseInsensitive, .diacriticInsensitive, .widthInsensitive,
+    ]
+
+    /// Every occurrence of `query`, as ranges in this text's index space.
+    ///
+    /// **Searches what is on screen, which is not the whole string.** A text broken
+    /// against a line limit keeps all of its characters in `attributed`, and a hit
+    /// among the ones that were cut cannot be shown: `rects(from:to:)` would hand
+    /// back a rectangle of zero width, because every index past the ellipsis
+    /// reports the same pen position, so the hit would be counted, navigated to,
+    /// and invisible on arrival.
+    ///
+    /// The bound is therefore the last line — **excluding that line itself when it
+    /// is the truncated one.** Core Text builds a truncated line over the entire
+    /// remainder and then cuts it without reporting where, so its `range` covers
+    /// text that is not on screen (`ShapedText.typeset(width:limit:)` says so, and
+    /// leaves selection deliberately reaching into it: for a message the reader
+    /// typed, "copy what I sent" is the right answer). A find cannot take the same
+    /// liberty, because a selection there is one the reader dragged and a hit there
+    /// is one nobody can see. Losing the visible part of that one line is the price
+    /// of not being able to ask where the ellipsis fell.
+    ///
+    /// Matches do not overlap — a search for `aa` finds one hit in `aaa`, where
+    /// the next search resumes past the one it just took. That is `NSTextView`'s
+    /// behaviour and every browser's.
+    func ranges(of query: String) -> [Range<Int>] {
+        guard !query.isEmpty, let last = lines.last else { return [] }
+
+        let string = attributed.string as NSString
+        let visible = isTruncated ? last.range.location : NSMaxRange(last.range)
+        let end = min(visible, string.length)
+        guard end > 0 else { return [] }
+
+        var found: [Range<Int>] = []
+        var searched = NSRange(location: 0, length: end)
+
+        while searched.length > 0 {
+            let match = string.range(of: query, options: Self.findOptions, range: searched)
+            guard match.location != NSNotFound else { break }
+            found.append(match.lowerBound..<match.upperBound)
+            // At least one forward, never only `NSMaxRange`: folding can reduce a
+            // query to nothing — a lone combining accent under
+            // `.diacriticInsensitive` — and an empty match at a fixed location
+            // would leave this loop with nowhere to go.
+            let next = max(NSMaxRange(match), match.location + 1)
+            searched = NSRange(location: next, length: max(0, end - next))
+        }
+        return found
+    }
+
     /// The link covering `index`, or `nil`.
     ///
     /// A **pure attribute lookup**. Whether the point that produced this index was

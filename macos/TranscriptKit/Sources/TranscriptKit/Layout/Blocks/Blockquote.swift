@@ -83,6 +83,8 @@ struct Blockquote: Block, @unchecked Sendable {
         // that take a point still take the indent, because that half is geometry.
         func link(at index: Int) -> InlineLink? { content.link(at: index) }
 
+        func ranges(of query: String) -> [Range<Int>] { content.ranges(of: query) }
+
         func wordRange(at point: CGPoint) -> Range<Int> {
             content.wordRange(at: CGPoint(x: point.x - indent, y: point.y))
         }

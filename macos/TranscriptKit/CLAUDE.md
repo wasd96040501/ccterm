@@ -318,7 +318,7 @@ so ignoring the cap for one row and re-measuring is a few lines — and it is a 
 one: a five-hundred-line paste unfolds under the reader, and collapsing it again
 means scrolling back to find the affordance. One press, one navigation. The rest
 of a long message belongs on a surface of its own, and nothing in this repository
-builds that surface yet — §7 records what was learned by building one and taking
+builds that surface yet — §8 records what was learned by building one and taking
 it out again.
 
 **Streaming is on the panel because none of it is assertable.** A test can prove
@@ -375,17 +375,37 @@ rows of real markdown, five hundred to a batch: **12.47 s of main thread, worst
 batch 665 ms.** Forty dropped frames, twenty times over. The window cannot be
 scrolled or resized throughout.
 
-**What `NSTableView` actually asks for, since the answer here was wrong for a
-while.** It does *not* need every row's height. It measures a working set — a few
-hundred rows — and extrapolates its scroll range from that sample, refining as
-the reader moves. Measured, on ten thousand rows: a `reloadData` asked 305 times;
-with the first 400 rows short and the rest long, the published document height
-came out **four times too small** until scrolling to the tail forced the real
-numbers out. So the table is already doing estimate-then-refine internally, which
-is why adding a second layer of it here would buy nothing (see below), and why a
-ten-thousand-row load asks for roughly four thousand heights rather than ten
-thousand. The corollary is that `prepareRows` **over-measures by about 2.5×** —
-worth knowing, not worth fixing, since background CPU is what is being spent.
+**What `NSTableView` actually asks for, and it depends on how the rows arrived.**
+Measured on rows of real markdown, counting the distinct rows the data source was
+asked about:
+
+| how the transcript was loaded | rows that end up measured |
+|---|---|
+| `reloadData()` | **all of them** — 50, 500, 2 000 and 10 000 rows each came out at 100% |
+| `insertRows(at:warming:)` | all of them, by construction: a prepared batch is merged whole |
+| `insertRows(at:)`, 500 to a batch | **60%** at 500 rows, **22%** at 10 000 — and it does not catch up, through neither further layout passes nor a scroll to the tail |
+
+With `usesAutomaticRowHeights` off the table has to publish a document height, and
+a `reloadData` gets there by asking about every row. An *insert* into a table that
+already has one does not — it asks about a working set and extrapolates, which is
+the third row above, and why with the first 400 rows short and the rest long the
+published height came out **four times too small** until scrolling to the tail
+forced the real numbers out.
+
+An earlier version of this paragraph said the table never needs every height, and
+that a ten-thousand-row `reloadData` asked 305 times. It does need them on that
+path, and where 305 came from the note did not record. §8's "`heightOfRow` is asked
+of every row at reload" was the accurate half, and the two sat here contradicting
+each other until someone measured. **A number here with nothing to reproduce it is
+a number to re-measure** — the same lesson as the one further down about an
+unexplained cost attributed to the framework.
+
+Two claims downstream turn on which path a host takes rather than on one number, so
+read them that way: `prepareRows` **over-measures** against a plain batched insert
+(ten thousand prepared against the ~2 200 that path asks for) and not at all
+against `reloadData`; and `RowCache.entries(measuredAtWidthOtherThan:)`'s note that
+a long transcript leaves most of itself unmeasured describes the batched-insert
+path, where after a `reloadData` a width change invalidates the lot.
 
 So `prepareRows(_:)` + `insertRows(at:warming:)` measure the batch off the main
 actor first and hand the answers over, leaving the insert a cache merge. Same
@@ -612,7 +632,171 @@ the same apparatus buys nothing here. Should a genuinely unbounded source turn
 up, adding visible-range observation back is pure addition — don't add it
 before then (§3).
 
-## 7. The other side of the seam: `TranscriptMedia`
+## 7. Finding text is the package's, and the find bar is not
+
+`find(_:)` / `findNext()` / `findPrevious()` / `endFind()`, a count reported
+through `transcriptView(_:didUpdateFindMatches:isComplete:)`, and — for the rows a
+host draws — one delegate question and one protocol. That split is §4's, drawn
+where the knowledge is — the same line the hover band is drawn along, and for the
+same reason.
+
+**Why the search is on this side.** A host holds the markdown source, so it looks
+like the party that can search. It is not: `**bold**` has no `bold` in it to match
+against, a link's address is text no reader sees, and a hit expressed as an offset
+into the source names nothing the transcript can highlight. What a hit *is* is a
+range in a row's flat index space, and that space exists only once the row has been
+built. So the search runs where the trees are.
+
+**Why the find bar is not.** What a reader is told — the wording, whether a
+still-climbing total is qualified, where the field sits, what ⌘G is bound to — is
+product, and the demo's `ControlPanelView` is one answer to it rather than this
+package's. What crosses is the count, because it is the only part a host renders.
+Not the hits: a position in one is an index into a tree the host has never seen,
+and there is nothing to do with one but hand it straight back.
+
+**`NSTextFinder` was the obvious parity move (§1) and was not taken.** It would
+bring the find bar, ⌘F/⌘G/⌘E and the match counter for free, and
+`NSTextFinderClient` is even shaped for discontiguous content —
+`string(at:effectiveRange:endsWithSearchBoundary:)` is "my content is a sequence of
+separately-addressable strings", and that boundary flag is this package's
+"a match never spans two blocks". Three costs sank it, and they are the reasons to
+re-read before anyone proposes it again:
+
+- Its index space is **one global character offset across the whole content**, so
+  it needs a prefix sum over row lengths and a (row, local index) ↔ global map,
+  rebuilt on every insertion. That is precisely the positional bookkeeping keying
+  `RowCache` on identity deleted, arriving back under a different name.
+- `string(at:)` is a **synchronous main-thread pull**, and a row nothing has
+  measured has no string until something parses it. There is no "not yet, ask
+  again" in that protocol, so the freeze §6 spent its whole length removing comes
+  back through it.
+- `drawCharactersInRange:forContentView:` assumes a client that can draw an
+  arbitrary range on demand, which fits `NSTextView`'s layout manager and not a
+  table of recycled rows.
+
+So the vocabulary is taken and the machinery is not, which is §2's standing shape.
+
+**A hit is a range, and that is what makes the rest cheap.** The flat index space
+is a function of a row's content and no part of it depends on the width — the same
+invariant `BlockView`'s selection rests on. So a resize moves every highlight to
+where those characters are now with nothing recomputed, and a hit survives
+insertions above it because it is filed under `TranscriptRow.ID` like everything
+else here.
+
+One consequence is worth stating outright because it looks like a bug: **a find
+reads a document's `RowCache` entry on content alone, ignoring the width.** An
+entry the cache would refuse to draw — measured before a resize, or still waiting
+for its correction — answers a search exactly as well as a fresh one.
+`cachedMeasured(for:width:)` with a `nil` width is that read, and it is the only one
+in the store that skips the width check. A capped user message is the exception
+that passes a width, for the reason two paragraphs down.
+
+**Reading order, not outward from the viewport**, which is the opposite of what
+`staleRowsOutwardFromViewport(at:)` chose. The two are racing different things: a
+width correction has a *window* the reader can meet, so it starts where they are
+looking; a find has an *ordinal*, and "4 of 51" only means anything if the fourth
+hit is the fourth from the top, so hits arriving out of order would renumber
+themselves under the reader as the walk filled in.
+
+**The ordinal is a cache, not a counter.** It was a counter once — "the hits filed
+so far are the hits before this one" — and that is true only of a transcript
+nobody touches during the walk. A removal above the current hit left it one too
+high ("3 of 2", and a ⌘G that stood still); a prepend mid-walk re-searched the rows
+it pushed forward and counted them twice. So the selection is held by *where* it is
+— a row identity and a range — and the number is worked out on demand by walking to
+it, cleared by anything that can change what comes before it.
+
+**The transcript can change under every `await`, and the walk is written for
+that.** Its cursor lives on the find rather than in the loop, and every mutation
+renumbers it the way it renumbers the scroll anchor. Rows inserted behind it pull
+it back so they are searched; a slice out on the pool that a mutation renumbered is
+dropped and taken again rather than filed against rows that have moved. Rows
+`reloadRows(at:)` announces are searched again on the spot — the table is measuring
+them anyway — so a streaming answer is found as it streams, and a rewritten one
+loses the hits its old text had. Each row's hits are filed with the content they
+were found in, and a row is only ever drawn with hits found in what it holds now.
+`reloadData()`, after which any row may hold anything, walks the whole find again in
+place: results stay up until replaced, the reader keeps their hit if it survived,
+and nothing scrolls.
+
+**Where the reader lands is a separate question from what order the walk runs
+in**, and conflating the two was the first thing the demo caught. Selecting the
+first hit the walk meets is one line and looks principled next to the paragraph
+above; used once, it is obviously wrong — search for a word on the screen in front
+of you and the transcript scrolls to the top of the history to show you a different
+one. So the hit that selects itself is the first one **at or after the first
+visible row**, and a query whose every hit is above the reader wraps to the first
+when the walk finishes. A hit already wholly on screen is selected without the
+transcript moving; one that is not is centred — **the hit, not its row**, which
+is several screens tall when it is a long answer, so bringing the row's nearest
+edge into view can leave the match a page away. The hit's rectangle comes from the
+row's tree and the table's cell frame, not from a view, so a row nothing has tiled
+answers as well as one on screen.
+
+The cost of keeping reading order is that a reader deep in a long transcript waits
+for the walk to reach them before anything is selected. That is bounded by the
+scan, which after a `reloadData` is a cache read per row; if it ever stops being
+beneath noticing, the direction is to walk from the viewport and wrap — and to
+accept that the current hit's ordinal then shifts as the part above it fills in.
+
+**A tree built to search is used and dropped.** Filing it in `RowCache` looks like
+thrift and is a change of behaviour: the cache never evicts (§6), so one ⌘F over a
+transcript nobody has read would leave every row in it typeset and resident. A
+search should not quietly spend the memory of having read the whole thing. What
+outlives the tree is the range, and the one row a reader jumps to is re-measured on
+arrival.
+
+**A cut-short user message is searched only as far as it is shown.** `UserMessage`
+caps its lines, and `ShapedText.typeset(width:limit:)` builds the last one over the
+*whole* remainder before truncating it — so that line's range covers text that is
+not on screen, and selection is deliberately allowed to reach into it ("copy what I
+sent"). A find cannot take the same liberty: every index past the ellipsis reports
+the same pen position, so a hit there is a rectangle of zero width — counted,
+navigable, and invisible on arrival. The truncated line is therefore left out
+whole, losing the visible part of one line, because Core Text does not report where
+it cut. The better answer is to report such a hit and let the host open the rest
+through `didActivateMoreInRow:`; it needs a host that has built that surface, and
+§8 records what was learned by building one and taking it out again.
+
+How far a capped message is shown depends on how its lines broke, which is a
+function of the width — so this is the one row whose searchable text moves with a
+resize. The find is walked again once the width settles (mouse-up, as with the
+off-screen re-measure), and a user message's cached tree is read only at the width
+the walk is matching at.
+
+**A host's `.view` rows take part through two small seams, and only two.** Where the
+matches are is `transcriptView(_:findMatchesOf:inRow:)`, on the delegate next to
+`heightOfRow` and answered the same way — from the model, for any row, never by
+building a view; `NSTableViewDelegate`'s `typeSelectStringFor:` is the precedent.
+Showing them is `TranscriptFindHighlighting.setFindMatches(_:current:)`, adopted by
+the row's view, which the transcript calls after every `viewForRow` and whenever the
+find changes. The transcript's own `BlockView` adopts the same protocol, so there is
+one path that tells a row about a find, whoever drew it. The ranges are in the
+host's own index space; the transcript counts them into the total and the ordinals,
+compares them to know which is current, and hands them back — nothing else. A hit in
+a `.view` row is scrolled to by its row's nearest edge, since its geometry is the
+host's. What was not added: a protocol for the host to *search* through (it already
+has its model), a rectangle query for scrolling to a hit inside a tall host view, or
+any options type. Each is a pure addition if a host ever needs it.
+
+**What the demo is for here**, and it earned its keep in the first two minutes: it
+found the landing rule above, and a find bar left showing "1 of 15" beside an empty
+field. The second one is why `endFind()` reports rather than staying silent — the
+callback means *this is the find's state now*, and a state a host is only sometimes
+told about is one it has to track twice. Both were invisible to a suite that had
+already verified every hit, every rectangle and every ordinal.
+
+The rest is what no assertion has an opinion about: whether a band reads as a hit
+rather than as a selection, whether the current one is distinguishable at a glance,
+and whether both survive the light↔dark flip. That last one is not hypothetical:
+`NSColor.findHighlightColor` is AppKit's own answer and is right in light and wrong
+in dark — it is one bright yellow chosen to sit under *dark* glyphs, and a
+transcript in dark mode draws near-white ones. Rendered, the word inside the band
+all but disappeared. Dark takes a low-alpha warm overlay instead, the shape VS Code
+and Xcode use, which tints the background rather than replacing it and leaves the
+glyphs at the contrast they already had.
+
+## 8. The other side of the seam: `TranscriptMedia`
 
 A second target in this package, and a second product: the parts §4 keeps out of
 the renderer, written once so the demo and the app get the same ones. The

@@ -23,6 +23,9 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
     /// than by being stopped.
     var onStreamingChange: ((Bool) -> Void)?
 
+    /// How many matches a find has so far, and whether it has stopped looking.
+    var onFindChange: ((Int, Bool) -> Void)?
+
     // MARK: - Mutations
 
     /// Above the viewport, wherever the viewport is: the case where holding the
@@ -406,6 +409,18 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
     // That is the state worth having on screen while the *picture* preview is
     // being read, because the two would open the same overlay and only one of
     // them is being looked at.
+
+    // MARK: - Find
+
+    /// Straight through to the panel's label, which is the whole of a host's side
+    /// of a find: the transcript knows which characters matched and draws them, and
+    /// what a reader is *told* about it — the wording, whether a still-climbing
+    /// total is qualified, where the field lives — never crosses back.
+    func transcriptView(
+        _ transcriptView: TranscriptView, didUpdateFindMatches matches: Int, isComplete: Bool
+    ) {
+        onFindChange?(matches, isComplete)
+    }
 
     // MARK: - Links
 

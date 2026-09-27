@@ -22,7 +22,7 @@ import AppKit
 /// `isFlipped` is true so that the y-down arithmetic every block is written in
 /// matches the context it draws into, rather than being un-flipped at each of
 /// the several dozen places a rectangle crosses the boundary.
-final class BlockView: NSView {
+final class BlockView: NSView, TranscriptFindHighlighting {
 
     private(set) var block: MeasuredBlock?
 
@@ -132,6 +132,12 @@ final class BlockView: NSView {
         // previous document had. Taken away outright rather than faded, because
         // there is nothing left for a fade to be about.
         removeHoverBand()
+        // And the same rule again, one the transcript restores immediately after
+        // for a row a live find covers. Dropped here rather than left to the
+        // caller: a recycled cell showing the previous row's hits is the visible
+        // half of the same bug, and this is the one place that can be sure.
+        findRanges = []
+        currentFindRange = nil
         remeasured(to: block)
     }
 
@@ -178,6 +184,68 @@ final class BlockView: NSView {
     /// how it is achieved.
     private func invalidate() {
         surfaces.forEach { $0.setNeedsDisplay() }
+    }
+
+    // MARK: - Find
+
+    /// The hits in this row, and which one the reader is on.
+    ///
+    /// Not derived here, because they are not this view's to work out: what
+    /// matched is a property of a search over the whole transcript, and a row is
+    /// told. What the view does own is that they are *ranges* — so they survive a
+    /// re-measure untouched, for the same reason the selection does, and a window
+    /// dragged narrower moves every highlight to where those characters are now
+    /// without anything being recomputed.
+    private var findRanges: [Range<Int>] = []
+    private var currentFindRange: Range<Int>?
+
+    /// Takes the hits for this row — the transcript's own rows answer the same
+    /// protocol a host's `.view` rows do, so one path tells every row on screen
+    /// about a find. Idempotent, and cheap when nothing moved, which matters
+    /// because the transcript publishes a find in slices and calls this on every
+    /// visible row for each one: a repaint per slice would be a screenful of
+    /// surfaces redrawn a dozen times for a search that changed nothing on screen.
+    func setFindMatches(_ ranges: [Range<Int>], current: Range<Int>?) {
+        guard ranges != findRanges || current != currentFindRange else { return }
+        findRanges = ranges
+        currentFindRange = current
+        invalidate()
+    }
+
+    /// The current hit, and every other one — one hue at two weights, the way the
+    /// hover band and its pressed state are.
+    ///
+    /// **Dynamic, and that is the whole of what these two constants are about.**
+    /// `NSColor.findHighlightColor` is AppKit's own answer here — "the bubble that
+    /// shows inline search result values", the yellow Safari and Xcode put under
+    /// the match you are on — and it is right in light and wrong in dark, because
+    /// it does not follow the appearance: it is one bright yellow chosen to be read
+    /// against *dark* glyphs, and a transcript in dark mode draws near-white ones.
+    /// Rendered, the word inside the band all but disappeared.
+    ///
+    /// So dark takes the shape VS Code and Xcode take instead: a low-alpha warm
+    /// overlay that composites the background *up* toward amber rather than
+    /// replacing it, leaving the glyphs at the contrast they already had. Same
+    /// idea as the hover band one file over — tint what is there, do not paint over
+    /// it — and the reason the numbers differ between appearances at all is that
+    /// one band sits under dark text and the other under light.
+    ///
+    /// This resolves per draw rather than per build, which costs nothing here:
+    /// blocks store `NSColor`s and `viewDidChangeEffectiveAppearance` already
+    /// repaints, so a light↔dark flip moves these with everything else.
+    private static let currentFindColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor.systemYellow.withAlphaComponent(0.45)
+            : NSColor.findHighlightColor
+    }
+
+    /// The weight that reads as *also here* rather than as *this one*. Low enough
+    /// not to compete with the current hit for the eye, high enough to be countable
+    /// at a glance down a screenful.
+    private static let findColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor.systemYellow.withAlphaComponent(0.2)
+            : NSColor.findHighlightColor.withAlphaComponent(0.4)
     }
 
     // MARK: - The hover band
@@ -828,6 +896,18 @@ final class BlockView: NSView {
         // with a phase; the player puts it where that phase says.
         items.removeAll(keepingCapacity: true)
         block.paint(at: .zero, dirty: dirtyRect, into: &items)
+
+        // Before the selection, so that a reader who selects a word that is also a
+        // hit sees the selection — the two tie inside `.decoration`, where order of
+        // emission settles it, and the selection is the one they are doing right
+        // now. Nothing else about the pair needs deciding: matches never overlap
+        // each other, so within this loop there is no order to get wrong.
+        for range in findRanges {
+            let color = range == currentFindRange ? Self.currentFindColor : Self.findColor
+            for rect in block.rects(from: range.lowerBound, to: range.upperBound) {
+                items.append(.fill(rect, color, phase: .decoration))
+            }
+        }
 
         if let selection {
             // Indices in, geometry out — and the block that owns the index space

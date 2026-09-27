@@ -88,6 +88,18 @@ final class MountedTranscript {
         settle()
     }
 
+    /// Settles, then waits for the walk `find(_:)` starts, then settles again.
+    ///
+    /// The sibling of `settleWidthChange()` above, waiting on the same kind of
+    /// ordinary production state for the same reason: a find publishes across
+    /// several turns, and the only honest way to know they have all landed is to
+    /// wait for the thing that publishes them.
+    func settleFind() async {
+        settle()
+        await transcript.finding?.value
+        settle()
+    }
+
     /// Resizes the window's content area, the way dragging its edge would —
     /// minus live resize, which no synthesized event reproduces.
     func setContentWidth(_ width: CGFloat) {

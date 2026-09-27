@@ -221,6 +221,56 @@ public protocol TranscriptViewDelegate: AnyObject {
     func transcriptView(
         _ transcriptView: TranscriptView, menu: NSMenu, forRow row: Int
     ) -> NSMenu?
+
+    /// Where `query` occurs in a `.view` row. Mirrors
+    /// `NSTableViewDelegate.tableView(_:typeSelectStringFor:row:)` — the table's
+    /// own "what text is in this row" question, asked of the one party that can
+    /// answer it for a row it did not draw.
+    ///
+    /// Asked of every `.view` row as a find walks past it, on screen or not, and
+    /// again when `reloadRows(at:)` announces one changed — so answer **from the
+    /// model, the way `heightOfRow` does**, never by building the view. The ranges
+    /// are in whatever index space the row's view draws in; the transcript counts
+    /// them into the find's total and its ordinals, and hands them back to that
+    /// view through `TranscriptFindHighlighting` when the row is on screen. In
+    /// reading order and not overlapping, which is what makes "4 of 51" count the
+    /// way the reader reads.
+    ///
+    /// Match the way the transcript's own rows are matched, or one find will read
+    /// as two different searches: case, diacritics and width folded —
+    /// `String.CompareOptions` `[.caseInsensitive, .diacriticInsensitive,
+    /// .widthInsensitive]`.
+    ///
+    /// The default answers no matches, so a `.view` row is left out of a find
+    /// until its host says what is in it.
+    func transcriptView(
+        _ transcriptView: TranscriptView, findMatchesOf query: String, inRow row: Int
+    ) -> [Range<Int>]
+
+    /// The find's state, whenever it changes: more matches, a different current
+    /// match, or the walk finishing. Ending one reports zero.
+    ///
+    /// `TranscriptView.find(_:)` returns immediately and walks the transcript off
+    /// the main actor, so this arrives several times for one search: `matches`
+    /// climbs while `isComplete` is `false`, then once more with it `true`. A find
+    /// bar reads "4 of 51" from `matches` and
+    /// `TranscriptView.indexOfSelectedFindMatch`, and can show the total as
+    /// provisional until the last call — which is what a browser's counter is
+    /// doing while it settles.
+    ///
+    /// **It fires for a selection change too**, where `matches` has not moved: the
+    /// `4` and the `51` are read from two places and only one of them is an
+    /// argument, so a ⌘G that did not report would leave a find bar showing the
+    /// position the reader was at four presses ago.
+    ///
+    /// **Not a hit list.** Where the matches in the transcript's own rows *are*
+    /// stays inside it, because a position in one is an index into a tree the host
+    /// has never seen — there is nothing a host could do with one but hand it
+    /// straight back. What crosses is the count, which is the only part a host
+    /// renders.
+    func transcriptView(
+        _ transcriptView: TranscriptView, didUpdateFindMatches matches: Int, isComplete: Bool
+    )
 }
 
 extension TranscriptViewDelegate {
@@ -259,6 +309,16 @@ extension TranscriptViewDelegate {
 
     public func transcriptView(
         _ transcriptView: TranscriptView, didHover url: URL?, at point: NSPoint, inRow row: Int
+    ) {}
+
+    public func transcriptView(
+        _ transcriptView: TranscriptView, findMatchesOf query: String, inRow row: Int
+    ) -> [Range<Int>] {
+        []
+    }
+
+    public func transcriptView(
+        _ transcriptView: TranscriptView, didUpdateFindMatches matches: Int, isComplete: Bool
     ) {}
 
     /// The transcript's own menu, unchanged — so not implementing this leaves

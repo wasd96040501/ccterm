@@ -50,8 +50,11 @@ extension MeasuredTextBlock {
         text.characterIndex(at: CGPoint(x: point.x - textOrigin.x, y: point.y - textOrigin.y))
     }
 
-    /// No offset: `textOrigin` is geometry, and this side is index space.
+    /// No offset on either: `textOrigin` is geometry, and both of these are
+    /// index space.
     func link(at index: Int) -> InlineLink? { text.link(at: index) }
+
+    func ranges(of query: String) -> [Range<Int>] { text.ranges(of: query) }
 
     /// Both of these are geometry on the way in, so both take the offset — the
     /// mirror of `index(at:)` above, where the index-taking versions they

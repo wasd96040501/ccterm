@@ -269,6 +269,35 @@ final class RowCache {
         entries[id]?.content.source
     }
 
+    /// `row`'s tree if one is filed for its current content, **without building
+    /// one** — measured at `width`, or at any width at all when `width` is `nil`.
+    ///
+    /// The `nil` case is the one read here that does not check the width, and it
+    /// is not a relaxation of the rule above but a different question. Everything
+    /// else asking this store wants geometry, and geometry is what the width
+    /// decides. A find over a document wants the flat index space, which is a
+    /// function of the row's content and no part of which depends on the width the
+    /// row was laid out at — the invariant `BlockView`'s selection rests on, one
+    /// level up. So an entry this store would rightly refuse to *draw* — one
+    /// measured before a resize, one still waiting for its correction — answers
+    /// that search exactly as well as a fresh one.
+    ///
+    /// **Not every case can ask it that way.** A user message cut short at its
+    /// line cap is searched only as far as it is shown (`TypesetText.ranges(of:)`),
+    /// and how far that is depends on how its lines broke — so its searchable
+    /// extent is a function of the width after all, and the caller passes one.
+    ///
+    /// `nil` for a row nothing has measured, and that stays the caller's problem
+    /// rather than being solved here by measuring one: the caller is walking every
+    /// row in the transcript, and a parse per miss on the main thread is the freeze
+    /// `prepareRows(_:)` exists to have removed.
+    func cachedMeasured(for row: TranscriptRow, width: CGFloat?) -> MeasuredBlock? {
+        guard let entry = entries[row.id], entry.content == row.content,
+            width.map({ $0 == entry.measuredWidth }) ?? true
+        else { return nil }
+        return entry.measured
+    }
+
     // MARK: - Bounding
 
     /// Drops every entry whose row is no longer in the data source.

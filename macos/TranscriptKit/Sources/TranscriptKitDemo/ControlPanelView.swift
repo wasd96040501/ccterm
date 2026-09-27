@@ -16,7 +16,7 @@ final class ControlPanelView: NSVisualEffectView {
 
     /// Fixed rather than derived from the stack, so the host can inset the
     /// transcript by it before anything has laid out.
-    static let height: CGFloat = 200
+    static let height: CGFloat = 236
 
     var onScrollToRow: ((Int, TranscriptView.ScrollPosition) -> Void)?
     var onPrepend: (() -> Void)?
@@ -37,6 +37,11 @@ final class ControlPanelView: NSVisualEffectView {
     var onColdLoad: ((Int, Bool) -> Void)?
     var onCancelColdLoad: (() -> Void)?
 
+    /// The query as it is typed, empty when the field is cleared.
+    var onFind: ((String) -> Void)?
+    var onFindNext: (() -> Void)?
+    var onFindPrevious: (() -> Void)?
+
     private let rowField = NSTextField(string: "0")
     private let positions = NSSegmentedControl(
         labels: ["Top", "Center", "Bottom", "Nearest"], trackingMode: .selectOne,
@@ -56,6 +61,9 @@ final class ControlPanelView: NSVisualEffectView {
     private let coldLoadField = NSTextField(string: "10000")
     private let coldLoadLabel = NSTextField(labelWithString: "")
 
+    private let findField = NSSearchField()
+    private let findLabel = NSTextField(labelWithString: "")
+
     init() {
         super.init(frame: .zero)
         material = .hudWindow
@@ -72,7 +80,22 @@ final class ControlPanelView: NSVisualEffectView {
         positions.selectedSegment = 0
         widthSlider.target = self
         widthSlider.action = #selector(widthChanged)
-        for label in [statusLabel, coldLoadLabel] {
+
+        findField.placeholderString = "Find"
+        // Typing searches; Return moves on to the next hit. Both halves matter to
+        // what this row is for — the count has to be seen climbing under the
+        // keystrokes, and the current hit has to be seen moving without it.
+        //
+        // `sendsWholeSearchString` is what makes the action mean Return. Left at
+        // its default, the field also sends it on its own once typing pauses — so
+        // every pause would step to the next hit, half a second after the find
+        // had landed the reader on the first one.
+        findField.delegate = self
+        findField.sendsWholeSearchString = true
+        findField.target = self
+        findField.action = #selector(findFieldAction)
+
+        for label in [statusLabel, coldLoadLabel, findLabel] {
             label.textColor = .secondaryLabelColor
             // Monospaced digits, or the timings jitter sideways as they update
             // once a chunk — which reads as the panel being the thing that is
@@ -81,7 +104,7 @@ final class ControlPanelView: NSVisualEffectView {
         }
 
         let rows = NSStackView(views: [
-            scrollRow(), mutationRow(), streamRow(), coldLoadRow(), widthRow(),
+            scrollRow(), mutationRow(), streamRow(), coldLoadRow(), findRow(), widthRow(),
         ])
         rows.orientation = .vertical
         rows.alignment = .leading
@@ -114,6 +137,7 @@ final class ControlPanelView: NSVisualEffectView {
             rowField.widthAnchor.constraint(equalToConstant: 56),
             streamField.widthAnchor.constraint(equalToConstant: 56),
             coldLoadField.widthAnchor.constraint(equalToConstant: 72),
+            findField.widthAnchor.constraint(equalToConstant: 200),
         ])
     }
 
@@ -140,6 +164,23 @@ final class ControlPanelView: NSVisualEffectView {
     /// after every chunk — and one label showing both would flicker between them.
     func setColdLoadStatus(_ text: String) {
         coldLoadLabel.stringValue = text
+    }
+
+    /// Blanked whenever the field is, whatever the caller passed. The transcript
+    /// reports "0 matches, complete" when a find ends, which is honest and reads as
+    /// **no matches** — wrong beside an empty field, where the truth is that
+    /// nothing was asked. The field is the only thing that can tell those apart, so
+    /// it decides here rather than at the call site.
+    func setFindStatus(_ text: String) {
+        findLabel.stringValue = findField.stringValue.isEmpty ? "" : text
+    }
+
+    /// What ⌘F is wired to. The field is always on screen here, so this is a
+    /// convenience rather than the only way in — but reaching for ⌘F is what
+    /// anyone will do, and a find bar that ignores it reads as broken before
+    /// anything of the transcript's has been looked at.
+    @objc func focusFind() {
+        window?.makeFirstResponder(findField)
     }
 
     // MARK: - Rows
@@ -191,6 +232,25 @@ final class ControlPanelView: NSVisualEffectView {
         return stack
     }
 
+    /// What only the eye can settle about a find: whether a band reads as a hit
+    /// rather than as a selection, whether the current one is distinguishable from
+    /// the rest at a glance, and whether both survive the light↔dark flip — the
+    /// current hit's colour is the system's own in light and a tint of the same
+    /// hue in dark, which is the one pair of numbers here that no assertion has an
+    /// opinion about.
+    ///
+    /// The count beside it is the other half, and it is the reason the label says
+    /// "so far" until the walk finishes: a find over a cold-loaded ten thousand
+    /// rows publishes as it goes, and watching that number climb *while the window
+    /// still scrolls* is the whole claim about where the scanning runs.
+    private func findRow() -> NSStackView {
+        row([
+            NSTextField(labelWithString: "Find"), findField,
+            button("‹", #selector(findPrevious)), button("›", #selector(findNext)),
+            findLabel,
+        ])
+    }
+
     private func widthRow() -> NSStackView {
         let stack = row([
             NSTextField(labelWithString: "Max content width"), widthSlider, widthLabel, statusLabel,
@@ -240,9 +300,40 @@ final class ControlPanelView: NSVisualEffectView {
     @objc private func coldLoadSync() { onColdLoad?(coldLoadField.integerValue, false) }
     @objc private func cancelColdLoad() { onCancelColdLoad?() }
 
+    /// Not `private`, unlike every other action here: these two are also the Edit
+    /// menu's Find Next / Find Previous, and a menu item's target has to be able to
+    /// name them.
+    @objc func findNext() { onFindNext?() }
+    @objc func findPrevious() { onFindPrevious?() }
+
+    /// Return, or the field's clear button — which empties the field without
+    /// posting a text change, so this is the only place that learns of it.
+    @objc private func findFieldAction() {
+        if findField.stringValue.isEmpty {
+            onFind?("")
+        } else {
+            onFindNext?()
+        }
+    }
+
     @objc private func widthChanged() {
         let width = widthSlider.doubleValue.rounded()
         widthLabel.stringValue = "\(Int(width)) pt"
         onMaxContentWidth?(width)
+    }
+}
+
+extension ControlPanelView: NSSearchFieldDelegate {
+
+    /// Per keystroke, rather than through the search field's own action.
+    ///
+    /// `NSSearchField` sends its action on Return or after a pause, and both are
+    /// wrong for what this row is showing: a find that only ran on Return would
+    /// never let the count be watched climbing under the typing, which is the
+    /// behaviour the incremental walk exists to produce. Return is left meaning
+    /// "next", the way it does in every find bar.
+    func controlTextDidChange(_ notification: Notification) {
+        guard (notification.object as? NSSearchField) === findField else { return }
+        onFind?(findField.stringValue)
     }
 }

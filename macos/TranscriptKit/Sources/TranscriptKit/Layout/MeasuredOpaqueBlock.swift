@@ -15,6 +15,7 @@ extension MeasuredOpaqueBlock {
     func text(from: Int, to: Int) -> String { "" }
     func characterIndex(at point: CGPoint) -> Int? { nil }
     func link(at index: Int) -> InlineLink? { nil }
+    func ranges(of query: String) -> [Range<Int>] { [] }
     func wordRange(at point: CGPoint) -> Range<Int> { 0..<0 }
     func paragraphRange(at point: CGPoint) -> Range<Int> { 0..<0 }
 }

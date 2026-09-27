@@ -440,6 +440,22 @@ struct Table: Block, @unchecked Sendable {
                 .joined(separator: "\n")
         }
 
+        /// Cell by cell, in reading order — which is the order the bases run in,
+        /// so nothing has to be sorted afterwards.
+        ///
+        /// A match stops at a cell edge for the reason it stops at a block edge
+        /// everywhere else, and here the reason is sharper: the text either side
+        /// of a cell boundary is not adjacent on screen at all.
+        func ranges(of query: String) -> [Range<Int>] {
+            cells.flatMap { row in
+                row.flatMap { cell in
+                    cell.text.ranges(of: query).map {
+                        ($0.lowerBound + cell.base)..<($0.upperBound + cell.base)
+                    }
+                }
+            }
+        }
+
         /// Whichever cell the point is in answers in its own space. `cell(at:)`
         /// clamps to the nearest edge cell, so the containment check is what keeps
         /// a point outside the card from picking up its last cell's glyphs.

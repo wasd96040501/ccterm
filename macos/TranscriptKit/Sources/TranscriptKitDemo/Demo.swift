@@ -17,7 +17,6 @@ struct Demo {
     static func main() {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
-        app.mainMenu = makeMainMenu()
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720),
@@ -44,6 +43,9 @@ struct Demo {
 
         let panel = ControlPanelView()
         panel.translatesAutoresizingMaskIntoConstraints = false
+        // After the panel exists, because the Find items target it. Copy still
+        // targets nothing and walks the chain — see below.
+        app.mainMenu = makeMainMenu(find: panel)
 
         root.addSubview(transcript)
         root.addSubview(panel)
@@ -79,6 +81,22 @@ struct Demo {
         panel.onColdLoad = { rows, prepared in host.coldLoad(rows: rows, prepared: prepared) }
         panel.onCancelColdLoad = { host.cancelColdLoad() }
         panel.onMaxContentWidth = { transcript.maxContentWidth = $0 }
+        panel.onFind = { transcript.find($0) }
+        panel.onFindNext = { transcript.findNext() }
+        panel.onFindPrevious = { transcript.findPrevious() }
+        host.onFindChange = { matches, isComplete in
+            guard matches > 0 else {
+                return panel.setFindStatus(isComplete ? "no matches" : "")
+            }
+            // The ordinal is one-based for a reader and zero-based in the API, and
+            // the qualifier stays on until the walk finishes — a total that is
+            // still climbing should not be presented as a total. No selection
+            // reads as a dash rather than as "1": the walk has not reached the
+            // reader yet, or the hit they were on went away, and in neither case
+            // is any match the current one.
+            let position = transcript.indexOfSelectedFindMatch.map { "\($0 + 1)" } ?? "–"
+            panel.setFindStatus("\(position) of \(matches)\(isComplete ? "" : " so far")")
+        }
         host.onRowCountChange = { panel.setStatus("\($0) rows") }
         host.onStreamingChange = { panel.setStreaming($0) }
         host.onColdLoadProgress = { panel.setColdLoadStatus($0) }
@@ -120,7 +138,7 @@ struct Demo {
     /// package needs *no* wiring for this: an app that has a normal Edit menu
     /// (any nib-based app, and any SwiftUI shell) gets ⌘C for free.
     @MainActor
-    private static func makeMainMenu() -> NSMenu {
+    private static func makeMainMenu(find panel: ControlPanelView) -> NSMenu {
         let main = NSMenu()
 
         let appItem = NSMenuItem()
@@ -137,6 +155,24 @@ struct Demo {
         // to any particular object — which is the whole mechanism.
         editMenu.addItem(
             withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+
+        // These three do have a target, unlike Copy above, and the difference is
+        // which object knows the answer. Copy belongs to whichever row holds the
+        // selection, which only the responder chain can find; a find belongs to the
+        // one find bar in the window, which is right here. Routing them down the
+        // chain instead would mean the transcript growing a `performFindPanelAction`
+        // — AppKit's hook for a find bar the *view* owns — and this one is the
+        // host's, which is the arrangement §4 is about.
+        editMenu.addItem(.separator())
+        for (title, key, action) in [
+            ("Find…", "f", #selector(ControlPanelView.focusFind)),
+            ("Find Next", "g", #selector(ControlPanelView.findNext)),
+            ("Find Previous", "G", #selector(ControlPanelView.findPrevious)),
+        ] {
+            let item = editMenu.addItem(withTitle: title, action: action, keyEquivalent: key)
+            item.target = panel
+        }
+
         editItem.submenu = editMenu
         main.addItem(editItem)
 

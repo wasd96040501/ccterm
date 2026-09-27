@@ -209,6 +209,11 @@ enum ListBuilder {
             // of the item rather than off the front of it.
             func link(at index: Int) -> InlineLink? { content.link(at: index) }
 
+            /// A marker is furniture and holds no positions, so an ordered list's
+            /// numbers are not searchable text — the same rule that keeps them out
+            /// of a copy.
+            func ranges(of query: String) -> [Range<Int>] { content.ranges(of: query) }
+
             func wordRange(at point: CGPoint) -> Range<Int> {
                 content.wordRange(at: CGPoint(x: point.x - indent, y: point.y))
             }

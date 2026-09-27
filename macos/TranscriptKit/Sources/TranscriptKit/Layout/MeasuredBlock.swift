@@ -155,6 +155,31 @@ protocol MeasuredBlock: Sendable {
     /// offset and the lift are the whole of the work.
     func link(at index: Int) -> InlineLink?
 
+    /// Every occurrence of `query` in this block, in its own index space, in
+    /// reading order.
+    ///
+    /// The find half of the family `link(at:)` and `wordRange(at:)` belong to,
+    /// and it composes the same way: a container asks each child in the child's
+    /// own space and lifts what comes back by that child's base. Nothing here
+    /// touches geometry — a hit is a pair of indices, and turning one into
+    /// rectangles is `rects(from:to:)`, which already knows how.
+    ///
+    /// **A match never spans two blocks**, because no container joins its
+    /// children's text before searching it. That is not a limitation worked
+    /// around: two paragraphs are two paragraphs, and a query bridging the gap
+    /// between them matches nothing a reader can see as one run. Blink's
+    /// `FindBuffer` draws the line in the same place, at block boundaries.
+    ///
+    /// Deliberately **not** derived from `text(from:to:)`, which is the obvious
+    /// cheaper-looking route and is wrong: that string is not this index space.
+    /// `BlockStack` joins its children with a newline it reserves no position
+    /// for, and `TypesetText` drops the placeholder an inline symbol occupies —
+    /// so an offset into the joined text drifts from the index it names, one
+    /// character per boundary, and a hit late in a long document would highlight
+    /// something else entirely. Asking each block in its own space has nothing to
+    /// translate.
+    func ranges(of query: String) -> [Range<Int>]
+
     /// The paragraph under `point` — what a triple-click takes.
     ///
     /// A *paragraph*, not a visual line, so wrapping never splits one. In

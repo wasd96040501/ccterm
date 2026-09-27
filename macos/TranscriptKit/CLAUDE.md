@@ -157,6 +157,17 @@ Three rules, learned the hard way:
   and it belongs next to any assertion whose meaning depends on two inputs not
   being equivalent.
 
+**The mount's size is the test's, on every machine.** `NSWindow`'s initialiser
+puts a new window on a screen — and on one too small for it, shrinks it — so the
+harness sets the frame again after init, thirty thousand points off, and
+`constrainFrameRect(_:to:)` returns it unchanged so `orderFront` cannot pull it
+back. Until that, "off-screen" was only true of the comment: the window sat on the
+developer's display at alpha 0.01, and the first CI run — a 1024×768 runner — gave
+the scroll tests a viewport 78 points short. Anything else a test reads from the
+machine is the same kind of input: SF Symbol metrics snap to the main screen's
+pixel grid, so `InlineSymbolTests` checks its recorded numbers only on the 2x
+screen they were recorded on.
+
 `settle()` runs **one** pass on purpose. The transcript's width invalidation
 lands inside the pass that changed the width, so nothing is left for a second
 round to settle — a change that starts needing `passes: 2` has pushed work

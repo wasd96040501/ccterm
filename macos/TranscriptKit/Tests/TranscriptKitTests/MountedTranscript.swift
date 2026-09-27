@@ -27,11 +27,21 @@ final class MountedTranscript {
         // keeps `swift test` from putting anything in the Dock or taking focus.
         NSApplication.shared.setActivationPolicy(.prohibited)
 
-        window = NSWindow(
-            contentRect: NSRect(origin: NSPoint(x: -30_000, y: -30_000), size: size),
+        window = UnconstrainedWindow(
+            contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.titled, .resizable],
             backing: .buffered,
             defer: false)
+        // After init, because init is where AppKit puts a new window on a screen
+        // — and on a screen too small for it, shrinks it to fit. Measured on CI: a
+        // 1024×768 runner display handed the scroll tests a viewport 78 points
+        // shorter than they asked for, and every offset they asserted moved with
+        // it. Set here, and kept by `UnconstrainedWindow`, the size is the one
+        // asked for on any machine.
+        window.setFrame(
+            window.frameRect(
+                forContentRect: NSRect(origin: NSPoint(x: -30_000, y: -30_000), size: size)),
+            display: false)
         window.alphaValue = 0.01
 
         let root = NSView()
@@ -142,5 +152,18 @@ extension NSView {
             found.append(contentsOf: subview.descendants(ofType: type))
         }
         return found
+    }
+}
+
+/// A window AppKit does not move back onto a screen.
+///
+/// `orderFront` constrains a titled window's frame to the screen it lands on,
+/// which is right for a window someone will look at and wrong for one a test
+/// mounts: the size is the test's input. Returning the frame unchanged is the
+/// documented hook for exactly that.
+private final class UnconstrainedWindow: NSWindow {
+
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        frameRect
     }
 }

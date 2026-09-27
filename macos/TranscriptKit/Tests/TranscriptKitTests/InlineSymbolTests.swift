@@ -50,7 +50,17 @@ final class InlineSymbolTests: XCTestCase {
     // an `NSImage`. These are the check that the numbers are still the ones the
     // artwork publishes — the only place in the package that opens the image.
 
+    ///
+    /// **On a 2x screen only**, because that is where the numbers were read and
+    /// AppKit snaps a symbol's metrics to the main screen's pixel grid: on CI's 1x
+    /// display every one of them came back rounded to whole points — `16.5`
+    /// as `17`, `3.5` as `4` — and the drawing-context scale makes no difference.
+    /// The artwork has not changed there; the grid has.
     func testRecordedProportionsMatchTheArtwork() throws {
+        let scale = NSScreen.main?.backingScaleFactor ?? 0
+        guard scale == 2 else {
+            throw XCTSkip("symbol metrics are recorded at 2x; the main screen is \(scale)x")
+        }
         for design in [InlineSymbol.Design.link, .image, .more] {
             let image = try XCTUnwrap(
                 NSImage(systemSymbolName: design.name, accessibilityDescription: nil),
@@ -62,14 +72,21 @@ final class InlineSymbolTests: XCTestCase {
 
     /// The claim the whole placement rests on: a symbol's alignment box is the
     /// cap height of text set at the same size. Apple's, not ours.
+    ///
+    /// Within half a pixel of the main screen as well as the 2% the design
+    /// allows, because the box is snapped to that screen's grid (see above): at
+    /// 1x a 12-point link's box is 8, against a cap height of 8.46.
     func testAlignmentBoxTracksTheFontsCapHeight() throws {
+        let halfPixel = 0.5 / (NSScreen.main?.backingScaleFactor ?? 1)
         for size in [12.0, 14.0, 20.0] as [CGFloat] {
             let font = NSFont.systemFont(ofSize: size)
             let image = try XCTUnwrap(
                 NSImage(systemSymbolName: "link", accessibilityDescription: nil)?
                     .withSymbolConfiguration(
                         NSImage.SymbolConfiguration(pointSize: size, weight: .regular)))
-            XCTAssertEqual(image.alignmentRect.height, font.capHeight, accuracy: size * 0.02)
+            XCTAssertEqual(
+                image.alignmentRect.height, font.capHeight,
+                accuracy: max(size * 0.02, halfPixel))
         }
     }
 

@@ -99,8 +99,12 @@ enum WindowCapture {
     private static func frames(
         of window: NSWindow, until done: @escaping (CFTimeInterval, Int) -> Bool
     ) async {
+        // The screen's link, not the window's: a window's link follows the display
+        // it was on when made, and a harness window starts on none — measured, a
+        // window moved here from thirty thousand points away waited forever.
+        guard let screen = window.screen ?? NSScreen.main else { return }
         let ticker = FrameTicker(until: done)
-        let link = window.displayLink(target: ticker, selector: #selector(FrameTicker.tick))
+        let link = screen.displayLink(target: ticker, selector: #selector(FrameTicker.tick))
         await withCheckedContinuation { continuation in
             ticker.resume = continuation
             link.add(to: .main, forMode: .common)

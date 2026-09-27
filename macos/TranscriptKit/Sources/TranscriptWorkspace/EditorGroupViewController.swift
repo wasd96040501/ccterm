@@ -30,6 +30,11 @@ public final class EditorGroupViewController: NSViewController {
 
     private var itemObservations: [ObjectIdentifier: [NSKeyValueObservation]] = [:]
 
+    /// Where the content starts: under the tab bar, or at the top when there is
+    /// no bar to be under. One of the two is active at a time.
+    private lazy var contentBelowTabBar = tabs.view.topAnchor.constraint(equalTo: separator.bottomAnchor)
+    private lazy var contentAtTop = tabs.view.topAnchor.constraint(equalTo: view.topAnchor)
+
     private lazy var separator: NSBox = {
         let box = NSBox()
         box.boxType = .separator
@@ -102,7 +107,6 @@ public final class EditorGroupViewController: NSViewController {
             separator.topAnchor.constraint(equalTo: tabBar.bottomAnchor, constant: 6),
             tabs.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tabs.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tabs.view.topAnchor.constraint(equalTo: separator.bottomAnchor),
             tabs.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             emptyLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             emptyLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
@@ -240,10 +244,14 @@ public final class EditorGroupViewController: NSViewController {
                     toolTip: item.toolTip, isPinned: isTabPinned(at: index))
             },
             selectedIndex: tabViewItems.isEmpty ? nil : selectedTabViewItemIndex)
-        let empty = tabViewItems.isEmpty
-        tabBar.isHidden = empty
-        separator.isHidden = empty
-        emptyLabel.isHidden = !empty
+        // A bar is for choosing between tabs, so one tab gets none, as in Safari.
+        let showsTabBar = tabViewItems.count > 1
+        tabBar.isHidden = !showsTabBar
+        separator.isHidden = !showsTabBar
+        let (on, off) = showsTabBar ? (contentBelowTabBar, contentAtTop) : (contentAtTop, contentBelowTabBar)
+        off.isActive = false
+        on.isActive = true
+        emptyLabel.isHidden = !tabViewItems.isEmpty
     }
 
     // MARK: - The tab menu

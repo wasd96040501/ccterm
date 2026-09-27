@@ -232,6 +232,36 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertEqual(mounted.recorder.activated.last.map { $0 == nil }, true)
     }
 
+    /// A bar is for choosing between tabs: one tab shows none, and its content
+    /// takes the bar's place; a second tab brings the bar back above it.
+    func testATabBarShowsOnlyWithMoreThanOneTab() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        let content = try XCTUnwrap(mounted.probes[0].view.superview, "premise: the tab's view is mounted")
+
+        XCTAssertTrue(group.tabBar.isHidden, "one tab still shows a bar")
+        XCTAssertEqual(
+            content.convert(content.bounds, to: group.view).maxY, group.view.bounds.maxY, accuracy: 0.5,
+            "the content does not start at the top of the editor")
+
+        group.addTabViewItem(NSTabViewItem(viewController: ProbeViewController(title: "Tab 1")))
+        settle(mounted.window)
+
+        XCTAssertFalse(group.tabBar.isHidden)
+        let bar = group.tabBar.convert(group.tabBar.bounds, to: group.view)
+        XCTAssertLessThanOrEqual(
+            content.convert(content.bounds, to: group.view).maxY, bar.minY,
+            "the content runs under the bar")
+
+        group.removeTabViewItem(group.tabViewItems[1])
+        settle(mounted.window)
+
+        XCTAssertTrue(group.tabBar.isHidden)
+        XCTAssertEqual(
+            content.convert(content.bounds, to: group.view).maxY, group.view.bounds.maxY, accuracy: 0.5)
+    }
+
     // MARK: - Pinning
 
     func testPinningMovesTheTabToTheFrontAndKeepsTheSelection() throws {
@@ -595,7 +625,9 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertEqual(dragged.loads, 1)
     }
 
-    func testDroppingAnEditorsLastTabOnTheOtherClosesTheFirst() throws {
+    /// An editor's only tab has no bar to be dragged from, so this is the area's
+    /// own rule rather than a gesture: an editor a move emptied closes.
+    func testAnEditorAMoveEmptiesCloses() throws {
         let mounted = mount(tabs: 1)
         defer { mounted.window.close() }
         let left = mounted.area.activeGroup
@@ -604,11 +636,7 @@ final class EditorAreaTests: XCTestCase {
                 with: NSTabViewItem(viewController: ProbeViewController(title: "Right"))))
         settle(mounted.window)
 
-        left.tabBar.dragWillBegin(tabAt: 0)
-        let drop = StubDraggingInfo(
-            source: left.tabBar, at: center(of: right.tabBar, tab: 0), in: right.tabBar)
-        XCTAssertTrue(right.tabBar.performDragOperation(drop))
-        left.tabBar.dragDidEnd()
+        mounted.area.moveTab(at: 0, of: left, to: right, at: 1)
 
         XCTAssertEqual(mounted.area.groups.count, 1)
         XCTAssertIdentical(mounted.area.groups[0], right)

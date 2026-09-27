@@ -57,13 +57,13 @@ final class SelectionTests: XCTestCase {
             eventNumber: 0, clickCount: clicks, pressure: 1)!
     }
 
-    /// A press on `from` in `pressed`, dragged to `to` in `over` — delivered, as
-    /// the window delivers a drag, to the view the press landed on.
+    /// A press on `from` in `pressed`, dragged to `to` in `over`, then released.
     private func drag(
         _ pressed: NSView, from: CGPoint, to: CGPoint, over: NSView? = nil
     ) {
-        pressed.mouseDown(with: event(.leftMouseDown, at: from, in: pressed))
-        pressed.mouseDragged(with: event(.leftMouseDragged, at: to, in: over ?? pressed))
+        mounted.press(
+            pressed, with: event(.leftMouseDown, at: from, in: pressed),
+            then: [event(.leftMouseDragged, at: to, in: over ?? pressed)])
     }
 
     /// Far outside the row on either side, at a given height — every block clamps
@@ -74,7 +74,7 @@ final class SelectionTests: XCTestCase {
     }
 
     private func click(_ view: BlockView, at point: CGPoint, times: Int) {
-        view.mouseDown(with: event(.leftMouseDown, at: point, in: view, clicks: times))
+        mounted.press(view, with: event(.leftMouseDown, at: point, in: view, clicks: times))
     }
 
     /// The row as the window server composited it — see `WindowCapture.bitmap(of:)`.
@@ -424,45 +424,85 @@ final class SelectionTests: XCTestCase {
         XCTAssertEqual(mounted.copy(), copied)
     }
 
-    /// A drag that autoscrolls can take the row it started in off screen, and the
-    /// view the press landed on — which keeps receiving the drag — out of the
-    /// table. Where the pointer is has to be answered without it.
-    ///
-    /// Short rows above tall ones, so that scrolling down needs fewer views than
-    /// the top did and the pressed one is left in the table's reuse pool, out of
-    /// the window — where the responder chain from it leads nowhere. A view merely
-    /// reused for another row would still reach the table that way, and prove
-    /// nothing.
-    func testADragKeepsSelectingAfterItsRowHasScrolledAway() throws {
-        let long = Array(repeating: "a paragraph long enough to wrap", count: 40)
-            .joined(separator: " ")
-        mount((0..<30).map { "row \($0)" } + (30..<60).map { "row \($0) " + long }, height: 300)
+    /// Content can move under a pointer that does not: the focus is re-read
+    /// whenever either moves, so a wheel turned mid-drag carries the selection
+    /// to the row that is under the pointer now — and takes the row the press
+    /// started in off screen, which the gesture does not notice.
+    func testTurningTheWheelMidDragCarriesTheSelectionWithIt() throws {
+        mount((0..<60).map { "row \($0) of a transcript long enough to scroll" }, height: 300)
         let pressed = try cell(0).view
-        pressed.mouseDown(with: event(.leftMouseDown, at: CGPoint(x: -500, y: 4), in: pressed))
+        let pointer = event(.leftMouseDragged, at: CGPoint(x: 5_000, y: 4), in: try cell(2).view)
+        let wheel = try XCTUnwrap(
+            CGEvent(
+                scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: -1_200,
+                wheel2: 0, wheel3: 0
+            ).flatMap(NSEvent.init(cgEvent:)))
 
-        mounted.transcript.scrollToRow(at: 45, scrollPosition: .top)
+        mounted.press(
+            pressed, with: event(.leftMouseDown, at: CGPoint(x: -500, y: 4), in: pressed),
+            then: [pointer, wheel])
         mounted.settle()
-        XCTAssertNil(pressed.window, "row 0's view is still in the table")
 
-        let target = try cell(45).view
-        pressed.mouseDragged(
-            with: event(.leftMouseDragged, at: CGPoint(x: 5_000, y: 4), in: target))
-        XCTAssertEqual(mounted.copy()?.components(separatedBy: "\n\n").count, 46)
+        let under = table.row(
+            at: NSPoint(x: table.bounds.midX, y: table.convert(pointer.locationInWindow, from: nil).y))
+        XCTAssertGreaterThan(under, 10, "the wheel did not scroll the transcript")
+        XCTAssertGreaterThan(
+            mounted.scrollView.documentVisibleRect.minY, mounted.transcript.rect(ofRow: 0).maxY,
+            "row 0 is still on screen")
+        XCTAssertEqual(mounted.copy()?.components(separatedBy: "\n\n").count, under + 1)
+    }
+
+    /// A pointer held past the bottom edge keeps the rows coming without the
+    /// mouse moving: each tick scrolls, and the selection follows to whatever is
+    /// under the pointer then. A drag stops producing events the moment the hand
+    /// stops, so a transcript that scrolled only on drags stalled there.
+    func testHoldingThePointerPastTheEdgeKeepsScrolling() throws {
+        mount((0..<60).map { "row \($0) of a transcript long enough to scroll" }, height: 300)
+        let pressed = try cell(0).view
+        let below = CGPoint(x: 5_000, y: mounted.scrollView.documentVisibleRect.maxY + 40)
+        let pointer = event(.leftMouseDragged, at: below, in: table)
+        // Ten events rather than one posted ten times: the queue hands a repeated
+        // object back once.
+        let ticks = (0..<10).map { _ in
+            NSEvent.otherEvent(
+                with: .periodic, location: .zero, modifierFlags: [], timestamp: 0,
+                windowNumber: 0, context: nil, subtype: 0, data1: 0, data2: 0)!
+        }
+
+        mounted.press(
+            pressed, with: event(.leftMouseDown, at: CGPoint(x: -500, y: 4), in: pressed),
+            then: [pointer] + ticks)
+        mounted.settle()
+
+        let top = mounted.scrollView.documentVisibleRect.minY
+        XCTAssertGreaterThan(top, 200, "ten ticks at 40 points past the edge scrolled \(top)")
+        let under = table.row(
+            at: NSPoint(x: table.bounds.midX, y: table.convert(pointer.locationInWindow, from: nil).y))
+        XCTAssertEqual(mounted.copy()?.components(separatedBy: "\n\n").count, under + 1)
     }
 
     /// Only the views whose part changed are repainted, so a drag inside one row
     /// costs what it did before selections could span rows: that row.
+    ///
+    /// Read off the surfaces' `contents`, which a repaint replaces: the gesture
+    /// is tracked to its release inside `mouseDown`, and the window displays while
+    /// it runs, so by the time it returns there is nothing left *waiting* to paint.
     func testADragInsideOneRowRepaintsOnlyThatRow() throws {
         mount(["alpha one", "beta two", "gamma three"])
-        let views = try (0...2).map { try cell($0).view }
-        let surfaces = views.map { $0.layer?.sublayers?.first }
+        let surfaces = try (0...2).map { try XCTUnwrap(cell($0).view.layer?.sublayers?.first) }
         XCTAssertEqual(
-            surfaces.map { $0?.needsDisplay() }, [false, false, false],
+            surfaces.map { $0.needsDisplay() }, [false, false, false],
             "rows still waiting to paint, so nothing below is measured")
+        var repainted: Set<Int> = []
+        let observations = surfaces.enumerated().map { row, surface in
+            surface.observe(\.contents) { _, _ in repainted.insert(row) }
+        }
 
-        sweep(views[1], atY: 4)
+        sweep(try cell(1).view, atY: 4)
+        mounted.settle()
 
-        XCTAssertEqual(surfaces.map { $0?.needsDisplay() }, [false, true, false])
+        XCTAssertEqual(repainted, [1])
+        withExtendedLifetime(observations) {}
     }
 
     // MARK: - Across a mutation
@@ -562,7 +602,7 @@ final class SelectionTests: XCTestCase {
         sweep(try cell(0).view, atY: 4)
         XCTAssertTrue(mounted.canCopy)
 
-        table.mouseDown(with: event(.leftMouseDown, at: CGPoint(x: 10, y: 10), in: table))
+        mounted.press(table, with: event(.leftMouseDown, at: CGPoint(x: 10, y: 10), in: table))
         XCTAssertFalse(mounted.canCopy)
     }
 
@@ -572,9 +612,7 @@ final class SelectionTests: XCTestCase {
         mounted.settle()
         let row1 = mounted.transcript.rect(ofRow: 1)
 
-        table.mouseDown(with: event(.leftMouseDown, at: CGPoint(x: 10, y: 10), in: table))
-        table.mouseDragged(
-            with: event(.leftMouseDragged, at: CGPoint(x: 590, y: row1.midY), in: table))
+        drag(table, from: CGPoint(x: 10, y: 10), to: CGPoint(x: 590, y: row1.midY))
         XCTAssertEqual(mounted.copy(), "alpha one\n\nbeta two")
     }
 

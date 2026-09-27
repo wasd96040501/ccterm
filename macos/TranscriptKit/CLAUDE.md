@@ -119,14 +119,22 @@ Extending it meant editing it. Three rules keep that from happening again:
   is handed its own part to draw, the way `NSTableView` sets `isSelected` on a
   row view. The responder is the table, the document view, as an `NSTextView`
   is: it takes the focus on a press, answers `copy:`, and drops the selection
-  when the focus moves on. A row reports presses and drags through `onSelect`, a
-  closure rather than the responder chain, and that is measured, not taste: a
-  drag that autoscrolls leaves the pressed view in the table's reuse pool, out
-  of the window, still receiving the drag, and the chain from there leads
-  nowhere (`SelectionTests.testADragKeepsSelectingAfterItsRowHasScrolledAway`
-  goes red without it). Nothing is selected, nothing is paid: binding a row
-  reads its part from four integers, and a drag repaints only the rows whose
-  part changed.
+  when the focus moves on. A press on a row goes up the responder chain to it,
+  and the transcript tracks the gesture to the release in **a tracking loop**,
+  `NSTextView`'s shape: the focus depends on where the pointer is *and* where
+  the content is, so it is re-read on a drag, on a periodic tick that scrolls
+  under a pointer held past an edge, and on a scroll wheel.
+
+  That replaced drags dispatched to the pressed view, and the reason is worth
+  keeping. Dispatched drags only arrive while the hand moves, so autoscroll
+  stalled the moment it stopped and ran at the speed of the mouse rather than
+  of the pointer's distance past the edge, and a wheel moved the content with
+  nothing re-reading the focus. It also needed a closure to reach the
+  transcript, because the pressed view could be in the reuse pool by then —
+  a loop pulls its events, so no view has to outlive its row. Nothing is
+  selected, nothing is paid: binding a row reads its part from four integers,
+  and the loop walks the rows on screen only when the focus moved, repainting
+  those whose part changed.
 - **Ordering contracts live in the API shape, not in prose.** `dataSource`
   deliberately does not refresh on assignment; the host has to call
   `reloadData()`, so "wire it up, then load" cannot be got wrong by accident.

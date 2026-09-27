@@ -203,8 +203,7 @@ final class LinkActivationTests: XCTestCase {
         let mounted = mount("[word](https://example.com)")
         let point = try onTheLink(mounted.block)
 
-        mounted.cell.mouseDown(with: event(mounted, at: point, .leftMouseDown))
-        mounted.cell.mouseUp(with: event(mounted, at: point, .leftMouseUp))
+        mounted.transcript.press(mounted.cell, with: event(mounted, at: point, .leftMouseDown))
 
         XCTAssertEqual(mounted.activated.map(\.absoluteString), ["https://example.com"])
         mounted.window.close()
@@ -215,8 +214,7 @@ final class LinkActivationTests: XCTestCase {
         let rect = try XCTUnwrap(mounted.block.fullRects().first)
         let point = CGPoint(x: rect.maxX + 60, y: rect.midY)
 
-        mounted.cell.mouseDown(with: event(mounted, at: point, .leftMouseDown))
-        mounted.cell.mouseUp(with: event(mounted, at: point, .leftMouseUp))
+        mounted.transcript.press(mounted.cell, with: event(mounted, at: point, .leftMouseDown))
 
         XCTAssertTrue(mounted.activated.isEmpty)
         mounted.window.close()
@@ -230,9 +228,9 @@ final class LinkActivationTests: XCTestCase {
         let from = CGPoint(x: rect.minX + 4, y: rect.midY)
         let to = CGPoint(x: rect.midX, y: rect.midY)
 
-        mounted.cell.mouseDown(with: event(mounted, at: from, .leftMouseDown))
-        mounted.cell.mouseDragged(with: event(mounted, at: to, .leftMouseDragged))
-        mounted.cell.mouseUp(with: event(mounted, at: to, .leftMouseUp))
+        mounted.transcript.press(
+            mounted.cell, with: event(mounted, at: from, .leftMouseDown),
+            then: [event(mounted, at: to, .leftMouseDragged)])
 
         XCTAssertTrue(mounted.activated.isEmpty)
         mounted.window.close()
@@ -244,8 +242,7 @@ final class LinkActivationTests: XCTestCase {
         let mounted = mount("[word](https://example.com)")
         let point = try onTheLink(mounted.block)
 
-        mounted.cell.mouseDown(with: event(mounted, at: point, .leftMouseDown, clicks: 2))
-        mounted.cell.mouseUp(with: event(mounted, at: point, .leftMouseUp, clicks: 2))
+        mounted.transcript.press(mounted.cell, with: event(mounted, at: point, .leftMouseDown, clicks: 2))
 
         XCTAssertTrue(mounted.activated.isEmpty)
         mounted.window.close()

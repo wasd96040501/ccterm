@@ -112,6 +112,21 @@ final class MountedTranscript {
         scrollView.reflectScrolledClipView(clip)
     }
 
+    /// A press on `view`, and the rest of its gesture — `rest`, then a release —
+    /// queued first, the way the window server has them waiting behind the press.
+    ///
+    /// Queued rather than sent, because a press that selects is tracked to its
+    /// release inside `mouseDown`, by a loop that *pulls* the events after it. The
+    /// release is always there, so a test cannot leave a loop waiting.
+    func press(_ view: NSView, with down: NSEvent, then rest: [NSEvent] = []) {
+        let up = NSEvent.mouseEvent(
+            with: .leftMouseUp, location: down.locationInWindow, modifierFlags: [],
+            timestamp: 0, windowNumber: window.windowNumber, context: nil,
+            eventNumber: 0, clickCount: down.clickCount, pressure: 0)!
+        for event in rest + [up] { NSApp.postEvent(event, atStart: false) }
+        view.mouseDown(with: down)
+    }
+
     /// What Edit ▸ Copy puts on the pasteboard: the action sent up the responder
     /// chain from the window's first responder, which is where a menu item with a
     /// `nil` target starts. `NSApp.sendAction` would start from the *key* window,

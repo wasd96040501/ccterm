@@ -9,8 +9,8 @@ import AppKit
 /// block skip what cannot be seen, and the pointer's state — the hover, the press.
 ///
 /// **The selection is not one of them.** It runs across rows, so it is the
-/// transcript's (`TextSelection`): this view reports the presses and drags that
-/// make one (`onSelect`) and is handed back its own part to draw
+/// transcript's (`TextSelection`): a press here goes up the responder chain to the
+/// table, which tracks it, and this view is handed back its own part to draw
 /// (`selectedRange`), the way `NSTableView` sets `isSelected` on a row view. A
 /// view is recycled the moment its row scrolls away, and a selection spanning
 /// rows is always partly off screen — state kept here would go with it.
@@ -73,16 +73,6 @@ final class BlockView: NSView, TranscriptFindHighlighting {
     /// and the selection is the transcript's to change.
     var onContextMenu: ((BlockView, NSMenu, NSEvent) -> NSMenu?)?
 
-    /// A press or a drag in this row, for the transcript to turn into a selection.
-    ///
-    /// The event rather than a range, because a drag leaves this row and what is
-    /// under the pointer then is only the transcript's to answer. And a closure
-    /// rather than `super` up the responder chain, which would otherwise be the
-    /// AppKit way to hand a mouse event on: a drag that autoscrolls can take this
-    /// view's row off screen and the view out of the table, still receiving the
-    /// drag, and the chain from a view the table has let go of leads nowhere.
-    var onSelect: ((NSEvent) -> Void)?
-
     /// The part of the selection in this row, set by the transcript whenever it
     /// changes and whenever this view is bound to a row. Positions in the block's
     /// flat index space; `nil` when none of the row is selected.
@@ -90,6 +80,9 @@ final class BlockView: NSView, TranscriptFindHighlighting {
         didSet {
             guard selectedRange != oldValue else { return }
             invalidate()
+            // The moment a press selects anything it stops being a click, so the
+            // tint goes back to the hover's while the button is still down.
+            updatePressedState()
         }
     }
 
@@ -445,7 +438,7 @@ final class BlockView: NSView, TranscriptFindHighlighting {
     ///
     /// Derived rather than set, from three pieces of state that already exist —
     /// which is what keeps "pressed" meaning the same thing here as it does in
-    /// `mouseUp`, where the same three decide whether a press was a click.
+    /// `mouseDown`, where the same three decide whether a press was a click.
     private var isPressed = false
 
     /// Re-derives the pressed tint and, if it changed, writes it.
@@ -619,9 +612,10 @@ final class BlockView: NSView, TranscriptFindHighlighting {
 
     // MARK: - Pressing and dragging
     //
-    // What a press *selects* is the transcript's to decide (`onSelect`); what it
-    // means for a link under it is this view's, because the link, the band and the
-    // pointer are.
+    // What a press *selects* is the transcript's to decide — the press goes up the
+    // responder chain to its table, which tracks the gesture to the release; what
+    // it means for a link under it is this view's, because the link, the band and
+    // the pointer are.
     //
     // No `acceptsFirstResponder` here, deliberately: the responder that owns the
     // selection, and copies it, is the transcript's table. Were this view to
@@ -639,15 +633,22 @@ final class BlockView: NSView, TranscriptFindHighlighting {
         // not become a drag and does not select anything — the same rule
         // `NSTextView` uses, and the reason a link's text is still selectable.
         pressedLink = block.link(at: convert(event.locationInWindow, from: nil))
-
-        // The transcript picks the unit the click count means and hands this row
-        // its part back synchronously, so it is in `selectedRange` by the next
-        // line.
-        onSelect?(event)
-        // After the selection is set, not before: whether this counts as a press
-        // depends on it — a double-click takes a word, which is a selection, and
-        // is therefore not a press on the link under it.
         updatePressedState()
+
+        // The whole gesture, to the button coming back up: the transcript tracks
+        // it and hands this row its part as it goes — which is also what takes the
+        // tint off when it becomes a selection (`selectedRange`).
+        super.mouseDown(with: event)
+
+        // A selected range covers both endings that are not a click: a drag that
+        // moved, and a double-click that took a word. Neither opens anything. A
+        // drag that moved on into the next row still leaves this one selected to
+        // its end, and a view recycled on the way was rebound, which let go of
+        // the link — so neither counts either.
+        let link = pressedLink
+        pressedLink = nil
+        updatePressedState()
+        if let link, selectedRange == nil { onLinkActivated?(self, link) }
     }
 
     /// An I-beam over the whole row, not only over glyphs.
@@ -711,36 +712,6 @@ final class BlockView: NSView, TranscriptFindHighlighting {
         // only when there is one, so a run with no destination to show reads to
         // the host exactly like leaving a link.
         onLinkHovered?(self, link?.url, point)
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        // The tint goes back to the hover's on the way out of every path through
-        // here, activation included — the pointer is still on the run, so the band
-        // stays; it is only the press that ended.
-        defer {
-            pressedLink = nil
-            updatePressedState()
-        }
-        // A selected range covers both endings that are not a click: a drag that
-        // moved, and a double-click that took a word. Neither should open
-        // anything. A drag that moved on into the next row still leaves this one
-        // selected to its end, so it counts too.
-        guard let link = pressedLink, selectedRange == nil else {
-            return super.mouseUp(with: event)
-        }
-
-        onLinkActivated?(self, link)
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        guard onSelect != nil else { return super.mouseDragged(with: event) }
-        onSelect?(event)
-        // The moment the press selects anything it stops being a click — the rule
-        // `mouseUp` applies — so the tint goes back to the hover's while the
-        // pointer is still down. `pressedLink` itself is left alone: a click that
-        // wobbled a point between down and up selects nothing and must still open
-        // its link.
-        updatePressedState()
     }
 
     // MARK: - The context menu

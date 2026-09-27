@@ -277,8 +277,9 @@ final class MarkdownGrowthTests: XCTestCase {
     /// without the test having to know where any glyph sits. Same sweep
     /// `SelectionTests` uses.
     private func sweep(_ view: BlockView, atY y: CGFloat) {
-        view.mouseDown(with: event(view, at: CGPoint(x: -500, y: y), .leftMouseDown))
-        view.mouseDragged(with: event(view, at: CGPoint(x: 5_000, y: y), .leftMouseDragged))
+        mounted.press(
+            view, with: event(view, at: CGPoint(x: -500, y: y), .leftMouseDown),
+            then: [event(view, at: CGPoint(x: 5_000, y: y), .leftMouseDragged)])
     }
 
     private func event(_ view: BlockView, at point: CGPoint, _ type: NSEvent.EventType) -> NSEvent {

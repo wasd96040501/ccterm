@@ -249,7 +249,6 @@ public final class TranscriptView: NSView {
         // Its part of the selection — the row may have scrolled out mid-selection
         // and be coming back, or be a new row landing inside one.
         view.selectedRange = selection?.range(inRow: row, length: block.length)
-        view.onSelect = { [weak self] event in self?.trackSelection(with: event) }
         // Re-bound on every pass rather than once at construction: the view is
         // recycled, and `row` is captured only as the fallback for a lookup that
         // can fail once the view has left the table.
@@ -2336,8 +2335,9 @@ public final class TranscriptView: NSView {
     // A selection runs from a position in one row to a position in another, so it
     // is held here, where rows have identities and outlive their views, rather
     // than on the views — which is `NSTableView`'s split, the table holding the
-    // selection and handing each row view its `isSelected`. `BlockView` reports
-    // presses and drags (`onSelect`) and draws what it is handed
+    // selection and handing each row view its `isSelected`. A press on a
+    // `BlockView` goes up the responder chain to the table, like any mouse event
+    // a view does not take, and the view draws what it is handed
     // (`selectedRange`); nothing about it is on the public surface.
     //
     // The responder is the table, the scroll view's document view, the way it is
@@ -2350,22 +2350,65 @@ public final class TranscriptView: NSView {
     // What it costs where the transcript is hot: nothing, until something is
     // selected. A row bound (`viewForRow`, `rebindVisibleRows`) reads its part —
     // arithmetic on four integers — and an insert renumbers two. Only a press or a
-    // drag walks anything, and it walks the row views on screen, repainting only
-    // those whose part changed.
+    // drag walks anything, and only when the focus moved: it walks the row views
+    // on screen, repainting those whose part changed.
 
     /// The reader's selection, or a caret after a click, or `nil`.
     private var selection: TextSelection?
 
-    /// A press (`leftMouseDown`) or a drag, from a row or from the table between
-    /// rows. The one way into a selection made with the mouse.
-    fileprivate func trackSelection(with event: NSEvent) {
-        guard event.type == .leftMouseDragged else { return beginSelection(with: event) }
-        guard var selection, let hit = selectionHit(at: event) else { return }
+    /// A press, and everything until the button comes back up. The one way into a
+    /// selection made with the mouse, reached from a row or from the table
+    /// between rows through the responder chain.
+    ///
+    /// A tracking loop — `NSTextView`'s shape, and `NSTableView`'s — rather than
+    /// drags dispatched to whichever view was pressed, because the focus is a
+    /// function of two things: where the pointer is **and where the content is**.
+    /// Either can move without the other, so the loop re-reads the focus on
+    /// both: a drag moves the pointer; a periodic event scrolls the content under
+    /// a pointer held past an edge, at a steady rate whether or not the mouse
+    /// moves; and a scroll wheel does it at the reader's.
+    ///
+    /// Nothing between the press and the release is dispatched to a view, so no
+    /// view has to outlive its row for the gesture to finish.
+    fileprivate func trackSelection(from event: NSEvent) {
+        beginSelection(with: event)
+        guard let window, selection != nil else { return }
+
+        // The press that started this, then each drag: where the pointer is in the
+        // window, which is what autoscroll and the focus are both worked out from.
+        var pointer = event
+        NSEvent.startPeriodicEvents(afterDelay: Self.autoscrollDelay, withPeriod: Self.autoscrollPeriod)
+        defer { NSEvent.stopPeriodicEvents() }
+        window.trackEvents(
+            matching: [.leftMouseDragged, .leftMouseUp, .periodic, .scrollWheel],
+            timeout: NSEvent.foreverDuration, mode: .eventTracking
+        ) { event, stop in
+            guard let event else { return }
+            switch event.type {
+            case .leftMouseDragged: pointer = event
+            // Scrolls by how far past the edge the pointer is, so the reader sets
+            // the speed by where they hold it; inside the viewport, nothing moved.
+            case .periodic: guard tableView.autoscroll(with: pointer) else { return }
+            case .scrollWheel: scrollView.scrollWheel(with: event)
+            default:
+                stop.pointee = true
+                return
+            }
+            extendSelection(to: pointer)
+        }
+    }
+
+    /// How soon a pointer held past an edge starts scrolling, and how often it
+    /// scrolls again: a frame, so the rows arriving move as a scroll does.
+    private static let autoscrollDelay: TimeInterval = 0.1
+    private static let autoscrollPeriod: TimeInterval = 1.0 / 60
+
+    /// Moves the selection's focus to what is under `pointer` now.
+    private func extendSelection(to pointer: NSEvent) {
+        guard var selection, let hit = selectionHit(at: pointer) else { return }
         selection.focus = .init(row: hit.row, id: hit.id, index: hit.block?.index(at: hit.point) ?? 0)
+        guard selection != self.selection else { return }
         select(selection)
-        // Lets a drag continue past the edge of the viewport — to the rows it is
-        // selecting towards.
-        tableView.autoscroll(with: event)
     }
 
     /// Starts a selection at a press: a caret, or — for a double- or triple-click
@@ -2835,19 +2878,15 @@ private final class TranscriptTableView: NSTableView {
         transcript?.setNeedsFindLayout()
     }
 
-    /// A press that no row took — the margins beside the content, the gap
-    /// between two rows, a host row that does not handle the mouse. It starts a
-    /// selection from the nearest position, as a press in `NSTextView`'s margin
-    /// does, which is also what makes clicking there clear one.
+    /// Every press that selects: one on a row's text, passed up the chain by its
+    /// `BlockView`, and one no row took — the margins beside the content, the gap
+    /// between two rows, a host row that does not handle the mouse, which starts
+    /// from the nearest position as a press in `NSTextView`'s margin does.
     ///
     /// `super` is not called: its tracking loop selects table rows, which the
-    /// transcript never shows, and would swallow the drag that follows.
+    /// transcript never shows. The transcript's loop takes the gesture instead.
     override func mouseDown(with event: NSEvent) {
-        transcript?.trackSelection(with: event)
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        transcript?.trackSelection(with: event)
+        transcript?.trackSelection(from: event)
     }
 
     override func resignFirstResponder() -> Bool {

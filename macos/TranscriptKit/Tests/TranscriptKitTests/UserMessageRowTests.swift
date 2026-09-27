@@ -160,14 +160,12 @@ final class UserMessageRowTests: XCTestCase {
             (view.layer?.sublayers ?? []).compactMap { $0 as? CAShapeLayer }.first)
         let hovering = try XCTUnwrap(band.fillColor?.alpha)
 
-        let point = CGPoint(x: more.midX, y: more.midY)
-        view.mouseDown(with: try event(view, at: point, .leftMouseDown))
-        let pressing = try XCTUnwrap(band.fillColor?.alpha)
-        XCTAssertGreaterThan(pressing, hovering)
+        let tints = record(band)
+        mounted.press(view, with: try event(view, at: CGPoint(x: more.midX, y: more.midY), .leftMouseDown))
 
+        XCTAssertGreaterThan(try XCTUnwrap(tints.values.first?.alpha), hovering)
         // And back, because the pointer is still on the run — it was the press
         // that ended, not the hover.
-        view.mouseUp(with: try event(view, at: point, .leftMouseUp))
         XCTAssertEqual(try XCTUnwrap(band.fillColor?.alpha), hovering, accuracy: 0.001)
     }
 
@@ -180,14 +178,35 @@ final class UserMessageRowTests: XCTestCase {
             (view.layer?.sublayers ?? []).compactMap { $0 as? CAShapeLayer }.first)
         let hovering = try XCTUnwrap(band.fillColor?.alpha)
 
-        view.mouseDown(
-            with: try event(view, at: CGPoint(x: more.midX, y: more.midY), .leftMouseDown))
-        XCTAssertGreaterThan(try XCTUnwrap(band.fillColor?.alpha), hovering)
+        let tints = record(band)
+        mounted.press(
+            view, with: try event(view, at: CGPoint(x: more.midX, y: more.midY), .leftMouseDown),
+            // Far enough to select something, which is what makes it a drag.
+            then: [try event(view, at: CGPoint(x: more.minX - 80, y: more.midY - 30), .leftMouseDragged)])
 
-        // Far enough to select something, which is what makes it a drag.
-        view.mouseDragged(
-            with: try event(view, at: CGPoint(x: more.minX - 80, y: more.midY - 30), .leftMouseDragged))
-        XCTAssertEqual(try XCTUnwrap(band.fillColor?.alpha), hovering, accuracy: 0.001)
+        XCTAssertEqual(tints.values.count, 2, "pressed, then back")
+        XCTAssertGreaterThan(try XCTUnwrap(tints.values.first?.alpha), hovering)
+        // Back while the drag was being handled — the button still down — rather
+        // than at the release, which would put it back for any press.
+        XCTAssertEqual(try XCTUnwrap(tints.values.last?.alpha), hovering, accuracy: 0.001)
+        XCTAssertEqual(tints.values.last?.during, .leftMouseDragged)
+    }
+
+    /// Every tint the band takes, and the event being handled when it did.
+    ///
+    /// Observed rather than sampled: a press is tracked to its release inside
+    /// `mouseDown`, so there is no moment between the two for a test to look.
+    private final class Tints {
+        var values: [(alpha: CGFloat, during: NSEvent.EventType?)] = []
+        var observation: NSKeyValueObservation?
+    }
+
+    private func record(_ band: CAShapeLayer) -> Tints {
+        let tints = Tints()
+        tints.observation = band.observe(\.fillColor) { [unowned tints] band, _ in
+            tints.values.append((band.fillColor?.alpha ?? 0, NSApp.currentEvent?.type))
+        }
+        return tints
     }
 
     func testMovingOffTheMoreRunTakesTheBandAway() throws {
@@ -214,9 +233,7 @@ final class UserMessageRowTests: XCTestCase {
         let host = mount([Self.longMessage()])
         let (view, more) = try hoverTheMoreRun()
 
-        let point = CGPoint(x: more.midX, y: more.midY)
-        view.mouseDown(with: try event(view, at: point, .leftMouseDown))
-        view.mouseUp(with: try event(view, at: point, .leftMouseUp))
+        mounted.press(view, with: try event(view, at: CGPoint(x: more.midX, y: more.midY), .leftMouseDown))
 
         XCTAssertTrue(host.activated.isEmpty)
     }

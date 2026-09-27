@@ -44,9 +44,9 @@ final class ContextMenuTests: XCTestCase {
     }
 
     private func drag(_ mounted: Mounted, from: CGPoint, to: CGPoint) {
-        for (point, type) in [(from, NSEvent.EventType.leftMouseDown), (to, .leftMouseDragged)] {
-            mounted.cell.mouseDown(with: point, type, in: mounted.window)
-        }
+        mounted.transcript.press(
+            mounted.cell, with: mounted.cell.event(.leftMouseDown, at: from),
+            then: [mounted.cell.event(.leftMouseDragged, at: to)])
     }
 
     /// The x of each of three equal words on one line, so a test can point at
@@ -128,12 +128,9 @@ final class ContextMenuTests: XCTestCase {
             .sorted { mounted.transcript.row(for: $0) < mounted.transcript.row(for: $1) }
         XCTAssertEqual(cells.count, 3)
 
-        cells[0].mouseDown(with: CGPoint(x: -500, y: 4), .leftMouseDown, in: mounted.window)
-        cells[0].mouseDragged(
-            with: NSEvent.mouseEvent(
-                with: .leftMouseDragged, location: cells[2].convert(CGPoint(x: 5_000, y: 4), to: nil),
-                modifierFlags: [], timestamp: 0, windowNumber: mounted.window.windowNumber,
-                context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!)
+        mounted.press(
+            cells[0], with: cells[0].event(.leftMouseDown, at: CGPoint(x: -500, y: 4)),
+            then: [cells[2].event(.leftMouseDragged, at: CGPoint(x: 5_000, y: 4))])
         let selected = mounted.copy()
         XCTAssertEqual(selected, "alpha one\n\nbeta two\n\ngamma three")
 
@@ -150,7 +147,8 @@ final class ContextMenuTests: XCTestCase {
         defer { mounted.transcript.teardown() }
 
         // Double-click takes "alpha"; the right-click then lands two words away.
-        mounted.cell.mouseDown(with: try word(0, in: mounted), .leftMouseDown, in: mounted.window, clicks: 2)
+        mounted.transcript.press(
+            mounted.cell, with: mounted.cell.event(.leftMouseDown, at: try word(0, in: mounted), clicks: 2))
         XCTAssertEqual(mounted.transcript.copy(), "alpha")
 
         _ = rightClick(mounted, at: try word(2, in: mounted))
@@ -287,16 +285,10 @@ final class ContextMenuTests: XCTestCase {
 extension BlockView {
 
     /// A mouse event at a point in this view's own (flipped) coordinates.
-    fileprivate func mouseDown(
-        with point: CGPoint, _ type: NSEvent.EventType, in window: NSWindow, clicks: Int = 1
-    ) {
-        let event = NSEvent.mouseEvent(
+    fileprivate func event(_ type: NSEvent.EventType, at point: CGPoint, clicks: Int = 1) -> NSEvent {
+        NSEvent.mouseEvent(
             with: type, location: convert(point, to: nil), modifierFlags: [], timestamp: 0,
-            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clicks,
-            pressure: 1)!
-        switch type {
-        case .leftMouseDragged: mouseDragged(with: event)
-        default: mouseDown(with: event)
-        }
+            windowNumber: window?.windowNumber ?? 0, context: nil, eventNumber: 0,
+            clickCount: clicks, pressure: 1)!
     }
 }

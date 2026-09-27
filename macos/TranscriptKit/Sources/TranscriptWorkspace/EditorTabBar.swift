@@ -72,7 +72,7 @@ final class EditorTabBar: NSSegmentedControl, NSDraggingSource {
     /// within the bar makes. `nil` when no drag started here.
     private(set) var draggedIndex: Int?
 
-    let closeButton = NSButton()
+    let closeButton: NSButton = TabCloseButton()
 
     /// Where a tab dragged in from another bar would drop.
     let insertionIndicator = NSView()
@@ -109,9 +109,15 @@ final class EditorTabBar: NSSegmentedControl, NSDraggingSource {
 
         closeButton.bezelStyle = .smallSquare
         closeButton.isBordered = false
-        closeButton.image = NSImage(
+        // Xcode's cross, 8 points in the middle of the circle. At 10 points medium
+        // the symbol's cross is 8 points with a point to spare on every side of
+        // its image (measured), so centring the image centres the cross — which
+        // the symbol's own alignment rect, a text baseline's, does not.
+        let cross = NSImage(
             systemSymbolName: "xmark", accessibilityDescription: String(localized: "Close Tab", bundle: .module)
-        )?.withSymbolConfiguration(.init(pointSize: 9, weight: .semibold))
+        )?.withSymbolConfiguration(.init(pointSize: 10, weight: .medium))
+        cross?.alignmentRect = NSRect(origin: .zero, size: cross?.size ?? .zero)
+        closeButton.image = cross
         closeButton.contentTintColor = .secondaryLabelColor
         closeButton.target = self
         closeButton.action = #selector(closeHovered)
@@ -386,6 +392,66 @@ final class EditorTabBar: NSSegmentedControl, NSDraggingSource {
             : rect(forTabAt: segmentCount - 1).maxX
         insertionIndicator.frame = NSRect(x: x - 1, y: 4, width: 2, height: bounds.height - 8)
         insertionIndicator.isHidden = false
+    }
+}
+
+/// The close button's glyph, with the circle Xcode puts behind it while the
+/// pointer is over it.
+///
+/// The circle is `tertiarySystemFill`: measured against Xcode's in the light
+/// appearance — 16 points across, black at 4.7% over the tab — and the system
+/// colour carries the dark value. It is the layer's background, which draws
+/// under the glyph.
+private final class TabCloseButton: NSButton {
+
+    private var isPointerInside = false {
+        didSet { updateCircle() }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas where area.owner === self { removeTrackingArea(area) }
+        addTrackingArea(
+            NSTrackingArea(
+                rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+                owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) { isPointerInside = true }
+    override func mouseExited(with event: NSEvent) { isPointerInside = false }
+
+    /// Moved to another tab or taken away, it is not under the pointer any more.
+    override func viewDidHide() {
+        super.viewDidHide()
+        isPointerInside = false
+    }
+
+    override func layout() {
+        super.layout()
+        updateCircle()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateCircle()
+    }
+
+    private func updateCircle() {
+        wantsLayer = true
+        layer?.cornerRadius = bounds.height / 2
+        guard isPointerInside else {
+            layer?.backgroundColor = nil
+            return
+        }
+        let fill: NSColor
+        if #available(macOS 14.0, *) {
+            fill = .tertiarySystemFill
+        } else {
+            fill = NSColor.labelColor.withAlphaComponent(0.047)
+        }
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = fill.cgColor
+        }
     }
 }
 

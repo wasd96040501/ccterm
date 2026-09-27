@@ -105,6 +105,90 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertIdentical(mounted.recorder.closed.first, mounted.probes[1])
     }
 
+    /// Under the pointer, the close button sits in Xcode's circle: measured off
+    /// Xcode's own tab bar in the light appearance, black at about 4.7% over the
+    /// tab (232 → 221); in the dark one, the same in white. Read as composited,
+    /// between a point inside the circle clear of the glyph and a corner outside it.
+    func testTheCloseButtonUnderThePointerSitsInXcodesCircle() async throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        let bar = mounted.area.activeGroup.tabBar
+        let button = bar.closeButton
+        bar.mouseMoved(with: mouse(.mouseMoved, at: center(of: bar, tab: 0), in: bar))
+        XCTAssertFalse(button.isHidden, "premise: the close button is over the hovered tab")
+        let point = button.convert(NSPoint(x: button.bounds.midX, y: button.bounds.midY), to: nil)
+
+        /// Inside the circle beside the glyph, and outside it in a corner, 0–255.
+        func greys() async throws -> (inside: CGFloat, outside: CGFloat) {
+            try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.2)
+            let rep = try await WindowCapture.bitmap(of: button)
+            func grey(_ x: Int, _ y: Int) throws -> CGFloat {
+                let color = try XCTUnwrap(rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
+                return (color.redComponent + color.greenComponent + color.blueComponent) / 3 * 255
+            }
+            return (try grey(3, 8), try grey(0, 0))
+        }
+
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            mounted.window.appearance = NSAppearance(named: appearance)
+            button.mouseExited(with: mouse(.mouseMoved, at: point, in: button))
+            let away = try await greys()
+            XCTAssertEqual(away.inside, away.outside, accuracy: 2, "\(name): a circle without the pointer")
+
+            button.mouseEntered(with: mouse(.mouseMoved, at: point, in: button))
+            let over = try await greys()
+            // Solve `inside = outside + (ink - outside) * alpha` for the overlay's alpha.
+            let ink: CGFloat = name == "light" ? 0 : 255
+            let alpha = (over.inside - over.outside) / (ink - over.outside)
+            XCTAssertEqual(alpha, 0.047, accuracy: 0.015, "\(name): not Xcode's circle — \(over)")
+        }
+    }
+
+    /// The cross is Xcode's — 8 points — and at the circle's centre, read off the
+    /// composited window at its own resolution: a half-point error is a single
+    /// pixel there, and would blur away at one pixel per point. A symbol placed by
+    /// its alignment rect, a text baseline's, sat half a point left and low.
+    func testTheCloseCrossIsXcodesSizeAndAtTheCircleCentre() async throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        let window = mounted.window
+        let bar = mounted.area.activeGroup.tabBar
+        let button = bar.closeButton
+        bar.mouseMoved(with: mouse(.mouseMoved, at: center(of: bar, tab: 0), in: bar))
+        XCTAssertFalse(button.isHidden, "premise: the close button is over the hovered tab")
+
+        try await WindowCapture.waitForFrames(of: window, spanning: 0.2)
+        let image = try await WindowCapture.image(of: window)
+        // The backing scale, not the capture's width over the frame's: a capture
+        // can come back a few pixels wider than the frame, and a scale of 2.004
+        // crops a 33-pixel square around a 32-pixel button.
+        let scale = window.backingScaleFactor
+        let inWindow = button.convert(button.bounds, to: nil)
+        let crop = CGRect(
+            x: inWindow.minX * scale, y: (window.frame.height - inWindow.maxY) * scale,
+            width: inWindow.width * scale, height: inWindow.height * scale)
+        XCTAssertEqual(crop, crop.integral, "premise: the button is on whole pixels")
+        let rep = NSBitmapImageRep(cgImage: try XCTUnwrap(image.cropping(to: crop)))
+        func grey(_ x: Int, _ y: Int) -> CGFloat {
+            let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
+            return ((color?.redComponent ?? 0) + (color?.greenComponent ?? 0) + (color?.blueComponent ?? 0)) / 3
+        }
+        // Ink: at least a quarter darker than the tab behind it.
+        let background = grey(0, 0)
+        let ink = (0..<rep.pixelsHigh).flatMap { y in
+            (0..<rep.pixelsWide).filter { background - grey($0, y) > 0.25 }.map { (x: $0, y: y) }
+        }
+        let xs = ink.map(\.x)
+        let ys = ink.map(\.y)
+        let (minX, maxX) = (try XCTUnwrap(xs.min(), "premise: the cross was drawn"), xs.max() ?? 0)
+        let (minY, maxY) = (ys.min() ?? 0, ys.max() ?? 0)
+
+        XCTAssertEqual(CGFloat(maxX - minX + 1) / scale, 8, accuracy: 0.5, "not Xcode's 8-point cross")
+        XCTAssertEqual(CGFloat(maxY - minY + 1) / scale, 8, accuracy: 0.5, "not Xcode's 8-point cross")
+        XCTAssertEqual(CGFloat(minX + maxX + 1) / 2, CGFloat(rep.pixelsWide) / 2, "off centre horizontally")
+        XCTAssertEqual(CGFloat(minY + maxY + 1) / 2, CGFloat(rep.pixelsHigh) / 2, "off centre vertically")
+    }
+
     func testClosingTheSelectedTabSelectsTheOneAfterIt() throws {
         let mounted = mount(tabs: 3)
         defer { mounted.window.close() }

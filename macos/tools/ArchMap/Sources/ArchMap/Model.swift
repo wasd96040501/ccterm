@@ -26,6 +26,12 @@ final class Scope {
     init(parent: Scope?) { self.parent = parent }
 
     func lookup(_ name: String) -> Binding? { bindings[name] ?? parent?.lookup(name) }
+
+    /// `x = value` on a local declared earlier (`var x: T?`): from here on `x`
+    /// resolves through `value`, in the scope that declared it.
+    func assign(_ name: String, _ value: ExprSyntax) {
+        if bindings[name] != nil { bindings[name] = .expr(value) } else { parent?.assign(name, value) }
+    }
 }
 
 struct Property {
@@ -62,6 +68,8 @@ struct Flow {
         case kvo = "kvo"
         case callback = "sets-callback"
         case delegate = "sets-delegate"
+        /// A publisher or stream handed to a constructed type's init.
+        case passes = "passes"
     }
 
     let kind: Kind
@@ -70,6 +78,8 @@ struct Flow {
     /// Notification name / key path / assigned value, when the subject alone
     /// doesn't say it.
     var detail: String? = nil
+    /// For `passes`: the type constructed, and the init label (`Type(label:)`).
+    var target: (type: String, label: String)? = nil
 }
 
 struct Access {

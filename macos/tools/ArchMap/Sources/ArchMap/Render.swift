@@ -59,8 +59,12 @@ struct Renderer {
         var flowLines: [String] = []
         for unit in units {
             for type in types(in: unit) {
-                for (kind, text, source) in resolvedFlows(of: type) where source != nil && source!.unit != unit {
-                    flowLines.append("- \(unit) ⟵ \(source!.unit): \(kind) `\(text)` (\(type.name))")
+                for flow in resolvedFlows(of: type) {
+                    // A publisher handed to an init feeds the constructed type, wired by this one.
+                    let consumer = flow.into?.unit ?? unit
+                    guard let source = flow.source, source.unit != consumer else { continue }
+                    let by = flow.into == nil ? type.name : "wired by \(type.name)"
+                    flowLines.append("- \(consumer) ⟵ \(source.unit): \(flow.kind) `\(flow.text)` (\(by))")
                 }
             }
         }
@@ -110,7 +114,7 @@ struct Renderer {
         types with only architecture-relevant facts — declaration, init (= injected dependencies), \
         state it owns, what it **emits** (published values, streams, callbacks, delegates) and **consumes** \
         (`sink`, `for-await`, `observes` = withObservationTracking, `swiftui-reads` = SwiftUI body reading an \
-        @Observable, `notified-by`, `kvo`), what it **wires** on others (`sets-callback`, `sets-delegate`), \
+        @Observable, `notified-by`, `kvo`), what it **wires** on others (`sets-callback`, `sets-delegate`, `passes` = hands a publisher or stream to what it constructs), \
         what it **creates**, `.shared` singletons it reaches for, and **used by** = which other units touch it \
         and through which of its own members (`init` = constructs it). Used-by counts every target — demo and \
         smoke executables too, even outside the scope; tests are not parsed. Names resolve only within a \
@@ -256,11 +260,15 @@ struct Renderer {
         let flows = resolvedFlows(of: type)
         add(
             "consumes",
-            flows.filter { ["sink", "for-await", "observes", "swiftui-reads", "kvo"].contains($0.0) }.map {
-                "\($0.0) \($0.1)"
+            flows.filter { ["sink", "for-await", "observes", "swiftui-reads", "kvo"].contains($0.kind) }.map {
+                "\($0.kind) \($0.text)"
             })
         add("notified-by", type.flows.filter { $0.kind == .notifyObserve }.map { $0.detail ?? "?" })
-        add("wires", flows.filter { ["sets-callback", "sets-delegate"].contains($0.0) }.map { "\($0.0) \($0.1)" })
+        add(
+            "wires",
+            flows.filter { ["sets-callback", "sets-delegate", "passes"].contains($0.kind) }.map {
+                "\($0.kind) \($0.text)"
+            })
 
         let holds = instanceStored.compactMap { p -> String? in
             guard let target = index.propertyType(p, in: type), !index.isSelfOrNested(target, of: type),
@@ -303,15 +311,33 @@ struct Renderer {
         return lines
     }
 
-    /// (kind, subject, producing type) for every flow of a type, receivers resolved.
-    private func resolvedFlows(of type: TypeInfo) -> [(String, String, TypeInfo?)] {
-        var result: [(String, String, TypeInfo?)] = []
+    /// One flow of a type with its receiver resolved: the producing type
+    /// (`source`), and for `passes` the type it is handed to (`into`).
+    private struct ResolvedFlow {
+        let kind: String
+        let text: String
+        let source: TypeInfo?
+        var into: TypeInfo? = nil
+    }
+
+    /// Every flow of a type, receivers resolved; `passes` only for what
+    /// resolves to a `$published` value or a stream-typed member.
+    private func resolvedFlows(of type: TypeInfo) -> [ResolvedFlow] {
+        var result: [ResolvedFlow] = []
         var seen: Set<String> = []
         for flow in type.flows where flow.kind != .notifyPost && flow.kind != .notifyObserve {
             guard let (text, source) = index.describe(flow.subject, scope: flow.scope, owner: type) else { continue }
-            let rendered = flow.detail.map { "\(text) \($0)" } ?? text
+            var rendered = flow.detail.map { "\(text) \($0)" } ?? text
+            var into: TypeInfo?
+            if let target = flow.target {
+                guard isStream(text, from: source) else { continue }
+                into = index.lookup(target.type, from: type)
+                rendered += " → \(target.type)(\(target.label):)"
+            }
             if seen.insert(flow.kind.rawValue + rendered).inserted {
-                result.append((flow.kind.rawValue, rendered, source === type ? nil : source))
+                result.append(
+                    ResolvedFlow(
+                        kind: flow.kind.rawValue, text: rendered, source: source === type ? nil : source, into: into))
             }
         }
         if type.isSwiftUIView {
@@ -321,11 +347,21 @@ struct Renderer {
                 else { continue }
                 let text = "\(target.name).\(access.name)"
                 if access.name != "shared", seen.insert("swiftui-reads" + text).inserted {
-                    result.append(("swiftui-reads", text, target))
+                    result.append(ResolvedFlow(kind: "swiftui-reads", text: text, source: target))
                 }
             }
         }
         return result
+    }
+
+    /// `Type.$name`, or `Type.name(…)` / `Type.name` declared stream-typed on `source`.
+    private func isStream(_ text: String, from source: TypeInfo?) -> Bool {
+        let last = text.split(separator: ".").last.map { String($0.prefix { $0 != "(" }) } ?? ""
+        if last.hasPrefix("$") { return true }
+        guard let source else { return false }
+        let declared =
+            source.members.first { $0.name == last }?.returnType ?? source.properties.first { $0.name == last }?.type
+        return Self.streamMarkers.contains { declared?.contains($0) == true }
     }
 
     private func list(_ items: [String]) -> String { items.isEmpty ? "—" : items.joined(separator: ", ") }

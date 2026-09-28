@@ -259,6 +259,15 @@ final class Extractor: SyntaxVisitor {
                 owner.tasks += 1
             } else {
                 owner.creates.append(constructed)
+                for argument in node.arguments {
+                    // `Render` keeps only the ones that turn out to be publishers or streams.
+                    let root = publisherRoot(argument.expression)
+                    guard root.is(MemberAccessExprSyntax.self) || root.is(FunctionCallExprSyntax.self) else { continue }
+                    owner.flows.append(
+                        Flow(
+                            kind: .passes, subject: root, scope: scope,
+                            target: (constructed, argument.label?.text ?? "_")))
+                }
             }
             if constructed.hasPrefix("NSHosting"),
                 let root = node.arguments.first?.expression.as(FunctionCallExprSyntax.self),
@@ -312,6 +321,12 @@ final class Extractor: SyntaxVisitor {
 
     override func visit(_ node: SequenceExprSyntax) -> SyntaxVisitorContinueKind {
         let elements = Array(node.elements)
+        if elements.count == 3, elements[1].is(AssignmentExprSyntax.self),
+            let local = elements[0].as(DeclReferenceExprSyntax.self)?.baseName.text,
+            scope.lookup(local) != nil, elements[2].trimmedDescription != "nil"
+        {
+            scope.assign(local, elements[2])
+        }
         guard elements.count == 3, elements[1].is(AssignmentExprSyntax.self),
             let target = elements[0].as(MemberAccessExprSyntax.self), let base = target.base,
             base.trimmedDescription != "self"

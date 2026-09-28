@@ -160,12 +160,22 @@ extension SidebarViewController: NSOutlineViewDataSource {
 extension SidebarViewController: NSOutlineViewDelegate {
     func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
         guard let item = item as? Item else { return nil }
-        let cell = outlineView.makeView(withIdentifier: .sidebarCell, owner: nil) as? NSTableCellView ?? Self.makeCell()
+        let cell = outlineView.makeView(withIdentifier: .sidebarCell, owner: nil) as? Cell ?? Cell()
         cell.imageView?.image = item.node.kind.image
         cell.imageView?.contentTintColor = item.node.kind.tintColor
-        cell.textField?.stringValue = item.node.title
+        cell.objectValue = item.node.title
         cell.toolTip = item.node.kind == .project ? item.node.id : item.node.title
         return cell
+    }
+
+    /// Type-to-select, which AppKit would otherwise read from the cell's
+    /// `textField` — a `Cell` has none.
+    func outlineView(
+        _ outlineView: NSOutlineView, typeSelectStringFor tableColumn: NSTableColumn?, item: Any
+    )
+        -> String?
+    {
+        (item as? Item)?.node.title
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
@@ -179,30 +189,65 @@ extension SidebarViewController: NSOutlineViewDelegate {
         delegate?.sidebarViewController(self, didSelect: item.node)
     }
 
-    /// The source list's standard row: an image and a label.
-    private static func makeCell() -> NSTableCellView {
-        let cell = NSTableCellView()
-        cell.identifier = .sidebarCell
-        let image = NSImageView()
-        image.imageScaling = .scaleProportionallyUpOrDown
-        let label = NSTextField(labelWithString: "")
-        label.lineBreakMode = .byTruncatingTail
-        for subview in [image, label] as [NSView] {
-            subview.translatesAutoresizingMaskIntoConstraints = false
-            cell.addSubview(subview)
+}
+
+// MARK: - Cell
+
+extension SidebarViewController {
+    /// The source list's row: an icon and its title, which is the cell's
+    /// `objectValue`.
+    ///
+    /// The title is deliberately not the cell's `textField`: a source list
+    /// rewrites its `textField` semibold while the row is selected, and Xcode's
+    /// navigator keeps a selected title's weight. As a plain subview it still
+    /// turns white on an emphasized row — the cell forwards `backgroundStyle` to
+    /// every control in it — and the drag image adds it back, since AppKit
+    /// builds one only from `imageView` and `textField`.
+    private final class Cell: NSTableCellView {
+        private let title = NSTextField(labelWithString: "")
+
+        override var objectValue: Any? {
+            didSet { title.stringValue = objectValue as? String ?? "" }
         }
-        cell.imageView = image
-        cell.textField = label
-        NSLayoutConstraint.activate([
-            image.leadingAnchor.constraint(equalTo: cell.leadingAnchor),
-            image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            image.widthAnchor.constraint(equalToConstant: 16),
-            image.heightAnchor.constraint(equalToConstant: 16),
-            label.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 6),
-            label.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor),
-            label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-        ])
-        return cell
+
+        init() {
+            super.init(frame: .zero)
+            identifier = .sidebarCell
+            let image = NSImageView()
+            image.imageScaling = .scaleProportionallyUpOrDown
+            imageView = image
+            title.font = .systemFont(ofSize: NSFont.systemFontSize)
+            title.lineBreakMode = .byTruncatingTail
+            for subview in [image, title] as [NSView] {
+                subview.translatesAutoresizingMaskIntoConstraints = false
+                addSubview(subview)
+            }
+            NSLayoutConstraint.activate([
+                image.leadingAnchor.constraint(equalTo: leadingAnchor),
+                image.centerYAnchor.constraint(equalTo: centerYAnchor),
+                image.widthAnchor.constraint(equalToConstant: 16),
+                image.heightAnchor.constraint(equalToConstant: 16),
+                title.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 6),
+                title.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+                title.centerYAnchor.constraint(equalTo: centerYAnchor),
+            ])
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+        override var draggingImageComponents: [NSDraggingImageComponent] {
+            guard let rep = title.bitmapImageRepForCachingDisplay(in: title.bounds) else {
+                return super.draggingImageComponents
+            }
+            title.cacheDisplay(in: title.bounds, to: rep)
+            let image = NSImage(size: title.bounds.size)
+            image.addRepresentation(rep)
+            let component = NSDraggingImageComponent(key: .label)
+            component.contents = image
+            component.frame = convert(title.bounds, from: title)
+            return super.draggingImageComponents + [component]
+        }
     }
 }
 

@@ -45,7 +45,7 @@ final class SidebarViewControllerTests: XCTestCase {
 
     private func titles() -> [String] {
         (0..<outline.numberOfRows).map { row in
-            (outline.view(atColumn: 0, row: row, makeIfNecessary: true) as? NSTableCellView)?.textField?.stringValue
+            (outline.view(atColumn: 0, row: row, makeIfNecessary: true) as? NSTableCellView)?.objectValue as? String
                 ?? "?"
         }
     }

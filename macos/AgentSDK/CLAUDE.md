@@ -6,7 +6,7 @@ Swift package over the `claude` CLI: a live `Session` on the stream-json stdio p
 
 | Dir | Holds |
 |---|---|
-| `Protocol/` | What the CLI says: `Message` (one enum over every line type) and its payloads, `ContentBlock`, `StreamEvent`, `JSONValue`, `Usage`. |
+| `Protocol/` | What the CLI says: `Message` (one enum over every line type) and its payloads, `ContentBlock`, `StreamEvent`, `JSONValue`, `Usage`; the tags the CLI writes into user text read as types (`UserMessage.localCommand`). |
 | `Session/` | Talking to a live CLI: `Session` (events, handshake, control RPCs), `SessionConfiguration` and its launch flags, `UserInput`, `PermissionRequest` / `PermissionDecision` / `PermissionUpdate`, `InitializationResult`, `ContextUsage`, `MessageExporter`. |
 | `Settings/` | `Settings` (a `settings.json` object), `SettingsKey<Value>` and its catalog (`SettingsKey+<Area>.swift`), `SettingsValue`, value types (`PermissionSettings`, …), `SettingsSnapshot` (`Session.settings()`). |
 | `Tools/` | `Tools.<Name>` — typed input/output per built-in tool; `ToolUseBlock.input(as:)`, `UserMessage.toolOutcome(_:)`. |

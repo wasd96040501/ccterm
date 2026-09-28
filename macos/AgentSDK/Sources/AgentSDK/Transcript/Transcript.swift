@@ -18,6 +18,8 @@ public struct Transcript: Sendable, Equatable {
     ///   everything before it stays.
     /// - A rewind or an edited prompt leaves the conversation as the user
     ///   continued it; the messages they went back over are not included.
+    /// - A local command (`/compact`) comes before its output, as it was
+    ///   run; the stream echoes it after.
     /// - Prompts the CLI queued while busy are user messages.
     /// - A subagent's messages live in its own file, which reads as that
     ///   subagent's conversation.

@@ -65,15 +65,22 @@ final class Run {
         events = session.events.makeAsyncIterator()
     }
 
-    /// Sends `text` and reads until its turn's result.
+    /// Sends `text` and reads until its turn's result. A local command's
+    /// echo arrives after its output; the contract puts the command first.
     func turn(_ text: String) async throws -> UserInput {
         let input = UserInput(text)
         try session.send(input)
+        var output: Int?
         while let event = await events.next() {
             switch event {
             case .message(.result(let result)):
-                log("turn \(text.prefix(40).debugDescription) uuid=\(input.uuid) → \(result.subtype.rawValue)")
+                log("turn \(text.prefix(40).debugDescription) → \(result.subtype.rawValue)")
                 return input
+            case .message(.user(let m)) where m.isReplay && m.uuid == input.uuid && output != nil:
+                conversation.insert(.user(m), at: output!)
+            case .message(.user(let m)) where m.isReplay && m.localCommand?.isOutput == true:
+                output = output ?? conversation.count
+                conversation.append(.user(m))
             case .message(let message):
                 if key(message) != nil { conversation.append(message) }
             case .permissionRequest(let request):
@@ -114,6 +121,13 @@ final class Run {
 }
 
 /// Compares the file, read now, with what was seen live.
+extension UserMessage.LocalCommand {
+    var isOutput: Bool {
+        if case .output = self { return true }
+        return false
+    }
+}
+
 func compare(_ expected: [Message], _ step: String) {
     guard let file = SessionDirectory(environment: env).sessions().first(where: { $0.id == sessionID }) else {
         return check(false, "\(step): the session's file exists")
@@ -158,6 +172,12 @@ do {
     compare(first.conversation, "rewind")
 
     _ = try await first.turn("/compact")
+    let commands = first.conversation.compactMap { message -> UserMessage.LocalCommand? in
+        if case .user(let m) = message { return m.localCommand }
+        return nil
+    }
+    check(commands.first == .input("/compact"), "/compact reads as a local command (\(commands))")
+    check(commands.dropFirst().first?.isOutput == true, "its output reads as the command's output")
     _ = try await first.turn("Reply with exactly: after compact")
     await first.close()
     compare(first.conversation, "compaction")

@@ -78,7 +78,9 @@ struct TranscriptChain {
         let decoder = JSONDecoder()
         switch row.type {
         case "user":
-            return (try? decoder.decode(UserMessage.self, from: line)).map(Message.user)
+            guard let user = try? decoder.decode(UserMessage.self, from: line), !user.isLocalCommandCaveat
+            else { return nil }
+            return .user(user)
         case "assistant":
             return (try? decoder.decode(AssistantMessage.self, from: line)).map(Message.assistant)
         case "system" where row.subtype == "compact_boundary":

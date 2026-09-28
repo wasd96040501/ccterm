@@ -8,7 +8,8 @@
 //
 // Prints counts per message kind, every `.unknown` / `.other` kind, content
 // blocks that fell back to `.unknown`, and known kinds that degraded to
-// `.unknown` (a decode failure). Reads local data only; writes nothing.
+// `.unknown` (a decode failure), and how many user messages read as a local
+// command or its output. Reads local data only; writes nothing.
 //
 //   swift run -c release CorpusAudit
 //   AUDIT_LIMIT=50 swift run CorpusAudit       # first 50 files per corpus
@@ -133,7 +134,19 @@ for file in mainFiles.prefix(limit) {
     for message in transcript.messages {
         switch message {
         case .assistant(let m): audit(blocks: m.content, line: Data())
-        case .user(let m): audit(blocks: m.content, line: Data())
+        case .user(let m):
+            audit(blocks: m.content, line: Data())
+            switch m.localCommand {
+            case .input: bump("disk.user.localCommand.input")
+            case .output: bump("disk.user.localCommand.output")
+            case nil:
+                // A local command's tags that did not read as one.
+                let text = m.content.compactMap(\.text).joined()
+                let tags = ["<command-name>", "<bash-input>", "<local-command-std", "<bash-std"]
+                if tags.contains(where: text.contains) {
+                    note("disk.user.localCommand", Data(text.utf8))
+                }
+            }
         default: break
         }
     }

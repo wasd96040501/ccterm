@@ -21,6 +21,9 @@ final class MainSplitViewController: NSSplitViewController {
     private let sidebarViewController: SidebarViewController
     private let editorArea = EditorAreaViewController()
 
+    /// The project last reported to the delegate.
+    private var shownProject: URL?
+
     init(library: LibraryStore) {
         self.library = library
         sidebarViewController = SidebarViewController(library: library)
@@ -109,14 +112,18 @@ final class MainSplitViewController: NSSplitViewController {
         return nil
     }
 
-    /// The library's node for a transcript, searched from the top.
-    private func node(forTranscriptAt url: URL) -> LibraryNode? {
-        var pending = library.nodes
-        while let node = pending.popLast() {
-            if node.transcriptURL == url { return node }
-            pending += node.children
+    /// The library's nodes from a project down to the transcript at `url`, or
+    /// none if it isn't in the library: `last` is the transcript's node, `first`
+    /// its project.
+    private func path(toTranscriptAt url: URL) -> [LibraryNode] {
+        func path(from node: LibraryNode) -> [LibraryNode]? {
+            if node.transcriptURL == url { return [node] }
+            for child in node.children {
+                if let rest = path(from: child) { return [node] + rest }
+            }
+            return nil
         }
-        return nil
+        return library.nodes.lazy.compactMap(path(from:)).first ?? []
     }
 }
 
@@ -149,14 +156,24 @@ extension MainSplitViewController: NSToolbarItemValidation {
 }
 
 extension MainSplitViewController: EditorAreaViewControllerDelegate {
-    /// Framework: tells the window which project the active transcript is in.
-    func editorArea(_ editorArea: EditorAreaViewController, didActivate viewController: NSViewController?) {}
+    /// Tells the window when the transcript the reader is in belongs to another
+    /// project — its folder in the sidebar, whose `id` is the directory.
+    func editorArea(_ editorArea: EditorAreaViewController, didActivate viewController: NSViewController?) {
+        let project = ((viewController as? TranscriptViewController)?.fileURL)
+            .flatMap { path(toTranscriptAt: $0).first }
+            .map { URL(fileURLWithPath: $0.id) }
+        guard project != shownProject else { return }
+        shownProject = project
+        delegate?.mainSplitViewController(self, didShowProjectAt: project)
+    }
 
-    /// Framework: a tab again for a transcript the history goes back to.
+    /// A tab again for a transcript the history goes back to, while the library
+    /// still has it.
     func editorArea(
         _ editorArea: EditorAreaViewController, tabViewItemWithIdentifier identifier: Any
     ) -> NSTabViewItem? {
-        nil
+        guard let url = identifier as? URL, let node = path(toTranscriptAt: url).last else { return nil }
+        return tab(for: node, at: url)
     }
 
     func editorArea(_ editorArea: EditorAreaViewController, willClose viewController: NSViewController) {
@@ -168,7 +185,7 @@ extension MainSplitViewController: EditorAreaViewControllerDelegate {
     ) -> NSTabViewItem? {
         guard
             let url = draggingInfo.draggingPasteboard.readObjects(forClasses: [NSURL.self])?.first as? URL,
-            let node = node(forTranscriptAt: url)
+            let node = path(toTranscriptAt: url).last
         else { return nil }
         return tab(for: node, at: url)
     }

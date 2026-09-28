@@ -74,6 +74,47 @@ final class MainWindowAppKitSnapshotTests: XCTestCase {
         XCTAssertEqual(Self.find(TranscriptView.self, in: split.view)?.numberOfRows, 24)
     }
 
+    /// The whole window — titlebar, toolbar, tab bar under them — with two
+    /// tabs open and a project whose branch is real. Synchronous for the same
+    /// reason as the split's: the branch arrives on a main-actor task. The
+    /// sidebar comes out blank: its behind-window material is composited by
+    /// the window server, which `cacheDisplay` doesn't reach — the split's
+    /// snapshot shows its rows.
+    func testMainWindowSnapshot() throws {
+        let fixture = try SessionDirectoryFixture()
+        defer { fixture.remove() }
+        try LibraryStoreTests.writeLibrary(fixture)
+        let repo = try GitRepoFixture(name: "ccterm", branch: "toolbar-pin-fixed-sidebar")
+        defer { repo.remove() }
+        let store = LibraryStore(directory: fixture.directory)
+        store.start()
+        defer { store.stop() }
+        let stage = AppKitStage.mainWindow(library: store)
+        defer { stage.teardown() }
+        XCTAssertTrue(stage.drainUntil(timeout: 10) { !store.nodes.isEmpty }, "the library never read")
+        let split = try XCTUnwrap(stage.mainSplit)
+        let sidebar = try XCTUnwrap(split.splitViewItems[0].viewController as? SidebarViewController)
+        let sessions = store.nodes.flatMap(\.children)
+        split.sidebarViewController(sidebar, didOpen: sessions[0])
+        split.sidebarViewController(sidebar, didSelect: sessions[1])
+        let controller = try XCTUnwrap(stage.windowController as? MainWindowController)
+        controller.mainSplitViewController(split, didShowProjectAt: repo.url)
+        stage.drain(seconds: 1)
+
+        let frameView = try XCTUnwrap(stage.window.contentView?.superview)
+        frameView.layoutSubtreeIfNeeded()
+        let rep = try XCTUnwrap(frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds))
+        frameView.cacheDisplay(in: frameView.bounds, to: rep)
+        let image = NSImage(size: frameView.bounds.size)
+        image.addRepresentation(rep)
+
+        let url = ViewSnapshot.writePNG(image, name: "MainWindowAppKit-Window")
+        let attachment = XCTAttachment(contentsOfFile: url)
+        attachment.name = "MainWindowAppKit-Window.png"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     private static func find<T: NSView>(_ type: T.Type, in root: NSView) -> T? {
         if let match = root as? T { return match }
         for subview in root.subviews {

@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 
 /// The main window's title, as Xcode's toolbar shows it: the project's folder
 /// icon and name, and under it the project's git branch.
@@ -14,19 +15,90 @@ final class MainWindowTitleView: NSView {
 
     /// The project's name, or `nil` to show nothing.
     var title: String? {
-        didSet {}
+        didSet {
+            titleField.stringValue = title ?? ""
+            isHidden = title == nil
+        }
     }
 
     /// The project's branch; `nil` hides it — at once, since what it said
-    /// belonged to a folder no longer shown. A branch arriving fades in.
+    /// belonged to a folder no longer shown. A branch arriving fades in; one
+    /// replacing another is just written.
     var subtitle: String? {
-        didSet {}
+        didSet {
+            guard subtitle != oldValue else { return }
+            subtitleField.stringValue = subtitle ?? ""
+            guard subtitle != nil else {
+                subtitleField.alphaValue = 0
+                return
+            }
+            guard oldValue == nil else { return }
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration =
+                    NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : Self.fadeDuration
+                subtitleField.animator().alphaValue = 1
+            }
+        }
     }
+
+    private static let fadeDuration: TimeInterval = 0.25
+
+    private lazy var iconView: NSImageView = {
+        let view = NSImageView(image: NSWorkspace.shared.icon(for: .folder))
+        view.imageScaling = .scaleProportionallyUpOrDown
+        return view
+    }()
+
+    private lazy var titleField: NSTextField = {
+        let field = NSTextField(labelWithString: "")
+        field.font = .boldSystemFont(ofSize: 13)
+        field.lineBreakMode = .byTruncatingTail
+        return field
+    }()
+
+    private lazy var subtitleField: NSTextField = {
+        let field = NSTextField(labelWithString: "")
+        field.font = .systemFont(ofSize: 11)
+        field.textColor = .secondaryLabelColor
+        field.lineBreakMode = .byTruncatingTail
+        field.alphaValue = 0
+        return field
+    }()
 
     init() {
         super.init(frame: .zero)
+        isHidden = true
+        configureHierarchy()
+        configureConstraints()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+    private func configureHierarchy() {
+        for subview in [iconView, titleField, subtitleField] {
+            subview.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(subview)
+        }
+    }
+
+    /// Icon, then the two lines stacked tight — AppKit's 16-point title line over
+    /// its 14-point subtitle line. The subtitle's line is there empty or not.
+    private func configureConstraints() {
+        NSLayoutConstraint.activate([
+            iconView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 24),
+            iconView.heightAnchor.constraint(equalToConstant: 24),
+            titleField.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 6),
+            titleField.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+            titleField.topAnchor.constraint(equalTo: topAnchor),
+            titleField.heightAnchor.constraint(equalToConstant: 16),
+            subtitleField.leadingAnchor.constraint(equalTo: titleField.leadingAnchor),
+            subtitleField.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+            subtitleField.topAnchor.constraint(equalTo: titleField.bottomAnchor),
+            subtitleField.heightAnchor.constraint(equalToConstant: 14),
+            subtitleField.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
 }

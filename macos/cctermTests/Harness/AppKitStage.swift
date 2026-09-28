@@ -61,6 +61,10 @@ final class AppKitStage {
     /// ancestor coordinate space for `Geometry` assertions.
     var rootView: NSView { rootViewController.view }
 
+    /// The production window controller whose window this is, for a stage
+    /// mounted from one; it owns the window's toolbar delegate.
+    let windowController: NSWindowController?
+
     /// Cleanup hooks (temp dirs, UserDefaults suites) registered by the
     /// factory, run on `teardown()`.
     private var cleanups: [() -> Void] = []
@@ -69,11 +73,13 @@ final class AppKitStage {
         window: NSWindow,
         container: NSView,
         rootViewController: NSViewController,
+        windowController: NSWindowController? = nil,
         cleanups: [() -> Void]
     ) {
         self.window = window
         self.container = container
         self.rootViewController = rootViewController
+        self.windowController = windowController
         self.cleanups = cleanups
     }
 
@@ -116,6 +122,29 @@ final class AppKitStage {
         return AppKitStage(
             window: window, container: container,
             rootViewController: viewController, cleanups: cleanups)
+    }
+
+    /// Mount a production `NSWindowController`'s own window — its style, its
+    /// toolbar, its content view controller — parked off-screen like every
+    /// stage. For what only the real window has: the titlebar, the toolbar, the
+    /// safe area under them.
+    static func mount(
+        _ windowController: NSWindowController,
+        size: CGSize = defaultWindowSize,
+        cleanups: [() -> Void] = []
+    ) -> AppKitStage {
+        guard let window = windowController.window, let content = windowController.contentViewController else {
+            preconditionFailure("AppKitStage.mount(_:): a window controller with a window and content")
+        }
+        window.isExcludedFromWindowsMenu = true
+        window.alphaValue = 0.01
+        window.setContentSize(size)
+        window.setFrameOrigin(CGPoint(x: -30_000, y: -30_000))
+        window.ccterm_orderFrontForTesting()
+        content.view.layoutSubtreeIfNeeded()
+        return AppKitStage(
+            window: window, container: content.view, rootViewController: content,
+            windowController: windowController, cleanups: cleanups)
     }
 
     private static func makeOffscreenWindow(size: CGSize) -> NSWindow {

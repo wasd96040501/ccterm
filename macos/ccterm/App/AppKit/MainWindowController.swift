@@ -14,8 +14,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     private let splitController: MainSplitViewController
     private let titleView = MainWindowTitleView()
 
-    /// The project the title shows, and the task following its branch.
-    private var project: URL?
+    /// The task following the shown project's branch.
     private var branchTask: Task<Void, Never>?
 
     init(library: LibraryStore) {
@@ -41,21 +40,13 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         // displayed window's origin — racing with the autosaved frame.
         // Disable so the saved frame is the only source of truth.
         shouldCascadeWindows = false
-        // Probe defaults before turning autosave on so we can detect a
-        // first launch (no saved frame) and center the default frame.
-        // `setFrameAutosaveName` synchronously reads the saved frame
-        // and applies it; nothing to do here if it landed.
-        let autosaveKey = "NSWindow Frame \(Self.frameAutosaveName)"
-        let hadSavedFrame = UserDefaults.standard.string(forKey: autosaveKey) != nil
-        window.setFrameAutosaveName(Self.frameAutosaveName)
-        if !hadSavedFrame {
-            window.center()
-        }
+        // Centred until a saved frame replaces it: persisting the frame is the
+        // composition root's (`windowFrameAutosaveName`), which applies the
+        // saved one as it is set.
+        window.center()
         splitController.delegate = self
         installToolbar()
     }
-
-    private static let frameAutosaveName = "MainWindow"
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
@@ -94,21 +85,57 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     }
 
     /// Back and forward as one control, as Xcode's and Finder's: a momentary
-    /// segmented group, each segment an item of its own that the split validates.
+    /// segmented group, each segment a subitem with its own action, aimed at the
+    /// split and validated by it. Navigational, so AppKit keeps it at the leading
+    /// edge of the title area.
     private func navigationItem() -> NSToolbarItem {
-        let group = NSToolbarItemGroup(itemIdentifier: .navigation)
+        let back = String(localized: "Back")
+        let forward = String(localized: "Forward")
+        let group = NSToolbarItemGroup(
+            itemIdentifier: .navigation,
+            images: [
+                NSImage(systemSymbolName: "chevron.left", accessibilityDescription: back),
+                NSImage(systemSymbolName: "chevron.right", accessibilityDescription: forward),
+            ].compactMap { $0 },
+            selectionMode: .momentary, labels: [back, forward], target: splitController, action: nil)
+        for (subitem, action) in zip(
+            group.subitems,
+            [#selector(MainSplitViewController.goBack(_:)), #selector(MainSplitViewController.goForward(_:))])
+        {
+            subitem.target = splitController
+            subitem.action = action
+        }
+        group.isNavigational = true
         return group
     }
 
+    /// The title is text, not a control: no bezel around it.
     private func titleItem() -> NSToolbarItem {
         let item = NSToolbarItem(itemIdentifier: .projectTitle)
         item.view = titleView
+        item.isBordered = false
         return item
     }
 }
 
 extension MainWindowController: MainSplitViewControllerDelegate {
-    func mainSplitViewController(_ split: MainSplitViewController, didShowProjectAt url: URL?) {}
+    /// Shows the project's name at once and follows its branch from then on,
+    /// until another project is shown.
+    func mainSplitViewController(_ split: MainSplitViewController, didShowProjectAt url: URL?) {
+        branchTask?.cancel()
+        branchTask = nil
+        let name = url?.lastPathComponent
+        window?.title = name ?? "ccterm"
+        titleView.title = name
+        titleView.subtitle = nil
+        guard let path = url?.path else { return }
+        branchTask = Task { [weak self] in
+            for await branch in GitUtils.currentBranchUpdates(at: path) {
+                guard !Task.isCancelled else { return }
+                self?.titleView.subtitle = branch
+            }
+        }
+    }
 }
 
 extension NSToolbarItem.Identifier {

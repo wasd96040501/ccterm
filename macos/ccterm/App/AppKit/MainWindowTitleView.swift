@@ -7,9 +7,10 @@ import UniformTypeIdentifiers
 /// Not the window's own `title` / `subtitle`: AppKit lays a title out alone
 /// (15-point semibold, centred) until a subtitle arrives and then again as two
 /// lines (13-point bold over 11-point), in one frame and without animation — and
-/// the branch arrives after the name, read off the main thread. So the two lines
-/// are always laid out, in the fonts AppKit uses for a title with a subtitle,
-/// and the branch fades in where it goes: nothing moves when it arrives.
+/// the branch is read off the main thread, so it can come and go on its own.
+/// Here the lines are in the fonts AppKit uses for a title with a subtitle, and
+/// the change animates: the name, centred alone, rises as the branch fades in
+/// under it, one constraint and one alpha through their animators.
 @MainActor
 final class MainWindowTitleView: NSView {
 
@@ -21,9 +22,9 @@ final class MainWindowTitleView: NSView {
         }
     }
 
-    /// The project's branch; `nil` hides it — at once, since what it said
-    /// belonged to a folder no longer shown. A branch arriving fades in; one
-    /// replacing another is just written.
+    /// The project's branch. Without one the name is centred; one arriving
+    /// raises the name and fades in under it, and one leaving does the reverse.
+    /// A branch replacing another is just written.
     var subtitle: String? {
         didSet {
             guard subtitle != oldValue else { return }

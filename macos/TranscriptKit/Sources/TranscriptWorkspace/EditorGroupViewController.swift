@@ -293,8 +293,8 @@ public final class EditorGroupViewController: NSViewController {
         area?.groupDidChangeTabs(self)
     }
 
-    /// Shows the tabs. The bar is always there, one tab or none: it is where the
-    /// tabs are, not a control that appears when there is a choice.
+    /// Shows the tabs. The bar is there while there are any, one or more: it is
+    /// where the tabs are, not a control that appears when there is a choice.
     func reloadTabBar() {
         guard isViewLoaded else { return }
         tabBar.configure(

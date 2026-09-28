@@ -11,13 +11,15 @@ import AppKit
 /// there is no sidebar button either.
 @MainActor
 final class MainWindowController: NSWindowController, NSToolbarDelegate {
+    private let library: LibraryStore
     private let splitController: MainSplitViewController
     private let titleView = MainWindowTitleView()
 
-    /// The task following the shown project's branch.
+    /// The task following the shown transcript's branch.
     private var branchTask: Task<Void, Never>?
 
     init(library: LibraryStore) {
+        self.library = library
         splitController = MainSplitViewController(library: library)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1200, height: 860),
@@ -119,22 +121,31 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
 }
 
 extension MainWindowController: MainSplitViewControllerDelegate {
-    /// Shows the project's name at once and follows its branch from then on,
-    /// until another project is shown.
-    func mainSplitViewController(_ split: MainSplitViewController, didShowProjectAt url: URL?) {
+    /// Names the transcript's project — its folder in the sidebar — under its
+    /// session's branch, and follows the branch until another transcript is
+    /// shown. Name and branch change together, on the branch's first answer, so
+    /// a name never stands over another project's branch; with no transcript,
+    /// the title goes at once.
+    func mainSplitViewController(_ split: MainSplitViewController, didShowTranscriptAt url: URL?) {
         branchTask?.cancel()
         branchTask = nil
-        let name = url?.lastPathComponent
-        window?.title = name ?? "ccterm"
-        titleView.title = name
-        titleView.subtitle = nil
-        guard let path = url?.path else { return }
-        branchTask = Task { [weak self] in
-            for await branch in GitUtils.currentBranchUpdates(at: path) {
+        guard let url, let project = library.path(toTranscriptAt: url).first else {
+            show(project: nil, branch: nil)
+            return
+        }
+        branchTask = Task { [weak self, library] in
+            for await branch in library.branchUpdates(ofTranscriptAt: url) {
                 guard !Task.isCancelled else { return }
-                self?.titleView.subtitle = branch
+                self?.show(project: project.title, branch: branch)
             }
         }
+    }
+
+    /// The title names the window in the Window menu and Mission Control too.
+    private func show(project: String?, branch: String?) {
+        window?.title = project ?? "ccterm"
+        titleView.title = project
+        titleView.subtitle = branch
     }
 }
 

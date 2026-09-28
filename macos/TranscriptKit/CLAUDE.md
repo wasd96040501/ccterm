@@ -1248,11 +1248,8 @@ disc, on the centre of the tab's leading end — which sits in a halo under the
 pointer and, where Safari's does not change, deepens a step while pressed. Along
 its bar a dragged tab stays in the bar under the pointer, and a neighbour whose
 middle its edge passes slides into the place it left, never across the pinned
-boundary; let go, it settles into its own. Pulled across the bar, the tab gives
-on a rubber band (`UIScrollView`'s curve), drawn past the bar's edge, and springs
-back if let go — which is why the track is a view behind the tabs and not the
-bar's own layer: rounding a view's own layer makes AppKit clip it; pulled far
-enough, it leaves as a drag session carrying a small picture of its content — the
+boundary; let go, it settles into its own. It moves only along the track: pulled
+far enough above or below, it leaves as a drag session carrying a small picture of its content — the
 group's view, drawn by `cacheDisplay` and framed by the bar — centred on the
 pointer, while the tabs it left close up. Over a bar it turns back into a tab, the
 tabs part where it would drop, and it drops into the gap. **Each side draws its own

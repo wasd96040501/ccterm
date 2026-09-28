@@ -45,9 +45,8 @@ protocol EditorTabBarDelegate: AnyObject {
 /// Safari's):
 ///
 /// - **Within the bar** the tab stays in it, under the pointer, and a neighbour
-///   whose middle it crosses slides into the place it left. Pulled across the
-///   bar it gives, less the further it goes, so it stays on the track until the
-///   pull is meant. Let go, it slides into its own place. No drag session: the
+///   whose middle it crosses slides into the place it left. Let go, it slides
+///   into its own place. No drag session: the
 ///   mouse events are enough, and a session's image would be a second copy of
 ///   the tab.
 /// - **Out of the bar**, far enough above or below it, the tab leaves as a drag
@@ -106,16 +105,14 @@ final class EditorTabBar: NSView, NSDraggingSource {
     /// keeps its source alive, so this does.
     private static var inFlight: EditorTabBar?
 
-    /// A tab's view and the constraints that place it: where along the bar it
-    /// starts, how wide it is, and how far below the bar's top — which is only
-    /// ever not zero under a pull. A slide animates the constants, which lays the
-    /// tab out again on every frame — so its glass and its title follow its width
-    /// as it changes, instead of being carried at the final width.
+    /// A tab's view and the two constraints that place it: where along the bar
+    /// it starts, and how wide it is. A slide animates the two constants, which
+    /// lays the tab out again on every frame — so its glass and its title follow
+    /// its width as it changes, instead of being carried at the final width.
     private struct Tab {
         let view: EditorTabView
         let leading: NSLayoutConstraint
         let width: NSLayoutConstraint
-        let top: NSLayoutConstraint
     }
 
     private var tabs: [ObjectIdentifier: Tab] = [:]
@@ -131,7 +128,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
     private var pressLocation: NSPoint = .zero
     /// Where along the dragged tab the pointer holds it, and where the pointer is.
     private var grabOffset: CGFloat = 0
-    private var pointer: NSPoint = .zero
+    private var pointerX: CGFloat = 0
 
     /// The size the tabs were last placed for.
     private var placedSize: NSSize?
@@ -143,10 +140,6 @@ final class EditorTabBar: NSView, NSDraggingSource {
         super.init(frame: .zero)
         wantsLayer = true
         registerForDraggedTypes([.editorTab])
-
-        track.frame = bounds
-        track.autoresizingMask = [.width, .height]
-        addSubview(track)
 
         closeButton.bezelStyle = .smallSquare
         closeButton.isBordered = false
@@ -182,20 +175,18 @@ final class EditorTabBar: NSView, NSDraggingSource {
 
     // MARK: - The track
 
-    /// The capsule the tabs run in, behind them. A view of its own rather than
-    /// the bar's layer: rounding a view's own layer makes AppKit clip the view,
-    /// and a tab pulled across the bar is drawn past its edge.
-    private let track: NSBox = {
-        let box = NSBox()
-        box.boxType = .custom
-        box.borderWidth = 0
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        let fill: NSColor
         if #available(macOS 14.0, *) {
-            box.fillColor = .secondarySystemFill
+            fill = .secondarySystemFill
         } else {
-            box.fillColor = NSColor.labelColor.withAlphaComponent(0.078)
+            fill = NSColor.labelColor.withAlphaComponent(0.078)
         }
-        return box
-    }()
+        layer?.backgroundColor = fill.cgColor
+        layer?.cornerRadius = bounds.height / 2
+    }
 
     // MARK: - Content
 
@@ -229,11 +220,11 @@ final class EditorTabBar: NSView, NSDraggingSource {
         let tab = Tab(
             view: view,
             leading: view.leadingAnchor.constraint(equalTo: leadingAnchor, constant: frame.minX),
-            width: view.widthAnchor.constraint(equalToConstant: frame.width),
-            top: view.topAnchor.constraint(equalTo: topAnchor, constant: frame.minY))
+            width: view.widthAnchor.constraint(equalToConstant: frame.width))
         NSLayoutConstraint.activate([
-            tab.leading, tab.width, tab.top,
-            view.heightAnchor.constraint(equalTo: heightAnchor),
+            tab.leading, tab.width,
+            view.topAnchor.constraint(equalTo: topAnchor),
+            view.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
         tabs[id] = tab
     }
@@ -248,7 +239,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
         tab.view.removeFromSuperview()
         attach(
             tab.view, as: id,
-            at: NSRect(x: tab.leading.constant, y: tab.top.constant, width: tab.width.constant, height: 0))
+            at: NSRect(x: tab.leading.constant, y: 0, width: tab.width.constant, height: 0))
     }
 
     private func tab(at index: Int) -> Tab? {
@@ -320,27 +311,16 @@ final class EditorTabBar: NSView, NSDraggingSource {
     /// A new size places the tabs for it, before the pass lays them out.
     override func layout() {
         if bounds.size != placedSize { placeTabs(animated: false) }
-        track.cornerRadius = bounds.height / 2
         super.layout()
     }
 
     /// Where the tab in hand is: under the pointer, held where it was picked up,
-    /// and kept on the track — along it; across it, it gives to a pull less and
-    /// less the further it goes, so that leaving the bar is a pull that has to be
-    /// meant.
+    /// and kept on the track — along it only, so that it leaves the bar all at
+    /// once, as the picture of its content, rather than being seen to drift off.
     private func heldFrame(in slot: NSRect) -> NSRect {
         var frame = slot
-        frame.origin.x = min(max(pointer.x - grabOffset, bounds.minX), bounds.maxX - slot.width)
-        frame.origin.y += Self.resistance(pointer.y - pressLocation.y, over: slot.height)
+        frame.origin.x = min(max(pointerX - grabOffset, bounds.minX), bounds.maxX - slot.width)
         return frame
-    }
-
-    /// How far a pull of `distance` moves what it pulls, against a resistance that
-    /// never lets it reach `limit`: `UIScrollView`'s rubber band, which has the
-    /// same job past the end of its content.
-    private static func resistance(_ distance: CGFloat, over limit: CGFloat) -> CGFloat {
-        let pulled = (1 - 1 / (abs(distance) * 0.55 / limit + 1)) * limit
-        return distance < 0 ? -pulled : pulled
     }
 
     /// Puts every tab where it goes now: at rest, bent by a drag. The tab in hand
@@ -373,7 +353,6 @@ final class EditorTabBar: NSView, NSDraggingSource {
                 for (tab, frame) in slides {
                     tab.leading.animator().constant = frame.minX
                     tab.width.animator().constant = frame.width
-                    tab.top.animator().constant = frame.minY
                 }
             }
         }
@@ -383,7 +362,6 @@ final class EditorTabBar: NSView, NSDraggingSource {
     private func place(_ tab: Tab, at frame: NSRect) {
         tab.leading.constant = frame.minX
         tab.width.constant = frame.width
-        tab.top.constant = frame.minY
     }
 
     /// The hovered tab lights up and shows its close button, Safari's way; no tab
@@ -444,13 +422,6 @@ final class EditorTabBar: NSView, NSDraggingSource {
 
     // MARK: - Pressing and dragging within the bar
 
-    /// Every press but the close button's is the bar's to track, the track's
-    /// included: it is only the bar's drawing.
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        let hit = super.hitTest(point)
-        return hit === track ? self : hit
-    }
-
     /// Selects on mouse-down, which is when Xcode and Safari select a tab.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
@@ -493,7 +464,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
             beginDraggingSession(tabAt: dragged, with: event)
             return
         }
-        pointer = point
+        pointerX = point.x
         // Past every tab whose middle its edge has crossed: the leading edge for a
         // tab before it, the trailing edge for one after. Held on the track, it
         // can reach either end.
@@ -508,8 +479,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
         placeTabs(animated: true)
     }
 
-    /// Let go within the bar: the tab slides into its place, and back up into
-    /// the track from a pull that did not take it out.
+    /// Let go within the bar: the tab slides into its place.
     override func mouseUp(with event: NSEvent) {
         pressedIndex = nil
         guard draggedID != nil, !isDraggedTabOut else { return }

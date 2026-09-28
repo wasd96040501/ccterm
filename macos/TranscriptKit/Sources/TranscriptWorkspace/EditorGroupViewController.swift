@@ -88,9 +88,7 @@ public final class EditorGroupViewController: NSViewController {
     }
 
     private func configureHierarchy() {
-        // The bar over the content: a tab pulled down out of it passes over what
-        // is under it.
-        for subview in [separator, tabs.view, emptyLabel, tabBar] {
+        for subview in [tabBar, separator, tabs.view, emptyLabel] {
             subview.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(subview)
         }

@@ -597,10 +597,10 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertEqual(try tabView(titled: "Tab 0", in: bar).frame, bar.rect(forTabAt: 0))
     }
 
-    /// Pulled across the bar, a tab gives, and less than the pointer moves — the
-    /// further, the less — so that it stays in the bar until the pull is meant;
-    /// let go, it goes back up into its place.
-    func testATabPulledAcrossTheBarGivesLessAndLessAndSpringsBack() async throws {
+    /// A tab moves along the track only: a drag down or up short of leaving the
+    /// bar leaves it where it runs, so that it goes all at once, as the picture of
+    /// its content, rather than drifting off first.
+    func testADraggedTabStaysOnTheTrackUntilItLeaves() throws {
         let mounted = mount(tabs: 3)
         defer { mounted.window.close() }
         let bar = mounted.area.activeGroup.tabBar
@@ -609,58 +609,16 @@ final class EditorAreaTests: XCTestCase {
         let rest = bar.rect(forTabAt: 0)
 
         bar.mouseDown(with: mouse(.leftMouseDown, at: start, in: bar))
-        var given: [CGFloat] = []
-        for pull: CGFloat in [-12, 12, 24] {
-            let point = NSPoint(x: start.x, y: start.y + pull)
-            bar.mouseDragged(with: mouse(.leftMouseDragged, at: point, in: bar))
+        for pull: CGFloat in [-20, 12, 24] {
+            bar.mouseDragged(
+                with: mouse(.leftMouseDragged, at: NSPoint(x: start.x + 10, y: start.y + pull), in: bar))
             XCTAssertEqual(bar.draggedIndex, 0, "premise: the pull is a drag")
             XCTAssertFalse(bar.isDraggedTabOut, "a pull of \(pull) took the tab out of the bar")
             bar.layoutSubtreeIfNeeded()
-            let moved = tab.frame.minY - rest.minY
-            XCTAssertEqual(moved.sign, pull.sign, "a pull of \(pull) moved the tab the other way, or not at all")
-            XCTAssertGreaterThan(abs(moved), 0, "a pull of \(pull) did not move the tab")
-            XCTAssertLessThan(abs(moved), abs(pull) / 2, "a pull of \(pull) met no resistance")
-            given.append(abs(moved))
+            XCTAssertEqual(tab.frame.minY, rest.minY, "a pull of \(pull) moved the tab off the track")
+            XCTAssertEqual(tab.frame.minX, rest.minX + 10, accuracy: 0.5, "the tab stopped following the pointer along")
         }
-        XCTAssertLessThan(given[2] - given[1], given[1], "a longer pull gave as much again")
-        XCTAssertEqual(tab.frame.minX, rest.minX, accuracy: 0.5, "a pull straight down moved the tab along")
-
-        bar.mouseUp(with: mouse(.leftMouseUp, at: NSPoint(x: start.x, y: start.y + 24), in: bar))
-        try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.5)
-        XCTAssertEqual(tab.frame, rest, "let go, the tab did not go back into its place")
-    }
-
-    /// A pulled tab is drawn where it has been pulled to, past the bar's edge:
-    /// the track under it is the bar's drawing, not a clip. Read as composited,
-    /// just below the bar, where only the pulled tab's glass can be.
-    func testAPulledTabIsDrawnPastTheBarsEdge() async throws {
-        let mounted = mount(tabs: 3)
-        defer { mounted.window.close() }
-        let group = mounted.area.activeGroup
-        let bar = group.tabBar
-        let start = center(of: bar, tab: 1)
-        let below = group.view.convert(NSPoint(x: start.x, y: bar.bounds.maxY + 3), from: bar)
-
-        func grey() async throws -> CGFloat {
-            group.view.layoutSubtreeIfNeeded()
-            try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.2)
-            let rep = try await WindowCapture.bitmap(of: group.view)
-            let y = group.view.isFlipped ? below.y : group.view.bounds.height - below.y
-            let color = try XCTUnwrap(rep.colorAt(x: Int(below.x), y: Int(y))?.usingColorSpace(.sRGB))
-            return (color.redComponent + color.greenComponent + color.blueComponent) / 3 * 255
-        }
-
-        let before = try await grey()
-        bar.mouseDown(with: mouse(.leftMouseDown, at: start, in: bar))
-        bar.mouseDragged(with: mouse(.leftMouseDragged, at: NSPoint(x: start.x, y: start.y + 24), in: bar))
-        XCTAssertGreaterThan(
-            try tabView(titled: "Tab 1", in: bar).frame.maxY, bar.bounds.maxY + 3,
-            "premise: the pull takes the tab past the point read")
-        let pulled = try await grey()
         bar.mouseUp(with: mouse(.leftMouseUp, at: start, in: bar))
-
-        XCTAssertGreaterThan(
-            abs(pulled - before), 5, "the pulled tab is cut off at the bar's edge — \(before) → \(pulled)")
     }
 
     /// A tab pulled out turns into its content: the group hands over the selected

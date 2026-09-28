@@ -169,7 +169,7 @@ public final class TranscriptView: NSView {
     /// How tall row `row` is. `.view` rows are the delegate's to measure; the
     /// self-drawn cases the transcript measures itself, from the same tree it
     /// will later draw.
-    fileprivate func height(ofRow row: Int) -> CGFloat {
+    func height(ofRow row: Int) -> CGFloat {
         let answer: CGFloat
         switch dataSource?.transcriptView(self, rowAt: row) {
         case .some(let described) where described.content == .view:
@@ -202,7 +202,7 @@ public final class TranscriptView: NSView {
 
     /// The cell for row `row`: the transcript's own cell view, with either a
     /// host-supplied view or the transcript's own self-drawn one inside it.
-    fileprivate func view(forRow row: Int) -> NSView? {
+    func view(forRow row: Int) -> NSView? {
         guard let described = dataSource?.transcriptView(self, rowAt: row) else {
             return nil
         }
@@ -276,7 +276,7 @@ public final class TranscriptView: NSView {
     /// Reports the row leaving the viewport. What goes back into the pool is the
     /// cell, but what the host has work to stop on is the view it supplied — so
     /// that is what it hears about.
-    fileprivate func didRemove(_ rowView: NSTableRowView, forRow row: Int) {
+    func didRemove(_ rowView: NSTableRowView, forRow row: Int) {
         setNeedsFindLayout()
         guard let cell = rowView.view(atColumn: 0) as? TranscriptCellView,
             let hosted = cell.hostedView,
@@ -377,7 +377,7 @@ public final class TranscriptView: NSView {
     /// package's public surface — and so a host can't be handed the transcript
     /// as a data source for a table of its own. Owned here; the table refers to
     /// it weakly.
-    private lazy var tableAdapter = TableViewAdapter(transcript: self)
+    private lazy var tableAdapter = TableViewAdapter(owner: self)
 
     // MARK: - Lifecycle
 
@@ -419,7 +419,7 @@ public final class TranscriptView: NSView {
             self, selector: #selector(clipViewBoundsDidChange),
             name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
         findOverlay.rows = { [weak self] in self?.findRowsOnScreen() ?? [] }
-        tableView.transcript = self
+        tableView.owner = self
     }
 
     deinit {
@@ -2829,171 +2829,41 @@ extension TranscriptView: BlockViewDelegate {
     }
 }
 
-/// `NSTableView`'s data source and delegate, forwarded to a `TranscriptView`.
-///
-/// Not a conformance on `TranscriptView` itself: that type is public, so the
-/// conformance would be too, putting AppKit's table callbacks on the package's
-/// surface next to three near-identically named row-count methods. Holds the
-/// transcript weakly — the transcript owns this, the table only refers to it.
-@MainActor
-private final class TableViewAdapter: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+extension TranscriptView: TableViewAdapterOwner {
 
-    private weak var transcript: TranscriptView?
-
-    init(transcript: TranscriptView) {
-        self.transcript = transcript
-        super.init()
-    }
-
-    func numberOfRows(in tableView: NSTableView) -> Int {
-        guard let transcript else { return 0 }
-        return transcript.dataSource?.numberOfRows(in: transcript) ?? 0
-    }
-
-    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        transcript?.height(ofRow: row) ?? 0
-    }
-
-    func tableView(
-        _ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int
-    ) -> NSView? {
-        transcript?.view(forRow: row)
-    }
-
-    func tableView(_ tableView: NSTableView, didRemove rowView: NSTableRowView, forRow row: Int) {
-        transcript?.didRemove(rowView, forRow: row)
+    var numberOfRowsInDataSource: Int {
+        dataSource?.numberOfRows(in: self) ?? 0
     }
 }
 
-/// The transcript's scroll view, and the one thing it exists to change: its
-/// scrollers are **always** overlay ones, whatever the reader's "Show scroll
-/// bars" setting says.
-///
-/// A legacy scroller is a permanent 15-point track carved out of the *inside* of
-/// the viewport. Everywhere else on the system that is the correct trade — a
-/// list gives up 15 points of a column it owns outright. Here it is not, because
-/// the transcript's content is **centred within a maximum width** and the
-/// scroller sits at the window's edge, several hundred points away from the
-/// column it would be narrowing. The result reads as the document having been
-/// shunted off-centre by a control that is nowhere near it, and the wider the
-/// window the more obviously wrong it looks. `maxContentWidth` and a legacy
-/// scroller are the two halves that do not fit together; an overlay scroller
-/// floats over the margin the centring already left, and costs the column
-/// nothing.
-///
-/// This does override an explicit preference, so it is worth being plain about:
-/// a reader who set "Always" gets an overlay scroller here regardless. The app's
-/// previous renderer (`Transcript2ScrollView`) made the same call for the same
-/// reason, and this is parity with it rather than a new position.
-///
-/// **Overriding the property, not assigning it once.** AppKit re-writes
-/// `scrollerStyle` from `NSPreferredScrollerStyleDidChangeNotification`, so a
-/// one-shot assignment in the initialiser silently reverts the first time the
-/// reader toggles the setting — or plugs in a mouse, which flips the
-/// "Automatically based on mouse or trackpad" default to legacy. Intercepting
-/// the setter is what makes the pin hold.
-///
-/// `autohidesScrollers` used to be set here and is deliberately gone: it governs
-/// whether a **legacy** scroller is hidden when the content fits, and with the
-/// style pinned there is no legacy case left for it to serve. Put it back if the
-/// pin ever comes off.
-private final class OverlayScrollView: NSScrollView {
+extension TranscriptView: TranscriptTableViewOwner {
 
-    override var scrollerStyle: NSScroller.Style {
-        get { .overlay }
-        set { super.scrollerStyle = .overlay }
-    }
-}
-
-/// The transcript's table, and the two things it adds: saying when it has placed
-/// its rows, and being the responder for the selection.
-///
-/// A find's overlay lights matches where the rows are, and the table moves rows
-/// without telling anyone — a height noted, a row inserted above, a width change
-/// re-tiling everything. `tile()` is where it works out the new geometry and
-/// `layout()` is where row views take it, so both report; the overlay sits later
-/// in the scroll view's subviews than the clip holding this table, so a layout pass
-/// reaches it after the rows have moved rather than before.
-///
-/// The selection's half is `NSTextView`'s shape: the document view holds the focus
-/// and answers Copy. Every piece of it is forwarded to the transcript, which holds
-/// the selection; see its `// MARK: - Selection`.
-private final class TranscriptTableView: NSTableView {
-
-    /// Weak, like `TableViewAdapter`'s: the transcript owns this table.
-    weak var transcript: TranscriptView?
-
-    override func tile() {
-        super.tile()
-        transcript?.setNeedsFindLayout()
-        // The document's height is decided here, and a height can move the end
-        // of the scroll without the clip moving — a reload, a re-measure.
-        transcript?.reportTailFollowing()
+    func tableViewDidTile(_ tableView: TranscriptTableView) {
+        setNeedsFindLayout()
+        reportTailFollowing()
     }
 
-    override func layout() {
-        super.layout()
-        transcript?.setNeedsFindLayout()
+    func tableViewDidLayout(_ tableView: TranscriptTableView) {
+        setNeedsFindLayout()
     }
 
-    /// Every press that selects: one on a row's text, passed up the chain by its
-    /// `BlockView`, and one no row took — the margins beside the content, the gap
-    /// between two rows, a host row that does not handle the mouse, which starts
-    /// from the nearest position as a press in `NSTextView`'s margin does.
-    ///
-    /// `super` is not called: its tracking loop selects table rows, which the
-    /// transcript never shows. The transcript's loop takes the gesture instead.
-    override func mouseDown(with event: NSEvent) {
-        transcript?.trackSelection(from: event)
+    func tableView(_ tableView: TranscriptTableView, trackSelectionFrom event: NSEvent) {
+        trackSelection(from: event)
     }
 
-    override func resignFirstResponder() -> Bool {
-        guard super.resignFirstResponder() else { return false }
-        transcript?.selectionDidResign()
-        return true
+    func tableViewDidResignFirstResponder(_ tableView: TranscriptTableView) {
+        selectionDidResign()
     }
 
-    /// The key being interpreted, so one the transcript doesn't answer can go up
-    /// the chain as itself.
-    private var interpretedKey: NSEvent?
-
-    /// Keys are interpreted, not switched on, so the reader's own key bindings
-    /// apply. The transcript answers only the scrolling commands; every other key
-    /// — typing, Return, Escape — goes to the next responder **as the event**, the
-    /// way `NSResponder` passes a key it doesn't handle. That is the whole of what
-    /// lets a host type into its input while the transcript has focus: its view
-    /// controller is further up the chain, sees the key, and hands it on. The
-    /// event rather than its text, so an input method there composes it.
-    ///
-    /// `super` is never asked: `NSTableView` would move a row selection the
-    /// transcript never shows (↓ selected row 0 and scrolled to the top) and
-    /// swallows Escape and Home.
-    override func keyDown(with event: NSEvent) {
-        interpretedKey = event
-        defer { interpretedKey = nil }
-        interpretKeyEvents([event])
+    func tableView(_ tableView: TranscriptTableView, performScrollCommand selector: Selector) -> Bool {
+        performScrollCommand(selector)
     }
 
-    override func doCommand(by selector: Selector) {
-        if transcript?.performScrollCommand(selector) == true { return }
-        passInterpretedKeyUp()
+    func tableViewCopySelection(_ tableView: TranscriptTableView) {
+        copySelection()
     }
 
-    override func insertText(_ insertString: Any) {
-        passInterpretedKeyUp()
-    }
-
-    private func passInterpretedKeyUp() {
-        guard let interpretedKey else { return }
-        nextResponder?.keyDown(with: interpretedKey)
-    }
-
-    @objc func copy(_ sender: Any?) {
-        transcript?.copySelection()
-    }
-
-    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
-        guard item.action == #selector(copy(_:)) else { return super.validateUserInterfaceItem(item) }
-        return transcript?.canCopySelection ?? false
+    func tableViewCanCopySelection(_ tableView: TranscriptTableView) -> Bool {
+        canCopySelection
     }
 }

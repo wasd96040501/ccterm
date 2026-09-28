@@ -1,6 +1,7 @@
 import Foundation
 
-/// A user-role message: a prompt, a tool result, or text the CLI injected.
+/// A user-role message: a prompt, a tool result, or text the CLI injected —
+/// ``kind`` says which.
 public struct UserMessage: Sendable, Equatable {
     /// `nil` only on messages from very old transcripts.
     public var uuid: String?
@@ -18,23 +19,25 @@ public struct UserMessage: Sendable, Equatable {
     /// not record one (successful calls inside a subagent). Its shape depends
     /// on the tool; see ``toolOutcome(_:)``.
     public var toolUseResult: JSONValue?
-    /// `true` for text the CLI wrote rather than a person: skill bodies,
-    /// reminders, compaction summaries, command caveats.
-    public var isSynthetic: Bool
     /// `true` when the CLI is echoing a prompt back as it enters a turn. A
     /// prompt sent with ``Session/send(_:)`` comes back with the same
     /// ``uuid``; the CLI also replays prompts it made itself (task
     /// notifications, local command output) with fresh uuids.
     public var isReplay: Bool
-    /// Who authored the prompt when known: `"human"`, `"task-notification"`,
-    /// `"peer"`, `"coordinator"`, … (`origin.kind` on the wire).
-    public var origin: String?
     public var timestamp: Date?
+    /// Marked on the wire as written by the CLI rather than a person. Read
+    /// through ``kind``.
+    var isSynthetic: Bool
+    /// Marked on the wire as a compaction's summary. Read through ``kind``.
+    var isCompactSummary: Bool
+    /// Who the wire says wrote it — `"human"`, `"task-notification"`,
+    /// `"peer"`, … (`origin.kind`). Read through ``kind``.
+    var origin: String?
 
     public init(
         uuid: String? = nil, sessionID: String? = nil, parentToolUseID: String? = nil, content: [ContentBlock],
-        toolUseResult: JSONValue? = nil, isSynthetic: Bool = false, isReplay: Bool = false, origin: String? = nil,
-        timestamp: Date? = nil
+        toolUseResult: JSONValue? = nil, isSynthetic: Bool = false, isCompactSummary: Bool = false,
+        isReplay: Bool = false, origin: String? = nil, timestamp: Date? = nil
     ) {
         self.uuid = uuid
         self.sessionID = sessionID
@@ -42,6 +45,7 @@ public struct UserMessage: Sendable, Equatable {
         self.content = content
         self.toolUseResult = toolUseResult
         self.isSynthetic = isSynthetic
+        self.isCompactSummary = isCompactSummary
         self.isReplay = isReplay
         self.origin = origin
         self.timestamp = timestamp
@@ -71,7 +75,7 @@ extension UserMessage: Decodable {
         self.isSynthetic =
             c.lenient(Bool.self, "isSynthetic") == true || c.lenient(Bool.self, "isMeta") == true
             || c.lenient(Bool.self, "isVisibleInTranscriptOnly") == true
-            || c.lenient(Bool.self, "isCompactSummary") == true
+        self.isCompactSummary = c.lenient(Bool.self, "isCompactSummary") == true
         self.isReplay = c.lenient(Bool.self, "isReplay") ?? false
         self.origin = c.lenient(JSONValue.self, "origin")?["kind"]?.stringValue
         self.timestamp = c.timestamp("timestamp")

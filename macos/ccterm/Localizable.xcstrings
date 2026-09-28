@@ -92,12 +92,62 @@
         }
       }
     },
+    "Interrupted": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已中断"
+          }
+        }
+      }
+    },
     "Launch Command": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "启动命令"
+          }
+        }
+      }
+    },
+    "Message from session %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自会话 %@ 的消息"
+          }
+        }
+      }
+    },
+    "Message from the %@ plugin": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自插件 %@ 的消息"
+          }
+        }
+      }
+    },
+    "Message from the coordinator": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自协调者的消息"
+          }
+        }
+      }
+    },
+    "Report from subagent %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "子代理 %@ 的报告"
           }
         }
       }

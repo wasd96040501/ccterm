@@ -8,8 +8,9 @@
 //
 // Prints counts per message kind, every `.unknown` / `.other` kind, content
 // blocks that fell back to `.unknown`, and known kinds that degraded to
-// `.unknown` (a decode failure), and how many user messages read as a local
-// command or its output. Reads local data only; writes nothing.
+// `.unknown` (a decode failure); for transcripts, how many user messages
+// read as each `UserMessage.Kind`, and any in a form the CLI writes that
+// fell back to `.prompt`. Reads local data only; writes nothing.
 //
 //   swift run -c release CorpusAudit
 //   AUDIT_LIMIT=50 swift run CorpusAudit       # first 50 files per corpus
@@ -35,6 +36,11 @@ func bump(_ key: String) { counts[key, default: 0] += 1 }
 func note(_ key: String, _ sample: Data) {
     let text = String(decoding: sample.prefix(300), as: UTF8.self)
     degraded[key, default: (0, text)].count += 1
+}
+
+extension UserMessage.Kind {
+    /// The case's name, for counting.
+    var label: String { String(String(describing: self).prefix { $0.isLetter }) }
 }
 
 func audit(blocks: [ContentBlock], line: Data) {
@@ -126,7 +132,7 @@ for file in mainFiles.prefix(limit) {
         uuidDump[file.path] = transcript.messages.compactMap { message in
             switch message {
             case .assistant(let m): return m.uuid
-            case .user(let m) where !m.isSynthetic: return m.uuid
+            case .user(let m) where m.kind != .synthetic && m.kind != .compactionSummary: return m.uuid
             default: return nil
             }
         }
@@ -136,15 +142,16 @@ for file in mainFiles.prefix(limit) {
         case .assistant(let m): audit(blocks: m.content, line: Data())
         case .user(let m):
             audit(blocks: m.content, line: Data())
-            switch m.localCommand {
-            case .input: bump("disk.user.localCommand.input")
-            case .output: bump("disk.user.localCommand.output")
-            case nil:
-                // A local command's tags that did not read as one.
-                let text = m.content.compactMap(\.text).joined()
-                let tags = ["<command-name>", "<bash-input>", "<local-command-std", "<bash-std"]
-                if tags.contains(where: text.contains) {
-                    note("disk.user.localCommand", Data(text.utf8))
+            bump("disk.user.kind.\(m.kind.label)")
+            if m.kind == .prompt {
+                // A form the CLI writes that did not read as one falls back
+                // to a prompt: markup, or a relay's header.
+                let text = m.content.compactMap(\.text).joined().drop(while: \.isWhitespace)
+                let firstLine = text.prefix { $0 != "\n" }
+                if text.hasPrefix("<") || firstLine.hasSuffix(" sent a message:")
+                    || firstLine.hasSuffix(" sent a message while you were working:")
+                {
+                    note("disk.user.unreadForm", Data(text.utf8))
                 }
             }
         default: break

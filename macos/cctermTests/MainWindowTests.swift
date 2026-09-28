@@ -202,8 +202,10 @@ final class MainWindowTests: XCTestCase {
 
         fadeOut.assertOpacity(from: 1, to: 0)
         fadeIn.assertOpacity(from: 0, to: 1)
-        rise.assertNoJump(.originY, maxStep: 2)
+        // Under Reduce Motion the change is meant to land at once: only where it
+        // lands is asserted, above.
         if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            rise.assertNoJump(.originY, maxStep: 2)
             XCTAssertGreaterThan(
                 Set(rise.composited.compactMap { $0.presentationFrame?.minY }).count, 3,
                 "the name jumped up\n\(rise.report())")

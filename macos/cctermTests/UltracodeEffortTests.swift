@@ -9,7 +9,7 @@ import XCTest
 /// must send `ultracode: false` so the two stay mutually exclusive.
 ///
 /// These tests pin that translation at both boundaries:
-/// - mid-session `applyFlagSettings` (`FlagSettings.effort(_:)`),
+/// - mid-session `applyFlagSettings` (`Effort.flagSettings`),
 /// - session launch (`SessionConfig.toAgentSDKConfig`).
 @MainActor
 final class UltracodeEffortTests: XCTestCase {
@@ -18,19 +18,19 @@ final class UltracodeEffortTests: XCTestCase {
         continueAfterFailure = false
     }
 
-    // MARK: - FlagSettings.effort — the mid-session apply_flag_settings payload
+    // MARK: - Effort.flagSettings — the mid-session apply_flag_settings payload
 
     func testUltracodeEffortSerializesToXhighPlusFlag() {
-        let dict = FlagSettings.effort(.ultracode).toDictionary()
-        XCTAssertEqual(dict["effortLevel"] as? String, "xhigh")
-        XCTAssertEqual(dict["ultracode"] as? Bool, true)
+        let dict = Effort.ultracode.flagSettings
+        XCTAssertEqual(dict["effortLevel"], "xhigh")
+        XCTAssertEqual(dict["ultracode"], true)
     }
 
     func testNormalEffortSendsUltracodeFalse() {
-        let dict = FlagSettings.effort(.high).toDictionary()
-        XCTAssertEqual(dict["effortLevel"] as? String, "high")
+        let dict = Effort.high.flagSettings
+        XCTAssertEqual(dict["effortLevel"], "high")
         XCTAssertEqual(
-            dict["ultracode"] as? Bool, false,
+            dict["ultracode"], false,
             "Picking a normal effort must turn ultracode off so the tiers stay mutually exclusive")
     }
 
@@ -42,9 +42,9 @@ final class UltracodeEffortTests: XCTestCase {
         let sdk = config.toAgentSDKConfig(
             sessionId: UUID().uuidString, resume: false, customCommand: nil)
 
-        // `--effort` carries the tier verbatim; the SDK argv builder maps
-        // `.ultracode` → xhigh. The ultracode flag itself rides in inline.
-        XCTAssertEqual(sdk.effort, .ultracode)
+        // `--effort` carries the CLI level; the ultracode flag itself rides
+        // in inline settings.
+        XCTAssertEqual(sdk.effort, .xhigh)
         XCTAssertEqual(sdk.settings, "{\"ultracode\":true}")
     }
 

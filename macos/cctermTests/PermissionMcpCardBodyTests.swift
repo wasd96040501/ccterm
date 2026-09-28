@@ -82,7 +82,7 @@ final class PermissionMcpCardBodyTests: XCTestCase {
     // MARK: - Helpers
 
     private func makeBody(
-        toolName: String, input: [String: Any]
+        toolName: String, input: JSONValue
     )
         -> PermissionMcpCardBody
     {

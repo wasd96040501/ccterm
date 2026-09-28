@@ -89,25 +89,4 @@ final class HistoryLoaderTests: XCTestCase {
         XCTAssertNil(resolved)
     }
 
-    // MARK: - parsers
-
-    func testParseLinesDropsUnparseable() {
-        // Use a minimal-shape line that the resolver can handle, plus
-        // garbage lines that must be skipped.
-        let valid =
-            #"{"type":"user","uuid":"a","message":{"role":"user","content":"hi"}}"#
-        let lines = [
-            valid,
-            "not even json",
-            #"{"this":"is valid json but not a known type"}"#,
-            valid,
-            "",
-        ]
-        let result = HistoryLoader.parseLines(lines)
-        // We don't pin the exact count from the resolver's strictness
-        // (which is implementation detail) — only that valid lines
-        // produced *some* messages and that garbage didn't crash.
-        XCTAssertGreaterThanOrEqual(result.count, 1)
-        XCTAssertLessThanOrEqual(result.count, lines.count)
-    }
 }

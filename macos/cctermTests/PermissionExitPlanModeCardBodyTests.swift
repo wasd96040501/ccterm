@@ -52,7 +52,7 @@ final class PermissionExitPlanModeCardBodyTests: XCTestCase {
     // MARK: - Helpers
 
     private func makeBody(
-        toolName: String, input: [String: Any]
+        toolName: String, input: JSONValue
     )
         -> PermissionExitPlanModeCardBody
     {

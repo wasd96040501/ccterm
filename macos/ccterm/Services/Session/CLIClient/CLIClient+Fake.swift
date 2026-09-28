@@ -11,7 +11,7 @@ import Foundation
 ///   so a test controls when — and whether — the "CLI" answers.
 /// - Pushes CLI output into `events` (`push`, `simulateExit`, …).
 ///
-/// Main-thread only, like the runtime that drives it.
+/// Main-actor isolated (via `CLIClient`), like the runtime that drives it.
 final class FakeCLIClient: CLIClient {
     let events: AsyncStream<SessionEvent>
     private let continuation: AsyncStream<SessionEvent>.Continuation
@@ -37,9 +37,14 @@ final class FakeCLIClient: CLIClient {
     // MARK: Calls held open
 
     private var pendingStart: CheckedContinuation<InitializationResult, Error>?
-    private var pendingInterrupts: [CheckedContinuation<Void, Error>] = []
-    private var pendingContextUsage: [CheckedContinuation<ContextUsage, Error>] = []
-    private var pendingSideQuestions: [CheckedContinuation<SideQuestionAnswer?, Error>] = []
+    private var pendingInterrupts: [Held<Void>] = []
+    private var pendingContextUsage: [Held<ContextUsage>] = []
+    private var pendingSideQuestions: [Held<SideQuestionAnswer?>] = []
+
+    private struct Held<T> {
+        let id: UUID
+        let continuation: CheckedContinuation<T, Error>
+    }
 
     init() {
         (events, continuation) = AsyncStream.makeStream(of: SessionEvent.self)
@@ -71,7 +76,7 @@ final class FakeCLIClient: CLIClient {
 
     func interrupt() async throws {
         interruptCalls += 1
-        try await withCheckedThrowingContinuation { pendingInterrupts.append($0) }
+        try await hold(\.pendingInterrupts)
     }
 
     func setModel(_ model: String?) async throws {
@@ -88,12 +93,26 @@ final class FakeCLIClient: CLIClient {
 
     func contextUsage() async throws -> ContextUsage {
         contextUsageCalls += 1
-        return try await withCheckedThrowingContinuation { pendingContextUsage.append($0) }
+        return try await hold(\.pendingContextUsage)
     }
 
     func askSideQuestion(_ question: String) async throws -> SideQuestionAnswer? {
         sideQuestions.append(question)
-        return try await withCheckedThrowingContinuation { pendingSideQuestions.append($0) }
+        return try await hold(\.pendingSideQuestions)
+    }
+
+    /// Parks a call until a driver completes it. Cancelling the caller's
+    /// task throws `CancellationError`, as `AgentSDK.Session` does.
+    private func hold<T>(_ queue: ReferenceWritableKeyPath<FakeCLIClient, [Held<T>]>) async throws -> T {
+        let id = UUID()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { self[keyPath: queue].append(Held(id: id, continuation: $0)) }
+        } onCancel: {
+            Task { @MainActor in
+                guard let index = self[keyPath: queue].firstIndex(where: { $0.id == id }) else { return }
+                self[keyPath: queue].remove(at: index).continuation.resume(throwing: CancellationError())
+            }
+        }
     }
 
     // MARK: Test drivers
@@ -119,19 +138,19 @@ final class FakeCLIClient: CLIClient {
     /// Acknowledges the oldest pending `interrupt()`.
     func completeInterrupt() {
         guard !pendingInterrupts.isEmpty else { return }
-        pendingInterrupts.removeFirst().resume()
+        pendingInterrupts.removeFirst().continuation.resume()
     }
 
     /// Answers the oldest pending `contextUsage()`; an error fails it.
     func completeContextUsage(_ result: Result<ContextUsage, Error>) {
         guard !pendingContextUsage.isEmpty else { return }
-        pendingContextUsage.removeFirst().resume(with: result)
+        pendingContextUsage.removeFirst().continuation.resume(with: result)
     }
 
     /// Answers the oldest pending `askSideQuestion(_:)`; an error fails it.
     func completeSideQuestion(_ result: Result<SideQuestionAnswer?, Error>) {
         guard !pendingSideQuestions.isEmpty else { return }
-        pendingSideQuestions.removeFirst().resume(with: result)
+        pendingSideQuestions.removeFirst().continuation.resume(with: result)
     }
 
     /// Delivers one CLI message.
@@ -149,8 +168,8 @@ final class FakeCLIClient: CLIClient {
         continuation.yield(event)
     }
 
-    /// Asks for tool permission; returns the request so the test can inspect
-    /// what the runtime answered via `decision`.
+    /// Asks for tool permission; returns the request so the test can find it
+    /// in the runtime's `pendingPermissions`. `onRespond` sees the answer.
     @discardableResult
     func requestPermission(
         toolName: String, input: JSONValue, id: String = UUID().uuidString,
@@ -167,11 +186,11 @@ final class FakeCLIClient: CLIClient {
         let error = AgentSDKError.processExited(termination)
         pendingStart?.resume(throwing: error)
         pendingStart = nil
-        pendingInterrupts.forEach { $0.resume(throwing: error) }
+        pendingInterrupts.forEach { $0.continuation.resume(throwing: error) }
         pendingInterrupts = []
-        pendingContextUsage.forEach { $0.resume(throwing: error) }
+        pendingContextUsage.forEach { $0.continuation.resume(throwing: error) }
         pendingContextUsage = []
-        pendingSideQuestions.forEach { $0.resume(throwing: error) }
+        pendingSideQuestions.forEach { $0.continuation.resume(throwing: error) }
         pendingSideQuestions = []
         continuation.yield(.exited(termination))
         continuation.finish()

@@ -3,7 +3,9 @@ import Foundation
 
 /// The runtime's view of a live CLI: exactly the `AgentSDK.Session` surface
 /// it uses, as a protocol so tests can inject `FakeCLIClient`. Production
-/// passes `AgentSDK.Session` itself (conformance below).
+/// passes `AgentSDK.Session` itself (conformance below). Main-actor
+/// isolated like the runtime, so the fake records calls without locks.
+@MainActor
 protocol CLIClient: AnyObject {
     /// Everything the CLI reports, in order; finishes after `.exited`.
     var events: AsyncStream<SessionEvent> { get }

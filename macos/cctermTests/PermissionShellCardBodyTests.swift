@@ -33,7 +33,7 @@ final class PermissionShellCardBodyTests: XCTestCase {
         let req = makeRequest(
             toolName: "Bash",
             command: "ls",
-            decisionReason: .string("Tool requires user approval"),
+            reason: "Tool requires user approval", reasonType: "rule",
             suggestions: [bashRule("ls:*"), bashRule("pwd:*")])
         let body = PermissionShellCardBody(request: req, kind: .bash)
         XCTAssertFalse(body.isCompoundCommand)
@@ -47,7 +47,7 @@ final class PermissionShellCardBodyTests: XCTestCase {
         let req = makeRequest(
             toolName: "Bash",
             command: "cd src && npm test",
-            decisionReason: .structured(type: "subcommandResults", reason: nil),
+            reasonType: "subcommandResults",
             suggestions: [bashRule("npm test:*")])
         let body = PermissionShellCardBody(request: req, kind: .bash)
         XCTAssertTrue(body.isCompoundCommand)
@@ -61,7 +61,7 @@ final class PermissionShellCardBodyTests: XCTestCase {
         let req = makeRequest(
             toolName: "Bash",
             command: "cd src && git status && npm test",
-            decisionReason: .structured(type: "subcommandResults", reason: nil),
+            reasonType: "subcommandResults",
             suggestions: [bashRule("git status:*"), bashRule("npm test:*"), bashRule("cd:*")])
         let body = PermissionShellCardBody(request: req, kind: .bash)
         XCTAssertEqual(body.bashRuleCount, 3)
@@ -111,7 +111,7 @@ final class PermissionShellCardBodyTests: XCTestCase {
         // The diff renderer paginates one line per row; the multi-line
         // command must arrive intact so the user sees every line.
         let heredoc = "git commit -m \"$(cat <<'EOF'\nfeat: x\n\nbody\nEOF\n)\""
-        let body = makeBody(toolName: "Bash", input: ["command": heredoc])
+        let body = makeBody(toolName: "Bash", input: ["command": .string(heredoc)])
         let diff = body.commandDiffBlock
         // Trailing newline (if any) is stripped to avoid a blank row.
         XCTAssertFalse(diff.newString.hasSuffix("\n"))
@@ -129,7 +129,7 @@ final class PermissionShellCardBodyTests: XCTestCase {
         let req = makeRequest(
             toolName: "PowerShell",
             command: "Get-ChildItem; Get-Process",
-            decisionReason: .structured(type: "subcommandResults", reason: nil),
+            reasonType: "subcommandResults",
             suggestions: [
                 powerShellRule("Get-ChildItem:*"),
                 powerShellRule("Get-Process:*"),
@@ -141,7 +141,7 @@ final class PermissionShellCardBodyTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func makeBody(toolName: String, input: [String: Any]) -> PermissionShellCardBody {
+    private func makeBody(toolName: String, input: JSONValue) -> PermissionShellCardBody {
         let req = PermissionRequest.preview(
             id: "shell-\(toolName)",
             toolName: toolName,
@@ -150,48 +150,29 @@ final class PermissionShellCardBodyTests: XCTestCase {
             request: req, kind: PermissionCardKind.kind(for: req))
     }
 
+    /// `reasonType` is the CLI's `decision_reason_type`.
     private func makeRequest(
         toolName: String,
         command: String,
-        decisionReason: DecisionReason?,
-        suggestions: [PermissionSuggestion]
+        reason: String? = nil,
+        reasonType: String?,
+        suggestions: [PermissionUpdate]
     ) -> PermissionRequest {
-        var dict: [String: Any] = [
-            "request_id": "shell-\(UUID().uuidString)",
-            "tool_name": toolName,
-            "input": ["command": command],
-            "permission_suggestions": suggestions.map { $0.toJSON() },
-        ]
-        switch decisionReason {
-        case .string(let s)?:
-            dict["decision_reason"] = ["type": "string", "reason": s]
-        case .structured(let type, let reason)?:
-            var dr: [String: Any] = ["type": type]
-            if let reason { dr["reason"] = reason }
-            dict["decision_reason"] = dr
-        case nil:
-            break
-        }
-        return try! PermissionRequest(json: dict)
+        PermissionRequest(
+            id: "shell-\(UUID().uuidString)", toolName: toolName, input: ["command": .string(command)],
+            suggestions: suggestions, decisionReason: reason, decisionReasonType: reasonType,
+            onRespond: { _ in })
     }
 
-    private func bashRule(_ content: String) -> PermissionSuggestion {
-        let json: [String: Any] = [
-            "type": "addRules",
-            "rules": [["tool_name": "Bash", "rule_content": content]],
-            "behavior": "allow",
-            "destination": "localSettings",
-        ]
-        return try! PermissionSuggestion(json: json)
+    private func bashRule(_ content: String) -> PermissionUpdate {
+        .addRules(
+            [PermissionRule(toolName: "Bash", ruleContent: content)], behavior: .allow,
+            destination: .localSettings)
     }
 
-    private func powerShellRule(_ content: String) -> PermissionSuggestion {
-        let json: [String: Any] = [
-            "type": "addRules",
-            "rules": [["tool_name": "PowerShell", "rule_content": content]],
-            "behavior": "allow",
-            "destination": "localSettings",
-        ]
-        return try! PermissionSuggestion(json: json)
+    private func powerShellRule(_ content: String) -> PermissionUpdate {
+        .addRules(
+            [PermissionRule(toolName: "PowerShell", ruleContent: content)], behavior: .allow,
+            destination: .localSettings)
     }
 }

@@ -29,10 +29,8 @@ final class PermissionPromptNoticeTests: XCTestCase {
         var captured: [PermissionPromptNotice] = []
         runtime.onPermissionPrompt = { captured.append($0) }
 
-        let request = PermissionRequest.preview(
-            id: "perm-1", toolName: "Bash", input: ["command": "ls"])
-        fake.simulatePermissionRequest(request) { _ in }
-        await drain()
+        fake.requestPermission(toolName: "Bash", input: ["command": "ls"], id: "perm-1")
+        await yieldUntil { !runtime.pendingPermissions.isEmpty }
 
         XCTAssertEqual(
             captured.count, 1, "enqueuing a permission must fire onPermissionPrompt exactly once")
@@ -50,10 +48,8 @@ final class PermissionPromptNoticeTests: XCTestCase {
         await bootstrap(runtime, fake)
         // No onPermissionPrompt installed — enqueue must still land the
         // pending entry without crashing on the nil closure.
-        let request = PermissionRequest.preview(
-            id: "perm-2", toolName: "Read", input: ["file_path": "/tmp/x"])
-        fake.simulatePermissionRequest(request) { _ in }
-        await drain()
+        fake.requestPermission(toolName: "Read", input: ["file_path": "/tmp/x"], id: "perm-2")
+        await yieldUntil { !runtime.pendingPermissions.isEmpty }
 
         XCTAssertEqual(runtime.pendingPermissions.count, 1)
     }
@@ -73,22 +69,9 @@ final class PermissionPromptNoticeTests: XCTestCase {
 
     private func bootstrap(_ runtime: SessionRuntime, _ fake: FakeCLIClient) async {
         runtime.activate()
-        for _ in 0..<8 {
-            await Task.yield()
-            if !fake.initializeCalls.isEmpty { break }
-        }
-        XCTAssertFalse(fake.initializeCalls.isEmpty, "bootstrap should have called initialize")
-        fake.completeInitialize(with: nil)
-        for _ in 0..<8 {
-            await Task.yield()
-            if runtime.status == .idle { break }
-        }
-    }
-
-    /// `onPermissionRequest` posts a `Task { @MainActor … }` that calls
-    /// `enqueuePermission`. Two yields drain that hop.
-    private func drain() async {
-        await Task.yield()
-        await Task.yield()
+        await yieldUntil { fake.isAwaitingStart }
+        XCTAssertTrue(fake.isAwaitingStart, "bootstrap should have started the client")
+        fake.completeStart()
+        await yieldUntil { runtime.status == .idle }
     }
 }

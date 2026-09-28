@@ -3,16 +3,16 @@ import Foundation
 
 @testable import ccterm
 
-/// JSON-driven Message2 fixtures for unit tests. We construct messages by
-/// feeding JSON dictionaries through `Message2Resolver` (the same path
-/// production code uses for JSONL replay), avoiding hand-built generated
-/// types whose initializers shift between SDK regenerations.
-enum Message2Fixtures {
+/// JSON-driven message fixtures for unit tests. Messages are built by
+/// decoding wire-shaped JSON through `Message(jsonLine:)` — the same path
+/// the SDK uses for live output and transcripts — so fixtures stay faithful
+/// to the protocol.
+enum MessageFixtures {
 
-    /// One assistant text message. `parentToolUseId == nil` so it counts
+    /// One assistant text message. `parentToolUseID == nil` so it counts
     /// as visible.
-    static func assistantText(_ text: String, messageId: String = "m") -> Message2 {
-        resolve([
+    static func assistantText(_ text: String, messageId: String = "m") -> Message {
+        message([
             "type": "assistant",
             "uuid": UUID().uuidString,
             "session_id": "s",
@@ -34,8 +34,8 @@ enum Message2Fixtures {
         text: String,
         inputTokens: Int,
         outputTokens: Int
-    ) -> Message2 {
-        resolve([
+    ) -> Message {
+        message([
             "type": "assistant",
             "uuid": UUID().uuidString,
             "session_id": "s",
@@ -57,8 +57,8 @@ enum Message2Fixtures {
     /// shares a `messageId` with a sibling text envelope).
     static func assistantContent(
         messageId: String, content: [[String: Any]]
-    ) -> Message2 {
-        resolve([
+    ) -> Message {
+        message([
             "type": "assistant",
             "uuid": UUID().uuidString,
             "session_id": "s",
@@ -74,8 +74,8 @@ enum Message2Fixtures {
     /// One user message containing a plain text content array. `uuid` is
     /// settable so tests can pretend the CLI is echoing back a specific
     /// `SingleEntry.id`.
-    static func userText(_ text: String, uuid: String = UUID().uuidString) -> Message2 {
-        resolve([
+    static func userText(_ text: String, uuid: String = UUID().uuidString) -> Message {
+        message([
             "type": "user",
             "uuid": uuid,
             "session_id": "s",
@@ -86,7 +86,7 @@ enum Message2Fixtures {
         ])
     }
 
-    /// A `Message2.system(.init)` — the CLI's session bootstrap /
+    /// A `.system(.initialized)` — the CLI's session bootstrap /
     /// turn-prologue blob. Emitted once at attach-time and again at
     /// the start of every CLI-spawned follow-up turn (see
     /// `AgentSDKMessageDumpSmokeTests`).
@@ -94,7 +94,7 @@ enum Message2Fixtures {
         sessionId: String = "s",
         permissionMode: String = "default",
         slashCommands: [String]? = nil
-    ) -> Message2 {
+    ) -> Message {
         var dict: [String: Any] = [
             "type": "system",
             "subtype": "init",
@@ -107,10 +107,10 @@ enum Message2Fixtures {
         // descriptions) — mirror that wire shape so the merge-on-adopt
         // path is exercised faithfully.
         if let slashCommands { dict["slash_commands"] = slashCommands }
-        return resolve(dict)
+        return message(dict)
     }
 
-    /// A `Message2.system(.status)` — CLI's broadcast for session-side
+    /// A `.system(.status)` — CLI's broadcast for session-side
     /// state changes (today: `permissionMode`). Triggered whenever the
     /// CLI flips its `toolPermissionContext.mode`: EnterPlanMode runs,
     /// a permission_request is answered with a `setMode` suggestion,
@@ -118,8 +118,8 @@ enum Message2Fixtures {
     /// PermissionModeProbe captures all three forms.
     static func systemStatus(
         permissionMode: String, sessionId: String = "s"
-    ) -> Message2 {
-        resolve([
+    ) -> Message {
+        message([
             "type": "system",
             "subtype": "status",
             "uuid": UUID().uuidString,
@@ -128,12 +128,12 @@ enum Message2Fixtures {
         ])
     }
 
-    /// A `Message2.result` (turn-end) message. The default branch is
+    /// A `.result` (turn-end) message. The default branch is
     /// `success`; pass `subtype: "error_during_execution"` for the
     /// error branch. The CLI emits exactly one of these per turn at
     /// turn close — see `AgentSDKMessageDumpSmokeTests` for raw samples.
-    static func result(subtype: String = "success", sessionId: String = "s") -> Message2 {
-        resolve([
+    static func result(subtype: String = "success", sessionId: String = "s") -> Message {
+        message([
             "type": "result",
             "uuid": UUID().uuidString,
             "session_id": sessionId,
@@ -146,14 +146,14 @@ enum Message2Fixtures {
         ])
     }
 
-    /// A `Message2.system(.thinkingTokens)` — the CLI's redacted-thinking
+    /// A `.system(.thinkingTokens)` — the CLI's redacted-thinking
     /// progress signal. `estimatedTokens` is the cumulative (conservative)
     /// thinking-token estimate for the current block; `estimatedTokensDelta`
     /// is the per-frame increment. See `ThinkingUsageSmoke` for live samples.
     static func systemThinkingTokens(
         estimatedTokens: Int, estimatedTokensDelta: Int, sessionId: String = "s"
-    ) -> Message2 {
-        resolve([
+    ) -> Message {
+        message([
             "type": "system",
             "subtype": "thinking_tokens",
             "uuid": UUID().uuidString,
@@ -167,8 +167,8 @@ enum Message2Fixtures {
     /// for tool_group rendering tests.
     static func assistantRead(
         toolUseId: String, filePath: String
-    ) -> Message2 {
-        resolve([
+    ) -> Message {
+        message([
             "type": "assistant",
             "uuid": UUID().uuidString,
             "session_id": "s",
@@ -193,8 +193,8 @@ enum Message2Fixtures {
     /// any tool_use of the same `toolUseId`.
     static func userToolResult(
         toolUseId: String, text: String = "ok", isError: Bool = false
-    ) -> Message2 {
-        resolve([
+    ) -> Message {
+        message([
             "type": "user",
             "uuid": UUID().uuidString,
             "session_id": "s",
@@ -294,7 +294,7 @@ enum Message2Fixtures {
         messageId: String,
         inputTokens: Int? = nil,
         outputTokens: Int? = nil
-    ) -> Message2StreamEvent {
+    ) -> StreamEvent {
         var usage: [String: Any] = [:]
         if let inputTokens { usage["input_tokens"] = inputTokens }
         if let outputTokens { usage["output_tokens"] = outputTokens }
@@ -304,7 +304,7 @@ enum Message2Fixtures {
     }
 
     /// `content_block_delta` carrying a `text_delta`.
-    static func streamTextDelta(index: Int, text: String) -> Message2StreamEvent {
+    static func streamTextDelta(index: Int, text: String) -> StreamEvent {
         streamEvent([
             "type": "content_block_delta",
             "index": index,
@@ -314,7 +314,7 @@ enum Message2Fixtures {
 
     /// `content_block_delta` carrying a `thinking_delta` (ignored for text by
     /// the assembler — used to prove it's skipped).
-    static func streamThinkingDelta(index: Int, thinking: String) -> Message2StreamEvent {
+    static func streamThinkingDelta(index: Int, thinking: String) -> StreamEvent {
         streamEvent([
             "type": "content_block_delta",
             "index": index,
@@ -324,7 +324,7 @@ enum Message2Fixtures {
 
     /// `content_block_delta` carrying an `input_json_delta` (tool-use args;
     /// ignored by the assembler).
-    static func streamInputJSONDelta(index: Int, partialJSON: String) -> Message2StreamEvent {
+    static func streamInputJSONDelta(index: Int, partialJSON: String) -> StreamEvent {
         streamEvent([
             "type": "content_block_delta",
             "index": index,
@@ -333,7 +333,7 @@ enum Message2Fixtures {
     }
 
     /// `message_delta` carrying a cumulative output-token count.
-    static func streamMessageDelta(outputTokens: Int) -> Message2StreamEvent {
+    static func streamMessageDelta(outputTokens: Int) -> StreamEvent {
         streamEvent([
             "type": "message_delta",
             "delta": [:],
@@ -341,27 +341,28 @@ enum Message2Fixtures {
         ])
     }
 
-    private static func streamEvent(_ event: [String: Any]) -> Message2StreamEvent {
-        do {
-            return try Message2StreamEvent(json: [
-                "type": "stream_event",
-                "uuid": UUID().uuidString,
-                "session_id": "s",
-                "event": event,
-            ])
-        } catch {
-            fatalError("Message2Fixtures: stream event parse failed: \(error)\n\(event)")
+    private static func streamEvent(_ event: [String: Any]) -> StreamEvent {
+        let message = message([
+            "type": "stream_event",
+            "uuid": UUID().uuidString,
+            "session_id": "s",
+            "event": event,
+        ])
+        guard case .streamEvent(let stream) = message else {
+            fatalError("MessageFixtures: not a stream event: \(event)")
         }
+        return stream
     }
 
     // MARK: - Internals
 
-    private static func resolve(_ dict: [String: Any]) -> Message2 {
-        do {
-            return try Message2Resolver().resolve(dict)
-        } catch {
-            fatalError("Message2Fixtures: resolver failed: \(error)\n\(dict)")
+    /// Decodes one wire-shaped message dictionary.
+    static func message(_ dict: [String: Any]) -> Message {
+        let line = try! JSONSerialization.data(withJSONObject: dict, options: [])
+        guard let message = Message(jsonLine: line) else {
+            fatalError("MessageFixtures: undecodable line: \(dict)")
         }
+        return message
     }
 
     private static func jsonl(_ dict: [String: Any]) -> String {

@@ -5,9 +5,9 @@ import XCTest
 
 /// Verifies that the four decision handlers `PermissionCardOverlay` builds
 /// for a `PermissionCardView` — via `decisionHandlers(for:session:)` — route
-/// to the right `LegacyPermissionDecision` at the `Session.respond(to:decision:)`
-/// boundary with the right pending `id`, and that the runtime pops the entry
-/// off `pendingPermissions` once a decision has been delivered. We build the
+/// to the right `PermissionDecision` at the `Session.respond(to:decision:)`
+/// boundary with the right request `id`, and that the runtime pops the
+/// request off `pendingPermissions` once a decision has been delivered. We build the
 /// SAME `Handlers` the body builds and invoke each closure (per
 /// `cctermTests/CLAUDE.md` — drive the underlying method the
 /// button invokes), so a regression that swaps Allow-once ↔ Allow-always,
@@ -25,15 +25,10 @@ final class PermissionCardWiringTests: XCTestCase {
         let handlers = PermissionCardOverlay.decisionHandlers(for: pending, session: session)
 
         handlers.onAllowOnce()
-        await Self.drainPendingRemoval()
 
         XCTAssertEqual(captured.count, 1)
         XCTAssertEqual(captured.ids.first, "perm-allow-once")
-        guard case .allow(let updatedInput) = captured[0] else {
-            XCTFail("expected .allow decision, got \(captured[0])")
-            return
-        }
-        XCTAssertNil(updatedInput)
+        XCTAssertEqual(captured[0], .allow())
         XCTAssertTrue(runtime.pendingPermissions.isEmpty)
     }
 
@@ -43,14 +38,12 @@ final class PermissionCardWiringTests: XCTestCase {
         let handlers = PermissionCardOverlay.decisionHandlers(for: pending, session: session)
 
         handlers.onAllowAlways()
-        await Self.drainPendingRemoval()
 
         XCTAssertEqual(captured.count, 1)
         XCTAssertEqual(captured.ids.first, "perm-allow-always")
-        guard case .allowAlways = captured[0] else {
-            XCTFail("expected .allowAlways decision, got \(captured[0])")
-            return
-        }
+        XCTAssertEqual(
+            captured[0], .allow(updatedPermissions: [Self.suggestion]),
+            "allow-always applies the CLI's suggestions")
         XCTAssertTrue(runtime.pendingPermissions.isEmpty)
     }
 
@@ -59,7 +52,6 @@ final class PermissionCardWiringTests: XCTestCase {
         let handlers = PermissionCardOverlay.decisionHandlers(for: pending, session: session)
 
         handlers.onDeny()
-        await Self.drainPendingRemoval()
 
         XCTAssertEqual(captured.count, 1)
         XCTAssertEqual(captured.ids.first, "perm-deny")
@@ -80,15 +72,10 @@ final class PermissionCardWiringTests: XCTestCase {
         let handlers = PermissionCardOverlay.decisionHandlers(for: pending, session: session)
 
         handlers.onAllowWithInput(["answers": ["yes"]])
-        await Self.drainPendingRemoval()
 
         XCTAssertEqual(captured.count, 1)
         XCTAssertEqual(captured.ids.first, "perm-allow-input")
-        guard case .allow(let updatedInput) = captured[0] else {
-            XCTFail("expected .allow decision, got \(captured[0])")
-            return
-        }
-        XCTAssertEqual(updatedInput?["answers"] as? [String], ["yes"])
+        XCTAssertEqual(captured[0], .allow(updatedInput: ["answers": ["yes"]]))
         XCTAssertTrue(runtime.pendingPermissions.isEmpty)
     }
 
@@ -102,7 +89,7 @@ final class PermissionCardWiringTests: XCTestCase {
     }
 
     /// With two cards queued, each handler set must target the `id` of the
-    /// `PendingPermission` it was built from — never the wrong (e.g. first)
+    /// request it was built from — never the wrong (e.g. first)
     /// entry. Drives the SECOND card's handlers and asserts the decision
     /// landed on its id (and only its entry is popped). A regression that
     /// hard-codes `pendingPermissions.first.id`, or otherwise routes to the
@@ -113,15 +100,13 @@ final class PermissionCardWiringTests: XCTestCase {
         let session = ccterm.Session(runtime: runtime)
         let captured = CapturedDecisions()
 
-        let first = Self.makePending(requestId: "perm-first", captured: captured, runtime: runtime)
-        let second = Self.makePending(
-            requestId: "perm-second", captured: captured, runtime: runtime)
+        let first = Self.makeRequest(requestId: "perm-first", captured: captured)
+        let second = Self.makeRequest(requestId: "perm-second", captured: captured)
         runtime.pendingPermissions.append(first)
         runtime.pendingPermissions.append(second)
 
         let handlers = PermissionCardOverlay.decisionHandlers(for: second, session: session)
         handlers.onAllowOnce()
-        await Self.drainPendingRemoval()
 
         XCTAssertEqual(captured.count, 1)
         XCTAssertEqual(captured.ids.first, "perm-second")
@@ -130,26 +115,18 @@ final class PermissionCardWiringTests: XCTestCase {
 
     // MARK: - Helpers
 
-    /// The production `respond` closure pops the pending entry off
-    /// `pendingPermissions` via `Task { @MainActor }`, so the array
-    /// hasn't been mutated yet by the time `session.respond` returns.
-    /// One run-loop turn drains that hop. Two `yield()`s for safety
-    /// — `Task.init` enqueues and `pendingPermissions.removeAll`
-    /// fires on the next main-actor execution slot.
-    private static func drainPendingRemoval() async {
-        await Task.yield()
-        await Task.yield()
-    }
+    private static let suggestion = PermissionUpdate.addRules(
+        [PermissionRule(toolName: "Bash", ruleContent: "ls")], behavior: .allow, destination: .localSettings)
 
     /// Constructs an active-phase session with one pending permission
     /// seeded directly onto the runtime. The returned `captured` records
-    /// every `(id, decision)` the response closure receives — tests assert
-    /// on its contents. The `PendingPermission` is returned so the test can
-    /// build the same `Handlers` the overlay body builds.
+    /// every `(id, decision)` the request receives — tests assert on its
+    /// contents. The request is returned so the test can build the same
+    /// `Handlers` the overlay body builds.
     private static func seedSession(
         requestId: String
     ) -> (
-        ccterm.Session, SessionRuntime, CapturedDecisions, PendingPermission
+        ccterm.Session, SessionRuntime, CapturedDecisions, PermissionRequest
     ) {
         let repo = InMemorySessionRepository()
         let runtime = SessionRuntime(
@@ -157,34 +134,22 @@ final class PermissionCardWiringTests: XCTestCase {
         let session = ccterm.Session(runtime: runtime)
         let captured = CapturedDecisions()
 
-        let pending = makePending(requestId: requestId, captured: captured, runtime: runtime)
-        runtime.pendingPermissions.append(pending)
+        let request = makeRequest(requestId: requestId, captured: captured)
+        runtime.pendingPermissions.append(request)
 
-        return (session, runtime, captured, pending)
+        return (session, runtime, captured, request)
     }
 
-    /// One pending entry whose `respond` closure records the decision
-    /// **keyed by `requestId`** (so the wrong-id guard can assert which
-    /// card was answered) and then pops its own entry off the runtime on
-    /// the next main-actor slot — mirroring the production sink. Shared by
-    /// the single-card seed and the multi-card targeting test.
-    private static func makePending(
+    /// A request that records its decision **keyed by `requestId`**, so the
+    /// wrong-id guard can assert which card was answered.
+    private static func makeRequest(
         requestId: String,
-        captured: CapturedDecisions,
-        runtime: SessionRuntime
-    ) -> PendingPermission {
-        let request = PermissionRequest.preview(
-            id: requestId,
-            toolName: "Bash",
-            input: ["command": "ls"])
-        return PendingPermission(
-            id: requestId,
-            request: request,
-            respond: { [captured] decision in
+        captured: CapturedDecisions
+    ) -> PermissionRequest {
+        PermissionRequest(
+            id: requestId, toolName: "Bash", input: ["command": "ls"], suggestions: [suggestion],
+            onRespond: { [captured] decision in
                 captured.append(id: requestId, decision: decision)
-                Task { @MainActor [weak runtime] in
-                    runtime?.pendingPermissions.removeAll { $0.id == requestId }
-                }
             })
     }
 }
@@ -192,15 +157,15 @@ final class PermissionCardWiringTests: XCTestCase {
 /// Reference wrapper capturing `(id, decision)` pairs so the closure can
 /// record what the runtime delivered without `inout` capture. The `id`
 /// side lets the wrong-id guard assert the handler targeted the right
-/// `PendingPermission`.
-private final class CapturedDecisions {
-    private(set) var values: [LegacyPermissionDecision] = []
+/// request. Only touched on the main thread (`respond` runs inline there).
+private final class CapturedDecisions: @unchecked Sendable {
+    private(set) var values: [PermissionDecision] = []
     private(set) var ids: [String] = []
     var count: Int { values.count }
     var isEmpty: Bool { values.isEmpty }
-    subscript(i: Int) -> LegacyPermissionDecision { values[i] }
+    subscript(i: Int) -> PermissionDecision { values[i] }
 
-    func append(id: String, decision: LegacyPermissionDecision) {
+    func append(id: String, decision: PermissionDecision) {
         ids.append(id)
         values.append(decision)
     }

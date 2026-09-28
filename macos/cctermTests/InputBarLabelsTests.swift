@@ -34,10 +34,11 @@ final class InputBarLabelsTests: XCTestCase {
     }
 
     func testEffortTitlesAreLiteralEnglish() {
-        XCTAssertEqual(AgentSDK.Effort.low.title, "Low")
-        XCTAssertEqual(AgentSDK.Effort.medium.title, "Medium")
-        XCTAssertEqual(AgentSDK.Effort.high.title, "High")
-        XCTAssertEqual(AgentSDK.Effort.xhigh.title, "Extra high")
-        XCTAssertEqual(AgentSDK.Effort.max.title, "Max")
+        XCTAssertEqual(Effort.low.title, "Low")
+        XCTAssertEqual(Effort.medium.title, "Medium")
+        XCTAssertEqual(Effort.high.title, "High")
+        XCTAssertEqual(Effort.xhigh.title, "Extra high")
+        XCTAssertEqual(Effort.max.title, "Max")
+        XCTAssertEqual(Effort.ultracode.title, "Ultracode")
     }
 }

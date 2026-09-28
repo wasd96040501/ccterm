@@ -33,15 +33,16 @@ Source lives in `Session/`:
 | `SessionRuntime+Receive.swift` | Incoming-message path from the CLI; `appendToTimeline` walks the live group boundary by inspecting `messages.last`. |
 | `SessionRuntime+Streaming.swift` | Typewriter-reveal pacing of streaming assistant text (`frameTicker` / `StreamingTurnAssembler`). |
 | `SessionRuntime+Tasks.swift` | Background-bash-task forwarders into `taskTracker` (incl. `markTaskStoppedLocally`). |
-| `SessionRuntime+Todos.swift` | Todo-plan forwarders into `todoTracker`. |
 | `SessionRuntime+ContextUsage.swift` | `requestContextUsage` forwarder handing the bound `cliClient` to `contextUsageCache`. |
 | `SessionRuntime+SideQuestion.swift` | `/btw`-style side-question call against the running CLI. |
 | `TodoTracker.swift` / `TaskTracker.swift` / `ContextUsageCache.swift` | `@Observable @MainActor` child objects held by `SessionRuntime` via plain `let` props (`todoTracker` / `taskTracker` / `contextUsageCache`). Runtime accessors (`todos` / `tasks` / `contextUsage`) forward into them so in-place element patches are tracked through the nested chain. |
-| `SessionTypes.swift` | `PendingPermission`, `SlashCommand`, `deriveTitleFromFirstMessage`. |
-| `MessageEntry.swift` | Render-ready entries (`SingleEntry` / `GroupEntry`), `LocalUserInput`. |
+| `SessionTypes.swift` | Small runtime value types (`SlashCommand`, `BackgroundTask`, `TodoEntry`, notices) + `deriveTitleFromFirstMessage`. |
+| `Message+Timeline.swift` | App-side reading of `AgentSDK.Message`: which messages are visible, which assistants group, one `UserMessage` per `tool_result` (`toolResultMessages`). Shared by the live and history paths. |
+| `PermissionRequest+Decisions.swift` | The permission card's decisions (`allowOnce` / `allowAlways` / `deny` / `deny(feedback:)`), worded like the CLI's own UI. |
+| `MessageEntry.swift` | Render-ready entries (`SingleEntry` / `GroupEntry`), `LocalUserInput`. A `SingleEntry` holds its `AgentSDK.Message` plus `toolResults: [toolUseID: UserMessage]`. |
 | `MessagesChange.swift` | Live timeline change events the bridge consumes (`.appended` / `.updated` / `.removed`). History load is **not** a `MessagesChange`. |
 
-History load lives on the façade, not the runtime: `Session.loadHistory()` drives a `TranscriptBackfillPipeline` (`Content/Chat/NativeTranscript2Bridge/`) over a reverse-streaming `JSONLReversePageSource`, building already-paired blocks off-main and applying them straight to the controller. Grouping + tool-pairing for that path is `ReverseEntryBuilder.swift` (in `Session/`, beside the live path it mirrors).
+History load lives on the façade, not the runtime: `Session.loadHistory()` drives a `TranscriptBackfillPipeline` (`Content/Chat/NativeTranscript2Bridge/`) over a `TranscriptPageSource` (the session's `AgentSDK.Transcript`, served newest page first), building already-paired blocks off-main and applying them straight to the controller. Grouping + tool-pairing for that path is `ReverseEntryBuilder.swift` (in `Session/`, beside the live path it mirrors).
 
 ### Load vs. live parity invariants
 
@@ -61,10 +62,10 @@ History load and the live CLI stream produce the same blocks two different ways;
 
 | Service | Lives at | Responsibility |
 |---|---|---|
-| `CLIClient` protocol + `AgentSDKCLIClient` + `FakeCLIClient` | `CLIClient/` | Thin abstraction over `AgentSDK.Session`. Factory injected at `SessionManager.init(... cliClientFactory:)` and forwarded into every `Session` the manager constructs; production defaults to `AgentSDKCLIClient.defaultFactory`, tests pass `{ _ in FakeCLIClient() }`. |
-| `TitleGenerator` | `TitleGenerator.swift` | Stateless one-shot LLM call (`Prompt.runTitleAndBranch`) inside a scratch dir. Runtime's `generateTitle(from:)` calls into it; injectable `runner` seam for tests. |
+| `CLIClient` protocol + `FakeCLIClient` | `CLIClient/` | The `AgentSDK.Session` surface the runtime uses, as a `@MainActor` protocol that `AgentSDK.Session` conforms to directly. The runtime reads `events` in one listening task and calls the async RPCs from fire-and-log tasks. Factory injected at `SessionManager.init(... cliClientFactory:)` and forwarded into every `Session` the manager constructs; production defaults to `liveCLIClientFactory`, tests pass `{ _ in FakeCLIClient() }` and drive it (`completeStart`, `push`, `requestPermission`, `simulateExit`). |
+| `TitleGenerator` | `TitleGenerator.swift` | Stateless one-shot LLM call (`Prompt.run`, no tools) inside a scratch dir; parses `<title_i18n>` / `<title>` from the reply. Runtime's `generateTitle(from:)` calls into it; injectable `runner` seam for tests. |
 | `WorktreeProvisioner` | `Worktree/WorktreeProvisioner.swift` | Off-main `git worktree add` invocation via `DispatchQueue.global`. Wraps `Worktree.create`; injectable `creator` seam for tests. |
-| `HistoryLoader` | `HistoryLoader.swift` | Path resolution (`locate(sessionId:slug:)` with root-injected overload) + `parseLines` (per-page line→`Message2` decode). Reverse paging itself is a single streaming backward reader — `JSONLReversePageSource` + `ReverseLineReader` (`Content/Chat/NativeTranscript2Bridge/`) — with no tail/prefix split. |
+| `HistoryLoader` | `HistoryLoader.swift` | Transcript path resolution (`locate(sessionId:slug:)` with root-injected overload). Reading and paging is `TranscriptPageSource` (`Content/Chat/NativeTranscript2Bridge/`). |
 
 ## Talking to the renderer
 

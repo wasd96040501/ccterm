@@ -42,7 +42,7 @@ final class SessionRuntimeReceiveStatusTests: XCTestCase {
         XCTAssertEqual(runtime.permissionMode, .default)
 
         runtime.receive(
-            Message2Fixtures.systemStatus(permissionMode: "acceptEdits", sessionId: sid))
+            MessageFixtures.systemStatus(permissionMode: "acceptEdits", sessionId: sid))
 
         XCTAssertEqual(runtime.permissionMode, .acceptEdits)
         XCTAssertEqual(repo.find(sid)?.extra.permissionMode, "acceptEdits")
@@ -58,7 +58,7 @@ final class SessionRuntimeReceiveStatusTests: XCTestCase {
         let runtime = SessionRuntime(sessionId: sid, repository: repo)
 
         runtime.receive(
-            Message2Fixtures.systemStatus(permissionMode: "plan", sessionId: sid))
+            MessageFixtures.systemStatus(permissionMode: "plan", sessionId: sid))
 
         XCTAssertEqual(runtime.permissionMode, .plan)
         XCTAssertNil(repo.find(sid))  // no eager record, no DB write attempted
@@ -80,7 +80,7 @@ final class SessionRuntimeReceiveStatusTests: XCTestCase {
 
         // Same mode CLI already knows: no write.
         runtime.receive(
-            Message2Fixtures.systemStatus(permissionMode: "default", sessionId: sid))
+            MessageFixtures.systemStatus(permissionMode: "default", sessionId: sid))
 
         XCTAssertEqual(runtime.permissionMode, .default)
         XCTAssertNil(
@@ -97,7 +97,7 @@ final class SessionRuntimeReceiveStatusTests: XCTestCase {
         let runtime = SessionRuntime(sessionId: sid, repository: repo)
 
         runtime.receive(
-            Message2Fixtures.systemStatus(permissionMode: "warp_drive_engaged", sessionId: sid))
+            MessageFixtures.systemStatus(permissionMode: "warp_drive_engaged", sessionId: sid))
 
         XCTAssertEqual(runtime.permissionMode, .default)
         XCTAssertNil(repo.find(sid)?.extra.permissionMode)
@@ -122,7 +122,7 @@ final class SessionRuntimeReceiveStatusTests: XCTestCase {
 
         // Step 2: CLI rejects, broadcasts the corrected mode.
         runtime.receive(
-            Message2Fixtures.systemStatus(permissionMode: "default", sessionId: sid))
+            MessageFixtures.systemStatus(permissionMode: "default", sessionId: sid))
 
         XCTAssertEqual(
             runtime.permissionMode, .default,
@@ -140,7 +140,7 @@ final class SessionRuntimeReceiveStatusTests: XCTestCase {
         let runtime = SessionRuntime(sessionId: sid, repository: repo)
 
         runtime.receive(
-            Message2Fixtures.systemStatus(permissionMode: "plan", sessionId: sid))
+            MessageFixtures.systemStatus(permissionMode: "plan", sessionId: sid))
 
         XCTAssertEqual(runtime.permissionMode, .plan)
         XCTAssertEqual(repo.find(sid)?.extra.permissionMode, "plan")

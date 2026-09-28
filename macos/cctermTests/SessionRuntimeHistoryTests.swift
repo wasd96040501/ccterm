@@ -3,14 +3,11 @@ import XCTest
 
 @testable import ccterm
 
-/// Covers the reverse-streaming history load now driven by
-/// `Session.loadHistory()` → `TranscriptBackfillPipeline` →
-/// `JSONLReversePageSource`. The old two-phase
-/// `.reset`/`.prepended` mechanism, its precomputed-blocks payload, and the
-/// `ToolResultReresolver` backfill are gone — the grouping/pairing correctness
-/// they used to guard now lives in `TranscriptReverseBuilderTests` (Group A),
-/// and the deposit/drain timing in `TranscriptBackfillPipelineTests` (Group B).
-/// These tests are the end-to-end integration: bytes on disk → blocks in the
+/// Covers the history load driven by `Session.loadHistory()` →
+/// `TranscriptBackfillPipeline` → `TranscriptPageSource`. Grouping/pairing
+/// correctness lives in `TranscriptReverseBuilderTests` (Group A) and the
+/// deposit/drain timing in `TranscriptBackfillPipelineTests` (Group B); these
+/// tests are the end-to-end integration: bytes on disk → blocks in the
 /// controller.
 @MainActor
 final class SessionRuntimeHistoryTests: XCTestCase {
@@ -51,8 +48,8 @@ final class SessionRuntimeHistoryTests: XCTestCase {
     /// Cold load of a small JSONL lands every entry's blocks in the controller.
     func testLoadHistoryRendersAllBlocks() async {
         let file = try! TempJSONLFile([
-            Message2Fixtures.assistantTextJSONL("Hello"),
-            Message2Fixtures.userTextJSONL("Hi back"),
+            MessageFixtures.assistantTextJSONL("Hello"),
+            MessageFixtures.userTextJSONL("Hi back"),
         ])
         tempFile = file
 
@@ -79,7 +76,7 @@ final class SessionRuntimeHistoryTests: XCTestCase {
     /// A JSONL larger than the first page exercises multi-page backfill:
     /// every line still lands, in document order.
     func testLoadHistoryMultiPageRendersInDocumentOrder() async {
-        let lines = (0..<6).map { Message2Fixtures.assistantTextJSONL("Segment \($0)") }
+        let lines = (0..<6).map { MessageFixtures.assistantTextJSONL("Segment \($0)") }
         let file = try! TempJSONLFile(lines)
         tempFile = file
 
@@ -102,7 +99,7 @@ final class SessionRuntimeHistoryTests: XCTestCase {
     /// Re-entry is idempotent: a second `loadHistory` on a `.loaded` session is
     /// a no-op (no duplicate content).
     func testLoadHistoryIdempotentOnReentry() async {
-        let file = try! TempJSONLFile([Message2Fixtures.assistantTextJSONL("Once")])
+        let file = try! TempJSONLFile([MessageFixtures.assistantTextJSONL("Once")])
         tempFile = file
 
         let session = makeSession()

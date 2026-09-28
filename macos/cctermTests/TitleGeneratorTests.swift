@@ -4,29 +4,23 @@ import XCTest
 @testable import ccterm
 
 /// Exercises `TitleGenerator.generate` through its injectable runner
-/// seam — no real LLM call, no CLI subprocess. The runner closure is
-/// the only place where the real `Prompt.runTitleAndBranch` would run
-/// in production, so flipping it lets these tests assert on:
-/// - what argument the runner receives (firstMessage / customCommand /
-///   workingDirectory shape)
-/// - what `generate` returns for success vs throwing runners
-/// - that the scratch workingDirectory is cleaned up on the success
-///   path (defer runs)
+/// seam — no real LLM call, no CLI subprocess. The runner stands in for
+/// the one-shot `claude -p` call, so these tests assert on:
+/// - the prompt and configuration the runner receives
+/// - how the model's reply is parsed (`<title_i18n>` over `<title>`)
+/// - that failures return nil
+/// - that the scratch working directory is removed afterwards
 final class TitleGeneratorTests: XCTestCase {
 
     /// Sendable capture box for runner-supplied state. The runner is
-    /// `@Sendable`, so anything it writes must cross actor boundaries
-    /// — a plain `var` in the test method won't compile. An actor
-    /// suffices.
+    /// `@Sendable`, so anything it writes must cross actor boundaries.
     private actor Capture {
-        var firstMessage: String?
-        var customCommand: String?
-        var workingDirectory: URL?
+        var prompt: String?
+        var configuration: PromptConfiguration?
 
-        func record(message: String, config: PromptConfiguration) {
-            firstMessage = message
-            customCommand = config.customCommand
-            workingDirectory = config.workingDirectory
+        func record(prompt: String, configuration: PromptConfiguration) {
+            self.prompt = prompt
+            self.configuration = configuration
         }
     }
 
@@ -42,24 +36,22 @@ final class TitleGeneratorTests: XCTestCase {
         let result = await TitleGenerator.generate(
             firstMessage: "Fix the login bug",
             customCLICommand: "trae-proxy claude --"
-        ) { msg, config in
-            await capture.record(message: msg, config: config)
-            return Prompt.TitleAndBranch(
-                title: "Fix login bug",
-                titleI18n: "Fix login bug",
-                branch: "fix-login-bug"
-            )
+        ) { prompt, configuration in
+            await capture.record(prompt: prompt, configuration: configuration)
+            return "<title>Fix login bug</title>\n<title_i18n>Fix login bug</title_i18n>"
         }
 
-        let firstMessage = await capture.firstMessage
-        let customCommand = await capture.customCommand
-        let workingDirectory = await capture.workingDirectory
-        XCTAssertEqual(firstMessage, "Fix the login bug")
-        XCTAssertEqual(customCommand, "trae-proxy claude --")
+        let prompt = await capture.prompt
+        let configuration = await capture.configuration
         XCTAssertTrue(
-            workingDirectory?.path.contains("title-gen-") ?? false,
+            prompt?.contains("<description>Fix the login bug</description>") ?? false,
+            "the first message is embedded in the template")
+        XCTAssertEqual(configuration?.customCommand, "trae-proxy claude --")
+        XCTAssertEqual(configuration?.tools, [], "title generation needs no tools")
+        XCTAssertTrue(
+            configuration?.workingDirectory.path.contains("title-gen-") ?? false,
             "workingDirectory should be a unique title-gen-<prefix> scratch dir")
-        XCTAssertEqual(result?.titleI18n, "Fix login bug")
+        XCTAssertEqual(result, "Fix login bug")
     }
 
     func testCustomCommandNilPassesThrough() async {
@@ -68,30 +60,41 @@ final class TitleGeneratorTests: XCTestCase {
         _ = await TitleGenerator.generate(
             firstMessage: "irrelevant",
             customCLICommand: nil
-        ) { msg, config in
-            await capture.record(message: msg, config: config)
-            return Prompt.TitleAndBranch(title: "x", titleI18n: "x", branch: "y")
+        ) { prompt, configuration in
+            await capture.record(prompt: prompt, configuration: configuration)
+            return "<title>x</title>"
         }
 
-        let customCommand = await capture.customCommand
-        XCTAssertNil(customCommand, "nil customCLICommand must round-trip as nil on PromptConfiguration")
+        let configuration = await capture.configuration
+        XCTAssertNil(configuration?.customCommand, "nil customCLICommand must round-trip as nil")
     }
 
-    // MARK: - Success / failure handling
+    func testLongFirstMessageIsTruncated() {
+        let prompt = TitleGenerator.prompt(for: String(repeating: "a", count: 50), limit: 10)
+        XCTAssertTrue(prompt.contains("<description>aaaaaaaaaa …</description>"))
+    }
 
-    func testRunnerSuccessReturnsValue() async {
-        let expected = Prompt.TitleAndBranch(
-            title: "Add dark mode",
-            titleI18n: "Add dark mode",
-            branch: "dark-mode")
-        let result = await TitleGenerator.generate(
-            firstMessage: "Add dark mode toggle",
-            customCLICommand: nil
-        ) { _, _ in expected }
+    // MARK: - Reply parsing
 
-        XCTAssertEqual(result?.title, "Add dark mode")
-        XCTAssertEqual(result?.titleI18n, "Add dark mode")
-        XCTAssertEqual(result?.branch, "dark-mode")
+    func testPrefersLocalizedTitle() async {
+        let result = await TitleGenerator.generate(firstMessage: "修复登录", customCLICommand: nil) { _, _ in
+            "<title>Fix login</title>\n<title_i18n>修复登录</title_i18n>"
+        }
+        XCTAssertEqual(result, "修复登录")
+    }
+
+    func testFallsBackToEnglishTitle() async {
+        let result = await TitleGenerator.generate(firstMessage: "x", customCLICommand: nil) { _, _ in
+            "<title>  Add dark mode  </title>"
+        }
+        XCTAssertEqual(result, "Add dark mode", "tags are trimmed")
+    }
+
+    func testReplyWithoutTitleReturnsNil() async {
+        let result = await TitleGenerator.generate(firstMessage: "x", customCLICommand: nil) { _, _ in
+            "I can't help with that."
+        }
+        XCTAssertNil(result)
     }
 
     func testRunnerThrowingReturnsNil() async {
@@ -112,12 +115,12 @@ final class TitleGeneratorTests: XCTestCase {
         _ = await TitleGenerator.generate(
             firstMessage: "x",
             customCLICommand: nil
-        ) { msg, config in
-            await capture.record(message: msg, config: config)
-            return Prompt.TitleAndBranch(title: "x", titleI18n: "x", branch: "y")
+        ) { prompt, configuration in
+            await capture.record(prompt: prompt, configuration: configuration)
+            return "<title>x</title>"
         }
 
-        guard let used = await capture.workingDirectory else {
+        guard let used = await capture.configuration?.workingDirectory else {
             XCTFail("runner never received a workingDirectory")
             return
         }
@@ -133,12 +136,12 @@ final class TitleGeneratorTests: XCTestCase {
         _ = await TitleGenerator.generate(
             firstMessage: "x",
             customCLICommand: nil
-        ) { msg, config in
-            await capture.record(message: msg, config: config)
+        ) { prompt, configuration in
+            await capture.record(prompt: prompt, configuration: configuration)
             throw Boom()
         }
 
-        guard let used = await capture.workingDirectory else {
+        guard let used = await capture.configuration?.workingDirectory else {
             XCTFail("runner never received a workingDirectory")
             return
         }

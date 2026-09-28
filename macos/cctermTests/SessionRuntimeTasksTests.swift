@@ -32,7 +32,7 @@ final class SessionRuntimeTasksTests: XCTestCase {
         )
     }
 
-    private func assistantBashToolUse(toolUseId: String, command: String) -> Message2 {
+    private func assistantBashToolUse(toolUseId: String, command: String) -> Message {
         resolve([
             "type": "assistant",
             "uuid": UUID().uuidString,
@@ -62,7 +62,7 @@ final class SessionRuntimeTasksTests: XCTestCase {
         backgroundTaskId: String,
         outputPath: String,
         sentenceTerminator: String = "."
-    ) -> Message2 {
+    ) -> Message {
         let body =
             "Command running in background with ID: \(backgroundTaskId). "
             + "Output is being written to: \(outputPath)\(sentenceTerminator) "
@@ -97,7 +97,7 @@ final class SessionRuntimeTasksTests: XCTestCase {
         toolUseId: String,
         description: String = "",
         taskType: String = "local_bash"
-    ) -> Message2 {
+    ) -> Message {
         resolve([
             "type": "system",
             "subtype": "task_started",
@@ -116,7 +116,7 @@ final class SessionRuntimeTasksTests: XCTestCase {
         status: String,
         outputFile: String,
         summary: String
-    ) -> Message2 {
+    ) -> Message {
         resolve([
             "type": "system",
             "subtype": "task_notification",
@@ -134,7 +134,7 @@ final class SessionRuntimeTasksTests: XCTestCase {
         taskId: String,
         status: String,
         endTimeMillis: Double? = nil
-    ) -> Message2 {
+    ) -> Message {
         var patch: [String: Any] = ["status": status]
         if let endTimeMillis { patch["end_time"] = endTimeMillis }
         return resolve([
@@ -147,8 +147,8 @@ final class SessionRuntimeTasksTests: XCTestCase {
         ])
     }
 
-    private func resolve(_ dict: [String: Any]) -> Message2 {
-        try! Message2Resolver().resolve(dict)
+    private func resolve(_ dict: [String: Any]) -> Message {
+        MessageFixtures.message(dict)
     }
 
     // MARK: - Lifecycle
@@ -355,7 +355,7 @@ final class SessionRuntimeTasksTests: XCTestCase {
     /// `<task-notification>` XML envelope but no `origin` field at all
     /// (observed in 2026-02 smoke dumps and still occasionally surfaces
     /// on certain CLI paths). The content-prefix fallback in
-    /// `Message2User.isVisible` must catch it; without that fallback
+    /// `UserMessage.isVisible` must catch it; without that fallback
     /// the bubble leaks into the transcript.
     func testTaskNotificationUserMessageWithoutOriginIsSuppressed() {
         let runtime = makeRuntime()
@@ -385,7 +385,7 @@ final class SessionRuntimeTasksTests: XCTestCase {
         let runtime = makeRuntime()
         let baseline = runtime.messages.count
 
-        runtime.receive(Message2Fixtures.userText("hello there"))
+        runtime.receive(MessageFixtures.userText("hello there"))
 
         XCTAssertEqual(
             runtime.messages.count,
@@ -397,7 +397,7 @@ final class SessionRuntimeTasksTests: XCTestCase {
     private func taskNotificationUserMessage(
         xml: String,
         includeOrigin: Bool
-    ) -> Message2 {
+    ) -> Message {
         var dict: [String: Any] = [
             "type": "user",
             "uuid": UUID().uuidString,

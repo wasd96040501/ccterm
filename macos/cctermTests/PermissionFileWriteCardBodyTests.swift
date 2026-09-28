@@ -29,7 +29,7 @@ final class PermissionFileWriteCardBodyTests: XCTestCase {
         let req = makeRequest(
             toolName: "Edit",
             input: [
-                "file_path": tempDir.appendingPathComponent("Greeter.swift").path,
+                "file_path": .string(tempDir.appendingPathComponent("Greeter.swift").path),
                 "old_string": "let x = 1",
                 "new_string": "let x = 2",
             ])
@@ -51,7 +51,7 @@ final class PermissionFileWriteCardBodyTests: XCTestCase {
         let req = makeRequest(
             toolName: "Edit",
             input: [
-                "file_path": tempDir.appendingPathComponent("New.swift").path,
+                "file_path": .string(tempDir.appendingPathComponent("New.swift").path),
                 "old_string": "",
                 "new_string": "import Foundation\n",
             ])
@@ -91,7 +91,7 @@ final class PermissionFileWriteCardBodyTests: XCTestCase {
         let req = makeRequest(
             toolName: "Write",
             input: [
-                "file_path": path,
+                "file_path": .string(path),
                 "content": "print(\"hi\")\n",
             ])
         let body = PermissionFileWriteCardBody(request: req, kind: .fileWrite)
@@ -112,7 +112,7 @@ final class PermissionFileWriteCardBodyTests: XCTestCase {
         let req = makeRequest(
             toolName: "Write",
             input: [
-                "file_path": path,
+                "file_path": .string(path),
                 "content": "line one\nLINE TWO\n",
             ])
         let body = PermissionFileWriteCardBody(request: req, kind: .fileWrite)
@@ -136,7 +136,7 @@ final class PermissionFileWriteCardBodyTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func makeRequest(toolName: String, input: [String: Any]) -> PermissionRequest {
+    private func makeRequest(toolName: String, input: JSONValue) -> PermissionRequest {
         PermissionRequest.preview(
             id: "fw-\(toolName)-\(UUID().uuidString)",
             toolName: toolName,

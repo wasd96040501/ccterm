@@ -241,9 +241,9 @@ final class TranscriptSearchCoordinatorTests: XCTestCase {
         let pipeline = TranscriptBackfillPipeline(
             source: FakeReversePageSource([
                 [
-                    Message2Fixtures.assistantRead(
+                    MessageFixtures.assistantRead(
                         toolUseId: tu, filePath: "/tmp/x.txt"),
-                    Message2Fixtures.userToolResult(
+                    MessageFixtures.userToolResult(
                         toolUseId: tu, text: "let apple = 1\nlet banana = 2"),
                 ]
             ]),
@@ -293,9 +293,9 @@ final class TranscriptSearchCoordinatorTests: XCTestCase {
         let pipeline = TranscriptBackfillPipeline(
             source: FakeReversePageSource([
                 [
-                    Message2Fixtures.assistantRead(
+                    MessageFixtures.assistantRead(
                         toolUseId: tu, filePath: "/tmp/zebrafile.txt"),
-                    Message2Fixtures.userToolResult(
+                    MessageFixtures.userToolResult(
                         toolUseId: tu, text: "let apple = 1"),
                 ]
             ]),

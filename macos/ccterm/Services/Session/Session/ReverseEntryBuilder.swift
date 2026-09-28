@@ -149,7 +149,8 @@ struct ReverseEntryBuilder {
         var out: [MessageEntry] = []
         for id in withheldOrder {
             guard let result = withheld[id] else { continue }
-            out.append(.single(SingleEntry(id: UUID(), payload: .remote(.user(result)), delivery: nil, toolResults: [:])))
+            out.append(
+                .single(SingleEntry(id: UUID(), payload: .remote(.user(result)), delivery: nil, toolResults: [:])))
         }
         withheld.removeAll()
         withheldOrder.removeAll()

@@ -33,15 +33,15 @@ final class TranscriptStreamTextToolReplayTests: XCTestCase {
     private let m2 = "msg_M2_second_text"
     private let toolUseId = "toolu_replay_0001"
 
-    private func assistantText(_ text: String, messageId: String) -> Message2 {
-        Message2Fixtures.assistantText(text, messageId: messageId)
+    private func assistantText(_ text: String, messageId: String) -> Message {
+        MessageFixtures.assistantText(text, messageId: messageId)
     }
 
     /// Finalized assistant envelope carrying exactly one tool_use block,
     /// reusing `messageId` — the captured "same msg.id, split into two
     /// messages" behavior.
-    private func assistantTool(messageId: String, toolUseId: String) -> Message2 {
-        Message2Fixtures.assistantContent(
+    private func assistantTool(messageId: String, toolUseId: String) -> Message {
+        MessageFixtures.assistantContent(
             messageId: messageId,
             content: [
                 [
@@ -83,9 +83,9 @@ final class TranscriptStreamTextToolReplayTests: XCTestCase {
         let (runtime, ticker, session) = makeStack()
 
         // M1 text streams in but is NOT drained — typewriter head still trails.
-        runtime.consumeStreamEvent(Message2Fixtures.streamMessageStart(messageId: m1))
+        runtime.consumeStreamEvent(MessageFixtures.streamMessageStart(messageId: m1))
         runtime.consumeStreamEvent(
-            Message2Fixtures.streamTextDelta(index: 0, text: "I'll read the file now."))
+            MessageFixtures.streamTextDelta(index: 0, text: "I'll read the file now."))
         XCTAssertEqual(paragraphCount(runtime), 1, "preview text is on screen")
 
         // Finalized [text] M1 arrives mid-reveal → deferred (preview mapping
@@ -99,7 +99,7 @@ final class TranscriptStreamTextToolReplayTests: XCTestCase {
         ticker.tick(10.0)
 
         runtime.receive(
-            Message2Fixtures.userToolResult(toolUseId: toolUseId, text: "no such file"),
+            MessageFixtures.userToolResult(toolUseId: toolUseId, text: "no such file"),
             mode: .live)
 
         XCTAssertEqual(paragraphCount(runtime), 1, "streamed text survives the tool finalize")
@@ -115,22 +115,22 @@ final class TranscriptStreamTextToolReplayTests: XCTestCase {
     func testTextToolTextDrainedKeepsAllBlocks() {
         let (runtime, ticker, session) = makeStack()
 
-        runtime.consumeStreamEvent(Message2Fixtures.streamMessageStart(messageId: m1))
+        runtime.consumeStreamEvent(MessageFixtures.streamMessageStart(messageId: m1))
         runtime.consumeStreamEvent(
-            Message2Fixtures.streamTextDelta(index: 0, text: "I'll read the file now."))
+            MessageFixtures.streamTextDelta(index: 0, text: "I'll read the file now."))
         ticker.tick(10.0)
         runtime.receive(assistantText("I'll read the file now.", messageId: m1), mode: .live)
         ticker.tick(10.0)
         runtime.receive(assistantTool(messageId: m1, toolUseId: toolUseId), mode: .live)
         runtime.receive(
-            Message2Fixtures.userToolResult(toolUseId: toolUseId, text: "no such file"),
+            MessageFixtures.userToolResult(toolUseId: toolUseId, text: "no such file"),
             mode: .live)
-        runtime.consumeStreamEvent(Message2Fixtures.streamMessageStart(messageId: m2))
-        runtime.consumeStreamEvent(Message2Fixtures.streamTextDelta(index: 0, text: "该文件不存在。"))
+        runtime.consumeStreamEvent(MessageFixtures.streamMessageStart(messageId: m2))
+        runtime.consumeStreamEvent(MessageFixtures.streamTextDelta(index: 0, text: "该文件不存在。"))
         ticker.tick(10.0)
         runtime.receive(assistantText("该文件不存在。", messageId: m2), mode: .live)
         ticker.tick(10.0)
-        runtime.receive(Message2Fixtures.result(), mode: .live)
+        runtime.receive(MessageFixtures.result(), mode: .live)
 
         XCTAssertEqual(paragraphCount(runtime), 2, "both streamed texts survive")
         XCTAssertEqual(toolGroupCount(runtime), 1, "tool group is present")

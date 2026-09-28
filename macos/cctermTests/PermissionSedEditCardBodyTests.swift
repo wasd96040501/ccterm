@@ -62,7 +62,7 @@ final class PermissionSedEditCardBodyTests: XCTestCase {
         let req = PermissionRequest.preview(
             id: "sed-\(UUID().uuidString)",
             toolName: "Bash",
-            input: ["command": command])
+            input: ["command": .string(command)])
         return PermissionSedEditCardBody(request: req)
     }
 

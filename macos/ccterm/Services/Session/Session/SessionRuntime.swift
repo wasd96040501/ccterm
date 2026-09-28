@@ -71,7 +71,7 @@ final class SessionRuntime {
     internal(set) var title: String = ""
     /// True while title generation is running asynchronously. UI uses this
     /// for shimmer/loading. Triggered by `generateTitle(from:)`, reset when
-    /// `Prompt.runTitleAndBranch` finishes.
+    /// `TitleGenerator.generate` finishes.
     internal(set) var isGeneratingTitle: Bool = false
 
     // MARK: - Configuration

@@ -301,7 +301,8 @@ public final class Session: @unchecked Sendable {
         return PermissionRequest(
             id: id, toolName: toolName, toolUseID: toolUseID, input: request["input"] ?? .object([:]),
             suggestions: suggestions, decisionReason: request["decision_reason"]?.stringValue,
-            decisionReasonType: request["decision_reason_type"]?.stringValue, blockedPath: request["blocked_path"]?.stringValue, agentID: request["agent_id"]?.stringValue,
+            decisionReasonType: request["decision_reason_type"]?.stringValue,
+            blockedPath: request["blocked_path"]?.stringValue, agentID: request["agent_id"]?.stringValue,
             onRespond: { [weak self] decision in
                 guard let self, self.state.withLock({ $0.permissions.removeValue(forKey: id) }) != nil else { return }
                 self.reply(id, success: Self.permissionResponse(decision, toolUseID: toolUseID))

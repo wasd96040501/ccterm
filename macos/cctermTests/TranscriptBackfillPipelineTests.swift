@@ -23,7 +23,7 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
     /// Run a pipeline to completion (`onLoaded`) and return its controller.
     @discardableResult
     private func runToLoaded(
-        pages: [[Message2]],
+        pages: [[Message]],
         budget: Int = 40,
         width: CGFloat = 0,
         configure: (TranscriptBackfillPipeline) -> Void = { _ in },
@@ -72,7 +72,7 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
     func testB1_coldAttachHasNoContentUntilFirstDeposit() async {
         let controller = makeController()
         let pipeline = TranscriptBackfillPipeline(
-            source: FakeReversePageSource([[Message2Fixtures.userText("only")]]),
+            source: FakeReversePageSource([[MessageFixtures.userText("only")]]),
             controller: controller,
             onLoaded: {})
         pipeline.start(width: 0)
@@ -89,9 +89,9 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
         var totalApplied = 0
         let controller = await runToLoaded(
             pages: [
-                [Message2Fixtures.assistantText("c")],
-                [Message2Fixtures.assistantText("b")],
-                [Message2Fixtures.assistantText("a")],
+                [MessageFixtures.assistantText("c")],
+                [MessageFixtures.assistantText("b")],
+                [MessageFixtures.assistantText("a")],
             ],
             configure: { pipeline in
                 pipeline.onDrainTickForDebug = { applied in
@@ -111,8 +111,8 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
     func testB3_pagesReassembleIntoDocumentOrder() async {
         // tail-first: newest page first.
         let controller = await runToLoaded(pages: [
-            [Message2Fixtures.userText("c"), Message2Fixtures.assistantText("d")],
-            [Message2Fixtures.userText("a"), Message2Fixtures.assistantText("b")],
+            [MessageFixtures.userText("c"), MessageFixtures.assistantText("d")],
+            [MessageFixtures.userText("a"), MessageFixtures.assistantText("b")],
         ])
         XCTAssertEqual(
             orderedTexts(controller), ["a", "b", "c", "d"],
@@ -133,7 +133,7 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
         var drainTicks = 0
         var maxAppliedPerTick = 0
         // 12 single-block pages, budget 3, width-mismatch → at least 4 ticks.
-        let pages = (0..<12).map { [Message2Fixtures.assistantText("m\($0)")] }
+        let pages = (0..<12).map { [MessageFixtures.assistantText("m\($0)")] }
         let controller = await runToLoaded(
             pages: pages,
             budget: 3,
@@ -156,7 +156,7 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
         let controller = makeController()
         let done = expectation(description: "loaded")
         let pipeline = TranscriptBackfillPipeline(
-            source: FakeReversePageSource([[Message2Fixtures.assistantText("x")]]),
+            source: FakeReversePageSource([[MessageFixtures.assistantText("x")]]),
             controller: controller,
             onLoaded: {
                 loadedCount += 1
@@ -192,8 +192,8 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
         let loaded = expectation(description: "loaded")
         let pipeline = TranscriptBackfillPipeline(
             source: FakeReversePageSource([
-                [Message2Fixtures.assistantText("b")],
-                [Message2Fixtures.assistantText("a")],
+                [MessageFixtures.assistantText("b")],
+                [MessageFixtures.assistantText("a")],
             ]),
             controller: controller,
             onLoaded: { loaded.fulfill() })
@@ -222,8 +222,8 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
         let loaded = expectation(description: "loaded")
         let pipeline = TranscriptBackfillPipeline(
             source: FakeReversePageSource([
-                [Message2Fixtures.userText("c"), Message2Fixtures.assistantText("d")],
-                [Message2Fixtures.userText("a"), Message2Fixtures.assistantText("b")],
+                [MessageFixtures.userText("c"), MessageFixtures.assistantText("d")],
+                [MessageFixtures.userText("a"), MessageFixtures.assistantText("b")],
             ]),
             controller: controller,
             onLoaded: { loaded.fulfill() })
@@ -257,8 +257,8 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
         }
         let loaded = expectation(description: "loaded")
         let source = FakeReversePageSource([
-            [Message2Fixtures.assistantText("tail")],
-            [Message2Fixtures.assistantText("older")],
+            [MessageFixtures.assistantText("tail")],
+            [MessageFixtures.assistantText("older")],
         ])
         let pipeline = TranscriptBackfillPipeline(
             source: source,
@@ -287,8 +287,8 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
 
     func testB7_manyPagesNoLossOrReorder() async {
         // 6 pages, tail-first; each older page should stack above.
-        let pages: [[Message2]] = (0..<6).reversed().map {
-            [Message2Fixtures.assistantText("p\($0)")]
+        let pages: [[Message]] = (0..<6).reversed().map {
+            [MessageFixtures.assistantText("p\($0)")]
         }
         // pages[0] = p5 (newest) ... pages[5] = p0 (oldest)
         let controller = await runToLoaded(pages: pages, budget: 2)
@@ -311,8 +311,8 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
         let loaded = expectation(description: "loaded")
         let pipeline = TranscriptBackfillPipeline(
             source: FakeReversePageSource([
-                [Message2Fixtures.userText("c"), Message2Fixtures.assistantText("d")],
-                [Message2Fixtures.userText("a"), Message2Fixtures.assistantText("b")],
+                [MessageFixtures.userText("c"), MessageFixtures.assistantText("d")],
+                [MessageFixtures.userText("a"), MessageFixtures.assistantText("b")],
             ]),
             controller: controller,
             onLoaded: { loaded.fulfill() })

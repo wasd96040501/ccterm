@@ -59,7 +59,7 @@ struct PermissionNotebookEditCardBody: View {
     var editMode: String {
         (request.input["edit_mode"]?.stringValue
             ?? request.input["editMode"]?.stringValue
-                ?? "replace")
+            ?? "replace")
     }
 
     /// "markdown" or "code" — the upstream `cell_type` field.

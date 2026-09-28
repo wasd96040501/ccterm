@@ -36,7 +36,7 @@ final class Transcript2EntryBridgeStatusTests: XCTestCase {
             SingleEntry(
                 id: id,
                 payload: .remote(
-                    Message2Fixtures.assistantRead(
+                    MessageFixtures.assistantRead(
                         toolUseId: toolUseId, filePath: "/tmp/x.txt")),
                 delivery: nil,
                 toolResults: [:]))

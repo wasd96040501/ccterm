@@ -112,7 +112,7 @@ final class PermissionFilesystemReadCardBodyTests: XCTestCase {
     // MARK: - Helpers
 
     private func makeBody(
-        toolName: String, input: [String: Any]
+        toolName: String, input: JSONValue
     )
         -> PermissionFilesystemReadCardBody
     {

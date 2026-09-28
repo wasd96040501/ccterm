@@ -72,10 +72,8 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
         guard let session = fx.sessionManager.session(sessionId),
             case .active(let runtime) = session.phase
         else { return false }
-        let request = PermissionRequest.preview(
-            id: requestId, toolName: "Bash", input: ["command": "rm -rf build"])
         runtime.pendingPermissions.append(
-            PendingPermission(id: requestId, request: request, respond: { _ in }))
+            PermissionRequest.preview(id: requestId, toolName: "Bash", input: ["command": "rm -rf build"]))
         return true
     }
 

@@ -41,43 +41,37 @@ final class SessionRuntimeSlashCommandsTests: XCTestCase {
         return (runtime, fake)
     }
 
-    /// Drive bootstrap to attached + `.idle`, completing `initialize`
+    /// Drive bootstrap to attached + `.idle`, completing the handshake
     /// with `response` (the desc-rich command catalog under test).
     private func bootstrap(
         _ runtime: SessionRuntime,
         _ fake: FakeCLIClient,
-        response: InitializeResponse?
+        response: JSONValue
     ) async {
         runtime.activate()
-        for _ in 0..<16 {
-            await Task.yield()
-            if !fake.initializeCalls.isEmpty { break }
-        }
-        XCTAssertFalse(fake.initializeCalls.isEmpty, "bootstrap should call initialize")
-        fake.completeInitialize(with: response)
-        for _ in 0..<16 {
-            await Task.yield()
-            if runtime.status == .idle { break }
-        }
+        await yieldUntil { fake.isAwaitingStart }
+        XCTAssertTrue(fake.isAwaitingStart, "bootstrap should have started the client")
+        fake.completeStart(with: response)
+        await yieldUntil { runtime.status == .idle }
         XCTAssertEqual(runtime.status, .idle)
     }
 
-    private func push(_ message: Message2, into fake: FakeCLIClient) async {
-        fake.pushMessage(message)
+    private func push(_ message: Message, into fake: FakeCLIClient) async {
+        fake.push(message)
         for _ in 0..<4 { await Task.yield() }
     }
 
     private func initializeResponse(
         _ commands: [(name: String, description: String?)]
-    ) -> InitializeResponse {
-        let json: [String: Any] = [
-            "commands": commands.map { cmd -> [String: Any] in
-                var d: [String: Any] = ["name": cmd.name]
-                if let desc = cmd.description { d["description"] = desc }
-                return d
-            }
+    ) -> JSONValue {
+        [
+            "commands": .array(
+                commands.map { cmd in
+                    var d: [String: JSONValue] = ["name": .string(cmd.name)]
+                    if let desc = cmd.description { d["description"] = .string(desc) }
+                    return .object(d)
+                })
         ]
-        return try! InitializeResponse(json: json)
     }
 
     private func descriptions(_ runtime: SessionRuntime) -> [String: String?] {
@@ -116,7 +110,7 @@ final class SessionRuntimeSlashCommandsTests: XCTestCase {
 
         // A follow-up turn / resume init carrying names only.
         await push(
-            Message2Fixtures.systemInit(slashCommands: ["commit", "review"]),
+            MessageFixtures.systemInit(slashCommands: ["commit", "review"]),
             into: fake)
 
         XCTAssertEqual(
@@ -134,7 +128,7 @@ final class SessionRuntimeSlashCommandsTests: XCTestCase {
             response: initializeResponse([("commit", "Create a commit")]))
 
         await push(
-            Message2Fixtures.systemInit(slashCommands: ["commit", "mystery"]),
+            MessageFixtures.systemInit(slashCommands: ["commit", "mystery"]),
             into: fake)
 
         let descs = descriptions(runtime)

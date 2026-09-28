@@ -49,7 +49,7 @@ final class TypewriterRevealTests: XCTestCase {
         XCTAssertTrue(r.isCaughtUp)
         XCTAssertFalse(r.hasWork)
 
-        r.pendingFinalize = (UUID(), Message2Fixtures.assistantText("hi", messageId: "m"))
+        r.pendingFinalize = (UUID(), MessageFixtures.assistantText("hi", messageId: "m"))
         XCTAssertTrue(r.hasWork, "a parked finalize is work until the swap runs")
     }
 

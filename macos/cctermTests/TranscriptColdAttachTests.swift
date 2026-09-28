@@ -57,9 +57,9 @@ final class TranscriptColdAttachTests: XCTestCase {
         let loaded = expectation(description: "loaded")
         let pipeline = TranscriptBackfillPipeline(
             source: FakeReversePageSource([
-                [Message2Fixtures.assistantText("newest")],
-                [Message2Fixtures.assistantText("middle")],
-                [Message2Fixtures.assistantText("oldest")],
+                [MessageFixtures.assistantText("newest")],
+                [MessageFixtures.assistantText("middle")],
+                [MessageFixtures.assistantText("oldest")],
             ]),
             controller: controller,
             budget: 1,
@@ -97,13 +97,13 @@ final class TranscriptColdAttachTests: XCTestCase {
 
         // Tail page (pages[0], newest) alone overflows the 800pt viewport;
         // a couple of older pages prepend above it.
-        let tailPage = (0..<40).map { Message2Fixtures.assistantText("newest line \($0)") }
+        let tailPage = (0..<40).map { MessageFixtures.assistantText("newest line \($0)") }
         let loaded = expectation(description: "loaded")
         let pipeline = TranscriptBackfillPipeline(
             source: FakeReversePageSource([
                 tailPage,
-                [Message2Fixtures.assistantText("older")],
-                [Message2Fixtures.assistantText("oldest")],
+                [MessageFixtures.assistantText("older")],
+                [MessageFixtures.assistantText("oldest")],
             ]),
             controller: controller,
             budget: 1,
@@ -186,8 +186,8 @@ final class TranscriptColdAttachTests: XCTestCase {
 
     func testU6_warmReentryFiresNoBackfill() async throws {
         let file = try TempJSONLFile([
-            Message2Fixtures.assistantTextJSONL("warm one"),
-            Message2Fixtures.userTextJSONL("warm two"),
+            MessageFixtures.assistantTextJSONL("warm one"),
+            MessageFixtures.userTextJSONL("warm two"),
         ])
         tempFile = file
 

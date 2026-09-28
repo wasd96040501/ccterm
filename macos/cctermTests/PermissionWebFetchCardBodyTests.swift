@@ -53,7 +53,7 @@ final class PermissionWebFetchCardBodyTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func makeBody(input: [String: Any]) -> PermissionWebFetchCardBody {
+    private func makeBody(input: JSONValue) -> PermissionWebFetchCardBody {
         let req = PermissionRequest.preview(
             id: "wf-\(UUID().uuidString)",
             toolName: "WebFetch",

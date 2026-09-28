@@ -245,6 +245,10 @@ final class SessionTests: XCTestCase {
         }
         let answer = try await session.askSideQuestion("why?")
         XCTAssertEqual(answer, SideQuestionAnswer(response: "Answer: why?", synthetic: false))
+        let rewound = try await session.rewindConversation(to: "prompt-1")
+        XCTAssertEqual(rewound, RewindResult(rewound: true))
+        let refused = try await session.rewindConversation(to: "busy")
+        XCTAssertEqual(refused, RewindResult(rewound: false, reason: "turn_running"))
         await session.close()
     }
 

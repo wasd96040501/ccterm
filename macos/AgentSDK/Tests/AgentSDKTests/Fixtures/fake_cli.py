@@ -91,6 +91,12 @@ def handle_control(msg):
         })
     elif subtype == "side_question":
         respond(request_id, {"response": "Answer: " + request.get("question", ""), "synthetic": False})
+    elif subtype == "rewind_conversation":
+        # A target named "busy" stands for a turn still winding down.
+        if request.get("target_message_uuid") == "busy":
+            respond(request_id, {"rewound": False, "reason": "turn_running"})
+        else:
+            respond(request_id, {"rewound": True})
     else:
         respond(request_id, {"echo": request})
 

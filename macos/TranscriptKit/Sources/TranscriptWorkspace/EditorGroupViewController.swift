@@ -157,6 +157,28 @@ public final class EditorGroupViewController: NSViewController {
         tabsDidChange()
     }
 
+    /// The tab something was only looked at in — Xcode's temporary tab, its
+    /// title in italics. Setting another closes this one and puts the new one
+    /// in its place, selected; setting `nil` keeps this one as an ordinary
+    /// tab, as double-clicking it does.
+    public var previewTabViewItem: NSTabViewItem? {
+        get { preview }
+        set {
+            guard newValue !== preview else { return }
+            if let newValue, !tabViewItems.contains(newValue) {
+                if let preview, let index = tabViewItems.firstIndex(of: preview) {
+                    removeTabViewItem(preview)
+                    insertTabViewItem(newValue, at: index)
+                } else {
+                    addTabViewItem(newValue)
+                }
+            }
+            preview = newValue
+        }
+    }
+
+    private weak var preview: NSTabViewItem?
+
     public func isTabPinned(at index: Int) -> Bool { index < numberOfPinnedTabs }
 
     /// Pins or unpins a tab, moving it to the boundary between the two runs.

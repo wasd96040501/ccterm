@@ -2,7 +2,7 @@
 
 Native macOS client for Claude Code. Pure AppKit (Swift), programmatic, minimum target macOS 14 (Sonoma).
 
-The app is a window shell — main window with an empty sidebar/detail split, Settings, About — plus UI-free services (worktrees, git probe, model catalog, completion stores). Sessions come from the `AgentSDK` package and the transcript from the `TranscriptKit` package; wiring them into the shell is the next step.
+The app is a main window — a sidebar listing every session transcript on disk (`AgentSDK`'s `SessionDirectory`, grouped by project) beside a tabbed, splittable editor area that shows them read-only (`TranscriptKit`'s view and workspace) — plus Settings, About, and UI-free services (worktrees, git probe, model catalog, completion stores). Running a live session is not wired yet.
 
 ## Where to read more
 
@@ -24,9 +24,9 @@ ccterm/
 │   ├── ccterm.xcodeproj/
 │   ├── ccterm/               # App sources
 │   │   ├── App/              # CCTermApp + About; AppKit/ holds AppDelegate + main/settings/about window controllers + main split
-│   │   ├── Content/Settings/
+│   │   ├── Content/          # Settings/, Sidebar/ (session outline), Transcript/ (a transcript tab)
 │   │   ├── Models/           # Effort, PermissionMode, SlashCommand
-│   │   ├── Services/         # Session/Worktree, Completion stores, GitProbe, ModelStore, Logging/, …
+│   │   ├── Services/         # Library/ (session tree store), Session/Worktree, Completion stores, GitProbe, ModelStore, Logging/, …
 │   │   ├── Extensions/
 │   │   └── Resources/
 │   ├── cctermTests/          # The app's only test target

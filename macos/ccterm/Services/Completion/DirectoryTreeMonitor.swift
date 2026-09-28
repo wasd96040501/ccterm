@@ -10,15 +10,6 @@ final class DirectoryTreeMonitor {
         case fileModified(URL)
         case directoryCreated(URL)
         case directoryRemoved(URL)
-
-        /// The file or directory the event is about.
-        var url: URL {
-            switch self {
-            case .fileCreated(let url), .fileRemoved(let url), .fileModified(let url),
-                .directoryCreated(let url), .directoryRemoved(let url):
-                url
-            }
-        }
     }
 
     // MARK: - Properties

@@ -12,11 +12,19 @@ public struct SessionMetadata: Sendable, Equatable {
     /// The directory the session runs in.
     public var cwd: String?
     public var gitBranch: String?
+    /// How the session was started: `cli` at the CLI's prompt, `sdk-cli`
+    /// through `claude -p` or an SDK.
+    var entrypoint: String?
     public var createdAt: Date?
     public var updatedAt: Date?
 
     /// ``customTitle``, else ``aiTitle``.
     public var title: String? { customTitle ?? aiTitle }
+
+    /// Whether someone ran the session at the CLI's prompt, not through
+    /// `claude -p` or an SDK. A transcript from before the CLI recorded how
+    /// it was started counts as interactive.
+    public var isInteractive: Bool { entrypoint.map { $0 == "cli" } ?? true }
 
     public init() {}
 

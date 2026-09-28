@@ -148,5 +148,19 @@ struct AppCommands: Commands {
             }
             .keyboardShortcut(",", modifiers: .command)
         }
+        // Xcode's pair: ⌘W closes a tab, ⇧⌘W the window. A window without
+        // tabs answers no `closeTab:`, so ⌘W closes it.
+        CommandGroup(replacing: .saveItem) {
+            Button("Close Tab") {
+                if !NSApp.sendAction(#selector(MainSplitViewController.closeTab(_:)), to: nil, from: nil) {
+                    NSApp.keyWindow?.performClose(nil)
+                }
+            }
+            .keyboardShortcut("w", modifiers: .command)
+            Button("Close Window") {
+                NSApp.keyWindow?.performClose(nil)
+            }
+            .keyboardShortcut("w", modifiers: [.command, .shift])
+        }
     }
 }

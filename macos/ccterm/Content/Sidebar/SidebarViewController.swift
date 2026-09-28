@@ -3,10 +3,11 @@ import Combine
 
 /// The main window's sidebar: the session library as an Xcode-style source
 /// list — projects, their sessions, and under each session its subagents and
-/// workflow runs, every row an icon and a title. Opening a row that has a
-/// transcript is reported to the delegate; groups only expand.
+/// workflow runs, every row an icon and a title.
 ///
-/// A click or Return opens; a double click on a group toggles it.
+/// Selecting a row with a transcript reports `didSelect`, double-clicking it
+/// `didOpen`; a double click on a group toggles it. A row with a transcript
+/// drags as its file.
 @MainActor
 final class SidebarViewController: NSViewController {
     weak var delegate: SidebarViewControllerDelegate?
@@ -20,6 +21,9 @@ final class SidebarViewController: NSViewController {
     /// selection across a republish.
     private var roots: [Item] = []
     private var items: [String: Item] = [:]
+    /// The node last reported selected, so restoring the selection after a
+    /// republish isn't reported again.
+    private var reportedSelection: String?
 
     /// The concrete store rather than a protocol: it has one implementation,
     /// and `LibraryStore(directory:)` over a fixture directory is the test seam.
@@ -31,8 +35,8 @@ final class SidebarViewController: NSViewController {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    private lazy var outlineView: SidebarOutlineView = {
-        let outline = SidebarOutlineView()
+    private lazy var outlineView: NSOutlineView = {
+        let outline = NSOutlineView()
         outline.style = .sourceList
         outline.headerView = nil
         outline.floatsGroupRows = false
@@ -41,6 +45,7 @@ final class SidebarViewController: NSViewController {
         column.isEditable = false
         outline.addTableColumn(column)
         outline.outlineTableColumn = column
+        outline.setDraggingSourceOperationMask(.copy, forLocal: true)
         return outline
     }()
 
@@ -63,8 +68,7 @@ final class SidebarViewController: NSViewController {
         outlineView.dataSource = self
         outlineView.delegate = self
         outlineView.target = self
-        outlineView.action = #selector(open(_:))
-        outlineView.doubleAction = #selector(toggle(_:))
+        outlineView.doubleAction = #selector(doubleClick(_:))
         library.$nodes
             .receive(on: DispatchQueue.main)
             .sink { [weak self] nodes in self?.show(nodes) }
@@ -109,21 +113,11 @@ final class SidebarViewController: NSViewController {
 
     // MARK: - Actions
 
-    /// The clicked row, or — from the keyboard, or a test sending the action
-    /// — the selected one.
-    private var actedItem: Item? {
-        let row = outlineView.clickedRow >= 0 ? outlineView.clickedRow : outlineView.selectedRow
-        return outlineView.item(atRow: row) as? Item
-    }
-
-    @objc private func open(_ sender: Any?) {
-        guard let item = actedItem, item.node.transcriptURL != nil else { return }
-        delegate?.sidebarViewController(self, didOpen: item.node)
-    }
-
-    @objc private func toggle(_ sender: Any?) {
-        guard let item = actedItem, !item.children.isEmpty else { return }
-        if outlineView.isItemExpanded(item) {
+    @objc private func doubleClick(_ sender: Any?) {
+        guard let item = outlineView.item(atRow: outlineView.clickedRow) as? Item else { return }
+        if item.node.transcriptURL != nil {
+            delegate?.sidebarViewController(self, didOpen: item.node)
+        } else if outlineView.isItemExpanded(item) {
             outlineView.animator().collapseItem(item)
         } else {
             outlineView.animator().expandItem(item)
@@ -145,6 +139,10 @@ extension SidebarViewController: NSOutlineViewDataSource {
     func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
         !((item as? Item)?.children.isEmpty ?? true)
     }
+
+    func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
+        (item as? Item)?.node.transcriptURL as NSURL?
+    }
 }
 
 // MARK: - NSOutlineViewDelegate
@@ -152,10 +150,44 @@ extension SidebarViewController: NSOutlineViewDataSource {
 extension SidebarViewController: NSOutlineViewDelegate {
     func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
         guard let item = item as? Item else { return nil }
-        let cell =
-            outlineView.makeView(withIdentifier: .sidebarCell, owner: nil) as? SidebarCellView
-            ?? SidebarCellView()
-        cell.configure(with: item.node)
+        let cell = outlineView.makeView(withIdentifier: .sidebarCell, owner: nil) as? NSTableCellView ?? Self.makeCell()
+        cell.imageView?.image = NSImage(systemSymbolName: item.node.kind.symbolName, accessibilityDescription: nil)
+        cell.textField?.stringValue = item.node.title
+        cell.toolTip = item.node.kind == .project ? item.node.id : item.node.title
+        return cell
+    }
+
+    func outlineViewSelectionDidChange(_ notification: Notification) {
+        guard let item = outlineView.item(atRow: outlineView.selectedRow) as? Item else {
+            reportedSelection = nil
+            return
+        }
+        guard item.node.id != reportedSelection else { return }
+        reportedSelection = item.node.id
+        guard item.node.transcriptURL != nil else { return }
+        delegate?.sidebarViewController(self, didSelect: item.node)
+    }
+
+    /// The source list's standard row: an image and a label.
+    private static func makeCell() -> NSTableCellView {
+        let cell = NSTableCellView()
+        cell.identifier = .sidebarCell
+        let image = NSImageView()
+        let label = NSTextField(labelWithString: "")
+        label.lineBreakMode = .byTruncatingTail
+        for subview in [image, label] as [NSView] {
+            subview.translatesAutoresizingMaskIntoConstraints = false
+            cell.addSubview(subview)
+        }
+        cell.imageView = image
+        cell.textField = label
+        NSLayoutConstraint.activate([
+            image.leadingAnchor.constraint(equalTo: cell.leadingAnchor),
+            image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            label.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 6),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor),
+            label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+        ])
         return cell
     }
 }
@@ -174,65 +206,14 @@ extension SidebarViewController {
     }
 }
 
-/// Return opens the selected row, as a click does.
-@MainActor
-private final class SidebarOutlineView: NSOutlineView {
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 36 || event.keyCode == 76, let action {
-            sendAction(action, to: target)
-        } else {
-            super.keyDown(with: event)
-        }
-    }
-}
-
-/// An icon and a title, the source list's standard row.
-@MainActor
-private final class SidebarCellView: NSTableCellView {
-    private let icon = NSImageView()
-    private let label = NSTextField(labelWithString: "")
-
-    init() {
-        super.init(frame: .zero)
-        identifier = .sidebarCell
-        label.lineBreakMode = .byTruncatingTail
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        for subview in [icon, label] as [NSView] {
-            subview.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(subview)
-        }
-        imageView = icon
-        textField = label
-        NSLayoutConstraint.activate([
-            icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
-            icon.centerYAnchor.constraint(equalTo: centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 16),
-            icon.heightAnchor.constraint(equalToConstant: 16),
-            label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 6),
-            label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -2),
-            label.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
-
-    /// Rewrites every field: cells are reused.
-    func configure(with node: LibraryNode) {
-        icon.image = NSImage(systemSymbolName: node.kind.symbolName, accessibilityDescription: nil)
-        label.stringValue = node.title
-        toolTip = node.kind == .project ? node.id : node.title
-    }
-}
-
 extension LibraryNode.Kind {
     fileprivate var symbolName: String {
         switch self {
-        case .project: "folder"
-        case .session: "bubble.left.and.bubble.right"
-        case .subagents: "person.2"
-        case .workflow: "flowchart"
-        case .agent: "person.crop.circle"
+        case .project: "folder.fill"
+        case .session: "bubble.left.fill"
+        case .subagents: "person.2.fill"
+        case .workflow: "flowchart.fill"
+        case .agent: "person.crop.circle.fill"
         }
     }
 }

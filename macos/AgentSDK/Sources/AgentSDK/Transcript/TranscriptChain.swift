@@ -310,6 +310,7 @@ struct TranscriptChain {
 
     private mutating func fold(_ row: Row) {
         if metadata.cwd == nil { metadata.cwd = row.cwd }
+        if metadata.entrypoint == nil { metadata.entrypoint = row.entrypoint }
         if let branch = row.gitBranch { metadata.gitBranch = branch }
         if let time = row.timestamp {
             if metadata.createdAt.map({ time < $0 }) ?? true { metadata.createdAt = time }
@@ -378,6 +379,7 @@ private struct Row: Decodable {
     let queuedOrigin: String?
     let cwd: String?
     let gitBranch: String?
+    let entrypoint: String?
     // Metadata rows.
     let customTitle: String?
     let aiTitle: String?
@@ -411,6 +413,7 @@ private struct Row: Decodable {
         subtype = c.lenient(String.self, "subtype")
         cwd = c.lenient(String.self, "cwd")
         gitBranch = c.lenient(String.self, "gitBranch")
+        entrypoint = c.lenient(String.self, "entrypoint")
 
         let message = try? c.nestedContainer(keyedBy: AnyCodingKey.self, forKey: "message")
         let blocks = message?.lenientArray(BlockIDs.self, "content") ?? []

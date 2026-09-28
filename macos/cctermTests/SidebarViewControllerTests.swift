@@ -54,10 +54,9 @@ final class SidebarViewControllerTests: XCTestCase {
         try XCTUnwrap(titles().firstIndex(of: title), "no row titled \(title) in \(titles())")
     }
 
-    /// What a click on the row does: select it, then the outline's action.
-    private func open(_ title: String) throws {
+    /// What a click on the row does.
+    private func select(_ title: String) throws {
         outline.selectRowIndexes([try row(titled: title)], byExtendingSelection: false)
-        outline.sendAction(outline.action, to: outline.target)
     }
 
     private func tabs() -> [String] {
@@ -76,25 +75,24 @@ final class SidebarViewControllerTests: XCTestCase {
         XCTAssertEqual(titles(), ["repo", "Named", String(localized: "Subagents"), "review", "Auto", "other"])
     }
 
-    func testOpeningASessionOpensATab() throws {
+    func testSelectingSessionsShowsThemInOneTemporaryTab() throws {
         outline.expandItem(outline.item(atRow: 0))
-        try open("Named")
-        try open("Auto")
-        try open("Named")
-        XCTAssertEqual(tabs(), ["Named", "Auto"])
+        try select("Named")
+        try select("Auto")
+        XCTAssertEqual(tabs(), ["Auto"])
     }
 
-    func testOpeningAGroupOpensNothing() throws {
-        try open("repo")
+    func testSelectingAGroupOpensNothing() throws {
+        try select("repo")
         outline.expandItem(outline.item(atRow: 0))
         outline.expandItem(outline.item(atRow: try row(titled: "Named")))
-        try open(String(localized: "Subagents"))
+        try select(String(localized: "Subagents"))
         XCTAssertEqual(tabs(), [])
     }
 
     func testExpansionAndSelectionSurviveARepublish() async throws {
         outline.expandItem(outline.item(atRow: 0))
-        outline.selectRowIndexes([try row(titled: "Auto")], byExtendingSelection: false)
+        try select("Auto")
 
         try fixture.write(
             "-x-repo/s6.jsonl", [SessionDirectoryFixture.user("u"), SessionDirectoryFixture.aiTitle("Newer")])
@@ -103,5 +101,6 @@ final class SidebarViewControllerTests: XCTestCase {
 
         XCTAssertEqual(titles(), ["repo", "Newer", "Named", "Auto", "other"])
         XCTAssertEqual(outline.selectedRow, try row(titled: "Auto"))
+        XCTAssertEqual(tabs(), ["Auto"])
     }
 }

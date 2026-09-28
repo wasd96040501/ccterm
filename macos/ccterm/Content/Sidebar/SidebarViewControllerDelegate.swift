@@ -1,8 +1,12 @@
-import AppKit
+import Foundation
 
+/// What the sidebar reports. Only nodes with a transcript are reported.
 @MainActor
 protocol SidebarViewControllerDelegate: AnyObject {
-    /// The reader asked to see `node`'s transcript. Sent only for nodes that
-    /// have one (`transcriptURL != nil`).
+    /// The reader selected a node, by clicking it or moving to it with the
+    /// keyboard — a look, not a decision to keep it open.
+    func sidebarViewController(_ sidebar: SidebarViewController, didSelect node: LibraryNode)
+
+    /// The reader double-clicked a node, to keep it open.
     func sidebarViewController(_ sidebar: SidebarViewController, didOpen node: LibraryNode)
 }

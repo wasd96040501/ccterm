@@ -2,132 +2,147 @@ import AgentSDK
 import Combine
 import Foundation
 
-/// Every transcript in the CLI's session directory (`~/.claude/projects`),
-/// as a tree of `LibraryNode`s: project → session → its subagents and
-/// workflow runs. The files are the only source; the store scans them off the
-/// main actor and rescans when the directory changes.
+/// Every transcript someone ran at the CLI's prompt, from the CLI's session
+/// directory, as a tree of `LibraryNode`s: project → session → its subagents
+/// and workflow runs. Sessions run through `claude -p` or an SDK are left
+/// out, and so are those that record no working directory.
+///
+/// Reads every session once on `start()`, then only the sessions the
+/// directory reports changed.
 @MainActor
 final class LibraryStore {
     /// Projects, most recently active first; within one, sessions likewise.
     ///
     /// Published only when the tree actually changes: a live session appends
     /// to its file every few seconds, and re-publishing an equal tree would
-    /// read downstream as a change. A cold scan publishes as it goes, newest
-    /// sessions first, so the top of the list fills before the rest is read.
+    /// read downstream as a change.
     @Published private(set) var nodes: [LibraryNode] = []
 
     private let directory: SessionDirectory
-    private let scanner = LibraryScanner()
-    private var monitor: DirectoryTreeMonitor?
-    private var scanTask: Task<Void, Never>?
-    private var needsScan = false
-    /// The last complete listing, which a rescan updates where files changed;
-    /// `nil` until the first scan finishes, and after `stop()`.
-    private var listing: [SessionFile]?
-    /// Files changed since the scan in flight took its list.
-    private var changedFiles: [URL] = []
+    private var task: Task<Void, Never>?
+    /// What each shown session read as, by transcript.
+    private var entries: [URL: Entry] = [:]
 
     init(directory: SessionDirectory) {
         self.directory = directory
     }
 
-    /// Scans once, then keeps scanning as the directory changes.
+    /// Reads every session, then keeps up with the directory.
     func start() {
-        guard monitor == nil else { return }
-        let monitor = DirectoryTreeMonitor(directory: directory.url, latency: Self.latency) {
-            @Sendable [weak self] events in
-            let files = events.map(\.url)
-            Task { @MainActor in self?.filesDidChange(files) }
-        }
-        monitor.start()
-        self.monitor = monitor
-        setNeedsScan()
-    }
-
-    /// Stops watching the directory and abandons a scan in flight.
-    func stop() {
-        monitor?.stop()
-        monitor = nil
-        scanTask?.cancel()
-        scanTask = nil
-        needsScan = false
-        listing = nil
-        changedFiles = []
-    }
-
-    private func filesDidChange(_ files: [URL]) {
-        changedFiles += files
-        setNeedsScan()
-    }
-
-    /// Scans now, or right after the scan in flight — never two at once, and
-    /// any number of changes during one scan cost one more.
-    private func setNeedsScan() {
-        guard scanTask == nil else {
-            needsScan = true
-            return
-        }
-        scanTask = Task { [weak self] in
-            await self?.scan()
-            guard let self, !Task.isCancelled else { return }
-            scanTask = nil
-            if needsScan {
-                needsScan = false
-                setNeedsScan()
+        guard task == nil else { return }
+        let directory = directory
+        task = Task { [weak self] in
+            // Watching starts before the listing, so nothing written between
+            // the two is missed.
+            let changes = directory.changes()
+            let all = await Self.read(directory.sessions())
+            self?.update(all)
+            for await sessions in changes {
+                let read = await Self.read(sessions)
+                guard let self else { return }
+                update(read)
             }
         }
     }
 
-    /// Lists — again only where files changed, once there is a listing to
-    /// update — then reads what changed, in batches that publish as they land.
-    private func scan() async {
-        let directory = directory
-        let scanner = scanner
-        let previous = listing
-        let changed = changedFiles
-        changedFiles = []
-        let started = Date()
-        let (sessions, touched) = await Task.detached(priority: .utility) {
-            guard let previous else { return (directory.sessions(), Set<URL>()) }
-            let sessions = directory.sessions(updating: previous, changesAt: changed)
-            // A subagent's file changing leaves its session's own date alone.
-            let touched = sessions.filter { session in changed.contains(where: session.contains) }.map(\.url)
-            return (sessions, Set(touched))
-        }.value
-        let listed = Date()
-        // A rescan reads a file or two: one batch, one tree.
-        let size = previous == nil ? Self.batchSize : max(sessions.count, 1)
-        var batches = stride(from: 0, to: sessions.count, by: size).map {
-            Array(sessions[$0..<min($0 + size, sessions.count)])
-        }
-        if batches.isEmpty { batches = [[]] }
-        var read = 0
-        for (index, batch) in batches.enumerated() {
-            let isLast = index == batches.count - 1
-            let (count, tree) = await Task.detached(priority: .utility) {
-                let count = await scanner.read(batch, forcing: touched)
-                if isLast { scanner.forget(allBut: sessions) }
-                return (count, scanner.tree(of: sessions))
-            }.value
-            read += count
-            guard !Task.isCancelled else { return }
-            if tree != nodes { nodes = tree }
-        }
-        listing = sessions
-        appLog(
-            .debug, "LibraryStore",
-            "scanned \(sessions.count) sessions, read \(read): listing \(Self.seconds(started, listed)), "
-                + "total \(Self.seconds(started, Date()))")
+    /// Stops keeping up; `start()` reads everything again.
+    func stop() {
+        task?.cancel()
+        task = nil
+        entries = [:]
     }
 
-    private static func seconds(_ from: Date, _ to: Date) -> String {
-        String(format: "%.2fs", to.timeIntervalSince(from))
+    private func update(_ read: [URL: Entry?]) {
+        for (url, entry) in read { entries[url] = entry }
+        let tree = Self.tree(of: entries.values)
+        if tree != nodes { nodes = tree }
     }
 
-    /// Sessions read between two publishes on a cold scan: a screenful of
-    /// projects arrives with the first.
-    private static let batchSize = 256
+    // MARK: - Reading
 
-    /// How long the directory is let to settle before a rescan.
-    private static let latency: TimeInterval = 1
+    private struct Entry: Sendable {
+        let modificationDate: Date
+        let project: String
+        let node: LibraryNode
+    }
+
+    /// Each session's entry, in parallel; `nil` for one that isn't shown or
+    /// can't be read.
+    @concurrent
+    private nonisolated static func read(_ sessions: [SessionFile]) async -> [URL: Entry?] {
+        await withTaskGroup(of: (URL, Entry?).self) { group in
+            for session in sessions {
+                group.addTask { (session.url, entry(for: session)) }
+            }
+            return await group.reduce(into: [URL: Entry?]()) { $0[$1.0] = .some($1.1) }
+        }
+    }
+
+    private nonisolated static func entry(for session: SessionFile) -> Entry? {
+        guard let metadata = try? SessionMetadata(contentsOf: session.url), metadata.isInteractive,
+            let cwd = metadata.cwd
+        else { return nil }
+        let title =
+            [metadata.title, metadata.lastPrompt]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? String(localized: "Untitled Session")
+        let node = LibraryNode(
+            id: session.url.path, kind: .session, title: title, transcriptURL: session.url,
+            children: children(of: session))
+        return Entry(modificationDate: session.modificationDate, project: project(ofDirectory: cwd), node: node)
+    }
+
+    private nonisolated static func children(of session: SessionFile) -> [LibraryNode] {
+        var children: [LibraryNode] = []
+        let subagents = session.subagents()
+        if !subagents.isEmpty {
+            children.append(
+                LibraryNode(
+                    id: session.url.path + "/subagents", kind: .subagents, title: String(localized: "Subagents"),
+                    transcriptURL: nil, children: subagents.map(node)))
+        }
+        for run in session.workflows() {
+            children.append(
+                LibraryNode(
+                    id: session.url.path + "/" + run.id, kind: .workflow, title: run.name ?? run.id,
+                    transcriptURL: nil, children: run.agents.map(node)))
+        }
+        return children
+    }
+
+    private nonisolated static func node(_ agent: SubagentFile) -> LibraryNode {
+        LibraryNode(
+            id: agent.url.path, kind: .agent,
+            title: agent.task ?? agent.agentType ?? agent.url.deletingPathExtension().lastPathComponent,
+            transcriptURL: agent.url, children: [])
+    }
+
+    // MARK: - Tree
+
+    /// Projects in the order of their newest session; sessions newest first.
+    private static func tree(of entries: some Sequence<Entry>) -> [LibraryNode] {
+        var order: [String] = []
+        var members: [String: [LibraryNode]] = [:]
+        for entry in entries.sorted(by: { $0.modificationDate > $1.modificationDate }) {
+            if members[entry.project] == nil { order.append(entry.project) }
+            members[entry.project, default: []].append(entry.node)
+        }
+        return order.map { path in
+            LibraryNode(
+                id: path, kind: .project, title: title(ofProject: path), transcriptURL: nil,
+                children: members[path] ?? [])
+        }
+    }
+
+    /// A session run in one of a repository's worktrees
+    /// (`<repo>/.claude/worktrees/<name>/…`) belongs to the repository.
+    private nonisolated static func project(ofDirectory path: String) -> String {
+        guard let range = path.range(of: "/.claude/worktrees/") else { return path }
+        return String(path[..<range.lowerBound])
+    }
+
+    private static func title(ofProject path: String) -> String {
+        let name = URL(fileURLWithPath: path).lastPathComponent
+        return name.isEmpty ? path : name
+    }
 }

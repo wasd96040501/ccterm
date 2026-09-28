@@ -15,7 +15,7 @@ EditorAreaViewController      NSSplitViewController — the divider, which edito
 - **`EditorTabBar` is built from what `NSSegmentedControl`'s `.tabs` role is made of** (track `secondarySystemFill`, selected tab an `NSGlassEffectView` inset 2pt) because segments can't be dragged. It matches the control pixel for pixel in both appearances and inactive windows — measure against the real control before changing how a tab looks.
 - **A bar shows only when there is something to choose or tell apart:** more than one tab, or two editors side by side (then every editor shows its bar, one tab or not). The area tells its groups from `insertSplitViewItem` / `removeSplitViewItem`, which every change to the split passes through.
 - **A tab is a view placed by two constraints** (leading + width), one view per tab identity, so a reorder moves views instead of relabelling them. Slides animate those constants through their animators. Don't use `animator().frame` — on a layer-backed view it lays out once at the final size, so the glass jumps to its end width while the title slides.
-- **The delegate is AppKit-shaped:** `editorArea(_:didActivate:)` and `editorArea(_:willClose:)`, both defaulted. `willClose` is the container's `prepareForRemoval()` hook — a tab's owner stops its stream or load there, before the controller leaves the tree.
+- **The delegate is AppKit-shaped:** `editorArea(_:didActivate:)`, `editorArea(_:willClose:)` and `editorArea(_:tabViewItemForDrop:)`, all defaulted. `willClose` is the container's `prepareForRemoval()` hook — a tab's owner stops its stream or load there, before the controller leaves the tree.
 
 ## Behaviour (Xcode's unless noted)
 

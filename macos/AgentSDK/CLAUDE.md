@@ -10,7 +10,7 @@ Swift package over the `claude` CLI: a live `Session` on the stream-json stdio p
 | `Session/` | Talking to a live CLI: `Session` (events, handshake, control RPCs), `SessionConfiguration` and its launch flags, `UserInput`, `PermissionRequest` / `PermissionDecision` / `PermissionUpdate`, `InitializationResult`, `ContextUsage`, `MessageExporter`. |
 | `Settings/` | `Settings` (a `settings.json` object), `SettingsKey<Value>` and its catalog (`SettingsKey+<Area>.swift`), `SettingsValue`, value types (`PermissionSettings`, …), `SettingsSnapshot` (`Session.settings()`). |
 | `Tools/` | `Tools.<Name>` — typed input/output per built-in tool; `ToolUseBlock.input(as:)`, `UserMessage.toolOutcome(_:)`. |
-| `Transcript/` | `Transcript(contentsOf:)` — the conversation chain from a session file (rewinds, forks, compactions, parallel calls); `SessionMetadata(contentsOf:)` — titles and cwd from a file's head and tail; `SessionDirectory` — the session, subagent and workflow-run files on disk. |
+| `Transcript/` | `Transcript(contentsOf:)` — the conversation chain from a session file (rewinds, forks, compactions, parallel calls); `SessionMetadata(contentsOf:)` — titles and cwd from a file's head and tail; `SessionDirectory` — the session, subagent and workflow-run files on disk, and which sessions change (FSEvents, mapped to the session a file belongs to). |
 | `Prompt/` | `Prompt.run` — one-shot `claude -p` with a timeout. |
 | `Process/` | Binary lookup, login-shell environment, custom launch commands. |
 

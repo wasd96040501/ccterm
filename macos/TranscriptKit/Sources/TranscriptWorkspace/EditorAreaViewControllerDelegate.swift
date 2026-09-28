@@ -1,6 +1,6 @@
 import AppKit
 
-/// What an editor area tells its host. Both requirements have default
+/// What an editor area tells its host. Every requirement has a default
 /// implementations, the way `NSSplitViewDelegate`'s optional methods are optional.
 @MainActor
 public protocol EditorAreaViewControllerDelegate: AnyObject {
@@ -23,6 +23,13 @@ public protocol EditorAreaViewControllerDelegate: AnyObject {
     /// tab, still open.
     func editorArea(
         _ editorArea: EditorAreaViewController, willClose viewController: NSViewController)
+
+    /// Something of a type registered with `registerForDraggedTypes(_:)` was
+    /// dropped on the area: the tab it opens, or `nil` to refuse it. Where the
+    /// tab goes follows the drop — as a dragged tab's does.
+    func editorArea(
+        _ editorArea: EditorAreaViewController, tabViewItemForDrop draggingInfo: NSDraggingInfo
+    ) -> NSTabViewItem?
 }
 
 extension EditorAreaViewControllerDelegate {
@@ -34,4 +41,8 @@ extension EditorAreaViewControllerDelegate {
     public func editorArea(
         _ editorArea: EditorAreaViewController, willClose viewController: NSViewController
     ) {}
+
+    public func editorArea(
+        _ editorArea: EditorAreaViewController, tabViewItemForDrop draggingInfo: NSDraggingInfo
+    ) -> NSTabViewItem? { nil }
 }

@@ -1,41 +1,19 @@
-import AppKit
 import SwiftUI
 
-/// Every window (main, Settings, About) is AppKit-rooted —
-/// see `AppDelegate`, `MainWindowController`, `SettingsWindowController`,
-/// `AboutWindowController`. The migration chain started with #219
-/// (Settings → AppKit, fixing "Settings occasionally pops up at
-/// launch"); removing the `Settings { … }` scene promoted the next
-/// `Window` scene to the leading slot which SwiftUI auto-opens at
-/// launch, so each remaining auxiliary window got the same treatment
-/// in turn. Each window is lazy, `isRestorable = false`, owned by
-/// `AppDelegate`.
+/// Every window (main, Settings, About) is AppKit-rooted and owned by
+/// `AppDelegate`, lazy and `isRestorable = false`: a SwiftUI `Window` scene
+/// in the leading slot auto-opens at launch and gets state-restored.
 ///
-/// `App.body` still requires a `some Scene`, so we declare a
-/// `Settings { EmptyView() }` placeholder: the dedicated `Settings`
-/// scene is the only built-in scene type that does NOT auto-open at
-/// launch. `.commands` attaches here. ⌘, is overridden via
-/// `CommandGroup(replacing: .appSettings)` to route to the AppKit
-/// Settings window, so users never reach the placeholder — nothing
-/// for the OS to state-restore.
+/// `App.body` still requires a `some Scene`, so it declares a
+/// `Settings { EmptyView() }` placeholder — the one built-in scene type that
+/// does not auto-open at launch — and attaches `AppCommands` to it. ⌘, is
+/// replaced to route to the AppKit Settings window, so users never reach the
+/// placeholder.
 @main
 struct CCTermApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
-    // Hosted unit tests inject this env var. When present we keep NSApp alive
-    // (snapshot/AppKit rendering still needs it) but skip every Window scene
-    // so the host app never draws a window or steals focus.
-    private static let isUnderXCTest =
-        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-
     var body: some Scene {
-        // Placeholder scene — `App.body` requires `some Scene` and
-        // `Settings` is the only built-in type that does NOT auto-
-        // open at launch. The content view is `EmptyView()`; users
-        // never reach this window because ⌘, is overridden in
-        // `AppCommands` to call `AppDelegate.showSettingsWindow()`.
-        // `.commands` attaches here so menu items install at the
-        // same launch-phase point as before.
         Settings {
             EmptyView()
         }
@@ -44,112 +22,6 @@ struct CCTermApp: App {
                 openSettings: { appDelegate.showSettingsWindow() },
                 openAbout: { appDelegate.showAboutWindow() }
             )
-        }
-    }
-
-    init() {
-        UserDefaults.standard.set(0, forKey: "NSInitialToolTipDelay")
-        if Self.isUnderXCTest {
-            // Hosted unit tests need NSApp alive (snapshot/AppKit rendering
-            // depends on it), but should never display a window or steal
-            // focus. Accessory policy hides the Dock icon; swizzling the
-            // window-ordering selectors to no-ops prevents SwiftUI's auto-
-            // opened Window scenes from ever appearing on screen — closing
-            // them after the fact still produced a visible flash.
-            NSApplication.shared.setActivationPolicy(.accessory)
-            NSWindow.suppressOrderingForTesting()
-            return
-        }
-        MainThreadWatchdog.start()
-    }
-}
-
-extension NSWindow {
-    fileprivate static func suppressOrderingForTesting() {
-        let pairs: [(Selector, Selector)] = [
-            (
-                #selector(NSWindow.makeKeyAndOrderFront(_:)),
-                #selector(NSWindow._ccterm_noopMakeKeyAndOrderFront(_:))
-            ),
-            (
-                #selector(NSWindow.orderFront(_:)),
-                #selector(NSWindow._ccterm_noopOrderFront(_:))
-            ),
-            (
-                #selector(NSWindow.orderFrontRegardless),
-                #selector(NSWindow._ccterm_noopOrderFrontRegardless)
-            ),
-        ]
-        for (original, replacement) in pairs {
-            guard
-                let m1 = class_getInstanceMethod(NSWindow.self, original),
-                let m2 = class_getInstanceMethod(NSWindow.self, replacement)
-            else { continue }
-            method_exchangeImplementations(m1, m2)
-        }
-    }
-
-    @objc fileprivate func _ccterm_noopMakeKeyAndOrderFront(_ sender: Any?) {}
-    @objc fileprivate func _ccterm_noopOrderFront(_ sender: Any?) {}
-    @objc fileprivate func _ccterm_noopOrderFrontRegardless() {}
-
-    /// Test-only escape hatch — invokes the real `makeKeyAndOrderFront(_:)`
-    /// even when `suppressOrderingForTesting()` has neutered it. Used by
-    /// `ViewSnapshot` (cctermTests) to wake an off-screen snapshot window
-    /// enough that SwiftUI's appearance lifecycle (`.task`, `.onAppear`)
-    /// fires on the hosted view.
-    ///
-    /// The swizzle exchanges implementations symmetrically: under
-    /// XCTest the real entry point lives at
-    /// `_ccterm_noopMakeKeyAndOrderFront:`, so we route there to bypass
-    /// the no-op stub. Outside XCTest there's nothing to bypass and we
-    /// just forward to the public selector.
-    func ccterm_orderFrontForTesting() {
-        let bypass = NSSelectorFromString("_ccterm_noopMakeKeyAndOrderFront:")
-        if responds(to: bypass) {
-            perform(bypass, with: nil)
-        } else {
-            makeKeyAndOrderFront(nil)
-        }
-    }
-}
-
-/// SwiftUI command bar attached to the `Settings { EmptyView() }`
-/// placeholder scene. SwiftUI's command system installs these as
-/// NSMenuItem instances on the merged main menu, so the AppKit main window
-/// keeps full menu coverage without an `applicationDidFinishLaunching`-side
-/// NSMenu rebuild. ⌘, → `openSettings`, App > About ccterm → `openAbout`
-/// route into `AppDelegate.show*Window()`, bypassing SwiftUI's scenes
-/// entirely.
-struct AppCommands: Commands {
-    let openSettings: @MainActor () -> Void
-    let openAbout: @MainActor () -> Void
-
-    var body: some Commands {
-        CommandGroup(replacing: .appInfo) {
-            Button("About ccterm") {
-                openAbout()
-            }
-        }
-        CommandGroup(replacing: .appSettings) {
-            Button("Settings…") {
-                openSettings()
-            }
-            .keyboardShortcut(",", modifiers: .command)
-        }
-        // Xcode's pair: ⌘W closes a tab, ⇧⌘W the window. A window without
-        // tabs answers no `closeTab:`, so ⌘W closes it.
-        CommandGroup(replacing: .saveItem) {
-            Button("Close Tab") {
-                if !NSApp.sendAction(#selector(MainSplitViewController.closeTab(_:)), to: nil, from: nil) {
-                    NSApp.keyWindow?.performClose(nil)
-                }
-            }
-            .keyboardShortcut("w", modifiers: .command)
-            Button("Close Window") {
-                NSApp.keyWindow?.performClose(nil)
-            }
-            .keyboardShortcut("w", modifiers: [.command, .shift])
         }
     }
 }

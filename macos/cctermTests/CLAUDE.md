@@ -72,7 +72,7 @@ Render a real view into an off-screen window, write `/tmp/ccterm-screenshots/<Na
 
 - **Existing ones:** `ls macos/cctermTests/*SnapshotTests.swift` — the class name tells you the view. Run with `make test-unit FILTER=<Class>` and `open` the PNG.
 - **Run policy:** the runner injects `-skip-testing:<Class>` for every `*SnapshotTests.swift` when `FILTER` is empty, so they never run on the default suite or CI but still compile. File name must equal class name; split files for multiple classes.
-- **Helpers:** `ViewSnapshot.render(_ view: some View, size:settle:)` for SwiftUI, `ViewSnapshot.renderViewController(_:size:settle:)` for AppKit VCs, `ViewSnapshot.writePNG(_:name:)`. Always go through them — they use `ccterm_orderFrontForTesting()`, which keeps the test-process window swizzle scoped.
+- **Helpers:** `ViewSnapshot.render(_ view: some View, size:settle:)` for SwiftUI, `ViewSnapshot.renderViewController(_:size:settle:)` for AppKit VCs, `ViewSnapshot.writePNG(_:name:)`. Always go through them — they park the window off-screen at alpha 0.01, so a snapshot never flashes on the user's display.
 
 Adding one:
 

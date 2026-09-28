@@ -16,20 +16,10 @@ import XCTest
 /// any main-actor work queued during view construction settle into
 /// pixels before the snapshot is taken.
 ///
-/// **Silence**: `CCTermApp.isUnderXCTest` swizzles
-/// `makeKeyAndOrderFront` / `orderFront` / `orderFrontRegardless` to
-/// no-ops at process start, so the snapshot window can never reach a
-/// visible space through normal AppKit paths. We additionally:
-/// - Park the window at `(-30_000, -30_000)` so a hypothetical
-///   auto-constrain back onto a screen would land off any real
-///   display.
-/// - Set `alphaValue = 0.01` so AppKit treats the window as on-screen
-///   for layout purposes (occlusion ↔ layout interplay) while the
-///   user sees nothing.
-/// - Call `ccterm_orderFrontForTesting()` (a test-only escape hatch
-///   on `NSWindow`) instead of the public `makeKeyAndOrderFront(_:)`,
-///   so the bypass is scoped to this one window and does not relax
-///   the swizzle for the rest of the process.
+/// **Silence**: the window never reaches a visible space —
+/// - parked at `(-30_000, -30_000)`, off any real display;
+/// - `alphaValue = 0.01`, so AppKit still treats it as on-screen for
+///   layout (occlusion ↔ layout interplay) while the user sees nothing.
 ///
 /// **State seeding**: SwiftUI's `.task` / `.onAppear` modifiers
 /// require an appearance signal from AppKit that this offscreen
@@ -66,7 +56,7 @@ enum ViewSnapshot {
         window.isExcludedFromWindowsMenu = true
         window.alphaValue = 0.01
         window.contentViewController = controller
-        window.ccterm_orderFrontForTesting()
+        window.makeKeyAndOrderFront(nil)
 
         controller.view.layoutSubtreeIfNeeded()
 
@@ -96,8 +86,7 @@ enum ViewSnapshot {
     /// Render an AppKit `NSViewController` at `size` and return the
     /// resulting `NSImage`. Parallel to `render(_:size:settle:)` but
     /// for AppKit-rooted hosts that don't go through
-    /// `NSHostingController`. Same offscreen-window + alpha-0.01 +
-    /// ccterm_orderFrontForTesting scaffolding.
+    /// `NSHostingController`. Same off-screen, alpha-0.01 window.
     @MainActor
     static func renderViewController(
         _ controller: NSViewController,
@@ -117,7 +106,7 @@ enum ViewSnapshot {
         window.isExcludedFromWindowsMenu = true
         window.alphaValue = 0.01
         window.contentViewController = controller
-        window.ccterm_orderFrontForTesting()
+        window.makeKeyAndOrderFront(nil)
 
         controller.view.layoutSubtreeIfNeeded()
 

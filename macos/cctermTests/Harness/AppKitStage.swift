@@ -116,7 +116,7 @@ final class AppKitStage {
             viewController.view.topAnchor.constraint(equalTo: container.topAnchor),
             viewController.view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
-        window.ccterm_orderFrontForTesting()
+        window.makeKeyAndOrderFront(nil)
         container.layoutSubtreeIfNeeded()
 
         return AppKitStage(
@@ -140,7 +140,7 @@ final class AppKitStage {
         window.alphaValue = 0.01
         window.setContentSize(size)
         window.setFrameOrigin(CGPoint(x: -30_000, y: -30_000))
-        window.ccterm_orderFrontForTesting()
+        window.makeKeyAndOrderFront(nil)
         content.view.layoutSubtreeIfNeeded()
         return AppKitStage(
             window: window, container: content.view, rootViewController: content,

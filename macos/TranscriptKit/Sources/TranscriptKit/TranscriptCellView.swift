@@ -54,7 +54,15 @@ final class TranscriptCellView: NSView {
         fatalError("TranscriptCellView is code-only; init(coder:) is unavailable")
     }
 
-    /// The content width a row `rowWidth` wide resolves to.
+    /// The least room either side of the content, at any width: a transcript
+    /// narrowed by a split or a window keeps its text off its edges, as a
+    /// document keeps off its window's. AppKit's standard window margin. A row's
+    /// own, so a host writes nothing to get it — and a `.view` row's host view is
+    /// inset the same as the text around it.
+    static let margin: CGFloat = 20
+
+    /// The content width a row `rowWidth` wide resolves to: the row less a margin
+    /// either side, clamped to the host's bounds.
     ///
     /// One implementation, two callers: the transcript answers `heightOfRow`
     /// with it, and this view lays the hosted view out at it. Measuring and
@@ -63,7 +71,7 @@ final class TranscriptCellView: NSView {
     static func contentWidth(
         forRowWidth rowWidth: CGFloat, minWidth: CGFloat, maxWidth: CGFloat
     ) -> CGFloat {
-        max(minWidth, min(maxWidth, rowWidth))
+        max(minWidth, min(maxWidth, rowWidth - 2 * margin))
     }
 
     /// Installs `view` as this row's content, or leaves it in place when the

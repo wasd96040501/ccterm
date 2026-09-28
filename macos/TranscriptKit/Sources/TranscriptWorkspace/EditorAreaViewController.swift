@@ -120,6 +120,19 @@ public final class EditorAreaViewController: NSSplitViewController {
         return group
     }
 
+    /// Every editor coming or going passes through here — `addSplitViewItem` and
+    /// setting `splitViewItems` included — and each editor's bar depends on
+    /// whether it is alone.
+    public override func insertSplitViewItem(_ splitViewItem: NSSplitViewItem, at index: Int) {
+        super.insertSplitViewItem(splitViewItem, at: index)
+        groups.forEach { $0.reloadTabBar() }
+    }
+
+    public override func removeSplitViewItem(_ splitViewItem: NSSplitViewItem) {
+        super.removeSplitViewItem(splitViewItem)
+        groups.forEach { $0.reloadTabBar() }
+    }
+
     /// Makes `group` the active editor.
     func activate(_ group: EditorGroupViewController) {
         guard groups.contains(where: { $0 === group }) else { return }

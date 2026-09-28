@@ -30,6 +30,11 @@ public final class EditorGroupViewController: NSViewController {
 
     private var itemObservations: [ObjectIdentifier: [NSKeyValueObservation]] = [:]
 
+    /// Where the content starts: under the tab bar, or at the top when there is
+    /// no bar to be under. One of the two is active at a time.
+    private lazy var contentBelowTabBar = tabs.view.topAnchor.constraint(equalTo: separator.bottomAnchor)
+    private lazy var contentAtTop = tabs.view.topAnchor.constraint(equalTo: view.topAnchor)
+
     private lazy var separator: NSBox = {
         let box = NSBox()
         box.boxType = .separator
@@ -102,7 +107,6 @@ public final class EditorGroupViewController: NSViewController {
             separator.topAnchor.constraint(equalTo: tabBar.bottomAnchor, constant: 6),
             tabs.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tabs.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tabs.view.topAnchor.constraint(equalTo: separator.bottomAnchor),
             tabs.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             emptyLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             emptyLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
@@ -231,7 +235,9 @@ public final class EditorGroupViewController: NSViewController {
         area?.groupDidChangeTabs(self)
     }
 
-    private func reloadTabBar() {
+    /// Shows the tabs, and the bar only where there is a choice to make or an
+    /// editor to tell apart: more than one tab, or another editor beside this one.
+    func reloadTabBar() {
         guard isViewLoaded else { return }
         tabBar.configure(
             items: tabViewItems.enumerated().map { index, item in
@@ -240,10 +246,13 @@ public final class EditorGroupViewController: NSViewController {
                     toolTip: item.toolTip, isPinned: isTabPinned(at: index))
             },
             selectedIndex: tabViewItems.isEmpty ? nil : selectedTabViewItemIndex)
-        let empty = tabViewItems.isEmpty
-        tabBar.isHidden = empty
-        separator.isHidden = empty
-        emptyLabel.isHidden = !empty
+        let showsTabBar = tabViewItems.count > 1 || (area?.groups.count ?? 1) > 1
+        tabBar.isHidden = !showsTabBar
+        separator.isHidden = !showsTabBar
+        let (on, off) = showsTabBar ? (contentBelowTabBar, contentAtTop) : (contentAtTop, contentBelowTabBar)
+        off.isActive = false
+        on.isActive = true
+        emptyLabel.isHidden = !tabViewItems.isEmpty
     }
 
     // MARK: - The tab menu
@@ -362,6 +371,20 @@ extension EditorGroupViewController: EditorTabBarDelegate {
 
     func tabBar(_ tabBar: EditorTabBar, menuForTabAt index: Int) -> NSMenu? {
         menu(forTabAt: index)
+    }
+
+    /// The tab's content as it is on screen, which only the selected tab's is —
+    /// and a tab being dragged was selected by the press that picked it up.
+    func tabBar(_ tabBar: EditorTabBar, draggingImageForTabAt index: Int) -> NSImage? {
+        guard tabViewItems.indices.contains(index), let viewController = tabViewItems[index].viewController,
+            viewController.isViewLoaded, viewController.view.window != nil
+        else { return nil }
+        let view = viewController.view
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        let image = NSImage(size: view.bounds.size)
+        image.addRepresentation(rep)
+        return image
     }
 
     func tabBar(

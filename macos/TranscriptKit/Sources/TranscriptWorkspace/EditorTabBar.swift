@@ -22,10 +22,17 @@ protocol EditorTabBarDelegate: AnyObject {
         _ tabBar: EditorTabBar, moveTabAt index: Int, of source: EditorTabBar,
         to destination: Int
     ) -> Int?
+
+    /// What the tab at `index` shows once it has been pulled out of the bar: its
+    /// content as it is now, or `nil` to go on showing the tab. `NSTableView`'s
+    /// `dragImageForRows(with:tableColumns:event:offset:)`, asked of the party
+    /// that holds the content; the bar frames it.
+    func tabBar(_ tabBar: EditorTabBar, draggingImageForTabAt index: Int) -> NSImage?
 }
 
-/// An editor's row of tabs, the way Xcode's are: a capsule track with the
-/// selected tab raised out of it in glass, and tabs that move under the pointer.
+/// An editor's row of tabs: a capsule track with the selected tab raised out of
+/// it in glass, as Xcode's are, and tabs that light up and move under the
+/// pointer as Safari's do.
 ///
 /// **Built from system parts.** The track is `secondarySystemFill` and the
 /// selected tab is an `NSGlassEffectView` — measured against `NSSegmentedControl`
@@ -34,16 +41,20 @@ protocol EditorTabBarDelegate: AnyObject {
 /// drawn here is only where each tab goes. A segmented control cannot be the bar
 /// because its segments cannot move: Xcode's drag moves a tab.
 ///
-/// **A drag, as Xcode's goes** (measured frame by frame off Xcode's own bar):
+/// **A drag, as Safari's goes** (measured frame by frame off Xcode's bar and
+/// Safari's):
 ///
 /// - **Within the bar** the tab stays in it, under the pointer, and a neighbour
 ///   whose middle it crosses slides into the place it left. Let go, it slides
-///   into its own. No drag session: the mouse events are enough, and a session's
-///   image would be a second copy of the tab.
-/// - **Out of the bar**, far enough above or below it, the tab leaves as a drag
-///   session carrying a small capsule of its title, and the tabs it left close up.
-/// - **Over a bar** — another editor's, or its own again — the tabs open a gap
-///   where it would drop, and it drops into the gap.
+///   into its own place. No drag session: the
+///   mouse events are enough, and a session's image would be a second copy of
+///   the tab.
+/// - **Out of the bar**, pulled to the edge of it, the tab becomes a drag
+///   session while still over the bar, so the bar shows it as the tab where it
+///   was; leaving the bar, AppKit turns it into a small picture of its content,
+///   centred on the pointer, and the tabs it left close up.
+/// - **Over a bar** — another editor's, or its own again — it is a tab again, the
+///   tabs open a gap where it would drop, and it drops into the gap.
 ///
 /// Only the drag moves anything. A tab added, closed or selected lands at once.
 ///
@@ -132,16 +143,19 @@ final class EditorTabBar: NSView, NSDraggingSource {
 
         closeButton.bezelStyle = .smallSquare
         closeButton.isBordered = false
-        // Xcode's cross, 8 points in the middle of the circle. At 10 points medium
-        // the symbol's cross is 8 points with a point to spare on every side of
-        // its image (measured), so centring the image centres the cross — which
-        // the symbol's own alignment rect, a text baseline's, does not.
+        // Safari's: a 12-point disc with the cross cut out of it, which at 12 points
+        // regular the symbol is (measured, ink and cross both). Centring its image
+        // centres the disc — which the symbol's own alignment rect, a text
+        // baseline's, does not.
         let cross = NSImage(
-            systemSymbolName: "xmark", accessibilityDescription: String(localized: "Close Tab", bundle: .module)
-        )?.withSymbolConfiguration(.init(pointSize: 10, weight: .medium))
+            systemSymbolName: "xmark.circle.fill",
+            accessibilityDescription: String(localized: "Close Tab", bundle: .module)
+        )?.withSymbolConfiguration(.init(pointSize: 12, weight: .regular))
         cross?.alignmentRect = NSRect(origin: .zero, size: cross?.size ?? .zero)
         closeButton.image = cross
-        closeButton.contentTintColor = .secondaryLabelColor
+        // Safari's measures 80% of the ink, a shade under a label's 85%; the label
+        // colour is the system's, and follows the appearance.
+        closeButton.contentTintColor = .labelColor
         closeButton.target = self
         closeButton.action = #selector(closeHovered)
         closeButton.isHidden = true
@@ -216,9 +230,12 @@ final class EditorTabBar: NSView, NSDraggingSource {
     }
 
     /// Puts the tab over its neighbours, to pass over them. Re-adding a view is
-    /// how AppKit reorders one, and it takes the view's constraints with it.
+    /// how AppKit reorders one, and it takes the constraints to the bar with it —
+    /// but not the width, which is the view's own and would stay to fight the new
+    /// one.
     private func raise(_ id: ObjectIdentifier) {
         guard let tab = tabs[id] else { return }
+        tab.width.isActive = false
         tab.view.removeFromSuperview()
         attach(
             tab.view, as: id,
@@ -274,6 +291,15 @@ final class EditorTabBar: NSView, NSDraggingSource {
         slots(for: shownIndices).filter { $0.midX < point.x }.count
     }
 
+    /// The place a tab dropped at `gap` would take: between the tabs either side
+    /// of it, or the track's end.
+    private func gapRect(at gap: Int) -> NSRect {
+        let rects = slots(for: shownIndices, gap: gap)
+        let minX = gap > 0 && gap <= rects.count ? rects[gap - 1].maxX : bounds.minX
+        let maxX = gap < rects.count ? rects[gap].minX : bounds.maxX
+        return NSRect(x: minX, y: bounds.minY, width: maxX - minX, height: bounds.height)
+    }
+
     /// As wide as its title and pin, and no wider: a pinned tab is kept for
     /// reaching, not for reading at length.
     private static func pinnedWidth(for title: String) -> CGFloat {
@@ -289,7 +315,8 @@ final class EditorTabBar: NSView, NSDraggingSource {
     }
 
     /// Where the tab in hand is: under the pointer, held where it was picked up,
-    /// and kept on the track.
+    /// and kept on the track — along it only, so that it leaves the bar all at
+    /// once, as the picture of its content, rather than being seen to drift off.
     private func heldFrame(in slot: NSRect) -> NSRect {
         var frame = slot
         frame.origin.x = min(max(pointerX - grabOffset, bounds.minX), bounds.maxX - slot.width)
@@ -329,7 +356,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
                 }
             }
         }
-        placeCloseButton()
+        showHover()
     }
 
     private func place(_ tab: Tab, at frame: NSRect) {
@@ -337,18 +364,24 @@ final class EditorTabBar: NSView, NSDraggingSource {
         tab.width.constant = frame.width
     }
 
-    private func placeCloseButton() {
-        guard let hovered = hoveredIndex, items.indices.contains(hovered), !items[hovered].isPinned,
-            draggedID == nil
-        else {
+    /// The hovered tab lights up and shows its close button, Safari's way; no tab
+    /// does while one is being dragged.
+    private func showHover() {
+        let hovered = draggedID == nil ? hoveredIndex.flatMap { items.indices.contains($0) ? $0 : nil } : nil
+        for (index, item) in items.enumerated() {
+            tabs[item.id]?.view.isHovered = index == hovered
+        }
+        guard let hovered, !items[hovered].isPinned else {
             closeButton.isHidden = true
             return
         }
-        // 8 points into the glass, which is 2 into the tab.
-        let side: CGFloat = 16
+        // On the centre of the glass's leading end, as Safari's sits on its
+        // capsule's: the glass is a capsule 2 points in from the tab, so its end is
+        // a half circle centred half the tab's height in from the tab's edge.
+        let side: CGFloat = 18
         let tab = rect(forTabAt: hovered)
         closeButton.frame = NSRect(
-            x: tab.minX + 10, y: tab.midY - side / 2, width: side, height: side)
+            x: tab.minX + tab.height / 2 - side / 2, y: tab.midY - side / 2, width: side, height: side)
         closeButton.isHidden = false
     }
 
@@ -379,7 +412,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
     private func setHoveredIndex(_ index: Int?) {
         guard index != hoveredIndex else { return }
         hoveredIndex = index
-        placeCloseButton()
+        showHover()
     }
 
     @objc private func closeHovered() {
@@ -425,8 +458,11 @@ final class EditorTabBar: NSView, NSDraggingSource {
             raise(items[pressed].id)
         }
         guard let dragged = draggedIndex, !isDraggedTabOut else { return }
-        // Far enough above or below, it has left the bar.
-        guard abs(point.y - bounds.midY) <= bounds.height else {
+        // At the edge of the bar and still over it, it leaves as a drag session:
+        // the bar is the first place the drag is over, and shows it as the tab it
+        // was, so leaving the bar is the drag's own change to the picture, with
+        // AppKit's animation. Past the edge, it would start as the picture.
+        guard abs(point.y - bounds.midY) < bounds.height / 2 - 2 else {
             pressedIndex = nil
             beginDraggingSession(tabAt: dragged, with: event)
             return
@@ -463,63 +499,110 @@ final class EditorTabBar: NSView, NSDraggingSource {
 
     // MARK: - Dragging out of the bar
 
+    /// Pulled out, the tab leaves as a picture of its content, centred on the
+    /// pointer — what the drag shows wherever no bar has said otherwise. Over a
+    /// bar it is a tab again, which is the bar's to say
+    /// (`updateDraggingItemsForDrag(_:)`), and AppKit returns it to this when the
+    /// drag leaves.
+    ///
+    /// In formation `.none`: the items keep the frame they are given. The
+    /// formation is what a drag looks like away from its source and from any
+    /// destination, and left to the system a picture shrank as it left the bar.
     private func beginDraggingSession(tabAt index: Int, with event: NSEvent) {
-        let image = Self.dragImage(for: items[index])
+        let thumbnail = Self.thumbnail(of: delegate?.tabBar(self, draggingImageForTabAt: index))
         let point = convert(event.locationInWindow, from: nil)
+        let size = thumbnail.size
         let item = NSDraggingItem(pasteboardWriter: EditorTabDrag())
         item.setDraggingFrame(
-            NSRect(
-                x: point.x - image.size.width / 2, y: point.y - image.size.height / 2,
-                width: image.size.width, height: image.size.height),
-            contents: image)
+            NSRect(x: point.x - size.width / 2, y: point.y - size.height / 2, width: size.width, height: size.height),
+            contents: thumbnail)
         dragWillBegin(tabAt: index)
-        beginDraggingSession(with: [item], event: event, source: self)
+        let session = beginDraggingSession(with: [item], event: event, source: self)
+        session.draggingFormation = .none
     }
 
     /// The bar's half of a tab leaving it as a drag session: the tab is out, and
-    /// the tabs it left close up. Kept apart from the session, which is the
-    /// window server's — the bar's state is everything a destination reads, and
-    /// it is the same whether the pointer or a test is moving it.
+    /// the place it left stays open as the gap the drag is over, until the drag
+    /// leaves the bar and the tabs close up. Kept apart from the session, which
+    /// is the window server's — the bar's state is everything a destination
+    /// reads, and it is the same whether the pointer or a test is moving it.
     func dragWillBegin(tabAt index: Int) {
         draggedID = items[index].id
         isDraggedTabOut = true
+        gapIndex = index
         Self.inFlight = self
         placeTabs(animated: true)
     }
 
     /// The bar's half of a drag ending, however it ended. A tab still here comes
-    /// back into its place.
+    /// back into its place, and no gap is left open for it.
     func dragDidEnd() {
         draggedID = nil
         isDraggedTabOut = false
+        gapIndex = nil
         Self.inFlight = nil
         placeTabs(animated: true)
     }
 
-    /// What follows the pointer out of the bar: the tab's title and image in a
-    /// small capsule, which is what Xcode's drag carries rather than the tab.
-    private static func dragImage(for item: Item) -> NSImage {
+    /// The tab as a drag carries it over a bar it could drop into: a capsule of
+    /// `size` with its image and title in the middle.
+    private static func dragImage(for item: Item, size: NSSize) -> NSImage {
         let font = EditorTabView.font
-        let title = item.title as NSString
-        let titleSize = title.size(withAttributes: [.font: font])
         let icon = item.image.map { $0.withSymbolConfiguration(.init(paletteColors: [.labelColor])) ?? $0 }
-        let (height, padding, spacing, side): (CGFloat, CGFloat, CGFloat, CGFloat) = (26, 12, 5, 16)
-        let width = ceil(2 * padding + (icon == nil ? 0 : side + spacing) + titleSize.width)
-        return NSImage(size: NSSize(width: width, height: height), flipped: false) { rect in
-            let capsule = NSBezierPath(
-                roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: (height - 1) / 2, yRadius: (height - 1) / 2)
+        let (spacing, side): (CGFloat, CGFloat) = (4, 16)
+        return NSImage(size: size, flipped: false) { rect in
+            let radius = (rect.height - 1) / 2
+            let capsule = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: radius, yRadius: radius)
             NSColor.controlBackgroundColor.setFill()
             capsule.fill()
             NSColor.separatorColor.setStroke()
             capsule.stroke()
-            var x = padding
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineBreakMode = .byTruncatingTail
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: font, .foregroundColor: NSColor.labelColor, .paragraphStyle: paragraph,
+            ]
+            let title = item.title as NSString
+            let room = rect.width - 2 * rect.height - (icon == nil ? 0 : side + spacing)
+            let titleSize = title.size(withAttributes: attributes)
+            let titleWidth = min(ceil(titleSize.width), max(0, room))
+            var x = rect.midX - (titleWidth + (icon == nil ? 0 : side + spacing)) / 2
             if let icon {
-                icon.draw(in: NSRect(x: x, y: (height - side) / 2, width: side, height: side))
+                icon.draw(in: NSRect(x: x, y: rect.midY - side / 2, width: side, height: side))
                 x += side + spacing
             }
             title.draw(
-                at: NSPoint(x: x, y: (height - titleSize.height) / 2),
-                withAttributes: [.font: font, .foregroundColor: NSColor.labelColor])
+                in: NSRect(x: x, y: rect.midY - titleSize.height / 2, width: titleWidth, height: titleSize.height),
+                withAttributes: attributes)
+            return true
+        }
+    }
+
+    /// Content as Safari carries a page pulled out of its bar: small — 112 points
+    /// across, measured — its top, in a thin frame; an empty card for a tab with
+    /// no content to show.
+    private static func thumbnail(of content: NSImage?) -> NSImage {
+        let width: CGFloat = 112
+        let aspect = content.map { $0.size.width > 0 ? $0.size.height / $0.size.width : 0 } ?? 0
+        let size = NSSize(width: width, height: round(width * min(max(aspect, 0.5), 0.75)))
+        return NSImage(size: size, flipped: false) { frame in
+            let outline = NSBezierPath(roundedRect: frame, xRadius: 6, yRadius: 6)
+            NSColor.windowBackgroundColor.setFill()
+            outline.fill()
+            if let content {
+                NSGraphicsContext.saveGraphicsState()
+                outline.addClip()
+                // Filling the width, from the top down.
+                let scale = frame.width / max(content.size.width, 1)
+                let drawn = NSSize(width: frame.width, height: content.size.height * scale)
+                content.draw(
+                    in: NSRect(x: frame.minX, y: frame.maxY - drawn.height, width: drawn.width, height: drawn.height))
+                NSGraphicsContext.restoreGraphicsState()
+            }
+            NSColor.separatorColor.setStroke()
+            let border = NSBezierPath(roundedRect: frame.insetBy(dx: 0.25, dy: 0.25), xRadius: 6, yRadius: 6)
+            border.lineWidth = 0.5
+            border.stroke()
             return true
         }
     }
@@ -542,6 +625,29 @@ final class EditorTabBar: NSView, NSDraggingSource {
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         draggingUpdated(sender)
+    }
+
+    /// Over the bar, the picture is a tab again: in the bar's row, as wide as
+    /// the gap it would drop into, and held along its length where it was picked
+    /// up — so over its own bar, as the drag begins, it is exactly the tab it
+    /// was. Changed here, when AppKit says a drop here is likely enough to show,
+    /// rather than on entering; AppKit takes the change off when the drag
+    /// leaves, and that is the tab turning into the picture.
+    override func updateDraggingItemsForDrag(_ sender: NSDraggingInfo?) {
+        guard let sender, let source = sender.draggingSource as? EditorTabBar,
+            let dragged = source.draggedIndex, let gap = gapIndex
+        else { return }
+        let glass = gapRect(at: gap).insetBy(dx: 2, dy: 2)
+        let tab = Self.dragImage(for: source.items[dragged], size: glass.size)
+        let along = source.grabOffset / max(source.rect(forTabAt: dragged).width, 1)
+        let pointer = convert(sender.draggingLocation, from: nil)
+        let frame = NSRect(
+            x: pointer.x - glass.width * along, y: glass.minY, width: glass.width, height: glass.height)
+        sender.enumerateDraggingItems(
+            options: [], for: self, classes: [NSPasteboardItem.self], searchOptions: [:]
+        ) { item, _, _ in
+            item.setDraggingFrame(frame, contents: tab)
+        }
     }
 
     /// A tab over the bar opens a gap where it would drop.
@@ -613,6 +719,22 @@ private final class EditorTabView: NSView {
         return box
     }()
 
+    /// The hover: a capsule the glass's size, over it on the selected tab and on
+    /// the track on any other. Measured off Safari, black at about 4% over the
+    /// track and 2% over the glass; the system's fills one step apart carry both,
+    /// and the dark appearance.
+    private let hoverFill: NSBox = {
+        let box = NSBox()
+        box.boxType = .custom
+        box.borderWidth = 0
+        box.isHidden = true
+        return box
+    }()
+
+    var isHovered = false {
+        didSet { hoverFill.isHidden = !isHovered }
+    }
+
     private let imageView: NSImageView = {
         let view = NSImageView()
         view.symbolConfiguration = .init(pointSize: 13, weight: .regular)
@@ -634,6 +756,7 @@ private final class EditorTabView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         addSubview(background)
+        addSubview(hoverFill)
         let content = NSStackView(views: [imageView, label])
         content.orientation = .horizontal
         // 4 points from the symbol's ink to the title's, as measured on the
@@ -642,14 +765,19 @@ private final class EditorTabView: NSView {
         content.translatesAutoresizingMaskIntoConstraints = false
         addSubview(content)
         // Room at the leading edge for the close button, and as much at the other.
+        // Short of required: a tab squeezed narrower than the two, as a new one is
+        // before it is placed, clips its content rather than breaking the layout.
         let inset: CGFloat = 28
         let centre = content.centerXAnchor.constraint(equalTo: centerXAnchor)
         centre.priority = .defaultHigh
+        let leading = content.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: inset)
+        let trailing = content.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -inset)
+        leading.priority = .required - 1
+        trailing.priority = .required - 1
         NSLayoutConstraint.activate([
             centre,
             content.centerYAnchor.constraint(equalTo: centerYAnchor),
-            content.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: inset),
-            content.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -inset),
+            leading, trailing,
         ])
     }
 
@@ -666,6 +794,8 @@ private final class EditorTabView: NSView {
     override func layout() {
         super.layout()
         background.frame = bounds.insetBy(dx: 2, dy: 2)
+        hoverFill.frame = background.frame
+        hoverFill.cornerRadius = background.frame.height / 2
         if #available(macOS 26.0, *), let glass = background as? NSGlassEffectView {
             glass.cornerRadius = background.frame.height / 2
         } else {
@@ -676,6 +806,7 @@ private final class EditorTabView: NSView {
     func configure(with item: EditorTabBar.Item, isSelected: Bool) {
         self.isSelected = isSelected
         background.isHidden = !isSelected
+        hoverFill.fillColor = isSelected ? .tabHoverOverGlass : .tabHover
         label.stringValue = item.title
         imageView.image =
             item.isPinned
@@ -701,17 +832,17 @@ private final class EditorTabView: NSView {
     }
 }
 
-/// The close button's glyph, with the circle Xcode puts behind it while the
-/// pointer is over it.
+/// The close button: Safari's disc, in a halo while the pointer is over it and a
+/// deeper one while it is pressed.
 ///
-/// The circle is `tertiarySystemFill`: measured against Xcode's in the light
-/// appearance — 16 points across, black at 4.7% over the tab — and the system
-/// colour carries the dark value. It is the layer's background, which draws
-/// under the glyph.
+/// Safari's halo is the tab's own hover fill, 20 points across its 30-point
+/// capsule, and it does not change on a press; the press is ours, one step deeper
+/// in the same family of system fills. Drawn under the glyph in `draw(_:)`, where
+/// a button reads its cell's highlight.
 private final class TabCloseButton: NSButton {
 
     private var isPointerInside = false {
-        didSet { updateCircle() }
+        didSet { needsDisplay = true }
     }
 
     override func updateTrackingAreas() {
@@ -732,32 +863,33 @@ private final class TabCloseButton: NSButton {
         isPointerInside = false
     }
 
-    override func layout() {
-        super.layout()
-        updateCircle()
+    override func draw(_ dirtyRect: NSRect) {
+        if let halo: NSColor = isHighlighted ? .tabPressed : isPointerInside ? .tabHover : nil {
+            halo.setFill()
+            NSBezierPath(ovalIn: bounds).fill()
+        }
+        super.draw(dirtyRect)
+    }
+}
+
+extension NSColor {
+
+    /// A tab, or the close button, under the pointer.
+    fileprivate static var tabHover: NSColor {
+        if #available(macOS 14.0, *) { return .tertiarySystemFill }
+        return NSColor.labelColor.withAlphaComponent(0.047)
     }
 
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        updateCircle()
+    /// The selected tab under the pointer: over the glass, a step lighter, as Safari's.
+    fileprivate static var tabHoverOverGlass: NSColor {
+        if #available(macOS 14.0, *) { return .quaternarySystemFill }
+        return NSColor.labelColor.withAlphaComponent(0.027)
     }
 
-    private func updateCircle() {
-        wantsLayer = true
-        layer?.cornerRadius = bounds.height / 2
-        guard isPointerInside else {
-            layer?.backgroundColor = nil
-            return
-        }
-        let fill: NSColor
-        if #available(macOS 14.0, *) {
-            fill = .tertiarySystemFill
-        } else {
-            fill = NSColor.labelColor.withAlphaComponent(0.047)
-        }
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = fill.cgColor
-        }
+    /// The close button pressed.
+    fileprivate static var tabPressed: NSColor {
+        if #available(macOS 14.0, *) { return .systemFill }
+        return NSColor.labelColor.withAlphaComponent(0.098)
     }
 }
 

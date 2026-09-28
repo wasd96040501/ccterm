@@ -82,13 +82,14 @@ final class UserMessageRowTests: XCTestCase {
         mount([String(repeating: "word ", count: 60)], width: 700)
 
         let view = try XCTUnwrap(mounted.transcript.descendants(ofType: BlockView.self).first)
-        XCTAssertEqual(try XCTUnwrap(view.block).size.width, 700, accuracy: 1)
+        // The content is the row less a 20-point margin either side.
+        XCTAssertEqual(try XCTUnwrap(view.block).size.width, 700 - 40, accuracy: 1)
         let wide = mounted.transcript.rect(ofRow: 0).height
 
         mounted.setContentWidth(320)
         mounted.settle()
 
-        XCTAssertEqual(try XCTUnwrap(view.block).size.width, 320, accuracy: 1)
+        XCTAssertEqual(try XCTUnwrap(view.block).size.width, 320 - 40, accuracy: 1)
         XCTAssertGreaterThan(mounted.transcript.rect(ofRow: 0).height, wide)
     }
 

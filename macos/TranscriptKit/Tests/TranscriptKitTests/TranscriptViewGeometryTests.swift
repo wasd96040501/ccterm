@@ -129,7 +129,8 @@ final class TranscriptViewGeometryTests: XCTestCase {
     // MARK: - Content width invalidation
 
     /// Narrowing past the clamp changes the width the delegate answered for, so
-    /// every height it already gave is stale.
+    /// every height it already gave is stale — and the width it is asked at keeps
+    /// a margin either side, so a narrow transcript's text stays off its edges.
     func testNarrowingBelowTheClampReAsksAtTheNewWidth() throws {
         let (mounted, host) = mount(rows: 24)
         defer { mounted.teardown() }
@@ -140,13 +141,14 @@ final class TranscriptViewGeometryTests: XCTestCase {
 
         // The clip's width rather than the window's: with "always show scroll
         // bars" on, a legacy scroller takes a slice of it, and the row width is
-        // what's left. Below the clamp the content width *is* the row width.
+        // what's left. Below the clamp the content width is the row width less a
+        // margin either side.
         let rowWidth = mounted.scrollView.contentView.bounds.width
         XCTAssertLessThan(rowWidth, 720, "500 wide should be under the clamp")
         XCTAssertFalse(host.heightWidths.isEmpty, "heights were not re-asked after narrowing")
         XCTAssertEqual(
-            Set(host.heightWidths), [rowWidth],
-            "re-asked at a width other than the transcript's current one")
+            Set(host.heightWidths), [rowWidth - 2 * 20],
+            "re-asked at a width other than the transcript's current one, less its margins")
     }
 
     /// Above the clamp the number handed to the delegate stops moving, so

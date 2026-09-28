@@ -20,19 +20,15 @@ final class DemoWindowController: NSWindowController {
     private var openedEditors = 0
 
     init() {
+        // The window takes its size from its content: the root view's frame is where
+        // it opens, its constraints how far it can be squeezed.
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1280, height: 800),
-            styleMask: [.titled, .closable, .resizable, .miniaturizable],
-            backing: .buffered, defer: false)
+            contentViewController: WorkspaceRootViewController(area: area, palette: palette))
         window.title = "TranscriptKit"
-        // Narrow on purpose: reflow, column collapse and min-content wrapping are
-        // all things you have to squeeze an editor to see.
-        window.contentMinSize = NSSize(width: 520, height: 320)
         super.init(window: window)
 
         window.delegate = self
         area.delegate = self
-        window.contentViewController = WorkspaceRootViewController(area: area, palette: palette)
 
         area.activeGroup.addTabViewItem(makeTab())
         area.activeGroup.addTabViewItem(makeTab())
@@ -247,8 +243,15 @@ private final class WorkspaceRootViewController: NSViewController {
         fatalError("code-only")
     }
 
+    /// Where the window opens: room for two editors side by side.
+    private static let initialSize = NSSize(width: 1280, height: 800)
+
+    /// Narrow on purpose: reflow, column collapse and min-content wrapping are all
+    /// things you have to squeeze an editor to see.
+    private static let minimumSize = NSSize(width: 520, height: 320)
+
     override func loadView() {
-        view = NSView()
+        view = NSView(frame: NSRect(origin: .zero, size: Self.initialSize))
     }
 
     override func viewDidLoad() {
@@ -266,6 +269,8 @@ private final class WorkspaceRootViewController: NSViewController {
             palette.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             palette.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16),
             palette.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 16),
+            view.widthAnchor.constraint(greaterThanOrEqualToConstant: Self.minimumSize.width),
+            view.heightAnchor.constraint(greaterThanOrEqualToConstant: Self.minimumSize.height),
         ])
     }
 }

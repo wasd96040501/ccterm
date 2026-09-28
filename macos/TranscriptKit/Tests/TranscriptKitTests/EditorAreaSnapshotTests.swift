@@ -35,8 +35,18 @@ final class EditorAreaSnapshotTests: XCTestCase {
         area.activeGroup.setTabPinned(true, at: 0)
         area.activeGroup.selectedTabViewItemIndex = 1
         let right = SnapshotPage(title: "Transcript 4", rows: Self.rows)
-        XCTAssertNotNil(area.addGroup(with: NSTabViewItem(viewController: right)))
+        let rightGroup = try XCTUnwrap(area.addGroup(with: NSTabViewItem(viewController: right)))
+        rightGroup.addTabViewItem(
+            NSTabViewItem(viewController: SnapshotPage(title: "Transcript 5", rows: Self.rows)))
         window.contentView?.layoutSubtreeIfNeeded()
+
+        // The pointer, as a reader would have it: over the left editor's last tab
+        // and on its close button, and over the right editor's selected tab.
+        let left = area.groups[0].tabBar
+        left.mouseMoved(with: Self.mouseMoved(at: left.rect(forTabAt: 2), in: left))
+        left.closeButton.mouseEntered(with: Self.mouseMoved(at: left.closeButton.frame, in: left))
+        let rightBar = rightGroup.tabBar
+        rightBar.mouseMoved(with: Self.mouseMoved(at: rightBar.rect(forTabAt: 1), in: rightBar))
 
         let finding = pages[1]
         finding.findBar.searchString = "claude"
@@ -55,6 +65,13 @@ final class EditorAreaSnapshotTests: XCTestCase {
             let url = try await WindowCapture.capture(window, named: "EditorArea-\(name)")
             add(XCTAttachment(contentsOfFile: url))
         }
+    }
+
+    private static func mouseMoved(at rect: NSRect, in view: NSView) -> NSEvent {
+        NSEvent.mouseEvent(
+            with: .mouseMoved, location: view.convert(NSPoint(x: rect.midX, y: rect.midY), to: nil),
+            modifierFlags: [], timestamp: 0, windowNumber: view.window?.windowNumber ?? 0, context: nil,
+            eventNumber: 0, clickCount: 0, pressure: 0)!
     }
 
     private static let rows: [TranscriptRowContent] = [

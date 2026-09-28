@@ -122,11 +122,12 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertIdentical(mounted.recorder.closed.first, mounted.probes[1])
     }
 
-    /// Under the pointer, the close button sits in Xcode's circle: measured off
-    /// Xcode's own tab bar in the light appearance, black at about 4.7% over the
-    /// tab (232 → 221); in the dark one, the same in white. Read as composited,
-    /// between a point inside the circle clear of the glyph and a corner outside it.
-    func testTheCloseButtonUnderThePointerSitsInXcodesCircle() async throws {
+    /// Under the pointer, the close button sits in a halo of the tab's hover fill,
+    /// as Safari's does — black at about 4.7% in the light appearance, white in the
+    /// dark — and a press deepens it a step, to about 9.8%. Read as composited at
+    /// one point inside the halo clear of the disc, over the hovered tab with the
+    /// pointer off the button, on it, and pressing it.
+    func testTheCloseButtonHasAHaloUnderThePointerAndADeeperOneWhilePressed() async throws {
         let mounted = mount(tabs: 2)
         defer { mounted.window.close() }
         let bar = mounted.area.activeGroup.tabBar
@@ -135,37 +136,43 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertFalse(button.isHidden, "premise: the close button is over the hovered tab")
         let point = button.convert(NSPoint(x: button.bounds.midX, y: button.bounds.midY), to: nil)
 
-        /// Inside the circle beside the glyph, and outside it in a corner, 0–255.
-        func greys() async throws -> (inside: CGFloat, outside: CGFloat) {
+        /// Grey 0–255 a point and a half in from the button's leading edge, on its
+        /// middle line: inside the halo, outside the disc.
+        func grey() async throws -> CGFloat {
             try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.2)
             let rep = try await WindowCapture.bitmap(of: button)
-            func grey(_ x: Int, _ y: Int) throws -> CGFloat {
-                let color = try XCTUnwrap(rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
-                return (color.redComponent + color.greenComponent + color.blueComponent) / 3 * 255
-            }
-            return (try grey(3, 8), try grey(0, 0))
+            let color = try XCTUnwrap(rep.colorAt(x: 1, y: rep.pixelsHigh / 2)?.usingColorSpace(.sRGB))
+            return (color.redComponent + color.greenComponent + color.blueComponent) / 3 * 255
         }
 
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             mounted.window.appearance = NSAppearance(named: appearance)
+            let ink: CGFloat = name == "light" ? 0 : 255
             button.mouseExited(with: mouse(.mouseMoved, at: point, in: button))
-            let away = try await greys()
-            XCTAssertEqual(away.inside, away.outside, accuracy: 2, "\(name): a circle without the pointer")
+            let away = try await grey()
 
             button.mouseEntered(with: mouse(.mouseMoved, at: point, in: button))
-            let over = try await greys()
-            // Solve `inside = outside + (ink - outside) * alpha` for the overlay's alpha.
-            let ink: CGFloat = name == "light" ? 0 : 255
-            let alpha = (over.inside - over.outside) / (ink - over.outside)
-            XCTAssertEqual(alpha, 0.047, accuracy: 0.015, "\(name): not Xcode's circle — \(over)")
+            let hovered = try await grey()
+            // Solve `over = away + (ink - away) * alpha` for the halo's alpha.
+            XCTAssertEqual(
+                (hovered - away) / (ink - away), 0.047, accuracy: 0.015,
+                "\(name): not the hover halo — \(away) → \(hovered)")
+
+            button.highlight(true)
+            let pressed = try await grey()
+            button.highlight(false)
+            XCTAssertEqual(
+                (pressed - away) / (ink - away), 0.098, accuracy: 0.015,
+                "\(name): the press does not deepen it — \(away) → \(pressed)")
         }
     }
 
-    /// The cross is Xcode's — 8 points — and at the circle's centre, read off the
-    /// composited window at its own resolution: a half-point error is a single
-    /// pixel there, and would blur away at one pixel per point. A symbol placed by
-    /// its alignment rect, a text baseline's, sat half a point left and low.
-    func testTheCloseCrossIsXcodesSizeAndAtTheCircleCentre() async throws {
+    /// The disc is Safari's — 12 points — centred in the button, and the button on
+    /// the centre of the glass's leading end. Read off the composited window at its
+    /// own resolution: a half-point error is a single pixel there, and would blur
+    /// away at one pixel per point. A symbol placed by its alignment rect, a text
+    /// baseline's, sat half a point left and low.
+    func testTheCloseDiscIsSafarisSizeAndOnTheCentreOfTheTabsEnd() async throws {
         let mounted = mount(tabs: 2)
         defer { mounted.window.close() }
         let window = mounted.window
@@ -173,37 +180,85 @@ final class EditorAreaTests: XCTestCase {
         let button = bar.closeButton
         bar.mouseMoved(with: mouse(.mouseMoved, at: center(of: bar, tab: 0), in: bar))
         XCTAssertFalse(button.isHidden, "premise: the close button is over the hovered tab")
+        let tab = bar.rect(forTabAt: 0)
+        XCTAssertEqual(button.frame.midX, tab.minX + tab.height / 2, "not on the centre of the glass's end")
+        XCTAssertEqual(button.frame.midY, tab.midY)
 
-        try await WindowCapture.waitForFrames(of: window, spanning: 0.2)
-        let image = try await WindowCapture.image(of: window)
-        // The backing scale, not the capture's width over the frame's: a capture
-        // can come back a few pixels wider than the frame, and a scale of 2.004
-        // crops a 33-pixel square around a 32-pixel button.
-        let scale = window.backingScaleFactor
-        let inWindow = button.convert(button.bounds, to: nil)
-        let crop = CGRect(
-            x: inWindow.minX * scale, y: (window.frame.height - inWindow.maxY) * scale,
-            width: inWindow.width * scale, height: inWindow.height * scale)
-        XCTAssertEqual(crop, crop.integral, "premise: the button is on whole pixels")
-        let rep = NSBitmapImageRep(cgImage: try XCTUnwrap(image.cropping(to: crop)))
-        func grey(_ x: Int, _ y: Int) -> CGFloat {
-            let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
-            return ((color?.redComponent ?? 0) + (color?.greenComponent ?? 0) + (color?.blueComponent ?? 0)) / 3
-        }
-        // Ink: at least a quarter darker than the tab behind it.
-        let background = grey(0, 0)
-        let ink = (0..<rep.pixelsHigh).flatMap { y in
-            (0..<rep.pixelsWide).filter { background - grey($0, y) > 0.25 }.map { (x: $0, y: y) }
-        }
-        let xs = ink.map(\.x)
-        let ys = ink.map(\.y)
-        let (minX, maxX) = (try XCTUnwrap(xs.min(), "premise: the cross was drawn"), xs.max() ?? 0)
-        let (minY, maxY) = (ys.min() ?? 0, ys.max() ?? 0)
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            window.appearance = NSAppearance(named: appearance)
+            try await WindowCapture.waitForFrames(of: window, spanning: 0.2)
+            let image = try await WindowCapture.image(of: window)
+            // The backing scale, not the capture's width over the frame's: a capture
+            // can come back a few pixels wider than the frame, and a scale of 2.004
+            // crops a 37-pixel square around a 36-pixel button.
+            let scale = window.backingScaleFactor
+            let inWindow = button.convert(button.bounds, to: nil)
+            let crop = CGRect(
+                x: inWindow.minX * scale, y: (window.frame.height - inWindow.maxY) * scale,
+                width: inWindow.width * scale, height: inWindow.height * scale)
+            XCTAssertEqual(crop, crop.integral, "premise: the button is on whole pixels")
+            let rep = NSBitmapImageRep(cgImage: try XCTUnwrap(image.cropping(to: crop)))
+            func grey(_ x: Int, _ y: Int) -> CGFloat {
+                let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
+                return ((color?.redComponent ?? 0) + (color?.greenComponent ?? 0) + (color?.blueComponent ?? 0)) / 3
+            }
+            // Ink: at least a quarter darker than the tab behind it in the light
+            // appearance, lighter in the dark — a disc that stayed dark there is one
+            // whose colour stopped following the appearance.
+            let background = grey(0, 0)
+            let sign: CGFloat = name == "light" ? 1 : -1
+            let ink = (0..<rep.pixelsHigh).flatMap { y in
+                (0..<rep.pixelsWide).filter { sign * (background - grey($0, y)) > 0.25 }.map { (x: $0, y: y) }
+            }
+            let xs = ink.map(\.x)
+            let ys = ink.map(\.y)
+            let (minX, maxX) = (try XCTUnwrap(xs.min(), "\(name): the disc was not drawn"), xs.max() ?? 0)
+            let (minY, maxY) = (ys.min() ?? 0, ys.max() ?? 0)
 
-        XCTAssertEqual(CGFloat(maxX - minX + 1) / scale, 8, accuracy: 0.5, "not Xcode's 8-point cross")
-        XCTAssertEqual(CGFloat(maxY - minY + 1) / scale, 8, accuracy: 0.5, "not Xcode's 8-point cross")
-        XCTAssertEqual(CGFloat(minX + maxX + 1) / 2, CGFloat(rep.pixelsWide) / 2, "off centre horizontally")
-        XCTAssertEqual(CGFloat(minY + maxY + 1) / 2, CGFloat(rep.pixelsHigh) / 2, "off centre vertically")
+            XCTAssertEqual(CGFloat(maxX - minX + 1) / scale, 12, accuracy: 0.5, "\(name): not Safari's 12-point disc")
+            XCTAssertEqual(CGFloat(maxY - minY + 1) / scale, 12, accuracy: 0.5, "\(name): not Safari's 12-point disc")
+            XCTAssertEqual(
+                CGFloat(minX + maxX + 1) / 2, CGFloat(rep.pixelsWide) / 2, accuracy: 0.5,
+                "\(name): off centre horizontally")
+            XCTAssertEqual(
+                CGFloat(minY + maxY + 1) / 2, CGFloat(rep.pixelsHigh) / 2, accuracy: 0.5,
+                "\(name): off centre vertically")
+        }
+    }
+
+    /// A tab under the pointer lights up as Safari's do: a capsule of fill the
+    /// glass's size, about 4.7% over the track on a tab that is not selected and a
+    /// step lighter, 2.7%, over the glass of the one that is. Read as composited, at
+    /// a point inside the capsule clear of the title, before and after.
+    func testAHoveredTabLightsUp() async throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        let bar = mounted.area.activeGroup.tabBar
+        XCTAssertEqual(bar.selectedIndex, 1, "premise: the second tab is the selected one")
+
+        /// Grey at the trailing end of a tab's capsule, where no title reaches.
+        func grey(atTab index: Int) async throws -> CGFloat {
+            try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.2)
+            let rep = try await WindowCapture.bitmap(of: bar)
+            let tab = bar.rect(forTabAt: index)
+            let color = try XCTUnwrap(
+                rep.colorAt(x: Int(tab.maxX - 10), y: Int(tab.midY))?.usingColorSpace(.sRGB))
+            return (color.redComponent + color.greenComponent + color.blueComponent) / 3 * 255
+        }
+
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            mounted.window.appearance = NSAppearance(named: appearance)
+            let ink: CGFloat = name == "light" ? 0 : 255
+            for (index, expected) in [(0, 0.047), (1, 0.027)] {
+                bar.mouseExited(with: mouse(.mouseMoved, at: .zero, in: bar))
+                let away = try await grey(atTab: index)
+                bar.mouseMoved(with: mouse(.mouseMoved, at: center(of: bar, tab: index), in: bar))
+                let over = try await grey(atTab: index)
+                XCTAssertEqual(
+                    (over - away) / (ink - away), expected, accuracy: 0.012,
+                    "\(name), tab \(index): not the hover fill — \(away) → \(over)")
+            }
+        }
     }
 
     func testClosingTheSelectedTabSelectsTheOneAfterIt() throws {
@@ -230,6 +285,56 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertTrue(group.tabBar.isHidden, "an editor with no tabs still shows a tab bar")
         XCTAssertNil(mounted.area.activeViewController)
         XCTAssertEqual(mounted.recorder.activated.last.map { $0 == nil }, true)
+    }
+
+    /// A bar is for choosing between tabs: one tab shows none, and its content
+    /// takes the bar's place; a second tab brings the bar back above it.
+    func testATabBarShowsOnlyWithMoreThanOneTab() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        let content = try XCTUnwrap(mounted.probes[0].view.superview, "premise: the tab's view is mounted")
+
+        XCTAssertTrue(group.tabBar.isHidden, "one tab still shows a bar")
+        XCTAssertEqual(
+            content.convert(content.bounds, to: group.view).maxY, group.view.bounds.maxY, accuracy: 0.5,
+            "the content does not start at the top of the editor")
+
+        group.addTabViewItem(NSTabViewItem(viewController: ProbeViewController(title: "Tab 1")))
+        settle(mounted.window)
+
+        XCTAssertFalse(group.tabBar.isHidden)
+        let bar = group.tabBar.convert(group.tabBar.bounds, to: group.view)
+        XCTAssertLessThanOrEqual(
+            content.convert(content.bounds, to: group.view).maxY, bar.minY,
+            "the content runs under the bar")
+
+        group.removeTabViewItem(group.tabViewItems[1])
+        settle(mounted.window)
+
+        XCTAssertTrue(group.tabBar.isHidden)
+        XCTAssertEqual(
+            content.convert(content.bounds, to: group.view).maxY, group.view.bounds.maxY, accuracy: 0.5)
+    }
+
+    /// Side by side, every editor shows its bar, one tab or not: it is what tells
+    /// the two apart. Back to one editor, a lone tab's bar goes again.
+    func testEveryEditorShowsItsBarWhileThereAreTwo() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let left = mounted.area.activeGroup
+        XCTAssertTrue(left.tabBar.isHidden, "premise: one editor with one tab shows no bar")
+
+        let right = try XCTUnwrap(
+            mounted.area.addGroup(with: NSTabViewItem(viewController: ProbeViewController(title: "Right"))))
+        settle(mounted.window)
+        XCTAssertFalse(left.tabBar.isHidden, "the editor already open hid its bar beside another")
+        XCTAssertFalse(right.tabBar.isHidden, "the editor opened beside it has no bar")
+
+        mounted.area.removeGroup(right)
+        settle(mounted.window)
+        XCTAssertEqual(mounted.area.groups.count, 1, "premise: back to one editor")
+        XCTAssertTrue(left.tabBar.isHidden, "alone again, one tab still shows a bar")
     }
 
     // MARK: - Pinning
@@ -492,6 +597,53 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertEqual(try tabView(titled: "Tab 0", in: bar).frame, bar.rect(forTabAt: 0))
     }
 
+    /// A tab moves along the track only: a drag down or up short of leaving the
+    /// bar leaves it where it runs, so that it goes all at once, as the picture of
+    /// its content, rather than drifting off first.
+    func testADraggedTabStaysOnTheTrackUntilItLeaves() throws {
+        let mounted = mount(tabs: 3)
+        defer { mounted.window.close() }
+        let bar = mounted.area.activeGroup.tabBar
+        let start = center(of: bar, tab: 0)
+        let tab = try tabView(titled: "Tab 0", in: bar)
+        let rest = bar.rect(forTabAt: 0)
+
+        bar.mouseDown(with: mouse(.leftMouseDown, at: start, in: bar))
+        // Short of the edge: a pull to it would start a real drag session, which a
+        // test cannot (this directory's `CLAUDE.md`).
+        for pull: CGFloat in [-10, 6, 11] {
+            bar.mouseDragged(
+                with: mouse(.leftMouseDragged, at: NSPoint(x: start.x + 10, y: start.y + pull), in: bar))
+            XCTAssertEqual(bar.draggedIndex, 0, "premise: the pull is a drag")
+            XCTAssertFalse(bar.isDraggedTabOut, "a pull of \(pull) took the tab out of the bar")
+            bar.layoutSubtreeIfNeeded()
+            XCTAssertEqual(tab.frame.minY, rest.minY, "a pull of \(pull) moved the tab off the track")
+            XCTAssertEqual(tab.frame.minX, rest.minX + 10, accuracy: 0.5, "the tab stopped following the pointer along")
+        }
+        bar.mouseUp(with: mouse(.leftMouseUp, at: start, in: bar))
+    }
+
+    /// A tab pulled out turns into its content: the group hands over the selected
+    /// tab's view as drawn, at its size, and nothing for a tab whose view is not
+    /// on screen.
+    func testAPulledOutTabIsDrawnAsItsContent() throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        let view = mounted.probes[1].view
+        XCTAssertEqual(group.selectedTabViewItemIndex, 1, "premise: the second tab is the one on screen")
+
+        let image = try XCTUnwrap(group.tabBar(group.tabBar, draggingImageForTabAt: 1), "no image")
+        XCTAssertEqual(image.size, view.bounds.size)
+        let rep = try XCTUnwrap(image.representations.first as? NSBitmapImageRep)
+        let drawn = (0..<rep.pixelsHigh).contains { y in
+            (0..<rep.pixelsWide).contains { (rep.colorAt(x: $0, y: y)?.alphaComponent ?? 0) > 0 }
+        }
+        XCTAssertTrue(drawn, "the image is blank")
+
+        XCTAssertNil(group.tabBar(group.tabBar, draggingImageForTabAt: 0), "a tab not on screen was drawn")
+    }
+
     func testADraggedTabStaysOutOfThePinnedTabs() throws {
         let mounted = mount(tabs: 3)
         defer { mounted.window.close() }
@@ -510,8 +662,10 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertEqual(group.numberOfPinnedTabs, 1)
     }
 
-    /// Out of the bar, the tab goes with the drag session and the tabs it left
-    /// close up; back from a drag that dropped nowhere, it takes its place again.
+    /// Out of the bar, the tab goes with the drag session: its place stays open
+    /// while the drag is still over the bar, and the tabs it left close up once
+    /// the drag leaves; back from a drag that dropped nowhere, it takes its place
+    /// again.
     func testATabDraggedOutOfTheBarLeavesNoHole() async throws {
         let mounted = mount(tabs: 3)
         defer { mounted.window.close() }
@@ -524,6 +678,11 @@ final class EditorAreaTests: XCTestCase {
         try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.5)
 
         XCTAssertTrue(dragged.isHidden, "the tab stayed in the bar as well as in the drag")
+        XCTAssertEqual(bar.gapIndex, 1, "the drag begins over the bar, and its place did not stay open")
+        XCTAssertEqual(last.frame, rest, "the tabs closed up while the drag was still over the bar")
+
+        bar.draggingExited(nil)
+        try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.5)
         XCTAssertEqual(try tabView(titled: "Tab 0", in: bar).frame.maxX, last.frame.minX, accuracy: 0.5)
         XCTAssertEqual(last.frame.maxX, bar.bounds.maxX, accuracy: 0.5, "the tabs did not close up")
 
@@ -595,7 +754,9 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertEqual(dragged.loads, 1)
     }
 
-    func testDroppingAnEditorsLastTabOnTheOtherClosesTheFirst() throws {
+    /// An editor's only tab has no bar to be dragged from, so this is the area's
+    /// own rule rather than a gesture: an editor a move emptied closes.
+    func testAnEditorAMoveEmptiesCloses() throws {
         let mounted = mount(tabs: 1)
         defer { mounted.window.close() }
         let left = mounted.area.activeGroup
@@ -604,11 +765,7 @@ final class EditorAreaTests: XCTestCase {
                 with: NSTabViewItem(viewController: ProbeViewController(title: "Right"))))
         settle(mounted.window)
 
-        left.tabBar.dragWillBegin(tabAt: 0)
-        let drop = StubDraggingInfo(
-            source: left.tabBar, at: center(of: right.tabBar, tab: 0), in: right.tabBar)
-        XCTAssertTrue(right.tabBar.performDragOperation(drop))
-        left.tabBar.dragDidEnd()
+        mounted.area.moveTab(at: 0, of: left, to: right, at: 1)
 
         XCTAssertEqual(mounted.area.groups.count, 1)
         XCTAssertIdentical(mounted.area.groups[0], right)

@@ -37,6 +37,7 @@ Invariants of the renderer target. Package-level API rules are in [../../CLAUDE.
   - Entries crossing the actor boundary carry their recipe (`RowCache.Body`); without it the first resize after a cold load rebuilds everything.
   - A row scrolled into before its correction lands is left as is; never call `noteHeightOfRows` from inside the table's own layout (re-entrant, measures at two widths).
 - **A width change outside a drag must not animate rows** — it opens `mutate`'s suppressed animation group (`ResizeRemeasureTests.testAWidthChangeOutsideADragDoesNotAnimateTheRows`).
+- **The content column keeps a margin either side at any width** (`TranscriptCellView.margin`, AppKit's 20pt window margin), so a transcript narrowed by a divider or a window never runs text into its edges. It is the transcript's, not the split's — the split holds any view controller and knows nothing of columns. Not configurable: nothing has needed another value. A `.view` row is inset with the text around it.
 
 ## Streaming increments (`MarkdownMemo`)
 

@@ -494,8 +494,9 @@ public final class TranscriptView: NSView {
         didSet { contentWidthBoundsChanged() }
     }
 
-    /// The width the transcript's content currently occupies: the row width
-    /// clamped into `minContentWidth ... maxContentWidth`. This is the number
+    /// The width the transcript's content currently occupies: the row width less
+    /// a margin either side (`TranscriptCellView.margin`), clamped into
+    /// `minContentWidth ... maxContentWidth`. This is the number
     /// `heightOfRow` is asked against and the number the hosted view is laid out
     /// at.
     ///

@@ -135,7 +135,9 @@ final class TranscriptTests: XCTestCase {
         XCTAssertTrue(cleared.messages.isEmpty)
     }
 
-    func testCompactionWithPreservedSegment() {
+    /// The shape older CLIs wrote: the row after the compaction hangs off the
+    /// last preserved row, not the summary.
+    func testCompactionKeepsEverythingBeforeIt() {
         let lines = [
             user("old1", parent: nil, "ancient"),
             assistant("head", parent: "old1", messageID: "m1", text("kept 1")),
@@ -154,15 +156,15 @@ final class TranscriptTests: XCTestCase {
             user("after", parent: "tail", "next question"),
         ]
         let result = transcript(lines)
-        XCTAssertEqual(uuids(result), ["boundary", "summary", "head", "tail", "after"])
-        guard case .system(.compactBoundary(let boundary)) = result.messages[0],
-            case .user(let summary) = result.messages[1]
+        XCTAssertEqual(uuids(result), ["old1", "head", "tail", "boundary", "summary", "after"])
+        guard case .system(.compactBoundary(let boundary)) = result.messages[3],
+            case .user(let summary) = result.messages[4]
         else { return XCTFail() }
         XCTAssertEqual(boundary, .init(trigger: "manual", preTokens: 1000, postTokens: 100))
         XCTAssertTrue(summary.isSynthetic)
     }
 
-    func testFullCompactionStartsAtBoundary() {
+    func testBoundaryWithoutItsLastRowStartsTheConversation() {
         let lines = [
             user("old1", parent: nil, "ancient"),
             line([

@@ -290,4 +290,57 @@ final class TranscriptViewAnchoringTests: XCTestCase {
         XCTAssertEqual(mounted.transcript.rect(ofRow: 55).minY, 2970)
         XCTAssertEqual(offset(mounted), 2970 - 12, "content shifted under the reader")
     }
+
+    /// An input bar growing a line at the tail: the inset grows, the transcript
+    /// stays the size it was, and the scroll follows the tail so the last row
+    /// comes to rest above the taller bar.
+    func testGrowingTheBottomInsetAtTheTailKeepsTheTail() throws {
+        let (mounted, _) = mount(insets: NSEdgeInsets(top: 0, left: 0, bottom: 60, right: 0))
+        defer { mounted.teardown() }
+        mounted.scroll(toY: 5400 + 60 - 720)
+        mounted.settle()
+        XCTAssertEqual(offset(mounted), 4740, "mount never placed rows")
+        let frame = mounted.transcript.frame
+
+        mounted.transcript.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 140, right: 0)
+
+        XCTAssertEqual(offset(mounted), 5400 + 140 - 720, "the last row went under the bar")
+        XCTAssertEqual(mounted.transcript.frame, frame, "the transcript moved instead of its scroll")
+    }
+
+    /// The bar shrinking back — a sent message clearing a multi-line draft.
+    func testShrinkingTheBottomInsetAtTheTailKeepsTheTail() throws {
+        let (mounted, _) = mount(insets: NSEdgeInsets(top: 0, left: 0, bottom: 140, right: 0))
+        defer { mounted.teardown() }
+        mounted.scroll(toY: 5400 + 140 - 720)
+        mounted.settle()
+        XCTAssertEqual(offset(mounted), 4820, "mount never placed rows")
+
+        mounted.transcript.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 60, right: 0)
+
+        XCTAssertEqual(offset(mounted), 5400 + 60 - 720)
+    }
+
+    /// A reader in the history: the bar growing under them moves nothing.
+    func testGrowingTheBottomInsetInTheMiddleMovesNothing() throws {
+        let (mounted, _) = mount()
+        defer { mounted.teardown() }
+        scrollRow50ToTop(mounted)
+
+        mounted.transcript.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 140, right: 0)
+
+        XCTAssertEqual(offset(mounted), 2700)
+    }
+
+    /// Chrome arriving at the top holds the row the reader was on below it rather
+    /// than sliding it underneath.
+    func testGrowingTheTopInsetKeepsTheTopRowBelowIt() throws {
+        let (mounted, _) = mount()
+        defer { mounted.teardown() }
+        scrollRow50ToTop(mounted)
+
+        mounted.transcript.contentInsets = NSEdgeInsets(top: 52, left: 0, bottom: 0, right: 0)
+
+        XCTAssertEqual(offset(mounted), 2700 - 52, "row 50 slid under the chrome")
+    }
 }

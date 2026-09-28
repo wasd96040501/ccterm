@@ -271,6 +271,20 @@ public protocol TranscriptViewDelegate: AnyObject {
     func transcriptView(
         _ transcriptView: TranscriptView, didUpdateFindMatches matches: Int, isComplete: Bool
     )
+
+    /// The viewport arrived at the end of the scroll, or left it — whether new
+    /// rows will now be followed (the first anchoring rule) or not.
+    ///
+    /// What a "jump to latest" button needs: show it on `false`, hide it on
+    /// `true`, and on a press scroll the last row to `.bottom`, which lands on the
+    /// tail and reports `true` back. The end is the end of the *scrollable range*,
+    /// so it sits above a bottom `contentInsets`, not under it.
+    ///
+    /// Fires on **changes only**, from `true` — an empty transcript is at its end,
+    /// so a host hears nothing until the reader leaves it. Scrolling by hand, a
+    /// resize, a reload, and `scrollToRow` all report; a mutation that the tail
+    /// follows does not, because it never left.
+    func transcriptView(_ transcriptView: TranscriptView, didChangeTailFollowing isFollowingTail: Bool)
 }
 
 extension TranscriptViewDelegate {
@@ -319,6 +333,10 @@ extension TranscriptViewDelegate {
 
     public func transcriptView(
         _ transcriptView: TranscriptView, didUpdateFindMatches matches: Int, isComplete: Bool
+    ) {}
+
+    public func transcriptView(
+        _ transcriptView: TranscriptView, didChangeTailFollowing isFollowingTail: Bool
     ) {}
 
     /// The transcript's own menu, unchanged — so not implementing this leaves

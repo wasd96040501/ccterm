@@ -693,10 +693,12 @@ public final class TranscriptView: NSView {
     @objc private func clipViewFrameDidChange(_ notification: Notification) {
         contentWidthDidChange()
         placeFindOverlay()
+        reportTailFollowing()
     }
 
     @objc private func clipViewBoundsDidChange(_ notification: Notification) {
         placeFindOverlay()
+        reportTailFollowing()
     }
 
     public override func viewDidEndLiveResize() {
@@ -1093,21 +1095,30 @@ public final class TranscriptView: NSView {
     ///
     /// The host owns these. A floating input bar that changes height reports the
     /// new height up to its controller, and the controller writes the inset here
-    /// in the same pass — nothing in the transcript watches for chrome.
+    /// in the same pass — nothing in the transcript watches for chrome. The
+    /// transcript's own frame stays where it is; only the scrollable range moves.
     ///
     /// These also define where "at the top" and "centred" are: a row scrolled to
     /// `.top` lands below the top inset, not underneath the chrome, and scroll
     /// anchoring measures from the same edge.
     ///
-    /// Writing this re-tiles, so compare before assigning if the call site can
-    /// run on every layout pass.
+    /// **A write is anchored like a row mutation**, because it moves the same
+    /// geometry. At the tail the transcript stays at the tail, so a bar growing a
+    /// line lifts the last row with it rather than covering it; anywhere else the
+    /// content under the top inset holds still, so a bar growing under a reader
+    /// in the history moves nothing. Writing the value already set does nothing,
+    /// so a controller may assign on every layout pass.
+    ///
     /// `scrollerInsets` is deliberately left alone: it is *added* to this, so
     /// mirroring the value here inset the scroller's track by twice the chrome's
     /// height. Measured — a 140pt bottom inset left the track ending 280pt short.
     /// Style-independent, so pinning the scrollers to overlay does not retire it.
     public var contentInsets: NSEdgeInsets {
         get { scrollView.contentInsets }
-        set { scrollView.contentInsets = newValue }
+        set {
+            guard !NSEdgeInsetsEqual(newValue, scrollView.contentInsets) else { return }
+            mutate(shiftedBy: .none) { scrollView.contentInsets = newValue }
+        }
     }
 
     /// The rectangle the given row occupies, in the scrolled content's
@@ -1195,6 +1206,61 @@ public final class TranscriptView: NSView {
     /// fraction — and an exact comparison would drop tail following on the
     /// strength of a rounding error.
     private static let tailTolerance: CGFloat = 1
+
+    /// What the delegate last heard from `didChangeTailFollowing`. Starts `true`:
+    /// an empty transcript is at its end, so a host starts from "following" and
+    /// hears only departures from it.
+    private var reportedTailFollowing = true
+
+    /// Tells the delegate if `isScrolledToTail` has changed since it last heard.
+    ///
+    /// Called wherever the answer can move — the clip scrolling or resizing, the
+    /// table re-tiling its rows — and silenced inside a mutation, where the
+    /// document has grown but the anchor hasn't been restored yet: a row appended
+    /// at the tail would otherwise report leaving it and coming back in one call.
+    /// `endAnchoring()` asks once the restore has landed.
+    fileprivate func reportTailFollowing() {
+        guard anchorDepth == 0 else { return }
+        let following = isScrolledToTail
+        guard following != reportedTailFollowing else { return }
+        reportedTailFollowing = following
+        delegate?.transcriptView(self, didChangeTailFollowing: following)
+    }
+
+    // MARK: - Keyboard
+
+    /// Answers a key the reader scrolls with — ↑ ↓, Page Up / Down, Home / End,
+    /// ⌘↑ ⌘↓, as the standard key bindings name them; `false` for every other
+    /// command, which the table then passes up the responder chain as the key it
+    /// came from.
+    ///
+    /// The steps are the scroll view's own (`verticalLineScroll`,
+    /// `verticalPageScroll`) and are measured against the area the host's chrome
+    /// leaves visible, so a page never scrolls a line out from under a bar.
+    /// Going to the end is going to the tail, so it re-engages tail following the
+    /// way scrolling there by hand does.
+    fileprivate func performScrollCommand(_ selector: Selector) -> Bool {
+        let visible = unobscuredRect
+        let line = scrollView.verticalLineScroll
+        let page = max(visible.height - scrollView.verticalPageScroll, line)
+        switch selector {
+        case #selector(moveUp(_:)):
+            scrollClip(toUnobscuredMinY: visible.minY - line)
+        case #selector(moveDown(_:)):
+            scrollClip(toUnobscuredMinY: visible.minY + line)
+        case #selector(scrollPageUp(_:)):
+            scrollClip(toUnobscuredMinY: visible.minY - page)
+        case #selector(scrollPageDown(_:)):
+            scrollClip(toUnobscuredMinY: visible.minY + page)
+        case #selector(moveToBeginningOfDocument(_:)), #selector(scrollToBeginningOfDocument(_:)):
+            scrollClip(toUnobscuredMinY: 0)
+        case #selector(moveToEndOfDocument(_:)), #selector(scrollToEndOfDocument(_:)):
+            scrollClipToTail()
+        default:
+            return false
+        }
+        return true
+    }
 
     // MARK: - View row recycling
 
@@ -2673,6 +2739,7 @@ public final class TranscriptView: NSView {
         guard anchorDepth == 0, let anchor else { return }
         self.anchor = nil
         restore(anchor)
+        reportTailFollowing()
     }
 
     /// Where the viewport is now, as something that can be re-found afterwards.
@@ -2892,6 +2959,9 @@ private final class TranscriptTableView: NSTableView {
     override func tile() {
         super.tile()
         transcript?.setNeedsFindLayout()
+        // The document's height is decided here, and a height can move the end
+        // of the scroll without the clip moving — a reload, a re-measure.
+        transcript?.reportTailFollowing()
     }
 
     override func layout() {
@@ -2914,6 +2984,41 @@ private final class TranscriptTableView: NSTableView {
         guard super.resignFirstResponder() else { return false }
         transcript?.selectionDidResign()
         return true
+    }
+
+    /// The key being interpreted, so one the transcript doesn't answer can go up
+    /// the chain as itself.
+    private var interpretedKey: NSEvent?
+
+    /// Keys are interpreted, not switched on, so the reader's own key bindings
+    /// apply. The transcript answers only the scrolling commands; every other key
+    /// — typing, Return, Escape — goes to the next responder **as the event**, the
+    /// way `NSResponder` passes a key it doesn't handle. That is the whole of what
+    /// lets a host type into its input while the transcript has focus: its view
+    /// controller is further up the chain, sees the key, and hands it on. The
+    /// event rather than its text, so an input method there composes it.
+    ///
+    /// `super` is never asked: `NSTableView` would move a row selection the
+    /// transcript never shows (↓ selected row 0 and scrolled to the top) and
+    /// swallows Escape and Home.
+    override func keyDown(with event: NSEvent) {
+        interpretedKey = event
+        defer { interpretedKey = nil }
+        interpretKeyEvents([event])
+    }
+
+    override func doCommand(by selector: Selector) {
+        if transcript?.performScrollCommand(selector) == true { return }
+        passInterpretedKeyUp()
+    }
+
+    override func insertText(_ insertString: Any) {
+        passInterpretedKeyUp()
+    }
+
+    private func passInterpretedKeyUp() {
+        guard let interpretedKey else { return }
+        nextResponder?.keyDown(with: interpretedKey)
     }
 
     @objc func copy(_ sender: Any?) {

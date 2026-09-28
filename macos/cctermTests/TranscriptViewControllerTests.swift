@@ -78,7 +78,7 @@ final class TranscriptViewControllerTests: XCTestCase {
 
         let loaded = transcript.numberOfRows
         XCTAssertLessThan(loaded, 6_000)
-        area.activeGroup.removeTabViewItem(try XCTUnwrap(area.activeGroup.tabViewItems.first))
+        area.closeTab(nil)
         stage.drain(seconds: 0.5)
         XCTAssertEqual(transcript.numberOfRows, loaded)
     }

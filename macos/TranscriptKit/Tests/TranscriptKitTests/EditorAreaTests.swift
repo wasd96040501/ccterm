@@ -1130,6 +1130,22 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertEqual(right.selectedTabViewItemIndex, 0, "a miss changed a selection")
     }
 
+    /// Selected by identifier with `pinning`, a temporary tab stays; without, it
+    /// is still the temporary one.
+    func testSelectingByIdentifierPinningKeepsATemporaryTab() {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        let look = Self.tab("b")
+        group.previewTabViewItem = look
+
+        XCTAssertTrue(mounted.area.selectTabViewItem(withIdentifier: "b"))
+        XCTAssertIdentical(group.previewTabViewItem, look, "selecting alone pinned the temporary tab")
+        XCTAssertTrue(mounted.area.selectTabViewItem(withIdentifier: "b", pinning: true))
+        XCTAssertNil(group.previewTabViewItem, "opening the temporary tab left it temporary")
+        XCTAssertEqual(group.tabViewItems.count, 2)
+    }
+
     /// A tab known to the history by its title.
     private static func tab(_ title: String) -> NSTabViewItem {
         let item = NSTabViewItem(viewController: ProbeViewController(title: title))

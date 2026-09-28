@@ -102,13 +102,7 @@ extension MainSplitViewController: SidebarViewControllerDelegate {
 
     func sidebarViewController(_ sidebar: SidebarViewController, didOpen node: LibraryNode) {
         guard let url = node.transcriptURL else { return }
-        if editorArea.selectTabViewItem(withIdentifier: url) {
-            // Opened, the temporary tab showing it stays.
-            for group in editorArea.groups where group.previewTabViewItem?.identifier as? URL == url {
-                group.previewTabViewItem = nil
-            }
-            return
-        }
+        guard !editorArea.selectTabViewItem(withIdentifier: url, pinning: true) else { return }
         editorArea.activeGroup.addTabViewItem(tab(for: node, at: url))
     }
 }

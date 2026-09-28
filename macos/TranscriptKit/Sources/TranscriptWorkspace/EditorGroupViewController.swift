@@ -157,7 +157,7 @@ public final class EditorGroupViewController: NSViewController {
 
     /// Closes a tab, telling the area's delegate first. The tab after it is
     /// selected, or the one before when it was the last.
-    public func removeTabViewItem(_ item: NSTabViewItem) {
+    func removeTabViewItem(_ item: NSTabViewItem) {
         guard let index = tabViewItems.firstIndex(of: item) else { return }
         close(at: index)
         tabsDidChange()

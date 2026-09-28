@@ -72,7 +72,7 @@ public final class Session: @unchecked Sendable {
     var sessionID: String? { state.withLock { $0.sessionID } }
 
     /// `true` between a successful ``start()`` and the process exiting.
-    public var isRunning: Bool {
+    var isRunning: Bool {
         state.withLock { if case .running = $0.phase { return true } else { return false } }
     }
 

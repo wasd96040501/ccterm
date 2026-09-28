@@ -59,7 +59,7 @@ public final class PermissionRequest: Sendable, Identifiable {
     }
 
     /// Whether the request still awaits an answer.
-    public var isPending: Bool { responder.withLock { $0 != nil } }
+    var isPending: Bool { responder.withLock { $0 != nil } }
 
     /// Drops the responder without answering (the CLI withdrew the request).
     func invalidate() {

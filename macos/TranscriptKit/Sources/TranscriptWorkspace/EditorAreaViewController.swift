@@ -115,13 +115,16 @@ public final class EditorAreaViewController: NSSplitViewController {
     /// (compared as `AnyHashable`, as the history compares them), in whichever
     /// editor has it, and answers whether there was one. The active editor stays
     /// where the reader is: the tab is brought forward in its own editor.
+    /// `pinning` also pins it if it is its editor's temporary tab — opening what
+    /// is already showing there, as a double-click in Xcode's navigator does.
     @discardableResult
-    public func selectTabViewItem(withIdentifier identifier: Any) -> Bool {
+    public func selectTabViewItem(withIdentifier identifier: Any, pinning: Bool = false) -> Bool {
         guard let identifier = identifier as? AnyHashable else { return false }
         for group in groups {
             guard let index = group.tabViewItems.firstIndex(where: { $0.identifier as? AnyHashable == identifier })
             else { continue }
             group.selectedTabViewItemIndex = index
+            if pinning, group.previewTabViewItem === group.tabViewItems[index] { group.previewTabViewItem = nil }
             return true
         }
         return false

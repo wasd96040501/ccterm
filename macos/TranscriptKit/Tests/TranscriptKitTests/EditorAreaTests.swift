@@ -609,7 +609,9 @@ final class EditorAreaTests: XCTestCase {
         let rest = bar.rect(forTabAt: 0)
 
         bar.mouseDown(with: mouse(.leftMouseDown, at: start, in: bar))
-        for pull: CGFloat in [-20, 12, 24] {
+        // Short of the edge: a pull to it would start a real drag session, which a
+        // test cannot (`CLAUDE.md` §5).
+        for pull: CGFloat in [-10, 6, 11] {
             bar.mouseDragged(
                 with: mouse(.leftMouseDragged, at: NSPoint(x: start.x + 10, y: start.y + pull), in: bar))
             XCTAssertEqual(bar.draggedIndex, 0, "premise: the pull is a drag")
@@ -660,8 +662,10 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertEqual(group.numberOfPinnedTabs, 1)
     }
 
-    /// Out of the bar, the tab goes with the drag session and the tabs it left
-    /// close up; back from a drag that dropped nowhere, it takes its place again.
+    /// Out of the bar, the tab goes with the drag session: its place stays open
+    /// while the drag is still over the bar, and the tabs it left close up once
+    /// the drag leaves; back from a drag that dropped nowhere, it takes its place
+    /// again.
     func testATabDraggedOutOfTheBarLeavesNoHole() async throws {
         let mounted = mount(tabs: 3)
         defer { mounted.window.close() }
@@ -674,6 +678,11 @@ final class EditorAreaTests: XCTestCase {
         try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.5)
 
         XCTAssertTrue(dragged.isHidden, "the tab stayed in the bar as well as in the drag")
+        XCTAssertEqual(bar.gapIndex, 1, "the drag begins over the bar, and its place did not stay open")
+        XCTAssertEqual(last.frame, rest, "the tabs closed up while the drag was still over the bar")
+
+        bar.draggingExited(nil)
+        try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.5)
         XCTAssertEqual(try tabView(titled: "Tab 0", in: bar).frame.maxX, last.frame.minX, accuracy: 0.5)
         XCTAssertEqual(last.frame.maxX, bar.bounds.maxX, accuracy: 0.5, "the tabs did not close up")
 

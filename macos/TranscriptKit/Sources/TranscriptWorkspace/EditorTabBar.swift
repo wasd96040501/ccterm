@@ -49,10 +49,10 @@ protocol EditorTabBarDelegate: AnyObject {
 ///   into its own place. No drag session: the
 ///   mouse events are enough, and a session's image would be a second copy of
 ///   the tab.
-/// - **Out of the bar**, far enough above or below it, the tab leaves as a drag
-///   session carrying a small picture of its content, centred on the pointer;
-///   the tabs it left close up. Over a bar, the bar makes it a tab again, the
-///   width of the gap it would drop into.
+/// - **Out of the bar**, pulled to the edge of it, the tab becomes a drag
+///   session while still over the bar, so the bar shows it as the tab where it
+///   was; leaving the bar, AppKit turns it into a small picture of its content,
+///   centred on the pointer, and the tabs it left close up.
 /// - **Over a bar** — another editor's, or its own again — it is a tab again, the
 ///   tabs open a gap where it would drop, and it drops into the gap.
 ///
@@ -458,8 +458,11 @@ final class EditorTabBar: NSView, NSDraggingSource {
             raise(items[pressed].id)
         }
         guard let dragged = draggedIndex, !isDraggedTabOut else { return }
-        // Far enough above or below, it has left the bar.
-        guard abs(point.y - bounds.midY) <= bounds.height else {
+        // At the edge of the bar and still over it, it leaves as a drag session:
+        // the bar is the first place the drag is over, and shows it as the tab it
+        // was, so leaving the bar is the drag's own change to the picture, with
+        // AppKit's animation. Past the edge, it would start as the picture.
+        guard abs(point.y - bounds.midY) < bounds.height / 2 - 2 else {
             pressedIndex = nil
             beginDraggingSession(tabAt: dragged, with: event)
             return
@@ -519,21 +522,24 @@ final class EditorTabBar: NSView, NSDraggingSource {
     }
 
     /// The bar's half of a tab leaving it as a drag session: the tab is out, and
-    /// the tabs it left close up. Kept apart from the session, which is the
-    /// window server's — the bar's state is everything a destination reads, and
-    /// it is the same whether the pointer or a test is moving it.
+    /// the place it left stays open as the gap the drag is over, until the drag
+    /// leaves the bar and the tabs close up. Kept apart from the session, which
+    /// is the window server's — the bar's state is everything a destination
+    /// reads, and it is the same whether the pointer or a test is moving it.
     func dragWillBegin(tabAt index: Int) {
         draggedID = items[index].id
         isDraggedTabOut = true
+        gapIndex = index
         Self.inFlight = self
         placeTabs(animated: true)
     }
 
     /// The bar's half of a drag ending, however it ended. A tab still here comes
-    /// back into its place.
+    /// back into its place, and no gap is left open for it.
     func dragDidEnd() {
         draggedID = nil
         isDraggedTabOut = false
+        gapIndex = nil
         Self.inFlight = nil
         placeTabs(animated: true)
     }
@@ -621,24 +627,26 @@ final class EditorTabBar: NSView, NSDraggingSource {
         draggingUpdated(sender)
     }
 
-    /// Over the bar, the picture is a tab again: as wide as the gap it would
-    /// drop into, centred on the pointer. Changed here, when AppKit says a drop
-    /// here is likely enough to show, rather than on entering; AppKit takes the
-    /// change off when the drag leaves.
+    /// Over the bar, the picture is a tab again: in the bar's row, as wide as
+    /// the gap it would drop into, and held along its length where it was picked
+    /// up — so over its own bar, as the drag begins, it is exactly the tab it
+    /// was. Changed here, when AppKit says a drop here is likely enough to show,
+    /// rather than on entering; AppKit takes the change off when the drag
+    /// leaves, and that is the tab turning into the picture.
     override func updateDraggingItemsForDrag(_ sender: NSDraggingInfo?) {
         guard let sender, let source = sender.draggingSource as? EditorTabBar,
             let dragged = source.draggedIndex, let gap = gapIndex
         else { return }
-        let size = gapRect(at: gap).insetBy(dx: 2, dy: 2).size
-        let tab = Self.dragImage(for: source.items[dragged], size: size)
-        let point = convert(sender.draggingLocation, from: nil)
+        let glass = gapRect(at: gap).insetBy(dx: 2, dy: 2)
+        let tab = Self.dragImage(for: source.items[dragged], size: glass.size)
+        let along = source.grabOffset / max(source.rect(forTabAt: dragged).width, 1)
+        let pointer = convert(sender.draggingLocation, from: nil)
+        let frame = NSRect(
+            x: pointer.x - glass.width * along, y: glass.minY, width: glass.width, height: glass.height)
         sender.enumerateDraggingItems(
             options: [], for: self, classes: [NSPasteboardItem.self], searchOptions: [:]
         ) { item, _, _ in
-            item.setDraggingFrame(
-                NSRect(
-                    x: point.x - size.width / 2, y: point.y - size.height / 2, width: size.width, height: size.height),
-                contents: tab)
+            item.setDraggingFrame(frame, contents: tab)
         }
     }
 

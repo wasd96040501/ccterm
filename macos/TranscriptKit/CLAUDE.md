@@ -1249,9 +1249,13 @@ pointer and, where Safari's does not change, deepens a step while pressed. Along
 its bar a dragged tab stays in the bar under the pointer, and a neighbour whose
 middle its edge passes slides into the place it left, never across the pinned
 boundary; let go, it settles into its own. It moves only along the track: pulled
-far enough above or below, it leaves as a drag session carrying a small picture of its content — the
-group's view, drawn by `cacheDisplay` and framed by the bar — centred on the
-pointer, while the tabs it left close up. Over a bar it turns back into a tab, the
+to the bar's edge, it leaves as a drag session **while still over the bar**, so the
+bar is the first destination the drag meets and shows it as the tab it was, its
+place held open. Leaving the bar is then AppKit taking the bar's change off — the
+tab turning into a small picture of its content (the group's view, drawn by
+`cacheDisplay` and framed by the bar), centred on the pointer, with AppKit's own
+animation — and the tabs it left close up. Begun past the edge, the drag started
+as the picture, with nothing to animate from. Over a bar it turns back into a tab, the
 tabs part where it would drop, and it drops into the gap. **Each side draws its own
 image, at the time AppKit says**: the source hands over the picture as the drag
 begins, in formation `.none` so it keeps its size away from any bar, and a bar

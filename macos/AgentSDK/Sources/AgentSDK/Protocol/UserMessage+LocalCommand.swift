@@ -39,7 +39,7 @@ extension UserMessage {
     /// CLI writes for what it sends as the user — `<name>body</name>`, one
     /// after another — or `nil` for any other message. Bodies are raw text
     /// the CLI does not escape, so this is not XML; they are read the way the
-    /// CLI reads them: up to the matching close tag, names in any case.
+    /// CLI reads them: up to the matching close tag, ASCII names in any case.
     private var taggedElements: [(name: String, body: Substring)]? {
         guard content.count == 1, let text = content[0].text else { return nil }
         var elements: [(name: String, body: Substring)] = []
@@ -47,7 +47,7 @@ extension UserMessage {
         while !rest.isEmpty {
             guard rest.first == "<", let tagEnd = rest.firstIndex(of: ">") else { return nil }
             let tag = rest[rest.index(after: rest.startIndex)..<tagEnd]
-            let name = tag.prefix { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+            let name = tag.prefix { $0.isASCII && ($0.isLetter || $0.isNumber) || $0 == "-" || $0 == "_" }
             guard name.first?.isLetter == true, tag.dropFirst(name.count).first.map(\.isWhitespace) ?? true,
                 let close = Self.close(of: name, in: rest[rest.index(after: tagEnd)...])
             else { return nil }
@@ -62,9 +62,9 @@ extension UserMessage {
     private static func close(of name: Substring, in text: Substring) -> Range<Substring.Index>? {
         var depth = 0
         var cursor = text.startIndex
-        while let close = text.range(of: "</\(name)>", options: .caseInsensitive, range: cursor..<text.endIndex) {
+        while let close = range(of: "</\(name)>", in: text[cursor...]) {
             var open = cursor
-            while let next = text.range(of: "<\(name)", options: .caseInsensitive, range: open..<close.lowerBound) {
+            while let next = range(of: "<\(name)", in: text[open..<close.lowerBound]) {
                 if let after = text[next.upperBound...].first, after == ">" || after.isWhitespace { depth += 1 }
                 open = next.upperBound
             }
@@ -73,5 +73,27 @@ extension UserMessage {
             cursor = close.upperBound
         }
         return nil
+    }
+
+    /// The first `tag` in `text`, in any case. Compares bytes: a tag is
+    /// ASCII, and `range(of:options: .caseInsensitive)` folds every character
+    /// of what may be a long body.
+    private static func range(of tag: String, in text: Substring) -> Range<Substring.Index>? {
+        let tag = tag.utf8.map(\.asciiLowercased)
+        let bytes = text.utf8
+        var start = bytes.startIndex
+        while start < bytes.endIndex {
+            if bytes[start...].starts(with: tag, by: { $0.asciiLowercased == $1 }) {
+                return start..<bytes.index(start, offsetBy: tag.count)
+            }
+            start = bytes.index(after: start)
+        }
+        return nil
+    }
+}
+
+extension UInt8 {
+    fileprivate var asciiLowercased: UInt8 {
+        (UInt8(ascii: "A")...UInt8(ascii: "Z")).contains(self) ? self + 0x20 : self
     }
 }

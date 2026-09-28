@@ -57,8 +57,8 @@ nonisolated extension TranscriptRow {
         guard let argument = keys.lazy.compactMap({ call.input[$0]?.stringValue }).first else {
             return "**\(call.name)**"
         }
-        var line = argument.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
-        if line.count > 160 { line = line.prefix(160) + "…" }
+        let firstLine = argument.drop(while: \.isNewline).prefix { !$0.isNewline }
+        let line = firstLine.count > 160 ? firstLine.prefix(160) + "…" : String(firstLine)
         return "**\(call.name)** `\(line.replacingOccurrences(of: "`", with: "'"))`"
     }
 }

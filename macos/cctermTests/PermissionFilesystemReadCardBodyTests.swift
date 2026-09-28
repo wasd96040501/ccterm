@@ -112,12 +112,12 @@ final class PermissionFilesystemReadCardBodyTests: XCTestCase {
     // MARK: - Helpers
 
     private func makeBody(
-        toolName: String, input: [String: Any]
+        toolName: String, input: JSONValue
     )
         -> PermissionFilesystemReadCardBody
     {
-        let req = PermissionRequest.makePreview(
-            requestId: "fs-\(UUID().uuidString)",
+        let req = PermissionRequest.preview(
+            id: "fs-\(UUID().uuidString)",
             toolName: toolName,
             input: input)
         return PermissionFilesystemReadCardBody(request: req)

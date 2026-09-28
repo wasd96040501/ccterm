@@ -47,8 +47,8 @@ struct PermissionNotebookEditCardBody: View {
     // MARK: - Data
 
     var notebookPath: String? {
-        (request.rawInput["notebook_path"] as? String)
-            ?? (request.rawInput["notebookPath"] as? String)
+        request.input["notebook_path"]?.stringValue
+            ?? request.input["notebookPath"]?.stringValue
     }
 
     var basename: String? { notebookPath.map { ($0 as NSString).lastPathComponent } }
@@ -57,20 +57,20 @@ struct PermissionNotebookEditCardBody: View {
     /// `edit_mode` enum). Defaults to "replace" since that's the
     /// upstream default when the field is missing.
     var editMode: String {
-        ((request.rawInput["edit_mode"] as? String)
-            ?? (request.rawInput["editMode"] as? String)
-                ?? "replace")
+        (request.input["edit_mode"]?.stringValue
+            ?? request.input["editMode"]?.stringValue
+            ?? "replace")
     }
 
     /// "markdown" or "code" — the upstream `cell_type` field.
     var cellType: String? {
-        (request.rawInput["cell_type"] as? String)
-            ?? (request.rawInput["cellType"] as? String)
+        request.input["cell_type"]?.stringValue
+            ?? request.input["cellType"]?.stringValue
     }
 
     var cellId: String? {
-        (request.rawInput["cell_id"] as? String)
-            ?? (request.rawInput["cellId"] as? String)
+        request.input["cell_id"]?.stringValue
+            ?? request.input["cellId"]?.stringValue
     }
 
     var subtitle: String? {
@@ -98,16 +98,16 @@ struct PermissionNotebookEditCardBody: View {
     /// shows only the cell label.
     var sourcePreview: String? {
         let raw =
-            (request.rawInput["new_source"] as? String)
-            ?? (request.rawInput["newSource"] as? String)
+            request.input["new_source"]?.stringValue
+            ?? request.input["newSource"]?.stringValue
         return raw?.isEmpty == false ? raw : nil
     }
 }
 
 #Preview("replace · python cell") {
     PermissionNotebookEditCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-1",
+        request: PermissionRequest.preview(
+            id: "preview-1",
             toolName: "NotebookEdit",
             input: [
                 "notebook_path": "/Users/example/notebooks/analysis.ipynb",
@@ -124,8 +124,8 @@ struct PermissionNotebookEditCardBody: View {
 
 #Preview("insert · markdown cell") {
     PermissionNotebookEditCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-2",
+        request: PermissionRequest.preview(
+            id: "preview-2",
             toolName: "NotebookEdit",
             input: [
                 "notebook_path": "/Users/example/notebooks/analysis.ipynb",
@@ -142,8 +142,8 @@ struct PermissionNotebookEditCardBody: View {
 
 #Preview("delete · empty source") {
     PermissionNotebookEditCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-3",
+        request: PermissionRequest.preview(
+            id: "preview-3",
             toolName: "NotebookEdit",
             input: [
                 "notebook_path": "/Users/example/notebooks/analysis.ipynb",

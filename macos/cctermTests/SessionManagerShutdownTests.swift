@@ -60,16 +60,10 @@ final class SessionManagerShutdownTests: XCTestCase {
         // detached `Task { @MainActor … }`, so we yield until every
         // fake has its `initialize` call recorded, complete them all,
         // then yield again until every status is `.idle`.
-        for _ in 0..<64 {
-            await Task.yield()
-            if fakes.count == count, fakes.allSatisfy({ !$0.initializeCalls.isEmpty }) { break }
-        }
+        await yieldUntil { fakes.count == count && fakes.allSatisfy({ $0.isAwaitingStart }) }
         XCTAssertEqual(fakes.count, count, "every session should have produced a fake")
-        for fake in fakes { fake.completeInitialize(with: nil) }
-        for _ in 0..<64 {
-            await Task.yield()
-            if sessions.allSatisfy({ $0.runtime?.status == .idle }) { break }
-        }
+        for fake in fakes { fake.completeStart() }
+        await yieldUntil { sessions.allSatisfy({ $0.runtime?.status == .idle }) }
         XCTAssertTrue(
             sessions.allSatisfy { $0.runtime?.status == .idle },
             "every session should reach .idle before the test exercises shutdown")
@@ -85,7 +79,7 @@ final class SessionManagerShutdownTests: XCTestCase {
         await manager.shutdownAllAsync()
 
         for fake in fakes {
-            XCTAssertEqual(fake.closeAsyncCalls, 1, "every session's CLI should be closed exactly once")
+            XCTAssertEqual(fake.closeCalls, 1, "every session's CLI should be closed exactly once")
         }
     }
 
@@ -108,7 +102,7 @@ final class SessionManagerShutdownTests: XCTestCase {
         let total = fakes.count
 
         for fake in fakes {
-            fake.closeAsyncHook = {
+            fake.closeHook = {
                 await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
                     Task { @MainActor in
                         entered += 1

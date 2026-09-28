@@ -2,7 +2,7 @@ import AgentSDK
 import Foundation
 
 /// Pure, value-type folder for the SDK's partial-message stream
-/// (`Session.onStreamEvent`, gated by `includePartialMessages`) plus the CLI's
+/// (`Message.streamEvent`, gated by `includePartialMessages`) plus the CLI's
 /// `system.thinking_tokens` progress messages. One instance lives on
 /// `SessionRuntime` per turn. It folds events into:
 ///
@@ -121,24 +121,25 @@ struct StreamingTurnAssembler {
 
     /// Fold one typed stream event into the turn state.
     @discardableResult
-    mutating func consume(_ event: Message2StreamEvent) -> Outcome {
-        guard let body = event.event else { return Outcome() }
-        switch body {
-        case .messageStart(let s):
-            return handleMessageStart(s)
-        case .contentBlockDelta(let d):
-            return handleContentBlockDelta(d)
-        case .messageDelta(let d):
-            return handleMessageDelta(d)
-        case .contentBlockStart, .contentBlockStop, .messageStop, .unknown:
+    mutating func consume(_ event: StreamEvent) -> Outcome {
+        switch event.event {
+        case .messageStart(let id, _, let usage):
+            return handleMessageStart(id: id, usage: usage)
+        case .contentBlockDelta(let index, .text(let chunk)):
+            return handleTextDelta(index: index, chunk: chunk)
+        case .messageDelta(_, let usage):
+            return handleMessageDelta(usage: usage)
+        default:
+            // `thinking` / `input_json` deltas are ignored: thinking is
+            // redacted on the wire and accounted via `system.thinking_tokens`;
+            // tool args render through the finalized message.
             return Outcome()
         }
     }
 
     // MARK: - Event handlers
 
-    private mutating func handleMessageStart(_ s: StreamMessageStart) -> Outcome {
-        guard let msg = s.message, let id = msg["id"] as? String else { return Outcome() }
+    private mutating func handleMessageStart(id: String, usage: Usage?) -> Outcome {
         var out = Outcome()
         if id != currentMessageId {
             currentMessageId = id
@@ -148,27 +149,21 @@ struct StreamingTurnAssembler {
         }
         // `message_start` carries the real `input_tokens` plus a placeholder
         // `output_tokens` (observed at 5); both raise the wire floor.
-        if let usage = msg["usage"] as? [String: Any], applyUsage(usage, to: id) {
+        if let usage, applyUsage(usage, to: id) {
             out.usageChanged = true
         }
         return out
     }
 
-    private mutating func handleContentBlockDelta(_ d: StreamContentBlockDelta) -> Outcome {
-        guard let idx = d.index, let delta = d.delta else { return Outcome() }
-        // Only `text_delta` feeds the rendered text + the output estimate.
-        // `thinking_delta` / `input_json_delta` are ignored here — thinking is
-        // redacted on the wire and accounted via `system.thinking_tokens`; tool
-        // args render through the finalized `onMessage` path.
-        guard delta["type"] as? String == "text_delta",
-            let chunk = delta["text"] as? String, !chunk.isEmpty
-        else { return Outcome() }
-        textByBlockIndex[idx, default: ""] += chunk
+    /// Only text deltas feed the rendered text + the output estimate.
+    private mutating func handleTextDelta(index: Int, chunk: String) -> Outcome {
+        guard !chunk.isEmpty else { return Outcome() }
+        textByBlockIndex[index, default: ""] += chunk
         return Outcome(textChanged: true, usageChanged: growTextEstimate(by: chunk))
     }
 
-    private mutating func handleMessageDelta(_ d: StreamMessageDelta) -> Outcome {
-        guard let id = currentMessageId, let usage = d.usage else { return Outcome() }
+    private mutating func handleMessageDelta(usage: Usage?) -> Outcome {
+        guard let id = currentMessageId, let usage else { return Outcome() }
         // `message_delta` is the authoritative per-message output total.
         return Outcome(usageChanged: applyUsage(usage, to: id))
     }
@@ -209,13 +204,10 @@ struct StreamingTurnAssembler {
         return displayedOutput(id) != before
     }
 
-    /// Merge a wire usage dict into the per-message floor. Input excludes cache
+    /// Merge wire usage into the per-message floor. Input excludes cache
     /// (`input_tokens` only, never the `cache_*` fields).
-    private mutating func applyUsage(_ usage: [String: Any], to id: String) -> Bool {
-        raiseFloor(
-            messageId: id,
-            input: (usage["input_tokens"] as? NSNumber)?.intValue,
-            output: (usage["output_tokens"] as? NSNumber)?.intValue)
+    private mutating func applyUsage(_ usage: Usage, to id: String) -> Bool {
+        raiseFloor(messageId: id, input: usage.inputTokens, output: usage.outputTokens)
     }
 
     /// Raise a message's wire floor (input + output) as a high-water mark;

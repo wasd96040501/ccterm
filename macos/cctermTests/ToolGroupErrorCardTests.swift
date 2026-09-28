@@ -25,18 +25,16 @@ final class ToolGroupErrorCardTests: XCTestCase {
 
     // MARK: - Helpers
 
-    /// Build a `ToolResultPayload` the same way `SessionRuntime.receive`
-    /// does — resolve a user `tool_result` message and project its block
-    /// + typed result. Mirrors `action(for:)`'s `.merge` construction.
+    /// The user `tool_result` message `SingleEntry.toolResults` holds for a
+    /// call — what `SessionRuntime.receive`'s `.merge` stores.
     private func toolResult(
         toolUseId: String, text: String, isError: Bool
-    ) -> ToolResultPayload {
-        let msg = Message2Fixtures.userToolResult(
-            toolUseId: toolUseId, text: text, isError: isError)
-        guard case .user(let u) = msg, let item = u.toolResultBlock else {
-            fatalError("fixture must carry a tool_result block")
-        }
-        return ToolResultPayload(item: item, typed: u.toolUseResult)
+    ) -> UserMessage {
+        guard
+            case .user(let u) = MessageFixtures.userToolResult(
+                toolUseId: toolUseId, text: text, isError: isError)
+        else { fatalError("fixture must be a user message") }
+        return u
     }
 
     /// A single-tool `read` entry paired with its (possibly failed)
@@ -48,7 +46,7 @@ final class ToolGroupErrorCardTests: XCTestCase {
             SingleEntry(
                 id: UUID(),
                 payload: .remote(
-                    Message2Fixtures.assistantRead(
+                    MessageFixtures.assistantRead(
                         toolUseId: "tu_1", filePath: "/tmp/foo.swift")),
                 delivery: nil,
                 toolResults: [

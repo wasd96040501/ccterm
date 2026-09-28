@@ -16,44 +16,44 @@ final class StreamingTurnAssemblerTests: XCTestCase {
 
     func testTextDeltasAccumulateInOrder() {
         var a = StreamingTurnAssembler()
-        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1"))
-        a.consume(Message2Fixtures.streamTextDelta(index: 0, text: "Hello"))
-        a.consume(Message2Fixtures.streamTextDelta(index: 0, text: ", world"))
+        a.consume(MessageFixtures.streamMessageStart(messageId: "m1"))
+        a.consume(MessageFixtures.streamTextDelta(index: 0, text: "Hello"))
+        a.consume(MessageFixtures.streamTextDelta(index: 0, text: ", world"))
         XCTAssertEqual(a.currentText, "Hello, world")
     }
 
     func testTextChangedFlagOnlyOnTextDelta() {
         var a = StreamingTurnAssembler()
-        XCTAssertTrue(a.consume(Message2Fixtures.streamMessageStart(messageId: "m1")).startedMessage)
-        let textOutcome = a.consume(Message2Fixtures.streamTextDelta(index: 0, text: "hi"))
+        XCTAssertTrue(a.consume(MessageFixtures.streamMessageStart(messageId: "m1")).startedMessage)
+        let textOutcome = a.consume(MessageFixtures.streamTextDelta(index: 0, text: "hi"))
         XCTAssertTrue(textOutcome.textChanged)
-        let thinkingOutcome = a.consume(Message2Fixtures.streamThinkingDelta(index: 1, thinking: "pondering"))
+        let thinkingOutcome = a.consume(MessageFixtures.streamThinkingDelta(index: 1, thinking: "pondering"))
         XCTAssertFalse(thinkingOutcome.textChanged, "thinking deltas must not change visible text")
         XCTAssertEqual(a.currentText, "hi", "thinking text must not leak into the rendered text")
     }
 
     func testThinkingAndToolDeltasAreIgnoredForText() {
         var a = StreamingTurnAssembler()
-        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1"))
-        a.consume(Message2Fixtures.streamThinkingDelta(index: 0, thinking: "let me think"))
-        a.consume(Message2Fixtures.streamInputJSONDelta(index: 1, partialJSON: "{\"path\":"))
+        a.consume(MessageFixtures.streamMessageStart(messageId: "m1"))
+        a.consume(MessageFixtures.streamThinkingDelta(index: 0, thinking: "let me think"))
+        a.consume(MessageFixtures.streamInputJSONDelta(index: 1, partialJSON: "{\"path\":"))
         XCTAssertEqual(a.currentText, "", "only text_delta should accumulate")
     }
 
     func testInterleavedTextBlocksJoinWithBlankLine() {
         var a = StreamingTurnAssembler()
-        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1"))
-        a.consume(Message2Fixtures.streamTextDelta(index: 0, text: "before tool"))
+        a.consume(MessageFixtures.streamMessageStart(messageId: "m1"))
+        a.consume(MessageFixtures.streamTextDelta(index: 0, text: "before tool"))
         // index 1 would be a tool_use (ignored); a later text block lands at 2.
-        a.consume(Message2Fixtures.streamTextDelta(index: 2, text: "after tool"))
+        a.consume(MessageFixtures.streamTextDelta(index: 2, text: "after tool"))
         XCTAssertEqual(a.currentText, "before tool\n\nafter tool")
     }
 
     func testNewMessageResetsTextButKeepsTurnUsage() {
         var a = StreamingTurnAssembler()
-        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 10, outputTokens: 0))
-        a.consume(Message2Fixtures.streamTextDelta(index: 0, text: "first message"))
-        let start2 = a.consume(Message2Fixtures.streamMessageStart(messageId: "m2", inputTokens: 5, outputTokens: 0))
+        a.consume(MessageFixtures.streamMessageStart(messageId: "m1", inputTokens: 10, outputTokens: 0))
+        a.consume(MessageFixtures.streamTextDelta(index: 0, text: "first message"))
+        let start2 = a.consume(MessageFixtures.streamMessageStart(messageId: "m2", inputTokens: 5, outputTokens: 0))
         XCTAssertTrue(start2.startedMessage)
         XCTAssertEqual(a.currentText, "", "text resets when a new message starts")
         XCTAssertEqual(a.currentMessageId, "m2")
@@ -66,26 +66,26 @@ final class StreamingTurnAssemblerTests: XCTestCase {
         var a = StreamingTurnAssembler()
         // The fixture only seeds input/output; in production the wire also
         // carries cache_creation/cache_read which the assembler never reads.
-        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 42, outputTokens: 3))
+        a.consume(MessageFixtures.streamMessageStart(messageId: "m1", inputTokens: 42, outputTokens: 3))
         XCTAssertEqual(a.turnUsage.inputTokens, 42)
         XCTAssertEqual(a.turnUsage.outputTokens, 3)
     }
 
     func testMessageDeltaUpdatesOutputCumulatively() {
         var a = StreamingTurnAssembler()
-        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 10, outputTokens: 1))
-        a.consume(Message2Fixtures.streamMessageDelta(outputTokens: 20))
-        a.consume(Message2Fixtures.streamMessageDelta(outputTokens: 55))
+        a.consume(MessageFixtures.streamMessageStart(messageId: "m1", inputTokens: 10, outputTokens: 1))
+        a.consume(MessageFixtures.streamMessageDelta(outputTokens: 20))
+        a.consume(MessageFixtures.streamMessageDelta(outputTokens: 55))
         XCTAssertEqual(a.turnUsage.inputTokens, 10, "input survives message_delta (which omits it)")
         XCTAssertEqual(a.turnUsage.outputTokens, 55, "output is the latest cumulative value, not a sum")
     }
 
     func testTurnUsageSumsAcrossMessages() {
         var a = StreamingTurnAssembler()
-        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 10, outputTokens: 0))
-        a.consume(Message2Fixtures.streamMessageDelta(outputTokens: 30))
-        a.consume(Message2Fixtures.streamMessageStart(messageId: "m2", inputTokens: 7, outputTokens: 0))
-        a.consume(Message2Fixtures.streamMessageDelta(outputTokens: 12))
+        a.consume(MessageFixtures.streamMessageStart(messageId: "m1", inputTokens: 10, outputTokens: 0))
+        a.consume(MessageFixtures.streamMessageDelta(outputTokens: 30))
+        a.consume(MessageFixtures.streamMessageStart(messageId: "m2", inputTokens: 7, outputTokens: 0))
+        a.consume(MessageFixtures.streamMessageDelta(outputTokens: 12))
         XCTAssertEqual(a.turnUsage.inputTokens, 17)
         XCTAssertEqual(a.turnUsage.outputTokens, 42)
     }
@@ -97,11 +97,11 @@ final class StreamingTurnAssemblerTests: XCTestCase {
     /// `message_start` placeholder.
     func testTextDeltasGrowOutputEstimate() {
         var a = StreamingTurnAssembler()
-        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 10, outputTokens: 5))
+        a.consume(MessageFixtures.streamMessageStart(messageId: "m1", inputTokens: 10, outputTokens: 5))
         XCTAssertEqual(a.turnUsage.outputTokens, 5, "only the wire placeholder so far")
         // 200 ASCII chars * 0.3/char = 60 estimated tokens.
         let out = a.consume(
-            Message2Fixtures.streamTextDelta(index: 0, text: String(repeating: "word ", count: 40)))
+            MessageFixtures.streamTextDelta(index: 0, text: String(repeating: "word ", count: 40)))
         XCTAssertTrue(out.textChanged)
         XCTAssertTrue(out.usageChanged, "a growing estimate requests a flush")
         XCTAssertEqual(a.turnUsage.outputTokens, 60, "output climbs with the text estimate")
@@ -111,8 +111,8 @@ final class StreamingTurnAssemblerTests: XCTestCase {
     /// CJK text counts denser (1.0/char) than Latin (0.3/char).
     func testCJKTextCountsDenser() {
         var a = StreamingTurnAssembler()
-        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 1, outputTokens: 1))
-        a.consume(Message2Fixtures.streamTextDelta(index: 0, text: String(repeating: "答", count: 50)))
+        a.consume(MessageFixtures.streamMessageStart(messageId: "m1", inputTokens: 1, outputTokens: 1))
+        a.consume(MessageFixtures.streamTextDelta(index: 0, text: String(repeating: "答", count: 50)))
         XCTAssertEqual(a.turnUsage.outputTokens, 50, "50 CJK chars * 1.0 = 50 tokens")
     }
 
@@ -120,9 +120,9 @@ final class StreamingTurnAssemblerTests: XCTestCase {
     /// via `system.thinking_tokens`, not the redacted stream delta).
     func testThinkingDeltaStreamEventIsNoop() {
         var a = StreamingTurnAssembler()
-        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 5, outputTokens: 1))
+        a.consume(MessageFixtures.streamMessageStart(messageId: "m1", inputTokens: 5, outputTokens: 1))
         let out = a.consume(
-            Message2Fixtures.streamThinkingDelta(
+            MessageFixtures.streamThinkingDelta(
                 index: 0, thinking: String(repeating: "想", count: 50)))
         XCTAssertTrue(out.isNoop, "raw thinking_delta changes nothing")
         XCTAssertEqual(a.turnUsage.outputTokens, 1, "raw thinking_delta never moves usage")
@@ -133,9 +133,9 @@ final class StreamingTurnAssemblerTests: XCTestCase {
     /// output (output = text + thinking, until the authoritative total wins).
     func testTextAndThinkingEstimatesAreAdditive() {
         var a = StreamingTurnAssembler()
-        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 2465, outputTokens: 5))
+        a.consume(MessageFixtures.streamMessageStart(messageId: "m1", inputTokens: 2465, outputTokens: 5))
         a.recordThinkingEstimate(cumulativeEstimate: 900)
-        a.consume(Message2Fixtures.streamTextDelta(index: 0, text: String(repeating: "x", count: 400)))  // 120 tokens
+        a.consume(MessageFixtures.streamTextDelta(index: 0, text: String(repeating: "x", count: 400)))  // 120 tokens
         XCTAssertEqual(a.turnUsage.outputTokens, 1020, "max(5, 120 text + 900 thinking)")
     }
 
@@ -143,10 +143,10 @@ final class StreamingTurnAssemblerTests: XCTestCase {
     /// — it never snaps the counter down (claude.app parity).
     func testAuthoritativeOutputOvertakesEstimate() {
         var a = StreamingTurnAssembler()
-        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 10, outputTokens: 5))
-        a.consume(Message2Fixtures.streamTextDelta(index: 0, text: String(repeating: "x", count: 400)))  // 120
+        a.consume(MessageFixtures.streamMessageStart(messageId: "m1", inputTokens: 10, outputTokens: 5))
+        a.consume(MessageFixtures.streamTextDelta(index: 0, text: String(repeating: "x", count: 400)))  // 120
         XCTAssertEqual(a.turnUsage.outputTokens, 120, "estimate climbs")
-        a.consume(Message2Fixtures.streamMessageDelta(outputTokens: 1556))
+        a.consume(MessageFixtures.streamMessageDelta(outputTokens: 1556))
         XCTAssertEqual(a.turnUsage.outputTokens, 1556, "authoritative total overtakes the estimate")
     }
 
@@ -156,8 +156,8 @@ final class StreamingTurnAssemblerTests: XCTestCase {
     /// placeholder can't drag the authoritative message_delta figure back down.
     func testFinalEnvelopePlaceholderDoesNotRegressOutput() {
         var a = StreamingTurnAssembler()
-        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 2465, outputTokens: 5))
-        a.consume(Message2Fixtures.streamMessageDelta(outputTokens: 1556))
+        a.consume(MessageFixtures.streamMessageStart(messageId: "m1", inputTokens: 2465, outputTokens: 5))
+        a.consume(MessageFixtures.streamMessageDelta(outputTokens: 1556))
         XCTAssertEqual(a.turnUsage.outputTokens, 1556)
         // The finalized envelope reconciles with the placeholder (5).
         let changed = a.recordUsage(messageId: "m1", input: 2465, output: 5)
@@ -174,7 +174,7 @@ final class StreamingTurnAssemblerTests: XCTestCase {
     /// it (it's larger — it includes thinking + text).
     func testThinkingEstimateFoldsIntoOutputThenAuthoritativeWins() {
         var a = StreamingTurnAssembler()
-        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 2465, outputTokens: 5))
+        a.consume(MessageFixtures.streamMessageStart(messageId: "m1", inputTokens: 2465, outputTokens: 5))
         XCTAssertEqual(a.turnUsage.outputTokens, 5, "placeholder only, before any thinking")
 
         // Cumulative thinking estimate climbs (and never regresses).
@@ -188,7 +188,7 @@ final class StreamingTurnAssemblerTests: XCTestCase {
         XCTAssertEqual(a.turnUsage.outputTokens, 900)
 
         // Authoritative total (includes thinking) supersedes the estimate.
-        a.consume(Message2Fixtures.streamMessageDelta(outputTokens: 1752))
+        a.consume(MessageFixtures.streamMessageDelta(outputTokens: 1752))
         XCTAssertEqual(a.turnUsage.outputTokens, 1752)
         XCTAssertEqual(a.turnUsage.inputTokens, 2465)
     }
@@ -203,8 +203,8 @@ final class StreamingTurnAssemblerTests: XCTestCase {
 
     func testResetClearsEverything() {
         var a = StreamingTurnAssembler()
-        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 10, outputTokens: 5))
-        a.consume(Message2Fixtures.streamTextDelta(index: 0, text: "stuff"))
+        a.consume(MessageFixtures.streamMessageStart(messageId: "m1", inputTokens: 10, outputTokens: 5))
+        a.consume(MessageFixtures.streamTextDelta(index: 0, text: "stuff"))
         a.reset()
         XCTAssertEqual(a.currentText, "")
         XCTAssertNil(a.currentMessageId)

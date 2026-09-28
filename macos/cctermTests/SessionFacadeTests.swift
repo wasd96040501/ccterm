@@ -194,7 +194,7 @@ final class SessionFacadeTests: XCTestCase {
         toolUseId: String,
         description: String = "",
         taskType: String = "local_bash"
-    ) -> Message2 {
+    ) -> Message {
         resolve([
             "type": "system",
             "subtype": "task_started",
@@ -207,7 +207,7 @@ final class SessionFacadeTests: XCTestCase {
         ])
     }
 
-    private func resolve(_ dict: [String: Any]) -> Message2 {
-        try! Message2Resolver().resolve(dict)
+    private func resolve(_ dict: [String: Any]) -> Message {
+        MessageFixtures.message(dict)
     }
 }

@@ -38,31 +38,25 @@ final class SessionRuntimeIsRunningTests: XCTestCase {
     /// Drive bootstrap to attached + `.idle`.
     private func bootstrap(_ runtime: SessionRuntime, _ fake: FakeCLIClient) async {
         runtime.activate()
-        for _ in 0..<16 {
-            await Task.yield()
-            if !fake.initializeCalls.isEmpty { break }
-        }
-        XCTAssertFalse(fake.initializeCalls.isEmpty, "bootstrap should call initialize")
-        fake.completeInitialize(with: nil)
-        for _ in 0..<16 {
-            await Task.yield()
-            if runtime.status == .idle { break }
-        }
+        await yieldUntil { fake.isAwaitingStart }
+        XCTAssertTrue(fake.isAwaitingStart, "bootstrap should have started the client")
+        fake.completeStart()
+        await yieldUntil { runtime.status == .idle }
         XCTAssertEqual(runtime.status, .idle)
     }
 
-    /// Push a Message2 into the runtime and wait until receive() has
-    /// actually applied it. `attachCallbacks` wraps `onMessage` in
-    /// `Task { @MainActor in receive(...) }`, so direct asserts after
-    /// `pushMessage` race the receive.
+    /// Push a Message into the runtime and wait until receive() has
+    /// actually applied it. The runtime reads `events` in a
+    /// `Task { @MainActor … }`, so direct asserts after `push` race the
+    /// receive.
     private func push(
-        _ message: Message2,
+        _ message: Message,
         into fake: FakeCLIClient
     ) async {
-        fake.pushMessage(message)
-        // A single yield is enough to drain the @MainActor task the
-        // SDK shim schedules; loop a few times in case the receive
-        // path itself schedules further work.
+        fake.push(message)
+        // A single yield is enough to let the listening task consume the
+        // event; loop a few times in case the receive path itself
+        // schedules further work.
         for _ in 0..<4 { await Task.yield() }
     }
 
@@ -76,10 +70,10 @@ final class SessionRuntimeIsRunningTests: XCTestCase {
         runtime.send(text: "hi")
         XCTAssertTrue(runtime.isRunning, "send must flip isRunning synchronously")
 
-        await push(Message2Fixtures.assistantText("response"), into: fake)
+        await push(MessageFixtures.assistantText("response"), into: fake)
         XCTAssertTrue(runtime.isRunning, "assistant keeps it on")
 
-        await push(Message2Fixtures.result(), into: fake)
+        await push(MessageFixtures.result(), into: fake)
         XCTAssertFalse(runtime.isRunning, ".result must flip it off")
     }
 
@@ -96,15 +90,15 @@ final class SessionRuntimeIsRunningTests: XCTestCase {
         await bootstrap(runtime, fake)
 
         runtime.send(text: "kick off background")
-        await push(Message2Fixtures.assistantText("kicking off…"), into: fake)
-        await push(Message2Fixtures.result(), into: fake)
+        await push(MessageFixtures.assistantText("kicking off…"), into: fake)
+        await push(MessageFixtures.result(), into: fake)
         XCTAssertFalse(runtime.isRunning, "turn 1 closed")
 
         // CLI spontaneously starts a follow-up turn.
-        await push(Message2Fixtures.assistantText("background finished"), into: fake)
+        await push(MessageFixtures.assistantText("background finished"), into: fake)
         XCTAssertTrue(runtime.isRunning, "late assistant must restart spinner")
 
-        await push(Message2Fixtures.result(), into: fake)
+        await push(MessageFixtures.result(), into: fake)
         XCTAssertFalse(runtime.isRunning, "second .result closes the follow-up turn")
     }
 
@@ -129,7 +123,7 @@ final class SessionRuntimeIsRunningTests: XCTestCase {
 
         // Accrue some usage on turn 1.
         await push(
-            Message2Fixtures.assistantWithUsage(
+            MessageFixtures.assistantWithUsage(
                 messageId: "m1", text: "working", inputTokens: 120, outputTokens: 400),
             into: fake)
         let usageDuringTurn1 = runtime.turnUsage
@@ -146,7 +140,7 @@ final class SessionRuntimeIsRunningTests: XCTestCase {
             "a queued send must not restart the running turn's clock")
 
         // Turn 1 closes — the final total stays visible through turn end.
-        await push(Message2Fixtures.result(), into: fake)
+        await push(MessageFixtures.result(), into: fake)
         XCTAssertFalse(runtime.isRunning)
         XCTAssertEqual(
             runtime.turnUsage, usageDuringTurn1,
@@ -154,7 +148,7 @@ final class SessionRuntimeIsRunningTests: XCTestCase {
 
         // The queued message's turn begins — the CLI re-inits. This is where
         // the per-turn state finally resets.
-        await push(Message2Fixtures.systemInit(), into: fake)
+        await push(MessageFixtures.systemInit(), into: fake)
         XCTAssertTrue(runtime.isRunning, "follow-up init relights the spinner")
         XCTAssertTrue(
             runtime.turnUsage.isEmpty,
@@ -176,10 +170,10 @@ final class SessionRuntimeIsRunningTests: XCTestCase {
         runtime.send(text: "msg 1")
         runtime.send(text: "msg 2")
         XCTAssertTrue(runtime.isRunning)
-        XCTAssertEqual(fake.sendCalls.count, 2)
+        XCTAssertEqual(fake.sent.count, 2)
 
-        await push(Message2Fixtures.assistantText("merged reply"), into: fake)
-        await push(Message2Fixtures.result(), into: fake)
+        await push(MessageFixtures.assistantText("merged reply"), into: fake)
+        await push(MessageFixtures.result(), into: fake)
         XCTAssertFalse(
             runtime.isRunning,
             "one .result must end the turn even when multiple sends were in flight")
@@ -196,13 +190,13 @@ final class SessionRuntimeIsRunningTests: XCTestCase {
 
         runtime.send(text: "x")
         // Out-of-order .result.
-        await push(Message2Fixtures.result(), into: fake)
+        await push(MessageFixtures.result(), into: fake)
         XCTAssertFalse(runtime.isRunning)
 
-        await push(Message2Fixtures.assistantText("real reply"), into: fake)
+        await push(MessageFixtures.assistantText("real reply"), into: fake)
         XCTAssertTrue(runtime.isRunning, "later assistant rescues isRunning")
 
-        await push(Message2Fixtures.result(), into: fake)
+        await push(MessageFixtures.result(), into: fake)
         XCTAssertFalse(runtime.isRunning)
     }
 
@@ -218,13 +212,13 @@ final class SessionRuntimeIsRunningTests: XCTestCase {
 
         runtime.send(text: "early")
         XCTAssertTrue(runtime.isRunning, "send must flip even pre-bootstrap")
-        XCTAssertTrue(fake.sendCalls.isEmpty, "no CLI write until bootstrap idle")
+        XCTAssertTrue(fake.sent.isEmpty, "no CLI write until bootstrap idle")
 
         await bootstrap(runtime, fake)
-        XCTAssertEqual(fake.sendCalls.count, 1, "queued entry flushed at bootstrap idle")
+        XCTAssertEqual(fake.sent.count, 1, "queued entry flushed at bootstrap idle")
         XCTAssertTrue(runtime.isRunning)
 
-        await push(Message2Fixtures.result(), into: fake)
+        await push(MessageFixtures.result(), into: fake)
         XCTAssertFalse(runtime.isRunning)
     }
 
@@ -238,7 +232,8 @@ final class SessionRuntimeIsRunningTests: XCTestCase {
 
         runtime.interrupt()
         XCTAssertFalse(runtime.isRunning)
-        XCTAssertEqual(fake.interruptCalls.count, 1)
+        await yieldUntil { fake.interruptCalls == 1 }
+        XCTAssertEqual(fake.interruptCalls, 1)
     }
 
     func testProcessExitClearsIsRunning() async {
@@ -247,11 +242,8 @@ final class SessionRuntimeIsRunningTests: XCTestCase {
         runtime.send(text: "x")
         XCTAssertTrue(runtime.isRunning)
 
-        fake.simulateProcessExit(code: 1)
-        for _ in 0..<16 {
-            await Task.yield()
-            if !runtime.isRunning { break }
-        }
+        fake.simulateExit(code: 1)
+        await yieldUntil { !runtime.isRunning }
         XCTAssertFalse(runtime.isRunning)
     }
 
@@ -264,10 +256,7 @@ final class SessionRuntimeIsRunningTests: XCTestCase {
         XCTAssertTrue(runtime.isRunning, "send flips first; failure unwinds")
 
         // Bootstrap was kicked off by `send`'s `ensureStarted()`.
-        for _ in 0..<32 {
-            await Task.yield()
-            if runtime.status == .stopped { break }
-        }
+        await yieldUntil { runtime.status == .stopped }
         XCTAssertEqual(runtime.status, .stopped)
         XCTAssertFalse(runtime.isRunning, "failLaunch must clear isRunning")
     }
@@ -282,12 +271,12 @@ final class SessionRuntimeIsRunningTests: XCTestCase {
         await bootstrap(runtime, fake)
 
         runtime.send(text: "go")
-        await push(Message2Fixtures.assistantText("a"), into: fake)
-        await push(Message2Fixtures.result(), into: fake)
+        await push(MessageFixtures.assistantText("a"), into: fake)
+        await push(MessageFixtures.result(), into: fake)
         XCTAssertFalse(runtime.isRunning, "turn 1 closed")
 
         // CLI re-inits at the start of a spontaneous follow-up turn.
-        await push(Message2Fixtures.systemInit(), into: fake)
+        await push(MessageFixtures.systemInit(), into: fake)
         XCTAssertTrue(
             runtime.isRunning,
             "turn-boundary system.init must relight the spinner ahead of assistant")
@@ -303,15 +292,12 @@ final class SessionRuntimeIsRunningTests: XCTestCase {
         // Drive bootstrap up to the initialize-response continuation,
         // *without* sending a user message. status is .starting.
         runtime.activate()
-        for _ in 0..<16 {
-            await Task.yield()
-            if !fake.initializeCalls.isEmpty { break }
-        }
+        await yieldUntil { fake.isAwaitingStart }
         XCTAssertEqual(runtime.status, .starting)
         XCTAssertFalse(runtime.isRunning)
 
         // Simulate the CLI pushing the bootstrap system.init.
-        await push(Message2Fixtures.systemInit(), into: fake)
+        await push(MessageFixtures.systemInit(), into: fake)
 
         XCTAssertFalse(
             runtime.isRunning,
@@ -327,11 +313,11 @@ final class SessionRuntimeIsRunningTests: XCTestCase {
         let (runtime, _) = makeRuntime()
         runtime.isRunning = false
 
-        runtime.receive(Message2Fixtures.assistantText("ancient"), mode: .replay)
+        runtime.receive(MessageFixtures.assistantText("ancient"), mode: .replay)
         XCTAssertFalse(runtime.isRunning, "replay assistant must not flip on")
 
         runtime.isRunning = true
-        runtime.receive(Message2Fixtures.result(), mode: .replay)
+        runtime.receive(MessageFixtures.result(), mode: .replay)
         XCTAssertTrue(runtime.isRunning, "replay result must not flip off")
     }
 }

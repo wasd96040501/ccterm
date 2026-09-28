@@ -82,12 +82,12 @@ final class PermissionMcpCardBodyTests: XCTestCase {
     // MARK: - Helpers
 
     private func makeBody(
-        toolName: String, input: [String: Any]
+        toolName: String, input: JSONValue
     )
         -> PermissionMcpCardBody
     {
-        let req = PermissionRequest.makePreview(
-            requestId: "mcp-\(UUID().uuidString)",
+        let req = PermissionRequest.preview(
+            id: "mcp-\(UUID().uuidString)",
             toolName: toolName,
             input: input)
         return PermissionMcpCardBody(request: req)

@@ -7,11 +7,10 @@ import Cocoa
 /// `initialize` response) is the authoritative source — callers pass it
 /// via `knownCommands` and `complete(...)` takes a fast synchronous
 /// path. In compose mode there is no running CLI yet, so the store
-/// spins up a short-lived `AgentSDK.Session`, drives a single
-/// `initialize(promptSuggestions: true)`, caches the response, and
-/// stops the subprocess. Cache invalidation is FSEvents-driven on the
-/// usual `.claude/skills` / `.claude/commands` directories under both
-/// `$HOME` and the working path.
+/// spins up a short-lived `AgentSDK.Session`, caches the commands its
+/// initialize handshake reports, and stops the subprocess. Cache
+/// invalidation is FSEvents-driven on the usual `.claude/skills` /
+/// `.claude/commands` directories under both `$HOME` and the working path.
 final class SlashCommandStore {
 
     // MARK: - Types
@@ -116,44 +115,27 @@ final class SlashCommandStore {
         launchTempCLI(for: key, pluginDirs: pluginDirs)
     }
 
-    /// Launch a one-shot CLI to fetch slash commands via `initialize`.
+    /// Launch a one-shot CLI and harvest the slash commands from its
+    /// initialize handshake.
     private func launchTempCLI(for key: CacheKey, pluginDirs: [String]) {
-        let config = SessionConfiguration(
-            workingDirectory: URL(fileURLWithPath: key.path),
-            plugins: pluginDirs
-        )
-        let session = AgentSDK.Session(configuration: config)
-
-        session.onProcessExit = { [weak self] exitCode in
-            guard let self else { return }
-            self.queue.async {
-                if self.pendingCallbacks[key] != nil {
-                    appLog(
-                        .error, "SlashCommandStore",
-                        "Temp CLI exited (\(exitCode)) before initialize response for \(key.path)")
-                    self.didFinishLoad(key: key, commands: [], pluginDirs: pluginDirs)
-                }
-            }
-        }
-
-        Task {
+        let session = AgentSDK.Session(
+            configuration: SessionConfiguration(
+                workingDirectory: URL(fileURLWithPath: key.path),
+                plugins: pluginDirs))
+        Task { [weak self] in
+            let commands: [SlashCommand]
             do {
-                try await session.start()
-                session.initialize(promptSuggestions: true) { [weak self] response in
-                    guard let self else { return }
-                    let commands: [SlashCommand] =
-                        response?.commands?
-                        .map { SlashCommand(name: $0.name, description: $0.description) } ?? []
-                    session.stop()
-                    self.queue.async {
-                        self.didFinishLoad(key: key, commands: commands, pluginDirs: pluginDirs)
-                    }
+                commands = try await session.start().commands.map {
+                    SlashCommand(name: $0.name, description: $0.description)
                 }
             } catch {
-                appLog(.error, "SlashCommandStore", "Failed to start temp CLI: \(error)")
-                self.queue.async { [weak self] in
-                    self?.didFinishLoad(key: key, commands: [], pluginDirs: pluginDirs)
-                }
+                appLog(.error, "SlashCommandStore", "Temp CLI failed for \(key.path): \(error)")
+                commands = []
+            }
+            session.terminate()
+            guard let self else { return }
+            self.queue.async {
+                self.didFinishLoad(key: key, commands: commands, pluginDirs: pluginDirs)
             }
         }
     }

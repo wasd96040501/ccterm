@@ -78,38 +78,30 @@ final class InputBarSnapshotTests: XCTestCase {
         return ccterm.Session(runtime: runtime)
     }
 
-    /// Hand-rolled `[ModelInfo]` mirroring what a current CLI's
-    /// `InitializeResponse.models` actually returns (captured via
-    /// `scripts/probe_claude_models.py`): three entries — `default` /
-    /// `sonnet` / `haiku` — with per-model `supportsEffort` and
-    /// `supportedEffortLevels`. Only `default` declares
-    /// `supportsAutoMode`, which the permission picker uses to gate
-    /// the `auto` row.
-    private static let mockModels: [ModelInfo] = {
-        let raws: [[String: Any]] = [
-            [
-                "value": "default",
-                "displayName": "Default (recommended)",
-                "description": "Opus 4.7 with 1M context · Most capable for complex work",
-                "supportsEffort": true,
-                "supportedEffortLevels": ["low", "medium", "high", "xhigh", "max"],
-                "supportsAutoMode": true,
-            ],
-            [
-                "value": "sonnet",
-                "displayName": "Sonnet",
-                "description": "Sonnet 4.6 · Best for everyday tasks",
-                "supportsEffort": true,
-                "supportedEffortLevels": ["low", "medium", "high", "max"],
-            ],
-            [
-                "value": "haiku",
-                "displayName": "Haiku",
-                "description": "Haiku 4.5 · Fastest for quick answers",
-            ],
-        ]
-        return raws.compactMap { try? ModelInfo(json: $0) }
-    }()
+    /// Hand-rolled models mirroring what a current CLI's initialize
+    /// response returns: three entries — `default` / `sonnet` / `haiku` —
+    /// with per-model `supportsEffort` and `supportedEffortLevels`. Only
+    /// `default` declares `supportsAutoMode`, which the permission picker
+    /// uses to gate the `auto` row.
+    private static let mockModels: [ModelStore.Model] = [
+        ModelStore.Model(
+            value: "default",
+            displayName: "Default (recommended)",
+            description: "Opus 4.7 with 1M context · Most capable for complex work",
+            supportsEffort: true,
+            supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"],
+            supportsAutoMode: true),
+        ModelStore.Model(
+            value: "sonnet",
+            displayName: "Sonnet",
+            description: "Sonnet 4.6 · Best for everyday tasks",
+            supportsEffort: true,
+            supportedEffortLevels: ["low", "medium", "high", "max"]),
+        ModelStore.Model(
+            value: "haiku",
+            displayName: "Haiku",
+            description: "Haiku 4.5 · Fastest for quick answers"),
+    ]
 }
 
 /// Mirror of `InputBarChrome`'s visible composition without the

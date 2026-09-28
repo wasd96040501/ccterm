@@ -53,7 +53,7 @@ await fulfillment(of: [exp], timeout: 5)   // backfill is async (off-main produc
 // assert on session.controller.blockIds
 ```
 
-Shared fixtures live in `Helpers/` (`FakeReversePageSource`, `Message2Fixtures`, `TempJSONLFile`, `MountedTranscript`, `ViewSnapshot`, …) — look there before writing a new one.
+Shared fixtures live in `Helpers/` (`FakeReversePageSource`, `MessageFixtures`, `TempJSONLFile`, `MountedTranscript`, `ViewSnapshot`, …) — look there before writing a new one.
 
 ## Measurement probes (merge gates)
 

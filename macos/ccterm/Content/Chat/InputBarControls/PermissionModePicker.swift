@@ -11,7 +11,7 @@ import SwiftUI
 /// letting the user pick a mode the model would silently ignore.
 struct PermissionModePicker: View {
     let session: Session
-    let activeModel: ModelInfo?
+    let activeModel: ModelStore.Model?
     @State private var isPresented = false
 
     var body: some View {
@@ -72,7 +72,7 @@ struct PermissionModePicker: View {
     /// All cases minus `.auto` unless the active model declares
     /// `supportsAutoMode == true`. Exposed (`internal`) so tests can pin
     /// the rule without standing up a real session.
-    static func visibleModes(for model: ModelInfo?) -> [PermissionMode] {
+    static func visibleModes(for model: ModelStore.Model?) -> [PermissionMode] {
         let supportsAuto = model?.supportsAutoMode == true
         return PermissionMode.allCases.filter { mode in
             mode != .auto || supportsAuto

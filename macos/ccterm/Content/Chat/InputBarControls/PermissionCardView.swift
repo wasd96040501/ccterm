@@ -42,7 +42,7 @@ struct PermissionCardView: View {
     /// dict (`questions` + `answers` per the AskUserQuestion contract)
     /// and the host turns it into `request.allowOnce(updatedInput:)`.
     /// Default is a no-op so existing call sites compile unchanged.
-    var onAllowWithInput: ([String: Any]?) -> Void = { _ in }
+    var onAllowWithInput: (JSONValue?) -> Void = { _ in }
 
     /// Matches `InputBarView2.cornerRadius` so the card visually
     /// belongs to the same surface family as the pill.
@@ -60,7 +60,7 @@ struct PermissionCardView: View {
             if !bodyOwnsChrome { header }
             body(for: kind)
             if !bodyOwnsChrome,
-                let reason = request.decisionReason?.reason, !reason.isEmpty
+                let reason = request.decisionReason, !reason.isEmpty
             {
                 Label {
                     Text(reason)
@@ -162,14 +162,14 @@ enum PermissionCardCopy {
         return String(localized: "Claude wants to \(verb)")
     }
 
-    /// The most informative single field from `rawInput`, in the
+    /// The most informative single field from `input`, in the
     /// order Anthropic's CLI prefers for its own preview text.
     /// Consumed by `PermissionFallbackCardBody` for kinds without a
     /// dedicated renderer.
     static func parameter(for request: PermissionRequest) -> String? {
         let candidates = ["command", "file_path", "path", "pattern", "url"]
         for key in candidates {
-            if let v = request.rawInput[key] as? String, !v.isEmpty {
+            if let v = request.input[key]?.stringValue, !v.isEmpty {
                 return v
             }
         }
@@ -323,8 +323,8 @@ struct PermissionDecisionButton: View {
 
 #Preview("Bash") {
     PermissionCardView(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-1",
+        request: PermissionRequest.preview(
+            id: "preview-1",
             toolName: "Bash",
             input: [
                 "command": "git push --force origin main",
@@ -341,8 +341,8 @@ struct PermissionDecisionButton: View {
 
 #Preview("Edit · file") {
     PermissionCardView(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-2",
+        request: PermissionRequest.preview(
+            id: "preview-2",
             toolName: "Edit",
             input: [
                 "file_path": "/Users/example/Project/Sources/Greeter.swift",
@@ -366,13 +366,13 @@ struct PermissionDecisionButton: View {
         "    case option\(i): return String(localized: \"option-\(i)\")"
     }.joined(separator: "\n")
     return PermissionCardView(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-long-diff",
+        request: PermissionRequest.preview(
+            id: "preview-long-diff",
             toolName: "Edit",
             input: [
                 "file_path": "/Users/example/Project/Sources/Localized.swift",
-                "old_string": oldText,
-                "new_string": newText,
+                "old_string": .string(oldText),
+                "new_string": .string(newText),
             ]),
         onAllowOnce: {},
         onAllowAlways: {},
@@ -385,8 +385,8 @@ struct PermissionDecisionButton: View {
 
 #Preview("WebFetch") {
     PermissionCardView(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-3",
+        request: PermissionRequest.preview(
+            id: "preview-3",
             toolName: "WebFetch",
             input: [
                 "url": "https://docs.swift.org/swift-book/",
@@ -403,8 +403,8 @@ struct PermissionDecisionButton: View {
 
 #Preview("EnterPlanMode") {
     PermissionCardView(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-4",
+        request: PermissionRequest.preview(
+            id: "preview-4",
             toolName: "EnterPlanMode",
             input: [:]),
         onAllowOnce: {},
@@ -418,8 +418,8 @@ struct PermissionDecisionButton: View {
 
 #Preview("AskUserQuestion") {
     PermissionCardView(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-ask",
+        request: PermissionRequest.preview(
+            id: "preview-ask",
             toolName: "AskUserQuestion",
             input: [
                 "questions": [
@@ -473,8 +473,8 @@ struct PermissionDecisionButton: View {
 
 #Preview("Fallback · unknown tool") {
     PermissionCardView(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-5",
+        request: PermissionRequest.preview(
+            id: "preview-5",
             toolName: "MysteryTool",
             input: [
                 "command": "do-something --important"

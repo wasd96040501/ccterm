@@ -92,13 +92,13 @@ struct ModelEffortPicker: View {
 
     /// Per-session catalog wins; fall through to the app-launch
     /// `ModelStore` snapshot when the session hasn't replied yet.
-    private var visibleModels: [ModelInfo] {
+    private var visibleModels: [ModelStore.Model] {
         let live = session.availableModels
         let base = live.isEmpty ? store.models : live
         return ModelStore.withExtendedModels(base)
     }
 
-    private var selectedModelInfo: ModelInfo? {
+    private var selectedModelInfo: ModelStore.Model? {
         guard let value = session.model else { return nil }
         return visibleModels.first(where: { $0.value == value })
     }
@@ -112,7 +112,7 @@ struct ModelEffortPicker: View {
     /// `default` entry, head of `init.models[]`.
     private func backfillModelIfNeeded() {
         guard session.model == nil, let first = visibleModels.first else { return }
-        let preferred: ModelInfo
+        let preferred: ModelStore.Model
         if session.draft != nil,
             let saved = NewSessionDefaultsStore.shared.model,
             let match = visibleModels.first(where: { $0.value == saved })
@@ -161,7 +161,7 @@ struct ModelEffortPicker: View {
 }
 
 private struct ModelEffortPopoverContent: View {
-    let models: [ModelInfo]
+    let models: [ModelStore.Model]
     let selectedModelValue: String?
     let selectedEffort: Effort?
     let fastModeEnabled: Bool
@@ -240,10 +240,9 @@ private struct ModelEffortPopoverContent: View {
     private var activeEffortLevels: [Effort]? {
         guard let value = selectedModelValue,
             let info = models.first(where: { $0.value == value }),
-            info.supportsEffort == true,
-            let raw = info.supportedEffortLevels
+            info.supportsEffort
         else { return nil }
-        var mapped = raw.compactMap(Effort.init(rawValue:))
+        var mapped = info.supportedEffortLevels.compactMap(Effort.init(rawValue:))
         if mapped.contains(.xhigh), !mapped.contains(.ultracode) {
             mapped.append(.ultracode)
         }

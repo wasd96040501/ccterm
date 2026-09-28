@@ -34,7 +34,7 @@ enum PermissionCardKind: Equatable {
     static func kind(for request: PermissionRequest) -> PermissionCardKind {
         switch request.toolName {
         case "Bash":
-            if let command = request.rawInput["command"] as? String,
+            if let command = request.input["command"]?.stringValue,
                 SedEditParser.parse(command) != nil
             {
                 return .sedEdit

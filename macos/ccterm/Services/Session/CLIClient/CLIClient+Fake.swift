@@ -5,210 +5,195 @@ import Foundation
 
 /// In-memory `CLIClient` for unit tests. **DEBUG build only.**
 ///
-/// Two responsibilities:
-/// - Record every outgoing call from the handle (start / send / interrupt
-///   / setModel / ...) so a test can assert "the handle did issue the
-///   RPC."
-/// - Provide imperative pushers (`pushMessage` / `simulateInitialize` /
-///   `simulateProcessExit` / ...) so a test can drive the handle's
-///   incoming side without standing up a real CLI subprocess.
+/// - Records every call the runtime makes (`sent`, `modelCalls`, …).
+/// - Holds the calls that wait for the CLI (`start`, `interrupt`,
+///   `contextUsage`, `askSideQuestion`) open until the test completes them,
+///   so a test controls when — and whether — the "CLI" answers.
+/// - Pushes CLI output into `events` (`push`, `simulateExit`, …).
 ///
-/// Lifetime is tied to the test; nothing escapes the process.
+/// Main-actor isolated (via `CLIClient`), like the runtime that drives it.
 final class FakeCLIClient: CLIClient {
+    let events: AsyncStream<SessionEvent>
+    private let continuation: AsyncStream<SessionEvent>.Continuation
 
-    // MARK: - Recorded outgoing calls
+    // MARK: Recorded calls
 
-    struct SendCall {
-        let text: String?
-        let blocks: [[String: Any]]?
-        let extra: [String: Any]
+    private(set) var startCalls = 0
+    private(set) var closeCalls = 0
+    private(set) var terminateCalls = 0
+    private(set) var sent: [UserInput] = []
+    private(set) var interruptCalls = 0
+    private(set) var modelCalls: [String?] = []
+    private(set) var permissionModeCalls: [AgentSDK.PermissionMode] = []
+    private(set) var settingsCalls: [AgentSDK.Settings] = []
+    private(set) var contextUsageCalls = 0
+    private(set) var sideQuestions: [String] = []
+
+    /// Thrown from `start()` instead of waiting for `completeStart`.
+    var startError: Error?
+    /// Awaited inside `close(timeout:)`; lets a test hold a close open.
+    var closeHook: (@Sendable () async -> Void)?
+
+    // MARK: Calls held open
+
+    private var pendingStart: CheckedContinuation<InitializationResult, Error>?
+    private var pendingInterrupts: [Held<Void>] = []
+    private var pendingContextUsage: [Held<ContextUsage>] = []
+    private var pendingSideQuestions: [Held<SideQuestionAnswer?>] = []
+
+    private struct Held<T> {
+        let id: UUID
+        let continuation: CheckedContinuation<T, Error>
     }
 
-    private(set) var startCalls: Int = 0
-    private(set) var closeCalls: Int = 0
-    private(set) var sendCalls: [SendCall] = []
-    private(set) var initializeCalls: [(promptSuggestions: Bool, completion: (InitializeResponse?) -> Void)] = []
-    private(set) var interruptCalls: [([String: Any]) -> Void] = []
-    private(set) var modelCalls: [String] = []
-    private(set) var effortCalls: [Effort] = []
-    private(set) var permissionModeCalls: [AgentSDK.PermissionMode] = []
-    private(set) var fastModeCalls: [Bool] = []
-    private(set) var flagSettingsCalls: [FlagSettings] = []
+    init() {
+        (events, continuation) = AsyncStream.makeStream(of: SessionEvent.self)
+    }
 
-    /// Set to throw from `start()`; default succeeds.
-    var startError: Error?
-
-    // MARK: - CLIClient (identity + callbacks)
-
-    var lastKnownSessionId: String?
-    var onMessage: ((Message2) -> Void)?
-    var onStreamEvent: ((Message2StreamEvent) -> Void)?
-    var onPermissionRequest: ((PermissionRequest, @escaping (PermissionDecision) -> Void) -> Void)?
-    var onPermissionCancelled: ((String) -> Void)?
-    var onProcessExit: ((Int32) -> Void)?
-    var onStderr: ((String) -> Void)?
-    var onHookRequest: ((HookRequest) -> HookResult)?
-    var onMCPRequest: ((MCPRequest) -> MCPResponse)?
-    var onElicitationRequest: ((ElicitationRequest) -> ElicitationResult)?
-
-    init() {}
-
-    /// Match the macOS 26 workaround used elsewhere in the codebase —
-    /// see `Session.deinit` for the bug rationale.
+    /// See `Session.deinit` for the macOS 26 executor-hop workaround.
     nonisolated deinit {}
 
-    // MARK: - Lifecycle
+    // MARK: CLIClient
 
-    func start() async throws {
+    func start() async throws -> InitializationResult {
         startCalls += 1
-        if let startError {
-            throw startError
-        }
+        if let startError { throw startError }
+        return try await withCheckedThrowingContinuation { pendingStart = $0 }
     }
 
-    func close() {
+    func close(timeout: TimeInterval) async {
         closeCalls += 1
+        await closeHook?()
     }
 
-    func closeAsync() async {
-        closeCalls += 1
-        closeAsyncCalls += 1
-        await closeAsyncHook?()
+    func terminate() {
+        terminateCalls += 1
     }
 
-    /// Optional async hook fired by `closeAsync`. Tests use it to
-    /// gate the continuation on an explicit signal so the parallel-
-    /// shutdown test can observe overlap rather than serial completion.
-    var closeAsyncHook: (@Sendable () async -> Void)?
-    private(set) var closeAsyncCalls: Int = 0
-
-    // MARK: - Control requests
-
-    func initialize(
-        promptSuggestions: Bool,
-        completion: @escaping (InitializeResponse?) -> Void
-    ) {
-        initializeCalls.append((promptSuggestions, completion))
+    func send(_ input: UserInput) throws {
+        sent.append(input)
     }
 
-    func interrupt(completion: @escaping ([String: Any]) -> Void) {
-        interruptCalls.append(completion)
+    func interrupt() async throws {
+        interruptCalls += 1
+        try await hold(\.pendingInterrupts)
     }
 
-    struct ContextUsageCall {
-        let timeout: TimeInterval
-        let completion: (ContextUsageOutcome) -> Void
-    }
-    private(set) var contextUsageCalls: [ContextUsageCall] = []
-
-    func getContextUsage(
-        timeout: TimeInterval,
-        completion: @escaping (ContextUsageOutcome) -> Void
-    ) {
-        contextUsageCalls.append(ContextUsageCall(timeout: timeout, completion: completion))
-    }
-
-    /// Drive the most recently queued `getContextUsage(...)` completion.
-    func completeContextUsage(_ outcome: ContextUsageOutcome) {
-        guard !contextUsageCalls.isEmpty else { return }
-        let call = contextUsageCalls.removeFirst()
-        call.completion(outcome)
-    }
-
-    struct SideQuestionCall {
-        let question: String
-        let completion: (SideQuestionOutcome) -> Void
-    }
-    private(set) var sideQuestionCalls: [SideQuestionCall] = []
-
-    func askSideQuestion(
-        _ question: String,
-        completion: @escaping (SideQuestionOutcome) -> Void
-    ) {
-        sideQuestionCalls.append(SideQuestionCall(question: question, completion: completion))
-    }
-
-    /// Drive the oldest queued `askSideQuestion(...)` completion.
-    func completeSideQuestion(_ outcome: SideQuestionOutcome) {
-        guard !sideQuestionCalls.isEmpty else { return }
-        let call = sideQuestionCalls.removeFirst()
-        call.completion(outcome)
-    }
-
-    // MARK: - Messaging
-
-    func sendMessage(_ text: String, extra: [String: Any]) {
-        sendCalls.append(SendCall(text: text, blocks: nil, extra: extra))
-    }
-
-    func sendMessage(contentBlocks: [[String: Any]], extra: [String: Any]) {
-        sendCalls.append(SendCall(text: nil, blocks: contentBlocks, extra: extra))
-    }
-
-    // MARK: - Configuration RPCs
-
-    func setModel(_ model: String) {
+    func setModel(_ model: String?) async throws {
         modelCalls.append(model)
     }
 
-    func setEffort(_ effort: Effort) {
-        effortCalls.append(effort)
-    }
-
-    func setPermissionMode(_ mode: AgentSDK.PermissionMode) {
+    func setPermissionMode(_ mode: AgentSDK.PermissionMode) async throws {
         permissionModeCalls.append(mode)
     }
 
-    func setFastMode(_ enabled: Bool) {
-        fastModeCalls.append(enabled)
+    func applySettings(_ settings: AgentSDK.Settings) async throws {
+        settingsCalls.append(settings)
     }
 
-    func applyFlagSettings(_ settings: FlagSettings) {
-        flagSettingsCalls.append(settings)
+    func contextUsage() async throws -> ContextUsage {
+        contextUsageCalls += 1
+        return try await hold(\.pendingContextUsage)
     }
 
-    // MARK: - Test drivers (push events back to the handle)
-
-    /// Deliver one Message2 through `onMessage` as if the CLI streamed it.
-    func pushMessage(_ message: Message2) {
-        onMessage?(message)
+    func askSideQuestion(_ question: String) async throws -> SideQuestionAnswer? {
+        sideQuestions.append(question)
+        return try await hold(\.pendingSideQuestions)
     }
 
-    /// Deliver one streaming partial through `onStreamEvent`, as the SDK does
-    /// when `includePartialMessages` is on.
-    func pushStreamEvent(_ event: Message2StreamEvent) {
-        onStreamEvent?(event)
+    /// Parks a call until a driver completes it. Cancelling the caller's
+    /// task throws `CancellationError`, as `AgentSDK.Session` does.
+    private func hold<T>(_ queue: ReferenceWritableKeyPath<FakeCLIClient, [Held<T>]>) async throws -> T {
+        let id = UUID()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { self[keyPath: queue].append(Held(id: id, continuation: $0)) }
+        } onCancel: {
+            Task { @MainActor in
+                guard let index = self[keyPath: queue].firstIndex(where: { $0.id == id }) else { return }
+                self[keyPath: queue].remove(at: index).continuation.resume(throwing: CancellationError())
+            }
+        }
     }
 
-    /// Drive the most recently queued `initialize(...)` completion. Tests
-    /// call this after `bootstrap` has awaited the initialize result.
-    func completeInitialize(with response: InitializeResponse?) {
-        guard !initializeCalls.isEmpty else { return }
-        let call = initializeCalls.removeFirst()
-        call.completion(response)
+    // MARK: Test drivers
+
+    /// Whether `start()` is waiting for `completeStart`.
+    var isAwaitingStart: Bool { pendingStart != nil }
+
+    /// Finishes the handshake with an `initialize` response object in the
+    /// CLI's JSON shape; `[:]` is an empty but valid one.
+    func completeStart(with response: JSONValue = [:]) {
+        // Every field decodes leniently, so any object is a valid response.
+        let result = try! response.decode(InitializationResult.self)
+        pendingStart?.resume(returning: result)
+        pendingStart = nil
     }
 
-    /// Drive the most recently queued `interrupt(...)` completion.
-    func completeInterrupt(response: [String: Any] = [:]) {
-        guard !interruptCalls.isEmpty else { return }
-        let cb = interruptCalls.removeFirst()
-        cb(response)
+    /// Fails the handshake, as a CLI that dies during startup does.
+    func failStart(_ error: Error) {
+        pendingStart?.resume(throwing: error)
+        pendingStart = nil
     }
 
-    /// Fire the process-exit callback.
-    func simulateProcessExit(code: Int32) {
-        onProcessExit?(code)
+    /// Acknowledges the oldest pending `interrupt()`.
+    func completeInterrupt() {
+        guard !pendingInterrupts.isEmpty else { return }
+        pendingInterrupts.removeFirst().continuation.resume()
     }
 
-    func simulateStderr(_ text: String) {
-        onStderr?(text)
+    /// Answers the oldest pending `contextUsage()`; an error fails it.
+    func completeContextUsage(_ result: Result<ContextUsage, Error>) {
+        guard !pendingContextUsage.isEmpty else { return }
+        pendingContextUsage.removeFirst().continuation.resume(with: result)
     }
 
-    func simulatePermissionRequest(
-        _ request: PermissionRequest,
-        completion: @escaping (PermissionDecision) -> Void
-    ) {
-        onPermissionRequest?(request, completion)
+    /// Answers the oldest pending `askSideQuestion(_:)`; an error fails it.
+    func completeSideQuestion(_ result: Result<SideQuestionAnswer?, Error>) {
+        guard !pendingSideQuestions.isEmpty else { return }
+        pendingSideQuestions.removeFirst().continuation.resume(with: result)
+    }
+
+    /// Delivers one CLI message.
+    func push(_ message: Message) {
+        continuation.yield(.message(message))
+    }
+
+    /// Delivers one CLI stdout line, decoded as the SDK decodes it.
+    func push(jsonLine: String) {
+        guard let message = Message(jsonLine: Data(jsonLine.utf8)) else { return }
+        push(message)
+    }
+
+    func push(_ event: SessionEvent) {
+        continuation.yield(event)
+    }
+
+    /// Asks for tool permission; returns the request so the test can find it
+    /// in the runtime's `pendingPermissions`. `onRespond` sees the answer.
+    @discardableResult
+    func requestPermission(
+        toolName: String, input: JSONValue, id: String = UUID().uuidString,
+        onRespond: @escaping @Sendable (PermissionDecision) -> Void = { _ in }
+    ) -> PermissionRequest {
+        let request = PermissionRequest(id: id, toolName: toolName, input: input, onRespond: onRespond)
+        continuation.yield(.permissionRequest(request))
+        return request
+    }
+
+    /// The process ends: pending calls fail, then `.exited` closes the stream.
+    func simulateExit(code: Int32, stderr: String = "") {
+        let termination = Termination(exitCode: code, stderr: stderr)
+        let error = AgentSDKError.processExited(termination)
+        pendingStart?.resume(throwing: error)
+        pendingStart = nil
+        pendingInterrupts.forEach { $0.continuation.resume(throwing: error) }
+        pendingInterrupts = []
+        pendingContextUsage.forEach { $0.continuation.resume(throwing: error) }
+        pendingContextUsage = []
+        pendingSideQuestions.forEach { $0.continuation.resume(throwing: error) }
+        pendingSideQuestions = []
+        continuation.yield(.exited(termination))
+        continuation.finish()
     }
 }
 

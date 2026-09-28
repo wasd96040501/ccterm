@@ -62,18 +62,18 @@ struct PermissionTaskAgentCardBody: View {
     /// at call time, so we surface that fallback as the headline.
     var subagentType: String? {
         let raw =
-            (request.rawInput["subagent_type"] as? String)
-            ?? (request.rawInput["subagentType"] as? String)
+            request.input["subagent_type"]?.stringValue
+            ?? request.input["subagentType"]?.stringValue
         return raw?.isEmpty == false ? raw : nil
     }
 
     var description: String? {
-        let raw = request.rawInput["description"] as? String
+        let raw = request.input["description"]?.stringValue
         return raw?.isEmpty == false ? raw : nil
     }
 
     var prompt: String? {
-        let raw = request.rawInput["prompt"] as? String
+        let raw = request.input["prompt"]?.stringValue
         return raw?.isEmpty == false ? raw : nil
     }
 
@@ -81,7 +81,7 @@ struct PermissionTaskAgentCardBody: View {
     /// `nil`. Surface presence as a chip — the literal value is the
     /// noteworthy detail.
     var isolation: String? {
-        let raw = request.rawInput["isolation"] as? String
+        let raw = request.input["isolation"]?.stringValue
         return raw?.isEmpty == false ? raw : nil
     }
 
@@ -89,7 +89,7 @@ struct PermissionTaskAgentCardBody: View {
     /// to the parent agent's model so the chip is hidden — surface
     /// only the explicit override.
     var modelOverride: String? {
-        let raw = request.rawInput["model"] as? String
+        let raw = request.input["model"]?.stringValue
         return raw?.isEmpty == false ? raw : nil
     }
 
@@ -136,8 +136,8 @@ struct PermissionTaskAgentCardBody: View {
 
 #Preview("Explore agent · worktree") {
     PermissionTaskAgentCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-1",
+        request: PermissionRequest.preview(
+            id: "preview-1",
             toolName: "Task",
             input: [
                 "subagent_type": "Explore",
@@ -155,8 +155,8 @@ struct PermissionTaskAgentCardBody: View {
 
 #Preview("Generic sub-task · no chips") {
     PermissionTaskAgentCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-2",
+        request: PermissionRequest.preview(
+            id: "preview-2",
             toolName: "Task",
             input: [
                 "description": "Draft release notes",
@@ -171,8 +171,8 @@ struct PermissionTaskAgentCardBody: View {
 
 #Preview("Plan agent · model override") {
     PermissionTaskAgentCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-3",
+        request: PermissionRequest.preview(
+            id: "preview-3",
             toolName: "Agent",
             input: [
                 "subagent_type": "Plan",

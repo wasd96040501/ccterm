@@ -117,8 +117,8 @@ struct PermissionCardsDemoView: View {
         Item(
             id: "ask-single",
             title: "AskUserQuestion · single-select",
-            request: PermissionRequest.makePreview(
-                requestId: "demo-ask-single",
+            request: PermissionRequest.preview(
+                id: "demo-ask-single",
                 toolName: "AskUserQuestion",
                 input: [
                     "questions": [
@@ -148,8 +148,8 @@ struct PermissionCardsDemoView: View {
         Item(
             id: "ask-multi",
             title: "AskUserQuestion · multi-select",
-            request: PermissionRequest.makePreview(
-                requestId: "demo-ask-multi",
+            request: PermissionRequest.preview(
+                id: "demo-ask-multi",
                 toolName: "AskUserQuestion",
                 input: [
                     "questions": [
@@ -173,8 +173,8 @@ struct PermissionCardsDemoView: View {
         Item(
             id: "ask-multi-question",
             title: "AskUserQuestion · 3 questions in a row",
-            request: PermissionRequest.makePreview(
-                requestId: "demo-ask-multi-q",
+            request: PermissionRequest.preview(
+                id: "demo-ask-multi-q",
                 toolName: "AskUserQuestion",
                 input: [
                     "questions": [

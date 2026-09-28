@@ -19,7 +19,7 @@ import SwiftUI
 ///
 /// **V2 fallback:** `ExitPlanModeV2` writes the plan to a file
 /// instead of inlining it; the file path arrives via tool context
-/// we don't surface in `rawInput`. When we can't read a plan body
+/// we don't surface in `input`. When we can't read a plan body
 /// we show a brief note so the user still knows what the request
 /// is — same trust budget, different inputs.
 struct PermissionExitPlanModeCardBody: View {
@@ -53,7 +53,7 @@ struct PermissionExitPlanModeCardBody: View {
     // MARK: - Data
 
     /// True when the tool is `ExitPlanModeV2`. V2 doesn't inline the
-    /// plan in `rawInput` — the agent writes a plan file and the
+    /// plan in `input` — the agent writes a plan file and the
     /// CLI reads it back. We don't have access to that file here, so
     /// the body falls back to a short explanatory hint.
     var isV2: Bool { request.toolName == "ExitPlanModeV2" }
@@ -62,7 +62,7 @@ struct PermissionExitPlanModeCardBody: View {
     /// only — V2 stores the plan elsewhere.
     var plan: String? {
         guard !isV2 else { return nil }
-        let raw = request.rawInput["plan"] as? String
+        let raw = request.input["plan"]?.stringValue
         return raw?.isEmpty == false ? raw : nil
     }
 
@@ -83,8 +83,8 @@ struct PermissionExitPlanModeCardBody: View {
 
 #Preview("ExitPlanMode · with plan") {
     PermissionExitPlanModeCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-1",
+        request: PermissionRequest.preview(
+            id: "preview-1",
             toolName: "ExitPlanMode",
             input: [
                 "plan": """
@@ -109,8 +109,8 @@ struct PermissionExitPlanModeCardBody: View {
 
 #Preview("ExitPlanModeV2 · file-backed") {
     PermissionExitPlanModeCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-2",
+        request: PermissionRequest.preview(
+            id: "preview-2",
             toolName: "ExitPlanModeV2",
             input: [:])
     )
@@ -121,8 +121,8 @@ struct PermissionExitPlanModeCardBody: View {
 
 #Preview("ExitPlanMode · empty plan") {
     PermissionExitPlanModeCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-3",
+        request: PermissionRequest.preview(
+            id: "preview-3",
             toolName: "ExitPlanMode",
             input: [:])
     )

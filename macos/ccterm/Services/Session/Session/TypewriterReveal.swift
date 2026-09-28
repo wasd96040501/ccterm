@@ -48,7 +48,7 @@ struct TypewriterReveal {
     /// The finalized `.assistant` envelope awaiting the head to catch up, plus
     /// the timeline entry id it converges onto. `nil` until the envelope lands;
     /// once set, the head reaching the end of `target` triggers the swap.
-    var pendingFinalize: (entryId: UUID, message: Message2)?
+    var pendingFinalize: (entryId: UUID, message: Message)?
 
     /// Last committed text surfaced to the renderer — lets the driver skip a
     /// redundant re-typeset on a frame where the visible prefix did not move

@@ -37,14 +37,20 @@ extension SessionRuntime {
             appLog(.info, "SessionRuntime", "interrupt() no cliClient — local-only \(sessionId)")
             return
         }
-        cliClient.interrupt { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                if self.status == .interrupting {
-                    self.status = .idle
-                }
-                appLog(.info, "SessionRuntime", "interrupt() ack \(self.sessionId)")
+        Task { [weak self] in
+            // Settle `.interrupting` whether the CLI acknowledged or failed
+            // (e.g. exited) — either way the turn is over.
+            var outcome = "ack"
+            do {
+                try await cliClient.interrupt()
+            } catch {
+                outcome = "\(error)"
             }
+            guard let self else { return }
+            if self.status == .interrupting {
+                self.status = .idle
+            }
+            appLog(.info, "SessionRuntime", "interrupt() settled \(self.sessionId) \(outcome)")
         }
     }
 

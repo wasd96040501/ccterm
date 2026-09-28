@@ -1,181 +1,197 @@
-import AgentSDK
-import Foundation
-
-// Dump-only smoke. Spawns a real `claude` CLI via AgentSDK.Session,
-// sends one prompt, captures every line of JSONL the CLI emits, and
-// prints message-type counts. Two scenarios are selectable by env:
+// DumpSmoke — drives one prompt through `Session` against the real CLI,
+// checks the basic round-trip contract, prints per-kind message counts, and
+// dumps the exported JSONL (both directions) to stderr.
 //
-//   SMOKE_SCENARIO=single   (default) — one turn, one prompt → one .result
-//   SMOKE_SCENARIO=bgjob              — ask claude to kick off a background
-//                                       bash and reply immediately, then
-//                                       keep the session open for 30s to
-//                                       capture post-`.result` traffic
+// SMOKE_SCENARIO=single (default): one prompt, one turn. Checks that
+// `start()` lists models, the prompt is replayed with its uuid, assistant
+// text arrives, exactly one `.success` result names the prompt in
+// `userMessageUUIDs`, the prompt's `CommandLifecycle` reaches `completed`,
+// and `close()` ends the process with exit code 0.
 //
-// Env: CLAUDE_BINARY_PATH (override), SMOKE_MODEL (default
-// claude-haiku-4-5).
-//
-// Run from `macos/AgentSDK`:
+// SMOKE_SCENARIO=bgjob: the model starts a background Bash
+// (`run_in_background`) and replies at once; the session stays open after
+// that first result (up to 30 s) to capture post-result traffic. Checks the
+// job's `taskStarted` and its `taskNotification` with status `completed`.
 //
 //   swift run DumpSmoke
 //   SMOKE_SCENARIO=bgjob swift run DumpSmoke
 //
-// This used to be an XCTest target inside cctermTests, but those tests
-// bundle-load the host app and hang on its GitProbe startup probe on
-// some machines. Standalone executable keeps the smoke working
-// regardless of host-app state.
+// Env: CLAUDE_BINARY_PATH, SMOKE_MODEL (default claude-haiku-4-5),
+// SMOKE_PROMPT, SMOKE_SCENARIO. Work dir (kept): /tmp/ccterm-dump-<scenario>-<timestamp>/.
 
-func log(_ msg: String) {
-    let ts = ISO8601DateFormatter().string(from: Date())
-    FileHandle.standardError.write(Data("[\(ts)] \(msg)\n".utf8))
+import AgentSDK
+import Foundation
+
+enum Scenario: String {
+    case single, bgjob
 }
-
-func locateClaude() -> String? {
-    if let envPath = ProcessInfo.processInfo.environment["CLAUDE_BINARY_PATH"],
-        FileManager.default.isExecutableFile(atPath: envPath)
-    {
-        return envPath
-    }
-    let home = FileManager.default.homeDirectoryForCurrentUser.path
-    for p in ["\(home)/.local/bin/claude", "/usr/local/bin/claude"] {
-        if FileManager.default.isExecutableFile(atPath: p) { return p }
-    }
-    return nil
-}
-
-enum Scenario: String { case single, bgjob }
 
 let env = ProcessInfo.processInfo.environment
-let scenario = Scenario(rawValue: env["SMOKE_SCENARIO"] ?? "single") ?? .single
+guard let scenario = Scenario(rawValue: env["SMOKE_SCENARIO"] ?? "single") else {
+    FileHandle.standardError.write(Data("SMOKE_SCENARIO must be single or bgjob\n".utf8))
+    exit(2)
+}
 let model = env["SMOKE_MODEL"] ?? "claude-haiku-4-5"
 let prompt: String
-let extraDrainSeconds: TimeInterval
 switch scenario {
 case .single:
     prompt = env["SMOKE_PROMPT"] ?? "Reply with exactly the two letters: ok"
-    extraDrainSeconds = 0
 case .bgjob:
     prompt =
         env["SMOKE_PROMPT"]
-            ?? """
-            Use the Bash tool with `run_in_background: true` to run \
-            `sleep 5 && echo finished`. After kicking it off, reply \
-            with exactly the two letters: ok.
-            """
-    extraDrainSeconds = 30
+        ?? "Use the Bash tool with `run_in_background: true` to run `sleep 5 && echo finished`. "
+        + "After kicking it off, reply with exactly the two letters: ok."
 }
 
-guard let claudeBin = locateClaude() else {
-    log("ERROR: no claude binary found")
-    exit(1)
-}
-
-let stamp = Int(Date().timeIntervalSince1970)
-let workDir = URL(fileURLWithPath: "/tmp/ccterm-dump-smoke-\(scenario.rawValue)-\(stamp)", isDirectory: true)
-let exportDir = workDir.appendingPathComponent("export", isDirectory: true)
-try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
+let workDir = URL(fileURLWithPath: "/tmp/ccterm-dump-\(scenario.rawValue)-\(Int(Date().timeIntervalSince1970))")
+let exportDir = workDir.appendingPathComponent("export")
 try FileManager.default.createDirectory(at: exportDir, withIntermediateDirectories: true)
 
-let sessionId = UUID().uuidString.lowercased()
+func log(_ message: String) {
+    let stamp = ISO8601DateFormatter().string(from: Date())
+    FileHandle.standardError.write(Data("[\(stamp)] \(message)\n".utf8))
+}
 
-log("scenario=\(scenario.rawValue) model=\(model) sessionId=\(sessionId)")
-log("workDir=\(workDir.path)")
+var failures: [String] = []
 
-let config = SessionConfiguration(
-    workingDirectory: workDir,
-    model: model,
-    sessionId: sessionId,
-    binaryPath: claudeBin,
-    inheritsParentEnvironment: true,
-    allowDangerouslySkipPermissions: true,
-    messageExportDirectory: exportDir
-)
+func check(_ ok: Bool, _ what: String) {
+    log("\(ok ? "PASS" : "FAIL")  \(what)")
+    if !ok { failures.append(what) }
+}
 
-let session = AgentSDK.Session(configuration: config)
-session.lastKnownSessionId = sessionId
+func label(_ message: Message) -> String {
+    switch message {
+    case .assistant: return "assistant"
+    case .user(let m): return m.isReplay ? "user.replay" : m.toolResult != nil ? "user.toolResult" : "user"
+    case .result(let r): return "result.\(r.subtype.rawValue)"
+    case .system(let s):
+        switch s {
+        case .initialized: return "system.init"
+        case .status: return "system.status"
+        case .compactBoundary: return "system.compact_boundary"
+        case .apiRetry: return "system.api_retry"
+        case .thinkingTokens: return "system.thinking_tokens"
+        case .taskStarted: return "system.task_started"
+        case .taskProgress: return "system.task_progress"
+        case .taskUpdated: return "system.task_updated"
+        case .taskNotification: return "system.task_notification"
+        case .backgroundTasksChanged: return "system.background_tasks_changed"
+        case .permissionDenied: return "system.permission_denied"
+        case .commandsChanged: return "system.commands_changed"
+        case .other(let subtype, _): return "system.other(\(subtype))"
+        }
+    case .streamEvent: return "stream_event"
+    case .toolProgress: return "tool_progress"
+    case .rateLimit: return "rate_limit_event"
+    case .commandLifecycle(let c): return "command_lifecycle.\(c.state.rawValue)"
+    case .promptSuggestion: return "prompt_suggestion"
+    case .unknown(let raw): return "unknown(\(raw["type"]?.stringValue ?? "?"))"
+    }
+}
+
+let session = Session(
+    configuration: SessionConfiguration(
+        workingDirectory: workDir, model: model, sessionId: UUID().uuidString.lowercased(),
+        binaryPath: env["CLAUDE_BINARY_PATH"], inheritsParentEnvironment: true, messageExportDirectory: exportDir))
+let input = UserInput(prompt)
 
 var counts: [String: Int] = [:]
-let firstResult = DispatchSemaphore(value: 0)
-var resultFired = false
-let processExited = DispatchSemaphore(value: 0)
+var replays = 0
+var assistantText = ""
+var results: [ResultMessage] = []
+var lifecycle: [CommandLifecycle.State] = []
+var startedTasks: [SystemMessage.TaskStarted] = []
+var notifications: [SystemMessage.TaskNotification] = []
+var termination: Termination?
 
-session.onMessage = { msg in
-    let key: String
-    switch msg {
-    case .assistant: key = "assistant"
-    case .user: key = "user"
-    case .result:
-        key = "result"
-        if !resultFired {
-            resultFired = true
-            firstResult.signal()
+func record(_ event: SessionEvent) {
+    switch event {
+    case .message(let message):
+        counts[label(message), default: 0] += 1
+        switch message {
+        case .user(let m) where m.isReplay && m.uuid == input.uuid: replays += 1
+        case .assistant(let m): assistantText += m.content.compactMap(\.text).joined()
+        case .result(let r): results.append(r)
+        case .commandLifecycle(let c) where c.commandUUID == input.uuid: lifecycle.append(c.state)
+        case .system(.taskStarted(let t)):
+            log("task started id=\(t.taskID) type=\(t.taskType) \(t.description)")
+            startedTasks.append(t)
+        case .system(.taskNotification(let n)):
+            log("task notification id=\(n.taskID) status=\(n.status)")
+            notifications.append(n)
+        default: break
         }
-    case .system(.`init`): key = "system.init"
-    case .system: key = "system.other"
-    case .progress: key = "progress"
-    case .unknown(let n, _): key = "unknown(\(n))"
-    default: key = "other"
+    case .permissionRequest(let request):
+        log("permission request tool=\(request.toolName) → allow")
+        request.respond(.allow())
+    case .permissionRequestCancelled(let id):
+        log("permission request cancelled id=\(id)")
+    case .exited(let t):
+        termination = t
     }
-    counts[key, default: 0] += 1
-}
-session.onStderr = { text in
-    log("[stderr] \(text.trimmingCharacters(in: .whitespacesAndNewlines))")
-}
-session.onProcessExit = { code in
-    log("[exit] code=\(code)")
-    processExited.signal()
 }
 
+_ = Task {
+    try await Task.sleep(for: .seconds(180))
+    log("FAIL  timed out after 180 s; work dir \(workDir.path)")
+    exit(1)
+}
+
+log("scenario=\(scenario.rawValue) model=\(model) workDir=\(workDir.path)")
+var events = session.events.makeAsyncIterator()
 do {
-    try await session.start()
-    log("session.start ok")
+    let initialization = try await session.start()
+    check(!initialization.models.isEmpty, "start() lists models (\(initialization.models.count))")
+    try session.send(input)
 } catch {
-    log("ERROR session.start: \(error)")
+    log("FAIL  start/send: \(error)")
     exit(1)
 }
 
-let initDone = DispatchSemaphore(value: 0)
-session.initialize(promptSuggestions: false) { resp in
-    log("init reply: models=\(resp?.models?.count ?? 0)")
-    initDone.signal()
-}
-if initDone.wait(timeout: .now() + 30) == .timedOut {
-    log("ERROR initialize timeout")
-    session.close()
-    exit(1)
-}
+while results.isEmpty, let event = await events.next() { record(event) }
+log("first result — counts so far: \(counts.sorted { $0.key < $1.key })")
 
-log("sending prompt…")
-session.sendMessage(prompt, extra: ["uuid": UUID().uuidString.lowercased()])
-
-if firstResult.wait(timeout: .now() + 120) == .timedOut {
-    log("ERROR first .result timeout")
-    session.close()
-    exit(1)
-}
-log("first .result received — counts: \(counts.sorted { $0.key < $1.key })")
-
-if extraDrainSeconds > 0 {
-    log("post-result drain window \(Int(extraDrainSeconds))s")
-    Thread.sleep(forTimeInterval: extraDrainSeconds)
-    log("post-result counts: \(counts.sorted { $0.key < $1.key })")
-}
-
-log("closing session")
-session.close()
-if processExited.wait(timeout: .now() + 10) == .timedOut {
-    log("WARN process did not exit within 10s of close")
-}
-
-// Dump JSONL.
-if let files = try? FileManager.default.contentsOfDirectory(at: exportDir, includingPropertiesForKeys: nil) {
-    for url in files {
-        log("--- export: \(url.lastPathComponent) ---")
-        if let data = try? Data(contentsOf: url),
-            let text = String(data: data, encoding: .utf8)
-        {
-            FileHandle.standardError.write(Data(text.utf8))
-            FileHandle.standardError.write(Data("\n".utf8))
-        }
+if scenario == .bgjob {
+    // Keep reading until the job reports back and the turn it triggers ends,
+    // or the drain window closes the session.
+    let closer = Task {
+        try await Task.sleep(for: .seconds(30))
+        await session.close()
     }
+    var resultsAtNotification: Int?
+    while let event = await events.next() {
+        record(event)
+        if resultsAtNotification == nil, !notifications.isEmpty { resultsAtNotification = results.count }
+        if let mark = resultsAtNotification, results.count > mark { break }
+    }
+    closer.cancel()
 }
-log("done")
+
+await session.close()
+while let event = await events.next() { record(event) }
+
+log("counts: \(counts.sorted { $0.key < $1.key })")
+switch scenario {
+case .single:
+    check(replays == 1, "prompt replayed once with its uuid (\(replays))")
+    check(!assistantText.isEmpty, "assistant text arrived (\(assistantText.prefix(40).debugDescription))")
+    check(results.count == 1, "exactly one result (\(results.count))")
+    check(results.first?.subtype == .success, "result is success (\(results.first?.subtype.rawValue ?? "none"))")
+    check(results.first?.userMessageUUIDs.contains(input.uuid) == true, "result names the prompt's uuid")
+    check(lifecycle.last == .completed, "prompt lifecycle ends completed (\(lifecycle.map(\.rawValue)))")
+case .bgjob:
+    let job = startedTasks.first { $0.taskType == "local_bash" }
+    check(job != nil, "background Bash reported taskStarted (\(startedTasks.map(\.taskType)))")
+    let finished = notifications.first { $0.taskID == job?.taskID }
+    check(finished?.status == "completed", "job reported taskNotification completed (\(finished?.status ?? "none"))")
+}
+check(termination?.exitCode == 0, "close() ends the process with exit code 0 (\(termination?.exitCode ?? -1))")
+
+for file in (try? FileManager.default.contentsOfDirectory(at: exportDir, includingPropertiesForKeys: nil)) ?? [] {
+    log("--- export \(file.path) ---")
+    FileHandle.standardError.write((try? Data(contentsOf: file)) ?? Data())
+}
+
+log(failures.isEmpty ? "DumpSmoke PASS" : "DumpSmoke FAIL (\(failures.count)): \(failures.joined(separator: "; "))")
+log("work dir: \(workDir.path)")
+exit(failures.isEmpty ? 0 : 1)

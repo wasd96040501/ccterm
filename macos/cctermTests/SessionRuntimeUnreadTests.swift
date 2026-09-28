@@ -43,16 +43,10 @@ final class SessionRuntimeUnreadTests: XCTestCase {
     /// `SessionRuntimeIsRunningTests`).
     private func bootstrap(_ runtime: SessionRuntime, _ fake: FakeCLIClient) async {
         runtime.activate()
-        for _ in 0..<16 {
-            await Task.yield()
-            if !fake.initializeCalls.isEmpty { break }
-        }
-        XCTAssertFalse(fake.initializeCalls.isEmpty, "bootstrap should call initialize")
-        fake.completeInitialize(with: nil)
-        for _ in 0..<16 {
-            await Task.yield()
-            if runtime.status == .idle { break }
-        }
+        await yieldUntil { fake.isAwaitingStart }
+        XCTAssertTrue(fake.isAwaitingStart, "bootstrap should have started the client")
+        fake.completeStart()
+        await yieldUntil { runtime.status == .idle }
         XCTAssertEqual(runtime.status, .idle)
     }
 
@@ -61,7 +55,7 @@ final class SessionRuntimeUnreadTests: XCTestCase {
     /// while the agent streams its reply.
     private func startTurn(_ runtime: SessionRuntime) {
         runtime.send(text: "hi")
-        runtime.receive(Message2Fixtures.systemInit())
+        runtime.receive(MessageFixtures.systemInit())
         XCTAssertEqual(runtime.status, .responding, "send + system.init should enter .responding")
     }
 
@@ -79,7 +73,7 @@ final class SessionRuntimeUnreadTests: XCTestCase {
         XCTAssertFalse(runtime.hasUnread)
 
         runtime.receive(
-            Message2Fixtures.assistantRead(toolUseId: "t1", filePath: "/tmp/x.txt"))
+            MessageFixtures.assistantRead(toolUseId: "t1", filePath: "/tmp/x.txt"))
 
         XCTAssertFalse(
             runtime.hasUnread,
@@ -99,16 +93,16 @@ final class SessionRuntimeUnreadTests: XCTestCase {
         startTurn(runtime)
 
         runtime.receive(
-            Message2Fixtures.assistantRead(toolUseId: "t1", filePath: "/tmp/x.txt"))
+            MessageFixtures.assistantRead(toolUseId: "t1", filePath: "/tmp/x.txt"))
         XCTAssertFalse(runtime.hasUnread, "tool_use mid-turn must not mark unread")
 
-        runtime.receive(Message2Fixtures.userToolResult(toolUseId: "t1"))
+        runtime.receive(MessageFixtures.userToolResult(toolUseId: "t1"))
         XCTAssertFalse(runtime.hasUnread, "tool_result mid-turn must not mark unread")
 
-        runtime.receive(Message2Fixtures.assistantText("done", messageId: "m-final"))
+        runtime.receive(MessageFixtures.assistantText("done", messageId: "m-final"))
         XCTAssertFalse(runtime.hasUnread, "intermediate assistant text must not mark unread")
 
-        runtime.receive(Message2Fixtures.result())
+        runtime.receive(MessageFixtures.result())
         XCTAssertTrue(
             runtime.hasUnread,
             "turn end (.responding → .idle) must mark unread on an unfocused session")
@@ -129,11 +123,11 @@ final class SessionRuntimeUnreadTests: XCTestCase {
         XCTAssertEqual(runtime.status, .idle)
 
         // No user send → no `.responding`. CLI spontaneously produces a turn.
-        runtime.receive(Message2Fixtures.assistantText("bg job done", messageId: "m-bg"))
+        runtime.receive(MessageFixtures.assistantText("bg job done", messageId: "m-bg"))
         XCTAssertFalse(runtime.hasUnread, "mid-turn assistant must not mark unread")
         XCTAssertNotEqual(runtime.status, .responding, "spontaneous turn never enters .responding")
 
-        runtime.receive(Message2Fixtures.result())
+        runtime.receive(MessageFixtures.result())
         XCTAssertTrue(
             runtime.hasUnread,
             "a CLI-spontaneous turn finish (.result without .responding) must mark unread")
@@ -150,10 +144,10 @@ final class SessionRuntimeUnreadTests: XCTestCase {
 
         startTurn(runtime)
         runtime.receive(
-            Message2Fixtures.assistantRead(toolUseId: "t1", filePath: "/tmp/x.txt"))
-        runtime.receive(Message2Fixtures.userToolResult(toolUseId: "t1"))
-        runtime.receive(Message2Fixtures.assistantText("done", messageId: "m-final"))
-        runtime.receive(Message2Fixtures.result())
+            MessageFixtures.assistantRead(toolUseId: "t1", filePath: "/tmp/x.txt"))
+        runtime.receive(MessageFixtures.userToolResult(toolUseId: "t1"))
+        runtime.receive(MessageFixtures.assistantText("done", messageId: "m-final"))
+        runtime.receive(MessageFixtures.result())
 
         XCTAssertFalse(
             runtime.hasUnread,

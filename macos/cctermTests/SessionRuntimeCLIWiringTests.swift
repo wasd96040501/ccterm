@@ -9,7 +9,7 @@ import XCTest
 /// The handle's runtime contract is exercised end-to-end against
 /// `FakeCLIClient`:
 /// - `send(...)` defers the write until bootstrap completes and then
-///   flushes the queued entry via `sendMessage(_:extra:)`.
+///   flushes the queued entry via `send(_:)`.
 /// - `setModel` / `setEffort` / `setPermissionMode` / `setFastMode`
 ///   forward to the client when attached.
 /// - `interrupt()` reaches the client when running.
@@ -52,20 +52,12 @@ final class SessionRuntimeCLIWiringTests: XCTestCase {
     /// flushed.
     private func bootstrap(_ runtime: SessionRuntime, _ fake: FakeCLIClient) async {
         runtime.activate()
-        // `bootstrap` is a detached `Task { @MainActor … }` kicked off
-        // synchronously from `ensureStarted`. Yield once so it can pick
-        // up the actor and reach the `initialize` continuation.
-        for _ in 0..<8 {
-            await Task.yield()
-            if !fake.initializeCalls.isEmpty { break }
-        }
-        XCTAssertFalse(fake.initializeCalls.isEmpty, "bootstrap should have called initialize")
-        fake.completeInitialize(with: nil)
-        // Let bootstrap resume after the continuation completes.
-        for _ in 0..<8 {
-            await Task.yield()
-            if runtime.status == .idle { break }
-        }
+        // `bootstrap` is a `Task { @MainActor … }` kicked off from
+        // `ensureStarted`; let it reach the held-open `start()`.
+        await yieldUntil { fake.isAwaitingStart }
+        XCTAssertTrue(fake.isAwaitingStart, "bootstrap should have started the client")
+        fake.completeStart()
+        await yieldUntil { runtime.status == .idle }
     }
 
     // MARK: - Tests
@@ -75,15 +67,15 @@ final class SessionRuntimeCLIWiringTests: XCTestCase {
         runtime.send(text: "hello")
 
         XCTAssertTrue(
-            fake.sendCalls.isEmpty,
+            fake.sent.isEmpty,
             "send() before bootstrap must not write to CLI yet")
         XCTAssertEqual(fake.startCalls, 0, "client.start should not run before bootstrap")
 
         await bootstrap(runtime, fake)
 
         XCTAssertEqual(fake.startCalls, 1)
-        XCTAssertEqual(fake.sendCalls.count, 1, "queued entry should flush once bootstrap idle")
-        XCTAssertEqual(fake.sendCalls.first?.text, "hello")
+        XCTAssertEqual(fake.sent.count, 1, "queued entry should flush once bootstrap idle")
+        XCTAssertEqual(fake.sent.first?.content.first?.text, "hello")
         XCTAssertEqual(runtime.status, .idle)
     }
 
@@ -93,8 +85,8 @@ final class SessionRuntimeCLIWiringTests: XCTestCase {
 
         runtime.send(text: "second")
 
-        XCTAssertEqual(fake.sendCalls.count, 1)
-        XCTAssertEqual(fake.sendCalls.first?.text, "second")
+        XCTAssertEqual(fake.sent.count, 1)
+        XCTAssertEqual(fake.sent.first?.content.first?.text, "second")
     }
 
     func testSetModelEffortPermissionForwardWhenAttached() async {
@@ -105,11 +97,22 @@ final class SessionRuntimeCLIWiringTests: XCTestCase {
         runtime.setEffort(.high)
         runtime.setPermissionMode(.acceptEdits)
         runtime.setFastMode(true)
+        await yieldUntil { fake.settingsCalls.count == 2 }
 
         XCTAssertEqual(fake.modelCalls, ["claude-sonnet-4-6"])
-        XCTAssertEqual(fake.effortCalls, [.high])
         XCTAssertEqual(fake.permissionModeCalls, [PermissionMode.acceptEdits.toSDK()])
-        XCTAssertEqual(fake.fastModeCalls, [true])
+        XCTAssertEqual(fake.settingsCalls, [Effort.high.settings, AgentSDK.Settings(json: ["fastMode": true])])
+    }
+
+    func testSetAdditionalDirectoriesSendsPermissionsWhenAttached() async {
+        let (runtime, fake) = makeRuntime()
+        await bootstrap(runtime, fake)
+
+        runtime.setAdditionalDirectories(["/extra", "/more"])
+        await yieldUntil { fake.settingsCalls.count == 1 }
+
+        XCTAssertEqual(
+            fake.settingsCalls.first?[.permissions], PermissionSettings(additionalDirectories: ["/extra", "/more"]))
     }
 
     func testSetModelWhileDetachedDoesNotTouchClient() {
@@ -127,11 +130,12 @@ final class SessionRuntimeCLIWiringTests: XCTestCase {
 
         runtime.send(text: "trigger")
         XCTAssertTrue(runtime.isRunning)
-        XCTAssertEqual(fake.sendCalls.count, 1)
+        XCTAssertEqual(fake.sent.count, 1)
 
         runtime.interrupt()
+        await yieldUntil { fake.interruptCalls == 1 }
 
-        XCTAssertEqual(fake.interruptCalls.count, 1, "interrupt should reach the client")
+        XCTAssertEqual(fake.interruptCalls, 1, "interrupt should reach the client")
         XCTAssertFalse(runtime.isRunning, "interrupt zeroes turn count synchronously")
     }
 
@@ -141,6 +145,7 @@ final class SessionRuntimeCLIWiringTests: XCTestCase {
         XCTAssertEqual(fake.closeCalls, 0)
 
         runtime.stop()
+        await yieldUntil { fake.closeCalls == 1 }
 
         XCTAssertEqual(fake.closeCalls, 1)
     }
@@ -154,10 +159,7 @@ final class SessionRuntimeCLIWiringTests: XCTestCase {
         runtime.onLaunchFailure = { captured = $0 }
 
         runtime.activate()
-        for _ in 0..<16 {
-            await Task.yield()
-            if runtime.status == .stopped { break }
-        }
+        await yieldUntil { runtime.status == .stopped }
 
         XCTAssertEqual(runtime.status, .stopped)
         XCTAssertNotNil(captured, "onLaunchFailure should fire on start() throw")

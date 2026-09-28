@@ -227,7 +227,7 @@ final class Session {
     /// view-renderable façade out of a runtime fixture.
     init(
         runtime: SessionRuntime,
-        cliClientFactory: @escaping CLIClientFactory = AgentSDKCLIClient.defaultFactory,
+        cliClientFactory: @escaping CLIClientFactory = liveCLIClientFactory,
         onPromoted: ((SessionRuntime) -> Void)? = nil
     ) {
         self.sessionId = runtime.sessionId
@@ -330,11 +330,11 @@ final class Session {
         runtime?.isRunning ?? false
     }
 
-    var pendingPermissions: [PendingPermission] {
+    var pendingPermissions: [PermissionRequest] {
         runtime?.pendingPermissions ?? []
     }
 
-    var availableModels: [ModelInfo] {
+    var availableModels: [InitializationResult.Model] {
         runtime?.availableModels ?? []
     }
 
@@ -387,18 +387,12 @@ final class Session {
         runtime?.isFetchingContextUsage ?? false
     }
 
-    /// Fire a `get_context_usage` request for the running CLI. No-op on
-    /// `.draft` sessions; `.unsupported` is delivered to the completion
-    /// when the CLI is too old to respond.
-    func requestContextUsage(
-        timeout: TimeInterval = 3.0,
-        completion: ((ContextUsageOutcome) -> Void)? = nil
-    ) {
-        guard let runtime else {
-            completion?(.unsupported)
-            return
-        }
-        runtime.requestContextUsage(timeout: timeout, completion: completion)
+    /// Refresh `contextUsage` from the running CLI. No-op on `.draft`
+    /// sessions and without a live CLI. Returns the refresh so a caller can
+    /// await it.
+    @discardableResult
+    func requestContextUsage(timeout: TimeInterval = 3.0) -> Task<Void, Never>? {
+        runtime?.requestContextUsage(timeout: timeout)
     }
 
     /// Phase-aware façade forwarder for the popover's task stop button.
@@ -411,17 +405,12 @@ final class Session {
     }
 
     /// Ask a `/btw`-style side question against the running CLI without
-    /// interrupting the current turn. On `.draft` sessions (no CLI yet) the
-    /// completion fires `.unsupported`. Completion runs on the main actor once.
-    func askSideQuestion(
-        _ question: String,
-        completion: @escaping (SideQuestionOutcome) -> Void
-    ) {
-        guard let runtime else {
-            completion(.unsupported)
-            return
-        }
-        runtime.askSideQuestion(question, completion: completion)
+    /// interrupting the current turn. `nil` when the CLI produced no text;
+    /// throws `AgentSDKError.notRunning` on `.draft` sessions and without a
+    /// live CLI.
+    func askSideQuestion(_ question: String) async throws -> SideQuestionAnswer? {
+        guard let runtime else { throw AgentSDKError.notRunning }
+        return try await runtime.askSideQuestion(question)
     }
 
     var isFocused: Bool {
@@ -558,8 +547,7 @@ final class Session {
 
         let url = overrideURL ?? runtime.historyJSONLURL
         let pipeline = TranscriptBackfillPipeline(
-            source: JSONLReversePageSource(
-                url: url, firstPageEntryTarget: firstPageEntryTarget),
+            source: TranscriptPageSource(url: url, firstPageEntryTarget: firstPageEntryTarget),
             controller: controller,
             onLoaded: { [weak self] in self?.runtime?.historyLoadState = .loaded },
             onApplied: { [weak self] entries in

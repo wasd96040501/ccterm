@@ -56,10 +56,10 @@ final class TranscriptAsyncLoadSwitchRaceTests: XCTestCase {
 
     /// Tail-first list of document-order message slices, one block per message.
     /// Each message carries a unique id so no two collapse into one entry.
-    private func makePages() -> [[Message2]] {
+    private func makePages() -> [[Message]] {
         (0..<Self.pageCount).map { p in
             (0..<Self.perPage).map { i in
-                Message2Fixtures.assistantText(
+                MessageFixtures.assistantText(
                     "page \(p) line \(i): the rain in spain falls mainly on the plain",
                     messageId: "m-\(p)-\(i)")
             }

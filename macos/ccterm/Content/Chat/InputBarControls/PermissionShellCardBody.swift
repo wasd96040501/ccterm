@@ -68,29 +68,27 @@ struct PermissionShellCardBody: View {
     /// view's body reads — see `PermissionShellCardBodyTests`. No
     /// state lives here; the view is a function of these getters.
     var command: String {
-        (request.rawInput["command"] as? String) ?? ""
+        request.input["command"]?.stringValue ?? ""
     }
 
     var description: String? {
-        request.rawInput["description"] as? String
+        request.input["description"]?.stringValue
     }
 
     /// True when the CLI's decision reason says the rules were
     /// computed per-subcommand. Same signal the upstream Bash dialog
     /// reads to seed the "yes, apply suggestions" branch.
     var isCompoundCommand: Bool {
-        guard case .structured(let type, _) = request.decisionReason else { return false }
-        return type == "subcommandResults"
+        request.decisionReasonType == "subcommandResults"
     }
 
     /// Count of bash rules in the request's suggestion bundle — what
     /// "Allow always" would install. We surface only the count, not
     /// the rule text, since long compound runs accumulate dozens.
     var bashRuleCount: Int {
-        guard let suggestions = request.permissionSuggestions else { return 0 }
-        return suggestions.reduce(0) { acc, suggestion in
-            if case .addRules(let s) = suggestion {
-                return acc + s.rules.filter { $0.toolName == "Bash" || $0.toolName == "PowerShell" }.count
+        request.suggestions.reduce(0) { acc, suggestion in
+            if case .addRules(let rules, _, _) = suggestion {
+                return acc + rules.filter { $0.toolName == "Bash" || $0.toolName == "PowerShell" }.count
             }
             return acc
         }
@@ -140,8 +138,8 @@ struct PermissionShellCardBody: View {
 
 #Preview("Bash · simple") {
     PermissionShellCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-1",
+        request: PermissionRequest.preview(
+            id: "preview-1",
             toolName: "Bash",
             input: [
                 "command": "rm -rf node_modules",
@@ -156,8 +154,8 @@ struct PermissionShellCardBody: View {
 
 #Preview("Bash · multi-line heredoc") {
     PermissionShellCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-2",
+        request: PermissionRequest.preview(
+            id: "preview-2",
             toolName: "Bash",
             input: [
                 "command":
@@ -173,8 +171,8 @@ struct PermissionShellCardBody: View {
 
 #Preview("PowerShell") {
     PermissionShellCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-3",
+        request: PermissionRequest.preview(
+            id: "preview-3",
             toolName: "PowerShell",
             input: [
                 "command": "Get-ChildItem -Recurse -Filter *.swift | Measure-Object",

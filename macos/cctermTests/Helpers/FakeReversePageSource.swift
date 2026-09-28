@@ -11,7 +11,7 @@ import Foundation
 /// `nextPage` is invoked serially by the single producer task, so the bare
 /// index is race-free in practice; `@unchecked Sendable` documents that.
 final class FakeReversePageSource: ReversePageSource, @unchecked Sendable {
-    private let pages: [[Message2]]
+    private let pages: [[Message]]
     private var index = 0
 
     /// Optional async hook fired just **before** the page at the given index is
@@ -22,11 +22,11 @@ final class FakeReversePageSource: ReversePageSource, @unchecked Sendable {
     var onBeforePage: (@Sendable (Int) async -> Void)?
 
     /// - Parameter pages: tail-first list of document-order message slices.
-    init(_ pages: [[Message2]]) {
+    init(_ pages: [[Message]]) {
         self.pages = pages
     }
 
-    func nextPage() async -> [Message2]? {
+    func nextPage() async -> [Message]? {
         guard index < pages.count else { return nil }
         let current = index
         await onBeforePage?(current)

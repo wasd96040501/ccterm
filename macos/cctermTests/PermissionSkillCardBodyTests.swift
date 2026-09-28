@@ -55,9 +55,9 @@ final class PermissionSkillCardBodyTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func makeBody(input: [String: Any]) -> PermissionSkillCardBody {
-        let req = PermissionRequest.makePreview(
-            requestId: "skill-\(UUID().uuidString)",
+    private func makeBody(input: JSONValue) -> PermissionSkillCardBody {
+        let req = PermissionRequest.preview(
+            id: "skill-\(UUID().uuidString)",
             toolName: "Skill",
             input: input)
         return PermissionSkillCardBody(request: req)

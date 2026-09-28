@@ -2,14 +2,13 @@ import AgentSDK
 import AppKit
 import Foundation
 
-/// Source of raw history pages, read **reverse** (newest page first). The
-/// reader abstraction is injected by initializer: the
-/// production wiring supplies a JSONL reverse pager, Group B injects a fake
-/// yielding canned pages. Each page is a contiguous slice of the file in
-/// **document order**; `nextPage` returns the tail page first and walks toward
-/// the file top, returning `nil` once the top is reached.
+/// Source of history pages, read **reverse** (newest page first). Injected by
+/// initializer: production supplies a `TranscriptPageSource`, tests a fake
+/// yielding canned pages. Each page is a contiguous slice of the history in
+/// **document order**; `nextPage` returns the newest page first and walks
+/// toward the oldest, returning `nil` once it is reached.
 protocol ReversePageSource: AnyObject {
-    func nextPage() async -> [Message2]?
+    func nextPage() async -> [Message]?
 }
 
 /// The content pipeline: an off-main producer task

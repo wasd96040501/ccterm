@@ -13,10 +13,6 @@ let package = Package(
             name: "AgentSDK"
         ),
         .executableTarget(
-            name: "SmokeTest",
-            dependencies: ["AgentSDK"]
-        ),
-        .executableTarget(
             name: "DumpSmoke",
             dependencies: ["AgentSDK"]
         ),
@@ -51,6 +47,19 @@ let package = Package(
         .executableTarget(
             name: "SideQuestionSmoke",
             dependencies: ["AgentSDK"]
+        ),
+        .executableTarget(
+            name: "SettingsSmoke",
+            dependencies: ["AgentSDK"]
+        ),
+        .executableTarget(
+            name: "CorpusAudit",
+            dependencies: ["AgentSDK"]
+        ),
+        .testTarget(
+            name: "AgentSDKTests",
+            dependencies: ["AgentSDK"],
+            resources: [.copy("Fixtures")]
         ),
     ]
 )

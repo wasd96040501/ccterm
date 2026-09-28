@@ -128,3 +128,25 @@ jobs:
 
       - name: Run package tests
         run: make test-kit
+
+  test-sdk:
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain info
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: macos/AgentSDK/.build
+          key: sdk-${{ runner.os }}-${{ runner.arch }}-pkg${{ hashFiles('macos/AgentSDK/Package.swift') }}-src${{ hashFiles('macos/AgentSDK/Sources/**/*.swift', 'macos/AgentSDK/Tests/**') }}
+          restore-keys: |
+            sdk-${{ runner.os }}-${{ runner.arch }}-pkg${{ hashFiles('macos/AgentSDK/Package.swift') }}-
+
+      - name: Run package tests
+        run: make test-sdk

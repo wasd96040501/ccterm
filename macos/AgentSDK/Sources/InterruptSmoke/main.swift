@@ -1,234 +1,173 @@
-import AgentSDK
-import Foundation
-
-// Real-CLI smoke for "interrupt mid-stream duplicates the user message".
-// Spawns haiku, sends a long-running prompt with a known uuid, waits for
-// the assistant stream to start, calls session.interrupt(), then drains
-// post-interrupt traffic and reports:
+// InterruptSmoke — interrupts a streaming turn with `Session.interrupt()`
+// against the real CLI and checks what the transcript receives afterwards.
 //
-//   - count of user-message echoes whose uuid matches the one we sent
-//     (the bug: this is > 1)
-//   - count of synthetic "[Request interrupted by user]" user messages
-//   - whether any user echo carries `isSidechain` / `parentToolUseId`
-//     (filtered by SessionRuntime.receive's isVisible check)
-//
-// Run from `macos/AgentSDK`:
+// Streams (`includePartialMessages`) a long-running prompt with a known uuid,
+// calls `interrupt()` INTERRUPT_AFTER_MS after the first text delta so it
+// lands mid-stream, reads until the turn's result, then sends a short
+// follow-up. Checks:
+//   - `interrupt()` is acknowledged, the turn ends interrupted
+//     (`terminalReason` `aborted_streaming`), and the partial text block is
+//     flushed with `isAborted`;
+//   - the prompt is replayed exactly once with its uuid — a second echo is
+//     the "interrupt duplicates the user message" bug (exit code 2);
+//   - the prompt's `CommandLifecycle` ends `cancelled`;
+//   - the session stays usable: the follow-up turn ends `.success`;
+//   - `close()` ends the process with exit code 0.
+// Also reports synthetic "[Request interrupted by user]" messages and user
+// messages carrying a `parentToolUseID`.
 //
 //   swift run InterruptSmoke
 //
-// Env: CLAUDE_BINARY_PATH (override), SMOKE_MODEL (default
-// claude-haiku-4-5), SMOKE_PROMPT (default a long-bedtime-story
-// prompt).
+// Env: CLAUDE_BINARY_PATH, SMOKE_MODEL (default claude-haiku-4-5),
+// SMOKE_PROMPT (default: a long story), INTERRUPT_AFTER_MS (default 1500).
+// Work dir (kept): /tmp/ccterm-interrupt-<timestamp>/.
 
-func log(_ msg: String) {
-    let ts = ISO8601DateFormatter().string(from: Date())
-    FileHandle.standardError.write(Data("[\(ts)] \(msg)\n".utf8))
-}
-
-func locateClaude() -> String? {
-    if let envPath = ProcessInfo.processInfo.environment["CLAUDE_BINARY_PATH"],
-        FileManager.default.isExecutableFile(atPath: envPath)
-    {
-        return envPath
-    }
-    let home = FileManager.default.homeDirectoryForCurrentUser.path
-    for p in ["\(home)/.local/bin/claude", "/usr/local/bin/claude"] {
-        if FileManager.default.isExecutableFile(atPath: p) { return p }
-    }
-    return nil
-}
+import AgentSDK
+import Foundation
 
 let env = ProcessInfo.processInfo.environment
 let model = env["SMOKE_MODEL"] ?? "claude-haiku-4-5"
 let prompt =
     env["SMOKE_PROMPT"]
-    ?? ("Write a long bedtime story about a robot exploring Mars. "
-        + "Aim for at least 800 words. Take your time and be descriptive.")
-guard let claudeBin = locateClaude() else {
-    log("ERROR: no claude binary found")
-    exit(1)
-}
+    ?? "Write a long bedtime story about a robot exploring Mars. Aim for at least 800 words. "
+    + "Take your time and be descriptive."
+let interruptAfterMS = Int(env["INTERRUPT_AFTER_MS"] ?? "") ?? 1500
 
-let stamp = Int(Date().timeIntervalSince1970)
-let workDir = URL(fileURLWithPath: "/tmp/ccterm-interrupt-smoke-\(stamp)", isDirectory: true)
-let exportDir = workDir.appendingPathComponent("export", isDirectory: true)
-try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
+let workDir = URL(fileURLWithPath: "/tmp/ccterm-interrupt-\(Int(Date().timeIntervalSince1970))")
+let exportDir = workDir.appendingPathComponent("export")
 try FileManager.default.createDirectory(at: exportDir, withIntermediateDirectories: true)
 
-let sessionId = UUID().uuidString.lowercased()
-let userUUID = UUID().uuidString.lowercased()
+func log(_ message: String) {
+    let stamp = ISO8601DateFormatter().string(from: Date())
+    FileHandle.standardError.write(Data("[\(stamp)] \(message)\n".utf8))
+}
 
-log("workDir=\(workDir.path)")
-log("model=\(model) sessionId=\(sessionId) userUUID=\(userUUID)")
+var failures: [String] = []
 
-let config = SessionConfiguration(
-    workingDirectory: workDir,
-    model: model,
-    sessionId: sessionId,
-    binaryPath: claudeBin,
-    inheritsParentEnvironment: true,
-    allowDangerouslySkipPermissions: true,
-    messageExportDirectory: exportDir
-)
+func check(_ ok: Bool, _ what: String) {
+    log("\(ok ? "PASS" : "FAIL")  \(what)")
+    if !ok { failures.append(what) }
+}
 
-let session = AgentSDK.Session(configuration: config)
-session.lastKnownSessionId = sessionId
+let session = Session(
+    configuration: SessionConfiguration(
+        workingDirectory: workDir, model: model, sessionId: UUID().uuidString.lowercased(),
+        binaryPath: env["CLAUDE_BINARY_PATH"], includePartialMessages: true, inheritsParentEnvironment: true,
+        messageExportDirectory: exportDir))
+let input = UserInput(prompt)
+let followUp = UserInput("Reply with exactly the two letters: ok")
 
-// Bug-relevant counters.
-var totalAssistantMessages = 0
-var totalUserMessagesAll = 0
-var userEchoesMatchingOurUUID = 0
-var userEchoesOtherUUID = 0
-var syntheticInterruptUserCount = 0
-var processExitCode: Int32? = nil
+var assistantCount = 0
+var abortedBlocks = 0
+var echoes = 0
+var interruptNotices = 0
+var otherUserMessages = 0
+var subagentUserMessages = 0
+var lifecycle: [CommandLifecycle.State] = []
+var results: [ResultMessage] = []
+var firstTextDelta: Date?
+var interruptSent = false
+var interruptAcked = false
+var termination: Termination?
 
-let interruptAcked = DispatchSemaphore(value: 0)
-let firstAssistantSeen = DispatchSemaphore(value: 0)
-var firstAssistantTripped = false
-let processExited = DispatchSemaphore(value: 0)
-
-session.onMessage = { (message: Message2) in
-    switch message {
-    case .assistant(let a):
-        totalAssistantMessages += 1
-        let textBlocks: [String] =
-            (a.message?.content ?? []).compactMap { block in
-                if case .text(let t) = block, let txt = t.text, !txt.isEmpty {
-                    return String(txt.prefix(40))
-                }
-                return nil
-            }
-        log("[asst #\(totalAssistantMessages)] text=\(textBlocks)")
-        if !firstAssistantTripped, !textBlocks.isEmpty {
-            firstAssistantTripped = true
-            firstAssistantSeen.signal()
+func record(_ event: SessionEvent) {
+    switch event {
+    case .message(.assistant(let m)):
+        assistantCount += 1
+        if m.isAborted { abortedBlocks += 1 }
+        let text = m.content.compactMap(\.text).joined()
+        log("assistant #\(assistantCount) aborted=\(m.isAborted) text=\(text.prefix(40).debugDescription)")
+    case .message(.user(let m)):
+        let text = m.content.compactMap(\.text).joined(separator: "|")
+        if m.parentToolUseID != nil { subagentUserMessages += 1 }
+        if m.uuid == input.uuid {
+            echoes += 1
+        } else if text.contains("[Request interrupted by user") {
+            interruptNotices += 1
+        } else if m.toolResult == nil && m.uuid != followUp.uuid {
+            otherUserMessages += 1
         }
-    case .user(let u):
-        totalUserMessagesAll += 1
-        // What text does it carry?
-        var snippet = ""
-        switch u.message?.content {
-        case .string(let s): snippet = String(s.prefix(80))
-        case .array(let items):
-            let texts: [String] = items.compactMap {
-                if case .text(let t) = $0 { return t.text }
-                return nil
-            }
-            snippet = String(texts.joined(separator: "|").prefix(80))
-        default: snippet = "(none)"
+        log("user uuid=\(m.uuid?.prefix(8) ?? "nil") replay=\(m.isReplay) text=\(text.prefix(60).debugDescription)")
+    case .message(.streamEvent(let e)):
+        if firstTextDelta == nil, case .contentBlockDelta(_, .text) = e.event {
+            firstTextDelta = Date()
+            log("first text delta")
         }
-        let isInterruptSynthetic = snippet.contains("[Request interrupted by user]")
-        if isInterruptSynthetic { syntheticInterruptUserCount += 1 }
-        let echoUUIDMatches = (u.uuid?.lowercased() == userUUID)
-        if echoUUIDMatches {
-            userEchoesMatchingOurUUID += 1
-        } else {
-            // Skip tool_result-only user messages (those carry tool_use_id).
-            let allToolResults: Bool = {
-                if case .array(let items) = u.message?.content {
-                    return !items.isEmpty
-                        && items.allSatisfy {
-                            if case .toolResult = $0 { return true }
-                            return false
-                        }
-                }
-                return false
-            }()
-            if !allToolResults && !isInterruptSynthetic {
-                userEchoesOtherUUID += 1
-            }
-        }
-        log(
-            "[user #\(totalUserMessagesAll)] uuid=\(u.uuid?.prefix(8) ?? "(nil)") "
-                + "match-ours=\(echoUUIDMatches) synth=\(isInterruptSynthetic) "
-                + "parentTool=\(u.parentToolUseId ?? "(nil)") "
-                + "text=\(snippet)"
-        )
-    case .result(let r):
-        log("[result] \(r)")
-    case .system(.`init`):
-        log("[system.init]")
+    case .message(.commandLifecycle(let c)) where c.commandUUID == input.uuid:
+        lifecycle.append(c.state)
+    case .message(.result(let r)):
+        log("result subtype=\(r.subtype.rawValue) terminalReason=\(r.terminalReason ?? "nil")")
+        results.append(r)
+    case .permissionRequest(let request):
+        log("permission request tool=\(request.toolName) → deny")
+        request.respond(.deny(message: "InterruptSmoke runs no tools"))
+    case .exited(let t):
+        termination = t
     default:
         break
     }
 }
-session.onStderr = { text in
-    log("[stderr] \(text.trimmingCharacters(in: .whitespacesAndNewlines))")
-}
-session.onProcessExit = { code in
-    log("[exit] code=\(code)")
-    processExitCode = code
-    processExited.signal()
+
+_ = Task {
+    try await Task.sleep(for: .seconds(180))
+    log("FAIL  timed out after 180 s; work dir \(workDir.path)")
+    exit(1)
 }
 
+log("model=\(model) interruptAfterMS=\(interruptAfterMS) workDir=\(workDir.path)")
+var events = session.events.makeAsyncIterator()
 do {
     try await session.start()
-    log("session.start ok")
+    try session.send(input)
 } catch {
-    log("ERROR session.start: \(error)")
+    log("FAIL  start/send: \(error)")
     exit(1)
 }
 
-let initDone = DispatchSemaphore(value: 0)
-session.initialize(promptSuggestions: false) { resp in
-    log("init reply: models=\(resp?.models?.count ?? 0)")
-    initDone.signal()
+while firstTextDelta == nil, results.isEmpty, let event = await events.next() { record(event) }
+let interrupter = Task {
+    try await Task.sleep(for: .milliseconds(interruptAfterMS))
+    log("calling interrupt()")
+    interruptSent = true
+    try await session.interrupt()
+    interruptAcked = true
+    log("interrupt acknowledged")
 }
-if initDone.wait(timeout: .now() + 30) == .timedOut {
-    log("ERROR initialize timeout")
-    session.close()
+
+while results.isEmpty, let event = await events.next() { record(event) }
+guard interruptSent else {
+    log("FAIL  the turn finished before the interrupt fired; lower INTERRUPT_AFTER_MS")
     exit(1)
 }
+if case .failure(let error) = await interrupter.result { log("interrupt() threw: \(error)") }
+check(interruptAcked, "interrupt() acknowledged")
+let interrupted = results.first
+check(
+    interrupted?.terminalReason?.hasPrefix("aborted") == true,
+    "turn ends interrupted (\(interrupted?.subtype.rawValue ?? "none"), \(interrupted?.terminalReason ?? "nil"))")
+check(abortedBlocks > 0, "the partial text block is flushed with isAborted (\(abortedBlocks))")
 
-log("sending prompt with uuid=\(userUUID)…")
-session.sendMessage(prompt, extra: ["uuid": userUUID])
+try? session.send(followUp)
+while results.count < 2, let event = await events.next() { record(event) }
+check(results.dropFirst().first?.subtype == .success, "follow-up turn after the interrupt succeeds")
 
-// Interrupt window: env `INTERRUPT_AFTER_MS` (default 1500). We do NOT
-// wait for the first assistant text — for fast models (haiku) the turn
-// can finish in <5s, and the bug only manifests if interrupt lands
-// mid-turn (entry not yet `.confirmed`, or assistant still streaming).
-let afterMs = Int(env["INTERRUPT_AFTER_MS"] ?? "1500") ?? 1500
-log("waiting \(afterMs)ms then calling interrupt regardless of assistant state")
-Thread.sleep(forTimeInterval: TimeInterval(afterMs) / 1000.0)
+await session.close()
+while let event = await events.next() { record(event) }
 
-log("calling session.interrupt() — totalAssistantMessages seen so far=\(totalAssistantMessages)")
-session.interrupt { _ in
-    log("interrupt ack")
-    interruptAcked.signal()
-}
-if interruptAcked.wait(timeout: .now() + 10) == .timedOut {
-    log("WARN interrupt ack did not arrive within 10s — continuing anyway")
-}
+check(lifecycle.last == .cancelled, "prompt lifecycle ends cancelled (\(lifecycle.map(\.rawValue)))")
+check(termination?.exitCode == 0, "close() ends the process with exit code 0 (\(termination?.exitCode ?? -1))")
+log(
+    "assistant=\(assistantCount) interruptNotices=\(interruptNotices) "
+        + "otherUserMessages=\(otherUserMessages) subagentUserMessages=\(subagentUserMessages)")
 
-// Drain post-interrupt traffic. The CLI may still emit additional
-// messages (synthetic interrupt user, late assistant, .result, …).
-log("drain window 6s")
-Thread.sleep(forTimeInterval: 6)
-
-log("closing session")
-session.close()
-if processExited.wait(timeout: .now() + 10) == .timedOut {
-    log("WARN process did not exit within 10s of close")
-}
-
-// Final report.
-log("=== REPORT ===")
-log("totalAssistantMessages=\(totalAssistantMessages)")
-log("totalUserMessages=\(totalUserMessagesAll)")
-log("userEchoesMatchingOurUUID=\(userEchoesMatchingOurUUID)  (>1 = duplicate bug)")
-log("userEchoesOtherUUID=\(userEchoesOtherUUID)")
-log("syntheticInterruptUserCount=\(syntheticInterruptUserCount)")
-log("processExitCode=\(processExitCode.map(String.init) ?? "nil")")
-log("workDir=\(workDir.path) (export at \(exportDir.path))")
-
-if let files = try? FileManager.default.contentsOfDirectory(at: exportDir, includingPropertiesForKeys: nil) {
-    for url in files {
-        log("export file: \(url.path)")
-    }
-}
-
-if userEchoesMatchingOurUUID > 1 {
-    log("REPRODUCED: CLI re-emitted our user message — bug is on the CLI side")
+if echoes > 1 {
+    log("REPRODUCED: the CLI echoed the prompt \(echoes) times after the interrupt; work dir \(workDir.path)")
     exit(2)
 }
-log("done")
+check(echoes == 1, "prompt echoed exactly once (\(echoes))")
+
+log(
+    failures.isEmpty
+        ? "InterruptSmoke PASS" : "InterruptSmoke FAIL (\(failures.count)): \(failures.joined(separator: "; "))")
+log("work dir: \(workDir.path)")
+exit(failures.isEmpty ? 0 : 1)

@@ -14,7 +14,7 @@ final class PermissionAskUserQuestionCardBodyTests: XCTestCase {
             [
                 "question": "Which auth method should we use?",
                 "options": [["label": "OIDC"], ["label": "SAML"]],
-            ] as [String: Any]
+            ] as JSONValue
         let q = try XCTUnwrap(PermissionAskUserQuestionCardBody.Question(raw: raw))
         XCTAssertEqual(q.question, "Which auth method should we use?")
         XCTAssertEqual(q.multiSelect, false)
@@ -32,7 +32,7 @@ final class PermissionAskUserQuestionCardBodyTests: XCTestCase {
                     ["label": "Diff view", "description": "Side-by-side patches"],
                     ["label": "Inline highlight"],
                 ],
-            ] as [String: Any]
+            ] as JSONValue
         let q = try XCTUnwrap(PermissionAskUserQuestionCardBody.Question(raw: raw))
         XCTAssertEqual(q.header, "Features")
         XCTAssertTrue(q.multiSelect)
@@ -59,7 +59,7 @@ final class PermissionAskUserQuestionCardBodyTests: XCTestCase {
                     ["label": ""],
                     ["label": "B"],
                 ],
-            ] as [String: Any]
+            ] as JSONValue
         let q = try XCTUnwrap(PermissionAskUserQuestionCardBody.Question(raw: raw))
         XCTAssertEqual(q.options.map(\.label), ["A", "B"])
     }

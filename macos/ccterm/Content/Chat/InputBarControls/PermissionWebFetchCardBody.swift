@@ -48,7 +48,7 @@ struct PermissionWebFetchCardBody: View {
     // MARK: - Data
 
     var url: String? {
-        let raw = request.rawInput["url"] as? String
+        let raw = request.input["url"]?.stringValue
         return (raw?.isEmpty == false) ? raw : nil
     }
 
@@ -61,15 +61,15 @@ struct PermissionWebFetchCardBody: View {
     }
 
     var prompt: String? {
-        let raw = request.rawInput["prompt"] as? String
+        let raw = request.input["prompt"]?.stringValue
         return (raw?.isEmpty == false) ? raw : nil
     }
 }
 
 #Preview("URL · with prompt") {
     PermissionWebFetchCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-1",
+        request: PermissionRequest.preview(
+            id: "preview-1",
             toolName: "WebFetch",
             input: [
                 "url": "https://docs.swift.org/swift-book/documentation/the-swift-programming-language/",
@@ -83,8 +83,8 @@ struct PermissionWebFetchCardBody: View {
 
 #Preview("URL · no prompt") {
     PermissionWebFetchCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-2",
+        request: PermissionRequest.preview(
+            id: "preview-2",
             toolName: "WebFetch",
             input: [
                 "url": "https://example.com/release-notes"
@@ -97,8 +97,8 @@ struct PermissionWebFetchCardBody: View {
 
 #Preview("Missing URL") {
     PermissionWebFetchCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-3",
+        request: PermissionRequest.preview(
+            id: "preview-3",
             toolName: "WebFetch",
             input: [:])
     )

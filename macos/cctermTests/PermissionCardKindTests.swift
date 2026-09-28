@@ -134,9 +134,9 @@ final class PermissionCardKindTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func makeRequest(toolName: String, input: [String: Any]) -> PermissionRequest {
-        PermissionRequest.makePreview(
-            requestId: "kind-\(toolName)",
+    private func makeRequest(toolName: String, input: JSONValue) -> PermissionRequest {
+        PermissionRequest.preview(
+            id: "kind-\(toolName)",
             toolName: toolName,
             input: input)
     }

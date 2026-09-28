@@ -70,8 +70,8 @@ struct PermissionFileWriteCardBody: View {
     /// FileWrite). Some pre-v2 builds emit `filePath` in camelCase;
     /// both are accepted.
     var filePath: String? {
-        if let v = request.rawInput["file_path"] as? String, !v.isEmpty { return v }
-        if let v = request.rawInput["filePath"] as? String, !v.isEmpty { return v }
+        if let v = request.input["file_path"]?.stringValue, !v.isEmpty { return v }
+        if let v = request.input["filePath"]?.stringValue, !v.isEmpty { return v }
         return nil
     }
 
@@ -117,8 +117,8 @@ struct PermissionFileWriteCardBody: View {
     }
 
     private func editDiffBlock(filePath: String) -> DiffBlock? {
-        let oldString = (request.rawInput["old_string"] as? String) ?? ""
-        let newString = (request.rawInput["new_string"] as? String) ?? ""
+        let oldString = request.input["old_string"]?.stringValue ?? ""
+        let newString = request.input["new_string"]?.stringValue ?? ""
         // An empty old_string with a non-empty new_string is the
         // upstream "append to new file" idiom — treat as new-file
         // mode so the gutter renders without `+` chrome. Otherwise
@@ -131,7 +131,7 @@ struct PermissionFileWriteCardBody: View {
     }
 
     private func writeDiffBlock(filePath: String) -> DiffBlock? {
-        let newContent = (request.rawInput["content"] as? String) ?? ""
+        let newContent = request.input["content"]?.stringValue ?? ""
         // ENOENT → new file. Any other read error (permissions, IO)
         // falls through to "new file" too — the agent could still
         // succeed at the write under the CLI's privileges, and the
@@ -150,8 +150,8 @@ struct PermissionFileWriteCardBody: View {
 
 #Preview("Edit · snippet diff") {
     PermissionFileWriteCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-1",
+        request: PermissionRequest.preview(
+            id: "preview-1",
             toolName: "Edit",
             input: [
                 "file_path": "/Users/example/Project/Sources/Greeter.swift",
@@ -167,8 +167,8 @@ struct PermissionFileWriteCardBody: View {
 
 #Preview("Write · create new file") {
     PermissionFileWriteCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-2",
+        request: PermissionRequest.preview(
+            id: "preview-2",
             toolName: "Write",
             input: [
                 "file_path": "/tmp/ccterm-preview-new-file.txt",
@@ -183,8 +183,8 @@ struct PermissionFileWriteCardBody: View {
 
 #Preview("Write · overwrite /etc/hosts") {
     PermissionFileWriteCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-3",
+        request: PermissionRequest.preview(
+            id: "preview-3",
             toolName: "Write",
             input: [
                 "file_path": "/etc/hosts",
@@ -199,8 +199,8 @@ struct PermissionFileWriteCardBody: View {
 
 #Preview("Edit · missing path") {
     PermissionFileWriteCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-4",
+        request: PermissionRequest.preview(
+            id: "preview-4",
             toolName: "Edit",
             input: [:]),
         kind: .fileEdit

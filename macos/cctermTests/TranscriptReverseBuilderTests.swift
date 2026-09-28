@@ -19,7 +19,7 @@ final class TranscriptReverseBuilderTests: XCTestCase {
     /// the backfill pipeline does: reverse the stream, prepend each finalized
     /// batch, then prepend the `finish()` flush at the top. Returns document
     /// order.
-    private func build(_ messages: [Message2]) -> [MessageEntry] {
+    private func build(_ messages: [Message]) -> [MessageEntry] {
         var builder = ReverseEntryBuilder()
         var acc: [MessageEntry] = []
         for m in messages.reversed() {
@@ -32,7 +32,7 @@ final class TranscriptReverseBuilderTests: XCTestCase {
     /// Forward reference: run the same messages through a throwaway
     /// `SessionRuntime.receive(_:mode:.replay)` — the exact path `buildEntries`
     /// used — and read the resulting timeline. Used by A6 to prove 1:1 parity.
-    private func forwardReference(_ messages: [Message2]) -> [MessageEntry] {
+    private func forwardReference(_ messages: [Message]) -> [MessageEntry] {
         let runtime = SessionRuntime(sessionId: UUID().uuidString, repository: InMemorySessionRepository())
         for m in messages { runtime.receive(m, mode: .replay) }
         return runtime.messages
@@ -72,18 +72,18 @@ final class TranscriptReverseBuilderTests: XCTestCase {
         guard case .single(let s) = entry,
             case .remote(.user(let u)) = s.payload
         else { return false }
-        return u.toolResultBlock != nil
+        return u.toolResult != nil
     }
 
     // MARK: - A1: clean bottom-up read, interleaved text
 
     func testA1_cleanFileEmitsDocumentOrder() throws {
         let t1 = "tool-1"
-        let messages: [Message2] = [
-            Message2Fixtures.userText("hi", uuid: UUID().uuidString),
-            Message2Fixtures.assistantRead(toolUseId: t1, filePath: "/a.swift"),
-            Message2Fixtures.userToolResult(toolUseId: t1, text: "contents"),
-            Message2Fixtures.assistantText("done"),
+        let messages: [Message] = [
+            MessageFixtures.userText("hi", uuid: UUID().uuidString),
+            MessageFixtures.assistantRead(toolUseId: t1, filePath: "/a.swift"),
+            MessageFixtures.userToolResult(toolUseId: t1, text: "contents"),
+            MessageFixtures.assistantText("done"),
         ]
 
         let entries = build(messages)
@@ -104,9 +104,9 @@ final class TranscriptReverseBuilderTests: XCTestCase {
         let t1 = "tool-2"
         // Reverse feed hits the result first; pairing must complete when the
         // tool_use is reached above it.
-        let messages: [Message2] = [
-            Message2Fixtures.assistantRead(toolUseId: t1, filePath: "/b.swift"),
-            Message2Fixtures.userToolResult(toolUseId: t1, text: "body"),
+        let messages: [Message] = [
+            MessageFixtures.assistantRead(toolUseId: t1, filePath: "/b.swift"),
+            MessageFixtures.userToolResult(toolUseId: t1, text: "body"),
         ]
 
         let entries = build(messages)
@@ -123,10 +123,10 @@ final class TranscriptReverseBuilderTests: XCTestCase {
 
     func testA3_trueOrphanFlushedBestEffortExactlyOnce() throws {
         let missing = "tool-missing"
-        let messages: [Message2] = [
-            Message2Fixtures.userText("hi"),
-            Message2Fixtures.userToolResult(toolUseId: missing, text: "stranded"),
-            Message2Fixtures.assistantText("done"),
+        let messages: [Message] = [
+            MessageFixtures.userText("hi"),
+            MessageFixtures.userToolResult(toolUseId: missing, text: "stranded"),
+            MessageFixtures.assistantText("done"),
         ]
 
         let entries = build(messages)
@@ -157,11 +157,11 @@ final class TranscriptReverseBuilderTests: XCTestCase {
         // Several non-groupable messages sit between the tool_use and its
         // result, mimicking a page split. The withhold buffer must carry the
         // result across them.
-        let messages: [Message2] = [
-            Message2Fixtures.assistantRead(toolUseId: t1, filePath: "/c.swift"),
-            Message2Fixtures.assistantText("thinking out loud"),
-            Message2Fixtures.userText("a follow up"),
-            Message2Fixtures.userToolResult(toolUseId: t1, text: "late result"),
+        let messages: [Message] = [
+            MessageFixtures.assistantRead(toolUseId: t1, filePath: "/c.swift"),
+            MessageFixtures.assistantText("thinking out loud"),
+            MessageFixtures.userText("a follow up"),
+            MessageFixtures.userToolResult(toolUseId: t1, text: "late result"),
         ]
 
         let entries = build(messages)
@@ -179,13 +179,13 @@ final class TranscriptReverseBuilderTests: XCTestCase {
     func testA5_everyEmittedToolUseIsBornWithItsResult() throws {
         let t1 = "tool-5a"
         let t2 = "tool-5b"
-        let messages: [Message2] = [
-            Message2Fixtures.userText("go"),
-            Message2Fixtures.assistantRead(toolUseId: t1, filePath: "/x.swift"),
-            Message2Fixtures.userToolResult(toolUseId: t1),
-            Message2Fixtures.assistantRead(toolUseId: t2, filePath: "/y.swift"),
-            Message2Fixtures.userToolResult(toolUseId: t2),
-            Message2Fixtures.assistantText("summary"),
+        let messages: [Message] = [
+            MessageFixtures.userText("go"),
+            MessageFixtures.assistantRead(toolUseId: t1, filePath: "/x.swift"),
+            MessageFixtures.userToolResult(toolUseId: t1),
+            MessageFixtures.assistantRead(toolUseId: t2, filePath: "/y.swift"),
+            MessageFixtures.userToolResult(toolUseId: t2),
+            MessageFixtures.assistantText("summary"),
         ]
 
         let entries = build(messages)
@@ -208,19 +208,19 @@ final class TranscriptReverseBuilderTests: XCTestCase {
         let t1 = "tool-6a"
         let t2 = "tool-6b"
         let t3 = "tool-6c"
-        let messages: [Message2] = [
-            Message2Fixtures.userText("first"),
-            Message2Fixtures.assistantText("intro text"),
+        let messages: [Message] = [
+            MessageFixtures.userText("first"),
+            MessageFixtures.assistantText("intro text"),
             // a run of three groupable tool_uses with interleaved results
-            Message2Fixtures.assistantRead(toolUseId: t1, filePath: "/1.swift"),
-            Message2Fixtures.userToolResult(toolUseId: t1),
-            Message2Fixtures.assistantRead(toolUseId: t2, filePath: "/2.swift"),
-            Message2Fixtures.userToolResult(toolUseId: t2),
-            Message2Fixtures.assistantRead(toolUseId: t3, filePath: "/3.swift"),
-            Message2Fixtures.userToolResult(toolUseId: t3),
+            MessageFixtures.assistantRead(toolUseId: t1, filePath: "/1.swift"),
+            MessageFixtures.userToolResult(toolUseId: t1),
+            MessageFixtures.assistantRead(toolUseId: t2, filePath: "/2.swift"),
+            MessageFixtures.userToolResult(toolUseId: t2),
+            MessageFixtures.assistantRead(toolUseId: t3, filePath: "/3.swift"),
+            MessageFixtures.userToolResult(toolUseId: t3),
             // closing assistant text breaks the group
-            Message2Fixtures.assistantText("wrap up"),
-            Message2Fixtures.userText("second"),
+            MessageFixtures.assistantText("wrap up"),
+            MessageFixtures.userText("second"),
         ]
 
         XCTAssertEqual(

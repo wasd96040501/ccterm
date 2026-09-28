@@ -11,9 +11,7 @@ import Observation
 //      + description + task_type
 //   3. `user.tool_result` — carries the absolute path of the spool file
 //      ("Output is being written to: …") + the backgroundTaskId
-//   4. `system.task_updated` — patches status / end_time / output_file /
-//      summary on the entry. Modeled as `TaskUpdated` + `TaskUpdatedPatch`
-//      alongside the other System variants.
+//   4. `system.task_updated` — patches status / end time on the entry.
 //   5. `system.task_notification` — terminal payload with status,
 //      output_file, summary, usage. Triggers a synthetic follow-up turn
 //      so the assistant can act on the result.
@@ -54,12 +52,12 @@ final class TaskTracker {
     /// scanning its message timeline (`SessionRuntime.bashCommand(forToolUseId:)`)
     /// — the tracker has no access to `messages`, so the caller passes
     /// the already-resolved value in.
-    func handleTaskStarted(_ started: TaskStarted, command: String?) {
-        guard let taskId = started.taskId else { return }
+    func handleTaskStarted(_ started: SystemMessage.TaskStarted, command: String?) {
+        let taskId = started.taskID
         let existingOutputFile = tasks.first(where: { $0.id == taskId })?.outputFile
         let task = BackgroundTask(
             id: taskId,
-            toolUseId: started.toolUseId,
+            toolUseId: started.toolUseID,
             description: started.description,
             taskType: started.taskType,
             command: command,
@@ -72,41 +70,28 @@ final class TaskTracker {
         upsert(task)
     }
 
-    func handleTaskNotification(_ notif: TaskNotification) {
-        guard let taskId = notif.taskId,
-            let idx = tasks.firstIndex(where: { $0.id == taskId })
-        else { return }
+    func handleTaskNotification(_ notif: SystemMessage.TaskNotification) {
+        guard let idx = tasks.firstIndex(where: { $0.id == notif.taskID }) else { return }
         var task = tasks[idx]
         task.status = Self.statusFrom(string: notif.status) ?? .completed
-        if let path = notif.outputFile { task.outputFile = path }
-        if let summary = notif.summary { task.summary = summary }
+        if !notif.outputFile.isEmpty { task.outputFile = notif.outputFile }
+        if !notif.summary.isEmpty { task.summary = notif.summary }
         task.endedAt = task.endedAt ?? Date()
         tasks[idx] = task
     }
 
-    /// `system.task_updated` carries a `patch` sub-record with whatever
-    /// fields the CLI is changing this tick — most commonly `status` +
-    /// `end_time` on the terminal transition. We apply each field
-    /// individually so partial patches (e.g. an interim status flip
-    /// with no end time yet) leave the rest of the entry untouched.
-    func handleTaskUpdated(_ updated: TaskUpdated) {
-        guard let taskId = updated.taskId,
-            let idx = tasks.firstIndex(where: { $0.id == taskId })
-        else { return }
+    /// `system.task_updated` carries only the fields the CLI is changing
+    /// this tick — most commonly `status` + end time on the terminal
+    /// transition. Each is applied individually so a partial patch (an
+    /// interim status flip with no end time yet) leaves the rest untouched.
+    func handleTaskUpdated(_ updated: SystemMessage.TaskUpdated) {
+        guard let idx = tasks.firstIndex(where: { $0.id == updated.taskID }) else { return }
         var task = tasks[idx]
-        if let patch = updated.patch {
-            if let mapped = Self.statusFrom(string: patch.status) {
-                task.status = mapped
-            }
-            if let endTime = patch.endTime {
-                task.endedAt = Date(timeIntervalSince1970: endTime / 1000.0)
-            }
-            if let outputFile = patch.outputFile {
-                task.outputFile = outputFile
-            }
-            if let summary = patch.summary {
-                task.summary = summary
-            }
+        if let mapped = Self.statusFrom(string: updated.status) {
+            task.status = mapped
+        }
+        if let endTime = updated.endTime {
+            task.endedAt = endTime
         }
         if task.isTerminal, task.endedAt == nil {
             task.endedAt = Date()
@@ -115,14 +100,13 @@ final class TaskTracker {
     }
 
     /// The bash tool_result for a background invocation carries the
-    /// spool-file path inside its text body. We don't have a structured
-    /// field for it (ObjectBash.persistedOutputPath is for the persisted
-    /// tail, not the live file), so parse the canonical sentence the CLI
-    /// emits: "Output is being written to: <path>".
-    func rememberOutputFileFromBashResult(_ user: Message2User) {
-        guard let block = Self.firstToolResultBlock(in: user),
-            let toolUseId = block.toolUseId
-        else { return }
+    /// spool-file path inside its text body. There is no structured field
+    /// for it (`persistedOutputPath` is the persisted tail, not the live
+    /// file), so parse the canonical sentence the CLI emits: "Output is
+    /// being written to: <path>".
+    func rememberOutputFileFromBashResult(_ user: UserMessage) {
+        guard let block = user.toolResult else { return }
+        let toolUseId = block.toolUseID
         // Use the tool_use_id to find the matching task (more reliable
         // than backgroundTaskId — the typed result carries the id, but
         // the text body has the path and the typed parse may or may not
@@ -164,14 +148,6 @@ final class TaskTracker {
         }
     }
 
-    private static func firstToolResultBlock(in user: Message2User) -> ItemToolResult? {
-        guard case .array(let items) = user.message?.content else { return nil }
-        for item in items {
-            if case .toolResult(let r) = item { return r }
-        }
-        return nil
-    }
-
     private static func statusFrom(string: String?) -> BackgroundTask.Status? {
         switch string?.lowercased() {
         case "completed": return .completed
@@ -187,12 +163,8 @@ final class TaskTracker {
     /// "Output is being written to: <absolute path>." We tolerate trailing
     /// punctuation and a missing leading whitespace just in case the CLI
     /// tightens its template.
-    private static func extractOutputPath(from result: ItemToolResult) -> String? {
-        let texts = result.content?.allText ?? []
-        for text in texts {
-            if let path = scanOutputPath(in: text) { return path }
-        }
-        return nil
+    private static func extractOutputPath(from result: ToolResultBlock) -> String? {
+        result.content.lazy.compactMap(\.text).compactMap(scanOutputPath(in:)).first
     }
 
     private static func scanOutputPath(in text: String) -> String? {
@@ -211,22 +183,5 @@ final class TaskTracker {
             path.removeLast()
         }
         return path.isEmpty ? nil : path
-    }
-}
-
-// MARK: - Convenience
-
-extension ItemToolResultContent {
-    fileprivate var allText: [String] {
-        switch self {
-        case .string(let s): return [s]
-        case .array(let items):
-            return items.compactMap {
-                if case .text(let t) = $0 { return t.text }
-                return nil
-            }
-        case .other:
-            return []
-        }
     }
 }

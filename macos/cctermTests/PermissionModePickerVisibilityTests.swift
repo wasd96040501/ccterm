@@ -4,7 +4,7 @@ import XCTest
 @testable import ccterm
 
 /// Pins `PermissionModePicker.visibleModes(for:)` — the rule that the
-/// `auto` row is only surfaced when the active `ModelInfo` declares
+/// `auto` row is only surfaced when the active model declares
 /// `supportsAutoMode == true`. Driven by the static helper so the test
 /// doesn't need to stand up a real `SessionRuntime` + `View`.
 @MainActor
@@ -20,7 +20,7 @@ final class PermissionModePickerVisibilityTests: XCTestCase {
 
     func testHidesAutoWhenActiveModelLacksCapability() {
         // sonnet in the current CLI: no `supportsAutoMode` field.
-        let sonnet = Self.makeModel(value: "sonnet", supportsAutoMode: nil)
+        let sonnet = Self.makeModel(value: "sonnet", supportsAutoMode: false)
         XCTAssertFalse(PermissionModePicker.visibleModes(for: sonnet).contains(.auto))
     }
 
@@ -31,9 +31,7 @@ final class PermissionModePickerVisibilityTests: XCTestCase {
         XCTAssertTrue(PermissionModePicker.visibleModes(for: defaultModel).contains(.auto))
     }
 
-    private static func makeModel(value: String, supportsAutoMode: Bool?) -> ModelInfo {
-        var raw: [String: Any] = ["value": value, "displayName": value]
-        if let supportsAutoMode { raw["supportsAutoMode"] = supportsAutoMode }
-        return try! ModelInfo(json: raw)
+    private static func makeModel(value: String, supportsAutoMode: Bool) -> ModelStore.Model {
+        ModelStore.Model(value: value, supportsAutoMode: supportsAutoMode)
     }
 }

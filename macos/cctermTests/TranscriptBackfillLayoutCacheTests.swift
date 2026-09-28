@@ -50,9 +50,9 @@ final class TranscriptBackfillLayoutCacheTests: XCTestCase {
         // so every page is a cache hit and drains unbudgeted (`budget: 2` only
         // gates the miss path now — see TranscriptBackfillPipelineTests.B4);
         // the single-width contract below holds regardless of tick count.
-        let pages: [[Message2]] = (0..<12).reversed().map {
+        let pages: [[Message]] = (0..<12).reversed().map {
             [
-                Message2Fixtures.assistantText(
+                MessageFixtures.assistantText(
                     "message \($0): the rain in spain falls mainly on the plain, "
                         + "and the quick brown fox jumps over the lazy dog.")
             ]

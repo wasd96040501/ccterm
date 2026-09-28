@@ -109,9 +109,9 @@ final class PermissionTaskAgentCardBodyTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func makeBody(input: [String: Any]) -> PermissionTaskAgentCardBody {
-        let req = PermissionRequest.makePreview(
-            requestId: "task-\(UUID().uuidString)",
+    private func makeBody(input: JSONValue) -> PermissionTaskAgentCardBody {
+        let req = PermissionRequest.preview(
+            id: "task-\(UUID().uuidString)",
             toolName: "Task",
             input: input)
         return PermissionTaskAgentCardBody(request: req)

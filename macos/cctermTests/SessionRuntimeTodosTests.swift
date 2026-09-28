@@ -25,20 +25,6 @@ final class SessionRuntimeTodosTests: XCTestCase {
 
     // MARK: - Fixtures
 
-    /// The `ToolUseResultObject` is created `.unknown(name: "unresolved")`
-    /// when first parsed, and only resolves to its typed variant
-    /// (`.TaskCreate(...)` etc.) once the resolver has previously seen
-    /// the matching assistant `tool_use` and stitches the two together.
-    /// Production wires a single `Message2Resolver` per session;
-    /// reuse one here so the dispatch path inside `applyTodoToolResult`
-    /// sees a properly-resolved result envelope.
-    private var resolver: Message2Resolver!
-
-    override func setUp() {
-        super.setUp()
-        resolver = Message2Resolver()
-    }
-
     private func makeRuntime() -> SessionRuntime {
         SessionRuntime(
             sessionId: UUID().uuidString,
@@ -52,7 +38,7 @@ final class SessionRuntimeTodosTests: XCTestCase {
         subject: String,
         description: String? = nil,
         activeForm: String? = nil
-    ) -> Message2 {
+    ) -> Message {
         var input: [String: Any] = ["subject": subject]
         if let description { input["description"] = description }
         if let activeForm { input["activeForm"] = activeForm }
@@ -80,7 +66,7 @@ final class SessionRuntimeTodosTests: XCTestCase {
         toolUseId: String,
         taskId: String,
         subject: String
-    ) -> Message2 {
+    ) -> Message {
         resolve([
             "type": "user",
             "uuid": UUID().uuidString,
@@ -109,7 +95,7 @@ final class SessionRuntimeTodosTests: XCTestCase {
         taskId: String,
         status: String? = nil,
         activeForm: String? = nil
-    ) -> Message2 {
+    ) -> Message {
         var input: [String: Any] = ["taskId": taskId]
         if let status { input["status"] = status }
         if let activeForm { input["activeForm"] = activeForm }
@@ -139,7 +125,7 @@ final class SessionRuntimeTodosTests: XCTestCase {
         from: String,
         to: String,
         success: Bool = true
-    ) -> Message2 {
+    ) -> Message {
         resolve([
             "type": "user",
             "uuid": UUID().uuidString,
@@ -166,8 +152,8 @@ final class SessionRuntimeTodosTests: XCTestCase {
         ])
     }
 
-    private func resolve(_ dict: [String: Any]) -> Message2 {
-        try! resolver.resolve(dict)
+    private func resolve(_ dict: [String: Any]) -> Message {
+        MessageFixtures.message(dict)
     }
 
     // MARK: - Materialization

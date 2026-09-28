@@ -52,12 +52,12 @@ final class PermissionExitPlanModeCardBodyTests: XCTestCase {
     // MARK: - Helpers
 
     private func makeBody(
-        toolName: String, input: [String: Any]
+        toolName: String, input: JSONValue
     )
         -> PermissionExitPlanModeCardBody
     {
-        let req = PermissionRequest.makePreview(
-            requestId: "exit-\(UUID().uuidString)",
+        let req = PermissionRequest.preview(
+            id: "exit-\(UUID().uuidString)",
             toolName: toolName,
             input: input)
         return PermissionExitPlanModeCardBody(request: req)

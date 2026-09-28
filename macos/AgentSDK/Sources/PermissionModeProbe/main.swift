@@ -1,290 +1,211 @@
+// PermissionModeProbe — shows where the CLI reports a permission-mode change
+// after a `PermissionRequest` is allowed with mode-changing
+// `PermissionUpdate`s ("allow always"), against the real CLI.
+//
+// Starts in `.default` mode with no settings sources (so the developer's own
+// allow rules cannot pre-approve the tool), sends a prompt that makes the
+// model call the scenario's tool, and answers every request with
+// `.allow(updatedPermissions: request.suggestions)`. For ExitPlanMode,
+// SMOKE_EXIT_MODE (default / acceptEdits / bypassPermissions / plan) sends
+// `.setMode(<mode>, destination: .session)` instead, since the CLI suggests
+// nothing there. After the turn it keeps reading for SMOKE_DRAIN_SECONDS.
+// Checks:
+//   - the scenario's tool asked for permission (EnterPlanMode needs none);
+//   - the turn ends `.success`;
+//   - every mode sent back in a `.setMode` update (and `plan` for the plan
+//     scenarios) is later reported by `SystemMessage.status` or `.initialized`.
+// Prints each request's suggestions, every typed mode report, and every raw
+// exported line that carries `permissionMode` / `permission_mode`.
+//
+//   swift run PermissionModeProbe                     # edit
+//   SMOKE_SCENARIO=bash swift run PermissionModeProbe  # bash, write, webfetch, enterplan, exitplan
+//   SMOKE_SCENARIO=exitplan SMOKE_EXIT_MODE=acceptEdits swift run PermissionModeProbe
+//
+// Env: CLAUDE_BINARY_PATH, SMOKE_MODEL (default claude-haiku-4-5), SMOKE_PROMPT
+// (overrides the scenario's prompt), SMOKE_SCENARIO, SMOKE_EXIT_MODE,
+// SMOKE_DRAIN_SECONDS (default 8). Work dir (kept):
+// /tmp/ccterm-permission-probe-<scenario>-<timestamp>/.
+
 import AgentSDK
 import Foundation
 
-// Real-CLI probe for "where does the CLI surface a permission_mode change
-// after the client responds to a permission_request with allowAlways +
-// permission_suggestions[type=setMode]?".
-//
-// Boots a fresh session with permissionMode=.default and the dangerous-skip
-// flag OFF, issues a prompt that should trigger a specific tool, captures
-// the resulting permission_request and its permission_suggestions verbatim,
-// responds with allowAlways (echoing those suggestions back to the CLI),
-// then dumps every subsequent JSONL line to stderr so we can see exactly
-// which message types ever carry `permission_mode`.
-//
-// Run from `macos/AgentSDK`:
-//
-//   swift run PermissionModeProbe                       # default: edit
-//   SMOKE_SCENARIO=bash       swift run PermissionModeProbe
-//   SMOKE_SCENARIO=write      swift run PermissionModeProbe
-//   SMOKE_SCENARIO=webfetch   swift run PermissionModeProbe
-//   SMOKE_SCENARIO=enterplan  swift run PermissionModeProbe
-//   SMOKE_SCENARIO=exitplan   swift run PermissionModeProbe
-//
-// Env: CLAUDE_BINARY_PATH (override), SMOKE_MODEL (default claude-haiku-4-5),
-//      SMOKE_DRAIN_SECONDS (default 8).
-
-func log(_ msg: String) {
-    let ts = ISO8601DateFormatter().string(from: Date())
-    FileHandle.standardError.write(Data("[\(ts)] \(msg)\n".utf8))
+enum Scenario: String {
+    case bash, edit, write, webfetch, enterplan, exitplan
 }
-
-func dumpJSON(_ tag: String, _ obj: Any) {
-    let data = (try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys])) ?? Data()
-    let str = String(data: data, encoding: .utf8) ?? "<unprintable>"
-    log("\(tag) \(str)")
-}
-
-func locateClaude() -> String? {
-    if let envPath = ProcessInfo.processInfo.environment["CLAUDE_BINARY_PATH"],
-        FileManager.default.isExecutableFile(atPath: envPath)
-    {
-        return envPath
-    }
-    let home = FileManager.default.homeDirectoryForCurrentUser.path
-    for p in ["\(home)/.local/bin/claude", "/usr/local/bin/claude"] {
-        if FileManager.default.isExecutableFile(atPath: p) { return p }
-    }
-    return nil
-}
-
-enum Scenario: String { case bash, edit, write, webfetch, enterplan, exitplan }
 
 let env = ProcessInfo.processInfo.environment
-let scenario = Scenario(rawValue: env["SMOKE_SCENARIO"] ?? "edit") ?? .edit
-let model = env["SMOKE_MODEL"] ?? "claude-haiku-4-5"
-let drainSeconds = TimeInterval(Int(env["SMOKE_DRAIN_SECONDS"] ?? "8") ?? 8)
-
-guard let claudeBin = locateClaude() else {
-    log("ERROR: no claude binary found")
-    exit(1)
+guard let scenario = Scenario(rawValue: env["SMOKE_SCENARIO"] ?? "edit") else {
+    FileHandle.standardError.write(Data("SMOKE_SCENARIO must be bash|edit|write|webfetch|enterplan|exitplan\n".utf8))
+    exit(2)
 }
+let model = env["SMOKE_MODEL"] ?? "claude-haiku-4-5"
+let exitMode = env["SMOKE_EXIT_MODE"].map { PermissionMode(rawValue: $0) }
+if case .some(nil) = exitMode {
+    FileHandle.standardError.write(Data("SMOKE_EXIT_MODE is not a permission mode\n".utf8))
+    exit(2)
+}
+let drainSeconds = Int(env["SMOKE_DRAIN_SECONDS"] ?? "") ?? 8
 
-let stamp = Int(Date().timeIntervalSince1970)
 let workDir = URL(
-    fileURLWithPath: "/tmp/ccterm-permission-probe-\(scenario.rawValue)-\(stamp)",
-    isDirectory: true)
-let exportDir = workDir.appendingPathComponent("export", isDirectory: true)
-try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
+    fileURLWithPath: "/tmp/ccterm-permission-probe-\(scenario.rawValue)-\(Int(Date().timeIntervalSince1970))")
+let exportDir = workDir.appendingPathComponent("export")
 try FileManager.default.createDirectory(at: exportDir, withIntermediateDirectories: true)
 
-// Scenario-specific filesystem setup + prompt.
-let targetFile = workDir.appendingPathComponent("target.txt")
-let prompt: String
+let target = workDir.appendingPathComponent("target.txt")
+let tool: String
+let defaultPrompt: String
 switch scenario {
 case .bash:
-    prompt = "Use the Bash tool to run exactly `echo probe-ok` and then reply with 'done'."
+    tool = "Bash"
+    defaultPrompt = "Use the Bash tool to run exactly `touch probe-ok.txt` and then reply with 'done'."
 case .edit:
-    try "hello\n".write(to: targetFile, atomically: true, encoding: .utf8)
-    prompt =
-        "Use the Edit tool to change the word 'hello' to 'world' inside "
-        + "\(targetFile.path). After that reply with 'done'."
+    tool = "Edit"
+    try "hello\n".write(to: target, atomically: true, encoding: .utf8)
+    defaultPrompt =
+        "Use the Edit tool to change the word 'hello' to 'world' inside \(target.path). After that reply with 'done'."
 case .write:
-    prompt =
-        "Use the Write tool to create the file \(workDir.path)/new.txt with the "
-        + "single line `created`. Then reply with 'done'."
+    tool = "Write"
+    defaultPrompt =
+        "Use the Write tool to create the file \(workDir.path)/new.txt with the single line `created`. "
+        + "Then reply with 'done'."
 case .webfetch:
-    prompt =
-        "Use the WebFetch tool to fetch https://example.com and summarize "
-        + "the page title in one short sentence."
+    tool = "WebFetch"
+    defaultPrompt = "Use the WebFetch tool to fetch https://example.com and summarize the page title in one sentence."
 case .enterplan:
-    prompt =
-        "Before doing anything else, call the EnterPlanMode tool to plan a "
-        + "trivial refactor of a hypothetical hello-world script. We are "
-        + "currently in default permission mode."
+    tool = "EnterPlanMode"
+    defaultPrompt =
+        "Before doing anything else, call the EnterPlanMode tool to plan a trivial refactor of a hypothetical "
+        + "hello-world script."
 case .exitplan:
-    // The CLI only exposes ExitPlanMode after EnterPlanMode succeeded, so
-    // ask it to enter then exit. We respond allowAlways to BOTH requests so
-    // the second one (ExitPlanMode) is the one that carries setMode→default
-    // in its permission_suggestions.
-    prompt =
-        "Step 1: call EnterPlanMode and produce a one-line plan that says "
-        + "'no-op'. Step 2: call ExitPlanMode with that plan so we leave "
-        + "plan mode. After the tool returns, reply with 'done'."
+    tool = "ExitPlanMode"
+    defaultPrompt =
+        "Step 1: call EnterPlanMode. Step 2: call ExitPlanMode with the one-line plan 'no-op' so we leave plan mode. "
+        + "After the tool returns, reply with 'done'."
+}
+let prompt = env["SMOKE_PROMPT"] ?? defaultPrompt
+
+func log(_ message: String) {
+    let stamp = ISO8601DateFormatter().string(from: Date())
+    FileHandle.standardError.write(Data("[\(stamp)] \(message)\n".utf8))
 }
 
-let sessionId = UUID().uuidString.lowercased()
-log("scenario=\(scenario.rawValue) model=\(model) sessionId=\(sessionId)")
-log("workDir=\(workDir.path)")
+var failures: [String] = []
 
-// settingSources=[] suppresses user/project/local settings so the CLI
-// doesn't auto-allow Edit/Bash via the developer's own ~/.claude/settings.json
-// rules — without this the prompt would never become a permission_request.
-let config = SessionConfiguration(
-    workingDirectory: workDir,
-    model: model,
-    permissionMode: .default,
-    sessionId: sessionId,
-    binaryPath: claudeBin,
-    settingSources: [],
-    inheritsParentEnvironment: true,
-    allowDangerouslySkipPermissions: false,
-    messageExportDirectory: exportDir)
-
-let session = AgentSDK.Session(configuration: config)
-session.lastKnownSessionId = sessionId
-
-// Track which messages carry a permission_mode field.
-struct ModeSighting {
-    let kind: String
-    let mode: String
+func check(_ ok: Bool, _ what: String) {
+    log("\(ok ? "PASS" : "FAIL")  \(what)")
+    if !ok { failures.append(what) }
 }
-var sightings: [ModeSighting] = []
-let firstResult = DispatchSemaphore(value: 0)
-var resultFired = false
-let processExited = DispatchSemaphore(value: 0)
-var permissionRequestSeq = 0
 
-func noteIfModeBearing(kind: String, raw: [String: Any]) {
-    // CLI uses both snake_case (`permission_mode`, e.g. in user.replay rows)
-    // and camelCase (`permissionMode`, e.g. in system.init / system.status)
-    // for the same field — match both so we don't undercount.
-    if let mode = (raw["permission_mode"] ?? raw["permissionMode"]) as? String {
-        sightings.append(ModeSighting(kind: kind, mode: mode))
-        log("MODE-FIELD-FOUND kind=\(kind) mode=\(mode)")
+func jsonString(_ value: some Encodable) -> String {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = .sortedKeys
+    return (try? encoder.encode(value)).map { String(decoding: $0, as: UTF8.self) } ?? "?"
+}
+
+let sessionID = UUID().uuidString.lowercased()
+let session = Session(
+    configuration: SessionConfiguration(
+        workingDirectory: workDir, model: model, permissionMode: .default, sessionId: sessionID,
+        binaryPath: env["CLAUDE_BINARY_PATH"], settingSources: [], inheritsParentEnvironment: true,
+        messageExportDirectory: exportDir))
+
+var requestedTools: [String] = []
+/// Modes the CLI reported, in order.
+var modesReported: [(kind: String, mode: PermissionMode)] = []
+/// Modes sent back in `.setMode` updates, with how many reports had arrived by then.
+var modesSent: [(mode: PermissionMode, after: Int)] = []
+var result: ResultMessage?
+
+func respond(to request: PermissionRequest) {
+    requestedTools.append(request.toolName)
+    log("permission #\(requestedTools.count) tool=\(request.toolName) reason=\(request.decisionReason ?? "nil")")
+    log("  input=\(jsonString(request.input))")
+    for (i, suggestion) in request.suggestions.enumerated() { log("  suggestion[\(i)]=\(jsonString(suggestion))") }
+    var updates = request.suggestions
+    if request.toolName == "ExitPlanMode", let mode = exitMode ?? nil {
+        updates = [.setMode(mode, destination: .session)]
     }
+    for case .setMode(let mode, _) in updates { modesSent.append((mode, modesReported.count)) }
+    log("  → allow, updatedPermissions=\(jsonString(updates))")
+    request.respond(.allow(updatedPermissions: updates))
 }
 
-session.onMessage = { msg in
-    switch msg {
-    case .assistant(let a):
-        noteIfModeBearing(kind: "assistant", raw: a._raw)
-    case .user(let u):
-        // u._raw is [String: Any]
-        noteIfModeBearing(kind: "user", raw: u._raw)
-        dumpJSON("USER-RAW", u._raw)
-    case .result(let r):
-        let raw: [String: Any]
-        switch r {
-        case .success(let s): raw = s._raw
-        case .errorDuringExecution(let e): raw = e._raw
-        case .unknown(_, let dict): raw = dict
-        }
-        noteIfModeBearing(kind: "result", raw: raw)
-        log("RESULT received")
-        if !resultFired {
-            resultFired = true
-            firstResult.signal()
-        }
-    case .system(.`init`(let info)):
-        noteIfModeBearing(kind: "system.init", raw: info._raw)
-        dumpJSON("SYSTEM-INIT", info._raw)
-    case .system(.status(let s)):
-        noteIfModeBearing(kind: "system.status", raw: s._raw)
-        dumpJSON("SYSTEM-STATUS", s._raw)
-    case .system(let other):
-        // Dump anything else under system so we don't miss an unexpected carrier.
-        log("SYSTEM-OTHER variant=\(other)")
-    case .progress:
-        break
-    case .unknown(let name, let raw):
-        log("UNKNOWN-MSG name=\(name)")
-        dumpJSON("UNKNOWN-RAW", raw)
+func record(_ event: SessionEvent) {
+    switch event {
+    case .permissionRequest(let request):
+        respond(to: request)
+    case .message(.system(.initialized(let i))):
+        log("system.init permissionMode=\(i.permissionMode?.rawValue ?? "nil")")
+        if let mode = i.permissionMode { modesReported.append(("system.init", mode)) }
+    case .message(.system(.status(let s))) where s.permissionMode != nil:
+        log("system.status permissionMode=\(s.permissionMode!.rawValue) status=\(s.status ?? "nil")")
+        modesReported.append(("system.status", s.permissionMode!))
+    case .message(.system(.permissionDenied(let d))):
+        log("system.permission_denied tool=\(d.toolName) \(d.message)")
+    case .message(.assistant(let m)):
+        for case .toolUse(let use) in m.content { log("tool_use \(use.name) \(jsonString(use.input))") }
+    case .message(.result(let r)):
+        log("result \(r.subtype.rawValue) \(r.result?.prefix(60).debugDescription ?? "")")
+        result = r
     default:
         break
     }
 }
 
-session.onStderr = { text in
-    log("[stderr] \(text.trimmingCharacters(in: .whitespacesAndNewlines))")
-}
-session.onProcessExit = { code in
-    log("[exit] code=\(code)")
-    processExited.signal()
+_ = Task {
+    try await Task.sleep(for: .seconds(240))
+    log("FAIL  timed out after 240 s; work dir \(workDir.path)")
+    exit(1)
 }
 
-// For ExitPlanMode we want to test how the CLI reacts to each of the
-// distinct mode targets the upstream UI offers (default / acceptEdits /
-// bypassPermissions / plan-keep). SMOKE_EXIT_MODE selects which one we
-// inject via updatedPermissions; null falls back to the CLI's own
-// suggestions (which are empty for ExitPlanMode).
-let exitModeOverride = env["SMOKE_EXIT_MODE"]  // "default" | "acceptEdits" | "bypassPermissions" | "plan" | nil
-
-session.onPermissionRequest = { request, completion in
-    permissionRequestSeq += 1
-    let seq = permissionRequestSeq
-    log("PERMISSION-REQ #\(seq) tool=\(request.toolName) requestId=\(request.requestId)")
-    dumpJSON("PERMISSION-REQ-RAW", request._raw)
-    let suggestions: [[String: Any]] =
-        (request.permissionSuggestions?.compactMap { $0.toJSON() as? [String: Any] }) ?? []
-    log("PERMISSION-REQ #\(seq) suggestion-count=\(suggestions.count)")
-    for (i, s) in suggestions.enumerated() {
-        dumpJSON("PERMISSION-REQ #\(seq) suggestion[\(i)]", s)
-    }
-
-    // ExitPlanMode override: inject a synthetic setMode update so we can
-    // observe what the CLI actually broadcasts for each branch.
-    if request.toolName == "ExitPlanMode", let mode = exitModeOverride {
-        let update: [String: Any] = [
-            "type": "setMode",
-            "mode": mode,
-            "destination": "session",
-        ]
-        log("PERMISSION-REQ #\(seq) overriding updatedPermissions with mode=\(mode)")
-        completion(request.allowAlways(updatedPermissions: [update]))
-        return
-    }
-    log("PERMISSION-REQ #\(seq) responding allowAlways (echoing suggestions)")
-    completion(request.allowAlways())
-}
-
+log("scenario=\(scenario.rawValue) model=\(model) workDir=\(workDir.path)")
+var events = session.events.makeAsyncIterator()
 do {
     try await session.start()
-    log("session.start ok")
+    try session.send(UserInput(prompt))
 } catch {
-    log("ERROR session.start: \(error)")
+    log("FAIL  start/send: \(error)")
     exit(1)
 }
+while result == nil, let event = await events.next() { record(event) }
 
-let initDone = DispatchSemaphore(value: 0)
-session.initialize(promptSuggestions: false) { resp in
-    log("init reply: models=\(resp?.models?.count ?? 0)")
-    initDone.signal()
+log("drain window \(drainSeconds) s")
+let closer = Task {
+    try await Task.sleep(for: .seconds(drainSeconds))
+    await session.close()
 }
-if initDone.wait(timeout: .now() + 30) == .timedOut {
-    log("ERROR initialize timeout")
-    session.close()
-    exit(1)
-}
+while let event = await events.next() { record(event) }
+closer.cancel()
 
-log("sending prompt: \(prompt)")
-session.sendMessage(prompt, extra: ["uuid": UUID().uuidString.lowercased()])
-
-if firstResult.wait(timeout: .now() + 180) == .timedOut {
-    log("ERROR first .result timeout")
-    session.close()
-    exit(1)
-}
-
-if drainSeconds > 0 {
-    log("post-result drain window \(Int(drainSeconds))s — watching for late system.status / etc")
-    Thread.sleep(forTimeInterval: drainSeconds)
+log("raw lines carrying a permission mode:")
+let exported = (try? Data(contentsOf: exportDir.appendingPathComponent("\(sessionID).jsonl"))) ?? Data()
+for line in exported.split(separator: UInt8(ascii: "\n")) {
+    guard let value = try? JSONDecoder().decode(JSONValue.self, from: Data(line)),
+        let mode = value["permissionMode"] ?? value["permission_mode"]
+    else { continue }
+    let kind = [value["type"]?.stringValue, value["subtype"]?.stringValue].compactMap { $0 }.joined(separator: ".")
+    log("  \(kind) \(mode.stringValue ?? "?")")
 }
 
-log("closing session")
-session.close()
-if processExited.wait(timeout: .now() + 10) == .timedOut {
-    log("WARN process did not exit within 10s of close")
+if scenario == .enterplan {
+    log("\(tool) permission requests: \(requestedTools.filter { $0 == tool }.count) (none expected)")
+} else {
+    check(requestedTools.contains(tool), "\(tool) asked for permission (asked: \(requestedTools))")
 }
+check(result?.subtype == .success, "turn ends success (\(result?.subtype.rawValue ?? "no result"))")
+var expectedModes = modesSent
+if scenario == .enterplan || scenario == .exitplan { expectedModes.insert((.plan, 0), at: 0) }
+for (mode, after) in expectedModes {
+    let reported = modesReported.dropFirst(after).contains { $0.mode == mode }
+    check(reported, "the CLI reports mode \(mode.rawValue) after it is set")
+}
+log(
+    "modes sent: \(modesSent.map(\.mode.rawValue)); reported: \(modesReported.map { "\($0.kind)=\($0.mode.rawValue)" })"
+)
 
-// Summarise.
-log("=============== SUMMARY ===============")
-log("permission requests handled: \(permissionRequestSeq)")
-log("messages carrying permission_mode: \(sightings.count)")
-for s in sightings {
-    log("  - kind=\(s.kind) mode=\(s.mode)")
-}
-
-// Dump JSONL for offline grep.
-if let files = try? FileManager.default.contentsOfDirectory(at: exportDir, includingPropertiesForKeys: nil) {
-    for url in files {
-        log("--- export: \(url.lastPathComponent) ---")
-        if let data = try? Data(contentsOf: url),
-            let text = String(data: data, encoding: .utf8)
-        {
-            FileHandle.standardError.write(Data(text.utf8))
-            FileHandle.standardError.write(Data("\n".utf8))
-        }
-    }
-}
-log("done")
+log(
+    failures.isEmpty
+        ? "PermissionModeProbe PASS"
+        : "PermissionModeProbe FAIL (\(failures.count)): \(failures.joined(separator: "; "))")
+log("work dir: \(workDir.path)")
+exit(failures.isEmpty ? 0 : 1)

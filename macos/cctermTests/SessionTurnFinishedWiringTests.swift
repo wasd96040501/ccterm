@@ -33,7 +33,7 @@ final class SessionTurnFinishedWiringTests: XCTestCase {
         // and the bridge pushes `.running` to the controller.
         let toolUseId = "tu-e2e"
         runtime.receive(
-            Message2Fixtures.assistantRead(
+            MessageFixtures.assistantRead(
                 toolUseId: toolUseId, filePath: "/tmp/x.txt"))
         let childId = StableBlockID.derive("tool", toolUseId)
         XCTAssertEqual(
@@ -43,7 +43,7 @@ final class SessionTurnFinishedWiringTests: XCTestCase {
 
         // Turn ends. Runtime fires `onTurnFinishedLive` synchronously,
         // bridge clears running.
-        runtime.receive(Message2Fixtures.result())
+        runtime.receive(MessageFixtures.result())
 
         XCTAssertEqual(
             session.controller.toolStatus(for: childId),
@@ -64,7 +64,7 @@ final class SessionTurnFinishedWiringTests: XCTestCase {
         var fired = false
         runtime.onTurnFinishedLive = { fired = true }
 
-        runtime.receive(Message2Fixtures.result(), mode: .replay)
+        runtime.receive(MessageFixtures.result(), mode: .replay)
 
         XCTAssertFalse(
             fired, "replay-mode .result must not fire onTurnFinishedLive")

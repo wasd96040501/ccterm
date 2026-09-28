@@ -57,8 +57,8 @@ final class SessionRuntimeStreamingTests: XCTestCase {
 
     func testTextDeltasCreateProvisionalPreviewEntry() {
         let (runtime, _) = makeRuntime()
-        runtime.consumeStreamEvent(Message2Fixtures.streamMessageStart(messageId: "m1"))
-        runtime.consumeStreamEvent(Message2Fixtures.streamTextDelta(index: 0, text: "Hello, world."))
+        runtime.consumeStreamEvent(MessageFixtures.streamMessageStart(messageId: "m1"))
+        runtime.consumeStreamEvent(MessageFixtures.streamTextDelta(index: 0, text: "Hello, world."))
 
         // The first frame paints synchronously, so the provisional entry exists
         // in the same runloop turn as the delta (before any envelope can race it).
@@ -66,7 +66,7 @@ final class SessionRuntimeStreamingTests: XCTestCase {
         guard case .single(let s) = runtime.messages[0], case .remote(let m) = s.payload,
             case .assistant(let a) = m
         else { return XCTFail("expected a provisional assistant single") }
-        XCTAssertEqual(a.message?.id, "m1")
+        XCTAssertEqual(a.messageID, "m1")
         XCTAssertNotNil(runtime.streamingPreviewEntryIds["m1"])
     }
 
@@ -76,12 +76,12 @@ final class SessionRuntimeStreamingTests: XCTestCase {
     /// first frame is what guarantees the preview exists by envelope time.)
     func testShortMessageEnvelopeBeforeAnyTickConverges() {
         let (runtime, ticker) = makeRuntime()
-        runtime.consumeStreamEvent(Message2Fixtures.streamMessageStart(messageId: "m1"))
-        runtime.consumeStreamEvent(Message2Fixtures.streamTextDelta(index: 0, text: "Yes"))
+        runtime.consumeStreamEvent(MessageFixtures.streamMessageStart(messageId: "m1"))
+        runtime.consumeStreamEvent(MessageFixtures.streamTextDelta(index: 0, text: "Yes"))
         let previewId = runtime.messages[0].id
 
         // Envelope arrives immediately — no manual frame stepped yet.
-        runtime.receive(Message2Fixtures.assistantText("Yes", messageId: "m1"), mode: .live)
+        runtime.receive(MessageFixtures.assistantText("Yes", messageId: "m1"), mode: .live)
         ticker.tick(1.0)  // drain the reveal → deferred swap runs
 
         XCTAssertEqual(runtime.messages.count, 1, "no duplicate entry")
@@ -91,9 +91,9 @@ final class SessionRuntimeStreamingTests: XCTestCase {
 
     func testRevealIsIncrementalNotWholeChunk() {
         let (runtime, ticker) = makeRuntime()
-        runtime.consumeStreamEvent(Message2Fixtures.streamMessageStart(messageId: "m1"))
+        runtime.consumeStreamEvent(MessageFixtures.streamMessageStart(messageId: "m1"))
         runtime.consumeStreamEvent(
-            Message2Fixtures.streamTextDelta(index: 0, text: String(repeating: "x", count: 40)))
+            MessageFixtures.streamTextDelta(index: 0, text: String(repeating: "x", count: 40)))
 
         // A single short frame reveals only a few glyphs — not the whole chunk.
         ticker.tick(1.0 / 60.0)
@@ -118,13 +118,13 @@ final class SessionRuntimeStreamingTests: XCTestCase {
     /// is `StreamPacerTests.testRealHaikuCadenceKeepsTheBufferFull`.)
     func testRevealDoesNotStallUnderRealCadence() {
         let (runtime, ticker) = makeRuntime()
-        runtime.consumeStreamEvent(Message2Fixtures.streamMessageStart(messageId: "m1"))
+        runtime.consumeStreamEvent(MessageFixtures.streamMessageStart(messageId: "m1"))
 
         let chunk = String(repeating: "x", count: 15)  // ~1/3 line per flush
         let gapFrames = 14  // ~228ms median gap @60fps
         var stalledFrames = 0
         for _ in 0..<14 {
-            runtime.consumeStreamEvent(Message2Fixtures.streamTextDelta(index: 0, text: chunk))
+            runtime.consumeStreamEvent(MessageFixtures.streamTextDelta(index: 0, text: chunk))
             for _ in 0..<gapFrames {
                 ticker.tick(1.0 / 60.0)
                 if !ticker.running { stalledFrames += 1 }
@@ -138,8 +138,8 @@ final class SessionRuntimeStreamingTests: XCTestCase {
 
     func testFinalEnvelopeDefersUntilTypewriterCatchesUp() {
         let (runtime, ticker) = makeRuntime()
-        runtime.consumeStreamEvent(Message2Fixtures.streamMessageStart(messageId: "m1"))
-        runtime.consumeStreamEvent(Message2Fixtures.streamTextDelta(index: 0, text: "Hello"))
+        runtime.consumeStreamEvent(MessageFixtures.streamMessageStart(messageId: "m1"))
+        runtime.consumeStreamEvent(MessageFixtures.streamTextDelta(index: 0, text: "Hello"))
 
         // Partial reveal — creates the preview entry + mapping, head still trails.
         ticker.tick(0.05)
@@ -149,12 +149,12 @@ final class SessionRuntimeStreamingTests: XCTestCase {
 
         // The finalized envelope arrives mid-type → the swap is deferred.
         runtime.receive(
-            Message2Fixtures.assistantText("Hello there!", messageId: "m1"), mode: .live)
+            MessageFixtures.assistantText("Hello there!", messageId: "m1"), mode: .live)
         XCTAssertNotNil(
             runtime.streamingPreviewEntryIds["m1"],
             "finalize is parked until the head catches up")
         guard case .single(let mid) = runtime.messages[0], case .remote(let mm) = mid.payload,
-            case .assistant(let ma) = mm, ma.message?.content?.count == 1
+            case .assistant(let ma) = mm, ma.content.count == 1
         else { return XCTFail("still the provisional single-text preview") }
 
         // Tick to completion → the typewriter performs the swap.
@@ -167,13 +167,13 @@ final class SessionRuntimeStreamingTests: XCTestCase {
 
     func testCaughtUpFinalEnvelopeConvergesImmediately() {
         let (runtime, ticker) = makeRuntime()
-        runtime.consumeStreamEvent(Message2Fixtures.streamMessageStart(messageId: "m1"))
-        runtime.consumeStreamEvent(Message2Fixtures.streamTextDelta(index: 0, text: "Hi"))
+        runtime.consumeStreamEvent(MessageFixtures.streamMessageStart(messageId: "m1"))
+        runtime.consumeStreamEvent(MessageFixtures.streamTextDelta(index: 0, text: "Hi"))
         // Fully reveal "Hi" first so the head is caught up when the envelope lands.
         ticker.tick(1.0)
         let previewId = runtime.messages[0].id
 
-        runtime.receive(Message2Fixtures.assistantText("Hi", messageId: "m1"), mode: .live)
+        runtime.receive(MessageFixtures.assistantText("Hi", messageId: "m1"), mode: .live)
 
         XCTAssertEqual(runtime.messages.count, 1)
         XCTAssertEqual(runtime.messages[0].id, previewId)
@@ -187,7 +187,7 @@ final class SessionRuntimeStreamingTests: XCTestCase {
         // before. (Guards that the convergence path is gated on an existing
         // preview and doesn't disturb non-streamed sessions.)
         let (runtime, _) = makeRuntime()
-        runtime.receive(Message2Fixtures.assistantText("plain", messageId: "m2"), mode: .live)
+        runtime.receive(MessageFixtures.assistantText("plain", messageId: "m2"), mode: .live)
         XCTAssertEqual(runtime.messages.count, 1)
         guard case .single(let s) = runtime.messages[0], case .remote = s.payload else {
             return XCTFail("expected a remote assistant single")
@@ -197,8 +197,8 @@ final class SessionRuntimeStreamingTests: XCTestCase {
     func testNewTurnResetsStreamingState() async {
         let (runtime, ticker) = makeRuntime()
         runtime.consumeStreamEvent(
-            Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 10, outputTokens: 5))
-        runtime.consumeStreamEvent(Message2Fixtures.streamTextDelta(index: 0, text: "stuff"))
+            MessageFixtures.streamMessageStart(messageId: "m1", inputTokens: 10, outputTokens: 5))
+        runtime.consumeStreamEvent(MessageFixtures.streamTextDelta(index: 0, text: "stuff"))
         ticker.tick(0.05)
         await wait(for: runtime) { !runtime.turnUsage.isEmpty }
 
@@ -216,8 +216,8 @@ final class SessionRuntimeStreamingTests: XCTestCase {
         // message_start carries real input + a small output placeholder; the
         // authoritative cumulative output lands only in message_delta.
         runtime.consumeStreamEvent(
-            Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 12, outputTokens: 5))
-        runtime.consumeStreamEvent(Message2Fixtures.streamMessageDelta(outputTokens: 1556))
+            MessageFixtures.streamMessageStart(messageId: "m1", inputTokens: 12, outputTokens: 5))
+        runtime.consumeStreamEvent(MessageFixtures.streamMessageDelta(outputTokens: 1556))
         await wait(for: runtime) { runtime.turnUsage.outputTokens == 1556 }
 
         XCTAssertEqual(runtime.turnUsage.inputTokens, 12)
@@ -226,7 +226,7 @@ final class SessionRuntimeStreamingTests: XCTestCase {
         // GROUND TRUTH (ThinkingUsageSmoke): the finalized `.assistant` envelope
         // carries the SAME output placeholder (5), not the real total. It must
         // not regress the authoritative figure message_delta already delivered.
-        let final = Message2Fixtures.assistantWithUsage(
+        let final = MessageFixtures.assistantWithUsage(
             messageId: "m1", text: "done", inputTokens: 12, outputTokens: 5)
         runtime.receive(final, mode: .live)
         XCTAssertEqual(runtime.turnUsage.inputTokens, 12)
@@ -244,13 +244,13 @@ final class SessionRuntimeStreamingTests: XCTestCase {
         runtime.onTurnUsageChange = { pushed.append($0) }
 
         runtime.consumeStreamEvent(
-            Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 2465, outputTokens: 5))
+            MessageFixtures.streamMessageStart(messageId: "m1", inputTokens: 2465, outputTokens: 5))
         // Redacted-thinking progress (cumulative estimate climbs).
         runtime.receive(
-            Message2Fixtures.systemThinkingTokens(estimatedTokens: 200, estimatedTokensDelta: 200),
+            MessageFixtures.systemThinkingTokens(estimatedTokens: 200, estimatedTokensDelta: 200),
             mode: .live)
         runtime.receive(
-            Message2Fixtures.systemThinkingTokens(estimatedTokens: 900, estimatedTokensDelta: 700),
+            MessageFixtures.systemThinkingTokens(estimatedTokens: 900, estimatedTokensDelta: 700),
             mode: .live)
 
         XCTAssertEqual(runtime.turnUsage.outputTokens, 900, "thinking estimate folded into output")
@@ -260,7 +260,7 @@ final class SessionRuntimeStreamingTests: XCTestCase {
             "the imperative sink fired synchronously with the latest total")
 
         // Authoritative total supersedes the estimate.
-        runtime.consumeStreamEvent(Message2Fixtures.streamMessageDelta(outputTokens: 1752))
+        runtime.consumeStreamEvent(MessageFixtures.streamMessageDelta(outputTokens: 1752))
         await wait(for: runtime) { runtime.turnUsage.outputTokens == 1752 }
     }
 
@@ -269,10 +269,10 @@ final class SessionRuntimeStreamingTests: XCTestCase {
     /// The text of the current provisional preview entry's first text block.
     private func revealedText(_ runtime: SessionRuntime) -> String {
         guard case .single(let s)? = runtime.messages.last, case .remote(let m) = s.payload,
-            case .assistant(let a) = m, let blocks = a.message?.content
+            case .assistant(let a) = m
         else { return "" }
-        for block in blocks {
-            if case .text(let t) = block { return t.text ?? "" }
+        for block in a.content {
+            if case .text(let t) = block { return t }
         }
         return ""
     }

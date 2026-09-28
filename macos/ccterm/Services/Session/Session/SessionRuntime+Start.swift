@@ -21,8 +21,8 @@ extension SessionRuntime {
         ensureStarted()
     }
 
-    /// Manually stop the CLI subprocess. While active, calls `close()`; the
-    /// onProcessExit callback then handles status / termination /
+    /// Manually stop the CLI subprocess. While active, asks the CLI to close;
+    /// its `.exited` event then handles status / termination /
     /// pendingPermissions cleanup. No-op otherwise.
     func stop() {
         switch status {
@@ -35,15 +35,14 @@ extension SessionRuntime {
         // Snap any half-typed streaming preview to its full text before the
         // CLI tears down — no more deltas are coming.
         finalizeStreamingOnTermination()
-        cliClient?.close()
+        guard let client = cliClient else { return }
+        Task { await client.close(timeout: 5) }
     }
 
-    /// Async sibling of `stop()`: waits for the CLI to actually exit
-    /// before returning, so the app-quit path can fan multiple sessions
-    /// out in parallel and only proceed once every subprocess has wound
-    /// down (or the underlying SDK's per-process timeout has forced
-    /// SIGTERM). `stop()` is unchanged so the stop-button path stays
-    /// fire-and-forget.
+    /// Async sibling of `stop()`: waits for the CLI to actually exit (or be
+    /// terminated after a timeout) before returning, so the app-quit path can
+    /// fan multiple sessions out in parallel. `stop()` stays fire-and-forget
+    /// for the stop button.
     func closeAsync() async {
         switch status {
         case .notStarted, .stopped:
@@ -53,7 +52,7 @@ extension SessionRuntime {
         }
         guard let client = cliClient else { return }
         appLog(.info, "SessionRuntime", "closeAsync() close agent \(sessionId)")
-        await client.closeAsync()
+        await client.close(timeout: 5)
     }
 }
 
@@ -139,11 +138,11 @@ extension SessionRuntime {
 
         ensureStarted()
 
-        if let session = cliClient {
+        if let client = cliClient {
             appLog(
                 .info, "SessionRuntime",
                 "[v2-send] write-immediate sid=\(sessionId.prefix(8)) entryId=\(single.id.uuidString.prefix(8))")
-            writeUserEntryToCLI(single, session: session)
+            writeUserEntryToCLI(single, client: client)
         } else {
             appLog(
                 .info, "SessionRuntime",
@@ -182,21 +181,21 @@ extension SessionRuntime {
     ///
     /// Always resets `isGeneratingTitle` and writes the title. In the
     /// worktree case, the branch keeps the initial random name provisioned
-    /// in `ensureStarted` (`Prompt.TitleAndBranch.branch` is discarded).
+    /// in `ensureStarted`.
     ///
     /// Split into a standalone method so tests can drive it directly without
     /// firing a real LLM call.
-    func applyGeneratedTitle(_ result: Prompt.TitleAndBranch) {
+    func applyGeneratedTitle(_ generated: String) {
         isGeneratingTitle = false
-        title = result.titleI18n
-        repository.updateTitle(sessionId, title: result.titleI18n)
+        title = generated
+        repository.updateTitle(sessionId, title: generated)
         // `title` is `@Observable` and `SidebarHistoryRow` reads it via
         // `session.title`, so the row re-renders on its own; the
         // `refreshRecords()` roundtrip is kept so the persisted `record.title`
         // stays current for sessions whose runtime later gets evicted (sidebar
         // falls back to `record.title`).
         onRecordPersisted?()
-        appLog(.info, "SessionRuntime", "title-gen done \(sessionId) title=\(result.titleI18n)")
+        appLog(.info, "SessionRuntime", "title-gen done \(sessionId) title=\(generated)")
     }
 }
 
@@ -298,7 +297,6 @@ extension SessionRuntime {
 
         status = .starting
         termination = nil
-        stderrBuffer = ""
 
         // A `/new` / `/clear` draft is persisted as a `.draft` row before its
         // first send. Committing (sending) flips it to `.pending` so the
@@ -450,7 +448,7 @@ extension SessionRuntime {
     /// messages are always `.single` (never grouped), so we only scan
     /// `.single`.
     func flushBootstrapBacklog() {
-        guard let session = cliClient else {
+        guard let client = cliClient else {
             appLog(
                 .warning, "SessionRuntime",
                 "[v2-send] flushBacklog SKIP cliClient=nil sid=\(sessionId.prefix(8))")
@@ -465,7 +463,7 @@ extension SessionRuntime {
             appLog(
                 .info, "SessionRuntime",
                 "[v2-send] flushBacklog write sid=\(sessionId.prefix(8)) entryId=\(single.id.uuidString.prefix(8))")
-            writeUserEntryToCLI(single, session: session)
+            writeUserEntryToCLI(single, client: client)
             flushed += 1
         }
         appLog(
@@ -509,8 +507,8 @@ extension SessionRuntime {
             )
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                if let r = result {
-                    self.applyGeneratedTitle(r)
+                if let title = result {
+                    self.applyGeneratedTitle(title)
                 } else {
                     self.isGeneratingTitle = false
                 }
@@ -596,94 +594,57 @@ extension SessionRuntime {
     // MARK: Bootstrap
 
     fileprivate func bootstrap(configuration: SessionConfiguration) async {
-        // Snapshot the resume/fresh decision NOW so the post-init
-        // `.created` update mirrors what `makeAgentConfig` just wired into
-        // `configuration`. (No mutation between these reads — both happen
-        // inside the same `continueStartup` on MainActor — but recomputing
-        // here keeps the function self-contained.)
+        // Snapshot the resume/fresh decision NOW so the post-start `.created`
+        // update mirrors what `makeAgentConfig` just wired into `configuration`.
         let wasFresh = !Self.shouldResumeBootstrap(for: repository.find(sessionId))
         appLog(
             .info, "SessionRuntime",
             "[v2-send] bootstrap enter sid=\(sessionId.prefix(8)) fresh=\(wasFresh) "
                 + "resume=\(configuration.resume ?? "(nil)") wd=\(configuration.workingDirectory.path)")
-        let session: any CLIClient = cliClientFactory(configuration)
-        session.lastKnownSessionId = sessionId
-        attachCallbacks(to: session)
+        let client: any CLIClient = cliClientFactory(configuration)
+        // Consume before starting so nothing the CLI says during the
+        // handshake is missed. A process that dies mid-handshake surfaces
+        // here as `.exited` *and* as `start()` throwing; whichever lands
+        // first fails the launch (both go through the status guard).
+        listen(to: client)
 
+        let initialization: InitializationResult
         do {
-            try await session.start()
+            initialization = try await client.start()
         } catch {
-            // Sync startup failure (chdir / binary missing) — funnel through
-            // the unified failLaunch.
-            failLaunch(reason: "\(error)")
+            if status == .starting { failLaunch(reason: Self.describe(error)) }
             return
         }
-        appLog(
-            .info, "SessionRuntime",
-            "[v2-send] bootstrap start-ok sid=\(sessionId.prefix(8)) status-before-attach=\(status)")
-
-        // Only expose `cliClient` once stdin is actually ready, so
-        // `send()` can't write before `start()` completes (writeJSON does
-        // guard nil pipes, but keeping the invariant tight is clearer).
-        self.cliClient = session
-
-        // Race: initialize completion vs process death. The CLI may start
-        // and die instantly (e.g. `--resume` can't find the JSONL); in that
-        // case the initialize control response never arrives, the SDK's
-        // `pendingControlResponses` is not fired by process exit, and we'd
-        // hang forever. The `bootstrapExitHook` lets handleProcessExit
-        // forward the death back to this continuation so we route through
-        // failLaunch.
-        let initResp: InitializeResponse? = await withCheckedContinuation {
-            (cont: CheckedContinuation<InitializeResponse?, Never>) in
-            var resumed = false
-            let resume: (InitializeResponse?) -> Void = { resp in
-                guard !resumed else { return }
-                resumed = true
-                cont.resume(returning: resp)
-            }
-            self.bootstrapExitHook = { _ in resume(nil) }
-            session.initialize(promptSuggestions: true) { resp in
-                Task { @MainActor in resume(resp) }
-            }
-        }
-        self.bootstrapExitHook = nil
-
-        // If the process died while waiting for init, handleProcessExit
-        // already called failLaunch on its own path (status flipped to
-        // .stopped); short-circuit here.
+        // The process may have exited between the handshake and this resume.
         guard status == .starting else {
             appLog(
                 .info, "SessionRuntime",
                 "[v2-send] bootstrap aborted-during-init sid=\(sessionId.prefix(8)) status=\(status)")
             return
         }
+        // Expose the client only once the handshake is done, so `send()`
+        // can't write before the CLI is ready.
+        cliClient = client
+        appLog(.info, "SessionRuntime", "[v2-send] bootstrap initialize-done sid=\(sessionId.prefix(8))")
 
-        appLog(
-            .info, "SessionRuntime",
-            "[v2-send] bootstrap initialize-done sid=\(sessionId.prefix(8)) "
-                + "respNil=\(initResp == nil) status=\(status)")
-
-        // Per-session model catalog snapshot. We deliberately do NOT
-        // pipe this into `ModelStore.shared` — model-list discovery is
-        // an app-launch concern owned by `ModelStore.prefetchIfNeeded()`.
-        // Entangling it with session bootstrap caused the picker to
-        // appear "loading" again every time a new CLI subprocess
-        // started.
-        if let models = initResp?.models, !models.isEmpty {
-            availableModels = models
+        // Per-session model catalog snapshot. Deliberately NOT piped into
+        // `ModelStore` — model-list discovery is an app-launch concern owned
+        // by `ModelStore.prefetchIfNeeded()`; entangling it with bootstrap
+        // made the picker read "loading" on every CLI start.
+        if !initialization.models.isEmpty {
+            availableModels = initialization.models
         }
 
-        // The bootstrap `initialize` response is the only source that
-        // carries command descriptions; the recurring `system.init` stream
-        // message has names only. Cache the descriptions so `adopt(_:)` can
-        // merge them back in, and seed `slashCommands` now so the popup has
-        // descriptions even before the first `system.init` lands.
-        if let cmds = initResp?.commands {
-            slashCommandDescriptions = Dictionary(
-                cmds.compactMap { cmd in cmd.description.map { (cmd.name, $0) } },
-                uniquingKeysWith: { first, _ in first })
-            slashCommands = cmds.map { SlashCommand(name: $0.name, description: $0.description) }
+        // The `initialize` response is the only source of command
+        // descriptions; the recurring `system.init` carries names only. Cache
+        // the descriptions so `adopt(_:)` can merge them back in, and seed
+        // `slashCommands` now so the popup has them before the first init.
+        let commands = initialization.commands
+        slashCommandDescriptions = Dictionary(
+            commands.filter { !$0.description.isEmpty }.map { ($0.name, $0.description) },
+            uniquingKeysWith: { first, _ in first })
+        slashCommands = commands.map {
+            SlashCommand(name: $0.name, description: $0.description.isEmpty ? nil : $0.description)
         }
 
         status = .idle
@@ -695,8 +656,8 @@ extension SessionRuntime {
         appLog(.info, "SessionRuntime", "[v2-send] bootstrap done sid=\(sessionId.prefix(8)) fresh=\(wasFresh)")
     }
 
-    /// Single sink for every CLI launch-time failure: sync `Process.run()`
-    /// throwing, or the CLI exiting non-zero before init completes.
+    /// Single sink for every CLI launch-time failure: the launch throwing, or
+    /// the CLI exiting before the handshake completes.
     ///
     /// Side effects ordered for "make it visible to UI first":
     /// status / isRunning flip first, cliClient is detached,
@@ -704,9 +665,8 @@ extension SessionRuntime {
     /// onLaunchFailure notifies the subscriber (SessionManager) to show
     /// an alert.
     ///
-    /// `reason` is surfaced directly — **no localization**.
-    /// `String(describing: error)` preserves the full SDK enum;
-    /// `process exited (code N): <stderr>` preserves the CLI's raw stderr.
+    /// `reason` is surfaced directly — **no localization** — so the CLI's raw
+    /// stderr reaches the user.
     fileprivate func failLaunch(reason: String) {
         appLog(
             .error, "SessionRuntime",
@@ -715,9 +675,8 @@ extension SessionRuntime {
         self.status = .stopped
         self.isRunning = false
         self.cliClient = nil
-        self.stderrBuffer = ""
-        for pending in pendingPermissions {
-            pending.respond(.deny(reason: "Launch failed"))
+        for request in pendingPermissions {
+            request.respond(.deny(message: "Launch failed"))
         }
         pendingPermissions.removeAll()
         failQueuedEntries(reason: reason)
@@ -725,84 +684,49 @@ extension SessionRuntime {
         onLaunchFailure?(reason)
     }
 
-    // MARK: Callbacks
-
-    fileprivate func attachCallbacks(to session: any CLIClient) {
-        let sidPrefix = sessionId.prefix(8)
-        session.onMessage = { [weak self] msg in
-            let kind: String
-            switch msg {
-            case .user: kind = "user"
-            case .assistant: kind = "assistant"
-            case .result: kind = "result"
-            case .system(.`init`): kind = "system.init"
-            case .system: kind = "system.other"
-            default: kind = "other"
-            }
-            appLog(.info, "SessionRuntime", "[v2-send] onMessage sid=\(sidPrefix) kind=\(kind)")
-            Task { @MainActor [weak self] in
-                self?.receive(msg, mode: .live)
-            }
-        }
-
-        // Partial-message stream (gated by `includePartialMessages`). Folds
-        // into live assistant text + turn token usage; see
-        // `SessionRuntime+Streaming`.
-        session.onStreamEvent = { [weak self] event in
-            Task { @MainActor [weak self] in
-                self?.consumeStreamEvent(event)
-            }
-        }
-
-        session.onPermissionRequest = { [weak self] request, completion in
-            Task { @MainActor [weak self] in
-                guard let self else {
-                    completion(.deny(reason: "SessionRuntime deallocated"))
-                    return
-                }
-                self.enqueuePermission(request, completion: completion)
-            }
-        }
-
-        session.onPermissionCancelled = { [weak self] requestId in
-            Task { @MainActor [weak self] in
-                self?.pendingPermissions.removeAll { $0.id == requestId }
-            }
-        }
-
-        session.onProcessExit = { [weak self] code in
-            Task { @MainActor [weak self] in
-                self?.handleProcessExit(code)
-            }
-        }
-
-        session.onStderr = { [weak self] text in
-            Task { @MainActor [weak self] in
-                self?.stderrBuffer += text
-            }
-        }
-
-        // Stage-1 minimal no-ops; fill in hook / mcp / elicitation later.
-        session.onHookRequest = { _ in HookResult.success() }
-        session.onMCPRequest = { _ in MCPResponse.success() }
-        session.onElicitationRequest = { _ in .cancel }
+    /// `process exited (code N): <stderr>` for an exit, the error's own
+    /// description otherwise.
+    fileprivate static func describe(_ error: Error) -> String {
+        if case AgentSDKError.processExited(let termination) = error { return describe(termination) }
+        return (error as? LocalizedError)?.errorDescription ?? "\(error)"
     }
 
-    fileprivate func enqueuePermission(
-        _ request: PermissionRequest,
-        completion: @escaping (PermissionDecision) -> Void
-    ) {
-        let pending = PendingPermission(
-            id: request.requestId,
-            request: request,
-            respond: { [weak self] decision in
-                completion(decision)
-                Task { @MainActor [weak self] in
-                    self?.pendingPermissions.removeAll { $0.id == request.requestId }
+    fileprivate static func describe(_ termination: Termination) -> String {
+        let stderr = termination.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        return stderr.isEmpty
+            ? "process exited (code \(termination.exitCode))"
+            : "process exited (code \(termination.exitCode)): \(stderr.suffix(500))"
+    }
+
+    // MARK: Events
+
+    /// Routes everything `client` reports onto the main actor, in order,
+    /// until its stream ends.
+    fileprivate func listen(to client: any CLIClient) {
+        let sidPrefix = sessionId.prefix(8)
+        let events = client.events
+        Task { @MainActor [weak self] in
+            for await event in events {
+                guard let self else { return }
+                switch event {
+                case .message(.streamEvent(let stream)):
+                    self.consumeStreamEvent(stream)
+                case .message(let message):
+                    appLog(.info, "SessionRuntime", "[v2-send] onMessage sid=\(sidPrefix) kind=\(message.logKind)")
+                    self.receive(message, mode: .live)
+                case .permissionRequest(let request):
+                    self.enqueuePermission(request)
+                case .permissionRequestCancelled(let id):
+                    self.pendingPermissions.removeAll { $0.id == id }
+                case .exited(let termination):
+                    self.handleProcessExit(termination, client: client)
                 }
             }
-        )
-        pendingPermissions.append(pending)
+        }
+    }
+
+    fileprivate func enqueuePermission(_ request: PermissionRequest) {
+        pendingPermissions.append(request)
 
         // A permission card is one of the two unread triggers — the other is a
         // turn finishing (see `finishTurn`'s every-`.result` `hasUnread`
@@ -827,29 +751,22 @@ extension SessionRuntime {
             ))
     }
 
-    fileprivate func handleProcessExit(_ code: Int32) {
-        let trimmed = stderrBuffer.isEmpty ? nil : String(stderrBuffer.prefix(500))
-        let desc =
-            trimmed.map { "process exited (code \(code)): \($0)" }
-            ?? "process exited (code \(code))"
-        appLog(
-            .warning, "SessionRuntime",
-            "[v2-send] processExit sid=\(sessionId.prefix(8)) code=\(code) stderr=\(trimmed ?? "(empty)")")
+    fileprivate func handleProcessExit(_ termination: Termination, client: any CLIClient) {
+        let desc = Self.describe(termination)
+        appLog(.warning, "SessionRuntime", "[v2-send] processExit sid=\(sessionId.prefix(8)) \(desc)")
 
-        // Died during bootstrap init wait → unblock the init continuation,
-        // then route through the unified failLaunch. The bootstrap side
-        // short-circuits its cleanup.
-        if let hook = bootstrapExitHook {
-            bootstrapExitHook = nil
-            hook(code)
+        // Died during the handshake → the launch failed (the pending
+        // `start()` throws too; the status guard keeps it to one report).
+        if status == .starting {
             failLaunch(reason: desc)
             return
         }
+        // A client we already let go of (a previous launch) — nothing to do.
+        guard cliClient === client else { return }
 
         // Died after running — normal cleanup (no alert).
-        stderrBuffer = ""
         cliClient = nil
-        termination = desc
+        self.termination = desc
         status = .stopped
         // Process is dead — no `.result` will arrive for any in-flight turn,
         // so clear isRunning explicitly to keep the spinner from getting stuck.
@@ -857,9 +774,7 @@ extension SessionRuntime {
         // …and no more deltas, so snap any half-typed streaming preview whole.
         finalizeStreamingOnTermination()
 
-        for pending in pendingPermissions {
-            pending.respond(.deny(reason: "Process exited"))
-        }
+        // The SDK already dropped these requests; just clear the cards.
         pendingPermissions.removeAll()
 
         failQueuedEntries(reason: "session stopped")
@@ -873,14 +788,10 @@ extension SessionRuntime {
     /// non-user entries are ignored — only locally-not-yet-echoed entries
     /// have outgoing responsibility.
     ///
-    /// - text-only: use the string-content `sendMessage(_:extra:)`.
-    /// - with image: build a text + image(base64) content array and use
-    ///   `sendMessage(contentBlocks:extra:)`.
-    ///
-    /// `entry.id` is sent as the `uuid` extra; the CLI echoes it back
+    /// `entry.id` is sent as the message uuid; the CLI echoes it back
     /// verbatim under `--replay-user-messages` for `confirmQueuedEntry`'s
     /// exact match.
-    fileprivate func writeUserEntryToCLI(_ entry: SingleEntry, session: any CLIClient) {
+    fileprivate func writeUserEntryToCLI(_ entry: SingleEntry, client: any CLIClient) {
         guard case .localUser(let input) = entry.payload else {
             appLog(
                 .warning, "SessionRuntime",
@@ -891,29 +802,34 @@ extension SessionRuntime {
             .info, "SessionRuntime",
             "[v2-send] writeCLI sid=\(sessionId.prefix(8)) entryId=\(entry.id.uuidString.prefix(8)) "
                 + "textLen=\(input.text?.count ?? 0) imageCount=\(input.images.count)")
-        var extra: [String: Any] = ["uuid": entry.id.uuidString.lowercased()]
-        if let plan = input.planContent {
-            extra["plan_content"] = plan
+        var content: [ContentBlock] = []
+        if let text = input.text, !text.isEmpty || input.images.isEmpty {
+            content.append(.text(text))
         }
+        for (data, mediaType) in input.images {
+            content.append(.image(ImageBlock(data: data, mediaType: mediaType)))
+        }
+        let message = UserInput(
+            uuid: entry.id.uuidString.lowercased(), content: content, planContent: input.planContent)
+        do {
+            try client.send(message)
+        } catch {
+            appLog(.error, "SessionRuntime", "[v2-send] writeCLI failed sid=\(sessionId.prefix(8)) \(error)")
+        }
+    }
+}
 
-        if !input.images.isEmpty {
-            var blocks: [[String: Any]] = []
-            if let text = input.text, !text.isEmpty {
-                blocks.append(["type": "text", "text": text])
-            }
-            for (data, mediaType) in input.images {
-                blocks.append([
-                    "type": "image",
-                    "source": [
-                        "type": "base64",
-                        "media_type": mediaType,
-                        "data": data.base64EncodedString(),
-                    ],
-                ])
-            }
-            session.sendMessage(contentBlocks: blocks, extra: extra)
-        } else {
-            session.sendMessage(input.text ?? "", extra: extra)
+extension Message {
+    /// Short kind label for logs.
+    fileprivate var logKind: String {
+        switch self {
+        case .user: return "user"
+        case .assistant: return "assistant"
+        case .result: return "result"
+        case .system(.initialized): return "system.init"
+        case .system: return "system.other"
+        case .streamEvent: return "stream_event"
+        default: return "other"
         }
     }
 }

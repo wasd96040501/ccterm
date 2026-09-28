@@ -79,8 +79,8 @@ struct PermissionEnterPlanModeCardBody: View {
 
 #Preview("EnterPlanMode") {
     PermissionEnterPlanModeCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-1",
+        request: PermissionRequest.preview(
+            id: "preview-1",
             toolName: "EnterPlanMode",
             input: [:])
     )

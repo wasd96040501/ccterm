@@ -6,11 +6,11 @@ import XCTest
 /// Pure-logic tests for the `/btw` side-question plumbing.
 ///
 /// `Session.askSideQuestion(...)` end-to-end: the request goes through
-/// the façade, into the runtime, into the `CLIClient`; the outcome the
-/// CLI hands back is delivered to the caller on the main actor exactly
-/// once. Tests drive a real `SessionRuntime` constructed with a
-/// `FakeCLIClient` factory and activate it so the production
-/// `activate → start → cliClient` wiring fires — no test-only seams.
+/// the façade, into the runtime, into the `CLIClient`; the CLI's answer
+/// (or failure) comes back to the caller. Tests drive a real
+/// `SessionRuntime` constructed with a `FakeCLIClient` factory and
+/// activate it so the production `activate → start → cliClient` wiring
+/// fires — no test-only seams.
 @MainActor
 final class SideQuestionTests: XCTestCase {
 
@@ -22,22 +22,12 @@ final class SideQuestionTests: XCTestCase {
         let fake = FakeCLIClient()
         let session = try await makeActivatedSession(client: fake)
 
-        let exp = expectation(description: "completion fires")
-        var received: SideQuestionAnswer?
-        session.askSideQuestion("what is the launch code?") { outcome in
-            if case .answer(let a) = outcome {
-                received = a
-                exp.fulfill()
-            } else {
-                XCTFail("\(outcome)")
-            }
-        }
+        let ask = Task { try await session.askSideQuestion("what is the launch code?") }
+        await yieldUntil { !fake.sideQuestions.isEmpty }
+        XCTAssertEqual(fake.sideQuestions, ["what is the launch code?"])
 
-        XCTAssertEqual(fake.sideQuestionCalls.count, 1)
-        XCTAssertEqual(fake.sideQuestionCalls.first?.question, "what is the launch code?")
-
-        fake.completeSideQuestion(.answer(SideQuestionAnswer(response: "PURPLE-RHINO-7", synthetic: false)))
-        await fulfillment(of: [exp], timeout: 2.0)
+        fake.completeSideQuestion(.success(SideQuestionAnswer(response: "PURPLE-RHINO-7", synthetic: false)))
+        let received = try await ask.value
 
         XCTAssertEqual(received?.response, "PURPLE-RHINO-7")
         XCTAssertEqual(received?.synthetic, false)
@@ -47,42 +37,45 @@ final class SideQuestionTests: XCTestCase {
         let fake = FakeCLIClient()
         let session = try await makeActivatedSession(client: fake)
 
-        let exp = expectation(description: "completion fires")
-        var synthetic: Bool?
-        session.askSideQuestion("read my file") { outcome in
-            synthetic = outcome.answer?.synthetic
-            exp.fulfill()
-        }
+        let ask = Task { try await session.askSideQuestion("read my file") }
+        await yieldUntil { !fake.sideQuestions.isEmpty }
         fake.completeSideQuestion(
-            .answer(SideQuestionAnswer(response: "(The model tried to call Read…)", synthetic: true)))
-        await fulfillment(of: [exp], timeout: 2.0)
+            .success(SideQuestionAnswer(response: "(The model tried to call Read…)", synthetic: true)))
 
+        let synthetic = try await ask.value?.synthetic
         XCTAssertEqual(synthetic, true)
     }
 
-    func testUnsupportedPassesThrough() async throws {
+    func testCLIFailurePassesThrough() async throws {
         let fake = FakeCLIClient()
         let session = try await makeActivatedSession(client: fake)
 
-        let exp = expectation(description: "unsupported")
-        session.askSideQuestion("anything") { outcome in
-            if case .unsupported = outcome { exp.fulfill() } else { XCTFail("\(outcome)") }
+        let ask = Task { try await session.askSideQuestion("anything") }
+        await yieldUntil { !fake.sideQuestions.isEmpty }
+        fake.completeSideQuestion(
+            .failure(AgentSDKError.controlRequestFailed(subtype: "side_question", message: "unsupported")))
+
+        do {
+            _ = try await ask.value
+            XCTFail("expected the CLI's error")
+        } catch AgentSDKError.controlRequestFailed(_, let message) {
+            XCTAssertEqual(message, "unsupported")
         }
-        fake.completeSideQuestion(.unsupported)
-        await fulfillment(of: [exp], timeout: 2.0)
     }
 
-    func testDraftSessionShortCircuitsToUnsupported() {
+    func testDraftSessionThrowsNotRunning() async {
         let session = ccterm.Session(
             draftSessionId: UUID().uuidString,
             repository: InMemorySessionRepository(),
             cliClientFactory: { _ in FakeCLIClient() }
         )
-        let exp = expectation(description: "unsupported")
-        session.askSideQuestion("anything") { outcome in
-            if case .unsupported = outcome { exp.fulfill() } else { XCTFail("\(outcome)") }
+        do {
+            _ = try await session.askSideQuestion("anything")
+            XCTFail("a draft has no CLI to ask")
+        } catch AgentSDKError.notRunning {
+        } catch {
+            XCTFail("\(error)")
         }
-        wait(for: [exp], timeout: 1.0)
     }
 
     // MARK: - Helpers
@@ -107,6 +100,8 @@ final class SideQuestionTests: XCTestCase {
             cliClientFactory: { _ in fake }
         )
         session.activate()
+        await yieldUntil { fake.isAwaitingStart }
+        fake.completeStart()
 
         let runtime = try XCTUnwrap(session.runtime)
         let attached = XCTNSPredicateExpectation(

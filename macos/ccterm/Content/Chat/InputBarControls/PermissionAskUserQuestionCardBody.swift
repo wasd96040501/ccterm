@@ -51,7 +51,7 @@ struct PermissionAskUserQuestionCardBody: View {
     // MARK: - Inputs
 
     let request: PermissionRequest
-    let onSubmit: ([String: Any]?) -> Void
+    let onSubmit: (JSONValue?) -> Void
     let onCancel: () -> Void
 
     // MARK: - State
@@ -79,8 +79,7 @@ struct PermissionAskUserQuestionCardBody: View {
     // MARK: - Decoded payload
 
     private var questions: [Question] {
-        guard let raw = request.rawInput["questions"] as? [[String: Any]] else { return [] }
-        return raw.compactMap(Question.init(raw:))
+        (request.input["questions"]?.arrayValue ?? []).compactMap(Question.init(raw:))
     }
 
     private var current: Question? {
@@ -446,11 +445,11 @@ struct PermissionAskUserQuestionCardBody: View {
         otherFocused = false
     }
 
-    private func buildUpdatedInput() -> [String: Any] {
-        var payload: [String: Any] = [:]
-        if let raw = request.rawInput["questions"] { payload["questions"] = raw }
-        payload["answers"] = answers
-        return payload
+    private func buildUpdatedInput() -> JSONValue {
+        var payload: [String: JSONValue] = [:]
+        if let questions = request.input["questions"] { payload["questions"] = questions }
+        payload["answers"] = .object(answers.mapValues(JSONValue.string))
+        return .object(payload)
     }
 
     // MARK: - Esc shortcut
@@ -493,20 +492,19 @@ struct PermissionAskUserQuestionCardBody: View {
 
     // MARK: - Models
 
-    /// Decoded view of one entry in `rawInput["questions"]`.
+    /// Decoded view of one entry in `input["questions"]`.
     struct Question {
         let header: String?
         let question: String
         let multiSelect: Bool
         let options: [Option]
 
-        init?(raw: [String: Any]) {
-            guard let q = raw["question"] as? String, !q.isEmpty else { return nil }
+        init?(raw: JSONValue) {
+            guard let q = raw["question"]?.stringValue, !q.isEmpty else { return nil }
             self.question = q
-            self.header = raw["header"] as? String
-            self.multiSelect = (raw["multiSelect"] as? Bool) ?? false
-            let rawOptions = raw["options"] as? [[String: Any]] ?? []
-            self.options = rawOptions.compactMap(Option.init(raw:))
+            self.header = raw["header"]?.stringValue
+            self.multiSelect = raw["multiSelect"]?.boolValue ?? false
+            self.options = (raw["options"]?.arrayValue ?? []).compactMap(Option.init(raw:))
         }
     }
 
@@ -514,10 +512,10 @@ struct PermissionAskUserQuestionCardBody: View {
         let label: String
         let description: String?
 
-        init?(raw: [String: Any]) {
-            guard let l = raw["label"] as? String, !l.isEmpty else { return nil }
+        init?(raw: JSONValue) {
+            guard let l = raw["label"]?.stringValue, !l.isEmpty else { return nil }
             self.label = l
-            self.description = raw["description"] as? String
+            self.description = raw["description"]?.stringValue
         }
     }
 }
@@ -587,8 +585,8 @@ private struct AskOptionRowStyle: ButtonStyle {
 
 #Preview("Single-select with Other") {
     PermissionAskUserQuestionCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-single",
+        request: PermissionRequest.preview(
+            id: "preview-single",
             toolName: "AskUserQuestion",
             input: [
                 "questions": [
@@ -620,8 +618,8 @@ private struct AskOptionRowStyle: ButtonStyle {
 
 #Preview("Multi-select 2 of 3") {
     PermissionAskUserQuestionCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-multi",
+        request: PermissionRequest.preview(
+            id: "preview-multi",
             toolName: "AskUserQuestion",
             input: [
                 "questions": [
@@ -657,8 +655,8 @@ private struct AskOptionRowStyle: ButtonStyle {
 
 #Preview("Empty fallback") {
     PermissionAskUserQuestionCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-empty",
+        request: PermissionRequest.preview(
+            id: "preview-empty",
             toolName: "AskUserQuestion",
             input: [:]),
         onSubmit: { _ in },

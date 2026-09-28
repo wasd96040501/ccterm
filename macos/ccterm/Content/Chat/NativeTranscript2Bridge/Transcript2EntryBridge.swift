@@ -215,16 +215,12 @@ final class Transcript2EntryBridge {
     }
 
     private func pushSingleEntryStatuses(_ single: SingleEntry, mode: StatusMode) {
-        guard case .remote(let m) = single.payload,
-            case .assistant(let a) = m,
-            let blocks = a.message?.content
-        else { return }
-        for (idx, block) in blocks.enumerated() {
+        guard case .assistant(let a) = single.remoteMessage else { return }
+        for (idx, block) in a.content.enumerated() {
             guard case .toolUse(let tu) = block else { continue }
-            let toolUseId = tu.id ?? "tu|\(single.id.uuidString)|\(idx)"
+            let toolUseId = tu.id.isEmpty ? "tu|\(single.id.uuidString)|\(idx)" : tu.id
             let childId = StableBlockID.derive(StableBlockID.toolChildPrefix, toolUseId)
-            let result = tu.id.flatMap { single.toolResults[$0] }
-            let status = Self.status(for: result, mode: mode)
+            let status = Self.status(for: single.toolResults[tu.id], mode: mode)
             controller.setToolStatus(id: childId, status: status)
             // Single-tool host group: group has exactly one child, so
             // group status mirrors that child's status.
@@ -237,18 +233,12 @@ final class Transcript2EntryBridge {
     private func pushGroupEntryStatuses(_ group: GroupEntry, mode: StatusMode) {
         var anyRunning = false
         for (itemIdx, item) in group.items.enumerated() {
-            guard case .remote(let m) = item.payload,
-                case .assistant(let a) = m,
-                let blocks = a.message?.content
-            else { continue }
-            for (blockIdx, block) in blocks.enumerated() {
+            guard case .assistant(let a) = item.remoteMessage else { continue }
+            for (blockIdx, block) in a.content.enumerated() {
                 guard case .toolUse(let tu) = block else { continue }
-                let toolUseId =
-                    tu.id
-                    ?? "tu|\(group.id.uuidString)|\(itemIdx)|\(blockIdx)"
+                let toolUseId = tu.id.isEmpty ? "tu|\(group.id.uuidString)|\(itemIdx)|\(blockIdx)" : tu.id
                 let childId = StableBlockID.derive(StableBlockID.toolChildPrefix, toolUseId)
-                let result = tu.id.flatMap { item.toolResults[$0] }
-                let status = Self.status(for: result, mode: mode)
+                let status = Self.status(for: item.toolResults[tu.id], mode: mode)
                 if case .running = status { anyRunning = true }
                 controller.setToolStatus(id: childId, status: status)
             }
@@ -258,18 +248,14 @@ final class Transcript2EntryBridge {
             id: groupId, status: anyRunning ? .running : .completed)
     }
 
-    private static func status(
-        for result: ToolResultPayload?, mode: StatusMode
-    )
-        -> ToolStatus
-    {
+    private static func status(for result: UserMessage?, mode: StatusMode) -> ToolStatus {
         guard let result else {
             switch mode {
             case .live: return .running
             case .historical: return .completed
             }
         }
-        if result.isError == true { return .failed(message: nil) }
+        if result.toolResult?.isError == true { return .failed(message: nil) }
         return .completed
     }
 

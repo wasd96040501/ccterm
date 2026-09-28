@@ -1,218 +1,171 @@
 import AgentSDK
 import Foundation
 
-/// Converts `ToolUse + ToolResultPayload` into a `ToolGroupBlock.Child`.
+/// Converts a tool call and its result into a `ToolGroupBlock.Child`.
 ///
-/// Same dispatch shape as the legacy `ToolBlockView`, but the output is the
-/// native transcript's per-kind child struct: each child carries a stable
-/// `id` (derived via StableBlockID from toolUseId), a display `label`, and
-/// the fields needed for rendering.
+/// Each child carries a stable `id` (derived via StableBlockID from
+/// toolUseId), a display `label`, and the fields needed for rendering.
 enum ToolUseToChild {
     /// `toolUseId` uniquely identifies this tool invocation across child id /
-    /// fold-state / highlight scope. `result` comes from
-    /// `SingleEntry.toolResults[toolUseId]`.
+    /// fold-state / highlight scope. `result` is the call's
+    /// `SingleEntry.toolResults` entry.
     ///
     /// Label policy: **fill both** (`label` = past tense, `activeLabel` =
     /// progressive). The layout selects between them based on `ToolStatus` —
-    /// `.running` picks `activeLabel`, terminal states pick `label`. The
-    /// bridge no longer toggles a single value via `hasResult`; status flows
-    /// through the independent `setToolStatus` channel and the bridge just
-    /// stages both labels.
+    /// `.running` picks `activeLabel`, terminal states pick `label`; status
+    /// flows through the separate `setToolStatus` channel.
     static func make(
-        toolUse: ToolUse,
+        toolUse: ToolUseBlock,
         toolUseId: String,
-        result: ToolResultPayload?
+        result: UserMessage?
     ) -> ToolGroupBlock.Child {
-        let label = toolUse.completedFragment ?? toolUse.caseName
-        let activeLabel = toolUse.activeFragment ?? toolUse.caseName
+        let label = toolUse.completedFragment ?? toolUse.name
+        let activeLabel = toolUse.activeFragment ?? toolUse.name
         let id = StableBlockID.derive(StableBlockID.toolChildPrefix, toolUseId)
-        let resultObject: ToolUseResultObject? = {
-            if case .object(let obj) = result?.typed { return obj }
-            return nil
-        }()
-        // Wrapper-level error text — uniform across every tool kind.
-        // On error the CLI returns a plain string (never the typed
-        // object — see `Transcript2EntryBridge`'s status table), so this
-        // is the only body content available for a failed call.
+        // Wrapper-level error text — uniform across every tool kind. On
+        // error the CLI returns a plain string, never the structured output
+        // (see `Transcript2EntryBridge`'s status table), so this is the only
+        // body content available for a failed call.
         let err = errorText(from: result)
 
-        switch toolUse {
-        case .Read(let v):
+        /// The structured output, when the call succeeded.
+        func output<T: ToolDefinition>(_ tool: T.Type) -> T.Output? {
+            if case .success(let value)? = result?.toolOutcome(tool) { return value }
+            return nil
+        }
+
+        switch toolUse.groupableKind {
+        case .read:
             return .read(
                 ReadChild(
                     id: id,
                     label: label,
                     activeLabel: activeLabel,
-                    filePath: v.input?.filePath ?? "",
+                    filePath: toolUse.input(as: Tools.Read.self)?.filePath ?? "",
                     // On error, `extractText` would otherwise pour the
                     // error string into the new-file diff card; suppress
                     // it so only the dedicated red error card shows.
-                    content: err == nil
-                        ? stripCatNPrefix(extractText(from: result)) : nil,
+                    content: err == nil ? stripCatNPrefix(extractText(from: result)) : nil,
                     errorText: err))
 
-        case .Edit(let v):
+        case .edit:
+            let input = toolUse.input(as: Tools.Edit.self)
             return .fileEdit(
                 FileEditChild(
                     id: id,
                     label: label,
                     activeLabel: activeLabel,
-                    filePath: v.input?.filePath ?? "",
+                    filePath: input?.filePath ?? "",
                     diff: DiffBlock(
-                        filePath: v.input?.filePath ?? "",
-                        oldString: v.input?.oldString,
-                        newString: v.input?.newString ?? ""),
+                        filePath: input?.filePath ?? "",
+                        oldString: input?.oldString,
+                        newString: input?.newString ?? ""),
                     errorText: err))
 
-        case .Write(let v):
-            let originalFile: String? = {
-                if case .Write(let obj, _) = resultObject { return obj.originalFile }
-                return nil
-            }()
+        case .write:
+            let input = toolUse.input(as: Tools.Write.self)
             return .fileEdit(
                 FileEditChild(
                     id: id,
                     label: label,
                     activeLabel: activeLabel,
-                    filePath: v.input?.filePath ?? "",
+                    filePath: input?.filePath ?? "",
                     diff: DiffBlock(
-                        filePath: v.input?.filePath ?? "",
-                        oldString: originalFile,
-                        newString: v.input?.content ?? ""),
+                        filePath: input?.filePath ?? "",
+                        oldString: output(Tools.Write.self)?.originalFile,
+                        newString: input?.content ?? ""),
                     errorText: err))
 
-        case .Bash(let v):
-            let (stdout, stderr): (String?, String?) = {
-                if case .Bash(let obj, _) = resultObject { return (obj.stdout, obj.stderr) }
-                return (nil, nil)
-            }()
+        case .bash:
+            let bash = output(Tools.Bash.self)
             return .bash(
                 BashChild(
                     id: id,
                     label: label,
                     activeLabel: activeLabel,
-                    command: v.input?.command ?? "",
-                    stdout: stdout,
-                    stderr: stderr,
+                    command: toolUse.input(as: Tools.Bash.self)?.command ?? "",
+                    stdout: bash?.stdout,
+                    stderr: bash?.stderr,
                     errorText: err))
 
-        case .Grep(let v):
-            let (filenames, content): ([String], String?) = {
-                if case .Grep(let obj, _) = resultObject {
-                    return (obj.filenames ?? [], obj.content)
-                }
-                return ([], nil)
-            }()
+        case .grep:
+            let grep = output(Tools.Grep.self)
             return .grep(
                 GrepChild(
                     id: id,
                     label: label,
                     activeLabel: activeLabel,
-                    pattern: v.input?.pattern ?? "",
-                    filenames: filenames,
-                    content: content,
+                    pattern: toolUse.input(as: Tools.Grep.self)?.pattern ?? "",
+                    filenames: grep?.filenames ?? [],
+                    content: grep?.content,
                     errorText: err))
 
-        case .Glob(let v):
-            let (filenames, truncated): ([String], Bool) = {
-                if case .Glob(let obj, _) = resultObject {
-                    return (obj.filenames ?? [], obj.truncated ?? false)
-                }
-                return ([], false)
-            }()
+        case .glob:
+            let glob = output(Tools.Glob.self)
             return .glob(
                 GlobChild(
                     id: id,
                     label: label,
                     activeLabel: activeLabel,
-                    pattern: v.input?.pattern ?? "",
-                    filenames: filenames,
-                    truncated: truncated,
+                    pattern: toolUse.input(as: Tools.Glob.self)?.pattern ?? "",
+                    filenames: glob?.filenames ?? [],
+                    truncated: glob?.truncated ?? false,
                     errorText: err))
 
-        case .WebFetch(let v):
-            let (httpStatus, body): (Int?, String?) = {
-                if case .WebFetch(let obj, _) = resultObject { return (obj.code, obj.result) }
-                return (nil, nil)
-            }()
+        case .webFetch:
+            let fetch = output(Tools.WebFetch.self)
             return .webFetch(
                 WebFetchChild(
                     id: id,
                     label: label,
                     activeLabel: activeLabel,
-                    url: v.input?.url ?? "",
-                    httpStatus: httpStatus,
-                    result: body,
+                    url: toolUse.input(as: Tools.WebFetch.self)?.url ?? "",
+                    httpStatus: fetch?.code,
+                    result: fetch?.result,
                     errorText: err))
 
-        case .WebSearch(let v):
-            let results: [WebSearchChild.Result] = {
-                if case .WebSearch(let obj, _) = resultObject,
-                    let entries = obj.results
-                {
-                    return entries.compactMap { entry -> WebSearchChild.Result? in
-                        switch entry {
-                        case .object(let r):
-                            let first = r.content?.first
-                            return WebSearchChild.Result(
-                                title: first?.title ?? r.toolUseId ?? "",
-                                url: first?.url ?? "",
-                                snippet: nil)
-                        case .string, .other:
-                            return nil
-                        }
-                    }
-                }
-                return []
-            }()
+        case .webSearch:
+            let links = output(Tools.WebSearch.self)?.links ?? []
             return .webSearch(
                 WebSearchChild(
                     id: id,
                     label: label,
                     activeLabel: activeLabel,
-                    query: v.input?.query ?? v.input?.searchQuery ?? "",
-                    results: results,
+                    query: toolUse.input(as: Tools.WebSearch.self)?.query ?? "",
+                    results: links.map { WebSearchChild.Result(title: $0.title, url: $0.url, snippet: nil) },
                     errorText: err))
 
-        case .AskUserQuestion(let v):
-            let answers: [String: String]? = {
-                if case .AskUserQuestion(let obj, _) = resultObject { return obj.answers }
-                return nil
-            }()
-            let items: [AskUserQuestionChild.Item] = (v.input?.questions ?? []).map { q in
-                let key = q.question ?? ""
-                return AskUserQuestionChild.Item(
-                    question: key,
-                    answer: answers?[key])
-            }
+        case .askUserQuestion:
+            let answers = output(Tools.AskUserQuestion.self)?.answers
+            let questions = toolUse.input(as: Tools.AskUserQuestion.self)?.questions ?? []
             return .askUserQuestion(
                 AskUserQuestionChild(
                     id: id,
                     label: label,
                     activeLabel: activeLabel,
-                    items: items,
+                    items: questions.map {
+                        AskUserQuestionChild.Item(question: $0.question, answer: answers?[$0.question])
+                    },
                     errorText: err))
 
-        case .Agent(let v):
-            let (progress, output): ([String], String?) = {
-                if case .Task(let obj, _) = resultObject {
-                    let progressTexts = (obj.content ?? []).compactMap { $0.text }
-                    let outputTexts = (obj.content ?? []).compactMap { $0.text }
-                    return (progressTexts, outputTexts.isEmpty ? nil : outputTexts.joined(separator: "\n\n"))
-                }
-                return ([], nil)
-            }()
+        case .agent:
+            // A background agent's report arrives later as a task
+            // notification, not in this result.
+            var report: String?
+            if case .completed(let run)? = output(Tools.Agent.self), !run.text.isEmpty {
+                report = run.text
+            }
             return .agent(
                 AgentChild(
                     id: id,
                     label: label,
                     activeLabel: activeLabel,
-                    description: v.input?.description ?? v.input?.name ?? "Agent",
-                    progress: progress,
-                    output: output,
+                    description: toolUse.input(as: Tools.Agent.self)?.description ?? "Agent",
+                    progress: [],
+                    output: report,
                     errorText: err))
 
-        default:
+        case .other:
             return .generic(
                 GenericChild(
                     id: id, label: label, activeLabel: activeLabel,
@@ -227,8 +180,8 @@ enum ToolUseToChild {
     /// `<tool_use_error>…</tool_use_error>` envelope which we strip so the
     /// card shows just the message. Returns `nil` for a successful result
     /// or one that carried no text.
-    private static func errorText(from result: ToolResultPayload?) -> String? {
-        guard result?.isError == true,
+    private static func errorText(from result: UserMessage?) -> String? {
+        guard result?.toolResult?.isError == true,
             let raw = extractText(from: result)
         else { return nil }
         return stripToolUseErrorEnvelope(raw)
@@ -250,27 +203,15 @@ enum ToolUseToChild {
         return inner.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Concatenate all text-bearing fragments out of a `ToolResultPayload`.
-    /// Returns `nil` when the result is missing or carries no text (image-
-    /// only / unknown shapes), so callers can distinguish "not landed yet"
-    /// from "landed empty".
-    private static func extractText(from result: ToolResultPayload?) -> String? {
-        guard let content = result?.item.content else { return nil }
-        switch content {
-        case .string(let s):
-            return s.isEmpty ? nil : s
-        case .array(let items):
-            let parts: [String] = items.compactMap { item in
-                if case .text(let t) = item, let s = t.text, !s.isEmpty {
-                    return s
-                }
-                return nil
-            }
-            guard !parts.isEmpty else { return nil }
-            return parts.joined(separator: "\n")
-        case .other:
-            return nil
+    /// Concatenate the text of a tool result. Returns `nil` when the result
+    /// is missing or carries no text (image-only / unknown shapes), so callers
+    /// can distinguish "not landed yet" from "landed empty".
+    private static func extractText(from result: UserMessage?) -> String? {
+        let parts = (result?.toolResult?.content ?? []).compactMap { block -> String? in
+            guard let text = block.text, !text.isEmpty else { return nil }
+            return text
         }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n")
     }
 
     /// Strip the `<lineNo>\t` prefix the CLI prepends to every Read

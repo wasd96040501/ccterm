@@ -8,7 +8,7 @@ import SwiftUI
 ///
 /// We parse the canonical `mcp__<server>__<tool>` triple so the user
 /// can see both the originating MCP server (the trust boundary) and
-/// the bare tool name. The full `rawInput` is rendered as
+/// the bare tool name. The full `input` is rendered as
 /// pretty-printed JSON inside a 200pt-cap monospace scroll —
 /// matching the shape of `taskAgent` / `notebook` bodies.
 ///
@@ -89,29 +89,21 @@ struct PermissionMcpCardBody: View {
     }
 
     var description: String? {
-        let raw = request.rawInput["description"] as? String
+        let raw = request.input["description"]?.stringValue
         return raw?.isEmpty == false ? raw : nil
     }
 
     /// Pretty-printed JSON for the input map. Sorted keys so the
     /// order is stable across renders — MCP servers don't guarantee
     /// any particular key order. Returns `nil` when there's nothing
-    /// to show (empty rawInput) and `""` when serialisation fails so
+    /// to show (empty input) and `""` when serialisation fails so
     /// the view collapses the row.
     var inputJSON: String? {
-        let dict = request.rawInput
-        guard !dict.isEmpty else { return nil }
-        guard JSONSerialization.isValidJSONObject(dict) else {
-            return ""
-        }
-        do {
-            let data = try JSONSerialization.data(
-                withJSONObject: dict,
-                options: [.prettyPrinted, .sortedKeys])
-            return String(data: data, encoding: .utf8) ?? ""
-        } catch {
-            return ""
-        }
+        guard let dict = request.input.objectValue, !dict.isEmpty else { return nil }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        guard let data = try? encoder.encode(request.input) else { return "" }
+        return String(data: data, encoding: .utf8) ?? ""
     }
 
     @ViewBuilder
@@ -130,8 +122,8 @@ struct PermissionMcpCardBody: View {
 
 #Preview("Standard server__tool") {
     PermissionMcpCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-1",
+        request: PermissionRequest.preview(
+            id: "preview-1",
             toolName: "mcp__linear__create_issue",
             input: [
                 "description": "Create a Linear ticket from the failing test report.",
@@ -147,8 +139,8 @@ struct PermissionMcpCardBody: View {
 
 #Preview("Nested tool name") {
     PermissionMcpCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-2",
+        request: PermissionRequest.preview(
+            id: "preview-2",
             toolName: "mcp__chrome__tabs__create",
             input: [
                 "url": "https://example.com",
@@ -162,8 +154,8 @@ struct PermissionMcpCardBody: View {
 
 #Preview("Empty input") {
     PermissionMcpCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-3",
+        request: PermissionRequest.preview(
+            id: "preview-3",
             toolName: "mcp__weather__current",
             input: [:])
     )

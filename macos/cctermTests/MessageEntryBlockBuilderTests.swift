@@ -19,7 +19,7 @@ final class MessageEntryBlockBuilderTests: XCTestCase {
         let entry = MessageEntry.single(
             SingleEntry(
                 id: entryId,
-                payload: .remote(Message2Fixtures.assistantText("Hello world")),
+                payload: .remote(MessageFixtures.assistantText("Hello world")),
                 delivery: nil,
                 toolResults: [:]))
 
@@ -38,7 +38,7 @@ final class MessageEntryBlockBuilderTests: XCTestCase {
             SingleEntry(
                 id: UUID(),
                 payload: .remote(
-                    Message2Fixtures.assistantRead(
+                    MessageFixtures.assistantRead(
                         toolUseId: "tu_1", filePath: "/tmp/foo.swift")),
                 delivery: nil,
                 toolResults: [:]))
@@ -70,7 +70,7 @@ final class MessageEntryBlockBuilderTests: XCTestCase {
         let remoteEntry = MessageEntry.single(
             SingleEntry(
                 id: id,
-                payload: .remote(Message2Fixtures.userText("hi")),
+                payload: .remote(MessageFixtures.userText("hi")),
                 delivery: .confirmed,
                 toolResults: [:]))
 

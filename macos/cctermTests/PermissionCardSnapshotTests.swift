@@ -27,8 +27,8 @@ final class PermissionCardSnapshotTests: XCTestCase {
     }
 
     func testCardAloneSnapshot() throws {
-        let request = PermissionRequest.makePreview(
-            requestId: "req-1",
+        let request = PermissionRequest.preview(
+            id: "req-1",
             toolName: "Bash",
             input: ["command": "rm -rf node_modules", "description": "Reset deps"])
 
@@ -53,8 +53,8 @@ final class PermissionCardSnapshotTests: XCTestCase {
     /// single-select payload (header chip + 3 options) so the
     /// vstack-of-rows look + chrome takeover can be reviewed.
     func testAskUserQuestionCardSnapshot() throws {
-        let request = PermissionRequest.makePreview(
-            requestId: "req-ask",
+        let request = PermissionRequest.preview(
+            id: "req-ask",
             toolName: "AskUserQuestion",
             input: [
                 "questions": [
@@ -102,8 +102,8 @@ final class PermissionCardSnapshotTests: XCTestCase {
     /// Multi-select variant — same payload structure but the bottom
     /// "Submit" row is expected to render.
     func testAskUserQuestionMultiSelectCardSnapshot() throws {
-        let request = PermissionRequest.makePreview(
-            requestId: "req-ask-multi",
+        let request = PermissionRequest.preview(
+            id: "req-ask-multi",
             toolName: "AskUserQuestion",
             input: [
                 "questions": [
@@ -203,25 +203,20 @@ final class PermissionCardSnapshotTests: XCTestCase {
 
     /// Append a pending permission directly onto the runtime's
     /// `internal(set)` storage. Mirrors what
-    /// `SessionRuntime.enqueuePermission` would do at runtime, minus
-    /// the response closure (the snapshot doesn't exercise it).
+    /// `SessionRuntime.enqueuePermission` would do at runtime, with a
+    /// request nobody answers (the snapshot doesn't exercise it).
     private static func enqueuePermission(
         on session: ccterm.Session,
         requestId: String,
         toolName: String,
-        input: [String: Any]
+        input: JSONValue
     ) {
         guard case .active(let runtime) = session.phase else {
             XCTFail("expected active session for permission seeding")
             return
         }
-        let request = PermissionRequest.makePreview(
-            requestId: requestId, toolName: toolName, input: input)
-        let pending = PendingPermission(
-            id: requestId,
-            request: request,
-            respond: { _ in })
-        runtime.pendingPermissions.append(pending)
+        runtime.pendingPermissions.append(
+            PermissionRequest.preview(id: requestId, toolName: toolName, input: input))
     }
 
     /// Builds a `SessionManager` (in-memory repo) holding one active
@@ -233,7 +228,7 @@ final class PermissionCardSnapshotTests: XCTestCase {
     private static func makeSelectedSessionWithPermission(
         requestId: String,
         toolName: String,
-        input: [String: Any]
+        input: JSONValue
     ) -> (MainSelectionModel, SessionManager) {
         let repo = InMemorySessionRepository()
         let sid = UUID().uuidString
@@ -246,10 +241,8 @@ final class PermissionCardSnapshotTests: XCTestCase {
             XCTFail("expected an active session for overlay seeding")
             return (MainSelectionModel(), manager)
         }
-        let request = PermissionRequest.makePreview(
-            requestId: requestId, toolName: toolName, input: input)
         runtime.pendingPermissions.append(
-            PendingPermission(id: requestId, request: request, respond: { _ in }))
+            PermissionRequest.preview(id: requestId, toolName: toolName, input: input))
 
         let model = MainSelectionModel()
         model.selection = .session(sid)
@@ -315,7 +308,7 @@ private struct InputBarChromeMirrorFixture: View {
             // without growing it.
             if let pending = session.pendingPermissions.first {
                 PermissionCardView(
-                    request: pending.request,
+                    request: pending,
                     onAllowOnce: {},
                     onAllowAlways: {},
                     onDeny: {}

@@ -15,7 +15,7 @@ final class Transcript2EntryBridgeTests: XCTestCase {
         continueAfterFailure = false
     }
 
-    private func single(_ message: Message2) -> MessageEntry {
+    private func single(_ message: Message) -> MessageEntry {
         .single(SingleEntry(id: UUID(), payload: .remote(message), delivery: nil, toolResults: [:]))
     }
 
@@ -24,8 +24,8 @@ final class Transcript2EntryBridgeTests: XCTestCase {
         let controller = Transcript2Controller()
         let bridge = Transcript2EntryBridge(controller: controller)
 
-        let a = single(Message2Fixtures.assistantText("first"))
-        let b = single(Message2Fixtures.assistantText("second"))
+        let a = single(MessageFixtures.assistantText("first"))
+        let b = single(MessageFixtures.assistantText("second"))
         bridge.apply(.appended(a))
         bridge.apply(.appended(b))
 
@@ -40,7 +40,7 @@ final class Transcript2EntryBridgeTests: XCTestCase {
         let controller = Transcript2Controller()
         let bridge = Transcript2EntryBridge(controller: controller)
 
-        let entry = single(Message2Fixtures.assistantText("body"))
+        let entry = single(MessageFixtures.assistantText("body"))
         bridge.apply(.appended(entry))
         let before = controller.coordinator.blockIds
 
@@ -65,7 +65,7 @@ final class Transcript2EntryBridgeTests: XCTestCase {
             .single(
                 SingleEntry(
                     id: entryId,
-                    payload: .remote(Message2Fixtures.assistantText(text, messageId: "m1")),
+                    payload: .remote(MessageFixtures.assistantText(text, messageId: "m1")),
                     delivery: nil, toolResults: [:]))
         }
 
@@ -94,8 +94,8 @@ final class Transcript2EntryBridgeTests: XCTestCase {
         let controller = Transcript2Controller()
         let bridge = Transcript2EntryBridge(controller: controller)
 
-        let a = single(Message2Fixtures.assistantText("keep"))
-        let b = single(Message2Fixtures.assistantText("drop"))
+        let a = single(MessageFixtures.assistantText("keep"))
+        let b = single(MessageFixtures.assistantText("drop"))
         bridge.apply(.appended(a))
         bridge.apply(.appended(b))
         bridge.apply(.removed(b))
@@ -110,7 +110,7 @@ final class Transcript2EntryBridgeTests: XCTestCase {
     func testHistoricalStatusPushNoToolsIsNoOp() {
         let controller = Transcript2Controller()
         let bridge = Transcript2EntryBridge(controller: controller)
-        bridge.pushHistoricalStatuses(for: [single(Message2Fixtures.assistantText("text only"))])
+        bridge.pushHistoricalStatuses(for: [single(MessageFixtures.assistantText("text only"))])
         XCTAssertEqual(controller.blockCount, 0, "status push alone applies no blocks")
     }
 }

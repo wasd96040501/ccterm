@@ -8,8 +8,9 @@ import Foundation
 /// those that record no working directory, and those run in a temporary or
 /// hidden directory.
 ///
-/// Reads every session once on `start()`, then only the sessions the
-/// directory reports changed.
+/// Reads every session once on `start()` — given an index, only those written
+/// since the last launch — then only the sessions the directory reports
+/// changed. Reads nothing on the main thread.
 @MainActor
 final class LibraryStore {
     /// Projects, most recently active first; within one, sessions likewise.
@@ -20,24 +21,36 @@ final class LibraryStore {
     @Published private(set) var nodes: [LibraryNode] = []
 
     private let directory: SessionDirectory
+    /// Where the `LibraryIndex` is kept between launches; `nil` keeps none.
+    private let indexURL: URL?
     private var task: Task<Void, Never>?
     /// What each shown session read as, by transcript.
     private var entries: [URL: Entry] = [:]
 
-    init(directory: SessionDirectory) {
+    init(directory: SessionDirectory, indexURL: URL? = nil) {
         self.directory = directory
+        self.indexURL = indexURL
     }
 
     /// Reads every session, then keeps up with the directory.
     func start() {
         guard task == nil else { return }
         let directory = directory
+        let indexURL = indexURL
         task = Task { [weak self] in
             // Watching starts before the listing, so nothing written between
             // the two is missed.
             let changes = directory.changes()
-            let all = await Self.read(directory.sessions())
-            self?.update(all)
+            // The tree as soon as the directory is listed: the index answers
+            // for every transcript unchanged since it was written.
+            let launch = await Self.launch(directory, indexedAt: indexURL)
+            self?.update(launch.records)
+            // Then the side transcripts the index answered for, as they are on
+            // disk: they come and go without their session's transcript
+            // changing.
+            let current = await Self.relisted(launch.records, of: launch.indexed)
+            self?.update(current)
+            if let indexURL { await Self.write(current, over: launch.index, to: indexURL) }
             for await sessions in changes {
                 let read = await Self.read(sessions)
                 guard let self else { return }
@@ -53,8 +66,8 @@ final class LibraryStore {
         entries = [:]
     }
 
-    private func update(_ read: [URL: Entry?]) {
-        for (url, entry) in read { entries[url] = entry }
+    private func update(_ read: [SessionFile: Record?]) {
+        for (session, record) in read { entries[session.url] = record.flatMap { Self.entry(for: session, $0) } }
         let tree = Self.tree(of: entries.values)
         if tree != nodes { nodes = tree }
     }
@@ -107,30 +120,107 @@ final class LibraryStore {
         let node: LibraryNode
     }
 
-    /// Each session's entry, in parallel; `nil` for one that isn't shown or
-    /// can't be read.
+    private typealias Record = LibraryIndex.Record
+
+    /// Every session in `directory`: what the index at `indexURL` records for
+    /// those unchanged since — `indexed` — and what the rest read as. `nil`
+    /// for a session that can't be read.
     @concurrent
-    private nonisolated static func read(_ sessions: [SessionFile]) async -> [URL: Entry?] {
-        await withTaskGroup(of: (URL, Entry?).self) { group in
-            for session in sessions {
-                group.addTask { (session.url, entry(for: session)) }
-            }
-            return await group.reduce(into: [URL: Entry?]()) { $0[$1.0] = .some($1.1) }
+    private nonisolated static func launch(
+        _ directory: SessionDirectory, indexedAt indexURL: URL?
+    ) async
+        -> (records: [SessionFile: Record?], indexed: [SessionFile], index: LibraryIndex)
+    {
+        let clock = ContinuousClock()
+        let start = clock.now
+        let sessions = directory.sessions()
+        let index = indexURL.map(LibraryIndex.init(contentsOf:)) ?? LibraryIndex()
+        var records: [SessionFile: Record?] = [:]
+        var unread: [SessionFile] = []
+        for session in sessions {
+            if let record = index.record(for: session) { records[session] = record } else { unread.append(session) }
+        }
+        let indexed = Array(records.keys)
+        records.merge(await read(unread)) { $1 }
+        appLog(
+            .info, "LibraryStore", "listed \(sessions.count) sessions, read \(unread.count), in \(clock.now - start)")
+        return (records, indexed, index)
+    }
+
+    /// Each session as its files read now, in parallel.
+    @concurrent
+    private nonisolated static func read(_ sessions: [SessionFile]) async -> [SessionFile: Record?] {
+        await map(sessions) { try? record(of: $0) }
+    }
+
+    /// `records`, with the side transcripts of `sessions` as they are on disk
+    /// now.
+    @concurrent
+    private nonisolated static func relisted(
+        _ records: [SessionFile: Record?], of sessions: [SessionFile]
+    ) async
+        -> [SessionFile: Record?]
+    {
+        let clock = ContinuousClock()
+        let start = clock.now
+        let shown = sessions.filter { records[$0]??.summary != nil }
+        var current = records
+        current.merge(await map(shown) { session in records[session]??.relisting(children(of: session)) }) { $1 }
+        appLog(.info, "LibraryStore", "listed the side transcripts of \(shown.count) sessions in \(clock.now - start)")
+        return current
+    }
+
+    /// Writes the index of `records` to `url`, unless it is `previous`.
+    @concurrent
+    private nonisolated static func write(
+        _ records: [SessionFile: Record?], over previous: LibraryIndex, to url: URL
+    )
+        async
+    {
+        let index = LibraryIndex(records.compactMap { session, record in record.map { (session, $0) } })
+        guard index != previous else { return }
+        do {
+            try index.write(to: url)
+        } catch {
+            appLog(.warning, "LibraryStore", "index not written: \(error.localizedDescription)")
         }
     }
 
-    private nonisolated static func entry(for session: SessionFile) -> Entry? {
-        guard let metadata = try? SessionMetadata(contentsOf: session.url), metadata.isInteractive,
-            let cwd = metadata.cwd, !isScratch(project(ofDirectory: cwd))
-        else { return nil }
+    /// `transform` of each session, in parallel.
+    private nonisolated static func map(
+        _ sessions: [SessionFile], _ transform: @escaping @Sendable (SessionFile) -> Record?
+    ) async -> [SessionFile: Record?] {
+        await withTaskGroup(of: (SessionFile, Record?).self) { group in
+            for session in sessions {
+                group.addTask { (session, transform(session)) }
+            }
+            return await group.reduce(into: [SessionFile: Record?]()) { $0[$1.0] = .some($1.1) }
+        }
+    }
+
+    /// What the session's files read as; throws if its transcript can't be
+    /// read.
+    private nonisolated static func record(of session: SessionFile) throws -> Record {
+        let metadata = try SessionMetadata(contentsOf: session.url)
+        guard metadata.isInteractive, let cwd = metadata.cwd, !isScratch(project(ofDirectory: cwd)) else {
+            return Record(modificationDate: session.modificationDate, summary: nil)
+        }
         let title =
             [metadata.title, metadata.lastPrompt]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { !$0.isEmpty } ?? String(localized: "Untitled Session")
+            .first { !$0.isEmpty }
+        return Record(
+            modificationDate: session.modificationDate,
+            summary: Record.Summary(project: project(ofDirectory: cwd), title: title, children: children(of: session)))
+    }
+
+    /// A shown session's entry; `nil` for one that isn't.
+    private nonisolated static func entry(for session: SessionFile, _ record: Record) -> Entry? {
+        guard let summary = record.summary else { return nil }
         let node = LibraryNode(
-            id: session.url.path, kind: .session, title: title, transcriptURL: session.url,
-            children: children(of: session))
-        return Entry(modificationDate: session.modificationDate, project: project(ofDirectory: cwd), node: node)
+            id: session.url.path, kind: .session, title: summary.title ?? String(localized: "Untitled Session"),
+            transcriptURL: session.url, children: summary.children)
+        return Entry(modificationDate: session.modificationDate, project: summary.project, node: node)
     }
 
     private nonisolated static func children(of session: SessionFile) -> [LibraryNode] {

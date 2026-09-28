@@ -3,8 +3,8 @@ import Foundation
 /// One node of the session library: a project, a session, a group of a
 /// session's side transcripts, or one side transcript. A value — every scan
 /// builds a new tree, and `id` is what stays the same across them.
-struct LibraryNode: Identifiable, Hashable, Sendable {
-    enum Kind: Hashable, Sendable {
+struct LibraryNode: Identifiable, Hashable, Codable, Sendable {
+    enum Kind: Hashable, Codable, Sendable {
         /// A working directory. Sessions run in its worktrees are folded in.
         case project
         /// A session's main transcript.

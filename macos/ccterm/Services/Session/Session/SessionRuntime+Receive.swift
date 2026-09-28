@@ -14,7 +14,7 @@ extension SessionRuntime {
 
 extension SessionRuntime {
 
-    /// Single ingest entry point. Consumes one Message2 and updates the handle:
+    /// Single ingest entry point. Consumes one CLI message and updates the handle:
     /// - Synchronous side effects (usage, contextWindow, cwd, slashCommands, permissionMode, lifecycle)
     /// - user echo whose uuid matches a local `.queued` entry → flip to `.confirmed` and
     ///   replace payload from `.localUser` with `.remote(echo)`, advance status
@@ -22,7 +22,7 @@ extension SessionRuntime {
     /// - other visible messages are appended to the timeline per the "groupable" rule
     ///
     /// live and replay share the same path; `mode` only affects lifecycle advancement and hasUnread.
-    func receive(_ message: Message2, mode: ReceiveMode = .live) {
+    func receive(_ message: Message, mode: ReceiveMode = .live) {
         switch message {
         case .assistant(let a):
             // Capture TaskCreate / TaskUpdate tool_use inputs so the
@@ -30,7 +30,7 @@ extension SessionRuntime {
             // entry in `todos`. Runs in both live and replay so the
             // popover list is correct after a JSONL reload.
             todoTracker.captureTodoToolUses(in: a)
-            noteUsage(a.message?.usage)
+            noteUsage(a.usage)
             // Fold this message's authoritative usage into the turn total.
             // Live mode only — replay reloads don't drive the turn counter.
             if mode == .live { reconcileFinalUsage(a) }
@@ -46,7 +46,7 @@ extension SessionRuntime {
             // tokens stream in.
             if mode == .live { isRunning = true }
         case .result(let r): finishTurn(with: r, mode: mode)
-        case .system(.`init`(let info)):
+        case .system(.initialized(let info)):
             // `system.init` arriving *after* the first bootstrap (i.e.
             // `status` is already past `.starting`) means the CLI is
             // re-initialising for a follow-up turn — the dump shows
@@ -90,7 +90,7 @@ extension SessionRuntime {
             // block. Fold it into the running output total so the pill's `↓`
             // counter climbs during thinking; the authoritative `message_delta`
             // total (which includes thinking) supersedes it at turn's end.
-            if let cumulative = tt.estimatedTokens { foldThinkingEstimate(cumulativeEstimate: cumulative) }
+            foldThinkingEstimate(cumulativeEstimate: tt.estimatedTokens)
         case .system(.status(let s)):
             // CLI broadcasts a `system.status` whenever the
             // session-side permission mode changes. Three triggers
@@ -109,15 +109,15 @@ extension SessionRuntime {
             // Case 3 is why we must trust the CLI, not the optimistic
             // local write in setPermissionMode: this branch is the
             // self-heal that pulls UI state back to reality.
-            adoptPermissionMode(s.permissionMode)
+            adoptPermissionMode(s.permissionMode?.rawValue)
         case .system(.taskStarted(let started)) where mode == .live:
             taskTracker.handleTaskStarted(
-                started, command: bashCommand(forToolUseId: started.toolUseId))
+                started, command: bashCommand(forToolUseId: started.toolUseID))
         case .system(.taskNotification(let notif)) where mode == .live:
             taskTracker.handleTaskNotification(notif)
         case .system(.taskUpdated(let updated)) where mode == .live:
             taskTracker.handleTaskUpdated(updated)
-        case .user(let u) where u.toolResultBlock?.toolUseId != nil:
+        case .user(let u) where u.toolResult != nil:
             // Capture backgroundTaskId → outputFile mapping when the bash
             // tool's tool_result lands. system.task_started doesn't carry
             // the output path (it's allocated lazily when the CLI writes
@@ -135,7 +135,7 @@ extension SessionRuntime {
         if mode == .live {
             let actDesc: String
             switch act {
-            case .merge(let id, _): actDesc = "merge(\(id.prefix(8)))"
+            case .merge(let results): actDesc = "merge(\(results.map { $0.toolUseID.prefix(8) }))"
             case .confirm(let id, _): actDesc = "confirm(\(id.uuidString.prefix(8)))"
             case .replaceAssistant(let id): actDesc = "replaceAssistant(\(id.uuidString.prefix(8)))"
             case .append: actDesc = "append"
@@ -147,18 +147,26 @@ extension SessionRuntime {
         }
         // Each mutation helper returns the MessagesChange it produced (or nil), so this
         // function can dispatch them uniformly to the bridge via onMessagesChange at the end.
-        let change: MessagesChange?
+        var changes: [MessagesChange] = []
         switch act {
-        case .merge(let id, let payload):
-            change = attachToolResult(payload, to: id).map(MessagesChange.updated)
+        case .merge(let results):
+            // Each result lands in the entry that issued its call; an entry
+            // answered several times in one message reports its final state.
+            var updated: [MessageEntry] = []
+            for (toolUseID, result) in results {
+                guard let entry = attachToolResult(result, to: toolUseID) else { continue }
+                updated.removeAll { $0.id == entry.id }
+                updated.append(entry)
+            }
+            changes = updated.map(MessagesChange.updated)
         case .confirm(let id, let echo):
-            change = confirmQueuedEntry(id: id, echo: echo, mode: mode).map(MessagesChange.updated)
+            changes = confirmQueuedEntry(id: id, echo: echo, mode: mode).map { [.updated($0)] } ?? []
         case .replaceAssistant(let id):
-            change = replaceAssistantEntry(id: id, with: message).map(MessagesChange.updated)
+            changes = replaceAssistantEntry(id: id, with: message).map { [.updated($0)] } ?? []
         case .append:
-            change = appendToTimeline(message, mode: mode)
+            changes = [appendToTimeline(message, mode: mode)]
         case .skip:
-            change = nil
+            break
         }
 
         // Replay updates `messages` but suppresses the per-message change
@@ -167,7 +175,7 @@ extension SessionRuntime {
         // `.replay` mode now exists only for the reverse-builder grouping
         // parity test (`TranscriptReverseBuilderTests.A6`).
         guard mode == .live else { return }
-        if let change { onMessagesChange?(change) }
+        for change in changes { onMessagesChange?(change) }
     }
 }
 
@@ -176,12 +184,12 @@ extension SessionRuntime {
 extension SessionRuntime {
 
     fileprivate enum Action {
-        case merge(toolUseId: String, payload: ToolResultPayload)
+        case merge([(toolUseID: String, result: UserMessage)])
         /// Local entry matched by CLI echo (by uuid); flip delivery to
         /// `.confirmed` and swap payload to `.remote(echo)`. Idempotent
         /// when the entry is already `.confirmed` (CLI replay during
         /// interrupt).
-        case confirm(entryId: UUID, echo: Message2)
+        case confirm(entryId: UUID, echo: Message)
         /// A finalized `.assistant` envelope whose message already has a live
         /// streaming-text preview entry — swap the provisional payload for the
         /// authoritative one in place, reusing the entry id so block ids
@@ -191,13 +199,11 @@ extension SessionRuntime {
         case skip
     }
 
-    fileprivate func action(for message: Message2) -> Action {
+    fileprivate func action(for message: Message) -> Action {
         switch message {
         case .user(let u):
-            if let r = u.toolResultBlock, let id = r.toolUseId {
-                let payload = ToolResultPayload(item: r, typed: u.toolUseResult)
-                return .merge(toolUseId: id, payload: payload)
-            }
+            let results = u.toolResultMessages
+            if !results.isEmpty { return .merge(results.map { ($0.toolUseID, $0.message) }) }
             if u.isVisible, let entryId = matchExistingEntry(for: u) {
                 return .confirm(entryId: entryId, echo: message)
             }
@@ -218,8 +224,7 @@ extension SessionRuntime {
             // [tool]` bug). Only a text-bearing finalize claims the preview; the
             // tool envelope falls through to `.append` and lands as its own
             // tool group.
-            if let msgId = a.message?.id,
-                let entryId = streamingPreviewEntryIds[msgId],
+            if let entryId = streamingPreviewEntryIds[a.messageID],
                 messages.contains(where: { $0.id == entryId })
             {
                 // A tool-only (groupable) envelope sharing a streamed text
@@ -230,7 +235,7 @@ extension SessionRuntime {
                 if message.isGroupableAssistant {
                     appLog(
                         .debug, "SessionRuntime",
-                        "[stream-text-guard] tool-only finalize msgId=\(msgId.prefix(12)) "
+                        "[stream-text-guard] tool-only finalize msgId=\(a.messageID.prefix(12)) "
                             + "shares preview entry \(entryId.uuidString.prefix(8)) — NOT claiming it, "
                             + "appending as tool group (streamed text preserved)")
                     return .append
@@ -257,7 +262,7 @@ extension SessionRuntime {
     /// - `.confirmed`: CLI replayed an already-confirmed user message
     ///   (observed around interrupt boundaries). Drop it — we'd
     ///   otherwise show two identical bubbles.
-    fileprivate func matchExistingEntry(for echo: Message2User) -> UUID? {
+    fileprivate func matchExistingEntry(for echo: UserMessage) -> UUID? {
         guard let raw = echo.uuid,
             let echoId = UUID(uuidString: raw)
         else {
@@ -296,7 +301,7 @@ extension SessionRuntime {
 
 extension SessionRuntime {
 
-    fileprivate func appendToTimeline(_ message: Message2, mode: ReceiveMode) -> MessagesChange {
+    fileprivate func appendToTimeline(_ message: Message, mode: ReceiveMode) -> MessagesChange {
         let single = SingleEntry(id: UUID(), payload: .remote(message), delivery: nil, toolResults: [:])
 
         // change differs in two cases:
@@ -332,18 +337,18 @@ extension SessionRuntime {
     /// Returns the mutated entry (`.single` or `.group`) so the caller can wrap it in
     /// `MessagesChange.updated`; if tool_use_id has no matching entry → nil
     /// (older CLI versions occasionally emit tool_result without an anchor).
-    fileprivate func attachToolResult(_ payload: ToolResultPayload, to toolUseId: String) -> MessageEntry? {
+    fileprivate func attachToolResult(_ result: UserMessage, to toolUseId: String) -> MessageEntry? {
         for i in messages.indices.reversed() {
             switch messages[i] {
             case .single(var e):
                 if e.ownsToolUse(toolUseId) {
-                    e.toolResults[toolUseId] = payload
+                    e.toolResults[toolUseId] = result
                     messages[i] = .single(e)
                     return messages[i]
                 }
             case .group(var g):
                 if let j = g.items.lastIndex(where: { $0.ownsToolUse(toolUseId) }) {
-                    g.items[j].toolResults[toolUseId] = payload
+                    g.items[j].toolResults[toolUseId] = result
                     messages[i] = .group(g)
                     return messages[i]
                 }
@@ -371,7 +376,7 @@ extension SessionRuntime {
     /// Re-confirm of an already-`.remote` entry (CLI replay during
     /// interrupt) returns nil — the entry has already adopted the
     /// CLI form once; don't thrash payload or status.
-    fileprivate func confirmQueuedEntry(id: UUID, echo: Message2, mode: ReceiveMode) -> MessageEntry? {
+    fileprivate func confirmQueuedEntry(id: UUID, echo: Message, mode: ReceiveMode) -> MessageEntry? {
         guard let idx = messages.firstIndex(where: { $0.id == id }) else { return nil }
         guard case .single(var single) = messages[idx] else { return nil }
         if case .remote = single.payload {
@@ -400,11 +405,9 @@ extension SessionRuntime {
     /// reply types all the way to its end instead of the untyped tail popping
     /// in. The typewriter emits the `.updated` itself in that case, so this
     /// returns nil (no synchronous change).
-    fileprivate func replaceAssistantEntry(id: UUID, with message: Message2) -> MessageEntry? {
-        if case .assistant(let a) = message, let msgId = a.message?.id,
-            shouldDeferFinalize(messageId: msgId)
-        {
-            scheduleFinalize(entryId: id, messageId: msgId, message: message)
+    fileprivate func replaceAssistantEntry(id: UUID, with message: Message) -> MessageEntry? {
+        if case .assistant(let a) = message, shouldDeferFinalize(messageId: a.messageID) {
+            scheduleFinalize(entryId: id, messageId: a.messageID, message: message)
             return nil
         }
         return swapAssistantPayload(entryId: id, with: message)
@@ -414,14 +417,14 @@ extension SessionRuntime {
     /// (`replaceAssistantEntry`) and the deferred typewriter-completion path
     /// (`performAssistantSwap`). Reuses the entry id so block ids converge and
     /// consumes the preview mapping for this message id.
-    func swapAssistantPayload(entryId: UUID, with message: Message2) -> MessageEntry? {
+    func swapAssistantPayload(entryId: UUID, with message: Message) -> MessageEntry? {
         guard let idx = messages.firstIndex(where: { $0.id == entryId }) else { return nil }
         guard case .single(var single) = messages[idx] else { return nil }
         single.payload = .remote(message)
         single.delivery = nil
         messages[idx] = .single(single)
-        if case .assistant(let a) = message, let msgId = a.message?.id {
-            streamingPreviewEntryIds.removeValue(forKey: msgId)
+        if case .assistant(let a) = message {
+            streamingPreviewEntryIds.removeValue(forKey: a.messageID)
         }
         return messages[idx]
     }
@@ -429,7 +432,7 @@ extension SessionRuntime {
     /// Deferred-path swap: perform the payload swap and emit the `.updated`
     /// directly. The typewriter calls this when the head finishes revealing a
     /// finalized message, outside `receive`'s return-the-change flow.
-    func performAssistantSwap(entryId: UUID, message: Message2) {
+    func performAssistantSwap(entryId: UUID, message: Message) {
         guard let entry = swapAssistantPayload(entryId: entryId, with: message) else { return }
         onMessagesChange?(.updated(entry))
     }
@@ -437,13 +440,9 @@ extension SessionRuntime {
     /// Join an assistant message's `.text` blocks with blank-line separators —
     /// the same shape `StreamingTurnAssembler.currentText` produces, so the
     /// typewriter's sealed reveal target lines up with the streamed prefix.
-    static func joinedAssistantText(_ message: Message2) -> String? {
-        guard case .assistant(let a) = message, let blocks = a.message?.content else { return nil }
-        let parts: [String] = blocks.compactMap { block in
-            if case .text(let t) = block, let txt = t.text, !txt.isEmpty { return txt }
-            return nil
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
+    static func joinedAssistantText(_ message: Message) -> String? {
+        guard case .assistant(let a) = message else { return nil }
+        return a.joinedText
     }
 
     /// Walk `messages`, flip every locally-queued user entry to
@@ -482,16 +481,13 @@ extension SessionRuntime {
 
 extension SessionRuntime {
 
-    fileprivate func noteUsage(_ usage: MessageUsage?) {
+    fileprivate func noteUsage(_ usage: Usage?) {
         guard let usage else { return }
-        contextUsedTokens =
-            (usage.inputTokens ?? 0)
-            + (usage.cacheCreationInputTokens ?? 0)
-            + (usage.cacheReadInputTokens ?? 0)
+        contextUsedTokens = usage.totalInputTokens
     }
 
-    fileprivate func finishTurn(with result: Message2Result, mode: ReceiveMode) {
-        if let window = result.contextWindow {
+    fileprivate func finishTurn(with result: ResultMessage, mode: ReceiveMode) {
+        if let window = result.modelUsage.values.map(\.contextWindow).max(), window > 0 {
             contextWindowTokens = window
         }
         if mode == .live {
@@ -556,23 +552,10 @@ extension SessionRuntime {
             return text.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         for entry in messages.reversed() {
-            guard case .single(let s) = entry,
-                case .assistant(let a) = s.remoteMessage,
-                let blocks = a.message?.content
+            guard case .single(let s) = entry, case .assistant(let a) = s.remoteMessage,
+                let text = a.joinedText
             else { continue }
-            let parts: [String] = blocks.compactMap { block in
-                if case .text(let t) = block,
-                    let txt = t.text,
-                    !txt.isEmpty
-                {
-                    return txt
-                }
-                return nil
-            }
-            if !parts.isEmpty {
-                return parts.joined(separator: "\n\n")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-            }
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         return nil
     }
@@ -595,156 +578,22 @@ extension SessionRuntime {
         }
     }
 
-    fileprivate func adopt(_ info: Init, mode: ReceiveMode) {
-        if let c = info.cwd { cwd = c }
-        adoptPermissionMode(info.permissionMode)
-        if let cmds = info.slashCommands {
-            // `system.init` carries command names only — merge in the
-            // descriptions cached from the bootstrap `initialize` response
-            // so the completion popup's footer keeps them across turns.
-            slashCommands = cmds.map {
-                SlashCommand(name: $0, description: slashCommandDescriptions[$0])
-            }
+    fileprivate func adopt(_ info: SystemMessage.Initialized, mode: ReceiveMode) {
+        if !info.cwd.isEmpty { cwd = info.cwd }
+        adoptPermissionMode(info.permissionMode?.rawValue)
+        // `system.init` carries command names only — merge in the
+        // descriptions cached from the bootstrap `initialize` response so the
+        // completion popup's footer keeps them across turns.
+        slashCommands = info.slashCommands.map {
+            SlashCommand(name: $0, description: slashCommandDescriptions[$0])
         }
         if mode == .live {
             appLog(
                 .info, "SessionRuntime",
-                "[v2-send] adopt-init sid=\(sessionId.prefix(8)) status-before=\(status) cwd=\(info.cwd ?? "(nil)")")
+                "[v2-send] adopt-init sid=\(sessionId.prefix(8)) status-before=\(status) cwd=\(info.cwd)")
         }
         if mode == .live, case .starting = status {
             status = .idle
         }
-    }
-}
-
-// MARK: - Message introspection
-
-extension Message2User {
-
-    /// Whether this message enters the timeline as its own entry.
-    /// Filters out sub-agents, synthetic, compact summary, transcript-only, and empty text.
-    ///
-    /// Module-internal (not `fileprivate`) so the pure `ReverseEntryBuilder`
-    /// reuses the exact same visibility rule the live `receive` path uses —
-    /// the single source of truth `TranscriptReverseBuilderTests.A6` pins.
-    var isVisible: Bool {
-        guard parentToolUseId == nil,
-            isSynthetic != true,
-            isCompactSummary != true,
-            isVisibleInTranscriptOnly != true,
-            // The CLI marks any user envelope whose turn was triggered
-            // by a background task notification with
-            // `origin.kind == "task-notification"`. Newer CLI builds may
-            // surface that as its own synthetic user record (the
-            // task-notification turn currently emits only a system.init
-            // + assistant block, but the CLI has shifted that contract
-            // before). Treat such envelopes as control signals so the
-            // tasks popover is the sole surface for completion-related
-            // chatter.
-            origin?.kind != "task-notification",
-            // Content-prefix fallback: older CLI builds (observed in
-            // smoke dumps as early as 2026-02) injected the synthetic
-            // task-notification user turn without the `origin` field at
-            // all. The `<task-notification>` XML envelope itself has
-            // been stable across every CLI version we have on file, so
-            // a string body that starts with it is a CLI control signal
-            // regardless of envelope metadata.
-            !startsWithTaskNotificationEnvelope
-        else { return false }
-        return hasVisibleText
-    }
-
-    /// Whether `message.content` begins with the `<task-notification>`
-    /// XML envelope. Backstop for legacy CLI builds that don't set
-    /// `origin.kind`. Checks both string-shaped content and the first
-    /// text block of array-shaped content; non-text content shapes
-    /// (e.g. tool_result, image) return false.
-    fileprivate var startsWithTaskNotificationEnvelope: Bool {
-        let marker = "<task-notification>"
-        switch message?.content {
-        case .string(let s)?:
-            return s.hasPrefix(marker)
-        case .array(let items)?:
-            for item in items {
-                if case .text(let t) = item, let txt = t.text {
-                    return txt.hasPrefix(marker)
-                }
-            }
-            return false
-        default:
-            return false
-        }
-    }
-
-    fileprivate var hasVisibleText: Bool {
-        switch message?.content {
-        case .string(let s)?:
-            return !s.isEmpty
-        case .array(let items)?:
-            return items.contains {
-                if case .text(let t) = $0 { return !(t.text?.isEmpty ?? true) }
-                return false
-            }
-        default:
-            return false
-        }
-    }
-
-    /// The first tool_result block (each user message typically carries only one).
-    /// Module-internal so `ReverseEntryBuilder` classifies tool_result the same
-    /// way `receive`'s `action(for:)` does.
-    var toolResultBlock: ItemToolResult? {
-        guard case .array(let items) = message?.content else { return nil }
-        for item in items {
-            if case .toolResult(let r) = item { return r }
-        }
-        return nil
-    }
-}
-
-extension Message2Assistant {
-
-    /// Has any visible content (text or tool_use). thinking-only / subagent is treated as invisible.
-    /// Module-internal so `ReverseEntryBuilder` shares the live visibility rule.
-    var isVisible: Bool {
-        guard parentToolUseId == nil, let blocks = message?.content else { return false }
-        return blocks.contains { block in
-            switch block {
-            case .text(let t): return !(t.text?.isEmpty ?? true)
-            case .toolUse: return true
-            default: return false
-            }
-        }
-    }
-}
-
-extension Message2 {
-
-    /// "Groupable": an assistant message whose non-empty content blocks are all tool_use (any kind).
-    /// Mixed text / thinking still goes through `.single` and is rendered by `AssistantMarkdownComponent`.
-    /// Module-internal so `ReverseEntryBuilder` applies the same grouping rule as `appendToTimeline`.
-    var isGroupableAssistant: Bool {
-        guard case .assistant(let a) = self,
-            let blocks = a.message?.content,
-            !blocks.isEmpty
-        else { return false }
-        for block in blocks {
-            guard case .toolUse = block else { return false }
-        }
-        return true
-    }
-}
-
-extension Message2Result {
-
-    /// Take the max contextWindow from modelUsage. Shared by success / errorDuringExecution.
-    fileprivate var contextWindow: Int? {
-        let usage: [String: ModelUsageValue]?
-        switch self {
-        case .success(let s): usage = s.modelUsage
-        case .errorDuringExecution(let e): usage = e.modelUsage
-        case .unknown: usage = nil
-        }
-        return usage?.values.compactMap(\.contextWindow).max()
     }
 }

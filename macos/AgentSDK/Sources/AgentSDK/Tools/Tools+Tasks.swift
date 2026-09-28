@@ -68,6 +68,8 @@ extension Tools {
             public var taskID: String
             public var updatedFields: [String]
             public var error: String?
+            /// The status after the update, when it changed.
+            public var newStatus: TaskStatus?
 
             public init(from decoder: Decoder) throws {
                 let c = try decoder.container(keyedBy: AnyCodingKey.self)
@@ -75,6 +77,8 @@ extension Tools {
                 taskID = c.lenient(String.self, "taskId") ?? ""
                 updatedFields = c.lenient([String].self, "updatedFields") ?? []
                 error = c.lenient(String.self, "error")
+                let change = try? c.nestedContainer(keyedBy: AnyCodingKey.self, forKey: "statusChange")
+                newStatus = change?.lenient(TaskStatus.self, "to")
             }
         }
     }

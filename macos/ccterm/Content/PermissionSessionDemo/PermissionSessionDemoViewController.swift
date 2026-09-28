@@ -211,17 +211,10 @@ final class PermissionSessionDemoViewController: NSViewController {
     private func showCurrent() {
         guard let runtime = seed.session.runtime else { return }
         let item = Self.kindFixtures[controlPanelState.selectedKindIndex]
-        let pending = PendingPermission(
-            id: item.id,
-            request: item.request,
-            // Card button taps land here; mirror the production runtime
-            // by popping the entry off the pending list. We don't care
-            // about the decision payload — this is a layout demo.
-            respond: { [weak runtime] _ in
-                runtime?.pendingPermissions.removeAll { $0.id == item.id }
-            }
-        )
-        runtime.pendingPermissions = [pending]
+        // Card taps go through `Session.respond(to:decision:)`, which pops
+        // the request off the pending list like production; the preview
+        // request itself answers nobody.
+        runtime.pendingPermissions = [item.request]
     }
 
     private func hideAll() {
@@ -247,7 +240,7 @@ final class PermissionSessionDemoViewController: NSViewController {
     /// `bridge.handleTurnFinished()` →
     /// `controller.clearAllRunningStatuses()`. Exercises the full
     /// runtime → bridge → controller chain without needing a
-    /// `Message2.result` fixture in app code.
+    /// `ResultMessage` fixture in app code.
     private func endTurn() {
         seed.session.runtime?.onTurnFinishedLive?()
     }
@@ -257,15 +250,15 @@ final class PermissionSessionDemoViewController: NSViewController {
     fileprivate struct KindFixture: Identifiable {
         let id: String
         let label: String
-        let request: LegacyPermissionRequest
+        let request: PermissionRequest
     }
 
     fileprivate static let kindFixtures: [KindFixture] = [
         KindFixture(
             id: "demo-bash",
             label: "Bash · shell command",
-            request: .makePreview(
-                requestId: "demo-bash",
+            request: .preview(
+                id: "demo-bash",
                 toolName: "Bash",
                 input: [
                     "command": "git push --force origin main",
@@ -274,8 +267,8 @@ final class PermissionSessionDemoViewController: NSViewController {
         KindFixture(
             id: "demo-edit",
             label: "Edit · file diff",
-            request: .makePreview(
-                requestId: "demo-edit",
+            request: .preview(
+                id: "demo-edit",
                 toolName: "Edit",
                 input: [
                     "file_path": "/Users/example/Project/Sources/Greeter.swift",
@@ -285,25 +278,27 @@ final class PermissionSessionDemoViewController: NSViewController {
         KindFixture(
             id: "demo-edit-long",
             label: "Edit · long diff (tests 780pt cap)",
-            request: .makePreview(
-                requestId: "demo-edit-long",
+            request: .preview(
+                id: "demo-edit-long",
                 toolName: "Edit",
                 input: [
                     "file_path": "/Users/example/Project/Sources/Localized.swift",
-                    "old_string": (0..<25)
-                        .map { "    case option\($0): return \"option-\($0)\"" }
-                        .joined(separator: "\n"),
-                    "new_string": (0..<25)
-                        .map {
-                            "    case option\($0): return String(localized: \"option-\($0)\")"
-                        }
-                        .joined(separator: "\n"),
+                    "old_string": .string(
+                        (0..<25)
+                            .map { "    case option\($0): return \"option-\($0)\"" }
+                            .joined(separator: "\n")),
+                    "new_string": .string(
+                        (0..<25)
+                            .map {
+                                "    case option\($0): return String(localized: \"option-\($0)\")"
+                            }
+                            .joined(separator: "\n")),
                 ])),
         KindFixture(
             id: "demo-webfetch",
             label: "WebFetch",
-            request: .makePreview(
-                requestId: "demo-webfetch",
+            request: .preview(
+                id: "demo-webfetch",
                 toolName: "WebFetch",
                 input: [
                     "url": "https://docs.swift.org/swift-book/",
@@ -312,15 +307,15 @@ final class PermissionSessionDemoViewController: NSViewController {
         KindFixture(
             id: "demo-enter-plan",
             label: "EnterPlanMode",
-            request: .makePreview(
-                requestId: "demo-enter-plan",
+            request: .preview(
+                id: "demo-enter-plan",
                 toolName: "EnterPlanMode",
                 input: [:])),
         KindFixture(
             id: "demo-ask",
             label: "AskUserQuestion",
-            request: .makePreview(
-                requestId: "demo-ask",
+            request: .preview(
+                id: "demo-ask",
                 toolName: "AskUserQuestion",
                 input: [
                     "questions": [

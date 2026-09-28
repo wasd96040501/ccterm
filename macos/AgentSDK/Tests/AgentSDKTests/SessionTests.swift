@@ -112,7 +112,7 @@ final class SessionTests: XCTestCase {
         let line = await probe("test_user_line", in: &events)
         XCTAssertEqual(line?["line"]?["type"], "user")
         XCTAssertEqual(line?["line"]?["uuid"]?.stringValue, input.uuid)
-        XCTAssertEqual(line?["line"]?["message"]?["content"]?[0]?["text"], "echo")
+        XCTAssertEqual(line?["line"]?["message"]?["content"], "echo", "a text-only prompt goes as a string")
 
         var kinds: [String] = []
         loop: while let event = await events.next() {

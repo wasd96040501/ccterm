@@ -29,8 +29,8 @@ final class PermissionPromptNoticeTests: XCTestCase {
         var captured: [PermissionPromptNotice] = []
         runtime.onPermissionPrompt = { captured.append($0) }
 
-        let request = LegacyPermissionRequest.makePreview(
-            requestId: "perm-1", toolName: "Bash", input: ["command": "ls"])
+        let request = PermissionRequest.preview(
+            id: "perm-1", toolName: "Bash", input: ["command": "ls"])
         fake.simulatePermissionRequest(request) { _ in }
         await drain()
 
@@ -50,8 +50,8 @@ final class PermissionPromptNoticeTests: XCTestCase {
         await bootstrap(runtime, fake)
         // No onPermissionPrompt installed — enqueue must still land the
         // pending entry without crashing on the nil closure.
-        let request = LegacyPermissionRequest.makePreview(
-            requestId: "perm-2", toolName: "Read", input: ["file_path": "/tmp/x"])
+        let request = PermissionRequest.preview(
+            id: "perm-2", toolName: "Read", input: ["file_path": "/tmp/x"])
         fake.simulatePermissionRequest(request) { _ in }
         await drain()
 

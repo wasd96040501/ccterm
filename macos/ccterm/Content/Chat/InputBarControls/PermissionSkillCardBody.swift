@@ -9,12 +9,12 @@ import SwiftUI
 /// "Allow always" would install.
 ///
 /// Upstream pulls the cwd from `originalCwd` on the tool-use
-/// confirmation; that field doesn't reach us as part of `rawInput`,
+/// confirmation; that field doesn't reach us as part of `input`,
 /// so we fall back to the process's current working directory —
 /// same value the CLI would have echoed when the request was
 /// queued.
 struct PermissionSkillCardBody: View {
-    let request: LegacyPermissionRequest
+    let request: PermissionRequest
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -52,13 +52,13 @@ struct PermissionSkillCardBody: View {
     /// `skill` → `skillName` for older camelCase builds.
     var skill: String? {
         let raw =
-            (request.rawInput["skill"] as? String)
-            ?? (request.rawInput["skillName"] as? String)
+            request.input["skill"]?.stringValue
+            ?? request.input["skillName"]?.stringValue
         return raw?.isEmpty == false ? raw : nil
     }
 
     var args: String? {
-        let raw = request.rawInput["args"] as? String
+        let raw = request.input["args"]?.stringValue
         return raw?.isEmpty == false ? raw : nil
     }
 
@@ -86,8 +86,8 @@ struct PermissionSkillCardBody: View {
 
 #Preview("Skill · with args") {
     PermissionSkillCardBody(
-        request: LegacyPermissionRequest.makePreview(
-            requestId: "preview-1",
+        request: PermissionRequest.preview(
+            id: "preview-1",
             toolName: "Skill",
             input: [
                 "skill": "review",
@@ -101,8 +101,8 @@ struct PermissionSkillCardBody: View {
 
 #Preview("Skill · no args") {
     PermissionSkillCardBody(
-        request: LegacyPermissionRequest.makePreview(
-            requestId: "preview-2",
+        request: PermissionRequest.preview(
+            id: "preview-2",
             toolName: "Skill",
             input: [
                 "skill": "commit"
@@ -115,8 +115,8 @@ struct PermissionSkillCardBody: View {
 
 #Preview("Skill · missing name") {
     PermissionSkillCardBody(
-        request: LegacyPermissionRequest.makePreview(
-            requestId: "preview-3",
+        request: PermissionRequest.preview(
+            id: "preview-3",
             toolName: "Skill",
             input: [:])
     )

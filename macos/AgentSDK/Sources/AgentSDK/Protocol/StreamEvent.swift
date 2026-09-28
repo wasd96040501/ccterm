@@ -8,7 +8,9 @@ import Foundation
 public struct StreamEvent: Sendable, Equatable {
     public enum Event: Sendable, Equatable {
         /// A new API response began; later deltas belong to `messageID`.
-        case messageStart(messageID: String, model: String)
+        /// `usage` carries the prompt's input tokens (its output count is a
+        /// placeholder until ``messageDelta(stopReason:usage:)``).
+        case messageStart(messageID: String, model: String, usage: Usage?)
         /// Block `index` began. Text and thinking start empty; a tool call
         /// starts with its id and name and an empty input.
         case contentBlockStart(index: Int, block: ContentBlock)
@@ -59,7 +61,8 @@ extension StreamEvent.Event: Decodable {
                 let message = try c.nestedContainer(keyedBy: AnyCodingKey.self, forKey: "message")
                 self = .messageStart(
                     messageID: try message.required(String.self, "id"),
-                    model: message.lenient(String.self, "model") ?? "")
+                    model: message.lenient(String.self, "model") ?? "",
+                    usage: message.lenient(Usage.self, "usage"))
             case "content_block_start":
                 self = .contentBlockStart(
                     index: try c.required(Int.self, "index"),

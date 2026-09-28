@@ -1,203 +1,160 @@
+// TodoSmoke — checks the typed task-list tool I/O (`Tools.TaskCreate`,
+// `Tools.TaskUpdate`) against what the real CLI records.
+//
+// Asks the model to create three pretend tasks with TaskCreate and move them
+// along with TaskUpdate, then matches every tool result to its call by
+// `toolUseID`. Checks:
+//   - each TaskCreate input decodes with `input(as:)` and its outcome is
+//     `.success` with a task id and the same subject;
+//   - each TaskUpdate input decodes with a known task id and a status, and
+//     its outcome is `.success` with `success == true` for that id;
+//   - the updates cover `in_progress` and `completed`, and the turn succeeds.
+// Prints every decoded input and raw `toolUseResult`. A TodoWrite call (older
+// CLIs) is decoded and printed but not required.
+//
+//   swift run TodoSmoke
+//
+// Env: CLAUDE_BINARY_PATH, SMOKE_MODEL (default claude-haiku-4-5), SMOKE_PROMPT.
+// Work dir (kept): /tmp/ccterm-todo-<timestamp>/.
+
 import AgentSDK
 import Foundation
 
-// Dump-only smoke focused on the TodoWrite tool. Spawns a real `claude`
-// CLI via AgentSDK.LegacySession, asks it to plan a small task using TodoWrite
-// (which forces multiple consecutive writes), captures every JSONL line
-// the CLI emits, and prints the TodoWrite-shaped payloads so we can
-// confirm:
-//
-//   - the assistant.tool_use payload shape (`tool_use.input.todos[]`)
-//   - the matching user.tool_result envelope (text body + `tool_use_result.new_todos/old_todos`)
-//   - whether the CLI surfaces a "clear" / dedicated update path that
-//     differs from a fresh full-list write
-//
-// Env: CLAUDE_BINARY_PATH (override), SMOKE_MODEL (default
-// claude-sonnet-4-6).
-//
-// Run from `macos/AgentSDK`:
-//
-//   swift run TodoSmoke
-
-func log(_ msg: String) {
-    let ts = ISO8601DateFormatter().string(from: Date())
-    FileHandle.standardError.write(Data("[\(ts)] \(msg)\n".utf8))
-}
-
-func locateClaude() -> String? {
-    if let envPath = ProcessInfo.processInfo.environment["CLAUDE_BINARY_PATH"],
-        FileManager.default.isExecutableFile(atPath: envPath)
-    {
-        return envPath
-    }
-    let home = FileManager.default.homeDirectoryForCurrentUser.path
-    for p in ["\(home)/.local/bin/claude", "/usr/local/bin/claude"] {
-        if FileManager.default.isExecutableFile(atPath: p) { return p }
-    }
-    return nil
-}
-
 let env = ProcessInfo.processInfo.environment
-let model = env["SMOKE_MODEL"] ?? "claude-sonnet-4-6"
+let model = env["SMOKE_MODEL"] ?? "claude-haiku-4-5"
 let prompt =
     env["SMOKE_PROMPT"]
         ?? """
-        Use the TodoWrite tool to plan the following pretend task:
+        Plan this pretend task with your task-list tools. Do NOT open any files or run anything.
 
-        1) Read a README file
-        2) Update a function in main.swift
-        3) Run the unit tests
+        1. Use TaskCreate three times, one call per item: "Read the README", "Update a function in main.swift", \
+        "Run the unit tests".
+        2. Use TaskUpdate to set the first task to in_progress.
+        3. Use TaskUpdate to set the first task to completed, then TaskUpdate to set the second to in_progress.
 
-        Make THREE separate TodoWrite calls in order:
-        - first call: all three items as `pending`
-        - second call: first item flipped to `in_progress`
-        - third call: first item `completed`, second item `in_progress`
-
-        After the third TodoWrite call, reply with exactly the two
-        letters: ok. Do NOT actually open any files or run anything;
-        these are just plan items.
+        Then reply with exactly the two letters: ok
         """
 
-guard let claudeBin = locateClaude() else {
-    log("ERROR: no claude binary found")
-    exit(1)
-}
-
-let stamp = Int(Date().timeIntervalSince1970)
-let workDir = URL(fileURLWithPath: "/tmp/ccterm-todo-smoke-\(stamp)", isDirectory: true)
-let exportDir = workDir.appendingPathComponent("export", isDirectory: true)
-try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
+let workDir = URL(fileURLWithPath: "/tmp/ccterm-todo-\(Int(Date().timeIntervalSince1970))")
+let exportDir = workDir.appendingPathComponent("export")
 try FileManager.default.createDirectory(at: exportDir, withIntermediateDirectories: true)
 
-let sessionId = UUID().uuidString.lowercased()
-
-log("model=\(model) sessionId=\(sessionId)")
-log("workDir=\(workDir.path)")
-
-let config = SessionConfiguration(
-    workingDirectory: workDir,
-    model: model,
-    sessionId: sessionId,
-    binaryPath: claudeBin,
-    inheritsParentEnvironment: true,
-    allowDangerouslySkipPermissions: true,
-    messageExportDirectory: exportDir
-)
-
-let session = AgentSDK.LegacySession(configuration: config)
-session.lastKnownSessionId = sessionId
-
-var counts: [String: Int] = [:]
-let firstResult = DispatchSemaphore(value: 0)
-var resultFired = false
-let processExited = DispatchSemaphore(value: 0)
-
-func dump(label: String, payload: Any) {
-    let opts: JSONSerialization.WritingOptions = [.prettyPrinted, .sortedKeys]
-    if let data = try? JSONSerialization.data(withJSONObject: payload, options: opts),
-        let text = String(data: data, encoding: .utf8)
-    {
-        FileHandle.standardError.write(Data("\n--- \(label) ---\n".utf8))
-        FileHandle.standardError.write(Data(text.utf8))
-        FileHandle.standardError.write(Data("\n".utf8))
-    }
+func log(_ message: String) {
+    let stamp = ISO8601DateFormatter().string(from: Date())
+    FileHandle.standardError.write(Data("[\(stamp)] \(message)\n".utf8))
 }
 
-session.onMessage = { msg in
-    let key: String
-    switch msg {
-    case .assistant(let a):
-        key = "assistant"
-        for block in a.message?.content ?? [] {
-            if case .toolUse(let tu) = block, case .TodoWrite(let tw) = tu {
-                dump(label: "assistant.tool_use TodoWrite (typed)", payload: tw.toJSON())
+var failures: [String] = []
+
+func check(_ ok: Bool, _ what: String) {
+    log("\(ok ? "PASS" : "FAIL")  \(what)")
+    if !ok { failures.append(what) }
+}
+
+func jsonString(_ value: JSONValue?) -> String {
+    guard let value, let data = try? JSONEncoder().encode(value) else { return "nil" }
+    return String(decoding: data, as: UTF8.self)
+}
+
+let session = Session(
+    configuration: SessionConfiguration(
+        workingDirectory: workDir, model: model, sessionId: UUID().uuidString.lowercased(),
+        binaryPath: env["CLAUDE_BINARY_PATH"], inheritsParentEnvironment: true, messageExportDirectory: exportDir))
+
+var calls: [String: ToolUseBlock] = [:]
+var createdIDs: [String] = []
+var creates = 0
+var updates = 0
+var updatedStatuses: Set<Tools.TaskStatus> = []
+var result: ResultMessage?
+
+func verifyCreate(_ call: ToolUseBlock, _ message: UserMessage) {
+    creates += 1
+    let input = call.input(as: Tools.TaskCreate.self)
+    log("TaskCreate input subject=\(input?.subject.debugDescription ?? "undecodable")")
+    log("  toolUseResult=\(jsonString(message.toolUseResult))")
+    let outcome = message.toolOutcome(Tools.TaskCreate.self)
+    guard case .success(let output)? = outcome else {
+        check(false, "TaskCreate #\(creates) outcome is success (\(String(describing: outcome)))")
+        return
+    }
+    createdIDs.append(output.taskID)
+    check(
+        input != nil && !output.taskID.isEmpty && output.subject == input?.subject,
+        "TaskCreate #\(creates) decodes: id=\(output.taskID) subject=\(output.subject.debugDescription)")
+}
+
+func verifyUpdate(_ call: ToolUseBlock, _ message: UserMessage) {
+    updates += 1
+    let input = call.input(as: Tools.TaskUpdate.self)
+    log("TaskUpdate input id=\(input?.taskID ?? "undecodable") status=\(input?.status?.rawValue ?? "nil")")
+    log("  toolUseResult=\(jsonString(message.toolUseResult))")
+    if let status = input?.status { updatedStatuses.insert(status) }
+    let outcome = message.toolOutcome(Tools.TaskUpdate.self)
+    guard case .success(let output)? = outcome else {
+        check(false, "TaskUpdate #\(updates) outcome is success (\(String(describing: outcome)))")
+        return
+    }
+    check(
+        input.map { createdIDs.contains($0.taskID) && $0.status != nil } == true && output.success
+            && output.taskID == input?.taskID,
+        "TaskUpdate #\(updates) decodes: id=\(output.taskID) success=\(output.success) "
+            + "updated=\(output.updatedFields) error=\(output.error ?? "nil")")
+}
+
+func record(_ event: SessionEvent) {
+    switch event {
+    case .message(.assistant(let m)):
+        for case .toolUse(let use) in m.content {
+            calls[use.id] = use
+            if let todo = use.input(as: Tools.TodoWrite.self) {
+                log("TodoWrite input \(todo.todos.map { "\($0.content) [\($0.status.rawValue)]" })")
             }
         }
-    case .user(let u):
-        key = "user"
-        // (A) The .toolUseResult typed branch — TodoWrite emits new_todos / old_todos here.
-        if case .object(let obj) = u.toolUseResult,
-            case .TodoWrite(let tw, _) = obj
-        {
-            dump(label: "user.tool_use_result TodoWrite (typed)", payload: tw.toJSON())
+    case .message(.user(let m)):
+        guard let id = m.toolResult?.toolUseID, let call = calls[id] else { return }
+        if Tools.TaskCreate.matches(call.name) {
+            verifyCreate(call, m)
+        } else if Tools.TaskUpdate.matches(call.name) {
+            verifyUpdate(call, m)
+        } else {
+            log("\(call.name) result \(jsonString(m.toolUseResult).prefix(200))")
         }
-        // (B) Top-level `todos` field on the user envelope. The generated
-        // struct already exposes `todos: [Any]?` — check whether the CLI
-        // populates it on TodoWrite responses (it may be a snapshot of
-        // the live list, distinct from the embedded new_todos).
-        if let topLevel = u.todos {
-            dump(
-                label: "user.todos (top-level)",
-                payload: ["count": topLevel.count, "items": topLevel] as [String: Any]
-            )
-        }
-    case .result:
-        key = "result"
-        if !resultFired {
-            resultFired = true
-            firstResult.signal()
-        }
-    case .system(.`init`): key = "system.init"
-    case .system: key = "system.other"
-    case .progress: key = "progress"
-    case .unknown(let n, _): key = "unknown(\(n))"
-    default: key = "other"
+    case .message(.result(let r)):
+        result = r
+    case .permissionRequest(let request):
+        log("permission request tool=\(request.toolName) → allow")
+        request.respond(.allow())
+    default:
+        break
     }
-    counts[key, default: 0] += 1
-}
-session.onStderr = { text in
-    log("[stderr] \(text.trimmingCharacters(in: .whitespacesAndNewlines))")
-}
-session.onProcessExit = { code in
-    log("[exit] code=\(code)")
-    processExited.signal()
 }
 
+_ = Task {
+    try await Task.sleep(for: .seconds(300))
+    log("FAIL  timed out after 300 s; work dir \(workDir.path)")
+    exit(1)
+}
+
+log("model=\(model) workDir=\(workDir.path)")
+var events = session.events.makeAsyncIterator()
 do {
     try await session.start()
-    log("session.start ok")
+    try session.send(UserInput(prompt))
 } catch {
-    log("ERROR session.start: \(error)")
+    log("FAIL  start/send: \(error)")
     exit(1)
 }
+while result == nil, let event = await events.next() { record(event) }
+await session.close()
 
-let initDone = DispatchSemaphore(value: 0)
-session.initialize(promptSuggestions: false) { resp in
-    log("init reply: models=\(resp?.models?.count ?? 0)")
-    initDone.signal()
-}
-if initDone.wait(timeout: .now() + 30) == .timedOut {
-    log("ERROR initialize timeout")
-    session.close()
-    exit(1)
-}
+check(creates >= 3, "three TaskCreate calls (\(creates))")
+check(updates >= 2, "at least two TaskUpdate calls (\(updates))")
+check(
+    updatedStatuses.isSuperset(of: [.inProgress, .completed]),
+    "updates cover in_progress and completed (\(updatedStatuses.map(\.rawValue).sorted()))")
+check(result?.subtype == .success, "turn succeeds (\(result?.subtype.rawValue ?? "no result"))")
 
-log("sending prompt…")
-session.sendMessage(prompt, extra: ["uuid": UUID().uuidString.lowercased()])
-
-if firstResult.wait(timeout: .now() + 300) == .timedOut {
-    log("ERROR first .result timeout")
-    session.close()
-    exit(1)
-}
-log("first .result received — counts: \(counts.sorted { $0.key < $1.key })")
-
-log("closing session")
-session.close()
-if processExited.wait(timeout: .now() + 10) == .timedOut {
-    log("WARN process did not exit within 10s of close")
-}
-
-// Dump JSONL — full transcript for reference.
-if let files = try? FileManager.default.contentsOfDirectory(at: exportDir, includingPropertiesForKeys: nil) {
-    for url in files {
-        log("--- export: \(url.lastPathComponent) ---")
-        if let data = try? Data(contentsOf: url),
-            let text = String(data: data, encoding: .utf8)
-        {
-            FileHandle.standardError.write(Data(text.utf8))
-            FileHandle.standardError.write(Data("\n".utf8))
-        }
-    }
-}
-log("done")
+log(failures.isEmpty ? "TodoSmoke PASS" : "TodoSmoke FAIL (\(failures.count)): \(failures.joined(separator: "; "))")
+log("work dir: \(workDir.path)")
+exit(failures.isEmpty ? 0 : 1)

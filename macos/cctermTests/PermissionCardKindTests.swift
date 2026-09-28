@@ -7,7 +7,7 @@ import XCTest
 /// permission-bearing tool name the CLI can deliver onto the right
 /// category, including the sed-in-Bash branch and the `mcp__*`
 /// catch-all. Mirrors the upstream `permissionComponentForTool`
-/// switch in `src/components/permissions/LegacyPermissionRequest.tsx` so a
+/// switch in `src/components/permissions/PermissionRequest.tsx` so a
 /// future PR that adds a new tool category fails this test instead of
 /// silently falling through to `.unknown`.
 final class PermissionCardKindTests: XCTestCase {
@@ -134,9 +134,9 @@ final class PermissionCardKindTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func makeRequest(toolName: String, input: [String: Any]) -> LegacyPermissionRequest {
-        LegacyPermissionRequest.makePreview(
-            requestId: "kind-\(toolName)",
+    private func makeRequest(toolName: String, input: [String: Any]) -> PermissionRequest {
+        PermissionRequest.preview(
+            id: "kind-\(toolName)",
             toolName: toolName,
             input: input)
     }

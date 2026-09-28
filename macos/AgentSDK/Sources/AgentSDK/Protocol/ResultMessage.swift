@@ -2,14 +2,14 @@ import Foundation
 
 /// The end of a turn. The CLI emits exactly one per turn.
 public struct ResultMessage: Sendable, Equatable {
-    /// How the turn ended.
+    /// How the turn ended. An interrupted turn can end with any subtype
+    /// (usually ``success``); ``ResultMessage/terminalReason`` tells it
+    /// apart (`aborted_streaming` or `aborted_tools`).
     public struct Subtype: RawRepresentable, Hashable, Sendable {
         public var rawValue: String
         public init(rawValue: String) { self.rawValue = rawValue }
 
         public static let success = Subtype(rawValue: "success")
-        /// Includes interrupts (``ResultMessage/terminalReason`` is
-        /// `aborted_streaming` or `aborted_tools`).
         public static let errorDuringExecution = Subtype(rawValue: "error_during_execution")
         public static let errorMaxTurns = Subtype(rawValue: "error_max_turns")
         public static let errorMaxBudgetUSD = Subtype(rawValue: "error_max_budget_usd")

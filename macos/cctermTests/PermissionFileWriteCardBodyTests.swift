@@ -136,9 +136,9 @@ final class PermissionFileWriteCardBodyTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func makeRequest(toolName: String, input: [String: Any]) -> LegacyPermissionRequest {
-        LegacyPermissionRequest.makePreview(
-            requestId: "fw-\(toolName)-\(UUID().uuidString)",
+    private func makeRequest(toolName: String, input: [String: Any]) -> PermissionRequest {
+        PermissionRequest.preview(
+            id: "fw-\(toolName)-\(UUID().uuidString)",
             toolName: toolName,
             input: input)
     }

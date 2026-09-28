@@ -201,7 +201,7 @@ final class SessionRuntime {
     /// in the first place.
     @ObservationIgnored var onTurnFinishedLive: (() -> Void)?
 
-    /// Fired when a new `LegacyPermissionRequest` is appended to
+    /// Fired when a new `PermissionRequest` is appended to
     /// `pendingPermissions` — i.e. the permission card just appeared and
     /// the turn is now blocked on a user decision. Mirrors `onTurnEnded`'s
     /// closure-injected shape: the subscriber (SessionManager →
@@ -211,13 +211,6 @@ final class SessionRuntime {
     /// signal that surfaces "your input is needed" while the app is in the
     /// background.
     @ObservationIgnored var onPermissionPrompt: ((PermissionPromptNotice) -> Void)?
-
-    /// Hook installed during the bootstrap init wait so
-    /// `handleProcessExit` can route "died before init" back into the
-    /// bootstrap continuation. Without it, `initialize` would never
-    /// complete and the Task would hang. Cleared on exit from the init
-    /// wait.
-    @ObservationIgnored internal var bootstrapExitHook: ((Int32) -> Void)?
 
     /// "Is something running?" — read this in the view layer (loading
     /// pill, InputBar's send↔stop swap).
@@ -241,7 +234,9 @@ final class SessionRuntime {
     /// background-bash scenario that motivated this.
     internal(set) var isRunning: Bool = false
 
-    internal(set) var pendingPermissions: [PendingPermission] = []
+    /// Tool calls waiting for the user's approval, oldest first. The card
+    /// shows `first`; answering goes through `respond(to:decision:)`.
+    internal(set) var pendingPermissions: [PermissionRequest] = []
     internal(set) var contextUsedTokens: Int = 0
     internal(set) var contextWindowTokens: Int = 0
 
@@ -365,12 +360,11 @@ final class SessionRuntime {
     /// Todo-plan read surface. Forwards into `todoTracker`.
     var todos: [TodoEntry] { todoTracker.todos }
 
-    /// Model catalog from the CLI's `InitializeResponse.models`. Source of
-    /// truth for the model picker — display name, supported effort levels,
-    /// and feature flags (auto / fast / adaptive thinking) per model. Set
-    /// once at bootstrap, then mirrored into `ModelStore` for sessions that
-    /// haven't started yet (the compose-mode picker reads the cache).
-    internal(set) var availableModels: [ModelInfo] = []
+    /// Model catalog from the CLI's `initialize` response. Source of truth
+    /// for the model picker — display name, supported effort levels, and
+    /// feature flags (auto / fast / adaptive thinking) per model. Set once
+    /// at bootstrap.
+    internal(set) var availableModels: [InitializationResult.Model] = []
 
     // MARK: - Presence
 
@@ -379,21 +373,16 @@ final class SessionRuntime {
 
     // MARK: - Internal runtime
 
-    /// Bound CLI subprocess wrapper. Assigned after a successful
-    /// `client.start()` in bootstrap; cleared on process exit / stop.
-    /// Concrete type is decided by `cliClientFactory` — production wires
-    /// `AgentSDKCLIClient`, tests inject `FakeCLIClient`.
+    /// The live CLI. Assigned after a successful `client.start()` in
+    /// bootstrap; cleared on process exit / stop. Production wires an
+    /// `AgentSDK.Session`, tests inject `FakeCLIClient`.
     internal var cliClient: (any CLIClient)?
 
     /// Factory used to construct the per-bootstrap CLI client from the
     /// derived `SessionConfiguration`. Captured at init so the handle
     /// stays agnostic of the underlying SDK type; default is
-    /// `AgentSDKCLIClient.defaultFactory`.
+    /// `liveCLIClientFactory`.
     @ObservationIgnored internal let cliClientFactory: CLIClientFactory
-
-    /// Accumulated stderr buffer. Written into `termination` on process
-    /// exit. Not persisted.
-    @ObservationIgnored internal var stderrBuffer: String = ""
 
     // MARK: - Init
 
@@ -441,7 +430,7 @@ final class SessionRuntime {
     init(
         sessionId: String,
         repository: any SessionRepository,
-        cliClientFactory: @escaping CLIClientFactory = AgentSDKCLIClient.defaultFactory,
+        cliClientFactory: @escaping CLIClientFactory = liveCLIClientFactory,
         frameTicker: FrameTicker? = nil
     ) {
         self.sessionId = sessionId
@@ -532,11 +521,8 @@ final class SessionRuntime {
 
     // MARK: - Permission
 
-    /// Reply to a pending permission.
-    ///
-    /// - Found in `pendingPermissions`: call its respond closure (auto-
-    ///   replies to CLI and removes from the array).
-    /// - id missing: no-op.
+    /// Reply to a pending permission: answers the CLI and removes the card;
+    /// no-op for an id that is no longer pending.
     // impl in SessionRuntime+Configuration.swift
 
     // MARK: - Presence

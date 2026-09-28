@@ -173,8 +173,8 @@ final class PermissionCardWiringTests: XCTestCase {
         captured: CapturedDecisions,
         runtime: SessionRuntime
     ) -> PendingPermission {
-        let request = LegacyPermissionRequest.makePreview(
-            requestId: requestId,
+        let request = PermissionRequest.preview(
+            id: requestId,
             toolName: "Bash",
             input: ["command": "ls"])
         return PendingPermission(

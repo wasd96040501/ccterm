@@ -51,8 +51,8 @@ final class PermissionEnterPlanModeCardBodyTests: XCTestCase {
     // MARK: - Helpers
 
     private func makeBody() -> PermissionEnterPlanModeCardBody {
-        let req = LegacyPermissionRequest.makePreview(
-            requestId: "plan-\(UUID().uuidString)",
+        let req = PermissionRequest.preview(
+            id: "plan-\(UUID().uuidString)",
             toolName: "EnterPlanMode",
             input: [:])
         return PermissionEnterPlanModeCardBody(request: req)

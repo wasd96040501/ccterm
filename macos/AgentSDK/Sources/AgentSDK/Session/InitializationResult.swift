@@ -12,6 +12,21 @@ public struct InitializationResult: Sendable, Equatable {
         public var supportsAdaptiveThinking: Bool
         public var supportsFastMode: Bool
         public var supportsAutoMode: Bool
+
+        public init(
+            value: String, displayName: String? = nil, description: String = "", supportsEffort: Bool = false,
+            supportedEffortLevels: [String] = [], supportsAdaptiveThinking: Bool = false,
+            supportsFastMode: Bool = false, supportsAutoMode: Bool = false
+        ) {
+            self.value = value
+            self.displayName = displayName ?? value
+            self.description = description
+            self.supportsEffort = supportsEffort
+            self.supportedEffortLevels = supportedEffortLevels
+            self.supportsAdaptiveThinking = supportsAdaptiveThinking
+            self.supportsFastMode = supportsFastMode
+            self.supportsAutoMode = supportsAutoMode
+        }
     }
 
     public struct Agent: Sendable, Equatable {

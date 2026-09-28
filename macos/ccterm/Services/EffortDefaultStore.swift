@@ -5,7 +5,7 @@ import Observation
 /// Per-model effort memory, persisted across launches in `UserDefaults`.
 ///
 /// CLI sends back the catalog of supported effort levels per model
-/// (`ModelInfo.supportedEffortLevels`) but never tells us which one is
+/// (`ModelStore.Model.supportedEffortLevels`) but never tells us which one is
 /// "default" — that's a UI concern. Two layers:
 ///
 ///   1. First-time defaults (`firstTimeDefault(for:)`) for the values
@@ -34,9 +34,9 @@ final class EffortDefaultStore {
     /// Effort to surface when the user opens the picker for `model`.
     /// Returns nil when the model itself declares no effort support —
     /// the popover hides the section in that case.
-    func effort(for model: ModelInfo) -> Effort? {
-        guard model.supportsEffort == true else { return nil }
-        let supported: [Effort] = (model.supportedEffortLevels ?? [])
+    func effort(for model: ModelStore.Model) -> Effort? {
+        guard model.supportsEffort else { return nil }
+        let supported: [Effort] = model.supportedEffortLevels
             .compactMap(Effort.init(rawValue:))
         let candidate = remembered(forValue: model.value) ?? Self.firstTimeDefault(for: model.value)
         if !supported.isEmpty, !supported.contains(candidate) {

@@ -18,6 +18,9 @@ public final class PermissionRequest: Sendable, Identifiable {
     public let suggestions: [PermissionUpdate]
     /// Why the call needs approval, when the CLI says.
     public let decisionReason: String?
+    /// What decided to ask: `"rule"`, `"mode"`, `"subcommandResults"` (a
+    /// compound Bash command checked part by part), `"safetyCheck"`, …
+    public let decisionReasonType: String?
     /// The path outside the allowed directories that triggered the request.
     public let blockedPath: String?
     /// The subagent asking; `nil` for the main thread.
@@ -25,10 +28,14 @@ public final class PermissionRequest: Sendable, Identifiable {
 
     private let responder: OSAllocatedUnfairLock<(@Sendable (PermissionDecision) -> Void)?>
 
-    init(
-        id: String, toolName: String, toolUseID: String, input: JSONValue, suggestions: [PermissionUpdate],
-        decisionReason: String?, blockedPath: String?, agentID: String?,
-        responder: @escaping @Sendable (PermissionDecision) -> Void
+    /// A ``Session`` creates these for the CLI's questions; build one
+    /// yourself to stand in for the CLI (previews, tests). `onRespond`
+    /// receives the first ``respond(_:)``.
+    public init(
+        id: String = UUID().uuidString, toolName: String, toolUseID: String = "", input: JSONValue,
+        suggestions: [PermissionUpdate] = [], decisionReason: String? = nil,
+        decisionReasonType: String? = nil, blockedPath: String? = nil,
+        agentID: String? = nil, onRespond: @escaping @Sendable (PermissionDecision) -> Void
     ) {
         self.id = id
         self.toolName = toolName
@@ -36,9 +43,10 @@ public final class PermissionRequest: Sendable, Identifiable {
         self.input = input
         self.suggestions = suggestions
         self.decisionReason = decisionReason
+        self.decisionReasonType = decisionReasonType
         self.blockedPath = blockedPath
         self.agentID = agentID
-        self.responder = OSAllocatedUnfairLock(initialState: responder)
+        self.responder = OSAllocatedUnfairLock(initialState: onRespond)
     }
 
     /// Answers the request. Only the first call has an effect.

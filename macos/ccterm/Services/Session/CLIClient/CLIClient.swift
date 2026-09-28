@@ -1,101 +1,34 @@
 import AgentSDK
 import Foundation
 
-/// Thin abstraction over `AgentSDK.LegacySession`. The handle's view of the CLI
-/// is exactly the methods it actually calls — nothing more. Production
-/// uses `AgentSDKCLIClient`; tests inject `FakeCLIClient` (DEBUG-only).
-///
-/// **Design**: closure-property callbacks mirror `AgentSDK.LegacySession` 1:1
-/// so the production wrapper is the boring forwarding adapter. Async
-/// methods stay async; completion-callback methods keep the completion
-/// form so we don't have to retrofit every call site.
-///
-/// **Why a protocol, not a struct/closure bundle**: callers (the
-/// handle's `bootstrap` / `attachCallbacks` / `writeUserEntryToCLI`)
-/// install callbacks immediately after constructing the client and
-/// before `start()`, then write to those callbacks from background
-/// threads. A reference type with mutable closure properties matches
-/// the existing AgentSDK.LegacySession shape without changing call patterns.
+/// The runtime's view of a live CLI: exactly the `AgentSDK.Session` surface
+/// it uses, as a protocol so tests can inject `FakeCLIClient`. Production
+/// passes `AgentSDK.Session` itself (conformance below).
 protocol CLIClient: AnyObject {
+    /// Everything the CLI reports, in order; finishes after `.exited`.
+    var events: AsyncStream<SessionEvent> { get }
 
-    /// Pre-set this before `start()` so the AgentSDK export writes the
-    /// init message under the right session id. Production reads this
-    /// from `lastKnownSessionId` on the underlying SDK session.
-    var lastKnownSessionId: String? { get set }
+    /// Launches the CLI and completes the handshake.
+    @discardableResult
+    func start() async throws -> InitializationResult
+    /// Asks the CLI to exit and waits for it (terminating after a timeout).
+    func close(timeout: TimeInterval) async
+    func terminate()
 
-    // MARK: Callbacks (assigned by Session.attachCallbacks)
-
-    var onMessage: ((Message2) -> Void)? { get set }
-    /// Streaming partial (delta) events. Fires only when the underlying
-    /// session was configured with `includePartialMessages = true`. The
-    /// runtime folds these into live assistant text + turn token usage; see
-    /// `StreamingTurnAssembler`.
-    var onStreamEvent: ((Message2StreamEvent) -> Void)? { get set }
-    var onPermissionRequest: ((LegacyPermissionRequest, @escaping (LegacyPermissionDecision) -> Void) -> Void)?
-    { get set }
-    var onPermissionCancelled: ((String) -> Void)? { get set }
-    var onProcessExit: ((Int32) -> Void)? { get set }
-    var onStderr: ((String) -> Void)? { get set }
-    var onHookRequest: ((LegacyHookRequest) -> HookResult)? { get set }
-    var onMCPRequest: ((MCPRequest) -> MCPResponse)? { get set }
-    var onElicitationRequest: ((LegacyElicitationRequest) -> ElicitationResult)? { get set }
-
-    // MARK: Lifecycle
-
-    func start() async throws
-    func close()
-
-    /// Graceful shutdown that completes only after the subprocess has
-    /// actually exited (or after the underlying SDK's per-process
-    /// timeout forces SIGTERM). Used by the app-quit path so all CLIs
-    /// can be shut down in parallel before `NSApplication` finishes
-    /// terminating. The synchronous `close()` remains fire-and-forget
-    /// for the usual stop-button path.
-    func closeAsync() async
-
-    // MARK: Control requests
-
-    func initialize(
-        promptSuggestions: Bool,
-        completion: @escaping (InitializeResponse?) -> Void
-    )
-    func interrupt(completion: @escaping ([String: Any]) -> Void)
-
-    /// Requests a context-window-usage breakdown. Falls through to
-    /// `.unsupported` on old CLIs (no response within `timeout` seconds).
-    /// Always invokes `completion` exactly once.
-    func getContextUsage(
-        timeout: TimeInterval,
-        completion: @escaping (ContextUsageOutcome) -> Void
-    )
-
-    /// Asks a one-shot `/btw`-style side question (`side_question` control
-    /// request). Answered from live conversation context without
-    /// interrupting the current turn. `.unsupported` when there is no live
-    /// CLI; `.sdkError` when the CLI rejects the subtype. Invokes
-    /// `completion` once, when the CLI responds.
-    func askSideQuestion(
-        _ question: String,
-        completion: @escaping (SideQuestionOutcome) -> Void
-    )
-
-    // MARK: Messaging
-
-    func sendMessage(_ text: String, extra: [String: Any])
-    func sendMessage(contentBlocks: [[String: Any]], extra: [String: Any])
-
-    // MARK: Configuration RPCs
-
-    func setModel(_ model: String)
-    func setEffort(_ effort: Effort)
-    func setPermissionMode(_ mode: AgentSDK.PermissionMode)
-    func setFastMode(_ enabled: Bool)
-    func applyFlagSettings(_ settings: FlagSettings)
+    func send(_ input: UserInput) throws
+    func interrupt() async throws
+    func setModel(_ model: String?) async throws
+    func setPermissionMode(_ mode: AgentSDK.PermissionMode) async throws
+    func applyFlagSettings(_ settings: [String: JSONValue]) async throws
+    func contextUsage() async throws -> ContextUsage
+    func askSideQuestion(_ question: String) async throws -> SideQuestionAnswer?
 }
 
-/// Builds a `CLIClient` from a session configuration. Injected into
-/// `Session` so bootstrap can construct the client without
-/// hard-wiring the `AgentSDK.LegacySession` type. Production default lives on
-/// `AgentSDKCLIClient`; tests pass a closure that returns a
-/// `FakeCLIClient`.
+extension AgentSDK.Session: CLIClient {}
+
+/// Builds a `CLIClient` for a launch configuration. Injected so tests can
+/// return a `FakeCLIClient`; production uses `liveCLIClientFactory`.
 typealias CLIClientFactory = @MainActor (SessionConfiguration) -> any CLIClient
+
+/// The production factory: a real `AgentSDK.Session`.
+@MainActor let liveCLIClientFactory: CLIClientFactory = { AgentSDK.Session(configuration: $0) }

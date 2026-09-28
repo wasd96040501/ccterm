@@ -230,11 +230,13 @@ final class MessageDecodingTests: XCTestCase {
                         durationMS: 2881, lastToolName: "Read", summary: nil))))
         XCTAssertEqual(
             decode(
-                #"{"type":"system","subtype":"task_updated","task_id":"b2","patch":{"status":"completed","end_time":1},"uuid":"u","session_id":"s"}"#
+                #"{"type":"system","subtype":"task_updated","task_id":"b2","patch":{"status":"completed","end_time":1790000000500},"uuid":"u","session_id":"s"}"#
             ),
             .system(
                 .taskUpdated(
-                    .init(taskID: "b2", status: "completed", description: nil, error: nil, isBackgrounded: nil))))
+                    .init(
+                        taskID: "b2", status: "completed", description: nil, error: nil, isBackgrounded: nil,
+                        endTime: Date(timeIntervalSince1970: 1_790_000_000.5)))))
         XCTAssertEqual(
             decode(
                 #"{"type":"system","subtype":"task_notification","task_id":"b9","tool_use_id":"t","status":"completed","output_file":"/o","summary":"done","uuid":"u","session_id":"s"}"#
@@ -278,8 +280,11 @@ final class MessageDecodingTests: XCTestCase {
             return e.event
         }
         XCTAssertEqual(
-            event(#"{"type":"message_start","message":{"model":"claude-opus-5","id":"msg_1","content":[]}}"#),
-            .messageStart(messageID: "msg_1", model: "claude-opus-5"))
+            event(
+                #"{"type":"message_start","message":{"model":"claude-opus-5","id":"msg_1","content":[],"usage":{"input_tokens":12,"output_tokens":5}}}"#
+            ),
+            .messageStart(
+                messageID: "msg_1", model: "claude-opus-5", usage: Usage(inputTokens: 12, outputTokens: 5)))
         XCTAssertEqual(
             event(#"{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}"#),
             .contentBlockStart(index: 1, block: .text("")))

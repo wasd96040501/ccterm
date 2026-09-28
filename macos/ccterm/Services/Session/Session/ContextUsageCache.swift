@@ -10,10 +10,9 @@ import Observation
 /// This is a **reference-type `@Observable` projection** owned by
 /// `SessionRuntime` (`runtime.contextUsageCache`). Even though the three
 /// fields are whole-value assignments (not in-place collection mutation),
-/// it must stay a class: `requestContextUsage`'s completion writes
+/// it must stay a class: `requestContextUsage`'s refresh task writes
 /// `contextUsage` / `contextUsageFetchedAt` / `isFetchingContextUsage`
-/// from an **async `[weak self]` `@MainActor` callback** that lands one
-/// or more runloop ticks later. A value type captured by the closure
+/// one or more runloop ticks later. A value type captured by the closure
 /// would write a copy that observation never sees — the
 /// `ContextRingButton` popover would never refresh. The reference type
 /// keeps the write on the observed instance so SwiftUI readers tracking
@@ -33,13 +32,12 @@ final class ContextUsageCache {
     /// When the cached `contextUsage` was last refreshed.
     internal(set) var contextUsageFetchedAt: Date?
 
-    /// True while a `getContextUsage` request is in flight. Lets the
+    /// True while a refresh is in flight. Lets the
     /// popover show a spinner instead of stale numbers during a refresh.
     internal(set) var isFetchingContextUsage: Bool = false
 
-    /// Completions queued while a `getContextUsage` is in flight. All
-    /// fire with the same outcome when the in-flight request settles.
-    @ObservationIgnored private var contextUsagePendingCallbacks: [(ContextUsageOutcome) -> Void] = []
+    /// The in-flight refresh; concurrent requests join it.
+    @ObservationIgnored private var refresh: Task<Void, Never>?
 
     /// @MainActor class deinit would otherwise route through
     /// `swift_task_deinitOnExecutorImpl`, hitting a macOS 26 SDK bug in
@@ -47,43 +45,37 @@ final class ContextUsageCache {
     /// path and avoids the bug (mirrors `SessionRuntime`).
     nonisolated deinit {}
 
-    /// Fire-and-forget request for a `get_context_usage` breakdown.
+    /// Refreshes `contextUsage` from the CLI.
     ///
-    /// - The result is cached on `self.contextUsage` (+ `fetchedAt`) so
-    ///   the popover can re-open synchronously between refreshes.
-    /// - Concurrent calls are coalesced: while `isFetchingContextUsage`
-    ///   is true, additional callers attach their completion to the
-    ///   pending request rather than firing a new one.
-    /// - Old CLIs never respond; the SDK times out into `.unsupported`
-    ///   after `timeout` seconds, the cache is left as-is, and
-    ///   `isFetchingContextUsage` flips back to false.
-    /// - Completion is invoked on the main actor exactly once.
+    /// - The result is cached (+ `fetchedAt`) so the popover can re-open
+    ///   synchronously between refreshes.
+    /// - Concurrent calls join the in-flight refresh instead of sending
+    ///   another request.
+    /// - A CLI that doesn't answer within `timeout` (one without the
+    ///   request) leaves the cache as-is; so does an error.
     ///
-    /// The `cliClient` is passed in by the runtime's thin forwarder — the
-    /// cache stays agnostic of how the CLI is bound.
-    func requestContextUsage(
-        cliClient: any CLIClient,
-        timeout: TimeInterval = 3.0,
-        completion: ((ContextUsageOutcome) -> Void)? = nil
-    ) {
-        if let completion {
-            contextUsagePendingCallbacks.append(completion)
-        }
-        guard !isFetchingContextUsage else { return }
+    /// Returns the refresh so a caller can await it; the UI ignores it.
+    @discardableResult
+    func requestContextUsage(cliClient: any CLIClient, timeout: TimeInterval = 3.0) -> Task<Void, Never> {
+        if let refresh { return refresh }
         isFetchingContextUsage = true
-
-        cliClient.getContextUsage(timeout: timeout) { [weak self] outcome in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                if case .usage(let usage) = outcome {
-                    self.contextUsage = usage
-                    self.contextUsageFetchedAt = Date()
-                }
-                self.isFetchingContextUsage = false
-                let callbacks = self.contextUsagePendingCallbacks
-                self.contextUsagePendingCallbacks.removeAll()
-                for cb in callbacks { cb(outcome) }
+        let task = Task { [weak self] in
+            let request = Task { try await cliClient.contextUsage() }
+            let timer = Task {
+                try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                request.cancel()
             }
+            let usage = try? await request.value
+            timer.cancel()
+            guard let self else { return }
+            if let usage {
+                self.contextUsage = usage
+                self.contextUsageFetchedAt = Date()
+            }
+            self.isFetchingContextUsage = false
+            self.refresh = nil
         }
+        refresh = task
+        return task
     }
 }

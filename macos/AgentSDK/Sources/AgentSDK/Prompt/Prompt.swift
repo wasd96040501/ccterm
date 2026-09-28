@@ -1,119 +1,75 @@
 import Foundation
 
-/// One-shot prompt runner. Wraps `claude -p --no-session-persistence --output-format json`.
+/// One-shot, non-interactive runs (`claude -p`). Nothing is persisted and no
+/// session stays open; for a conversation use ``Session``.
+///
+/// ```swift
+/// let result = try await Prompt.run("Name this repo", configuration: .init(workingDirectory: url))
+/// print(result.result ?? "")
+/// ```
 public enum Prompt {
-
-    /// Runs a one-shot prompt, waits for the process to exit, and returns the result.
-    public static func run(
-        message: String,
-        configuration: PromptConfiguration
-    ) async throws -> PromptResult {
-        let config = configuration
-
-        return try await Task.detached {
-            var sdkArgs: [String] = []
-            sdkArgs.append("-p")
-            sdkArgs.append("--output-format")
-            sdkArgs.append("json")
-            sdkArgs.append("--no-session-persistence")
-
-            if let model = config.model {
-                sdkArgs.append("--model")
-                sdkArgs.append(model)
-            }
-            if let systemPrompt = config.systemPrompt {
-                sdkArgs.append("--system-prompt")
-                sdkArgs.append(systemPrompt)
-            }
-            if let tools = config.tools {
-                sdkArgs.append("--tools")
-                sdkArgs.append(tools.joined(separator: ","))
-            }
-            if let jsonSchema = config.jsonSchema {
-                sdkArgs.append("--json-schema")
-                sdkArgs.append(jsonSchema)
-            }
-            if config.disableSlashCommands {
-                sdkArgs.append("--disable-slash-commands")
-            }
-            if let effort = config.effort {
-                sdkArgs.append("--effort")
-                // `ultracode` is not a CLI effort value — launch at xhigh.
-                sdkArgs.append(effort == Effort.ultracode.rawValue ? Effort.xhigh.rawValue : effort)
-            }
-
-            sdkArgs.append("--")
-            sdkArgs.append(message)
-
-            let (executablePath, args) = try resolveLaunch(config: config, sdkArgs: sdkArgs)
-
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: executablePath)
-            proc.arguments = args
-            proc.currentDirectoryURL = config.workingDirectory
-
-            var env = ShellEnvironment.loginEnvironment() ?? ProcessInfo.processInfo.environment
-            env.removeValue(forKey: "CLAUDECODE")
-            for (k, v) in config.env { env[k] = v }
-            proc.environment = env
-
-            let stdoutPipe = Pipe()
-            let stderrPipe = Pipe()
-            proc.standardOutput = stdoutPipe
-            proc.standardError = stderrPipe
-
-            let fullCommand = ([executablePath] + args).map { arg in
-                arg.contains(" ") ? "\"\(arg)\"" : arg
-            }.joined(separator: " ")
-            NSLog("[AgentSDK.Prompt] Launch: %@", fullCommand)
-
-            do {
-                try proc.run()
-            } catch {
-                throw AgentSDKError.launchFailed(error.localizedDescription)
-            }
-
-            let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-            let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-            proc.waitUntilExit()
-
-            let exitCode = proc.terminationStatus
-            guard exitCode == 0 else {
-                let stderrText = String(data: stderrData, encoding: .utf8) ?? ""
-                throw AgentSDKError.promptFailed(exitCode: exitCode, stderr: stderrText)
-            }
-
-            guard let json = try? JSONSerialization.jsonObject(with: stdoutData) as? [String: Any] else {
-                let stdoutText = String(data: stdoutData, encoding: .utf8) ?? ""
-                throw AgentSDKError.promptFailed(exitCode: 0, stderr: "Invalid JSON output: \(stdoutText.prefix(500))")
-            }
-
-            return PromptResult(
-                result: json["result"] as? String ?? "",
-                structuredOutput: json["structured_output"] as? [String: Any],
-                sessionId: json["session_id"] as? String,
-                totalCostUsd: json["total_cost_usd"] as? Double,
-                durationMs: json["duration_ms"] as? Int,
-                raw: json
-            )
-        }.value
+    /// Runs `message` to completion and returns the CLI's result. Cancelling
+    /// the task, or exceeding ``PromptConfiguration/timeout``, terminates the
+    /// CLI; the latter throws ``AgentSDKError/promptFailed(exitCode:stderr:)``.
+    public static func run(_ message: String, configuration: PromptConfiguration) async throws -> ResultMessage {
+        let process = try await Task.detached { try configuration.makeProcess(message: message) }.value
+        let output = try await withTaskCancellationHandler {
+            try await Task.detached { try collect(process, timeout: configuration.timeout) }.value
+        } onCancel: {
+            process.terminate()
+        }
+        try Task.checkCancellation()
+        guard output.status == 0 else {
+            let stderr = output.timedOut ? "Timed out after \(configuration.timeout ?? 0)s" : output.stderr
+            throw AgentSDKError.promptFailed(exitCode: output.status, stderr: stderr)
+        }
+        guard let result = try? JSONDecoder().decode(ResultMessage.self, from: output.stdout) else {
+            let text = String(decoding: output.stdout.prefix(500), as: UTF8.self)
+            throw AgentSDKError.promptFailed(exitCode: 0, stderr: "Unexpected output: \(text)")
+        }
+        return result
     }
 
-    // MARK: - Private
+    private struct Output {
+        var status: Int32
+        var stdout: Data
+        var stderr: String
+        var timedOut: Bool
+    }
 
-    /// Resolves the executable and full argument vector for the launch. A custom command
-    /// runs through the user's login shell (see `CustomCommand`); otherwise the located
-    /// `claude` binary is exec'd directly with `sdkArgs`.
-    private static func resolveLaunch(
-        config: PromptConfiguration,
-        sdkArgs: [String]
-    ) throws -> (executablePath: String, arguments: [String]) {
-        if let customCommand = config.customCommand, !customCommand.isEmpty {
-            return CustomCommand.shellInvocation(customCommand, sdkArgs: sdkArgs)
+    /// Runs the process to exit, draining both pipes concurrently so a full
+    /// stderr pipe cannot stall it. Blocking.
+    private static func collect(_ process: Process, timeout: TimeInterval?) throws -> Output {
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = stdout
+        process.standardError = stderr
+        do {
+            try process.run()
+        } catch {
+            throw AgentSDKError.launchFailed(error.localizedDescription)
         }
-        guard let resolved = config.binaryPath ?? BinaryLocator.locate() else {
-            throw AgentSDKError.binaryNotFound
+
+        var timedOut = false
+        let watchdog = DispatchWorkItem {
+            timedOut = true
+            process.terminate()
         }
-        return (resolved, sdkArgs)
+        if let timeout { DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: watchdog) }
+
+        var errorData = Data()
+        let drained = DispatchGroup()
+        DispatchQueue.global().async(group: drained) {
+            errorData = stderr.fileHandleForReading.readDataToEndOfFile()
+        }
+        let outputData = stdout.fileHandleForReading.readDataToEndOfFile()
+        drained.wait()
+        process.waitUntilExit()
+        watchdog.cancel()
+
+        return Output(
+            status: process.terminationStatus, stdout: outputData,
+            stderr: String(decoding: errorData, as: UTF8.self), timedOut: timedOut)
     }
 }

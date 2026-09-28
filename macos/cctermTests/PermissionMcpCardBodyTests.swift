@@ -86,8 +86,8 @@ final class PermissionMcpCardBodyTests: XCTestCase {
     )
         -> PermissionMcpCardBody
     {
-        let req = LegacyPermissionRequest.makePreview(
-            requestId: "mcp-\(UUID().uuidString)",
+        let req = PermissionRequest.preview(
+            id: "mcp-\(UUID().uuidString)",
             toolName: toolName,
             input: input)
         return PermissionMcpCardBody(request: req)

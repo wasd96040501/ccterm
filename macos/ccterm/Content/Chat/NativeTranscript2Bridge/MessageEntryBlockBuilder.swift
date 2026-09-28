@@ -12,7 +12,7 @@ import Foundation
 ///   swaps kind in place and preserves row-local state (fold, selection,
 ///   animation).
 /// - **Text vs tool ordering inside an assistant entry**: follows the original
-///   `Message2Assistant.message?.content` order. Consecutive text blocks buffer
+///   `AssistantMessage.content` order. Consecutive text blocks buffer
 ///   into one markdown chunk; on tool_use the markdown chunk is flushed first,
 ///   then a single-child toolGroup is emitted, then iteration continues.
 /// - **GroupEntry**: tool_uses across multiple items aggregate into one
@@ -86,41 +86,27 @@ enum MessageEntryBlockBuilder {
     }
 
     private static func remoteUserBlocks(
-        _ user: Message2User,
+        _ user: UserMessage,
         single: SingleEntry
     ) -> [Block] {
-        guard let content = user.message?.content else { return [] }
+        // Text blocks concatenate into the bubble caption; image blocks decode
+        // into the attachments strip. tool_result blocks are dropped — they're
+        // already merged into the matching assistant's toolGroup.
         var images: [NSImage] = []
-        let text: String
-        switch content {
-        case .string(let s):
-            text = s
-        case .array(let items):
-            // Walk the content array once: text items concatenate into the
-            // bubble caption; image items decode their base64 data into
-            // NSImage for the attachments strip. tool_result items are
-            // dropped — they're already merged into the matching
-            // assistant's toolGroup.
-            var texts: [String] = []
-            for item in items {
-                switch item {
-                case .text(let t):
-                    if let s = t.text, !s.isEmpty { texts.append(s) }
-                case .image(let img):
-                    guard let source = img.source,
-                        source.type == "base64",
-                        let b64 = source.data,
-                        let data = Data(base64Encoded: b64),
-                        let ns = NSImage(data: data)
-                    else { continue }
-                    images.append(ns)
-                case .toolResult, .unknown:
-                    continue
-                }
+        var texts: [String] = []
+        for block in user.content {
+            switch block {
+            case .text(let text):
+                if !text.isEmpty { texts.append(text) }
+            case .image(let image):
+                guard case .base64(_, let encoded) = image.source,
+                    let data = Data(base64Encoded: encoded),
+                    let ns = NSImage(data: data)
+                else { continue }
+                images.append(ns)
+            default:
+                continue
             }
-            text = texts.joined(separator: "\n\n")
-        case .other:
-            return []
         }
         var out: [Block] = []
         if !images.isEmpty {
@@ -129,7 +115,7 @@ enum MessageEntryBlockBuilder {
                     id: userAttachmentsBlockId(entryId: single.id),
                     kind: .userAttachments(images: images)))
         }
-        let stripped = strippedCaption(text)
+        let stripped = strippedCaption(texts.joined(separator: "\n\n"))
         if !stripped.isEmpty {
             out.append(
                 Block(
@@ -188,11 +174,9 @@ enum MessageEntryBlockBuilder {
     }
 
     private static func assistantBlocks(
-        _ assistant: Message2Assistant,
+        _ assistant: AssistantMessage,
         single: SingleEntry
     ) -> [Block] {
-        guard let blocks = assistant.message?.content else { return [] }
-
         var out: [Block] = []
         var textBuffer: [String] = []
         var textStartIdx: Int = 0
@@ -205,32 +189,30 @@ enum MessageEntryBlockBuilder {
             out.append(contentsOf: MarkdownToBlocks.blocks(source: source, idPrefix: prefix))
         }
 
-        for (idx, block) in blocks.enumerated() {
+        for (idx, block) in assistant.content.enumerated() {
             switch block {
-            case .text(let t):
-                if let s = t.text, !s.isEmpty {
+            case .text(let text):
+                if !text.isEmpty {
                     if textBuffer.isEmpty { textStartIdx = idx }
-                    textBuffer.append(s)
+                    textBuffer.append(text)
                 }
             case .toolUse(let tu):
                 flushText()
-                // ToolUse.id is Optional<String> — upstream CLI populates it
-                // for every tool_use; nil only appears in dirty data. Fallback
-                // `tu|<idx>` keeps child id derivation stable; result lookup
-                // with nil simply misses.
-                let toolUseId = tu.id ?? "tu|\(single.id.uuidString)|\(idx)"
-                let result = tu.id.flatMap { single.toolResults[$0] }
+                // The CLI gives every tool_use an id; an empty one only
+                // appears in dirty data. The `tu|<idx>` fallback keeps child
+                // id derivation stable; its result lookup simply misses.
+                let toolUseId = tu.id.isEmpty ? "tu|\(single.id.uuidString)|\(idx)" : tu.id
                 let child = ToolUseToChild.make(
                     toolUse: tu,
                     toolUseId: toolUseId,
-                    result: result)
+                    result: single.toolResults[tu.id])
                 // Single-tool group: all three title states derive from the
                 // same tu. With one tool, "aggregated progressive" degrades
                 // to "per-tool progressive"; introducing `activeCountPhrase(1)`
                 // would replace "Reading foo.swift" with the vaguer
                 // "Reading 1 file".
-                let activeTitle = tu.activeFragment ?? tu.caseName
-                let completedTitle = tu.completedFragment ?? tu.caseName
+                let activeTitle = tu.activeFragment ?? tu.name
+                let completedTitle = tu.completedFragment ?? tu.name
                 let group = ToolGroupBlock(
                     activeTitle: activeTitle,
                     expandedActiveTitle: activeTitle,
@@ -239,7 +221,7 @@ enum MessageEntryBlockBuilder {
                 let blockId = StableBlockID.derive(
                     "entry", single.id.uuidString, "tg", String(idx))
                 out.append(Block(id: blockId, kind: .toolGroup(group)))
-            case .thinking, .unknown:
+            default:
                 continue
             }
         }
@@ -252,21 +234,15 @@ enum MessageEntryBlockBuilder {
     private static func makeGroupBlock(_ group: GroupEntry) -> Block? {
         var children: [ToolGroupBlock.Child] = []
         for (itemIdx, item) in group.items.enumerated() {
-            guard case .remote(let m) = item.payload,
-                case .assistant(let a) = m,
-                let blocks = a.message?.content
-            else { continue }
-            for (blockIdx, block) in blocks.enumerated() {
+            guard case .assistant(let a) = item.remoteMessage else { continue }
+            for (blockIdx, block) in a.content.enumerated() {
                 guard case .toolUse(let tu) = block else { continue }
-                let toolUseId =
-                    tu.id
-                    ?? "tu|\(group.id.uuidString)|\(itemIdx)|\(blockIdx)"
-                let result = tu.id.flatMap { item.toolResults[$0] }
+                let toolUseId = tu.id.isEmpty ? "tu|\(group.id.uuidString)|\(itemIdx)|\(blockIdx)" : tu.id
                 children.append(
                     ToolUseToChild.make(
                         toolUse: tu,
                         toolUseId: toolUseId,
-                        result: result))
+                        result: item.toolResults[tu.id]))
             }
         }
         guard !children.isEmpty else { return nil }

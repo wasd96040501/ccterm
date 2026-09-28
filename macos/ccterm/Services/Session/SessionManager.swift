@@ -24,7 +24,7 @@ final class SessionManager {
 
     @ObservationIgnored private let repository: any SessionRepository
     /// CLI client factory injected at the manager level. Production wires
-    /// `AgentSDKCLIClient.defaultFactory`; tests wire a `FakeCLIClient`
+    /// `liveCLIClientFactory`; tests wire a `FakeCLIClient`
     /// factory once on the manager and every `Session` constructed by it
     /// inherits the injection — no per-session rewiring in test setups.
     @ObservationIgnored private let cliClientFactory: CLIClientFactory
@@ -103,7 +103,7 @@ final class SessionManager {
 
     init(
         repository: any SessionRepository = CoreDataSessionRepository(),
-        cliClientFactory: @escaping CLIClientFactory = AgentSDKCLIClient.defaultFactory,
+        cliClientFactory: @escaping CLIClientFactory = liveCLIClientFactory,
         worktreeArchive: @escaping WorktreeSideEffect = SessionManager.defaultWorktreeArchive,
         worktreeRestore: @escaping WorktreeSideEffect = SessionManager.defaultWorktreeRestore
     ) {

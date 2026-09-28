@@ -87,9 +87,7 @@ extension SessionConfiguration {
         }
         if let thinkingTokens { args += ["--max-thinking-tokens", String(thinkingTokens)] }
 
-        // `.ultracode` launches at xhigh; the ultracode flag itself rides in
-        // through `settings`.
-        if let effort { args += ["--effort", effort == .ultracode ? Effort.xhigh.rawValue : effort.rawValue] }
+        if let effort { args += ["--effort", effort.rawValue] }
 
         if let jsonSchema, let data = try? JSONEncoder().encode(jsonSchema) {
             args += ["--json-schema", String(decoding: data, as: UTF8.self)]

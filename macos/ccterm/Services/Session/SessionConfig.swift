@@ -149,16 +149,14 @@ struct SessionConfig: Equatable {
             permissionMode: permissionMode.toSDK(),
             sessionId: resume ? nil : sessionId,
             resume: resume ? sessionId : nil,
-            effort: effort,
-            // The `.ultracode` tier launches at xhigh (handled by the SDK's
-            // `--effort` builder); the ultracode flag itself rides in as an
-            // inline flag-settings source so it is live from the first turn.
+            effort: effort?.level,
+            // The ultracode flag rides in as an inline settings source so it
+            // is live from the first turn.
             settings: effort == .ultracode ? "{\"ultracode\":true}" : nil,
             addDirs: additionalDirectories,
-            // Opt into SSE-style partial messages so the renderer can stream
-            // assistant text live and track turn token usage as it accrues.
-            // Deltas arrive on `Session.onStreamEvent` (wired in
-            // `SessionRuntime.attachCallbacks`), never on `onMessage`.
+            // Opt into partial messages so the renderer can stream assistant
+            // text live and track turn token usage as it accrues (see
+            // `SessionRuntime+Streaming`).
             includePartialMessages: true,
             plugins: pluginDirectories,
             customCommand: customCommand,

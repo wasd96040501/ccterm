@@ -1,15 +1,8 @@
-import AgentSDK
 import Foundation
 
-/// Pure I/O for a session's history JSONL: locate the file and decode JSON
-/// lines into `Message2`. All `nonisolated static` — no actor isolation, no
-/// handle state.
-///
-/// Reverse paging now lives in `JSONLReversePageSource` + `ReverseLineReader`
-/// (a single streaming backward reader, no tail/prefix split); this type keeps
-/// only path resolution + `parseLines`, the per-page line→`Message2` decode the
-/// page source calls. The orchestration (`loadHistory()`) that drives the
-/// pipeline still lives on `Session`, coupled to `historyLoadState`.
+/// Locates a session's history JSONL. All `nonisolated static` — no actor
+/// isolation, no handle state. Reading it is `AgentSDK.Transcript`'s job (see
+/// `TranscriptPageSource`).
 enum HistoryLoader {
 
     // MARK: - Path resolution
@@ -85,38 +78,5 @@ enum HistoryLoader {
             if fm.fileExists(atPath: candidate.path) { return candidate }
         }
         return nil
-    }
-
-    // MARK: - Parsers
-
-    /// Forward-parse JSONL text lines into `[Message2]`, dropping lines
-    /// that fail to parse. Pass a page's lines in **document order** so the
-    /// per-call `Message2Resolver` pairs each tool_result with its tool_use.
-    nonisolated static func parseLines(_ lines: [String]) -> [Message2] {
-        let resolver = Message2Resolver()
-        var out: [Message2] = []
-        out.reserveCapacity(lines.count)
-        for line in lines {
-            guard let data = line.data(using: .utf8),
-                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                let msg = try? resolver.resolve(json)
-            else {
-                continue
-            }
-            out.append(msg)
-        }
-        return out
-    }
-
-    /// Errors emitted by the parsers. Wraps `LocalizedError` so the
-    /// orchestrator's failure-state copy is user-readable.
-    enum ParseError: LocalizedError {
-        case invalidUTF8
-
-        var errorDescription: String? {
-            switch self {
-            case .invalidUTF8: return "History JSONL is not valid UTF-8"
-            }
-        }
     }
 }

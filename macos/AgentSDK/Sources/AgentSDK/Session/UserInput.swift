@@ -42,9 +42,15 @@ public struct UserInput: Sendable, Equatable {
 extension UserInput {
     /// The stdin line for this prompt.
     var jsonValue: JSONValue {
+        // A text-only prompt goes as a plain string, as the CLI's own SDK
+        // sends one; the CLI parses slash commands out of it.
+        let body: JSONValue =
+            if content.count == 1, let text = content[0].text { .string(text) } else {
+                .array(content.map(\.jsonValue))
+            }
         var o: [String: JSONValue] = [
             "type": "user",
-            "message": ["role": "user", "content": .array(content.map(\.jsonValue))],
+            "message": ["role": "user", "content": body],
             "parent_tool_use_id": .null,
             "uuid": .string(uuid),
         ]

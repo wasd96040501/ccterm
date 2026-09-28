@@ -1,18 +1,6 @@
 import AgentSDK
 import Foundation
 
-/// A pending permission request from the CLI awaiting decision. Holds the
-/// request content and a response closure. The UI shows the request, and
-/// once the user decides, calling `respond` sends the decision back to the
-/// CLI and removes the entry from the list.
-struct PendingPermission: Identifiable {
-    let id: String
-    let request: LegacyPermissionRequest
-    /// Reply to the CLI. The closure removes the entry from
-    /// pendingPermissions on its own.
-    let respond: (LegacyPermissionDecision) -> Void
-}
-
 /// A slash command advertised by the CLI during initialize.
 struct SlashCommand {
     let name: String
@@ -32,7 +20,7 @@ struct TurnEndedNotice {
 }
 
 /// Payload for "this session is asking the user to approve a tool
-/// call." Produced by `SessionRuntime` the moment a `LegacyPermissionRequest`
+/// call." Produced by `SessionRuntime` the moment a `PermissionRequest`
 /// is enqueued (the permission card appears) and consumed by the
 /// notification service the same way `TurnEndedNotice` is. A pending
 /// permission *pauses* the turn, so the `.responding` → `.idle` edge

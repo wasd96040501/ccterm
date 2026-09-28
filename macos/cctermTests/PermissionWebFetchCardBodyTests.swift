@@ -54,8 +54,8 @@ final class PermissionWebFetchCardBodyTests: XCTestCase {
     // MARK: - Helpers
 
     private func makeBody(input: [String: Any]) -> PermissionWebFetchCardBody {
-        let req = LegacyPermissionRequest.makePreview(
-            requestId: "wf-\(UUID().uuidString)",
+        let req = PermissionRequest.preview(
+            id: "wf-\(UUID().uuidString)",
             toolName: "WebFetch",
             input: input)
         return PermissionWebFetchCardBody(request: req)

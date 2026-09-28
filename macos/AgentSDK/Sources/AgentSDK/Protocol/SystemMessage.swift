@@ -113,6 +113,8 @@ extension SystemMessage {
         public var description: String?
         public var error: String?
         public var isBackgrounded: Bool?
+        /// When the task ended.
+        public var endTime: Date?
     }
 
     public struct TaskNotification: Sendable, Equatable {
@@ -215,7 +217,8 @@ extension SystemMessage: Decodable {
                         status: patch.lenient(String.self, "status"),
                         description: patch.lenient(String.self, "description"),
                         error: patch.lenient(String.self, "error"),
-                        isBackgrounded: patch.lenient(Bool.self, "is_backgrounded")))
+                        isBackgrounded: patch.lenient(Bool.self, "is_backgrounded"),
+                        endTime: patch.lenient(Double.self, "end_time").map { Date(timeIntervalSince1970: $0 / 1000) }))
             case "task_notification":
                 self = .taskNotification(
                     TaskNotification(

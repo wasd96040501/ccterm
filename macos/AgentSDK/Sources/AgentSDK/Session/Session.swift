@@ -167,19 +167,19 @@ public final class Session: @unchecked Sendable {
             "set_max_thinking_tokens", ["max_thinking_tokens": tokens.map { .number(Double($0)) } ?? .null])
     }
 
-    /// Merges `settings` into the CLI's runtime settings layer.
-    public func applyFlagSettings(_ settings: FlagSettings) async throws {
-        let data = try JSONSerialization.data(withJSONObject: settings.toDictionary())
-        let value = try JSONDecoder().decode(JSONValue.self, from: data)
-        _ = try await sendControlRequest("apply_flag_settings", ["settings": value])
+    /// Merges `settings` into the CLI's runtime settings layer, keyed as in
+    /// `settings.json` (`["effortLevel": "high", "fastMode": true]`). A
+    /// `null` value removes that key from the layer.
+    public func applyFlagSettings(_ settings: [String: JSONValue]) async throws {
+        _ = try await sendControlRequest("apply_flag_settings", ["settings": .object(settings)])
     }
 
     /// How the context window is currently spent.
     public func contextUsage() async throws -> ContextUsage {
         let response = try await sendControlRequest("get_context_usage")
-        guard let json = try? JSONSerialization.jsonObject(with: JSONEncoder().encode(response)),
-            let usage = try? ContextUsage(json: json)
-        else { throw AgentSDKError.invalidResponse(subtype: "get_context_usage") }
+        guard let usage = try? response.decode(ContextUsage.self) else {
+            throw AgentSDKError.invalidResponse(subtype: "get_context_usage")
+        }
         return usage
     }
 
@@ -301,11 +301,11 @@ public final class Session: @unchecked Sendable {
         return PermissionRequest(
             id: id, toolName: toolName, toolUseID: toolUseID, input: request["input"] ?? .object([:]),
             suggestions: suggestions, decisionReason: request["decision_reason"]?.stringValue,
-            blockedPath: request["blocked_path"]?.stringValue, agentID: request["agent_id"]?.stringValue
-        ) { [weak self] decision in
-            guard let self, self.state.withLock({ $0.permissions.removeValue(forKey: id) }) != nil else { return }
-            self.reply(id, success: Self.permissionResponse(decision, toolUseID: toolUseID))
-        }
+            decisionReasonType: request["decision_reason_type"]?.stringValue, blockedPath: request["blocked_path"]?.stringValue, agentID: request["agent_id"]?.stringValue,
+            onRespond: { [weak self] decision in
+                guard let self, self.state.withLock({ $0.permissions.removeValue(forKey: id) }) != nil else { return }
+                self.reply(id, success: Self.permissionResponse(decision, toolUseID: toolUseID))
+            })
     }
 
     private static func permissionResponse(_ decision: PermissionDecision, toolUseID: String) -> JSONValue {

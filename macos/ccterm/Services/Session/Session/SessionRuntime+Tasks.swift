@@ -34,18 +34,7 @@ extension SessionRuntime {
     }
 
     private static func matchBashToolUse(_ single: SingleEntry, toolUseId: String) -> String? {
-        guard case .remote(let m) = single.payload,
-            case .assistant(let a) = m,
-            let blocks = a.message?.content
-        else { return nil }
-        for block in blocks {
-            guard case .toolUse(let tu) = block,
-                tu.id == toolUseId,
-                case .Bash(let bash) = tu
-            else { continue }
-            return bash.input?.command
-        }
-        return nil
+        single.toolUses.first { $0.id == toolUseId }?.input(as: Tools.Bash.self)?.command
     }
 
     /// Thin forwarder kept so the `Session.stopBackgroundTask` façade

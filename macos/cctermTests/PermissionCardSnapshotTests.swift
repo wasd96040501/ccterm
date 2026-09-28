@@ -27,8 +27,8 @@ final class PermissionCardSnapshotTests: XCTestCase {
     }
 
     func testCardAloneSnapshot() throws {
-        let request = LegacyPermissionRequest.makePreview(
-            requestId: "req-1",
+        let request = PermissionRequest.preview(
+            id: "req-1",
             toolName: "Bash",
             input: ["command": "rm -rf node_modules", "description": "Reset deps"])
 
@@ -53,8 +53,8 @@ final class PermissionCardSnapshotTests: XCTestCase {
     /// single-select payload (header chip + 3 options) so the
     /// vstack-of-rows look + chrome takeover can be reviewed.
     func testAskUserQuestionCardSnapshot() throws {
-        let request = LegacyPermissionRequest.makePreview(
-            requestId: "req-ask",
+        let request = PermissionRequest.preview(
+            id: "req-ask",
             toolName: "AskUserQuestion",
             input: [
                 "questions": [
@@ -102,8 +102,8 @@ final class PermissionCardSnapshotTests: XCTestCase {
     /// Multi-select variant — same payload structure but the bottom
     /// "Submit" row is expected to render.
     func testAskUserQuestionMultiSelectCardSnapshot() throws {
-        let request = LegacyPermissionRequest.makePreview(
-            requestId: "req-ask-multi",
+        let request = PermissionRequest.preview(
+            id: "req-ask-multi",
             toolName: "AskUserQuestion",
             input: [
                 "questions": [
@@ -215,8 +215,8 @@ final class PermissionCardSnapshotTests: XCTestCase {
             XCTFail("expected active session for permission seeding")
             return
         }
-        let request = LegacyPermissionRequest.makePreview(
-            requestId: requestId, toolName: toolName, input: input)
+        let request = PermissionRequest.preview(
+            id: requestId, toolName: toolName, input: input)
         let pending = PendingPermission(
             id: requestId,
             request: request,
@@ -246,8 +246,8 @@ final class PermissionCardSnapshotTests: XCTestCase {
             XCTFail("expected an active session for overlay seeding")
             return (MainSelectionModel(), manager)
         }
-        let request = LegacyPermissionRequest.makePreview(
-            requestId: requestId, toolName: toolName, input: input)
+        let request = PermissionRequest.preview(
+            id: requestId, toolName: toolName, input: input)
         runtime.pendingPermissions.append(
             PendingPermission(id: requestId, request: request, respond: { _ in }))
 
@@ -261,7 +261,7 @@ final class PermissionCardSnapshotTests: XCTestCase {
 /// horizontal inset the chrome wrapper sits under so the snapshot
 /// reads as a fair preview of real geometry.
 private struct StandalonePermissionCardFixture: View {
-    let request: LegacyPermissionRequest
+    let request: PermissionRequest
 
     var body: some View {
         VStack {

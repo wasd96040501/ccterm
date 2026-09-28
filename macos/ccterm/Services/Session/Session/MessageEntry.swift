@@ -40,24 +40,26 @@ struct SingleEntry: Identifiable {
     let id: UUID
     var payload: Payload
     var delivery: DeliveryState?
-    var toolResults: [String: ToolResultPayload]
+    /// Each of this entry's tool calls that has been answered, keyed by
+    /// tool_use id: the user message carrying just that call's result (see
+    /// `UserMessage.toolResultMessages`), so `toolOutcome(_:)` reads it.
+    var toolResults: [String: UserMessage]
 
     /// Payload has two shapes:
     /// - `.localUser`: an entry just appended by `send(text:)` / `send(image:)`,
     ///   not yet echoed by the CLI. Retains raw text / image / planContent so
-    ///   `writeUserEntryToCLI` can read them directly without parsing a `Message2`.
-    /// - `.remote`: a parsed `Message2` from the CLI (or JSONL replay). When a
-    ///   user echo arrives, `.localUser` is replaced by `.remote`;
-    ///   assistant / tool_result are always `.remote`.
+    ///   `writeUserEntryToCLI` can read them directly.
+    /// - `.remote`: a message from the CLI (or history). When a user echo
+    ///   arrives, `.localUser` is replaced by `.remote`; assistant entries
+    ///   are always `.remote`.
     enum Payload {
         case localUser(LocalUserInput)
-        case remote(Message2)
+        case remote(Message)
     }
 }
 
 /// Snapshot of a user message we sent locally. Captured at the `send(_:)`
-/// entry so `writeUserEntryToCLI` can read the fields directly without
-/// stuffing them into a `Message2` only to extract them again.
+/// entry so `writeUserEntryToCLI` can read the fields directly.
 ///
 /// `images` is plural to match the wire `content` array: a single message
 /// can carry text + N image blocks, encoded back-to-back. Empty `images`
@@ -74,36 +76,18 @@ struct LocalUserInput {
     }
 }
 
-/// Merged view of a tool_use's result: the raw tool_result block (text +
-/// isError) plus the user message's typed `tool_use_result` projection.
-/// Typed-aware blocks (Grep, WebSearch, WebFetch, Bash, etc.) read from
-/// `typed`; generic / text-only blocks can fall back to `item.content`.
-struct ToolResultPayload {
-    let item: ItemToolResult
-    let typed: ToolUseResult?
-
-    var toolUseId: String? { item.toolUseId }
-    var isError: Bool? { item.isError }
-}
-
 extension SingleEntry {
     /// Non-nil only for `.remote` payloads.
-    var remoteMessage: Message2? {
+    var remoteMessage: Message? {
         if case .remote(let m) = payload { return m }
         return nil
     }
 
-    /// Legacy API: returns the underlying Message2 when present, nil for
-    /// `.localUser`.
-    var message: Message2? { remoteMessage }
-
     /// All `toolUse` blocks inside an assistant single, in order. Empty for
     /// user / non-assistant / non-tool_use messages.
-    var toolUses: [ToolUse] {
-        guard case .assistant(let a) = remoteMessage,
-            let blocks = a.message?.content
-        else { return [] }
-        return blocks.compactMap { block in
+    var toolUses: [ToolUseBlock] {
+        guard case .assistant(let a) = remoteMessage else { return [] }
+        return a.content.compactMap { block in
             if case .toolUse(let t) = block { return t }
             return nil
         }
@@ -251,54 +235,41 @@ enum GroupableToolName {
 
 // MARK: - ToolUse classification / fragments
 
-extension ToolUse {
+extension ToolUseBlock {
     /// Always returns a grouping kind — every tool_use participates in grouping.
     /// Rich-rendered tools map to their dedicated case; everything else falls
     /// through to ``GroupableToolName/other``.
     var groupableKind: GroupableToolName {
-        switch self {
-        case .Read: return .read
-        case .Edit: return .edit
-        case .Write: return .write
-        case .Grep: return .grep
-        case .Glob: return .glob
-        case .Bash: return .bash
-        case .WebFetch: return .webFetch
-        case .WebSearch: return .webSearch
-        case .Agent: return .agent
-        case .AskUserQuestion: return .askUserQuestion
-        default: return .other
-        }
+        if Tools.Read.matches(name) { return .read }
+        if Tools.Edit.matches(name) { return .edit }
+        if Tools.Write.matches(name) { return .write }
+        if Tools.Grep.matches(name) { return .grep }
+        if Tools.Glob.matches(name) { return .glob }
+        if Tools.Bash.matches(name) { return .bash }
+        if Tools.WebFetch.matches(name) { return .webFetch }
+        if Tools.WebSearch.matches(name) { return .webSearch }
+        if Tools.Agent.matches(name) { return .agent }
+        if Tools.AskUserQuestion.matches(name) { return .askUserQuestion }
+        return .other
     }
 
     /// Progressive / present-continuous phrase (e.g. `Reading foo.swift`).
     /// Consumed by both group titles and standalone ToolBlock headers while
-    /// the tool is running. `nil` only for tools where a generic fallback to
-    /// `caseName` reads better.
+    /// the tool is running. `nil` for tools where the bare tool name reads
+    /// better.
     var activeFragment: String? {
-        switch self {
-        case .Read(let v):
-            return String(localized: "Reading \(readTarget(v))")
-        case .Edit(let v):
-            return String(localized: "Editing \(editTarget(v))")
-        case .Write(let v):
-            return String(localized: "Writing \(writeTarget(v))")
-        case .Grep(let v):
-            return String(localized: "Searching \"\(grepTarget(v))\"")
-        case .Glob(let v):
-            return String(localized: "Globbing \"\(globTarget(v))\"")
-        case .Bash(let v):
-            return String(localized: "Running \(bashTarget(v))")
-        case .WebFetch(let v):
-            return String(localized: "Fetching \(webFetchTarget(v))")
-        case .WebSearch(let v):
-            return String(localized: "Searching \"\(webSearchTarget(v))\"")
-        case .Agent(let v):
-            return String(localized: "Running agent: \(agentTarget(v))")
-        case .AskUserQuestion(let v):
-            return String(localized: "Asking: \(askTarget(v))")
-        default:
-            return nil
+        switch groupableKind {
+        case .read: return String(localized: "Reading \(fileTarget)")
+        case .edit: return String(localized: "Editing \(fileTarget)")
+        case .write: return String(localized: "Writing \(fileTarget)")
+        case .grep: return String(localized: "Searching \"\(patternTarget)\"")
+        case .glob: return String(localized: "Globbing \"\(patternTarget)\"")
+        case .bash: return String(localized: "Running \(bashTarget)")
+        case .webFetch: return String(localized: "Fetching \(webFetchTarget)")
+        case .webSearch: return String(localized: "Searching \"\(webSearchTarget)\"")
+        case .agent: return String(localized: "Running agent: \(agentTarget)")
+        case .askUserQuestion: return String(localized: "Asking: \(askTarget)")
+        case .other: return nil
         }
     }
 
@@ -307,78 +278,43 @@ extension ToolUse {
     /// titles have their own aggregated form (`Read 3 files · …`) and do not
     /// go through this.
     var completedFragment: String? {
-        switch self {
-        case .Read(let v):
-            return String(localized: "Read \(readTarget(v))")
-        case .Edit(let v):
-            return String(localized: "Edited \(editTarget(v))")
-        case .Write(let v):
-            return String(localized: "Wrote \(writeTarget(v))")
-        case .Grep(let v):
-            return String(localized: "Searched \"\(grepTarget(v))\"")
-        case .Glob(let v):
-            return String(localized: "Globbed \"\(globTarget(v))\"")
-        case .Bash(let v):
-            return String(localized: "Ran \(bashTarget(v))")
-        case .WebFetch(let v):
-            return String(localized: "Fetched \(webFetchTarget(v))")
-        case .WebSearch(let v):
-            return String(localized: "Searched \"\(webSearchTarget(v))\"")
-        case .Agent(let v):
-            return String(localized: "Agent: \(agentTarget(v))")
-        case .AskUserQuestion(let v):
-            return String(localized: "Asked: \(askTarget(v))")
-        default:
-            return nil
+        switch groupableKind {
+        case .read: return String(localized: "Read \(fileTarget)")
+        case .edit: return String(localized: "Edited \(fileTarget)")
+        case .write: return String(localized: "Wrote \(fileTarget)")
+        case .grep: return String(localized: "Searched \"\(patternTarget)\"")
+        case .glob: return String(localized: "Globbed \"\(patternTarget)\"")
+        case .bash: return String(localized: "Ran \(bashTarget)")
+        case .webFetch: return String(localized: "Fetched \(webFetchTarget)")
+        case .webSearch: return String(localized: "Searched \"\(webSearchTarget)\"")
+        case .agent: return String(localized: "Agent: \(agentTarget)")
+        case .askUserQuestion: return String(localized: "Asked: \(askTarget)")
+        case .other: return nil
         }
     }
-}
 
-// MARK: - Fragment targets
+    // MARK: Fragment targets
 
-private func readTarget(_ v: ToolUseRead) -> String {
-    basename(v.input?.filePath) ?? String(localized: "file")
-}
+    /// Basename of the `file_path` a Read / Edit / Write call targets (read
+    /// raw: the key is shared by the three tools).
+    private var fileTarget: String {
+        guard let path = input["file_path"]?.stringValue, !path.isEmpty else { return String(localized: "file") }
+        return (path as NSString).lastPathComponent
+    }
 
-private func editTarget(_ v: ToolUseEdit) -> String {
-    basename(v.input?.filePath) ?? String(localized: "file")
-}
+    /// Grep's and Glob's shared `pattern` key.
+    private var patternTarget: String { input["pattern"]?.stringValue ?? "" }
 
-private func writeTarget(_ v: ToolUseWrite) -> String {
-    basename(v.input?.filePath) ?? String(localized: "file")
-}
+    private var bashTarget: String {
+        let bash = input(as: Tools.Bash.self)
+        return bash?.description ?? bash.map { String($0.command.prefix(40)) } ?? ""
+    }
 
-private func grepTarget(_ v: ToolUseGrep) -> String {
-    v.input?.pattern ?? ""
-}
+    private var webFetchTarget: String { input(as: Tools.WebFetch.self)?.url ?? "" }
 
-private func globTarget(_ v: ToolUseGlob) -> String {
-    v.input?.pattern ?? ""
-}
+    private var webSearchTarget: String { input(as: Tools.WebSearch.self)?.query ?? "" }
 
-private func bashTarget(_ v: ToolUseBash) -> String {
-    v.input?.description
-        ?? v.input?.command.map { String($0.prefix(40)) }
-        ?? ""
-}
+    private var agentTarget: String { input(as: Tools.Agent.self)?.description ?? "" }
 
-private func webFetchTarget(_ v: ToolUseWebFetch) -> String {
-    v.input?.url ?? ""
-}
-
-private func webSearchTarget(_ v: ToolUseWebSearch) -> String {
-    v.input?.query ?? v.input?.searchQuery ?? ""
-}
-
-private func agentTarget(_ v: Agent) -> String {
-    v.input?.description ?? v.input?.name ?? ""
-}
-
-private func askTarget(_ v: ToolUseAskUserQuestion) -> String {
-    v.input?.questions?.first?.question ?? ""
-}
-
-private func basename(_ path: String?) -> String? {
-    guard let path, !path.isEmpty else { return nil }
-    return (path as NSString).lastPathComponent
+    private var askTarget: String { input(as: Tools.AskUserQuestion.self)?.questions.first?.question ?? "" }
 }

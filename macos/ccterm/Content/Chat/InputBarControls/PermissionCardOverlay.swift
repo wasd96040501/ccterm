@@ -61,7 +61,7 @@ struct PermissionCardOverlay: View {
             if let pending = session.pendingPermissions.first {
                 let handlers = Self.decisionHandlers(for: pending, session: session)
                 PermissionCardView(
-                    request: pending.request,
+                    request: pending,
                     onAllowOnce: handlers.onAllowOnce,
                     onAllowAlways: handlers.onAllowAlways,
                     onDeny: handlers.onDeny,
@@ -85,7 +85,7 @@ struct PermissionCardOverlay: View {
 
     /// The four decision actions for a pending permission, packaged so both
     /// the body and `PermissionCardWiringTests` build them the same way. Each
-    /// closure turns a `LegacyPermissionRequest` convenience decision into a
+    /// closure turns a `PermissionRequest` convenience decision into a
     /// `session.respond(to:decision:)` call — keeping the wire-up
     /// (which decision maps to which button, and that `updatedInput` survives)
     /// in one unit-testable place.
@@ -93,24 +93,22 @@ struct PermissionCardOverlay: View {
         let onAllowOnce: () -> Void
         let onAllowAlways: () -> Void
         let onDeny: () -> Void
-        let onAllowWithInput: ([String: Any]?) -> Void
+        let onAllowWithInput: (JSONValue?) -> Void
     }
 
-    static func decisionHandlers(for pending: PendingPermission, session: Session) -> Handlers {
+    static func decisionHandlers(for request: PermissionRequest, session: Session) -> Handlers {
         Handlers(
             onAllowOnce: {
-                session.respond(to: pending.id, decision: pending.request.allowOnce())
+                session.respond(to: request.id, decision: request.allowOnce())
             },
             onAllowAlways: {
-                session.respond(to: pending.id, decision: pending.request.allowAlways())
+                session.respond(to: request.id, decision: request.allowAlways())
             },
             onDeny: {
-                session.respond(to: pending.id, decision: pending.request.deny())
+                session.respond(to: request.id, decision: request.deny())
             },
             onAllowWithInput: { updated in
-                session.respond(
-                    to: pending.id,
-                    decision: pending.request.allowOnce(updatedInput: updated))
+                session.respond(to: request.id, decision: request.allowOnce(updatedInput: updated))
             }
         )
     }

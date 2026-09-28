@@ -3,7 +3,7 @@ import Foundation
 
 /// Pure, stateful **reverse-streaming** timeline builder.
 ///
-/// Feed it `Message2` values in **reverse document order** (newest first);
+/// Feed it messages in **reverse document order** (newest first);
 /// receive grouped + tool-paired `MessageEntry` values back in **document
 /// order** as runs finalize. This is the proper death of `buildEntries`'
 /// throwaway in-memory `SessionRuntime`: the grouping +
@@ -43,16 +43,10 @@ struct ReverseEntryBuilder {
     /// order** (oldest first). Newly ingested (older) singles insert at index 0.
     private var openGroupItems: [SingleEntry] = []
 
-    /// A tool_result seen before its originating `tool_use` was reached. Keeps
-    /// the original `Message2` alongside the typed payload so a true orphan can
-    /// be re-emitted as its own entry at `finish()`.
-    private struct Withheld {
-        let payload: ToolResultPayload
-        let message: Message2
-    }
-
-    /// `tool_use_id` → result seen before its `tool_use` was reached.
-    private var withheld: [String: Withheld] = [:]
+    /// `tool_use_id` → the message carrying just that result (see
+    /// `UserMessage.toolResultMessages`), seen before its `tool_use` was
+    /// reached. A true orphan is re-emitted as its own entry at `finish()`.
+    private var withheld: [String: UserMessage] = [:]
 
     /// Insertion-ordered list of `tool_use_id`s still in ``withheld`` — used so
     /// the `finish()` true-orphan flush is deterministic.
@@ -68,19 +62,16 @@ struct ReverseEntryBuilder {
     /// Feed one message in **reverse document order**. Returns the entries that
     /// became **final** as a result — already in document order. The caller
     /// prepends this batch above whatever it has accumulated so far.
-    mutating func ingest(_ message: Message2) -> [MessageEntry] {
+    mutating func ingest(_ message: Message) -> [MessageEntry] {
         // tool_result → withhold for later pairing. Classified first, exactly
-        // as `receive`'s `action(for:)` checks `toolResultBlock` before
-        // visibility, so a malformed message carrying both a result and text
-        // still routes to merge.
-        if case .user(let u) = message,
-            let result = u.toolResultBlock,
-            let id = result.toolUseId
-        {
-            if withheld[id] == nil { withheldOrder.append(id) }
-            withheld[id] = Withheld(
-                payload: ToolResultPayload(item: result, typed: u.toolUseResult),
-                message: message)
+        // as `receive`'s `action(for:)` checks for results before visibility,
+        // so a malformed message carrying both a result and text still routes
+        // to merge.
+        if case .user(let u) = message, case let results = u.toolResultMessages, !results.isEmpty {
+            for (id, result) in results {
+                if withheld[id] == nil { withheldOrder.append(id) }
+                withheld[id] = result
+            }
             return []
         }
 
@@ -123,7 +114,7 @@ struct ReverseEntryBuilder {
     /// Close the open group run (if any) and emit the closing non-groupable
     /// single. The closing message is **older** than the run, so document order
     /// is `[single, group]`.
-    private mutating func closeRun(with message: Message2) -> [MessageEntry] {
+    private mutating func closeRun(with message: Message) -> [MessageEntry] {
         var out: [MessageEntry] = [.single(makeSingle(message))]
         if !openGroupItems.isEmpty {
             out.append(.group(GroupEntry(id: UUID(), items: openGroupItems)))
@@ -135,19 +126,15 @@ struct ReverseEntryBuilder {
     /// Build a `SingleEntry` for a remote message, attaching any withheld
     /// tool_results for the tool_uses this message owns (removing them from the
     /// buffer so each result pairs exactly once).
-    private mutating func makeSingle(_ message: Message2) -> SingleEntry {
-        var toolResults: [String: ToolResultPayload] = [:]
-        if case .assistant(let a) = message, let blocks = a.message?.content {
-            for block in blocks {
-                guard case .toolUse(let tu) = block, let id = tu.id else { continue }
-                if let entry = withheld.removeValue(forKey: id) {
-                    toolResults[id] = entry.payload
-                    withheldOrder.removeAll { $0 == id }
-                }
+    private mutating func makeSingle(_ message: Message) -> SingleEntry {
+        var single = SingleEntry(id: UUID(), payload: .remote(message), delivery: nil, toolResults: [:])
+        for call in single.toolUses {
+            if let result = withheld.removeValue(forKey: call.id) {
+                single.toolResults[call.id] = result
+                withheldOrder.removeAll { $0 == call.id }
             }
         }
-        return SingleEntry(
-            id: UUID(), payload: .remote(message), delivery: nil, toolResults: toolResults)
+        return single
     }
 
     /// Emit any unmatched tool_result as its own `.single` entry wrapping the
@@ -161,14 +148,8 @@ struct ReverseEntryBuilder {
         guard !withheld.isEmpty else { return [] }
         var out: [MessageEntry] = []
         for id in withheldOrder {
-            guard let entry = withheld[id] else { continue }
-            out.append(
-                .single(
-                    SingleEntry(
-                        id: UUID(),
-                        payload: .remote(entry.message),
-                        delivery: nil,
-                        toolResults: [:])))
+            guard let result = withheld[id] else { continue }
+            out.append(.single(SingleEntry(id: UUID(), payload: .remote(.user(result)), delivery: nil, toolResults: [:])))
         }
         withheld.removeAll()
         withheldOrder.removeAll()

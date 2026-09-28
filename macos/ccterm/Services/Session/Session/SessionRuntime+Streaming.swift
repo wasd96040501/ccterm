@@ -4,9 +4,9 @@ import Foundation
 // MARK: - Partial-message stream consumption + typewriter reveal
 //
 // The CLI is launched with `--include-partial-messages` (see
-// `SessionConfig.toAgentSDKConfig`), so the SDK delivers SSE-style deltas on
-// `Session.onStreamEvent`. `attachCallbacks` hops each event to the main actor
-// and funnels it here. We consume only what we render:
+// `SessionConfig.toAgentSDKConfig`), so the SDK delivers raw API deltas as
+// `Message.streamEvent`. The runtime's event loop (`listen(to:)`) funnels them
+// here on the main actor. We consume only what we render:
 //
 //   • `text_delta` → live assistant text. Accumulated per message in
 //     `StreamingTurnAssembler`, then *revealed one glyph at a time* by a
@@ -20,7 +20,7 @@ import Foundation
 //     (input + output, cache excluded), shown beside the running pill.
 //
 // `thinking_delta` / `input_json_delta` are ignored — thinking isn't rendered,
-// and tool calls render through the finalized `onMessage` path unchanged.
+// and tool calls render through the finalized message unchanged.
 //
 // ### Convergence without a snap
 //
@@ -83,7 +83,7 @@ extension SessionRuntime {
     /// turn state. Text feeds the typewriter reveal synchronously (so a delta
     /// that lands just before a `message_start` is never lost to the
     /// assembler's per-message reset); usage rides the coalesced flush.
-    func consumeStreamEvent(_ event: Message2StreamEvent) {
+    func consumeStreamEvent(_ event: StreamEvent) {
         let outcome = streamingAssembler.consume(event)
 
         // A new assistant message began — snap the previous reveal (keeping its
@@ -113,12 +113,11 @@ extension SessionRuntime {
     /// Reconcile the assembler's per-message usage against a finalized
     /// `.assistant` envelope's authoritative figures, then refresh `turnUsage`.
     /// Called from `receive`'s `.assistant` arm.
-    func reconcileFinalUsage(_ assistant: Message2Assistant) {
-        guard let id = assistant.message?.id else { return }
+    func reconcileFinalUsage(_ assistant: AssistantMessage) {
         streamingAssembler.recordUsage(
-            messageId: id,
-            input: assistant.message?.usage?.inputTokens,
-            output: assistant.message?.usage?.outputTokens)
+            messageId: assistant.messageID,
+            input: assistant.usage?.inputTokens,
+            output: assistant.usage?.outputTokens)
         publishTurnUsage(streamingAssembler.turnUsage)
     }
 
@@ -242,7 +241,7 @@ extension SessionRuntime {
     /// Park a finalized `.assistant` envelope on the active reveal, sealing the
     /// reveal target to the authoritative text. The typewriter performs the
     /// swap (and emits the `.updated`) once the head reaches the end.
-    func scheduleFinalize(entryId: UUID, messageId: String, message: Message2) {
+    func scheduleFinalize(entryId: UUID, messageId: String, message: Message) {
         guard activeReveal?.messageId == messageId else { return }
         // Seal the target to the authoritative text so the head reveals to the
         // true end before swapping. Falls back to the streamed text if the
@@ -283,26 +282,12 @@ extension SessionRuntime {
         }
     }
 
-    /// Build a synthetic `Message2.assistant` carrying a single text content
-    /// block — the partial-render shape. The text lands at content-block
-    /// index 0, matching the common text-first assistant message so the
-    /// finalized envelope's block ids converge (a message that opens with a
-    /// thinking / tool block instead reflows once at finalize, never mid-stream).
-    static func syntheticAssistantMessage(messageId: String, text: String) -> Message2 {
-        let dict: [String: Any] = [
-            "type": "assistant",
-            "message": [
-                "id": messageId,
-                "type": "message",
-                "role": "assistant",
-                "content": [["type": "text", "text": text]],
-            ],
-        ]
-        // The resolver is the same path JSONL replay uses; a malformed dict
-        // can't happen here (we built it), so fall back to an empty assistant.
-        if let resolved = try? Message2Resolver().resolve(dict) {
-            return resolved
-        }
-        return .unknown(name: "assistant", raw: dict)
+    /// Build a synthetic assistant message carrying a single text block — the
+    /// partial-render shape. The text lands at content-block index 0,
+    /// matching the common text-first assistant message so the finalized
+    /// envelope's block ids converge (a message that opens with a thinking /
+    /// tool block instead reflows once at finalize, never mid-stream).
+    static func syntheticAssistantMessage(messageId: String, text: String) -> Message {
+        .assistant(AssistantMessage(uuid: "", sessionID: "", messageID: messageId, model: "", content: [.text(text)]))
     }
 }

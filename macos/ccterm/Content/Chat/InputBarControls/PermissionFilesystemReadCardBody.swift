@@ -12,7 +12,7 @@ import SwiftUI
 /// showing whichever field is populated. The decision buttons stay
 /// on the shared chrome — no per-tool branching.
 struct PermissionFilesystemReadCardBody: View {
-    let request: LegacyPermissionRequest
+    let request: PermissionRequest
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -118,7 +118,7 @@ struct PermissionFilesystemReadCardBody: View {
     /// snake_case (current CLI) and camelCase (older builds).
     private func string(forKeys keys: [String]) -> String? {
         for key in keys {
-            if let v = request.rawInput[key] as? String, !v.isEmpty {
+            if let v = request.input[key]?.stringValue, !v.isEmpty {
                 return v
             }
         }
@@ -128,8 +128,8 @@ struct PermissionFilesystemReadCardBody: View {
 
 #Preview("Read") {
     PermissionFilesystemReadCardBody(
-        request: LegacyPermissionRequest.makePreview(
-            requestId: "preview-1",
+        request: PermissionRequest.preview(
+            id: "preview-1",
             toolName: "Read",
             input: [
                 "file_path": "/Users/example/Project/Sources/Greeter.swift"
@@ -142,8 +142,8 @@ struct PermissionFilesystemReadCardBody: View {
 
 #Preview("Glob") {
     PermissionFilesystemReadCardBody(
-        request: LegacyPermissionRequest.makePreview(
-            requestId: "preview-2",
+        request: PermissionRequest.preview(
+            id: "preview-2",
             toolName: "Glob",
             input: [
                 "pattern": "**/*.swift",
@@ -157,8 +157,8 @@ struct PermissionFilesystemReadCardBody: View {
 
 #Preview("Grep · with mode") {
     PermissionFilesystemReadCardBody(
-        request: LegacyPermissionRequest.makePreview(
-            requestId: "preview-3",
+        request: PermissionRequest.preview(
+            id: "preview-3",
             toolName: "Grep",
             input: [
                 "pattern": "TODO|FIXME",

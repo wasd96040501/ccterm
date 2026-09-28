@@ -5,7 +5,8 @@ import os
 /// `<directory>/<session id>.jsonl` (``SessionConfiguration/messageExportDirectory``).
 ///
 /// Lines seen before the session id is known are held and flushed into the
-/// first file. Export is best-effort: I/O failures are ignored.
+/// first file, or on ``close()`` into `unidentified-<uuid>.jsonl` when the
+/// id never arrived. Export is best-effort: I/O failures are ignored.
 final class MessageExporter: Sendable {
     private let directory: URL
     private let state = OSAllocatedUnfairLock(initialState: State())
@@ -31,19 +32,28 @@ final class MessageExporter: Sendable {
                 s.handle = open(sessionID)
                 s.sessionID = sessionID
             }
-            for pending in s.held + [line] {
-                var data = pending
-                data.append(UInt8(ascii: "\n"))
-                try? s.handle?.write(contentsOf: data)
-            }
+            write(s.held + [line], to: s.handle)
             s.held.removeAll()
         }
     }
 
     func close() {
         state.withLock { s in
+            if !s.held.isEmpty {
+                s.handle = s.handle ?? open("unidentified-\(UUID().uuidString.lowercased())")
+                write(s.held, to: s.handle)
+                s.held.removeAll()
+            }
             try? s.handle?.close()
             s.handle = nil
+        }
+    }
+
+    private func write(_ lines: [Data], to handle: FileHandle?) {
+        for line in lines {
+            var data = line
+            data.append(UInt8(ascii: "\n"))
+            try? handle?.write(contentsOf: data)
         }
     }
 

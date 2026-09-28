@@ -6,18 +6,22 @@ import Foundation
 /// 1. Index chain rows by uuid. A repeated uuid keeps its first position and
 ///    its last content. Legacy `progress` rows are dropped, and their children
 ///    re-parented to the nearest real ancestor.
-/// 2. Relink the preserved segment of the last compaction behind its summary,
-///    so the walk skips pre-compaction history.
-/// 3. Pick the leaf: the newest main-chain message, unless it does not
-///    descend from the recorded `last-prompt` leaf (a rewind), which wins.
+/// 2. Relink each compaction's preserved rows behind its summary, so the
+///    walk skips pre-compaction history.
+/// 3. Pick the leaf: walk back from the most recently written terminal row
+///    of the main chain to its nearest message, unless that does not descend
+///    from the recorded `last-prompt` leaf (a rewind), which then wins.
 /// 4. Walk `parentUuid` to the root. A missing parent falls back to the
 ///    closest earlier row within 5 s.
-/// 5. Splice in parallel tool results that hang off sibling blocks of an
-///    assistant response rather than off the walked path.
+/// 5. Splice in the parts of each assistant response that are off the walked
+///    path: sibling blocks of parallel tool calls and their results.
 struct TranscriptChain {
     private(set) var metadata = SessionMetadata()
     private var rows: [String: Row] = [:]
+    /// Order of first appearance.
     private var position: [String: Int] = [:]
+    /// Line index of the latest write.
+    private var lastWrite: [String: Int] = [:]
     private var progressParents: [String: String?] = [:]
     private var parentOverrides: [String: String] = [:]
     private var leafHint: String?
@@ -25,9 +29,8 @@ struct TranscriptChain {
 
     init(data: Data) {
         let decoder = JSONDecoder()
-        var lastBoundary: Row?
         var index = 0
-        for line in Self.lines(of: data) {
+        for (lineIndex, line) in Self.lines(of: data).enumerated() {
             guard let row = try? decoder.decode(Row.self, from: line) else { continue }
             if row.isChainRow {
                 guard let uuid = row.uuid else { continue }
@@ -38,17 +41,20 @@ struct TranscriptChain {
                 var stored = row
                 stored.line = line
                 rows[uuid] = stored
+                lastWrite[uuid] = lineIndex
                 if position[uuid] == nil {
                     position[uuid] = index
                     index += 1
                 }
-                if row.type == "system", row.subtype == "compact_boundary" { lastBoundary = row }
                 fold(row)
             } else {
                 foldMetadata(row)
             }
         }
-        if let lastBoundary { relink(after: lastBoundary) }
+        let boundaries = rows.values.filter { $0.type == "system" && $0.subtype == "compact_boundary" }
+        for boundary in boundaries.sorted(by: { position[$0.uuid!]! < position[$1.uuid!]! }) {
+            relink(boundary.preserved)
+        }
     }
 
     // MARK: - Messages
@@ -91,44 +97,60 @@ struct TranscriptChain {
         return next
     }
 
-    /// Re-chains the last compaction's preserved rows behind its summary
-    /// (`anchor → head … tail`) and moves the anchor's other children to the
-    /// tail. Full compactions (no preserved rows) need nothing: the boundary
-    /// has no parent, so the walk stops there.
-    private mutating func relink(after boundary: Row) {
-        guard let preserved = boundary.preserved else { return }
-        var segment: [String] = []
+    /// Re-chains a compaction's preserved rows behind its summary
+    /// (`anchor → first … last`) and moves the anchor's other children to the
+    /// last preserved row. Full compactions (nothing preserved) need nothing:
+    /// the boundary has no parent, so the walk stops there.
+    private mutating func relink(_ preserved: Row.Preserved?) {
+        let anchor: String
+        let first: String
+        let last: String
         switch preserved {
-        case .messages(_, let uuids):
-            segment = uuids.filter { rows[$0] != nil }
-        case .segment(let head, _, let tail):
-            var cursor: String? = tail
-            var seen = Set<String>()
-            while let uuid = cursor, rows[uuid] != nil, seen.insert(uuid).inserted {
-                segment.append(uuid)
-                if uuid == head { break }
-                cursor = parent(of: uuid)
+        case .messages(let messagesAnchor, let uuids):
+            guard let head = uuids.first, let tail = uuids.last, uuids.allSatisfy({ rows[$0] != nil }) else { return }
+            var previous = messagesAnchor
+            for uuid in uuids {
+                parentOverrides[uuid] = previous
+                previous = uuid
             }
-            guard segment.last == head else { return }
-            segment.reverse()
+            (anchor, first, last) = (messagesAnchor, head, tail)
+        case .segment(let head, let segmentAnchor, let tail):
+            if rows[head] != nil { parentOverrides[head] = segmentAnchor }
+            (anchor, first, last) = (segmentAnchor, head, tail)
+        case nil:
+            return
         }
-        guard let first = segment.first, let tail = segment.last else { return }
-        let anchor = preserved.anchor
-        parentOverrides[first] = anchor
-        for (earlier, later) in zip(segment, segment.dropFirst()) { parentOverrides[later] = earlier }
-        let preservedSet = Set(segment)
-        for (uuid, row) in rows where row.parentUUID == anchor && !preservedSet.contains(uuid) {
-            parentOverrides[uuid] = tail
+        for uuid in rows.keys where uuid != first && parent(of: uuid) == anchor {
+            parentOverrides[uuid] = last
         }
     }
 
     private func chooseLeaf() -> String? {
-        let newest = rows.values
-            .filter { ($0.type == "user" || $0.type == "assistant") && !$0.isSidechain && !$0.isTeam }
-            .max { position[$0.uuid!]! < position[$1.uuid!]! }?.uuid
-        guard let hint = leafHint, rows[hint] != nil else { return newest }
-        guard let newest else { return hint }
-        return descends(newest, from: hint) ? newest : hint
+        let mainChain = rows.values.filter { !$0.isSidechain && !$0.isTeam }
+        var hasChild = Set<String>()
+        for row in mainChain {
+            if let uuid = row.uuid, let parent = parent(of: uuid) { hasChild.insert(parent) }
+        }
+        let terminals = mainChain.compactMap(\.uuid).filter { !hasChild.contains($0) }
+            .sorted { lastWrite[$0, default: -1] > lastWrite[$1, default: -1] }
+        var leaf: String?
+        var checked = Set<String>()
+        search: for terminal in terminals {
+            var trail: [String] = []
+            var cursor: String? = terminal
+            while let uuid = cursor, let row = rows[uuid], !checked.contains(uuid), !trail.contains(uuid) {
+                if row.type == "user" || row.type == "assistant" {
+                    leaf = uuid
+                    break search
+                }
+                trail.append(uuid)
+                cursor = parent(of: uuid)
+            }
+            checked.formUnion(trail)
+        }
+        guard let hint = leafHint, rows[hint] != nil else { return leaf }
+        guard let leaf else { return hint }
+        return descends(leaf, from: hint) ? leaf : hint
     }
 
     private func descends(_ uuid: String, from ancestor: String) -> Bool {
@@ -167,40 +189,109 @@ struct TranscriptChain {
             .max { $0.timestamp! < $1.timestamp! }?.uuid
     }
 
-    /// Inserts tool results whose `tool_use` belongs to a response on the
-    /// path but which are not on the path themselves, right after that
-    /// response's last block.
+    /// Adds the parts of each assistant response that the walk missed. The
+    /// CLI writes a response as one row per block and chains tool results to
+    /// the block that called the tool, so parallel calls leave sibling blocks
+    /// and their results on side branches. They are inserted, oldest first,
+    /// after the response's last block on the path.
     private func withParallelResults(_ path: [String]) -> [String] {
-        var answered = Set(path.flatMap { rows[$0]?.toolResultIDs ?? [] })
-        var resultRows: [String: String] = [:]
-        var blocksByMessage: [String: [String]] = [:]
-        for (uuid, row) in rows where !row.isSidechain {
-            for id in row.toolResultIDs where resultRows[id].map({ position[$0]! > position[uuid]! }) ?? true {
-                resultRows[id] = uuid
-            }
-            if let messageID = row.messageID { blocksByMessage[messageID, default: []].append(uuid) }
-        }
-        let onPath = Set(path)
-        var output: [String] = []
-        for (i, uuid) in path.enumerated() {
-            output.append(uuid)
-            guard let messageID = rows[uuid]?.messageID,
-                i + 1 == path.count || rows[path[i + 1]]?.messageID != messageID
-            else { continue }
-            let toolUseIDs = (blocksByMessage[messageID] ?? [])
-                .sorted { position[$0]! < position[$1]! }
-                .flatMap { rows[$0]?.toolUseIDs ?? [] }
-            var recovered: [String] = []
-            for id in toolUseIDs where !answered.contains(id) {
-                guard let result = resultRows[id], !onPath.contains(result), !recovered.contains(result) else {
-                    continue
+        let assistantsOnPath = path.filter { rows[$0]?.messageID != nil }
+        guard !assistantsOnPath.isEmpty else { return path }
+
+        var included = Set(path)
+        var blocks: [String: [String]] = [:]
+        // The block that issued each tool call; `nil` when two responses claim it.
+        var caller: [String: String?] = [:]
+        var resultRows: [String] = []
+        for uuid in rows.keys.sorted(by: { position[$0]! < position[$1]! }) {
+            guard let row = rows[uuid] else { continue }
+            if let messageID = row.messageID {
+                blocks[messageID, default: []].append(uuid)
+                for id in row.toolUseIDs {
+                    if let previous = caller[id] {
+                        caller[id] = previous.flatMap { rows[$0]?.messageID } == messageID ? uuid : nil
+                    } else {
+                        caller[id] = uuid
+                    }
                 }
-                recovered.append(result)
-                answered.formUnion(rows[result]?.toolResultIDs ?? [])
+            } else if !row.toolResultIDs.isEmpty, row.parentUUID != nil {
+                resultRows.append(uuid)
             }
-            output += recovered.sorted { position[$0]! < position[$1]! }
         }
-        return output
+
+        // Result rows reachable from each block: by parent, by source
+        // assistant, or by the tool call they answer.
+        var attached: [String: [String]] = [:]
+        var attachedPairs = Set<[String]>()
+        func attach(_ result: String, to block: String) {
+            if attachedPairs.insert([block, result]).inserted { attached[block, default: []].append(result) }
+        }
+        for uuid in resultRows {
+            guard let row = rows[uuid], let parent = row.parentUUID else { continue }
+            attach(uuid, to: parent)
+            if let source = row.sourceToolAssistantUUID, source != parent, let other = rows[source],
+                row.sameThread(as: other)
+            {
+                attach(uuid, to: source)
+            }
+            for id in row.toolResultIDs {
+                if let block = caller[id] ?? nil, let other = rows[block], row.sameThread(as: other) {
+                    attach(uuid, to: block)
+                }
+            }
+        }
+
+        let answeredOnPath = Set(path.flatMap { rows[$0]?.toolResultIDs ?? [] })
+        var lastOnPath: [String: String] = [:]
+        for uuid in assistantsOnPath { lastOnPath[rows[uuid]!.messageID!] = uuid }
+
+        var insertions: [String: [String]] = [:]
+        var handled = Set<String>()
+        for uuid in assistantsOnPath {
+            guard let messageID = rows[uuid]?.messageID, handled.insert(messageID).inserted else { continue }
+            let group = blocks[messageID] ?? [uuid]
+            let groupSet = Set(group)
+            let offPath = group.filter { !included.contains($0) }
+            var direct: [String] = []
+            var indirect: [String] = []
+            var seen = Set<String>()
+            for block in group {
+                for result in attached[block] ?? [] where !included.contains(result) && seen.insert(result).inserted {
+                    if let parent = rows[result]?.parentUUID, groupSet.contains(parent) {
+                        direct.append(result)
+                    } else {
+                        indirect.append(result)
+                    }
+                }
+            }
+            if !indirect.isEmpty {
+                var answered = answeredOnPath.union(direct.flatMap { rows[$0]?.toolResultIDs ?? [] })
+                for result in indirect.sorted(by: { position[$0]! < position[$1]! }) {
+                    let ids = rows[result]?.toolResultIDs ?? []
+                    let answersGroup = ids.contains { id in
+                        !answered.contains(id) && (caller[id] ?? nil).map(groupSet.contains) == true
+                    }
+                    guard answersGroup else { continue }
+                    answered.formUnion(ids)
+                    direct.append(result)
+                }
+            }
+            guard !offPath.isEmpty || !direct.isEmpty else { continue }
+            let spliced = byTimestamp(offPath) + byTimestamp(direct)
+            included.formUnion(spliced)
+            insertions[lastOnPath[messageID]!] = spliced
+        }
+
+        return path.flatMap { [$0] + (insertions[$0] ?? []) }
+    }
+
+    /// Stable sort by timestamp; rows without one first.
+    private func byTimestamp(_ uuids: [String]) -> [String] {
+        uuids.enumerated().sorted { a, b in
+            let ta = rows[a.element]?.timestamp ?? .distantPast
+            let tb = rows[b.element]?.timestamp ?? .distantPast
+            return ta != tb ? ta < tb : a.offset < b.offset
+        }.map(\.element)
     }
 
     // MARK: - Metadata
@@ -260,6 +351,7 @@ private struct Row: Decodable {
     let parentUUID: String?
     let sessionID: String?
     let isSidechain: Bool
+    let agentID: String?
     let isTeam: Bool
     let isMeta: Bool
     let timestamp: Date?
@@ -267,6 +359,7 @@ private struct Row: Decodable {
     let messageID: String?
     let toolUseIDs: [String]
     let toolResultIDs: [String]
+    let sourceToolAssistantUUID: String?
     let preserved: Preserved?
     let compactBoundary: SystemMessage.CompactBoundary?
     let queuedPrompt: [ContentBlock]?
@@ -284,6 +377,11 @@ private struct Row: Decodable {
     /// The raw line, kept for chain rows.
     var line: Data?
 
+    /// Both rows are on the main thread, or in the same subagent.
+    func sameThread(as other: Row) -> Bool {
+        isSidechain == other.isSidechain && agentID == other.agentID
+    }
+
     var isChainRow: Bool { ["user", "assistant", "attachment", "system", "progress"].contains(type) }
 
     init(from decoder: Decoder) throws {
@@ -293,6 +391,8 @@ private struct Row: Decodable {
         parentUUID = c.lenient(String.self, "parentUuid")
         sessionID = c.lenient(String.self, "sessionId")
         isSidechain = c.lenientBool("isSidechain") ?? false
+        agentID = c.lenient(String.self, "agentId")
+        sourceToolAssistantUUID = c.lenient(String.self, "sourceToolAssistantUUID")
         isTeam = c.lenient(String.self, "teamName") != nil
         isMeta = c.lenientBool("isMeta") ?? false
         timestamp = c.timestamp("timestamp")
@@ -312,17 +412,17 @@ private struct Row: Decodable {
                 trigger: compact.lenient(String.self, "trigger") ?? "",
                 preTokens: compact.lenientInt("preTokens") ?? 0,
                 postTokens: compact.lenientInt("postTokens"))
-            if let segment = try? compact.nestedContainer(keyedBy: AnyCodingKey.self, forKey: "preservedSegment"),
+            if let kept = try? compact.nestedContainer(keyedBy: AnyCodingKey.self, forKey: "preservedMessages"),
+                let anchor = kept.lenient(String.self, "anchorUuid"),
+                let uuids = kept.lenient([String].self, "uuids"), !uuids.isEmpty
+            {
+                preserved = .messages(anchor: anchor, uuids: uuids)
+            } else if let segment = try? compact.nestedContainer(keyedBy: AnyCodingKey.self, forKey: "preservedSegment"),
                 let head = segment.lenient(String.self, "headUuid"),
                 let anchor = segment.lenient(String.self, "anchorUuid"),
                 let tail = segment.lenient(String.self, "tailUuid")
             {
                 preserved = .segment(head: head, anchor: anchor, tail: tail)
-            } else if let kept = try? compact.nestedContainer(keyedBy: AnyCodingKey.self, forKey: "preservedMessages"),
-                let anchor = kept.lenient(String.self, "anchorUuid"),
-                let uuids = kept.lenient([String].self, "uuids")
-            {
-                preserved = .messages(anchor: anchor, uuids: uuids)
             } else {
                 preserved = nil
             }

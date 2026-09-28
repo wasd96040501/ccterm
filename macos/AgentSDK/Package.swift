@@ -52,5 +52,14 @@ let package = Package(
             name: "SideQuestionSmoke",
             dependencies: ["AgentSDK"]
         ),
+        .executableTarget(
+            name: "CorpusAudit",
+            dependencies: ["AgentSDK"]
+        ),
+        .testTarget(
+            name: "AgentSDKTests",
+            dependencies: ["AgentSDK"],
+            resources: [.copy("Fixtures")]
+        ),
     ]
 )

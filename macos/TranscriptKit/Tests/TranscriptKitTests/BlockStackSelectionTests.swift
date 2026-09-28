@@ -38,12 +38,12 @@ final class BlockStackSelectionTests: XCTestCase {
     /// A list at the fixture font, markers rendered the way `MarkdownBlockBuilder`
     /// renders them — the marker column is settled before any width is known, so
     /// this is a plain `BlockStack` by the time a test sees it.
-    private func list(_ items: [(ListBuilder.Kind, Block)]) -> BlockStack {
+    private func list(_ items: [(MarkdownListBuilder.Kind, Block)]) -> BlockStack {
         let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        return ListBuilder.make(
+        return MarkdownListBuilder.make(
             items: items.map {
-                ListBuilder.Item(
-                    marker: ListBuilder.marker($0.0, font: font, color: .secondaryLabelColor),
+                MarkdownListBuilder.Item(
+                    marker: MarkdownListBuilder.marker($0.0, font: font, color: .secondaryLabelColor),
                     content: $0.1)
             },
             spacing: 6,
@@ -96,7 +96,7 @@ final class BlockStackSelectionTests: XCTestCase {
     /// stack is told nothing. A heading is the case this exists for — and it can
     /// only ever add, which is why nothing sits *closer* than `spacing`.
     func testHeadingAddsItsExtraRoomInsideItsOwnHeight() {
-        let title = ShapedText("Title", attributes: [.font: Heading.font(level: 1)])
+        let title = ShapedText("Title", attributes: [.font: TextStyle.default.headingFont(level: 1)])
         let bare = title.typeset(width: 400).size.height
         let heading = Heading(level: 1, text: title).measure(400)
 

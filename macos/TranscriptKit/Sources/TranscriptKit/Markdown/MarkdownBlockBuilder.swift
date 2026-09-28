@@ -8,7 +8,7 @@ import AppKit
 /// arithmetic for a quote's indent or a list's marker column inside the type that
 /// owns it, instead of being spread across every call site that builds one.
 ///
-/// It is also the only markdown-aware file below the parser. `Blockquote`, `ListBuilder`,
+/// It is also the only markdown-aware file below the parser. `Blockquote`, `ListRow`,
 /// `BlockStack` and the rest have never heard of `MarkdownIR`, so anything else that
 /// wants to build a row composes them directly without going through here.
 ///
@@ -80,16 +80,16 @@ enum MarkdownBlockBuilder {
     /// The numbered list the notes render as.
     ///
     /// An ordered list, because that is what it is: a numbered marker column
-    /// beside each note's own blocks. `ListBuilder` already settles the column
+    /// beside each note's own blocks. `MarkdownListBuilder` already settles the column
     /// against the widest marker, so a document with ten notes lines `10.` up
     /// with `9.` without this knowing that is a question.
     private static func list(
         _ footnotes: [MarkdownIR.Document.Footnote], style: TextStyle
     ) -> Block {
-        ListBuilder.make(
+        MarkdownListBuilder.make(
             items: footnotes.map { note in
-                ListBuilder.Item(
-                    marker: ListBuilder.marker(
+                MarkdownListBuilder.Item(
+                    marker: MarkdownListBuilder.marker(
                         .ordinal(note.number), font: style.bodyFont,
                         color: style.secondaryColor),
                     content: stack(note.blocks, style: style, spacing: tightListSpacing))
@@ -141,7 +141,7 @@ enum MarkdownBlockBuilder {
         case .heading(let level, let inlines):
             return Heading(
                 level: level,
-                text: text(inlines, style: style, font: Heading.font(level: level)))
+                text: text(inlines, style: style, font: style.headingFont(level: level)))
 
         case .blockquote(let children):
             return Blockquote(stack(children, style: style, spacing: spacing))
@@ -170,10 +170,10 @@ enum MarkdownBlockBuilder {
             // item from the sub-list under it. Which rhythm that is, is the
             // loose/tight distinction and nothing else.
             let listSpacing = list.isTight ? tightListSpacing : blockSpacing
-            return ListBuilder.make(
+            return MarkdownListBuilder.make(
                 items: list.items.enumerated().map { index, item in
-                    ListBuilder.Item(
-                        marker: ListBuilder.marker(
+                    MarkdownListBuilder.Item(
+                        marker: MarkdownListBuilder.marker(
                             kind(for: item, at: index, in: list),
                             font: style.bodyFont, color: style.secondaryColor),
                         content: stack(item.content, style: style, spacing: listSpacing))
@@ -182,7 +182,7 @@ enum MarkdownBlockBuilder {
                 gap: style.bodyFont.pointSize * 0.5)
 
         case .table(let table):
-            let headerFont = Table.headerFont(style.bodyFont)
+            let headerFont = style.tableHeaderFont
             return Table(
                 header: table.header.map { text($0, style: style, font: headerFont) },
                 rows: table.rows.map { row in row.map { text($0, style: style) } },
@@ -207,7 +207,7 @@ enum MarkdownBlockBuilder {
         return ShapedText(
             name,
             attributes: [
-                .font: NSFont.systemFont(ofSize: CodeBlock.badgeFontSize, weight: .regular),
+                .font: style.codeBadgeFont,
                 .foregroundColor: style.secondaryColor,
             ]
         ).typeset(width: .greatestFiniteMagnitude)
@@ -226,7 +226,7 @@ enum MarkdownBlockBuilder {
 
     private static func kind(
         for item: MarkdownIR.List.Item, at index: Int, in list: MarkdownIR.List
-    ) -> ListBuilder.Kind {
+    ) -> MarkdownListBuilder.Kind {
         switch item.checkbox {
         case .checked: return .task(checked: true)
         case .unchecked: return .task(checked: false)

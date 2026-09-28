@@ -50,6 +50,36 @@ struct TextStyle {
         return .monospacedSystemFont(ofSize: size, weight: bold ? .semibold : .regular)
     }
 
+    /// h1 26 / h2 22 / h3–h6 18, semibold. Markdown's six levels collapse to
+    /// three visual tiers — chat content rarely goes deeper than h3, and
+    /// shrinking the tail levels toward body size makes them read as emphasis
+    /// rather than as structure.
+    ///
+    /// Here rather than on `Heading`: the block is handed its text already set,
+    /// and the face is decided by whoever sets it — the markdown lowering. What
+    /// the level decides at measure time, the room above, stays on the block.
+    func headingFont(level: Int) -> NSFont {
+        let size: CGFloat
+        switch max(1, level) {
+        case 1: size = 26
+        case 2: size = 22
+        default: size = 18
+        }
+        return .systemFont(ofSize: size, weight: .semibold)
+    }
+
+    /// A table's header cells: the body size, one weight up. The size belongs to
+    /// the text around the table, not to the table.
+    var tableHeaderFont: NSFont {
+        .systemFont(ofSize: bodyFont.pointSize, weight: .semibold)
+    }
+
+    /// The face a code card's language chip is set in. The card lays out
+    /// whatever chip it is handed; the chip's text is set by whoever typesets it.
+    var codeBadgeFont: NSFont {
+        .systemFont(ofSize: 11, weight: .regular)
+    }
+
     static let `default` = TextStyle(
         bodyFont: .systemFont(ofSize: 14, weight: .regular),
         textColor: .labelColor,

@@ -7,7 +7,7 @@ import AppKit
 /// the Find menu, whose items send `performTextFinderAction(_:)` with the same
 /// actions as tags, arrive at the one `switch` in the editor.
 @MainActor
-public protocol FindBarViewDelegate: AnyObject {
+protocol FindBarViewDelegate: AnyObject {
 
     /// The query changed as it was typed or cleared. Empty means no find.
     func findBarView(_ findBarView: FindBarView, didChangeSearchString searchString: String)

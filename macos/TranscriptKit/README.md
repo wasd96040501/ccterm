@@ -159,8 +159,10 @@ transcript.noteHeightOfRows(withIndexesChanged: [transcript.row(for: cell)])
 A second product in this package, independent of `TranscriptKit` — it imports
 nothing from it. Up to two editors, left and right, each with its own tabs, in
 Xcode's shape: a draggable divider, tabs that reorder by dragging and move between
-editors, pinned tabs, and a find bar (`FindBarView`) to put over whatever a tab
-shows. A tab holds any `NSViewController`; the area never looks inside it.
+editors, pinned tabs, and per-editor back and forward. A tab holds any
+`NSViewController`; the area never looks inside it. The area answers its own
+commands — `goBack(_:)`, `goForward(_:)`, `closeTab(_:)` — as responder actions
+on the active editor, validated for menu and toolbar items alike.
 
 ```swift
 let area = EditorAreaViewController()        // an NSSplitViewController

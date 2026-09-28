@@ -21,27 +21,3 @@
 
 /* Shown in an editor that has no tabs. */
 "No Editor" = "No Editor";
-
-/* Placeholder of the find bar's field. */
-"Find" = "Find";
-
-/* Find bar button that closes it. */
-"Done" = "Done";
-
-/* Accessibility label of the find bar's button that empties the field. */
-"Clear" = "Clear";
-
-/* Accessibility label of the find bar's arrow to the previous match. */
-"Previous" = "Previous";
-
-/* Accessibility label of the find bar's arrow to the next match. */
-"Next" = "Next";
-
-/* Find bar count when the query matches nothing. */
-"No matches" = "No matches";
-
-/* Find bar count for a single match. */
-"1 match" = "1 match";
-
-/* Find bar count for several matches. */
-"%lld matches" = "%lld matches";

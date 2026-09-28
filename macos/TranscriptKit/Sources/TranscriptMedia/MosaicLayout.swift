@@ -21,7 +21,7 @@ import CoreGraphics
 /// No AppKit, no views, no images — sizes in, rectangles out. So the arrangement
 /// is testable as arithmetic, and a row can answer `heightOfRow` by running the
 /// same layout it will later draw, from the same numbers, with no view built.
-public struct MosaicLayout {
+struct MosaicLayout {
 
     /// Which of a tile's corners are on the outside of the block.
     ///
@@ -29,37 +29,37 @@ public struct MosaicLayout {
     /// rectangle, so a corner is round only where it is nobody's neighbour. Every
     /// other corner takes a much smaller radius — not zero, which reads as a
     /// crack between two pictures rather than as a seam.
-    public struct Corners: OptionSet, Sendable {
-        public let rawValue: Int
-        public init(rawValue: Int) { self.rawValue = rawValue }
+    struct Corners: OptionSet, Sendable {
+        let rawValue: Int
+        init(rawValue: Int) { self.rawValue = rawValue }
 
-        public static let topLeft = Corners(rawValue: 1 << 0)
-        public static let topRight = Corners(rawValue: 1 << 1)
-        public static let bottomLeft = Corners(rawValue: 1 << 2)
-        public static let bottomRight = Corners(rawValue: 1 << 3)
+        static let topLeft = Corners(rawValue: 1 << 0)
+        static let topRight = Corners(rawValue: 1 << 1)
+        static let bottomLeft = Corners(rawValue: 1 << 2)
+        static let bottomRight = Corners(rawValue: 1 << 3)
 
-        public static let all: Corners = [.topLeft, .topRight, .bottomLeft, .bottomRight]
+        static let all: Corners = [.topLeft, .topRight, .bottomLeft, .bottomRight]
     }
 
     /// One picture's place. `frame` is in the block's own space, top-left origin,
     /// y growing downward — `MeasuredBlock`'s convention, and the one a flipped
     /// `NSView` draws in.
-    public struct Tile: Sendable {
-        public let frame: CGRect
-        public let outerCorners: Corners
+    struct Tile: Sendable {
+        let frame: CGRect
+        let outerCorners: Corners
     }
 
-    public let tiles: [Tile]
+    let tiles: [Tile]
 
     /// What the tiles add up to. Never wider than the `maxSize` handed in; the
     /// height is whatever the chosen arrangement came to, which is the number a
     /// row reports.
-    public let size: CGSize
+    let size: CGSize
 
     // MARK: - Telegram's constants
 
     /// Between two pictures, horizontally and vertically alike.
-    public static let spacing: CGFloat = 4
+    static let spacing: CGFloat = 4
 
     /// No row may be shorter than this, and an arrangement that would go under it
     /// is penalised rather than forbidden — a picture narrower than a thumbnail
@@ -99,7 +99,7 @@ public struct MosaicLayout {
     /// the backing scale. Independent flooring can leave a half-point of daylight
     /// between two tiles; that is the trade Telegram takes, and taking it here
     /// too is what keeps a picture's own edge from being resampled.
-    public init(
+    init(
         imageSizes: [CGSize], maxSize: CGSize, spacing: CGFloat = MosaicLayout.spacing,
         scale: CGFloat = 2
     ) {

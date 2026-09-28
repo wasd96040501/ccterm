@@ -1,6 +1,6 @@
 # TranscriptMedia
 
-The host-side media parts that TranscriptKit §4 keeps out of the renderer, written once so the demo and the app share them. `TranscriptMedia → TranscriptKit` is a build edge: nothing in the renderer can name a window, overlay or grid.
+The host-side media parts that TranscriptKit §4 keeps out of the renderer, written once so the demo and the app share them. It depends on nothing in the package: a grid is a plain `NSView` a host hands the transcript as a `.view` row, so no renderer type is needed, and nothing in the renderer can name a window, overlay or grid.
 
 **The boundary is the name: pictures, how a group of them packs, and the viewer they open into.** A host component that isn't media doesn't go here — it gets its own target or a deliberate rename. Before changing the renderer for something new, ask whether it's picture-shaped (presentation with product decisions, a model the renderer would have to borrow); if so it belongs here.
 
@@ -10,7 +10,9 @@ The host-side media parts that TranscriptKit §4 keeps out of the renderer, writ
 | `ImageGridView` | The `.view` row drawn from those rects. Outer corners 17, inner 5 (square inner corners across a 4pt gap read as a crack). `snapshot(ofTile:)` supplies the still the viewer flies from. |
 | `MediaOverlayWindow` | Telegram's `GalleryViewer` mechanism: a borderless transparent screen-sized window with the 90% black dimming as a layer-backed view **inside** it (a window background can't animate apart from its content). |
 | `ImagePreviewView` | The content opened into the overlay; answers `MediaOverlayContent`'s one question — given the space, what rect it wants. |
-| `MediaImageStore` | Size and bitmap cache. |
+| `MediaImageStore` | Size and bitmap cache. Internal, and the one singleton here: a process-level cache, reason in its doc comment. |
+
+**The public surface is what a host builds a picture row and a preview from, nothing more:** `ImageGridView` (`init()`, `configure(with:)`, `onActivate`, `height(for:width:)`, `snapshot(ofTile:)`), `MediaOverlayWindow.present`, `MediaOverlayContent`, `ImagePreviewView(url:)`. `MosaicLayout` and `MediaImageStore` are internal — a host hands over URLs and gets pictures. Widen something only when a host needs it.
 
 ## `MediaOverlayWindow.animate(oldRect:newRect:)`
 

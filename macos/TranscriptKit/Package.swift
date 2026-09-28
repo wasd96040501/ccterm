@@ -26,13 +26,13 @@ let package = Package(
         // Separate product, not a folder inside the other one. `TranscriptKit`'s
         // §4 turns on a boundary — the package draws rows and owns none of the
         // presentation around them — and a boundary both sides can `import`
-        // across is not one. Two
-        // products make the arrow single-direction and the compiler the thing
-        // that holds it: `TranscriptMedia` depends on `TranscriptKit`, and
-        // nothing in `TranscriptKit` can name a window, an overlay or a grid.
+        // across is not one. Two products, with no edge between them, make the
+        // compiler the thing that holds it: nothing in `TranscriptKit` can name a
+        // window, an overlay or a grid, and nothing here needs a renderer type —
+        // a grid is a plain `NSView` a host hands the transcript as a `.view` row.
         .library(name: "TranscriptMedia", targets: ["TranscriptMedia"]),
-        // The editor area a transcript is shown in: side-by-side editors, tabs,
-        // the find bar an editor carries. Its own product for the same reason as
+        // The editor area a transcript is shown in: side-by-side editors and
+        // their tabs. Its own product for the same reason as
         // the one above, and with a stronger edge — it depends on nothing in this
         // package. A tab holds any `NSViewController`, so the split can never
         // reach into a transcript, and the compiler is what says so.
@@ -56,8 +56,8 @@ let package = Package(
             // `.copy` rather than `.process`: the corpus is a directory the demo
             // enumerates at runtime, so adding another document to it should cost
             // no code change — and `.process` flattens the structure that walk
-            // depends on. See `StressCorpus`.
-            resources: [.copy("Corpus")]),
+            // depends on. See `StressCorpus`. `Resources` is the find bar's text.
+            resources: [.copy("Corpus"), .process("Resources")]),
         .target(
             name: "TranscriptKit",
             dependencies: [
@@ -74,16 +74,18 @@ let package = Package(
         // renderer. Kept in this package rather than in the app so the demo and
         // the app get the same components, and so they stay buildable without an
         // Xcode project.
-        .target(name: "TranscriptMedia", dependencies: ["TranscriptKit"], exclude: ["CLAUDE.md"]),
+        .target(name: "TranscriptMedia", exclude: ["CLAUDE.md"]),
         // No dependencies, on purpose: see the product above.
         .target(
             name: "TranscriptWorkspace", exclude: ["CLAUDE.md"], resources: [.process("Resources")]),
         // `swift test`. Kept in the package rather than folded into the app's
         // Xcode test target so the package stays buildable and testable on its
         // own — the point of it being a package. One target for the whole
-        // package, so every test mounts through the one harness.
+        // package, so every test mounts through the one harness — the demo's
+        // find bar included, which is why the demo is a dependency.
         .testTarget(
-            name: "TranscriptKitTests", dependencies: ["TranscriptKit", "TranscriptWorkspace"],
+            name: "TranscriptKitTests",
+            dependencies: ["TranscriptKit", "TranscriptWorkspace", "TranscriptKitDemo"],
             exclude: ["CLAUDE.md"]),
     ]
 )

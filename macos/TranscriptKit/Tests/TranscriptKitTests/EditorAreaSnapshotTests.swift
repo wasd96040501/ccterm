@@ -2,6 +2,7 @@ import AppKit
 import XCTest
 
 @testable import TranscriptKit
+@testable import TranscriptKitDemo
 @testable import TranscriptWorkspace
 
 /// Two editors side by side, as the window server composited them, in both

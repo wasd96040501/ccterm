@@ -13,14 +13,17 @@ import AppKit
 /// with nothing behind it until a find can take options — a transcript's folds
 /// case and diacritics, the way a find bar's search is expected to, and takes no
 /// options — and a control that does nothing is worse than an absent one.
+///
+/// The demo's, not the workspace's: an editor area is a split and tabs, and what
+/// a tab puts over its content is the tab's.
 @MainActor
-public final class FindBarView: NSView, NSTextFieldDelegate {
+final class FindBarView: NSView {
 
-    public weak var delegate: FindBarViewDelegate?
+    weak var delegate: FindBarViewDelegate?
 
     /// The query. Setting it does not report a change: the host setting its own
     /// query needs no telling.
-    public var searchString: String {
+    var searchString: String {
         get { field.stringValue }
         set {
             field.stringValue = newValue
@@ -30,12 +33,12 @@ public final class FindBarView: NSView, NSTextFieldDelegate {
 
     /// The count shown at the field's trailing end, or `nil` for none — while a
     /// search has not settled, and beside an empty field.
-    public var numberOfMatches: Int? {
+    var numberOfMatches: Int? {
         didSet { updateCount() }
     }
 
     /// Fixed, so an editor can lay out around the bar before it has drawn.
-    public static let height: CGFloat = 32
+    static let height: CGFloat = 32
 
     lazy var field: NSTextField = {
         let field = NSTextField(string: "")
@@ -46,7 +49,7 @@ public final class FindBarView: NSView, NSTextFieldDelegate {
         field.placeholderString = String(localized: "Find", bundle: .module)
         field.cell?.usesSingleLineMode = true
         field.cell?.isScrollable = true
-        field.delegate = self
+        field.delegate = fieldDelegate
         field.setContentHuggingPriority(.defaultLow, for: .horizontal)
         return field
     }()
@@ -106,19 +109,22 @@ public final class FindBarView: NSView, NSTextFieldDelegate {
 
     private lazy var fieldBox = FieldBox()
 
+    /// The field's delegate, so that being one is not part of this view's surface.
+    private lazy var fieldDelegate = FieldDelegate(bar: self)
+
     private lazy var separator: NSBox = {
         let box = NSBox()
         box.boxType = .separator
         return box
     }()
 
-    public override init(frame frameRect: NSRect) {
+    override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         configureHierarchy()
         configureConstraints()
     }
 
-    public convenience init() {
+    convenience init() {
         self.init(frame: .zero)
     }
 
@@ -178,7 +184,7 @@ public final class FindBarView: NSView, NSTextFieldDelegate {
     /// and Return repeats it — ⌘F's behaviour in every Mac find bar. The field
     /// selects its text on taking the focus, and takes it again when the caret
     /// is already there, so there is nothing to select by hand.
-    public func beginEditing() {
+    func beginEditing() {
         window?.makeFirstResponder(field)
     }
 
@@ -210,7 +216,7 @@ public final class FindBarView: NSView, NSTextFieldDelegate {
 
     // MARK: - Reporting
 
-    public func controlTextDidChange(_ notification: Notification) {
+    fileprivate func fieldTextDidChange() {
         updateClearButton()
         delegate?.findBarView(self, didChangeSearchString: searchString)
     }
@@ -218,9 +224,7 @@ public final class FindBarView: NSView, NSTextFieldDelegate {
     /// Return steps to the next match and Shift-Return to the previous, which is
     /// Xcode's binding and Safari's; both arrive as `insertNewline(_:)`, so the
     /// modifier is read off the event. Escape is Done.
-    public func control(
-        _ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector
-    ) -> Bool {
+    fileprivate func fieldDoCommand(by commandSelector: Selector) -> Bool {
         switch commandSelector {
         case #selector(NSResponder.insertNewline(_:)):
             let backward = NSApp.currentEvent?.modifierFlags.contains(.shift) == true
@@ -247,6 +251,26 @@ public final class FindBarView: NSView, NSTextFieldDelegate {
 
     @objc private func done() {
         delegate?.findBarView(self, perform: .hideFindInterface)
+    }
+}
+
+/// The query field's `NSTextFieldDelegate`, passing what the field reports to
+/// the bar it belongs to.
+@MainActor
+private final class FieldDelegate: NSObject, NSTextFieldDelegate {
+
+    private unowned let bar: FindBarView
+
+    init(bar: FindBarView) {
+        self.bar = bar
+    }
+
+    func controlTextDidChange(_ notification: Notification) {
+        bar.fieldTextDidChange()
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        bar.fieldDoCommand(by: commandSelector)
     }
 }
 

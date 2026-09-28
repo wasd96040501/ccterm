@@ -6,13 +6,17 @@ Swift package over the `claude` CLI: a live `Session` on the stream-json stdio p
 
 | Dir | Holds |
 |---|---|
-| `Protocol/` | What the CLI says: `Message` (one enum over every line type) and its payloads, `ContentBlock`, `StreamEvent`, `JSONValue`, `Usage`; what a user message is — typed text, a local command, a task report, another party's message — read from the markup the CLI writes into its text (`UserMessage.kind`, `TaskNotification`). |
-| `Session/` | Talking to a live CLI: `Session` (events, handshake, control RPCs), `SessionConfiguration` and its launch flags, `UserInput`, `PermissionRequest` / `PermissionDecision` / `PermissionUpdate`, `InitializationResult`, `ContextUsage`, `MessageExporter`. |
-| `Settings/` | `Settings` (a `settings.json` object), `SettingsKey<Value>` and its catalog (`SettingsKey+<Area>.swift`), `SettingsValue`, value types (`PermissionSettings`, …), `SettingsSnapshot` (`Session.settings()`). |
-| `Tools/` | `Tools.<Name>` — typed input/output per built-in tool; `ToolUseBlock.input(as:)`, `UserMessage.toolOutcome(_:)`. |
-| `Transcript/` | `Transcript(contentsOf:)` — a session file read as the messages a live `Session` would have emitted, first prompt to last reply; `SessionMetadata(contentsOf:)` — titles and cwd from a file's head and tail; `SessionDirectory` — the session, subagent and workflow-run files on disk, and which sessions change (FSEvents, mapped to the session a file belongs to). |
+| `Process/` | Starting the CLI: `CLILaunch` resolves the executable (binary lookup, or a custom launch command through the login shell) and the environment once for `Session` and `Prompt`, which only build arguments; `CLIProcess` (the subprocess and its pipes), `Termination`, `AgentSDKError`. |
+| `Protocol/` | What the CLI says and takes: `Message` (one enum over every line type) and its payloads, `ContentBlock`, `StreamEvent`, `JSONValue`, `Usage`; the values it takes as flags and settings (`PermissionMode`, `Effort`, `PermissionRule`, `PermissionBehavior`) and `SettingsValue`, a value's `settings.json` form; `ToolDefinition` / `ToolOutcome`, how a tool call reads typed (`ToolUseBlock.input(as:)`, `UserMessage.toolOutcome(_:)`); the decoding plumbing every reader shares (`AnyCodingKey`, lenient containers, `concurrentMap`). |
+| `Protocol/UserText/` | What a user message is — typed text, a local command, a task report, another party's message — read from the markup the CLI writes into its text: `UserMessage.kind`, `TaskReport`, `TaggedElement`. |
+| `Tools/` | `Tools.<Name>` — the built-in tools' definitions, typed input/output per tool. |
+| `Settings/` | `Settings` (a `settings.json` object), `SettingsKey<Value>` and its catalog (`SettingsKey+<Area>.swift`), value types (`PermissionSettings`, …), `SettingsSnapshot` (`Session.settings()`). |
+| `Transcript/` | `Transcript(contentsOf:)` — a session file read as the messages a live `Session` would have emitted, first prompt to last reply; `Transcript.metadata(contentsOf:)` — its `SessionMetadata` (titles, cwd) from the file's head and tail only. |
+| `SessionDirectory/` | `SessionDirectory` — the session, subagent and workflow-run files on disk (`SessionFile`, `SubagentFile`, `WorkflowRun`), and which sessions change (FSEvents, mapped to the session a file belongs to). |
+| `Session/` | Talking to a live CLI: `Session` (events, handshake, typed control RPCs), `SessionConfiguration` and its launch flags, `UserInput`, `PermissionRequest` / `PermissionDecision` / `PermissionUpdate`, `InitializationResult`, `ContextUsage`, `RewindResult`, `MessageExporter`. |
 | `Prompt/` | `Prompt.run` — one-shot `claude -p` with a timeout. |
-| `Process/` | Binary lookup, login-shell environment, custom launch commands. |
+
+Directories depend downward only, so the graph stays acyclic: `Process/` and `Protocol/` depend on nothing in the package; `Protocol/UserText/`, `Tools/`, `Settings/`, `Transcript/` and `SessionDirectory/` on `Protocol/`; `Session/` and `Prompt/` on `Process/`, `Protocol/` and `Settings/`. No source file sits at the package root. A type two directories need lives in the lower one, with its conformances.
 
 ## Rules
 

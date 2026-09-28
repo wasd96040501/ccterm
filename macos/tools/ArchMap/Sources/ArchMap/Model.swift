@@ -115,6 +115,10 @@ final class TypeInfo {
     var tasks = 0
     /// Lines added by extensions declared in other files.
     var extensionLines = 0
+    /// Set on an `extension` of a mapped type declared in another unit: its
+    /// surface is merged into that type, but what it depends on stays here, in
+    /// the unit that declares it — and `self` in it is that type.
+    var extends: TypeInfo?
 
     init(name: String, kind: String, file: SourceFile, line: Int, endLine: Int) {
         self.name = name

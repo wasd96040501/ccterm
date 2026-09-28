@@ -43,7 +43,7 @@ final class Index {
         if let first = name.split(separator: ".").first, modules.contains(String(first)), name.contains(".") {
             name = String(name.dropFirst(first.count + 1))
         }
-        if let owner, owner.kind != "file", owner.kind != "extension" {
+        if let owner = owner?.extends ?? owner, owner.kind != "file", owner.kind != "extension" {
             var prefix = owner.name.split(separator: ".").map(String.init)
             while !prefix.isEmpty {
                 if let hit = byName[(prefix + [name]).joined(separator: ".")]?.first(where: {
@@ -115,13 +115,14 @@ final class Index {
         let expr = unwrap(raw)
         if let ref = expr.as(DeclReferenceExprSyntax.self) {
             let name = ref.baseName.text
-            if name == "self" || name == "Self" { return owner.kind == "file" ? nil : owner }
+            if name == "self" || name == "Self" { return owner.kind == "file" ? nil : owner.extends ?? owner }
             switch scope?.lookup(name) {
             case .type(let t): return coreName(t).flatMap { lookup($0, from: owner) }
             case .expr(let e): return typeOf(e, scope: scope, owner: owner, depth: depth + 1)
             case nil: break
             }
-            if let property = findProperty(name, in: owner) { return propertyType(property, in: owner) }
+            let home = owner.extends ?? owner
+            if let property = findProperty(name, in: home) { return propertyType(property, in: home) }
             if name.first?.isUppercase == true { return lookup(name, from: owner) }
             return nil
         }
@@ -139,7 +140,7 @@ final class Index {
             if let ref = callee.as(DeclReferenceExprSyntax.self) {
                 let name = ref.baseName.text
                 if name.first?.isUppercase == true { return lookup(name, from: owner) }
-                return returnType(of: name, in: owner)
+                return returnType(of: name, in: owner.extends ?? owner)
             }
             if let generic = callee.as(GenericSpecializationExprSyntax.self) {
                 return typeOf(generic.expression, scope: scope, owner: owner, depth: depth + 1)
@@ -185,13 +186,14 @@ final class Index {
         }
         if let ref = expr.as(DeclReferenceExprSyntax.self) {
             let name = ref.baseName.text
-            if name == "self" { return (owner.name, owner) }
+            let home = owner.extends ?? owner
+            if name == "self" { return (home.name, home) }
             switch scope?.lookup(name) {
             case .expr(let e): return describe(e, scope: scope, owner: owner, depth: depth + 1)
             case .type(let t): return ("\(name): \(t)", coreName(t).flatMap { lookup($0, from: owner) })
             case nil: break
             }
-            if findProperty(name, in: owner) != nil { return ("\(owner.name).\(name)", owner) }
+            if findProperty(name, in: home) != nil { return ("\(home.name).\(name)", home) }
             if name.first?.isUppercase == true { return (name, lookup(name, from: owner)) }
             return nil  // a closure parameter (a TaskGroup, say): local, not a flow between types
         }
@@ -213,15 +215,37 @@ final class Index {
                 target.members += ext.members
                 target.inits += ext.inits
                 target.initParams.formUnion(ext.initParams)
-                target.typeRefs.formUnion(ext.typeRefs)
-                target.creates += ext.creates
-                target.hosts += ext.hosts
-                target.flows += ext.flows
-                target.accesses += ext.accesses
-                target.tasks += ext.tasks
                 target.nested += ext.nested
                 target.extensionLines += ext.lines
-                if ext.unit != target.unit { extendedIn[ObjectIdentifier(target), default: []].insert(ext.unit) }
+                guard ext.unit != target.unit else {
+                    target.typeRefs.formUnion(ext.typeRefs)
+                    target.creates += ext.creates
+                    target.hosts += ext.hosts
+                    target.flows += ext.flows
+                    target.accesses += ext.accesses
+                    target.tasks += ext.tasks
+                    continue
+                }
+                // Declared elsewhere: its dependencies are its unit's, not the
+                // extended type's — a conformance in `Settings/` makes Settings
+                // depend on the type, not the type on Settings.
+                extendedIn[ObjectIdentifier(target), default: []].insert(ext.unit)
+                if let merged = foreign[ext.unit + "|" + target.name] {
+                    merged.properties += ext.properties
+                    merged.members += ext.members
+                    merged.inherits += ext.inherits.filter { !merged.inherits.contains($0) }
+                    merged.typeRefs.formUnion(ext.typeRefs)
+                    merged.creates += ext.creates
+                    merged.hosts += ext.hosts
+                    merged.flows += ext.flows
+                    merged.accesses += ext.accesses
+                    merged.tasks += ext.tasks
+                    merged.extensionLines += ext.lines
+                } else {
+                    ext.extends = target
+                    foreign[ext.unit + "|" + target.name] = ext
+                    types.append(ext)
+                }
             } else if let merged = foreign[ext.unit + "|" + ext.name] {
                 merged.properties += ext.properties
                 merged.members += ext.members

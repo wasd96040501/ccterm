@@ -20,7 +20,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         window.titleVisibility = .hidden
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 880, height: 540)
+        window.minSize = NSSize(width: 970, height: 540)  // the sidebar's 290 beside the editors' 680
         window.contentViewController = splitController
 
         super.init(window: window)

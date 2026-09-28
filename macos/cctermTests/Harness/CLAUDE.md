@@ -59,7 +59,7 @@ Factories default to `AppKitStage.defaultWindowSize` = **1200×860**, the
 main window's first-launch content size (source:
 `MainWindowController.init` `contentRect` — the baseline most users run
 at). Override per call for edge cases; `AppKitStage.minWindowSize`
-(880×540) is the production `window.minSize` for narrow-pane tests. The
+(970×540) is the production `window.minSize` for narrow-pane tests. The
 size constants are sourced from production, not magic numbers — if the
 window default changes, update them here.
 

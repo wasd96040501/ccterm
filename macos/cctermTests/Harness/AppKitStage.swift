@@ -45,9 +45,9 @@ final class AppKitStage {
     static let defaultWindowSize = CGSize(width: 1200, height: 860)
 
     /// The main window's minimum content size. Source:
-    /// `MainWindowController` `window.minSize` (`880 × 540`). Use for
+    /// `MainWindowController` `window.minSize` (`970 × 540`). Use for
     /// narrow-edge tests (shrink-to-fit, sidebar-collapse boundaries).
-    static let minWindowSize = CGSize(width: 880, height: 540)
+    static let minWindowSize = CGSize(width: 970, height: 540)
 
     // MARK: - Stored
 

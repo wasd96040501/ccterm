@@ -37,7 +37,7 @@ final class MainSplitLayoutTests: XCTestCase {
         let sidebar = split.splitViewItems[0].viewController.view
         let detail = split.splitViewItems[1].viewController.view
 
-        XCTAssertGreaterThanOrEqual(sidebarWidth, 220 - Geometry.tolerance, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(sidebarWidth, 290 - Geometry.tolerance, file: file, line: line)
         XCTAssertLessThanOrEqual(sidebarWidth, 350 + Geometry.tolerance, file: file, line: line)
         XCTAssertGreaterThanOrEqual(detailWidth, 680 - Geometry.tolerance, file: file, line: line)
         Geometry.assertContained(sidebar, in: stage.rootView, file: file, line: line)

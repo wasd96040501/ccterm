@@ -26,11 +26,11 @@ final class MainSplitViewController: NSSplitViewController {
     override func loadView() {
         super.loadView()
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarViewController)
-        sidebarItem.minimumThickness = 220
+        // Xcode's navigator at its narrowest.
+        sidebarItem.minimumThickness = 290
         sidebarItem.maximumThickness = 350
-        // First-launch width when no autosaved divider position exists.
-        // 0.22 of a 1200pt default window → 264pt, inside [220, 350].
-        // Once autosave kicks in this is ignored.
+        // First-launch width when no autosaved divider position exists,
+        // clamped into [290, 350]. Once autosave kicks in this is ignored.
         sidebarItem.preferredThicknessFraction = 0.22
         sidebarItem.canCollapse = true
         sidebarItem.titlebarSeparatorStyle = .automatic

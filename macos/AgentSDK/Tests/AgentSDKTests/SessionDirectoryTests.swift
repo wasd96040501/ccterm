@@ -73,6 +73,38 @@ final class SessionDirectoryTests: XCTestCase {
         XCTAssertNil(workflows[1].name)
     }
 
+    func testUpdatingListsAgainOnlyWhereThingsChanged() throws {
+        try write("-a/s1.jsonl", modified: 100)
+        try write("-a/gone.jsonl", modified: 150)
+        try write("-b/s2.jsonl", modified: 200)
+        let directory = SessionDirectory(url: root)
+        let previous = directory.sessions()
+
+        try FileManager.default.removeItem(at: root.appendingPathComponent("-a/gone.jsonl"))
+        try write("-a/s3.jsonl", modified: 300)
+        // A change nobody reported stays as it was listed.
+        try write("-b/s4.jsonl", modified: 400)
+        let real = URL(fileURLWithPath: String(cString: realpath(root.path, nil)))
+        let updated = directory.sessions(
+            updating: previous,
+            changesAt: [real.appendingPathComponent("-a/s3.jsonl"), real.appendingPathComponent("-a/gone.jsonl")])
+        XCTAssertEqual(updated.map(\.id), ["s3", "s2", "s1"])
+
+        let outside = directory.sessions(updating: previous, changesAt: [URL(fileURLWithPath: "/elsewhere")])
+        XCTAssertEqual(outside.map(\.id), ["s4", "s3", "s2", "s1"])
+    }
+
+    func testASessionContainsWhatItSpawned() throws {
+        try write("-a/s.jsonl")
+        try write("-a/other.jsonl")
+        let sessions = SessionDirectory(url: root).sessions()
+        let session = try XCTUnwrap(sessions.first { $0.id == "s" })
+        XCTAssertTrue(session.contains(root.appendingPathComponent("-a/s.jsonl")))
+        XCTAssertTrue(session.contains(root.appendingPathComponent("-a/s/subagents/agent-x.jsonl")))
+        XCTAssertFalse(session.contains(root.appendingPathComponent("-a/other.jsonl")))
+        XCTAssertFalse(session.contains(root.appendingPathComponent("-b/s/subagents/agent-x.jsonl")))
+    }
+
     func testDirectoryFromEnvironment() {
         XCTAssertEqual(
             SessionDirectory(environment: ["CLAUDE_CONFIG_DIR": "/cfg"]).url.path, "/cfg/projects")

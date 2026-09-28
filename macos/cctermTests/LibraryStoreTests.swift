@@ -123,6 +123,19 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertEqual(emissions.count, 2)
     }
 
+    func testASubagentStartedLaterIsPublishedUnderItsSession() async throws {
+        try Self.writeLibrary(fixture)
+        store.start()
+        await waitForNodes { !$0.isEmpty }
+
+        // Only the agent's own files are written; the session's is untouched.
+        try fixture.write("-x-repo/s1/subagents/agent-c.jsonl", [Rows.user("u")])
+        try fixture.write("-x-repo/s1/subagents/agent-c.meta.json", [#"{"description":"Later"}"#])
+        await waitForNodes { nodes in
+            nodes.first?.children.first?.children.first?.children.map(\.title).contains("Later") == true
+        }
+    }
+
     func testANewSessionIsPublished() async throws {
         try Self.writeLibrary(fixture)
         store.start()

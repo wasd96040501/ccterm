@@ -6,8 +6,8 @@ import Foundation
 ///
 /// Keeps what it read per transcript, keyed by modification date, so a rescan
 /// re-reads only the files that changed. A session's subagents and workflow
-/// runs are re-listed with it: spawning one writes the tool call to the
-/// session's own file first, so its date moves too.
+/// runs are re-listed with it — when its own file changes, or when the store
+/// forces it because one of the files it spawned did.
 ///
 /// Not thread-safe; `LibraryStore` runs one scan at a time.
 nonisolated final class LibraryScanner: @unchecked Sendable {
@@ -22,10 +22,14 @@ nonisolated final class LibraryScanner: @unchecked Sendable {
 
     private var entries: [URL: Entry] = [:]
 
-    /// Reads the sessions whose files changed since they were last read, in
-    /// parallel.
-    func read(_ sessions: [SessionFile]) async {
-        let stale = sessions.filter { entries[$0.url]?.modificationDate != $0.modificationDate }
+    /// Reads, in parallel, the sessions whose files changed since they were
+    /// last read, and those in `forced` whatever their date. Answers how many
+    /// it read.
+    @discardableResult
+    func read(_ sessions: [SessionFile], forcing forced: Set<URL> = []) async -> Int {
+        let stale = sessions.filter {
+            forced.contains($0.url) || entries[$0.url]?.modificationDate != $0.modificationDate
+        }
         let read = await withTaskGroup(of: (URL, Entry).self) { group in
             for session in stale {
                 group.addTask { (session.url, Self.entry(for: session)) }
@@ -33,6 +37,7 @@ nonisolated final class LibraryScanner: @unchecked Sendable {
             return await group.reduce(into: [URL: Entry]()) { $0[$1.0] = $1.1 }
         }
         entries.merge(read) { $1 }
+        return stale.count
     }
 
     /// Drops what was read for any session not in `sessions`.

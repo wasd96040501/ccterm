@@ -26,24 +26,54 @@ public struct SessionDirectory: Sendable, Hashable {
     /// missing or unreadable directory answers `[]`; unreadable entries are
     /// skipped.
     public func sessions() -> [SessionFile] {
-        let manager = FileManager.default
-        let keys: [URLResourceKey] = [.isRegularFileKey, .contentModificationDateKey]
         let projects =
-            (try? manager.contentsOfDirectory(
+            (try? FileManager.default.contentsOfDirectory(
                 at: url, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles)) ?? []
-        var sessions: [SessionFile] = []
-        for project in projects where project.isDirectory {
-            let entries =
-                (try? manager.contentsOfDirectory(
-                    at: project, includingPropertiesForKeys: keys, options: .skipsHiddenFiles)) ?? []
-            for entry in entries where entry.pathExtension == "jsonl" {
-                guard let values = try? entry.resourceValues(forKeys: Set(keys)), values.isRegularFile == true
-                else { continue }
-                sessions.append(
-                    SessionFile(url: entry, modificationDate: values.contentModificationDate ?? .distantPast))
+        return projects.filter(\.isDirectory).flatMap(Self.sessions(inProject:)).sorted(by: Self.newestFirst)
+    }
+
+    /// What ``sessions()`` answers now, given that it answered `previous`
+    /// and every file changed since is in `paths` — but listing again only
+    /// where those paths are, which costs a fraction of a full listing. A
+    /// path it can't place lists everything.
+    public func sessions(updating previous: [SessionFile], changesAt paths: [URL]) -> [SessionFile] {
+        guard let root = Self.realPath(of: url) else { return sessions() }
+        var projects = Set<String>()
+        for path in paths {
+            let components = path.pathComponents
+            guard components.count > root.count, Array(components.prefix(root.count)) == root else {
+                return sessions()
             }
+            projects.insert(components[root.count])
         }
-        return sessions.sorted { $0.modificationDate > $1.modificationDate }
+        let kept = previous.filter { !projects.contains($0.projectName) }
+        let listed = projects.flatMap { Self.sessions(inProject: url.appendingPathComponent($0, isDirectory: true)) }
+        return (kept + listed).sorted(by: Self.newestFirst)
+    }
+
+    private static func sessions(inProject project: URL) -> [SessionFile] {
+        let keys: [URLResourceKey] = [.isRegularFileKey, .contentModificationDateKey]
+        let entries =
+            (try? FileManager.default.contentsOfDirectory(
+                at: project, includingPropertiesForKeys: keys, options: .skipsHiddenFiles)) ?? []
+        return entries.compactMap { entry in
+            guard entry.pathExtension == "jsonl", let values = try? entry.resourceValues(forKeys: Set(keys)),
+                values.isRegularFile == true
+            else { return nil }
+            return SessionFile(url: entry, modificationDate: values.contentModificationDate ?? .distantPast)
+        }
+    }
+
+    private static func newestFirst(_ a: SessionFile, _ b: SessionFile) -> Bool {
+        a.modificationDate > b.modificationDate
+    }
+
+    /// The directory's components with symlinks resolved, as the file
+    /// system reports changes (`/private/var/…`, not `/var/…`).
+    private static func realPath(of url: URL) -> [String]? {
+        guard let resolved = realpath(url.path, nil) else { return nil }
+        defer { free(resolved) }
+        return URL(fileURLWithPath: String(cString: resolved)).pathComponents
     }
 }
 

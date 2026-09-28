@@ -36,6 +36,19 @@ public struct SessionFile: Sendable, Hashable, Identifiable {
             }
     }
 
+    /// Whether `file` is one of the session's: its transcript, or anything
+    /// it spawned.
+    public func contains(_ file: URL) -> Bool {
+        let path = file.path
+        let prefix = "/\(projectName)/\(id)"
+        return path.hasSuffix(prefix + ".jsonl") || path.contains(prefix + "/")
+    }
+
+    /// The project directory the session is filed under.
+    var projectName: String {
+        url.deletingLastPathComponent().lastPathComponent
+    }
+
     /// `<session id>/` beside the transcript: everything the session spawned.
     private var sessionDirectory: URL {
         url.deletingPathExtension()

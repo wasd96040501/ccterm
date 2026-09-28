@@ -1255,14 +1255,15 @@ bar's own layer: rounding a view's own layer makes AppKit clip it; pulled far
 enough, it leaves as a drag session carrying a small picture of its content — the
 group's view, drawn by `cacheDisplay` and framed by the bar — centred on the
 pointer, while the tabs it left close up. Over a bar it turns back into a tab, the
-tabs part where it would drop, and it drops into the gap. The tab is the
-destination's change to the image, made through `enumerateDraggingItems` on
-entering, and AppKit takes it off when the drag leaves: nothing tracks which one
-is showing. **The two images are one size**, the larger of the pair with each drawn
-in the middle: AppKit turns one dragged image into the next by scaling it into the
-new frame about the old centre, and measured, images of two sizes showed a
-thumbnail squashed into a tab's shape with its card showing, a tab narrowing into a
-thumbnail, and a centre left wherever along the tab it had been picked up. What no
+tabs part where it would drop, and it drops into the gap. **Each side draws its own
+image, at the time AppKit says**: the source hands over the picture as the drag
+begins, in formation `.none` so it keeps its size away from any bar, and a bar
+turns it into a tab the gap's width in `updateDraggingItemsForDrag(_:)` — the
+destination's hook for exactly this, called once a drop there is likely — and
+AppKit takes that off when the drag leaves. Nothing here tracks which one is
+showing or swaps an image mid-drag; three attempts that did, from the source and
+from `draggingEntered`, showed pictures shrinking off the bar, tabs arriving late
+or squashed, and centres off the pointer. What no
 test can reach is how the change looks — a real session cannot be started from one
 (§5), so that part is the demo's. Dropped on the other editor's content it
 goes to the end;

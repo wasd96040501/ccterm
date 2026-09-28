@@ -52,7 +52,8 @@ protocol EditorTabBarDelegate: AnyObject {
 ///   the tab.
 /// - **Out of the bar**, far enough above or below it, the tab leaves as a drag
 ///   session carrying a small picture of its content, centred on the pointer;
-///   the tabs it left close up.
+///   the tabs it left close up. Over a bar, the bar makes it a tab again, the
+///   width of the gap it would drop into.
 /// - **Over a bar** — another editor's, or its own again — it is a tab again, the
 ///   tabs open a gap where it would drop, and it drops into the gap.
 ///
@@ -299,6 +300,15 @@ final class EditorTabBar: NSView, NSDraggingSource {
         slots(for: shownIndices).filter { $0.midX < point.x }.count
     }
 
+    /// The place a tab dropped at `gap` would take: between the tabs either side
+    /// of it, or the track's end.
+    private func gapRect(at gap: Int) -> NSRect {
+        let rects = slots(for: shownIndices, gap: gap)
+        let minX = gap > 0 && gap <= rects.count ? rects[gap - 1].maxX : bounds.minX
+        let maxX = gap < rects.count ? rects[gap].minX : bounds.maxX
+        return NSRect(x: minX, y: bounds.minY, width: maxX - minX, height: bounds.height)
+    }
+
     /// As wide as its title and pin, and no wider: a pinned tab is kept for
     /// reaching, not for reading at length.
     private static func pinnedWidth(for title: String) -> CGFloat {
@@ -517,37 +527,25 @@ final class EditorTabBar: NSView, NSDraggingSource {
     // MARK: - Dragging out of the bar
 
     /// Pulled out, the tab leaves as a picture of its content, centred on the
-    /// pointer; over a bar it is the tab again (`draggingEntered(_:)`).
+    /// pointer — what the drag shows wherever no bar has said otherwise. Over a
+    /// bar it is a tab again, which is the bar's to say
+    /// (`updateDraggingItemsForDrag(_:)`), and AppKit returns it to this when the
+    /// drag leaves.
     ///
-    /// **Every image the drag carries is one size**, the larger of the two, with
-    /// each drawn in the middle. AppKit turns one image into the next by scaling
-    /// it into the new one's frame about the old one's centre — measured, a
-    /// thumbnail squashed into a tab's shape with its card showing, a tab
-    /// narrowing into a thumbnail, and a centre left wherever along the tab it
-    /// had been picked up. Of one size, one replaces the other where it is.
+    /// In formation `.none`: the items keep the frame they are given. The
+    /// formation is what a drag looks like away from its source and from any
+    /// destination, and left to the system a picture shrank as it left the bar.
     private func beginDraggingSession(tabAt index: Int, with event: NSEvent) {
         let thumbnail = Self.thumbnail(of: delegate?.tabBar(self, draggingImageForTabAt: index))
-        let tab = rect(forTabAt: index).insetBy(dx: 2, dy: 2).size
-        let size = NSSize(
-            width: max(thumbnail.size.width, tab.width), height: max(thumbnail.size.height, tab.height))
         let point = convert(event.locationInWindow, from: nil)
+        let size = thumbnail.size
         let item = NSDraggingItem(pasteboardWriter: EditorTabDrag())
         item.setDraggingFrame(
             NSRect(x: point.x - size.width / 2, y: point.y - size.height / 2, width: size.width, height: size.height),
-            contents: Self.centred(thumbnail, in: size))
+            contents: thumbnail)
         dragWillBegin(tabAt: index)
-        beginDraggingSession(with: [item], event: event, source: self)
-    }
-
-    /// `image` in the middle of a clear image `size` big.
-    private static func centred(_ image: NSImage, in size: NSSize) -> NSImage {
-        NSImage(size: size, flipped: false) { rect in
-            image.draw(
-                in: NSRect(
-                    x: round(rect.midX - image.size.width / 2), y: round(rect.midY - image.size.height / 2),
-                    width: image.size.width, height: image.size.height))
-            return true
-        }
+        let session = beginDraggingSession(with: [item], event: event, source: self)
+        session.draggingFormation = .none
     }
 
     /// The bar's half of a tab leaving it as a drag session: the tab is out, and
@@ -649,22 +647,29 @@ final class EditorTabBar: NSView, NSDraggingSource {
 
     // MARK: NSDraggingDestination
 
-    /// Over a bar, the picture is the tab again: the tab as it was in its own
-    /// bar, in the same place in the same size of image as the picture, so one
-    /// replaces the other under the pointer. A destination's change to the image
-    /// lasts while the drag is over it: AppKit takes it off on the way out.
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        let operation = draggingUpdated(sender)
-        guard let source = sender.draggingSource as? EditorTabBar, let dragged = source.draggedIndex
-        else { return operation }
-        let tab = Self.dragImage(
-            for: source.items[dragged], size: source.rect(forTabAt: dragged).insetBy(dx: 2, dy: 2).size)
+        draggingUpdated(sender)
+    }
+
+    /// Over the bar, the picture is a tab again: as wide as the gap it would
+    /// drop into, centred on the pointer. Changed here, when AppKit says a drop
+    /// here is likely enough to show, rather than on entering; AppKit takes the
+    /// change off when the drag leaves.
+    override func updateDraggingItemsForDrag(_ sender: NSDraggingInfo?) {
+        guard let sender, let source = sender.draggingSource as? EditorTabBar,
+            let dragged = source.draggedIndex, let gap = gapIndex
+        else { return }
+        let size = gapRect(at: gap).insetBy(dx: 2, dy: 2).size
+        let tab = Self.dragImage(for: source.items[dragged], size: size)
+        let point = convert(sender.draggingLocation, from: nil)
         sender.enumerateDraggingItems(
             options: [], for: self, classes: [NSPasteboardItem.self], searchOptions: [:]
         ) { item, _, _ in
-            item.setDraggingFrame(item.draggingFrame, contents: Self.centred(tab, in: item.draggingFrame.size))
+            item.setDraggingFrame(
+                NSRect(
+                    x: point.x - size.width / 2, y: point.y - size.height / 2, width: size.width, height: size.height),
+                contents: tab)
         }
-        return operation
     }
 
     /// A tab over the bar opens a gap where it would drop.

@@ -3,8 +3,8 @@ import Foundation
 // Conversation, context and tool behavior.
 
 extension SettingsKey where Value == String {
-    /// The output style for responses (`default`, `Explanatory`, or a custom
-    /// style's name).
+    /// The output style for responses, by name
+    /// (``InitializationResult/availableOutputStyles`` lists them).
     public static var outputStyle: Self { Self("outputStyle") }
 
     /// The language Claude answers in (`japanese`, `spanish`, …).
@@ -41,10 +41,10 @@ extension SettingsKey where Value == Bool {
     /// Whether the session suggests a next prompt after each turn.
     public static var promptSuggestionEnabled: Self { Self("promptSuggestionEnabled") }
 
-    /// Whether the todo / task tracking tools are on.
+    /// Whether the todo / task tracking panel is on.
     public static var todoFeatureEnabled: Self { Self("todoFeatureEnabled") }
 
-    /// Whether file suggestions skip `.gitignore`d files. Default `true`.
+    /// Whether the `@` file picker skips `.gitignore`d files. Default `true`.
     public static var respectGitignore: Self { Self("respectGitignore") }
 }
 

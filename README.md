@@ -17,12 +17,11 @@ Prefer to build it yourself? Read on.
 You'll need:
 
 - **macOS 14+** and **Xcode 26.3+** — run `xcodebuild -runFirstLaunch` once after installing.
-- **Go** — the bundled `fzf` submodule is compiled during the build (`brew install go`).
 
-Clone it (submodules and all):
+Clone it:
 
 ```bash
-git clone --recurse-submodules https://github.com/wasd96040501/ccterm.git
+git clone https://github.com/wasd96040501/ccterm.git
 cd ccterm
 ```
 
@@ -42,7 +41,7 @@ make install      # build Release and copy it to /Applications
 make clean        # wipe build artifacts
 ```
 
-Always go through `make` — don't call the scripts under `macos/scripts/` directly. Forgot `--recurse-submodules`? The first `make build` initializes submodules for you.
+Always go through `make` — don't call the scripts under `macos/scripts/` directly.
 
 ## Develop
 

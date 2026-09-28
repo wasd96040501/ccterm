@@ -22,14 +22,6 @@ for arg in "$@"; do
   esac
 done
 
-# --- Prerequisites ---
-
-# Initialize git submodules (fzf) if needed
-if [ ! -f ../thirdparty/fzf/main.go ]; then
-  echo "Initializing git submodules..."
-  git -C .. submodule update --init --recursive
-fi
-
 # --- Build ---
 
 BUILD_LOG="/tmp/ccterm-build-$$.log"

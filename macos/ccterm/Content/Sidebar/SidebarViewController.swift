@@ -297,12 +297,13 @@ extension LibraryNode.Kind {
         }
     }
 
-    /// A glyph's colour: a system colour, as Xcode's navigator gives each
-    /// file type one. The folder icon has its own colours and takes none.
+    /// A glyph's colour, as Xcode's navigator gives each file type one
+    /// (`design/sidebar-icons`). The folder icon has its own colours and
+    /// takes none.
     fileprivate var tintColor: NSColor? {
         switch self {
         case .project, .subagents: nil
-        case .session: .systemOrange
+        case .session: NSColor(resource: .sidebarCoral)
         case .agent: .systemGray
         case .workflow: .systemIndigo
         }

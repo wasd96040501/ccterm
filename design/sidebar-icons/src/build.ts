@@ -11,25 +11,28 @@ const ROOT = resolve(import.meta.dir, "../../..")
 const ASSETS = join(ROOT, "macos/ccterm/Assets.xcassets/Sidebar")
 const SHEET = resolve(import.meta.dir, "../index.html")
 
-// MARK: - Colour: the system's, as Xcode colours its file types
+// MARK: - Colour: as Xcode colours its file types
 //
-// Xcode's navigator tints each file type's glyph with a system colour (its
-// DVTUserInterfaceKit colour sets doc-orange, doc-gray and doc-purple are
-// systemOrange, systemGray and systemIndigo), made to sit beside the system
-// folder in both appearances. Its navigator reads blue folders and orange
-// Swift files, complements, with the rest quieter. So here: a conversation,
-// the row there is most of, is orange; a subagent, nested and secondary, is
-// grey; a workflow, rare, is the one cool accent. The app names them
-// (`NSColor.systemOrange`, …) and the system resolves each per appearance.
-// The values here are only for the sheet: macOS 26's.
+// Xcode's navigator tints each file type's glyph with a colour set from its
+// DVTUserInterfaceKit catalog, made to sit beside the system folder in both
+// appearances: mostly system colours (doc-gray and doc-purple are systemGray
+// and systemIndigo), plus a few of its own (doc-swift). Its navigator reads
+// blue folders and orange Swift files, complements, with the rest quieter.
+// So here: a conversation, the row there is most of, is a coral of our own —
+// systemOrange is too bright for so many rows — the way Swift has its own;
+// a subagent, nested and secondary, is grey; a workflow, rare, is the one
+// cool accent. A system colour is named by the app (`NSColor.systemGray`)
+// and resolved per appearance; the values here are only for the sheet,
+// macOS 26's. A colour of our own becomes a colour set, `asset`.
 
-type SystemColour = { name: string; light: string; dark: string }
+type Colour = { name: string; light: string; dark: string; asset?: string }
 
-const SYSTEM = {
-  orange: { name: "systemOrange", light: "#ff8d28", dark: "#ff9230" },
+const COLOURS = {
+  // oklch(0.70 0.155 50): the folder's tab lightness, clean.
+  coral: { name: "coral", light: "#e97d39", dark: "#e97d39", asset: "SidebarCoral" },
   gray: { name: "systemGray", light: "#8e8e93", dark: "#98989d" },
   indigo: { name: "systemIndigo", light: "#6155f5", dark: "#6d7cff" },
-} satisfies Record<string, SystemColour>
+} satisfies Record<string, Colour>
 
 // MARK: - Geometry: Lamé curves |x/a|ⁿ + |y/b|ⁿ = 1 on the 16-pt grid, y down
 
@@ -64,7 +67,7 @@ type Glyph = {
   geometry: string
   fill: string
   stroke?: string
-  colour: SystemColour
+  colour: Colour
 }
 
 const GLYPHS: Glyph[] = [
@@ -79,7 +82,7 @@ const GLYPHS: Glyph[] = [
       "M3.4 10.6L8.4 11.4L3.6 14.6Q3.1 14.9 3.1 14.3Z" +
       slot(4.75, 11.25, 5.5, 1.5) +
       slot(4.75, 8.75, 8.5, 1.5),
-    colour: SYSTEM.orange,
+    colour: COLOURS.coral,
   },
   {
     asset: "SidebarAgent",
@@ -88,7 +91,7 @@ const GLYPHS: Glyph[] = [
     geometry:
       "Lamé star n = 0.8, radius 7.5: four cusps on the axes, sides concave, between the astroid (n = ⅔) and the rhombus (n = 1).",
     fill: lame(8, 8, 7.5, 7.5, 0.8),
-    colour: SYSTEM.gray,
+    colour: COLOURS.gray,
   },
   {
     asset: "SidebarWorkflow",
@@ -98,7 +101,7 @@ const GLYPHS: Glyph[] = [
       "Two squircle nodes n = 4, 5.5 wide, on the diagonal 8 pt apart; one 1.5-pt connector turning through a 2.5-pt arc.",
     fill: lame(4, 4, 2.75, 2.75, 4) + lame(12, 12, 2.75, 2.75, 4),
     stroke: "M4 6.75V9.5A2.5 2.5 0 0 0 6.5 12H9.25",
-    colour: SYSTEM.indigo,
+    colour: COLOURS.indigo,
   },
 ]
 
@@ -131,6 +134,25 @@ for (const glyph of GLYPHS) {
       images: [{ filename: file, idiom: "universal" }],
       info: INFO,
       properties: { "preserves-vector-representation": true, "template-rendering-intent": "template" },
+    }),
+  )
+}
+for (const colour of Object.values(COLOURS) as Colour[]) {
+  if (!colour.asset) continue
+  const set = join(ASSETS, `${colour.asset}.colorset`)
+  mkdirSync(set)
+  const components = (hex: string) => {
+    const [red, green, blue] = [1, 3, 5].map((i) => `0x${hex.slice(i, i + 2).toUpperCase()}`)
+    return { "color-space": "srgb", components: { alpha: "1.000", red, green, blue } }
+  }
+  writeFileSync(
+    join(set, "Contents.json"),
+    json({
+      colors: [
+        { color: components(colour.light), idiom: "universal" },
+        { appearances: [{ appearance: "luminosity", value: "dark" }], color: components(colour.dark), idiom: "universal" },
+      ],
+      info: INFO,
     }),
   )
 }
@@ -202,7 +224,7 @@ const cards = GLYPHS.map((glyph) => {
   ${construction(glyph, light)}
   <div class="title"><h2>${glyph.name}</h2><span>${glyph.role} · <code>${glyph.asset}</code></span></div>
   <p>${glyph.geometry}</p>
-  <div class="swatch"><i style="background:${light}"></i><i style="background:${dark}"></i><code>${name} · ${light} light · ${dark} dark</code></div>
+  <div class="swatch"><i style="background:${light}"></i><i style="background:${dark}"></i><code>${name} · ${light === dark ? light : `${light} light · ${dark} dark`}</code></div>
 </section>`
 }).join("\n")
 
@@ -239,7 +261,7 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 <main>
 <header>
 <h1>Sidebar icons</h1>
-<p class="lede">Every outline is a Lamé curve |x/a|ⁿ + |y/b|ⁿ = 1 on the 16-pt grid · every colour is a system colour, the ones Xcode gives its file types</p>
+<p class="lede">Every outline is a Lamé curve |x/a|ⁿ + |y/b|ⁿ = 1 on the 16-pt grid · colours as Xcode gives its file types: system colours, and one of our own the way Swift has its own</p>
 </header>
 <div class="cards">
 ${cards}

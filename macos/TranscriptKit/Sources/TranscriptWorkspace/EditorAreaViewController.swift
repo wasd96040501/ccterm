@@ -24,6 +24,11 @@ import AppKit
 /// inside, or holding the first responder — and is reported to the delegate
 /// together with the tab that editor shows. It is what a window's commands aim
 /// at: ⌘F, a new tab, a tool acting on "this transcript".
+///
+/// **The area answers its own commands** — `goBack(_:)`, `goForward(_:)`,
+/// `closeTab(_:)` — as responder actions aimed at the active editor, and
+/// validates them. A host puts them on a menu or a toolbar and implements none
+/// of them.
 @MainActor
 public final class EditorAreaViewController: NSSplitViewController {
 
@@ -106,9 +111,29 @@ public final class EditorAreaViewController: NSSplitViewController {
         }
     }
 
+    /// Selects the open tab whose `NSTabViewItem.identifier` equals `identifier`
+    /// (compared as `AnyHashable`, as the history compares them), in whichever
+    /// editor has it, and answers whether there was one. The active editor stays
+    /// where the reader is: the tab is brought forward in its own editor.
+    /// `pinning` also pins it if it is its editor's temporary tab — opening what
+    /// is already showing there, as a double-click in Xcode's navigator does.
+    @discardableResult
+    public func selectTabViewItem(withIdentifier identifier: Any, pinning: Bool = false) -> Bool {
+        guard let identifier = identifier as? AnyHashable else { return false }
+        for group in groups {
+            guard let index = group.tabViewItems.firstIndex(where: { $0.identifier as? AnyHashable == identifier })
+            else { continue }
+            group.selectedTabViewItemIndex = index
+            if pinning, group.previewTabViewItem === group.tabViewItems[index] { group.previewTabViewItem = nil }
+            return true
+        }
+        return false
+    }
+
     /// Lets things of `types` be dropped on the editors — beside tabs dragged
-    /// between them, which need nothing registered. The delegate makes each
-    /// drop's tab in `editorArea(_:tabViewItemForDrop:)`.
+    /// between them, which need nothing registered. The delegate names what each
+    /// drop shows in `editorArea(_:identifierForDrop:)` and makes its tab in
+    /// `editorArea(_:tabViewItemWithIdentifier:)`.
     public func registerForDraggedTypes(_ types: [NSPasteboard.PasteboardType]) {
         draggedTypes = types
         groups.forEach { $0.acceptDrops(of: types) }
@@ -131,12 +156,12 @@ public final class EditorAreaViewController: NSSplitViewController {
     }
 
     /// Every editor coming passes through here — `addSplitViewItem` and setting
-    /// `splitViewItems` included — and takes what the area takes.
+    /// `splitViewItems` included — reports to the area, and takes what it takes.
     public override func insertSplitViewItem(_ splitViewItem: NSSplitViewItem, at index: Int) {
         super.insertSplitViewItem(splitViewItem, at: index)
-        if !draggedTypes.isEmpty {
-            (splitViewItem.viewController as? EditorGroupViewController)?.acceptDrops(of: draggedTypes)
-        }
+        guard let group = splitViewItem.viewController as? EditorGroupViewController else { return }
+        group.delegate = self
+        if !draggedTypes.isEmpty { group.acceptDrops(of: draggedTypes) }
     }
 
     /// Makes `group` the active editor.
@@ -146,23 +171,47 @@ public final class EditorAreaViewController: NSSplitViewController {
         reportActiveViewController()
     }
 
-    /// Called by a group after every change to its tabs.
-    func groupDidChangeTabs(_ group: EditorGroupViewController) {
-        if group.tabViewItems.isEmpty, groups.count > 1,
-            let item = splitViewItems.first(where: { $0.viewController === group })
-        {
-            removeSplitViewItem(item)
-            if activeGroup === group, let remaining = groups.first { activeGroup = remaining }
-        }
-        reportActiveViewController()
-    }
-
     private func reportActiveViewController() {
         let current = activeViewController
         guard !hasReported || current !== reportedViewController else { return }
         hasReported = true
         reportedViewController = current
         delegate?.editorArea(self, didActivate: current)
+    }
+
+    // MARK: - Commands
+
+    /// Xcode's ⌘W: closes the active editor's selected tab, or the window when
+    /// there is no tab to close. A standard responder action, so a nil-targeted
+    /// menu item finds it from anything inside the area.
+    @objc public func closeTab(_ sender: Any?) {
+        guard let item = activeGroup.selectedTabViewItem else {
+            view.window?.performClose(sender)
+            return
+        }
+        activeGroup.removeTabViewItem(item)
+    }
+
+    /// Back through the active editor's history — a toolbar's back button.
+    @objc public func goBack(_ sender: Any?) {
+        activeGroup.goBack()
+    }
+
+    /// Forward through the active editor's history — a toolbar's forward button.
+    @objc public func goForward(_ sender: Any?) {
+        activeGroup.goForward()
+    }
+
+    /// Back and forward while the active editor has somewhere to go; Close Tab
+    /// while there is a tab or a window to close. Menu items and toolbar items
+    /// (through `validateToolbarItem(_:)`) alike are asked here, after every event.
+    public override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        switch item.action {
+        case #selector(goBack(_:)): return activeGroup.canGoBack
+        case #selector(goForward(_:)): return activeGroup.canGoForward
+        case #selector(closeTab(_:)): return activeGroup.selectedTabViewItem != nil || view.window != nil
+        default: return super.validateUserInterfaceItem(item)
+        }
     }
 
     // MARK: - Moving tabs between editors
@@ -184,28 +233,14 @@ public final class EditorAreaViewController: NSSplitViewController {
     }
 
     /// Moves a tab to the other editor, opening one on the right if there is
-    /// only this one.
+    /// only this one. Refused for an editor's only tab when it is the only
+    /// editor: that would leave it empty and closing — the same layout, moved
+    /// over.
     func moveTabToOtherGroup(at index: Int, of source: EditorGroupViewController) {
-        guard canMoveTab(outOf: source),
+        guard groups.count > 1 || source.tabViewItems.count > 1,
             let destination = groups.first(where: { $0 !== source }) ?? addGroup()
         else { return }
         moveTab(at: index, of: source, to: destination, at: destination.tabViewItems.count)
-    }
-
-    /// Whether a tab can leave `group` for the other editor. Moving an editor's
-    /// only tab into a new editor beside it would leave the first one empty and
-    /// closing — the same layout, moved over — so that one is refused.
-    func canMoveTab(outOf group: EditorGroupViewController) -> Bool {
-        groups.count > 1 || group.tabViewItems.count > 1
-    }
-
-    /// What the tab menu calls moving a tab out of `group`.
-    func moveMenuTitle(forTabIn group: EditorGroupViewController) -> String? {
-        guard let index = groups.firstIndex(where: { $0 === group }) else { return nil }
-        if groups.count == 1 { return String(localized: "Move to New Editor on Right", bundle: .module) }
-        return index == 0
-            ? String(localized: "Move to Editor on Right", bundle: .module)
-            : String(localized: "Move to Editor on Left", bundle: .module)
     }
 
     // MARK: - Following the reader
@@ -250,5 +285,72 @@ public final class EditorAreaViewController: NSSplitViewController {
             })
         else { return }
         activate(group)
+    }
+}
+
+extension EditorAreaViewController: EditorGroupViewControllerDelegate {
+
+    func editorGroupWasChosen(_ group: EditorGroupViewController) {
+        activate(group)
+    }
+
+    /// Closes an editor that ran out of tabs, unless it is the only one.
+    func editorGroupDidChangeTabs(_ group: EditorGroupViewController) {
+        if group.tabViewItems.isEmpty, groups.count > 1,
+            let item = splitViewItems.first(where: { $0.viewController === group })
+        {
+            removeSplitViewItem(item)
+            if activeGroup === group, let remaining = groups.first { activeGroup = remaining }
+        }
+        reportActiveViewController()
+    }
+
+    func editorGroup(_ group: EditorGroupViewController, willClose viewController: NSViewController) {
+        delegate?.editorArea(self, willClose: viewController)
+    }
+
+    func editorGroup(
+        _ group: EditorGroupViewController, tabViewItemWithIdentifier identifier: AnyHashable
+    ) -> NSTabViewItem? {
+        delegate?.editorArea(self, tabViewItemWithIdentifier: identifier.base)
+    }
+
+    func editorGroup(
+        _ group: EditorGroupViewController, tabViewItemForDrop draggingInfo: NSDraggingInfo
+    ) -> NSTabViewItem? {
+        guard let delegate, let identifier = delegate.editorArea(self, identifierForDrop: draggingInfo) else {
+            return nil
+        }
+        return delegate.editorArea(self, tabViewItemWithIdentifier: identifier)
+    }
+
+    func position(of group: EditorGroupViewController) -> EditorGroupViewController.Position {
+        guard groups.count > 1 else { return .only }
+        return groups.first === group ? .left : .right
+    }
+
+    func editorGroup(
+        _ group: EditorGroupViewController, moveTabAt index: Int, of source: EditorGroupViewController,
+        to position: Int
+    ) -> Int {
+        moveTab(at: index, of: source, to: group, at: position)
+    }
+
+    func editorGroup(_ group: EditorGroupViewController, moveTabToOtherGroupAt index: Int) {
+        moveTabToOtherGroup(at: index, of: group)
+    }
+
+    func editorGroup(_ group: EditorGroupViewController, openNewGroupWith item: NSTabViewItem) {
+        addGroup(with: item)
+    }
+}
+
+/// A toolbar item asks its target `validateToolbarItem(_:)` and nothing else —
+/// measured: without this, an item aimed at the area stays enabled whatever
+/// `validateUserInterfaceItem(_:)` answers. So it is passed to the one switch
+/// menu items are asked.
+extension EditorAreaViewController: NSToolbarItemValidation {
+    public func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
+        validateUserInterfaceItem(item)
     }
 }

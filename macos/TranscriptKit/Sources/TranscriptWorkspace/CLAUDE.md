@@ -1,12 +1,14 @@
 # TranscriptWorkspace
 
-An IDE-shaped area of up to two editors, left and right, each with its own tabs. **It depends on nothing in the package**, not even `TranscriptKit`: a tab holds any `NSViewController` and the compiler guarantees the area can't reach into it. A transcript doesn't know it's in a tab.
+An IDE-shaped area of up to two editors, left and right, each with its own tabs — a split and tabs, nothing else; what a tab puts over its content (a find bar) is the tab's. **It depends on nothing in the package**, not even `TranscriptKit`: a tab holds any `NSViewController` and the compiler guarantees the area can't reach into it. A transcript doesn't know it's in a tab.
 
 ```
 EditorAreaViewController      NSSplitViewController — the divider, which editor is active
 └─ EditorGroupViewController  one per editor — its tab bar + an NSTabViewController
    └─ NSViewController        one per tab — never looked inside
 ```
+
+**Dependencies run parent to child.** An editor never names the area: it reports up through its weak, internal `EditorGroupViewControllerDelegate`, which only the area implements — so moving a tab across editors, which editor is active, closing an editor that ran out of tabs and every call to the host's delegate live in the area. Only the area makes editors (`EditorGroupViewController.init` is internal).
 
 ## Structure is AppKit's
 
@@ -15,7 +17,8 @@ EditorAreaViewController      NSSplitViewController — the divider, which edito
 - **`EditorTabBar` is built from what `NSSegmentedControl`'s `.tabs` role is made of** (track `secondarySystemFill`, selected tab an `NSGlassEffectView` inset 2pt) because segments can't be dragged. It matches the control pixel for pixel in both appearances and inactive windows — measure against the real control before changing how a tab looks.
 - **The bar is there while there are tabs**, one or more: it is where the tabs are, not a control that appears when there is a choice; an editor with none shows no empty bar. Showing and hiding it moves nothing. It hangs from the group's `safeAreaLayoutGuide`, so under a window's toolbar (full-size content view) it sits below the titlebar — which takes clicks for moving and zooming the window, and would take a tab's drag.
 - **A tab is a view placed by two constraints** (leading + width), one view per tab identity, so a reorder moves views instead of relabelling them. Slides animate those constants through their animators. Don't use `animator().frame` — on a layer-backed view it lays out once at the final size, so the glass jumps to its end width while the title slides.
-- **The delegate is AppKit-shaped:** `editorArea(_:didActivate:)`, `editorArea(_:willClose:)`, `editorArea(_:tabViewItemForDrop:)` and `editorArea(_:tabViewItemWithIdentifier:)`, all defaulted. `willClose` is the container's `prepareForRemoval()` hook — a tab's owner stops its stream or load there, before the controller leaves the tree.
+- **The delegate is AppKit-shaped:** `editorArea(_:didActivate:)`, `editorArea(_:willClose:)`, `editorArea(_:identifierForDrop:)` and `editorArea(_:tabViewItemWithIdentifier:)`, all defaulted. **One factory makes every tab the area asks for** — identifier → tab, for history and drops alike; a drop only says what it names. `willClose` is the container's `prepareForRemoval()` hook — a tab's owner stops its stream or load there, before the controller leaves the tree.
+- **The area answers its own commands.** `goBack(_:)`, `goForward(_:)` and `closeTab(_:)` are responder actions on `EditorAreaViewController`, aimed at the active editor and validated in its one `validateUserInterfaceItem(_:)` — a toolbar item asks `validateToolbarItem(_:)` instead and never falls back (measured), so that forwards to the same switch. `closeTab:` with no tab to close closes the window (Xcode's ⌘W). A host puts the items on its menu or toolbar and implements none of it; `selectTabViewItem(withIdentifier:pinning:)` brings forward an open tab in whichever editor has it, pinning a temporary one when asked.
 
 ## Behaviour (Xcode's unless noted)
 
@@ -32,4 +35,3 @@ EditorAreaViewController      NSSplitViewController — the divider, which edito
 ## What a tab's owner routes itself
 
 - **⌘F is not a responder-chain action a view controller answers** — `performTextFinderAction:` is answered only by `NSTextView` (field editor). The demo's Find menu targets its window controller, which forwards to the active editor's tab. That's host logic and stays in the host.
-- **`FindBarView`** is a view + delegate: it reports the query and `NSTextFinder.Action`s, is told the count, and knows nothing about what it searches. No Aa / Contains / replace controls — `TranscriptView.find(_:)` takes no options, and controls that do nothing are worse than none. Return / ⇧Return step; Escape / Done hide; the count reads "No matches" / "1 match" / "N matches"; arrows enable only when there's somewhere to go.

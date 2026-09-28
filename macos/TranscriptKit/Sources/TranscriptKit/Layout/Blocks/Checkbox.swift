@@ -16,7 +16,7 @@ import AppKit
 /// fraction of 13 and multiplied back by whatever `size` is: at 13 this is
 /// Chromium pixel for pixel, and at any other size it is the same drawing
 /// scaled rather than a nearby different one. Which size to ask for is
-/// `ListBuilder`'s call, not this type's.
+/// `MarkdownListBuilder`'s call, not this type's.
 ///
 /// A 1:1 port rather than an approximation, because "looks about right" is how a
 /// control ends up subtly wrong at one size and badly wrong at another. The

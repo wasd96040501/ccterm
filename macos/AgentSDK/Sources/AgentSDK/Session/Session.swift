@@ -69,10 +69,10 @@ public final class Session: @unchecked Sendable {
 
     /// The CLI's session id, once known. Changes when the CLI forks or
     /// clears the conversation.
-    public var sessionID: String? { state.withLock { $0.sessionID } }
+    var sessionID: String? { state.withLock { $0.sessionID } }
 
     /// `true` between a successful ``start()`` and the process exiting.
-    public var isRunning: Bool {
+    var isRunning: Bool {
         state.withLock { if case .running = $0.phase { return true } else { return false } }
     }
 
@@ -87,7 +87,8 @@ public final class Session: @unchecked Sendable {
         }
         let process: CLIProcess
         do {
-            process = try await Task.detached { [configuration] in try configuration.makeProcess() }.value
+            process = try await Task.detached { [configuration] in CLIProcess(launch: try configuration.launch()) }
+                .value
         } catch {
             finish(Termination(exitCode: -1, stderr: error.localizedDescription))
             throw error
@@ -153,16 +154,16 @@ public final class Session: @unchecked Sendable {
     }
 
     /// Switches the model; `nil` restores the default.
-    public func setModel(_ model: String?) async throws {
+    func setModel(_ model: String?) async throws {
         _ = try await sendControlRequest("set_model", ["model": model.map(JSONValue.string) ?? .null])
     }
 
-    public func setPermissionMode(_ mode: PermissionMode) async throws {
+    func setPermissionMode(_ mode: PermissionMode) async throws {
         _ = try await sendControlRequest("set_permission_mode", ["mode": .string(mode.rawValue)])
     }
 
     /// Caps thinking tokens; `nil` removes the cap.
-    public func setMaxThinkingTokens(_ tokens: Int?) async throws {
+    func setMaxThinkingTokens(_ tokens: Int?) async throws {
         _ = try await sendControlRequest(
             "set_max_thinking_tokens", ["max_thinking_tokens": tokens.map { .number(Double($0)) } ?? .null])
     }
@@ -213,14 +214,25 @@ public final class Session: @unchecked Sendable {
         return SideQuestionAnswer(response: text, synthetic: response["synthetic"]?.boolValue ?? false)
     }
 
+    /// Takes the conversation back to before the prompt whose uuid is
+    /// `messageUUID` (``UserInput/uuid``), as editing that prompt does. The
+    /// CLI refuses while the turn it just reported is still winding down;
+    /// ``RewindResult/reason`` says so.
+    public func rewindConversation(to messageUUID: String) async throws -> RewindResult {
+        let response = try await sendControlRequest(
+            "rewind_conversation", ["target_message_uuid": .string(messageUUID)])
+        return RewindResult(
+            rewound: response["rewound"]?.boolValue ?? false, reason: response["reason"]?.stringValue)
+    }
+
     /// Stops a background task (see ``SystemMessage/taskStarted(_:)``).
-    public func stopTask(id: String) async throws {
+    func stopTask(id: String) async throws {
         _ = try await sendControlRequest("stop_task", ["task_id": .string(id)])
     }
 
-    /// Sends any control request and returns the CLI's response payload
-    /// (`.null` when it has none). For requests this type has no method for.
-    public func sendControlRequest(_ subtype: String, _ params: [String: JSONValue] = [:]) async throws -> JSONValue {
+    /// Sends a control request and returns the CLI's response payload
+    /// (`.null` when it has none). The typed methods above are built on it.
+    func sendControlRequest(_ subtype: String, _ params: [String: JSONValue] = [:]) async throws -> JSONValue {
         let id = state.withLock { s -> String in
             s.nextRequestID += 1
             return "req_\(s.nextRequestID)"

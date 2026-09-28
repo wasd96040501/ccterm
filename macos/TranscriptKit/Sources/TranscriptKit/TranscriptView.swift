@@ -13,10 +13,15 @@ import AppKit
 ///
 /// Inside is an `NSTableView` in an `NSScrollView`, its content centred.
 ///
-/// `TranscriptView` is that table's data source and delegate. Rows carrying
-/// `.markdown` / `.userMessage` it answers itself — measuring and
-/// drawing them; `.view` rows it forwards to the host's
+/// `TranscriptView` answers that table's data source and delegate (through
+/// `TableViewAdapter`). Rows carrying `.markdown` / `.userMessage` it answers
+/// itself — measuring and drawing them; `.view` rows it forwards to the host's
 /// `TranscriptViewDelegate` (`heightOfRow`, `viewForRow`).
+///
+/// What is not table glue lives in collaborators it owns: `FindSession` (a
+/// find), `SelectionTracker` (the text selection) and `RemeasureScheduler` (the
+/// off-screen re-measure after a width change), with `RowCache` holding the
+/// measurements all of them share.
 ///
 /// `NSTableView` asks for the height of **far more rows than are visible**, but
 /// not all of them: measured, a ten-thousand-row reload asked about 305, and the
@@ -63,7 +68,7 @@ import AppKit
 /// scroll offset into the layout producing it — so that half is unanchored, and
 /// the content settles where the new width puts it. The rest of the transcript is
 /// corrected afterwards, on later turns and in batches (see
-/// `beginRemeasuringOffscreenRows(at:)`), and every one of those *is* anchored:
+/// `RemeasureScheduler`), and every one of those *is* anchored:
 /// they land nowhere near the tile, and a batch changing the height of rows above
 /// the viewport is exactly what rule 2 is for.
 ///
@@ -160,7 +165,7 @@ public final class TranscriptView: NSView {
     /// what it is believed against, which is what lets the cache notice a content
     /// change instead of being told about one. **Nothing here names a recipe** —
     /// which case gets built how lives on the case, in
-    /// `TranscriptRowContent.entry(width:reusing:)`, so that the background path
+    /// `RowCache.Entry.init(measuring:width:reusing:)`, so that the background path
     /// and this one cannot describe a row differently.
     private func measuredBlock(for row: TranscriptRow) -> MeasuredBlock? {
         rowCache.measured(for: row, width: contentWidth)
@@ -169,7 +174,7 @@ public final class TranscriptView: NSView {
     /// How tall row `row` is. `.view` rows are the delegate's to measure; the
     /// self-drawn cases the transcript measures itself, from the same tree it
     /// will later draw.
-    fileprivate func height(ofRow row: Int) -> CGFloat {
+    func height(ofRow row: Int) -> CGFloat {
         let answer: CGFloat
         switch dataSource?.transcriptView(self, rowAt: row) {
         case .some(let described) where described.content == .view:
@@ -202,7 +207,7 @@ public final class TranscriptView: NSView {
 
     /// The cell for row `row`: the transcript's own cell view, with either a
     /// host-supplied view or the transcript's own self-drawn one inside it.
-    fileprivate func view(forRow row: Int) -> NSView? {
+    func view(forRow row: Int) -> NSView? {
         guard let described = dataSource?.transcriptView(self, rowAt: row) else {
             return nil
         }
@@ -228,7 +233,7 @@ public final class TranscriptView: NSView {
         // A row arriving is a row the find may have matches in. Nothing is handed
         // to the view — the overlay asks every row on screen where its matches are
         // when it next lays out, so a recycled view has nothing stale to carry.
-        setNeedsFindLayout()
+        findSession.setNeedsFindLayout()
         return cell
     }
 
@@ -236,65 +241,48 @@ public final class TranscriptView: NSView {
     ///
     /// One path for every self-drawn case rather than one per case: what differs
     /// between a document and a user's bubble is the tree, and the tree is settled
-    /// by the time this runs. A bubble carries no links today, so three of these
-    /// four lines do nothing for it — which is the point. Nothing here has to know
-    /// which case it is serving, so nothing here has to be revisited when another
-    /// one lands.
+    /// by the time this runs. Nothing here has to know which case it is serving,
+    /// so nothing here has to be revisited when another one lands.
     private func blockView(
         in cell: TranscriptCellView, showing block: MeasuredBlock, forRow row: Int
     ) -> BlockView {
         // Recycled through the cell it was already installed in, so a row
-        // scrolling back into view rebuilds no constraints. Falls back to a fresh
-        // instance when the pool hands over a cell that was serving a `.view` row.
-        let view = cell.hostedView as? BlockView ?? BlockView()
+        // scrolling back into view rebuilds no constraints. A fresh one only when
+        // the pool hands over a cell that was serving a `.view` row — and that is
+        // the one moment its delegate is set.
+        let view = cell.hostedView as? BlockView ?? makeBlockView()
         view.configure(with: block)
         // Its part of the selection — the row may have scrolled out mid-selection
         // and be coming back, or be a new row landing inside one.
-        view.selectedRange = selection?.range(inRow: row, length: block.length)
-        // Re-bound on every pass rather than once at construction: the view is
-        // recycled, and `row` is captured only as the fallback for a lookup that
-        // can fail once the view has left the table.
-        view.onLinkActivated = { [weak self] view, link in
-            guard let self else { return }
-            let current = self.row(for: view)
-            switch link.destination {
-            case .url(let url):
-                self.delegate?.transcriptView(
-                    self, didActivate: url, inRow: current >= 0 ? current : row)
-
-            case .more:
-                self.delegate?.transcriptView(
-                    self, didActivateMoreInRow: current >= 0 ? current : row)
-            }
-        }
-        view.onLinkHovered = { [weak self] view, url, point in
-            guard let self else { return }
-            let current = self.row(for: view)
-            self.delegate?.transcriptView(
-                self, didHover: url, at: self.convert(point, from: view),
-                inRow: current >= 0 ? current : row)
-        }
-        // Not `delegate?.transcriptView(…) ?? menu`: optional-chaining a method
-        // that itself returns an optional flattens the two, so a host answering
-        // "show no menu" would be indistinguishable from having no delegate — and
-        // would silently get the default menu instead.
-        view.onContextMenu = { [weak self] view, menu, event in
-            guard let self else { return menu }
-            // Before the host sees the menu: what it acts on is decided here.
-            self.selectForContextMenu(with: event)
-            guard let delegate = self.delegate else { return menu }
-            let current = self.row(for: view)
-            return delegate.transcriptView(
-                self, menu: menu, forRow: current >= 0 ? current : row)
-        }
+        view.selectedRange = selectionTracker.range(inRow: row, length: block.length)
+        boundRows.setObject(row as NSNumber, forKey: view)
         return view
+    }
+
+    private func makeBlockView() -> BlockView {
+        let view = BlockView()
+        view.delegate = self
+        return view
+    }
+
+    /// The row each self-drawn view was last bound to, for the one moment
+    /// `row(for:)` cannot answer: a view that has already left the table — the
+    /// hover it was showing ends as it goes, and that report still names a row.
+    /// Weak keys, so a view the pool lets go takes its entry with it.
+    private let boundRows = NSMapTable<BlockView, NSNumber>.weakToStrongObjects()
+
+    /// The row `view` is showing now, or the one it was last bound to once it has
+    /// left the table.
+    fileprivate func row(of view: BlockView) -> Int {
+        let current = row(for: view)
+        return current >= 0 ? current : boundRows.object(forKey: view)?.intValue ?? current
     }
 
     /// Reports the row leaving the viewport. What goes back into the pool is the
     /// cell, but what the host has work to stop on is the view it supplied — so
     /// that is what it hears about.
-    fileprivate func didRemove(_ rowView: NSTableRowView, forRow row: Int) {
-        setNeedsFindLayout()
+    func didRemove(_ rowView: NSTableRowView, forRow row: Int) {
+        findSession.setNeedsFindLayout()
         guard let cell = rowView.view(atColumn: 0) as? TranscriptCellView,
             let hosted = cell.hostedView,
             // A self-drawn row's view is the transcript's own. Reporting it
@@ -380,21 +368,12 @@ public final class TranscriptView: NSView {
 
     private static let columnIdentifier = NSUserInterfaceItemIdentifier("TranscriptKit.column")
 
-    /// A find's presentation — the dimming, the lit matches, the current one's
-    /// bubble. Mounted once, as a floating subview of the scroll view, and hidden
-    /// while no find is up. See `FindOverlayView`.
-    private let findOverlay: FindOverlayView = {
-        let overlay = FindOverlayView()
-        overlay.isHidden = true
-        return overlay
-    }()
-
     /// Answers the table's data source and delegate callbacks on the
     /// transcript's behalf, so that AppKit's table protocols stay off the
     /// package's public surface — and so a host can't be handed the transcript
     /// as a data source for a table of its own. Owned here; the table refers to
     /// it weakly.
-    private lazy var tableAdapter = TableViewAdapter(transcript: self)
+    private lazy var tableAdapter = TableViewAdapter(owner: self)
 
     // MARK: - Lifecycle
 
@@ -403,7 +382,7 @@ public final class TranscriptView: NSView {
 
         // Hierarchy.
         scrollView.documentView = tableView
-        scrollView.addFloatingSubview(findOverlay, for: .horizontal)
+        scrollView.addFloatingSubview(findSession.overlay, for: .horizontal)
         addSubview(scrollView)
 
         // Constraints.
@@ -430,13 +409,13 @@ public final class TranscriptView: NSView {
             self, selector: #selector(clipViewFrameDidChange),
             name: NSView.frameDidChangeNotification, object: scrollView.contentView)
 
-        // A find's overlay covers what is on screen; see `placeFindOverlay()`.
+        // A find's overlay covers what is on screen; see
+        // `FindSession.placeFindOverlay()`.
         scrollView.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(
             self, selector: #selector(clipViewBoundsDidChange),
             name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
-        findOverlay.rows = { [weak self] in self?.findRowsOnScreen() ?? [] }
-        tableView.transcript = self
+        tableView.owner = self
     }
 
     deinit {
@@ -481,7 +460,10 @@ public final class TranscriptView: NSView {
     /// with its edges clipped — the trade a block makes when it has a width it
     /// cannot usefully go under (a table, a code block). `0` means it always
     /// follows.
-    public var minContentWidth: CGFloat = 0 {
+    ///
+    /// Internal: no host sets one (§3). It becomes public the day one does, as
+    /// `maxContentWidth`'s counterpart.
+    var minContentWidth: CGFloat = 0 {
         didSet { contentWidthBoundsChanged() }
     }
 
@@ -508,7 +490,7 @@ public final class TranscriptView: NSView {
     /// every tile, so the table's width is a copy and the clip's is the original.
     /// Reading the original is what lets the invalidation below run before the
     /// table has laid out, instead of during.
-    private var contentWidth: CGFloat {
+    var contentWidth: CGFloat {
         TranscriptCellView.contentWidth(
             forRowWidth: scrollView.contentView.bounds.width,
             minWidth: minContentWidth,
@@ -578,8 +560,8 @@ public final class TranscriptView: NSView {
             hasStaleOffscreenHeights = true
             return
         }
-        beginRemeasuringOffscreenRows(at: width)
-        refreshFindAfterWidthChange()
+        remeasureScheduler.beginRemeasuringOffscreenRows(at: width)
+        findSession.refreshFindAfterWidthChange()
     }
 
     /// Invalidates the heights of the rows on screen, which is cheap and is what
@@ -644,7 +626,7 @@ public final class TranscriptView: NSView {
     @discardableResult
     private func rebindVisibleRows(in rows: IndexSet?) -> IndexSet {
         var rebound = IndexSet()
-        let selected = selection
+        let selected = selectionTracker.selection
         tableView.enumerateAvailableRowViews { [weak self] rowView, row in
             guard let self, rows?.contains(row) ?? true,
                 let cell = rowView.view(atColumn: 0) as? TranscriptCellView,
@@ -669,16 +651,16 @@ public final class TranscriptView: NSView {
                 view.remeasured(to: block)
             } else {
                 view.configure(with: block)
-                if selection?.ends(in: described.id) == true { selection = nil }
+                selectionTracker.dropSelection(endingIn: described.id)
             }
-            view.selectedRange = selection?.range(inRow: row, length: block.length)
+            view.selectedRange = selectionTracker.range(inRow: row, length: block.length)
             rebound.insert(row)
         }
         // Rows handled before the selection was dropped still show their part.
-        if selection != selected { pushSelection() }
+        if selectionTracker.selection != selected { selectionTracker.pushSelection() }
         // Either way the glyphs may have moved without the row's height changing,
         // which no re-tile would report.
-        if !rebound.isEmpty { setNeedsFindLayout() }
+        if !rebound.isEmpty { findSession.setNeedsFindLayout() }
         return rebound
     }
 
@@ -692,12 +674,12 @@ public final class TranscriptView: NSView {
     /// two different widths.
     @objc private func clipViewFrameDidChange(_ notification: Notification) {
         contentWidthDidChange()
-        placeFindOverlay()
+        findSession.placeFindOverlay()
         reportTailFollowing()
     }
 
     @objc private func clipViewBoundsDidChange(_ notification: Notification) {
-        placeFindOverlay()
+        findSession.placeFindOverlay()
         reportTailFollowing()
     }
 
@@ -705,381 +687,24 @@ public final class TranscriptView: NSView {
         super.viewDidEndLiveResize()
         guard hasStaleOffscreenHeights, numberOfRows > 0 else { return }
         hasStaleOffscreenHeights = false
-        beginRemeasuringOffscreenRows(at: contentWidth)
-        refreshFindAfterWidthChange()
-    }
-
-    /// Walks a find again once the width has settled, if it was walked at another.
-    ///
-    /// Only a user message cut at its line cap searches differently at a new width
-    /// — how far it is shown depends on how its lines broke — and nothing cheaper
-    /// than a walk can say which rows those are. Settled rather than per frame of a
-    /// drag, for the reason the off-screen re-measure waits for mouse-up.
-    private func refreshFindAfterWidthChange() {
-        guard let find, find.width != contentWidth else { return }
-        refreshFind()
+        remeasureScheduler.beginRemeasuringOffscreenRows(at: contentWidth)
+        findSession.refreshFindAfterWidthChange()
     }
 
     // MARK: - Re-measuring a width change off the main actor
 
-    /// The re-measure in flight, or `nil`.
-    ///
-    /// Held for two reasons, and neither is correctness. A second width change
-    /// cancels the first, so the loser stops burning cores for an answer that
-    /// would be rejected anyway — measured against the alternative, letting it run
-    /// costs the work and nothing else, because `publish(_:at:)` drops a batch
-    /// whose width has been superseded and `RowCache` would reject the entries
-    /// even if it did not. And it is what a test waits on: the corrections land on
-    /// later turns, and there is no honest way to know they all have except to wait
-    /// for the thing that publishes them.
-    private(set) var remeasuring: Task<Void, Never>?
+    /// Re-measures, off the main actor, the rows a settled width change left
+    /// stale; see `RemeasureScheduler`.
+    private lazy var remeasureScheduler = RemeasureScheduler(
+        owner: self, rowCache: rowCache, tableView: tableView)
 
-    /// Re-measures everything a width change invalidated, off the main actor,
-    /// nearest the reader first, publishing each batch as it fills rather than the
-    /// whole job at the end.
-    ///
-    /// **Why this is not `prepareRows` pointed at a resize.** That one is the
-    /// host's to call, so the `await` lands at the host's own call site. A resize
-    /// has no host call site — it is the transcript's own invalidation, arriving
-    /// through `viewDidEndLiveResize` — so the transcript has to own a `Task`, and
-    /// that `Task` spans main-actor turns during which the host may do anything at
-    /// all. What makes that safe is that the answers are filed by identity and
-    /// checked against the content they were made from: see
-    /// `RowCache.merge(remeasured:at:)`, where every way it can go stale is
-    /// enumerated, and every one of them costs the work rather than the render.
-    ///
-    /// **Nothing is invalidated until answers are in.** Calling `noteHeightOfRows`
-    /// first would make the table re-ask immediately and measure the whole working
-    /// set on the main thread, which is the freeze this exists to remove. So the
-    /// rows off screen keep heights from the old width until a batch covering them
-    /// lands, and the visible ones are already correct — `contentWidthDidChange`
-    /// re-measures those synchronously, every frame of the drag and again on
-    /// mouse-up.
-    ///
-    /// **What that window costs, precisely.** A row scrolled into while this runs
-    /// gets its glyphs at the new width, because `viewForRow` misses the cache and
-    /// re-measures on demand — but its *rectangle* is the table's own cached
-    /// number from the old width, and the table has no reason to re-ask, since its
-    /// `heightOfRow` takes no width. New glyphs in an old rect, until a batch
-    /// covering that row lands. It is confined to rows the table has already
-    /// measured: one it has not is asked about on the spot and comes out right.
-    /// Whether that window is short enough to be beneath noticing is not something
-    /// an assertion can answer — `make demo-kit` on ten thousand rows is where it
-    /// gets looked at.
-    ///
-    /// **The window is what the order and the batching are both about.** A
-    /// transcript the reader has been through for an hour has tens of thousands of
-    /// measured rows, and one batch at the end would mean the whole of that before
-    /// anything is corrected. Two things shorten what the reader can actually meet:
-    /// the walk starts where they are looking
-    /// (`staleRowsOutwardFromViewport(at:)`), and each batch is published as it
-    /// fills (`publishInterval`) rather than at the end. Together
-    /// those make the *relevant* window the time to correct the next screenful,
-    /// which does not grow with the transcript at all — the total still does, and
-    /// is spent on rows nobody is looking at.
-    private func beginRemeasuringOffscreenRows(at width: CGFloat) {
-        remeasuring?.cancel()
+    /// The re-measure in flight, or `nil` — what a test waits on, since the
+    /// corrections land on later turns.
+    var remeasuring: Task<Void, Never>? { remeasureScheduler.task }
 
-        let stale = staleRowsOutwardFromViewport(at: width)
-        guard !stale.isEmpty else {
-            // Nothing was ever measured, so there is nothing to prepare from and
-            // nothing to wait for. The table's own re-ask does the work, exactly
-            // as it did before any of this existed. Goes to the table directly
-            // rather than through `noteHeightOfEveryRow(at:)`: this path can run
-            // inside the scroll view's own tile, where anchoring is not available.
-            remeasuring = nil
-            tableView.noteHeightOfRows(withIndexesChanged: IndexSet(0..<numberOfRows))
-            return
-        }
-
-        // Built out here rather than inside the `Task` so that it can hold the
-        // transcript weakly: written in there, `self` is already the outer
-        // capture's optional and weakening it again reads as a puzzle.
-        let publish: @MainActor @Sendable (Batch) -> UInt64 = { [weak self] batch in
-            self?.publish(batch, at: width) ?? 0
-        }
-        remeasuring = Task { [weak self] in
-            await Self.remeasure(stale, at: width, publish: publish)
-            // A cancelled run has already been replaced; clearing here would clear
-            // its successor.
-            guard !Task.isCancelled, let self else { return }
-            remeasuring = nil
-            noteHeightOfEveryRow(at: width)
-        }
-    }
-
-    /// One batch of answers: what each row now measures to, and which row that was
-    /// when the walk passed it.
-    ///
-    /// The row number is not what the answer is filed under — that is the identity,
-    /// and `RowCache` still holds no positions. It is only what the table has to be
-    /// told changed, and it is allowed to be wrong: see `publish(_:at:)`.
-    private typealias Batch = [(row: Int, id: TranscriptRow.ID, entry: RowCache.Entry)]
-
-    /// Everything a width change invalidated, in the order it should be corrected:
-    /// the rows on screen, then one below, one above, one below, out to both ends.
-    ///
-    /// **Why the order is the point.** Row 0 of a ten-thousand-row transcript is
-    /// nine thousand rows of scrolling away from mattering; the row just past the
-    /// bottom edge is one flick away. Working outward from the reader is what makes
-    /// the window they can actually meet the time to correct the next screenful,
-    /// which does not grow with the transcript — where the cache's own dictionary
-    /// order would put that row anywhere at all.
-    ///
-    /// **Why the transcript does this and the cache does not.** `RowCache` is keyed
-    /// on identity and holds no positions — that is the whole of what the identity
-    /// bought (see its `What the identity deleted`). Which row an entry belongs to
-    /// is therefore a question only the data source can answer, and only on the main
-    /// actor, so this is where it gets asked.
-    ///
-    /// **It costs a walk, and the walk stops early.** One `rowAt` per row passed,
-    /// as `sweepCache()` also does, until every stale entry has been claimed. What
-    /// bounds it is not the transcript's length but how far the *farthest measured
-    /// row* is from the viewport — a reader who has stayed near the tail is a few
-    /// hundred rows, one who has read the whole thing is all of it. Measured on ten
-    /// thousand rows with every one of them measured, which is that worst case:
-    /// **12 ms**, against the 1.9 s of measuring whose order it is deciding.
-    ///
-    /// Entries left over belong to rows the data source no longer has — an id a
-    /// `removeRows` orphaned and no sweep has reached yet. They are dropped rather
-    /// than measured: nothing will ever ask for them.
-    private func staleRowsOutwardFromViewport(at width: CGFloat) -> Batch {
-        var pending = rowCache.entries(measuredAtWidthOtherThan: width)
-        guard !pending.isEmpty, let dataSource else { return [] }
-
-        // Clamped rather than trusted: the table answers about the geometry it last
-        // laid out, and answers `NSNotFound` for a viewport with no rows in it.
-        let onScreen = tableView.rows(in: tableView.visibleRect)
-        let visible =
-            onScreen.length > 0
-            ? (onScreen.location..<(onScreen.location + onScreen.length))
-                .clamped(to: 0..<numberOfRows)
-            : 0..<0
-
-        var ordered: Batch = []
-        ordered.reserveCapacity(pending.count)
-        var inside = visible.makeIterator()
-        var below = visible.upperBound
-        var above = visible.lowerBound - 1
-        // Flipped by each step that takes the side it names, so a side that has run
-        // out is skipped without flipping it and the survivor runs on alone. A tie
-        // goes downwards, because a transcript is read downwards.
-        var takesBelow = true
-        while !pending.isEmpty {
-            let row: Int
-            if let onScreen = inside.next() {
-                row = onScreen
-            } else if below < numberOfRows, takesBelow || above < 0 {
-                row = below
-                below += 1
-                takesBelow = false
-            } else if above >= 0 {
-                row = above
-                above -= 1
-                takesBelow = true
-            } else {
-                break
-            }
-            let id = dataSource.transcriptView(self, rowAt: row).id
-            if let entry = pending.removeValue(forKey: id) { ordered.append((row, id, entry)) }
-        }
-        return ordered
-    }
-
-    /// The shortest a batch may collect for, whatever the rule below works out.
-    ///
-    /// One frame at 60 Hz. Two batches inside one frame is one batch nobody saw,
-    /// and it is the *only* floor that matters — a small transcript's publish costs
-    /// so little that the rule below would otherwise publish per result.
-    ///
-    /// Nanoseconds off `DispatchTime` rather than a `Duration` off
-    /// `ContinuousClock`, which is macOS 13 and this package is 12.
-    private nonisolated static let publishFloor: UInt64 = 16_000_000
-
-    /// How many times as long a batch collects for as the last one took to apply,
-    /// which is what actually paces this.
-    ///
-    /// **Neither a fixed count of rows nor a fixed slice of time, and both were
-    /// tried.** A row count is the wrong currency outright: a row here is a
-    /// one-line paragraph and a row there is a four-hundred-line code fence, so any
-    /// count is either a batch too small to be worth the hop or one long enough to
-    /// be the whole job again. A fixed slice is better and still wrong, because
-    /// what a batch *costs* is not fixed — applying one is `noteHeightOfRows` plus
-    /// a layout, which is work proportional to the transcript, on a main thread
-    /// whose speed depends on what else the machine is doing. Measured on the
-    /// demo's ten thousand rows, one publish cost 5 ms on a quiet machine and 15 ms
-    /// on a loaded one; at a fixed 8 ms slice that was 609 publishes and **1.9 s**
-    /// of main thread, which is a tenth of the freeze this whole design removed,
-    /// handed back.
-    ///
-    /// Pacing off the cost fixes both ends at once: the share of the main thread is
-    /// pinned wherever this number puts it, on any transcript and any machine, and
-    /// nothing has to know how long a row takes or how many there are. Twenty gives
-    /// the correction about 5% of the window — measured, **77 publishes and 0.41 s**
-    /// over the same ten thousand rows, in hops of 0.5 to 13 ms.
-    private nonisolated static let publishInterval: UInt64 = 20
-
-    /// How many rows are being measured at once.
-    ///
-    /// **Not a throughput knob — the collecting task is what this protects.** Every
-    /// row queued at once is what `prepareRows` does, on the reasoning that the pool
-    /// runs only as many as there are cores and the rest cost a task object each.
-    /// That reasoning misses this loop: the task doing the collecting is itself on
-    /// the pool, so ten thousand runnable children make it one starved job among ten
-    /// thousand. Measured, on the demo's ten thousand: the collector took **78
-    /// results in 10.8 s**, then the remaining 9 900 in the 90 ms after the last
-    /// child finished — which is to say the batching did nothing at all, and every
-    /// correction arrived at the end exactly as if none of this existed.
-    ///
-    /// `prepareRows` keeps the unbounded version because it has no such loop: it
-    /// collects into a dictionary, hops nowhere, and nobody is waiting on it
-    /// part-way.
-    private nonisolated static let inFlightLimit = ProcessInfo.processInfo.activeProcessorCount
-
-    /// The stale entries, re-measured concurrently, handed over a batch at a time.
-    ///
-    /// `nonisolated` for the reason `measure(_:width:)` is: a `static` member of a
-    /// `@MainActor` type is isolated by default and this one must not be. What
-    /// crosses is `RowCache.Entry`, which is `Sendable` and carries its own
-    /// recipe — so this is line-breaking and nothing else. No parse, no shaping,
-    /// no data source.
-    ///
-    /// **Order survives the fan-out, because only `inFlightLimit` rows are in the
-    /// air.** Nearest-first in, nearest-first out to within a core count — near
-    /// enough that a batch is a contiguous band around the viewport. Nothing depends
-    /// on more than that: a row in the wrong batch is corrected one batch later.
-    ///
-    /// **`publish` is `@MainActor`, and that is the whole of the hand-over.** The
-    /// hop is the `await` on it; between hops this runs on the pool. It answers what
-    /// applying the batch cost, which is what sets how long the next one collects
-    /// for — the cost of *applying*, not of getting on: waiting for a main thread
-    /// that is busy with something else is already its own back-pressure, and
-    /// charging for it too would back off twice.
-    private nonisolated static func remeasure(
-        _ stale: Batch, at width: CGFloat,
-        publish: @escaping @MainActor @Sendable (Batch) -> UInt64
-    ) async {
-        await withTaskGroup(of: (row: Int, id: TranscriptRow.ID, entry: RowCache.Entry)?.self) {
-            group in
-            var next = 0
-            func addNext() {
-                guard next < stale.count else { return }
-                let item = stale[next]
-                next += 1
-                group.addTask {
-                    guard !Task.isCancelled else { return nil }
-                    return (item.row, item.id, item.entry.remeasured(at: width))
-                }
-            }
-            for _ in 0..<Swift.min(stale.count, inFlightLimit) { addNext() }
-
-            var batch: Batch = []
-            var interval = publishFloor
-            var opened = DispatchTime.now().uptimeNanoseconds
-            for await result in group {
-                addNext()
-                guard let result else { continue }
-                batch.append(result)
-                guard DispatchTime.now().uptimeNanoseconds - opened >= interval else { continue }
-                interval = Swift.max(publishFloor, await publish(batch) * publishInterval)
-                batch.removeAll(keepingCapacity: true)
-                // Restarted after the hand-over rather than before it, so the
-                // budget is a floor on *measuring* between publishes. Timing it
-                // from before would let a slow publish schedule the next one
-                // immediately, which is the opposite of what a budget is for.
-                opened = DispatchTime.now().uptimeNanoseconds
-            }
-            if !batch.isEmpty { _ = await publish(batch) }
-        }
-    }
-
-    /// Files one batch and tells the table, in that order and in one turn.
-    ///
-    /// **Only the rows this batch carried, and that is the whole difference between
-    /// this working and this being the freeze again.** `noteHeightOfRows` is not a
-    /// note — the table re-asks, inside the call, for the rows it is told about that
-    /// it has heights for. When the batches were published one at a time and each
-    /// invalidated the whole transcript, the first one therefore re-asked about ten
-    /// thousand rows of which it had corrected seventy: the other 9 930 missed the
-    /// cache and were re-measured on the main thread, one document at a time.
-    /// Measured, on the demo's ten thousand: **2 466 ms in a single call**, which is
-    /// worse than the whole-job freeze this design replaced. Invalidating exactly
-    /// what was corrected is answered entirely from the cache — same transcript,
-    /// **8 to 12 ms**.
-    ///
-    /// **The row numbers are allowed to be wrong.** They were read when the walk
-    /// passed the row and the host may have inserted or removed since, so a note can
-    /// land on the wrong row: an uncorrected row gets invalidated (it is re-measured
-    /// on demand, correctly, one row's cost) and a corrected one does not (it keeps
-    /// the old width's rectangle). The second is the one that would persist, which
-    /// is what `noteHeightOfEveryRow(at:)` at the end of the run is for — by then
-    /// everything is in the cache, so invalidating the lot is answered from it.
-    ///
-    /// **Anchored, unlike the synchronous half of a width change.** §2 puts a
-    /// resize outside both anchoring rules, and the reason it gives is that the
-    /// re-measure runs inside the scroll view's own tile, where writing a scroll
-    /// offset would be writing into the layout producing it. That reason does not
-    /// reach here: this runs on a later turn, from a task continuation, with the
-    /// tile long finished. Anchoring matters more the smaller the batches get —
-    /// each one changes the height of rows above the viewport, and unanchored that
-    /// is the content stepping under the reader once per batch instead of once per
-    /// resize.
-    ///
-    /// `mutate` also suppresses the implicit animation the row geometry would
-    /// otherwise take (see `suppressImplicitAnimation`) — a hundred rows sliding
-    /// to new positions over a quarter second, repeatedly, while the reader is
-    /// trying to read.
-    ///
-    /// **What is left here is thrift.** Publishing a superseded batch, or one whose
-    /// rows have moved on, is self-correcting: the entries carry the width they were
-    /// measured at, so the very next read rejects them and measures again, inside
-    /// the same pass — no frame is drawn wrong. The merge is likewise an
-    /// optimisation and not a correctness step, since the invalidation makes the
-    /// table re-ask and a row with no usable entry is simply measured then. Which is
-    /// the whole point, and also why no assertion can see it: with the merge removed
-    /// the transcript is still right, it is just measuring on the main thread again.
-    /// The evidence for it is a measurement, in §6.
-    /// - Returns: what this cost, in nanoseconds — the number that paces the next
-    ///   batch. See `publishInterval`.
-    @discardableResult
-    private func publish(_ batch: Batch, at width: CGFloat) -> UInt64 {
-        let started = DispatchTime.now().uptimeNanoseconds
-        guard width == contentWidth, numberOfRows > 0 else { return 0 }
-
-        var rows = IndexSet()
-        var entries: [(id: TranscriptRow.ID, entry: RowCache.Entry)] = []
-        entries.reserveCapacity(batch.count)
-        for item in batch {
-            guard item.row < numberOfRows else { continue }
-            rows.insert(item.row)
-            entries.append((item.id, item.entry))
-        }
-        rowCache.merge(remeasured: entries, at: width)
-        mutate(shiftedBy: .none) {
-            tableView.noteHeightOfRows(withIndexesChanged: rows)
-        }
-        return DispatchTime.now().uptimeNanoseconds - started
-    }
-
-    /// Invalidates every row's height, once the run that corrected them has
-    /// finished.
-    ///
-    /// Cheap exactly because it is last: every answer is in the cache by now, so
-    /// the re-ask this provokes is a lookup per row rather than a measurement.
-    /// **8 ms** on ten thousand rows, against the 2 466 ms the same call costs
-    /// against a cache that is still mostly stale (see `publish(_:at:)`).
-    ///
-    /// It exists to catch the rows whose numbers moved under the batches.
-    ///
-    /// Anchored, for the reason `publish(_:at:)` gives — which is also why the
-    /// "nothing was stale" path in `beginRemeasuringOffscreenRows(at:)` does not
-    /// come through here despite wanting the same call: that one can run inside the
-    /// scroll view's own tile, where anchoring is not available.
-    private func noteHeightOfEveryRow(at width: CGFloat) {
-        guard width == contentWidth, numberOfRows > 0 else { return }
-        mutate(shiftedBy: .none) {
-            tableView.noteHeightOfRows(withIndexesChanged: IndexSet(0..<numberOfRows))
-        }
+    /// The row at `index` as the data source describes it, or `nil` with none.
+    func row(at index: Int) -> TranscriptRow? {
+        dataSource?.transcriptView(self, rowAt: index)
     }
 
     // MARK: - Geometry
@@ -1358,8 +983,8 @@ public final class TranscriptView: NSView {
         tableView.reloadData()
         // Any row may hold anything now, and nothing says which — so a find up
         // walks again, in place.
-        refreshFind()
-        reportFind()
+        findSession.refreshFind()
+        findSession.reportFind()
     }
 
     /// Drops cache entries for rows the data source no longer has.
@@ -1391,14 +1016,14 @@ public final class TranscriptView: NSView {
     private func sweepCache() {
         guard let dataSource else {
             rowCache.removeAll()
-            keepSelection([:])
+            selectionTracker.keepSelection([:])
             return
         }
         let count = dataSource.numberOfRows(in: self)
         var live = Set<TranscriptRow.ID>(minimumCapacity: count)
         // The selection's two ends, found by identity on the same walk — a
         // removal or a reload says which rows are left, not where they went.
-        let ends = selection.map { [$0.anchor.id, $0.focus.id] } ?? []
+        let ends = selectionTracker.endIDs
         var located: [TranscriptRow.ID: Int] = [:]
         for row in 0..<count {
             let id = dataSource.transcriptView(self, rowAt: row).id
@@ -1406,8 +1031,8 @@ public final class TranscriptView: NSView {
             if !ends.isEmpty, ends.contains(id) { located[id] = row }
         }
         rowCache.keep(live)
-        keepFind(live)
-        keepSelection(located)
+        findSession.keepFind(live)
+        selectionTracker.keepSelection(located)
     }
 
     /// Announces rows newly inserted at `indexes` (positions in the
@@ -1519,7 +1144,7 @@ public final class TranscriptView: NSView {
             tableView.removeRows(at: indexes, withAnimation: [])
         }
         // Out here rather than in the sweep: see `keepFind(_:)`.
-        reportFind()
+        findSession.reportFind()
     }
 
     /// Announces in-place content changes: the rows at `indexes` are
@@ -1564,7 +1189,7 @@ public final class TranscriptView: NSView {
             // height it already has, and changed content is a different height.
             tableView.noteHeightOfRows(withIndexesChanged: indexes)
         }
-        refileFind(inRows: indexes)
+        findSession.refileFind(inRows: indexes)
     }
 
     /// Invalidates the cached heights of the rows at `indexes` without
@@ -1676,174 +1301,29 @@ public final class TranscriptView: NSView {
         // measured into one number — which is what lets the whole batch be
         // accepted or dropped on a single comparison.
         let width = contentWidth
-        return await Self.measure(rows, width: width)
-    }
-
-    /// The batch, measured concurrently.
-    ///
-    /// `nonisolated` is the whole point: a `static` member of a `@MainActor` type
-    /// is main-actor isolated by default, and this one must not be — awaiting it
-    /// from `prepareRows` is what hops off. The batch crosses whole, identities
-    /// and all, which `TranscriptRow.ID` is `Sendable` for.
-    ///
-    /// One child task per row rather than a hand-rolled chunking loop, because
-    /// the cooperative pool already caps the number actually running at the core
-    /// count; the extra tasks queue, and a task is cheaper than the document it
-    /// is holding. Results are collected in whatever order they finish, because
-    /// each carries the identity it belongs to — the positional version of this
-    /// had to gather by offset to keep the batch in the order it was given.
-    ///
-    /// **Only the last `RowCache.residentBudget` worth of rows keep their tree**;
-    /// the rest are measured, keep their height, and release the tree in the same
-    /// child task that built it. The cache would evict them on arrival anyway —
-    /// doing it here keeps a batch of history from ever being resident all at once,
-    /// and keeps tearing it down off the main thread. The last rows rather than the
-    /// first because a batch is usually a prepend, and its last rows are the ones
-    /// that land against what the reader is looking at.
-    private nonisolated static func measure(
-        _ rows: [TranscriptRow], width: CGFloat
-    ) async -> PreparedRows {
-        var budget = RowCache.residentBudget
-        var keepsTree = [Bool](repeating: false, count: rows.count)
-        for index in rows.indices.reversed() {
-            budget -= RowCache.cost(of: rows[index].content)
-            guard budget >= 0 else { break }
-            keepsTree[index] = true
-        }
-        return await withTaskGroup(of: (TranscriptRow.ID, RowCache.Entry)?.self) { group in
-            for (row, keepsTree) in zip(rows, keepsTree) {
-                group.addTask {
-                    // Nothing to take from, and stated rather than defaulted: a
-                    // row being prepared does not exist yet, so there is no
-                    // previous version of it anywhere — which is the one thing
-                    // that makes this call safe off the main actor.
-                    guard !Task.isCancelled,
-                        let entry = row.content.entry(width: width, reusing: nil)
-                    else { return nil }
-                    return (row.id, keepsTree ? entry : entry.evicted)
-                }
-            }
-            var entries = [TranscriptRow.ID: RowCache.Entry](minimumCapacity: rows.count)
-            for await measured in group {
-                guard let measured else { continue }
-                entries[measured.0] = measured.1
-            }
-            return PreparedRows(entries: entries, width: width)
-        }
+        return await PreparedRows.measuring(rows, width: width)
     }
 
     // MARK: - Find
 
-    /// A find, running or settled.
-    ///
-    /// **Keyed on identity**, for the reason `RowCache` is: a hit is a place inside
-    /// a row, and every insertion above a row renumbers it. The row numbers held
-    /// here are the walk's own — its cursor and the slice it has out — and every
-    /// mutation renumbers them on the way through (`shiftFind(byRowsInserted:)`),
-    /// the way it renumbers the scroll anchor.
-    private struct Find {
-
-        let query: String
-
-        /// What each row matched, for the rows that matched anything, filed with
-        /// the content it was matched in — so a row whose content has moved on
-        /// since is never drawn with ranges that name other characters now.
-        var matches: [TranscriptRow.ID: RowMatches] = [:]
-
-        /// How many hits that is, kept in step rather than derived — publishing a
-        /// slice should cost the slice, not a walk of everything filed so far.
-        var count = 0
-
-        /// The hit the reader is on, by *where* it is: a row and a range, which no
-        /// insertion or removal elsewhere can move.
-        var selection: (row: TranscriptRow.ID, range: Range<Int>)?
-
-        /// The selection's ordinal — the `4` in "4 of 51" less one — when it is
-        /// known. **A cache, not a fact**: anything that changes which hits come
-        /// before the selection clears it, and `indexOfSelectedFindMatch` works it
-        /// out again when next asked. Kept in step instead, it would be one more
-        /// number every mutation had to renumber correctly, and the review that
-        /// found it wrong after a removal is why it is not.
-        var ordinal: Int?
-
-        /// The walk's cursor: every row above it has been searched.
-        var next = 0
-
-        /// The rows whose slice is on the pool right now. Cleared by a mutation
-        /// that renumbers any of them, which is how the walk learns that the row
-        /// numbers in the answer it is waiting for now name other rows.
-        var pending: Range<Int>?
-
-        /// Rows `reloadRows(at:)` searched again on the main actor while `pending`
-        /// was out. What the pool answers for them was matched against the content
-        /// before, so it is older than what is filed, and is dropped.
-        var refiled: Set<TranscriptRow.ID> = []
-
-        /// The width the walk matches at. Only a capped user message cares — see
-        /// `RowCache.cachedMeasured(for:width:)` — and a change is what
-        /// `refreshFind()` exists to catch.
-        var width: CGFloat
-
-        /// Whether the walk selects a hit when it reaches the reader. A new find's
-        /// first pass does; any later pass — a refresh, new rows arriving — must
-        /// not scroll someone who is already reading.
-        var landsOnViewport = true
-
-        var isComplete = false
-    }
-
-    /// One row's hits, and the content they were found in.
-    private struct RowMatches: Equatable {
-        let content: TranscriptRowContent
-        let ranges: [Range<Int>]
-    }
-
-    private var find: Find?
-
-    /// The walk in flight, held for the two reasons `remeasuring` is: a superseded
-    /// walk should stop burning cores for an answer nothing will read, and a test
-    /// has no other honest way to know the walk has finished.
-    private(set) var finding: Task<Void, Never>?
-
-    /// One slice of the walk, in rows.
-    ///
-    /// A row count, where `beginRemeasuringOffscreenRows(at:)` had to reject one in
-    /// favour of pacing against the cost of applying a batch. The difference is
-    /// what a publish costs: there it is `noteHeightOfRows`, whose work is
-    /// proportional to the whole transcript however few rows the batch held; here
-    /// it is a dictionary write per row and a repaint of whatever is on screen.
-    /// Bounded by the slice, so the slice is a fair unit.
-    private static let findSliceRows = 200
-
-    /// One slice on its way to the pool: what to search, and either the tree to
-    /// search it in when something has already built one, or — for a `.view` row —
-    /// the host's answer, which was asked for on the main actor.
-    private typealias FindSlice = [(
-        row: Int, id: TranscriptRow.ID, content: TranscriptRowContent,
-        measured: MeasuredBlock?, answered: [Range<Int>]?
-    )]
-
-    /// What comes back: every row of the slice with what it matched — nothing
-    /// included — so a walk passing a row that no longer matches can take its old
-    /// hits away.
-    private typealias FindBatch = [(
-        row: Int, id: TranscriptRow.ID, content: TranscriptRowContent, ranges: [Range<Int>]
-    )]
+    /// The find, its walk and its presentation; see `FindSession`.
+    private lazy var findSession = FindSession(
+        owner: self, rowCache: rowCache, tableView: tableView, scrollView: scrollView)
 
     /// The number of matches found so far. Still climbing until the delegate
     /// reports `isComplete`.
-    public var numberOfFindMatches: Int { find?.count ?? 0 }
+    ///
+    /// Internal, like the ordinal below: a host hears the count through
+    /// `transcriptView(_:didUpdateFindMatches:isComplete:)`, the one channel a
+    /// find's state crosses by, so it never keeps a second copy to reconcile.
+    var numberOfFindMatches: Int { findSession.numberOfMatches }
 
     /// Which match the reader is on, counting from zero, or `nil` when none is
-    /// selected — the walk has not reached the reader yet, there are no matches,
-    /// or the one they were on went away. The `4` in "4 of 51" is this plus one.
-    public var indexOfSelectedFindMatch: Int? {
-        guard let find, let selection = find.selection else { return nil }
-        if let ordinal = find.ordinal { return ordinal }
-        let ordinal = ordinal(of: selection, in: find)
-        self.find?.ordinal = ordinal
-        return ordinal
-    }
+    /// selected.
+    var indexOfSelectedFindMatch: Int? { findSession.indexOfSelectedMatch }
+
+    /// The walk in flight — what a test waits on.
+    var finding: Task<Void, Never>? { findSession.finding }
 
     /// Highlights every occurrence of `query` and selects the first at or after
     /// the reader, replacing any find already up. An empty query ends one.
@@ -1879,12 +1359,7 @@ public final class TranscriptView: NSView {
     /// anything, and a settled change of width walk the whole transcript again in
     /// place, keeping the reader where they are.
     public func find(_ query: String) {
-        guard !query.isEmpty else { return endFind() }
-
-        find = Find(query: query, width: contentWidth)
-        walkFind()
-        rebindFind()
-        reportFind()
+        findSession.find(query)
     }
 
     /// Takes the highlights away and stops the walk.
@@ -1895,349 +1370,16 @@ public final class TranscriptView: NSView {
     /// empty search field. The callback means *this is the find's state now*, and a
     /// state it is only sometimes told about is a state it has to track twice.
     public func endFind() {
-        finding?.cancel()
-        finding = nil
-        guard find != nil else { return }
-        find = nil
-        rebindFind()
-        delegate?.transcriptView(self, didUpdateFindMatches: 0, isComplete: true)
+        findSession.endFind()
     }
 
     /// Moves to the next match, wrapping at the end, and scrolls it into view.
     /// With none selected, that is the first match at or after the reader.
-    public func findNext() { moveFindSelection(by: 1) }
+    public func findNext() { findSession.findNext() }
 
     /// Moves to the previous match, wrapping at the start, and scrolls it into
     /// view. With none selected, that is the last match above the reader.
-    public func findPrevious() { moveFindSelection(by: -1) }
-
-    /// Starts the walk from the cursor, replacing one already running.
-    private func walkFind() {
-        finding?.cancel()
-        guard find != nil else {
-            finding = nil
-            return
-        }
-        find?.pending = nil
-        find?.isComplete = false
-        finding = Task { [weak self] in
-            await self?.scan()
-        }
-    }
-
-    /// Walks a find again from the top, in place: what it had stays up until the
-    /// walk reaches each row and replaces it, the reader keeps the hit they are
-    /// on if it is still there, and nothing scrolls.
-    ///
-    /// For the two things that can change what matched without saying which rows:
-    /// `reloadData()`, after which any row may hold anything, and the content width
-    /// settling, which moves where a capped user message is cut. Cheap in the
-    /// common case, because every row the last pass searched is answered from the
-    /// cache.
-    private func refreshFind() {
-        guard find != nil else { return }
-        find?.next = 0
-        find?.width = contentWidth
-        walkFind()
-    }
-
-    /// Walks the transcript from the cursor in order, matching each slice off the
-    /// main actor and publishing it before the next one starts.
-    ///
-    /// **In order, rather than outward from the viewport** — the opposite of what
-    /// `staleRowsOutwardFromViewport(at:)` chose, and the difference is what the
-    /// two are racing. A width correction has a *window* the reader can meet, so it
-    /// starts where they are looking. A find has an *ordinal*: "4 of 51" only means
-    /// anything if the fourth hit is the fourth from the top, and hits arriving out
-    /// of order would renumber themselves under the reader as the walk filled in.
-    ///
-    /// **The cursor lives in `find`, not here**, because the transcript can change
-    /// under every `await`: a mutation renumbers it where it stands, and one that
-    /// renumbers the slice out on the pool clears `pending` — so the answer is
-    /// dropped and the slice taken again from wherever the cursor went, rather than
-    /// filed against rows that have since moved.
-    private func scan() async {
-        while let slice = takeFindSlice() {
-            let batch = await Self.match(slice.rows, query: slice.query, width: slice.width)
-            guard !Task.isCancelled else { return }
-            guard find?.pending == slice.range else { continue }
-            publish(batch, covering: slice.range)
-        }
-        guard !Task.isCancelled else { return }
-        completeFind()
-    }
-
-    /// The next slice from the cursor, marked as out — or `nil` once the walk has
-    /// passed the last row.
-    ///
-    /// The cache is read **by content, and by width only where the width decides
-    /// what is searchable** — see `RowCache.cachedMeasured(for:width:)`. A row it
-    /// answers costs this walk a dictionary lookup; a row it does not is carried
-    /// across as its content and built on the pool, which is the only part of a
-    /// find that is ever expensive.
-    private func takeFindSlice() -> (
-        range: Range<Int>, rows: FindSlice, query: String, width: CGFloat
-    )? {
-        guard var find, let dataSource, find.next < numberOfRows else { return nil }
-        let range = find.next..<min(find.next + Self.findSliceRows, numberOfRows)
-        let rows: FindSlice = range.map { row in
-            let described = dataSource.transcriptView(self, rowAt: row)
-            switch described.content {
-            case .markdown:
-                let cached = rowCache.cachedMeasured(for: described, width: nil)
-                return (row, described.id, described.content, cached, nil)
-            case .userMessage:
-                let cached = rowCache.cachedMeasured(for: described, width: find.width)
-                return (row, described.id, described.content, cached, nil)
-            case .view:
-                let answered =
-                    delegate?.transcriptView(self, findMatchesOf: find.query, inRow: row) ?? []
-                return (row, described.id, described.content, nil, answered)
-            }
-        }
-        find.pending = range
-        find.refiled = []
-        self.find = find
-        return (range, rows, find.query, find.width)
-    }
-
-    /// One slice, matched across every core.
-    ///
-    /// `nonisolated` for the reason `measure(_:width:)` is: a `static` member of a
-    /// `@MainActor` type is main-actor isolated by default, and awaiting this from
-    /// `scan` is what hops off. Everything crossing is `Sendable` — a
-    /// `MeasuredBlock` because measuring is pure and nothing mutates one after it
-    /// is built.
-    ///
-    /// **A tree built here is used and dropped, not filed.** Handing it to
-    /// `RowCache` looks like thrift and is a change of behaviour: a find over a
-    /// transcript nothing has read would push every row it passed through the
-    /// resident budget, evicting the rows the reader has on screen to make room for
-    /// rows nobody is looking at. What a hit actually needs is its range, which outlives
-    /// the tree, and the one row the reader jumps to is re-measured on arrival for a
-    /// fraction of a frame.
-    private nonisolated static func match(
-        _ slice: FindSlice, query: String, width: CGFloat
-    ) async -> FindBatch {
-        await withTaskGroup(of: FindBatch.Element?.self) { group in
-            for row in slice {
-                group.addTask {
-                    guard !Task.isCancelled else { return nil }
-                    if let answered = row.answered {
-                        return (row.row, row.id, row.content, answered)
-                    }
-                    // Nothing to reuse: this is either a row the cache already
-                    // answered, or one nobody has measured at this width. Same
-                    // call the cache would make, so the two cannot describe a row
-                    // differently.
-                    let measured =
-                        row.measured ?? row.content.entry(width: width, reusing: nil)?.measured
-                    return (row.row, row.id, row.content, measured?.ranges(of: query) ?? [])
-                }
-            }
-            var batch: FindBatch = []
-            for await found in group {
-                guard let found else { continue }
-                batch.append(found)
-            }
-            // The pool answers in whatever order it finishes; the order a reader
-            // navigates by is reading order, and this is the only place both are in
-            // hand at once.
-            return batch.sorted { $0.row < $1.row }
-        }
-    }
-
-    /// Files a slice's hits, moves the cursor past it, shows what changed, and
-    /// lands the selection if this is the slice the reader was looking at.
-    ///
-    /// **A find starts from where the reader is, not from the top.** Selecting the
-    /// first hit the walk meets is what this did first, and it is wrong in the way
-    /// that is obvious the moment it is used: search for a word that is on the
-    /// screen in front of you, and the transcript jumps to the top of the history
-    /// to show you a different one. Every find bar starts at the reader's position
-    /// and wraps, so the hit that selects itself is the first one **at or after the
-    /// first visible row**, and the wrap — for a query whose every hit is above
-    /// them — happens once the walk is done, in `completeFind()`.
-    ///
-    /// The row numbers in `batch` are trusted here because `scan` only calls this
-    /// while the slice is still `pending` — nothing has renumbered them.
-    private func publish(_ batch: FindBatch, covering range: Range<Int>) {
-        guard var find else { return }
-
-        let viewport = firstVisibleRow
-        var landing: (row: Int, id: TranscriptRow.ID, range: Range<Int>)?
-        var changed = false
-
-        for found in batch where !find.refiled.contains(found.id) {
-            if Self.file(found.ranges, searched: found.content, for: found.id, in: &find) {
-                changed = true
-            }
-            if find.landsOnViewport, find.selection == nil, landing == nil,
-                found.row >= viewport, let first = found.ranges.first
-            {
-                landing = (found.row, found.id, first)
-            }
-        }
-        find.next = range.upperBound
-        find.pending = nil
-        self.find = find
-
-        if let landing {
-            select(row: landing.row, id: landing.id, range: landing.range, ordinal: nil)
-        } else if changed {
-            rebindFind()
-        }
-        if changed { reportFind() }
-    }
-
-    /// Ends a walk that reached the last row.
-    ///
-    /// A first pass that found hits but none at or below the reader wraps to the
-    /// first one — the same wrap `findNext()` makes off the end of the transcript,
-    /// and what lets `publish` be strict about "at or after the viewport" without
-    /// the case where nothing is falling through it.
-    private func completeFind() {
-        finding = nil
-        guard var find else { return }
-        find.isComplete = true
-        let wraps = find.landsOnViewport && find.selection == nil && find.count > 0
-        find.landsOnViewport = false
-        self.find = find
-        if wraps {
-            // Reports on its way out, so this branch does not report twice.
-            moveFindSelection(by: 1)
-        } else {
-            reportFind()
-        }
-    }
-
-    /// Files what one row matched, keeping the count, the selection and the
-    /// ordinal in step. Answers whether anything changed.
-    ///
-    /// **Replaces, never adds.** A row can be searched more than once — a refresh,
-    /// a reload, a walk pulled back by an insertion — and the count has to move by
-    /// the difference, not by the whole of each answer.
-    private static func file(
-        _ ranges: [Range<Int>], searched content: TranscriptRowContent,
-        for id: TranscriptRow.ID, in find: inout Find
-    ) -> Bool {
-        let old = find.matches[id]
-        let new = ranges.isEmpty ? nil : RowMatches(content: content, ranges: ranges)
-        guard new != old else { return false }
-
-        find.matches[id] = new
-        find.count += ranges.count - (old?.ranges.count ?? 0)
-        if new?.ranges != old?.ranges {
-            // Conservative: a row after the selection cannot move its ordinal, but
-            // knowing which side a row is on costs the walk this is saving.
-            find.ordinal = nil
-            if let selection = find.selection, selection.row == id,
-                !ranges.contains(selection.range)
-            {
-                find.selection = nil
-            }
-        }
-        return true
-    }
-
-    /// The topmost row the reader can see — where a fresh find starts looking.
-    ///
-    /// The table's own answer rather than a tracked one, and it is allowed to be
-    /// approximate: a row half under the top inset counts as visible, which is the
-    /// forgiving direction. `NSNotFound` is a viewport with no rows in it, which a
-    /// transcript that has not laid out yet reports.
-    private var firstVisibleRow: Int {
-        let visible = tableView.rows(in: tableView.visibleRect)
-        return visible.location == NSNotFound ? 0 : max(0, visible.location)
-    }
-
-    /// Tells the delegate where the find has got to.
-    ///
-    /// One funnel rather than a call beside every mutation, because the host reads
-    /// two things here — the count from the argument and the position from
-    /// `indexOfSelectedFindMatch` — and a path that moved the selection without
-    /// reporting would leave a find bar showing "1 of 15" after the reader had
-    /// pressed ⌘G four times.
-    private func reportFind() {
-        guard let find else { return }
-        delegate?.transcriptView(
-            self, didUpdateFindMatches: find.count, isComplete: find.isComplete)
-    }
-
-    /// Moves the selection `delta` hits along, wrapping at both ends — or, with
-    /// nothing selected, onto the nearest hit from the reader in that direction.
-    ///
-    /// The order is re-derived here rather than kept, which costs one `rowAt` per
-    /// row — the same walk `sweepCache()` makes, on a keystroke rather than in a
-    /// loop. Keeping it instead would mean a list of positions that every insertion
-    /// renumbers, which is the bookkeeping `RowCache`'s identity keying exists to
-    /// have deleted; and it would still have to be rebuilt after any mutation, so
-    /// what it saves is a walk the reader is waiting on either way.
-    private func moveFindSelection(by delta: Int) {
-        let hits = locatedHits()
-        guard !hits.isEmpty else { return }
-
-        let target: Int
-        if let selection = find?.selection,
-            let current = hits.firstIndex(where: {
-                $0.id == selection.row && $0.range == selection.range
-            })
-        {
-            target = ((current + delta) % hits.count + hits.count) % hits.count
-        } else {
-            let viewport = firstVisibleRow
-            let after = hits.firstIndex { $0.row >= viewport } ?? hits.count
-            target = delta > 0 ? after % hits.count : (after + hits.count - 1) % hits.count
-        }
-        let hit = hits[target]
-        select(row: hit.row, id: hit.id, range: hit.range, ordinal: target)
-        reportFind()
-    }
-
-    /// Every hit in transcript order, with where its row is now.
-    ///
-    /// Rows the data source no longer has simply do not turn up, so a hit in a row
-    /// that went away is skipped rather than navigated to — the same shape as
-    /// `staleRowsOutwardFromViewport(at:)` dropping entries a removal orphaned.
-    private func locatedHits() -> [(row: Int, id: TranscriptRow.ID, range: Range<Int>)] {
-        guard let find, !find.matches.isEmpty, let dataSource else { return [] }
-        var hits: [(row: Int, id: TranscriptRow.ID, range: Range<Int>)] = []
-        for row in 0..<numberOfRows {
-            let id = dataSource.transcriptView(self, rowAt: row).id
-            guard let ranges = find.matches[id]?.ranges else { continue }
-            hits.append(contentsOf: ranges.map { (row, id, $0) })
-        }
-        return hits
-    }
-
-    /// How many hits come before `selection`, in transcript order.
-    ///
-    /// The walk `locatedHits()` makes, stopping at the selection's row — so what a
-    /// find bar asking after every report costs is the distance to the reader, and
-    /// only when something has cleared the cached answer.
-    private func ordinal(
-        of selection: (row: TranscriptRow.ID, range: Range<Int>), in find: Find
-    ) -> Int? {
-        guard let dataSource else { return nil }
-        var before = 0
-        for row in 0..<numberOfRows {
-            let id = dataSource.transcriptView(self, rowAt: row).id
-            guard let ranges = find.matches[id]?.ranges else { continue }
-            if id == selection.row {
-                return ranges.firstIndex(of: selection.range).map { before + $0 }
-            }
-            before += ranges.count
-        }
-        return nil
-    }
-
-    /// Makes one hit the current one: records it, brings it on screen, repaints.
-    private func select(row: Int, id: TranscriptRow.ID, range: Range<Int>, ordinal: Int?) {
-        find?.selection = (id, range)
-        find?.ordinal = ordinal
-        scrollFindMatchToVisible(range, inRow: row)
-        rebindFind()
-    }
+    public func findPrevious() { findSession.findPrevious() }
 
     /// Brings a hit on screen — the hit, not only its row, because a row is a
     /// whole message and a long one is several screens tall: scrolling its nearest
@@ -2251,7 +1393,7 @@ public final class TranscriptView: NSView {
     ///
     /// A `.view` row's geometry is its host's, so there the row is brought to its
     /// nearest edge instead.
-    private func scrollFindMatchToVisible(_ range: Range<Int>, inRow row: Int) {
+    func scrollFindMatchToVisible(_ range: Range<Int>, inRow row: Int) {
         guard let described = dataSource?.transcriptView(self, rowAt: row),
             let block = measuredBlock(for: described),
             let hit = block.rects(from: range.lowerBound, to: range.upperBound)
@@ -2269,375 +1411,13 @@ public final class TranscriptView: NSView {
         scrollClip(toUnobscuredMinY: (minY + maxY - visible.height) / 2)
     }
 
-    /// Shows the find as it stands now, or takes it away.
-    ///
-    /// Called wherever the find changes — its matches, its selection, its end.
-    /// Every other reason the overlay has to look again is a row moving under it,
-    /// and those reach `setNeedsFindLayout()` on their own.
-    private func rebindFind() {
-        findOverlay.isHidden = find == nil
-        placeFindOverlay()
-        setNeedsFindLayout()
-    }
-
-    /// Keeps the overlay over what is on screen: the clip's bounds, which are in
-    /// the document's coordinates and so in the overlay's, with half a screen to
-    /// spare either way.
-    ///
-    /// The overlay moves with the document on its own — AppKit carries a floating
-    /// subview through a scroll the way it carries the rows — so this is not what
-    /// keeps a lit match on its text. It is what keeps the *dimming* reaching the
-    /// edge of the viewport as the reader travels further than the spare half
-    /// screen, and what brings rows that have scrolled in under the overlay.
-    ///
-    /// A scroll inside the spare half screen changes nothing here: the rows it
-    /// brings in report themselves as they arrive (`setNeedsFindLayout()`), so
-    /// the overlay is not laid out — and its shade not redrawn — once per wheel
-    /// event for nothing.
-    private func placeFindOverlay() {
-        guard find != nil else { return }
-        let visible = scrollView.contentView.bounds
-        guard !findOverlay.frame.contains(visible) || findOverlay.frame.width != visible.width
-        else { return }
-        findOverlay.frame = visible.insetBy(dx: 0, dy: -visible.height / 2)
-        findOverlay.needsLayout = true
-    }
-
-    /// Asks the overlay to read the rows on screen again, if a find is up.
-    fileprivate func setNeedsFindLayout() {
-        guard find != nil else { return }
-        findOverlay.needsLayout = true
-    }
-
-    /// The rows on screen that have matches, as the overlay asks for them.
-    ///
-    /// Filed matches are shown only for the content they were found in, so a row
-    /// whose text has moved on since is lit nowhere rather than at ranges that name
-    /// other characters now.
-    private func findRowsOnScreen() -> [FindOverlayView.Row] {
-        guard let find, let dataSource else { return [] }
-        var rows: [FindOverlayView.Row] = []
-        tableView.enumerateAvailableRowViews { [weak self] rowView, row in
-            guard let self,
-                let cell = rowView.view(atColumn: 0) as? TranscriptCellView,
-                let view = cell.hostedView as? NSView & TranscriptFindHighlighting
-            else { return }
-            let described = dataSource.transcriptView(self, rowAt: row)
-            guard let filed = find.matches[described.id], filed.content == described.content
-            else { return }
-            let current = find.selection.flatMap { $0.row == described.id ? $0.range : nil }
-            rows.append(.init(id: described.id, view: view, matches: filed.ranges, current: current))
-        }
-        return rows
-    }
-
-    /// Searches again the rows `reloadRows(at:)` announced changed — the ones the
-    /// walk has passed or has out, since it will reach the rest on its own.
-    ///
-    /// On the main actor and on the spot, because the table is about to measure
-    /// these rows anyway: a changed row is a changed height, so the tree this
-    /// searches is the one its height is answered from. For the streaming row that
-    /// is one search of one row a frame, and only while a find is up.
-    private func refileFind(inRows rows: IndexSet) {
-        guard var find, let dataSource else { return }
-        let covered = min(find.pending?.upperBound ?? find.next, numberOfRows)
-        var changed = false
-        for row in rows where row < covered {
-            let described = dataSource.transcriptView(self, rowAt: row)
-            let ranges =
-                described.content == .view
-                ? delegate?.transcriptView(self, findMatchesOf: find.query, inRow: row) ?? []
-                : measuredBlock(for: described)?.ranges(of: find.query) ?? []
-            if find.pending?.contains(row) == true {
-                find.refiled.insert(described.id)
-            }
-            if Self.file(ranges, searched: described.content, for: described.id, in: &find) {
-                changed = true
-            }
-        }
-        self.find = find
-        guard changed else { return }
-        rebindFind()
-        reportFind()
-    }
-
-    /// Renumbers the walk for rows inserted at `indexes` (post-insertion
-    /// positions), and resumes a walk that had finished so it takes them in.
-    ///
-    /// Rows landing *behind* the cursor pull it back to the first of them rather
-    /// than past them: the walk re-reads what lies between, which the cache
-    /// answers, and nothing inserted goes unsearched. A slice out on the pool that
-    /// the insertion renumbered is abandoned — `scan` takes it again.
-    ///
-    /// Not reported: nothing has been found yet. The walk reports as it files, and
-    /// `isComplete` goes back to `true` when it reaches the end again.
-    private func shiftFind(byRowsInserted indexes: IndexSet) {
-        guard var find, let first = indexes.first else { return }
-        if let pending = find.pending, first < pending.upperBound {
-            find.pending = nil
-        }
-        find.next = min(find.next, first)
-        self.find = find
-        if finding == nil { walkFind() }
-    }
-
-    /// Renumbers the walk for rows removed at `indexes` (pre-removal positions).
-    /// Their hits went with the sweep `removeRows(at:)` makes first.
-    private func shiftFind(byRowsRemoved indexes: IndexSet) {
-        guard var find, let first = indexes.first else { return }
-        if let pending = find.pending, first < pending.upperBound {
-            find.pending = nil
-        }
-        find.next -= indexes.count(in: 0..<find.next)
-        self.find = find
-    }
-
-    /// Drops hits for rows the data source no longer has.
-    ///
-    /// Called from `sweepCache()`, off the same walk and the same live set, because
-    /// the two answer one question — which identities still name a row — and asking
-    /// it twice is how the answers come to differ. Not reported here: this runs
-    /// inside a mutation, before the table has been told, and a host reading
-    /// `indexOfSelectedFindMatch` from the report would walk rows the table does
-    /// not have yet. The mutation reports once it is done.
-    private func keepFind(_ live: Set<TranscriptRow.ID>) {
-        guard var find else { return }
-        let gone = find.matches.keys.filter { !live.contains($0) }
-        guard !gone.isEmpty else { return }
-        for id in gone {
-            find.count -= find.matches.removeValue(forKey: id)?.ranges.count ?? 0
-        }
-        find.ordinal = nil
-        if let selection = find.selection, !live.contains(selection.row) {
-            find.selection = nil
-        }
-        self.find = find
-    }
-
     // MARK: - Selection
-    //
-    // A selection runs from a position in one row to a position in another, so it
-    // is held here, where rows have identities and outlive their views, rather
-    // than on the views — which is `NSTableView`'s split, the table holding the
-    // selection and handing each row view its `isSelected`. A press on a
-    // `BlockView` goes up the responder chain to the table, like any mouse event
-    // a view does not take, and the view draws what it is handed
-    // (`selectedRange`); nothing about it is on the public surface.
-    //
-    // The responder is the table, the scroll view's document view, the way it is
-    // an `NSTextView` and not its scroll view: it takes first responder on a
-    // press, answers Copy, and drops the selection when the focus moves on —
-    // how a selection in one transcript goes away when the reader starts one in
-    // another. Keyboard handling stays exactly what it was, because the row view
-    // that used to hold the focus passed every key up to this same table.
-    //
-    // What it costs where the transcript is hot: nothing, until something is
-    // selected. A row bound (`viewForRow`, `rebindVisibleRows`) reads its part —
-    // arithmetic on four integers — and an insert renumbers two. Only a press or a
-    // drag walks anything, and only when the focus moved: it walks the row views
-    // on screen, repainting those whose part changed.
 
-    /// The reader's selection, or a caret after a click, or `nil`.
-    private var selection: TextSelection?
-
-    /// A press, and everything until the button comes back up. The one way into a
-    /// selection made with the mouse, reached from a row or from the table
-    /// between rows through the responder chain.
-    ///
-    /// A tracking loop — `NSTextView`'s shape, and `NSTableView`'s — rather than
-    /// drags dispatched to whichever view was pressed, because the focus is a
-    /// function of two things: where the pointer is **and where the content is**.
-    /// Either can move without the other, so the loop re-reads the focus on
-    /// both: a drag moves the pointer; a periodic event scrolls the content under
-    /// a pointer held past an edge, at a steady rate whether or not the mouse
-    /// moves; and a scroll wheel does it at the reader's.
-    ///
-    /// Nothing between the press and the release is dispatched to a view, so no
-    /// view has to outlive its row for the gesture to finish.
-    fileprivate func trackSelection(from event: NSEvent) {
-        beginSelection(with: event)
-        guard let window, selection != nil else { return }
-
-        // The press that started this, then each drag: where the pointer is in the
-        // window, which is what autoscroll and the focus are both worked out from.
-        var pointer = event
-        NSEvent.startPeriodicEvents(afterDelay: Self.autoscrollDelay, withPeriod: Self.autoscrollPeriod)
-        defer { NSEvent.stopPeriodicEvents() }
-        window.trackEvents(
-            matching: [.leftMouseDragged, .leftMouseUp, .periodic, .scrollWheel],
-            timeout: NSEvent.foreverDuration, mode: .eventTracking
-        ) { event, stop in
-            guard let event else { return }
-            switch event.type {
-            case .leftMouseDragged: pointer = event
-            // Scrolls by how far past the edge the pointer is, so the reader sets
-            // the speed by where they hold it; inside the viewport, nothing moved.
-            case .periodic: guard tableView.autoscroll(with: pointer) else { return }
-            case .scrollWheel: scrollView.scrollWheel(with: event)
-            default:
-                stop.pointee = true
-                return
-            }
-            extendSelection(to: pointer)
-        }
-    }
-
-    /// How soon a pointer held past an edge starts scrolling, and how often it
-    /// scrolls again: a frame, so the rows arriving move as a scroll does.
-    private static let autoscrollDelay: TimeInterval = 0.1
-    private static let autoscrollPeriod: TimeInterval = 1.0 / 60
-
-    /// Moves the selection's focus to what is under `pointer` now.
-    private func extendSelection(to pointer: NSEvent) {
-        guard var selection, let hit = selectionHit(at: pointer) else { return }
-        selection.focus = .init(row: hit.row, id: hit.id, index: hit.block?.index(at: hit.point) ?? 0)
-        guard selection != self.selection else { return }
-        select(selection)
-    }
-
-    /// Starts a selection at a press: a caret, or — for a double- or triple-click
-    /// — the word or paragraph under it. Which unit that is, is the block's to
-    /// answer, and the **point** goes over for the two that take one: an index at
-    /// a line boundary names two places, and only the point can tell them apart.
-    private func beginSelection(with event: NSEvent) {
-        window?.makeFirstResponder(tableView)
-        guard let hit = selectionHit(at: event) else { return select(nil) }
-        let range: Range<Int>
-        switch (hit.block, event.clickCount) {
-        case (let block?, 2): range = block.wordRange(at: hit.point)
-        case (let block?, 3...): range = block.paragraphRange(at: hit.point)
-        case (let block?, _):
-            let index = block.index(at: hit.point)
-            range = index..<index
-        case (nil, _): range = 0..<0
-        }
-        select(TextSelection(row: hit.row, id: hit.id, range: range))
-    }
-
-    /// What a right-click acts on, settled before its menu is shown.
-    ///
-    /// Two things, and both are why this is not a pure getter. **The focus** moves
-    /// to the selection's responder, because a menu item with a `nil` target
-    /// dispatches from the window's first responder, not from the view the menu
-    /// came from — right-clicking a row nobody has clicked would otherwise
-    /// validate Copy against whatever held the focus. And **the word under the
-    /// pointer** is selected, unless the click landed inside the selection, which
-    /// is then what the reader is pointing at. `NSTextView` and WebKit both do
-    /// this; the alternative is a menu whose only item is greyed out.
-    ///
-    /// Inside is tested in the index space rather than geometrically, which is
-    /// `NSTextView`'s test too — and for a table, whose selection is a rectangle,
-    /// the endpoints are what a copy would be taken from.
-    fileprivate func selectForContextMenu(with event: NSEvent) {
-        window?.makeFirstResponder(tableView)
-        guard let hit = selectionHit(at: event), let block = hit.block else { return }
-        if selection?.contains(row: hit.row, index: block.index(at: hit.point)) == true { return }
-        select(TextSelection(row: hit.row, id: hit.id, range: block.wordRange(at: hit.point)))
-    }
-
-    /// The row under `event` and the point in its block's own coordinates.
-    ///
-    /// Clamped rather than failing: above the rows is the start of the first and
-    /// below them the end of the last — `NSTextView`'s answer past its first and
-    /// last lines — so a drag that leaves the rows selects to the end, and the
-    /// block clamps a point beside its text the same way.
-    /// Worked out from the table's geometry, not from a view, so a row with no
-    /// view on screen answers as well as one with — and a drag keeps working when
-    /// the view it started on has been recycled. `block` is `nil` for a `.view`
-    /// row, whose content has no positions: the selection passes through it.
-    private func selectionHit(
-        at event: NSEvent
-    ) -> (row: Int, id: TranscriptRow.ID, block: MeasuredBlock?, point: CGPoint)? {
-        guard numberOfRows > 0, let dataSource else { return nil }
-        let point = tableView.convert(event.locationInWindow, from: nil)
-        let row = tableView.row(at: NSPoint(x: tableView.bounds.midX, y: point.y))
-        let above = row < 0 && point.y < 0
-        let clamped = row >= 0 ? row : above ? 0 : numberOfRows - 1
-
-        let described = dataSource.transcriptView(self, rowAt: clamped)
-        // The block is drawn from the cell's top edge, centred at the content
-        // width — `TranscriptCellView`'s arrangement.
-        let cell = tableView.frameOfCell(atColumn: 0, row: clamped)
-        let local =
-            row >= 0
-            ? CGPoint(x: point.x - (cell.midX - contentWidth / 2), y: point.y - cell.minY)
-            : above ? .zero : CGPoint(x: contentWidth, y: cell.height)
-        return (
-            clamped, described.id,
-            described.content == .view ? nil : measuredBlock(for: described), local
-        )
-    }
-
-    /// Makes `selection` the selection and shows it.
-    private func select(_ selection: TextSelection?) {
-        self.selection = selection
-        pushSelection()
-    }
-
-    /// Hands every row view on screen its part of the selection. A view whose
-    /// part did not change is not repainted (`BlockView.selectedRange`), so a drag
-    /// inside one row repaints that row alone.
-    private func pushSelection() {
-        tableView.enumerateAvailableRowViews { rowView, row in
-            guard let view = (rowView.view(atColumn: 0) as? TranscriptCellView)?.hostedView as? BlockView,
-                let block = view.block
-            else { return }
-            view.selectedRange = selection?.range(inRow: row, length: block.length)
-        }
-    }
-
-    /// Finds the selection's rows again after a removal or a reload, or drops it
-    /// when a row one of its ends was in has gone.
-    ///
-    /// Runs inside the mutation, before the table has been told — so it shows
-    /// nothing unless the selection went. A selection that survived is still
-    /// correct in every view on screen: what each shows is its part of the same
-    /// text, whatever number its row now has.
-    private func keepSelection(_ rows: [TranscriptRow.ID: Int]) {
-        guard let selection else { return }
-        self.selection = selection.relocated(to: rows)
-        if self.selection == nil { pushSelection() }
-    }
-
-    /// The table stopped being first responder.
-    fileprivate func selectionDidResign() {
-        guard selection != nil else { return }
-        select(nil)
-    }
-
-    /// Whether Copy has anything to copy.
-    fileprivate var canCopySelection: Bool {
-        selection.map { !$0.isEmpty } ?? false
-    }
-
-    /// Copies the selection as plain text, a blank line between rows.
-    ///
-    /// A row the selection covers that nothing has measured — it can run through
-    /// rows the reader dragged past without the table ever asking about — is
-    /// built for this and dropped, not filed: the same rule as a find's walk, for
-    /// the same reason: filing it would push the rows on screen out of `RowCache`'s
-    /// resident budget to make room for rows nobody is looking at. That includes a
-    /// row whose tree the budget already evicted, which reads as unmeasured here and
-    /// is rebuilt the same way. The flat index space depends on
-    /// the content and not the width, so a tree measured at any width answers.
-    /// `.view` rows contribute nothing; their content is the host's.
-    fileprivate func copySelection() {
-        guard let selection, !selection.isEmpty, let dataSource else { return }
-        var parts: [String] = []
-        for row in selection.rows where row < numberOfRows {
-            let described = dataSource.transcriptView(self, rowAt: row)
-            guard
-                let block = rowCache.cachedMeasured(for: described, width: nil)
-                    ?? described.content.entry(width: contentWidth, reusing: nil)?.measured,
-                let range = selection.range(inRow: row, length: block.length)
-            else { continue }
-            let text = block.text(from: range.lowerBound, to: range.upperBound)
-            if !text.isEmpty { parts.append(text) }
-        }
-        guard !parts.isEmpty else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(parts.joined(separator: "\n\n"), forType: .string)
-    }
+    /// The reader's selection and the gestures that make it; see
+    /// `SelectionTracker`. The transcript renumbers it on every mutation and reads
+    /// each row's part back when it binds a view.
+    private lazy var selectionTracker = SelectionTracker(
+        owner: self, rowCache: rowCache, tableView: tableView, scrollView: scrollView)
 
     // MARK: - Scroll anchoring
 
@@ -2686,17 +1466,17 @@ public final class TranscriptView: NSView {
         // selection is read against these indices. A removal is renumbered by
         // identity instead, in the sweep `removeRows` runs inside `body`.
         if case .inserted(let indexes) = shift {
-            selection = selection?.shifted(byRowsInserted: indexes)
+            selectionTracker.shift(byRowsInserted: indexes)
         }
         body()
         switch shift {
         case .none: break
         case .inserted(let indexes):
             anchor = anchor?.shifted(byRowsInserted: indexes)
-            shiftFind(byRowsInserted: indexes)
+            findSession.shiftFind(byRowsInserted: indexes)
         case .removed(let indexes):
             anchor = anchor?.shifted(byRowsRemoved: indexes)
-            shiftFind(byRowsRemoved: indexes)
+            findSession.shiftFind(byRowsRemoved: indexes)
         }
         endAnchoring()
     }
@@ -2862,171 +1642,85 @@ public final class TranscriptView: NSView {
     }
 }
 
-/// `NSTableView`'s data source and delegate, forwarded to a `TranscriptView`.
-///
-/// Not a conformance on `TranscriptView` itself: that type is public, so the
-/// conformance would be too, putting AppKit's table callbacks on the package's
-/// surface next to three near-identically named row-count methods. Holds the
-/// transcript weakly — the transcript owns this, the table only refers to it.
-@MainActor
-private final class TableViewAdapter: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+extension TranscriptView: BlockViewDelegate {
 
-    private weak var transcript: TranscriptView?
+    func blockView(_ view: BlockView, didActivate link: InlineLink) {
+        switch link.destination {
+        case .url(let url):
+            delegate?.transcriptView(self, didActivate: url, inRow: row(of: view))
 
-    init(transcript: TranscriptView) {
-        self.transcript = transcript
-        super.init()
+        case .more:
+            delegate?.transcriptView(self, didActivateMoreInRow: row(of: view))
+        }
     }
 
-    func numberOfRows(in tableView: NSTableView) -> Int {
-        guard let transcript else { return 0 }
-        return transcript.dataSource?.numberOfRows(in: transcript) ?? 0
+    func blockView(_ view: BlockView, didHover url: URL?, at point: CGPoint) {
+        delegate?.transcriptView(
+            self, didHover: url, at: convert(point, from: view), inRow: row(of: view))
     }
 
-    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        transcript?.height(ofRow: row) ?? 0
-    }
-
-    func tableView(
-        _ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int
-    ) -> NSView? {
-        transcript?.view(forRow: row)
-    }
-
-    func tableView(_ tableView: NSTableView, didRemove rowView: NSTableRowView, forRow row: Int) {
-        transcript?.didRemove(rowView, forRow: row)
+    /// Not `delegate?.transcriptView(…) ?? menu`: optional-chaining a method that
+    /// itself returns an optional flattens the two, so a host answering "show no
+    /// menu" would be indistinguishable from having no delegate — and would
+    /// silently get the default menu instead.
+    func blockView(_ view: BlockView, menu: NSMenu, for event: NSEvent) -> NSMenu? {
+        // Before the host sees the menu: what it acts on is decided here.
+        selectionTracker.selectForContextMenu(with: event)
+        guard let delegate else { return menu }
+        return delegate.transcriptView(self, menu: menu, forRow: row(of: view))
     }
 }
 
-/// The transcript's scroll view, and the one thing it exists to change: its
-/// scrollers are **always** overlay ones, whatever the reader's "Show scroll
-/// bars" setting says.
-///
-/// A legacy scroller is a permanent 15-point track carved out of the *inside* of
-/// the viewport. Everywhere else on the system that is the correct trade — a
-/// list gives up 15 points of a column it owns outright. Here it is not, because
-/// the transcript's content is **centred within a maximum width** and the
-/// scroller sits at the window's edge, several hundred points away from the
-/// column it would be narrowing. The result reads as the document having been
-/// shunted off-centre by a control that is nowhere near it, and the wider the
-/// window the more obviously wrong it looks. `maxContentWidth` and a legacy
-/// scroller are the two halves that do not fit together; an overlay scroller
-/// floats over the margin the centring already left, and costs the column
-/// nothing.
-///
-/// This does override an explicit preference, so it is worth being plain about:
-/// a reader who set "Always" gets an overlay scroller here regardless. The app's
-/// previous renderer (`Transcript2ScrollView`) made the same call for the same
-/// reason, and this is parity with it rather than a new position.
-///
-/// **Overriding the property, not assigning it once.** AppKit re-writes
-/// `scrollerStyle` from `NSPreferredScrollerStyleDidChangeNotification`, so a
-/// one-shot assignment in the initialiser silently reverts the first time the
-/// reader toggles the setting — or plugs in a mouse, which flips the
-/// "Automatically based on mouse or trackpad" default to legacy. Intercepting
-/// the setter is what makes the pin hold.
-///
-/// `autohidesScrollers` used to be set here and is deliberately gone: it governs
-/// whether a **legacy** scroller is hidden when the content fits, and with the
-/// style pinned there is no legacy case left for it to serve. Put it back if the
-/// pin ever comes off.
-private final class OverlayScrollView: NSScrollView {
+extension TranscriptView: TableViewAdapterOwner {
 
-    override var scrollerStyle: NSScroller.Style {
-        get { .overlay }
-        set { super.scrollerStyle = .overlay }
+    var numberOfRowsInDataSource: Int {
+        dataSource?.numberOfRows(in: self) ?? 0
     }
 }
 
-/// The transcript's table, and the two things it adds: saying when it has placed
-/// its rows, and being the responder for the selection.
-///
-/// A find's overlay lights matches where the rows are, and the table moves rows
-/// without telling anyone — a height noted, a row inserted above, a width change
-/// re-tiling everything. `tile()` is where it works out the new geometry and
-/// `layout()` is where row views take it, so both report; the overlay sits later
-/// in the scroll view's subviews than the clip holding this table, so a layout pass
-/// reaches it after the rows have moved rather than before.
-///
-/// The selection's half is `NSTextView`'s shape: the document view holds the focus
-/// and answers Copy. Every piece of it is forwarded to the transcript, which holds
-/// the selection; see its `// MARK: - Selection`.
-private final class TranscriptTableView: NSTableView {
+extension TranscriptView: TranscriptTableViewOwner {
 
-    /// Weak, like `TableViewAdapter`'s: the transcript owns this table.
-    weak var transcript: TranscriptView?
-
-    override func tile() {
-        super.tile()
-        transcript?.setNeedsFindLayout()
-        // The document's height is decided here, and a height can move the end
-        // of the scroll without the clip moving — a reload, a re-measure.
-        transcript?.reportTailFollowing()
+    func tableViewDidTile(_ tableView: TranscriptTableView) {
+        findSession.setNeedsFindLayout()
+        reportTailFollowing()
     }
 
-    override func layout() {
-        super.layout()
-        transcript?.setNeedsFindLayout()
+    func tableViewDidLayout(_ tableView: TranscriptTableView) {
+        findSession.setNeedsFindLayout()
     }
 
-    /// Every press that selects: one on a row's text, passed up the chain by its
-    /// `BlockView`, and one no row took — the margins beside the content, the gap
-    /// between two rows, a host row that does not handle the mouse, which starts
-    /// from the nearest position as a press in `NSTextView`'s margin does.
-    ///
-    /// `super` is not called: its tracking loop selects table rows, which the
-    /// transcript never shows. The transcript's loop takes the gesture instead.
-    override func mouseDown(with event: NSEvent) {
-        transcript?.trackSelection(from: event)
+    func tableView(_ tableView: TranscriptTableView, trackSelectionFrom event: NSEvent) {
+        selectionTracker.trackSelection(from: event)
     }
 
-    override func resignFirstResponder() -> Bool {
-        guard super.resignFirstResponder() else { return false }
-        transcript?.selectionDidResign()
-        return true
+    func tableViewDidResignFirstResponder(_ tableView: TranscriptTableView) {
+        selectionTracker.selectionDidResign()
     }
 
-    /// The key being interpreted, so one the transcript doesn't answer can go up
-    /// the chain as itself.
-    private var interpretedKey: NSEvent?
-
-    /// Keys are interpreted, not switched on, so the reader's own key bindings
-    /// apply. The transcript answers only the scrolling commands; every other key
-    /// — typing, Return, Escape — goes to the next responder **as the event**, the
-    /// way `NSResponder` passes a key it doesn't handle. That is the whole of what
-    /// lets a host type into its input while the transcript has focus: its view
-    /// controller is further up the chain, sees the key, and hands it on. The
-    /// event rather than its text, so an input method there composes it.
-    ///
-    /// `super` is never asked: `NSTableView` would move a row selection the
-    /// transcript never shows (↓ selected row 0 and scrolled to the top) and
-    /// swallows Escape and Home.
-    override func keyDown(with event: NSEvent) {
-        interpretedKey = event
-        defer { interpretedKey = nil }
-        interpretKeyEvents([event])
+    func tableView(_ tableView: TranscriptTableView, performScrollCommand selector: Selector) -> Bool {
+        performScrollCommand(selector)
     }
 
-    override func doCommand(by selector: Selector) {
-        if transcript?.performScrollCommand(selector) == true { return }
-        passInterpretedKeyUp()
+    func tableViewCopySelection(_ tableView: TranscriptTableView) {
+        selectionTracker.copySelection()
     }
 
-    override func insertText(_ insertString: Any) {
-        passInterpretedKeyUp()
+    func tableViewCanCopySelection(_ tableView: TranscriptTableView) -> Bool {
+        selectionTracker.canCopySelection
+    }
+}
+
+extension TranscriptView: RemeasureSchedulerOwner {}
+
+extension TranscriptView: SelectionTrackerOwner {}
+
+extension TranscriptView: FindSessionOwner {
+
+    func findMatches(of query: String, inRow row: Int) -> [Range<Int>] {
+        delegate?.transcriptView(self, findMatchesOf: query, inRow: row) ?? []
     }
 
-    private func passInterpretedKeyUp() {
-        guard let interpretedKey else { return }
-        nextResponder?.keyDown(with: interpretedKey)
-    }
-
-    @objc func copy(_ sender: Any?) {
-        transcript?.copySelection()
-    }
-
-    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
-        guard item.action == #selector(copy(_:)) else { return super.validateUserInterfaceItem(item) }
-        return transcript?.canCopySelection ?? false
+    func findDidUpdate(matches: Int, isComplete: Bool) {
+        delegate?.transcriptView(self, didUpdateFindMatches: matches, isComplete: isComplete)
     }
 }

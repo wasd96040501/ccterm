@@ -63,6 +63,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Hosted unit tests keep NSApp alive for AppKit rendering, but the host
+        // shows no Dock icon and opens no window of its own.
+        if Self.isUnderXCTest {
+            NSApp.setActivationPolicy(.accessory)
+            return
+        }
+        UserDefaults.standard.set(0, forKey: "NSInitialToolTipDelay")
+        MainThreadWatchdog.start()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         if Self.isUnderXCTest { return }
 
@@ -73,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             directory: SessionDirectory(environment: ProcessInfo.processInfo.environment),
             indexURL: caches.appendingPathComponent("LibraryIndex.plist"))
         self.library = library
-        let controller = MainWindowController(library: library)
+        let controller = MainWindowController(library: library, git: GitService())
         // Where the frame persists is the app's configuration, not the window's:
         // a `MainWindowController` built anywhere else writes no defaults.
         controller.windowFrameAutosaveName = "MainWindow"
@@ -97,10 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
-    /// Mirrors `CCTermApp.isUnderXCTest`. The test path installs the
-    /// `NSWindow` swizzles in `CCTermApp.init` and we must skip
-    /// creating the real window here so XCTest doesn't see a stray
-    /// visible window.
+    /// XCTest injects this into a hosted test run.
     private static let isUnderXCTest =
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 }

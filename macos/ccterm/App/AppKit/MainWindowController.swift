@@ -1,4 +1,6 @@
+import AgentSDK
 import AppKit
+import TranscriptWorkspace
 
 /// Window controller for the AppKit-rooted main window. The window is
 /// created in `applicationDidFinishLaunching` rather than declared as a
@@ -12,14 +14,16 @@ import AppKit
 @MainActor
 final class MainWindowController: NSWindowController, NSToolbarDelegate {
     private let library: LibraryStore
+    private let git: GitService
     private let splitController: MainSplitViewController
     private let titleView = MainWindowTitleView()
 
     /// The task following the shown transcript's branch.
     private var branchTask: Task<Void, Never>?
 
-    init(library: LibraryStore) {
+    init(library: LibraryStore, git: GitService) {
         self.library = library
+        self.git = git
         splitController = MainSplitViewController(library: library)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1200, height: 860),
@@ -88,7 +92,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
 
     /// Back and forward as one control, as Xcode's and Finder's: a momentary
     /// segmented group, each segment a subitem with its own action, aimed at the
-    /// split and validated by it. Navigational, so AppKit keeps it at the leading
+    /// editor area and validated by it. Navigational, so AppKit keeps it at the leading
     /// edge of the title area.
     private func navigationItem() -> NSToolbarItem {
         let back = String(localized: "Back")
@@ -99,12 +103,12 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
                 NSImage(systemSymbolName: "chevron.left", accessibilityDescription: back),
                 NSImage(systemSymbolName: "chevron.right", accessibilityDescription: forward),
             ].compactMap { $0 },
-            selectionMode: .momentary, labels: [back, forward], target: splitController, action: nil)
+            selectionMode: .momentary, labels: [back, forward], target: splitController.editorArea, action: nil)
         for (subitem, action) in zip(
             group.subitems,
-            [#selector(MainSplitViewController.goBack(_:)), #selector(MainSplitViewController.goForward(_:))])
+            [#selector(EditorAreaViewController.goBack(_:)), #selector(EditorAreaViewController.goForward(_:))])
         {
-            subitem.target = splitController
+            subitem.target = splitController.editorArea
             subitem.action = action
         }
         group.isNavigational = true
@@ -133,8 +137,20 @@ extension MainWindowController: MainSplitViewControllerDelegate {
             show(project: nil, branch: nil)
             return
         }
-        branchTask = Task { [weak self, library] in
-            for await branch in library.branchUpdates(ofTranscriptAt: url) {
+        branchTask = Task { [weak self, library, git] in
+            // The live branch of the folder the session ran in (a worktree's
+            // own); once that is no repository — a worktree removed — the
+            // branch the transcript last recorded.
+            let metadata = await library.metadata(ofTranscriptAt: url)
+            var branches: AsyncStream<String?>?
+            if let cwd = metadata?.cwd { branches = await git.branchUpdates(at: cwd) }
+            guard let branches else {
+                guard !Task.isCancelled else { return }
+                // The CLI records a detached HEAD as "HEAD".
+                self?.show(project: project.title, branch: metadata?.gitBranch.flatMap { $0 == "HEAD" ? nil : $0 })
+                return
+            }
+            for await branch in branches {
                 guard !Task.isCancelled else { return }
                 self?.show(project: project.title, branch: branch)
             }

@@ -2,7 +2,7 @@
 // reading a session's file gives the conversation a live `Session` emitted.
 //
 // One session, driven through what shapes a file: a response with parallel
-// tool calls, a rewind to an earlier prompt (`rewind_conversation`, as an
+// tool calls, a rewind to an earlier prompt (`rewindConversation(to:)`, as an
 // edited prompt does), `/compact`, and a resume in a second process. After
 // each step the file is read with `Transcript` and compared with the
 // `.user` / `.assistant` / compaction-boundary messages received live, minus
@@ -96,15 +96,14 @@ final class Run {
     /// The CLI refuses while the turn it just reported is still winding
     /// down (`turn_running`), so this retries for a few seconds.
     func rewind(to prompt: UserInput) async throws {
-        var response = JSONValue.null
+        var response = RewindResult(rewound: false)
         for _ in 0..<50 {
-            response = try await session.sendControlRequest(
-                "rewind_conversation", ["target_message_uuid": .string(prompt.uuid)])
-            guard response["reason"]?.stringValue == "turn_running" else { break }
+            response = try await session.rewindConversation(to: prompt.uuid)
+            guard response.reason == "turn_running" else { break }
             try await Task.sleep(for: .milliseconds(200))
         }
         log("rewind → \(response)")
-        guard response["rewound"]?.boolValue == true else {
+        guard response.rewound else {
             throw AgentSDKError.invalidResponse(subtype: "rewind_conversation")
         }
         if let cut = conversation.firstIndex(where: { key($0)?.hasPrefix("user \(prompt.uuid) ") == true }) {

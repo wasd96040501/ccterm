@@ -13,7 +13,7 @@ import UniformTypeIdentifiers
 final class SidebarViewController: NSViewController {
     weak var delegate: SidebarViewControllerDelegate?
 
-    private let library: LibraryStore
+    private let nodes: AnyPublisher<[LibraryNode], Never>
     private var cancellables = Set<AnyCancellable>()
 
     /// The outline's items. `NSOutlineView` tells items apart by identity and
@@ -26,10 +26,10 @@ final class SidebarViewController: NSViewController {
     /// republish isn't reported again.
     private var reportedSelection: String?
 
-    /// The concrete store rather than a protocol: it has one implementation,
-    /// and `LibraryStore(directory:)` over a fixture directory is the test seam.
-    init(library: LibraryStore) {
-        self.library = library
+    /// `nodes`: the library's tree, current value first, then each change —
+    /// `LibraryStore.$nodes`.
+    init(nodes: AnyPublisher<[LibraryNode], Never>) {
+        self.nodes = nodes
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -76,7 +76,7 @@ final class SidebarViewController: NSViewController {
         outlineView.target = self
         outlineView.action = #selector(click(_:))
         outlineView.doubleAction = #selector(doubleClick(_:))
-        library.$nodes
+        nodes
             .receive(on: DispatchQueue.main)
             .sink { [weak self] nodes in self?.show(nodes) }
             .store(in: &cancellables)

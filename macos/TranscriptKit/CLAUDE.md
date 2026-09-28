@@ -5,8 +5,8 @@ Standalone Swift package: a chat transcript view for AppKit, `TranscriptView`, d
 | Target | What | Rules |
 |---|---|---|
 | `TranscriptKit` | The renderer: `TranscriptView`, data source / delegate, markdown → blocks, `RowCache`, selection, find | this file + [Sources/TranscriptKit/CLAUDE.md](Sources/TranscriptKit/CLAUDE.md) (internals) |
-| `TranscriptMedia` | Pictures: mosaic layout, image grid row, full-screen viewer. Depends on `TranscriptKit` | [Sources/TranscriptMedia/CLAUDE.md](Sources/TranscriptMedia/CLAUDE.md) |
-| `TranscriptWorkspace` | Xcode-style editor area (split + tabs + find bar). Depends on **nothing** | [Sources/TranscriptWorkspace/CLAUDE.md](Sources/TranscriptWorkspace/CLAUDE.md) |
+| `TranscriptMedia` | Pictures: mosaic layout, image grid row, full-screen viewer. Depends on **nothing** | [Sources/TranscriptMedia/CLAUDE.md](Sources/TranscriptMedia/CLAUDE.md) |
+| `TranscriptWorkspace` | Xcode-style editor area (split + tabs). Depends on **nothing** | [Sources/TranscriptWorkspace/CLAUDE.md](Sources/TranscriptWorkspace/CLAUDE.md) |
 | `TranscriptKitDemo` | The demo app — where what tests can't assert gets looked at | [Sources/TranscriptKitDemo/CLAUDE.md](Sources/TranscriptKitDemo/CLAUDE.md) |
 | `TranscriptKitTests` | The package's own suite | [Tests/TranscriptKitTests/CLAUDE.md](Tests/TranscriptKitTests/CLAUDE.md) |
 

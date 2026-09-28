@@ -4,7 +4,7 @@ The app's only test target. Three kinds of test live here:
 
 | Kind | What | Runs on default suite / CI |
 |---|---|---|
-| **Logic tests** (most) | Services and models: worktree provisioning, git probing, title generation, effort / permission-mode vocabulary. Click / keystroke / focus flows are covered by calling the method the control would call, not by synthesizing the event. | yes |
+| **Logic tests** (most) | Stores and services: the session library and its index, a folder's live git branch, sidebar → editor routing. Click / keystroke / focus flows are covered by calling the method the control would call, not by synthesizing the event. | yes |
 | **Measurement probes / harness tests** | Mount a real production view tree off-screen and **assert** on geometry, row-typeset counts, animation curves, hit-testing. See [Measurement probes](#measurement-probes-merge-gates) and [Harness/CLAUDE.md](Harness/CLAUDE.md). | yes — merge gates |
 | **Snapshot tests** (`*SnapshotTests.swift`) | Render a view to a PNG for a human to look at. No golden-image diff. See [Snapshot tests](#snapshot-tests). | **no** — opt-in by name |
 
@@ -23,7 +23,7 @@ XCTest runs **classes in parallel**, each in its own forked process (CI forces 4
 
 ## Recipes
 
-Service test against real on-disk state (the shape of `GitProbeTests` / `Worktree*Tests`):
+Service test against real on-disk state (the shape of `LibraryStoreTests` / `GitServiceTests`):
 
 ```swift
 @MainActor
@@ -72,7 +72,7 @@ Render a real view into an off-screen window, write `/tmp/ccterm-screenshots/<Na
 
 - **Existing ones:** `ls macos/cctermTests/*SnapshotTests.swift` — the class name tells you the view. Run with `make test-unit FILTER=<Class>` and `open` the PNG.
 - **Run policy:** the runner injects `-skip-testing:<Class>` for every `*SnapshotTests.swift` when `FILTER` is empty, so they never run on the default suite or CI but still compile. File name must equal class name; split files for multiple classes.
-- **Helpers:** `ViewSnapshot.render(_ view: some View, size:settle:)` for SwiftUI, `ViewSnapshot.renderViewController(_:size:settle:)` for AppKit VCs, `ViewSnapshot.writePNG(_:name:)`. Always go through them — they use `ccterm_orderFrontForTesting()`, which keeps the test-process window swizzle scoped.
+- **Helpers:** `ViewSnapshot.render(_ view: some View, size:settle:)` for SwiftUI, `ViewSnapshot.renderViewController(_:size:settle:)` for AppKit VCs, `ViewSnapshot.writePNG(_:name:)`. Always go through them — they park the window off-screen at alpha 0.01, so a snapshot never flashes on the user's display.
 
 Adding one:
 

@@ -2,18 +2,30 @@
 
 Invariants of the renderer target. Package-level API rules are in [../../CLAUDE.md](../../CLAUDE.md). Measurements and the reasoning behind a type live in its doc comment; this file lists the rules that span types.
 
+## `TranscriptView` and its collaborators
+
+- **`TranscriptView` is the `NSTableView`-shaped façade and the table glue** — the public API, the row answers (heights, views, binding `BlockView`s), the content width and the synchronous half of a width change, the mutations, and scroll anchoring. Everything else is an internal, non-view collaborator that owns its state and cancels its own `Task`:
+  - `FindSession` — a find: its state, the walk, `FindOverlayView`.
+  - `SelectionTracker` — the text selection and every gesture that changes it (press-to-release loop, context-menu word, Copy).
+  - `RemeasureScheduler` — the off-screen re-measure after a settled width change.
+  - `RowCache` — measurements, shared by all of the above.
+- **A collaborator talks back through one narrow protocol** (`FindSessionOwner`, `SelectionTrackerOwner`, `RemeasureSchedulerOwner`, `TableViewAdapterOwner`, `TranscriptTableViewOwner`) that `TranscriptView` conforms to — never by naming `TranscriptView`, so no internal type cycles back to it; only the public `dataSource` / `delegate` pair does (the `NSTableView` idiom). Rows reach a collaborator through `row(at:)`, the host's delegate only through its owner protocol.
+- **Mutations enter only through `TranscriptView`**, which tells each collaborator what the mutation did (renumber by an insert or removal, keep by identity after a sweep, re-search reloaded rows) inside the same call.
+
 ## Rows, blocks, painting
 
 - A `.markdown` / `.userMessage` row is parsed to `MarkdownIR`, built into blocks (`Layout/Blocks/`), stacked by `BlockStack` (which assigns origins and index bases at stacking time), and drawn by `BlockView` onto `SurfaceLayer`s.
+- **Directories depend one way: `Layout/` ← `Layout/Blocks/` ← `Markdown/` ← the root.** `Layout/` is the primitives every block and `BlockView` read — including `TextStyle` (the faces and colours shared by markdown and the user bubble) and `TranscriptFindHighlighting`; `Layout/Blocks/` is block geometry and knows no markdown; `Markdown/` lowers the IR into blocks and owns every markdown-only decision — which face a heading or a table header is set in (asked of `TextStyle`), which marker a list item gets and how wide the column is (`MarkdownListBuilder`; `ListRow` only draws it); the root is the view and its collaborators. A type needed by a lower directory moves down; `make arch SCOPE=TranscriptKit/Sources/TranscriptKit` must report no unit cycle.
 - A row paints onto `SurfaceLayer` sublayers, not the view's own layer, because CoreAnimation composites `contents` **below** sublayers. Anything that must sit under the glyphs (the hover band) needs the glyphs on a surface above it.
 - **`SurfaceLayer.draw(in:)` makes the view's effective appearance current itself.** A sublayer's draw is CoreAnimation's call and gets no appearance; without this a window with its own appearance draws rows in the system's. In-process `cacheDisplay` hides the bug (it sets appearance on the way) — only a window-server capture shows it.
 - **Layer colours don't follow appearance.** `NSColor`s in a paint list resolve at draw time, so a repaint fixes them; a `CGColor` on a layer (the hover band) must be re-resolved in `viewDidChangeEffectiveAppearance`, and a hand-added layer's `contentsScale` maintained by hand.
 - **The hover band is a `CAShapeLayer`, not a `PaintItem`** — the only thing on its own clock. A paint list has no notion of time; a layer fades on the render server with nothing redrawn. The press tint (8% → 16%) and its geometry (rects inflated 2, corner 4) are Telegram's; each is one constant in `BlockView`.
+- `BlockView` reports clicks, hovers and its context menu to one weak `BlockViewDelegate` — the transcript, set when the view is created, never per bind; the view hands itself back and the transcript resolves its row.
 - A link is anything `link(at:)` answers for — including a truncated user message's More — so band, pointing hand and press-is-a-click are `BlockView`'s one mechanism.
 
 ## Selection
 
-- `TextSelection` belongs to the transcript, keyed by row identity and renumbered by every mutation (as the scroll anchor is). Each `BlockView` is handed only its part to draw, the way `NSTableView` sets `isSelected`.
+- `TextSelection` belongs to the transcript — held by `SelectionTracker`, which owns it and every gesture that changes it — keyed by row identity and renumbered by every mutation (as the scroll anchor is). Each `BlockView` is handed only its part to draw, the way `NSTableView` sets `isSelected`.
 - The first responder is the table (document view), as with `NSTextView`: it takes focus on press, answers `copy:`, drops the selection when focus leaves.
 - **Keys:** the table answers only the scrolling commands and passes every other key to the next responder **as the event** — never through `NSTableView`'s `keyDown`, which moves a row selection the transcript doesn't have. That is how a host types into its input while the transcript has focus; there is no API for it.
 - A press is tracked to its release in **a tracking loop inside `mouseDown`** (`NSTextView`'s shape). The focus depends on pointer *and* content position, so it is re-read on drag, on a periodic autoscroll tick past an edge, and on scroll-wheel events. Don't dispatch drags to the pressed view: they stop when the hand stops, and the view may already be in the reuse pool.
@@ -23,6 +35,7 @@ Invariants of the renderer target. Package-level API rules are in [../../CLAUDE.
 ## `RowCache`: heights for every row, trees for a few
 
 - Entries are keyed by `TranscriptRow.ID` and trusted only while `(content, width)` matches; a stale entry re-measures rather than rendering wrong. Compare **whole `TranscriptRowContent` values**, not their text — the same string measures differently as `.markdown` vs `.userMessage`.
+- **One recipe, on the cache:** `RowCache.Entry.init(measuring:width:reusing:)` is the only place a content case is built and measured — the cache, `PreparedRows.measuring(_:width:)` off-main, a find's walk and Copy all go through it. `TranscriptRowContent` stays a Foundation-only value the host builds; it names no block or memo.
 - Every row keeps its height for its lifetime; typeset trees are held up to `RowCache.residentBudget`, least recently drawn evicted first. An evicted row is re-typeset when drawn, rebuilt off-main on a width change, and built-then-dropped by a find.
 - `removeRows` / `reloadData` walk the data source to find orphaned entries (`sweepCache()`); acceptable because those operations re-tile everything below anyway.
 - An unexplained cost is ours until measured otherwise — check this package's own bookkeeping before blaming `NSTableView`.
@@ -30,7 +43,7 @@ Invariants of the renderer target. Package-level API rules are in [../../CLAUDE.
 ## Width changes
 
 - **Mid-drag** (`inLiveResize`, including an `NSSplitView` divider drag) only on-screen rows re-measure.
-- **At the end** (`viewDidEndLiveResize`, or any non-drag width change) `beginRemeasuringOffscreenRows(at:)` re-measures on-screen rows inside the pass and hands the rest — only rows that already had an entry — to the cooperative pool. Rules it depends on:
+- **At the end** (`viewDidEndLiveResize`, or any non-drag width change) the transcript re-measures on-screen rows inside the pass and `RemeasureScheduler` (which owns the `Task`, and cancels one a newer width supersedes) hands the rest — only rows that already had an entry — to the cooperative pool. Rules it depends on:
   - **Order outward from the viewport** (`staleRowsOutwardFromViewport(at:)`) and **publish as produced**: the only window a reader can meet is "time to correct the next screenful".
   - **Invalidate each batch's own rows**, then one full `noteHeightOfRows` at the end. `noteHeightOfRows` re-asks inside the call; a full invalidation with most rows uncorrected measures them all on main.
   - **A sliding window of `activeProcessorCount` tasks**, not the whole set queued at once — thousands of runnable children starve the parent job that has to hop to main.
@@ -48,6 +61,7 @@ Invariants of the renderer target. Package-level API rules are in [../../CLAUDE.
 
 ## Find
 
+- **`FindSession` owns a find** — its state, the walk's `Task` (cancelled by a newer find or a refresh) and `FindOverlayView`; `TranscriptView` forwards its public find API there and tells it what each mutation did.
 - **The search runs in the package** — a hit is a range in a row's flat index space, which exists only once the row is built (`**bold**` contains no `bold` in source). **The find bar is the host's**; only the count crosses (`transcriptView(_:didUpdateFindMatches:isComplete:)`), and `endFind()` reports too, so the host never tracks state twice.
 - A hit is `(row identity, range)`. The flat index space doesn't depend on width, so a resize moves highlights with nothing recomputed.
 - **A find reads a markdown row's `RowCache` entry on content alone** (`cachedMeasured(for:width:)` with `nil` width) — a stale-width entry searches as well as a fresh one. Capped user messages are the exception: they pass the width, and the find re-walks once a width change settles.

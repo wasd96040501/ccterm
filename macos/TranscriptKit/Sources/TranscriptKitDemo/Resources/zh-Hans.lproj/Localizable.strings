@@ -1,0 +1,23 @@
+/* Placeholder of the find bar's field. */
+"Find" = "查找";
+
+/* Find bar button that closes it. */
+"Done" = "完成";
+
+/* Accessibility label of the find bar's button that empties the field. */
+"Clear" = "清除";
+
+/* Accessibility label of the find bar's arrow to the previous match. */
+"Previous" = "上一个";
+
+/* Accessibility label of the find bar's arrow to the next match. */
+"Next" = "下一个";
+
+/* Find bar count when the query matches nothing. */
+"No matches" = "无匹配项";
+
+/* Find bar count for a single match. */
+"1 match" = "1 个匹配项";
+
+/* Find bar count for several matches. */
+"%lld matches" = "%lld 个匹配项";

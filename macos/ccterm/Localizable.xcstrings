@@ -12,16 +12,6 @@
         }
       }
     },
-    "%lld untracked": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 项未跟踪"
-          }
-        }
-      }
-    },
     "About ccterm": {
       "localizations": {
         "zh-Hans": {
@@ -39,16 +29,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "后退"
-          }
-        }
-      }
-    },
-    "Clean": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无更改"
           }
         }
       }

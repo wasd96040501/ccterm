@@ -52,9 +52,16 @@ public struct PromptConfiguration: Sendable {
         self.inheritsParentEnvironment = inheritsParentEnvironment
     }
 
-    /// The configured, unlaunched process. Blocking (the login-shell
+    /// How to start the CLI for `message`. Blocking (the login-shell
     /// environment probe).
-    func makeProcess(message: String) throws -> Process {
+    func launch(message: String) throws -> CLILaunch {
+        try CLILaunch(
+            arguments: arguments(message: message), workingDirectory: workingDirectory, binaryPath: binaryPath,
+            customCommand: customCommand, env: env, inheritsParentEnvironment: inheritsParentEnvironment)
+    }
+
+    /// The CLI command line for a one-shot run of `message`.
+    func arguments(message: String) -> [String] {
         var args = ["-p", "--output-format", "json", "--no-session-persistence"]
         if let model { args += ["--model", model] }
         if let systemPrompt { args += ["--system-prompt", systemPrompt] }
@@ -65,29 +72,6 @@ public struct PromptConfiguration: Sendable {
         if let effort { args += ["--effort", effort.rawValue] }
         if let settings = settings.launchArgument { args += ["--settings", settings] }
         if disableSlashCommands { args += ["--disable-slash-commands"] }
-        args += ["--", message]
-
-        let executable: String
-        let arguments: [String]
-        if let customCommand, !customCommand.isEmpty {
-            (executable, arguments) = CustomCommand.shellInvocation(customCommand, sdkArgs: args)
-        } else {
-            guard let resolved = binaryPath ?? BinaryLocator.locate() else { throw AgentSDKError.binaryNotFound }
-            (executable, arguments) = (resolved, args)
-        }
-
-        var environment =
-            inheritsParentEnvironment
-            ? ProcessInfo.processInfo.environment
-            : (ShellEnvironment.loginEnvironment() ?? ProcessInfo.processInfo.environment)
-        environment.removeValue(forKey: "CLAUDECODE")
-        environment.merge(env) { _, override in override }
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.currentDirectoryURL = workingDirectory
-        process.environment = environment
-        return process
+        return args + ["--", message]
     }
 }

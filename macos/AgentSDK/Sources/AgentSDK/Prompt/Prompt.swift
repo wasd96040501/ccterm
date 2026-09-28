@@ -12,7 +12,7 @@ public enum Prompt {
     /// the task, or exceeding ``PromptConfiguration/timeout``, terminates the
     /// CLI; the latter throws ``AgentSDKError/promptFailed(exitCode:stderr:)``.
     public static func run(_ message: String, configuration: PromptConfiguration) async throws -> ResultMessage {
-        let process = try await Task.detached { try configuration.makeProcess(message: message) }.value
+        let process = try await Task.detached { try configuration.launch(message: message).makeProcess() }.value
         let output = try await withTaskCancellationHandler {
             try await Task.detached { try collect(process, timeout: configuration.timeout) }.value
         } onCancel: {

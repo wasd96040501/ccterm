@@ -18,60 +18,15 @@ import AppKit
 /// `isFlipped` is true so that the y-down arithmetic every block is written in
 /// matches the context it draws into, rather than being un-flipped at each of
 /// the several dozen places a rectangle crosses the boundary.
-final class BlockView: NSView, TranscriptFindHighlighting {
+final class BlockView: NSView, TranscriptFindHighlighting, SurfaceLayerOwner {
 
     private(set) var block: MeasuredBlock?
 
-    /// A link in this row was clicked. Reported with the view rather than the row
-    /// index, because a row's index moves under it — the transcript resolves the
-    /// current one at the moment of the call.
-    ///
-    /// The whole run goes over, not its address: what this view knows is *that an
-    /// activatable run was clicked*, and which kind it was is a question only the
-    /// side holding the host's delegate can act on. See `InlineLink.Destination`.
-    ///
-    /// A closure, where §4 of the package's notes asks for a delegate: those two
-    /// protocols are the *host's* surface, and this crosses no such boundary —
-    /// `TranscriptView` builds these views itself. Handing the view back rather
-    /// than capturing it is what keeps the closure from retaining its own owner.
-    var onLinkActivated: ((BlockView, InlineLink) -> Void)?
-
-    /// The link under the pointer changed. `nil` on leaving one.
-    ///
-    /// What the hover *says* is still the host's — an address in a label, a
-    /// preview, nothing at all. What it *looks like on the run* is not, and cannot
-    /// be: only this side knows which rectangles a run occupies. So the band under
-    /// the words is drawn here and the label is reported, which is the line
-    /// between the two halves.
-    ///
-    /// Fires only when the answer changes, so a listener may treat each call as an
-    /// instruction rather than a sample.
-    var onLinkHovered: ((BlockView, URL?, CGPoint) -> Void)?
-
-    /// This row was right-clicked, and the menu passed over is the one **this
-    /// package** would show: the commands it implements itself, and nothing
-    /// else. What comes back is what gets displayed — the same menu with items
-    /// added, a different menu, or `nil` for none at all.
-    ///
-    /// Handing over a proposed menu rather than asking whether to show one is
-    /// what lets the two sets of commands compose. Copy depends on a selection
-    /// nobody outside this view can see, so it cannot be the host's to build;
-    /// Quote, Retry and the rest depend on a model this package will never know
-    /// about, so they cannot be this view's. A proposal that comes back edited
-    /// is the only shape where each side writes the half it can.
-    ///
-    /// The menu is built fresh per click for that reason too — an accumulating
-    /// shared instance would grow another copy of the host's items every time
-    /// the reader right-clicked. That is the one place this deviates from
-    /// `NSView.defaultMenu`, whose class-property shape hands the same object to
-    /// everyone.
-    ///
-    /// Same closure-not-delegate reasoning as the two above.
-    ///
-    /// The event goes over too, because what the menu acts on is decided on the
-    /// way: a right-click outside the selection takes the word under the pointer,
-    /// and the selection is the transcript's to change.
-    var onContextMenu: ((BlockView, NSMenu, NSEvent) -> NSMenu?)?
+    /// Who hears what happens to this row's links and menu: the transcript. Set
+    /// once, where the view is created — a recycled view keeps serving the same
+    /// transcript, so nothing about it is re-wired per row. See
+    /// `BlockViewDelegate`.
+    weak var delegate: BlockViewDelegate?
 
     /// The part of the selection in this row, set by the transcript whenever it
     /// changes and whenever this view is bound to a row. Positions in the block's
@@ -648,7 +603,7 @@ final class BlockView: NSView, TranscriptFindHighlighting {
         let link = pressedLink
         pressedLink = nil
         updatePressedState()
-        if let link, selectedRange == nil { onLinkActivated?(self, link) }
+        if let link, selectedRange == nil { delegate?.blockView(self, didActivate: link) }
     }
 
     /// An I-beam over the whole row, not only over glyphs.
@@ -711,7 +666,7 @@ final class BlockView: NSView, TranscriptFindHighlighting {
         // The band is drawn for any activatable run; the *address* is reported
         // only when there is one, so a run with no destination to show reads to
         // the host exactly like leaving a link.
-        onLinkHovered?(self, link?.url, point)
+        delegate?.blockView(self, didHover: link?.url, at: point)
     }
 
     // MARK: - The context menu
@@ -730,11 +685,11 @@ final class BlockView: NSView, TranscriptFindHighlighting {
     /// late.
     ///
     /// What the menu acts on is settled on the way, by the transcript
-    /// (`onContextMenu` carries the event for it): the word under the pointer is
+    /// (`BlockViewDelegate.blockView(_:menu:for:)` carries the event for it): the word under the pointer is
     /// selected unless the click landed inside the selection, and the selection's
     /// responder takes the focus so Copy validates against it. The selection is
     /// the transcript's, so both halves are too — see
-    /// `TranscriptView.selectForContextMenu(with:)`.
+    /// `SelectionTracker.selectForContextMenu(with:)`.
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = NSMenu()
         // `nil` target on purpose: that is what sends it up the responder chain
@@ -747,8 +702,8 @@ final class BlockView: NSView, TranscriptFindHighlighting {
                 title: String(localized: "Copy", bundle: .module),
                 action: #selector(NSText.copy(_:)), keyEquivalent: ""))
 
-        guard let onContextMenu else { return menu }
-        return onContextMenu(self, menu, event)
+        guard let delegate else { return menu }
+        return delegate.blockView(self, menu: menu, for: event)
     }
 
     /// Light ↔ dark flip, or the view joining a different appearance context.
@@ -819,6 +774,14 @@ final class BlockView: NSView, TranscriptFindHighlighting {
     private var items: [PaintItem] = []
 }
 
+/// What a `SurfaceLayer` plays for: the view whose paint list it draws a slice
+/// of, and whose appearance that list resolves against. `BlockView` is the only
+/// one; the protocol is what keeps the layer from naming it back.
+fileprivate protocol SurfaceLayerOwner: AnyObject {
+    var effectiveAppearance: NSAppearance { get }
+    func paint(_ phases: ClosedRange<PaintItem.Phase>, in ctx: CGContext, dirty dirtyRect: CGRect)
+}
+
 /// One composited surface: the slice of the paint order it plays, and nothing
 /// else.
 ///
@@ -855,9 +818,9 @@ private final class SurfaceLayer: CALayer {
 
     /// Weak, and the direction that matters: the view owns its layers, so a
     /// strong edge back would be a cycle that outlives every row it recycles.
-    private weak var owner: BlockView?
+    private weak var owner: SurfaceLayerOwner?
 
-    init(playing phases: ClosedRange<PaintItem.Phase>, for owner: BlockView) {
+    init(playing phases: ClosedRange<PaintItem.Phase>, for owner: SurfaceLayerOwner) {
         self.phases = phases
         self.owner = owner
         super.init()

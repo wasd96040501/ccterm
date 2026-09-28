@@ -5,9 +5,9 @@ import AppKit
 /// Its own type rather than a `Paragraph` with different numbers, because both
 /// numbers that make a heading a heading — the size it renders at and the space
 /// it claims — follow from the level, and keeping them here is what stops them
-/// being scattered into a table keyed by node kind somewhere else. Whoever lowers
-/// the text asks `Heading.font(level:)` for the face; nothing else needs to know
-/// what an h2 is.
+/// being scattered into a table keyed by node kind somewhere else. The face is
+/// the text's, set by whoever lowers it (`TextStyle.headingFont(level:)`); the
+/// room it claims is this block's.
 struct Heading: Block, @unchecked Sendable {
 
     let level: Int
@@ -16,20 +16,6 @@ struct Heading: Block, @unchecked Sendable {
     init(level: Int, text: ShapedText) {
         self.level = level
         self.text = text
-    }
-
-    /// h1 26 / h2 22 / h3–h6 18, semibold. Markdown's six levels collapse to
-    /// three visual tiers — chat content rarely goes deeper than h3, and
-    /// shrinking the tail levels toward body size makes them read as emphasis
-    /// rather than as structure.
-    static func font(level: Int) -> NSFont {
-        let size: CGFloat
-        switch clamp(level) {
-        case 1: size = 26
-        case 2: size = 22
-        default: size = 18
-        }
-        return .systemFont(ofSize: size, weight: .semibold)
     }
 
     /// Extra room **above** a heading, on top of whatever the container already

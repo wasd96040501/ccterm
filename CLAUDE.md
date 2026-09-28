@@ -2,7 +2,7 @@
 
 Native macOS client for Claude Code. Pure AppKit (Swift), programmatic, minimum target macOS 14 (Sonoma).
 
-The app is a main window — a sidebar listing every session transcript on disk (`AgentSDK`'s `SessionDirectory`, grouped by project) beside a tabbed, splittable editor area that shows them read-only (`TranscriptKit`'s view and workspace) — plus Settings, About, and UI-free services (worktrees, git probe, model catalog). Running a live session is not wired yet.
+The app is a main window — a sidebar listing every session transcript on disk (`AgentSDK`'s `SessionDirectory`, grouped by project) beside a tabbed, splittable editor area that shows them read-only (`TranscriptKit`'s view and workspace) — plus Settings and About. Running a live session is not wired yet.
 
 ## Where to read more
 
@@ -23,11 +23,11 @@ ccterm/
 ├── macos/
 │   ├── ccterm.xcodeproj/
 │   ├── ccterm/               # App sources
-│   │   ├── App/              # CCTermApp + About; AppKit/ holds AppDelegate + main/settings/about window controllers + main split
-│   │   ├── Content/          # Settings/, Sidebar/ (session outline), Transcript/ (a transcript tab)
-│   │   ├── Models/           # Effort, PermissionMode
-│   │   ├── Services/         # Library/ (session tree store), Session/Worktree, GitProbe, ModelStore, Logging/, …
-│   │   ├── Extensions/
+│   │   ├── App/              # CCTermApp + menu commands; AppKit/ holds AppDelegate (composition root) + window controllers + main split
+│   │   ├── Content/          # About/, Settings/, Sidebar/ (session outline), Transcript/ (a transcript tab)
+│   │   ├── Library/          # LibraryStore — the session tree on disk, and reading one transcript
+│   │   ├── Git/              # GitService — a folder's branch, live
+│   │   ├── Logging/          # appLog, main-thread watchdog
 │   │   └── Resources/
 │   ├── cctermTests/          # The app's only test target
 │   ├── TranscriptKit/        # Standalone SwiftPM package (own tests, own demo)
@@ -60,6 +60,7 @@ make test-sdk [FILTER=<Class>]       # AgentSDK package tests
 make demo-kit                        # TranscriptKit demo app (foreground; close window to stop)
 make logs [CONFIG=release] [CATEGORY=X] [LEVEL=debug]   # tail unified log of THIS worktree's build
 make appkit-doc SYMBOL=NSTableView   # Apple's DocC for an AppKit symbol
+make arch [SCOPE=core|app|kit|sdk|<dir>|<unit>]   # architecture map → build/arch/ (what /arch-review reads)
 ```
 
 `make build` prints success/failure plus two log paths. On failure read the summary log first; open the full log only if the summary isn't enough — don't `tail`/`cat` it blindly.
@@ -76,7 +77,7 @@ Every PR runs `fmt.yml` (`make fmt-check`) and `test.yml` (three jobs: `test` �
 
 ## Logging
 
-Use `appLog()` (`Services/Logging/AppLogger.swift`); never `NSLog` / `print`.
+Use `appLog()` (`Logging/AppLogger.swift`); never `NSLog` / `print`.
 
 ```swift
 appLog(.info, "SessionRuntime", "send() queued — status=\(status)")

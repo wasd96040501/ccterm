@@ -1,32 +1,12 @@
 import Foundation
 
 extension SessionConfiguration {
-    /// Resolves the binary and environment and builds the process. Blocking
-    /// (the login-shell environment probe can take seconds); call off the
-    /// main thread.
-    func makeProcess() throws -> CLIProcess {
-        let executable: String
-        let finalArguments: [String]
-        if let customCommand, !customCommand.isEmpty {
-            // Through the user's login shell so aliases, functions and
-            // `~`/`$VAR` expansion behave as at a prompt; SDK args ride in "$@".
-            (executable, finalArguments) = CustomCommand.shellInvocation(customCommand, sdkArgs: arguments)
-        } else {
-            guard let resolved = binaryPath ?? BinaryLocator.locate() else { throw AgentSDKError.binaryNotFound }
-            executable = resolved
-            finalArguments = arguments
-        }
-
-        var environment =
-            inheritsParentEnvironment
-            ? ProcessInfo.processInfo.environment
-            : (ShellEnvironment.loginEnvironment() ?? ProcessInfo.processInfo.environment)
-        environment.removeValue(forKey: "CLAUDECODE")
-        environment.merge(env) { _, override in override }
-
-        return CLIProcess(
-            executable: executable, arguments: finalArguments, workingDirectory: workingDirectory,
-            environment: environment)
+    /// How to start the CLI for this session. Blocking (the login-shell
+    /// environment probe can take seconds); call off the main thread.
+    func launch() throws -> CLILaunch {
+        try CLILaunch(
+            arguments: arguments, workingDirectory: workingDirectory, binaryPath: binaryPath,
+            customCommand: customCommand, env: env, inheritsParentEnvironment: inheritsParentEnvironment)
     }
 
     /// The CLI command line for a stream-json session.

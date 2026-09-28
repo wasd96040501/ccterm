@@ -1055,6 +1055,97 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertFalse(group.canGoBack, "the refused look was not forgotten")
     }
 
+    // MARK: - Commands
+
+    /// Back and forward are the area's responder actions, aimed at the active
+    /// editor, and enabled — for a menu item and a toolbar item alike — while that
+    /// editor has somewhere to go.
+    func testBackAndForwardAreTheAreasCommandsForTheActiveEditor() throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        let area = mounted.area
+        let back = NSMenuItem(title: "Back", action: #selector(EditorAreaViewController.goBack(_:)), keyEquivalent: "")
+        let toolbar = ToolbarWithItem(target: area, action: #selector(EditorAreaViewController.goForward(_:)))
+        mounted.window.toolbar = toolbar.toolbar
+        let forward = try XCTUnwrap(toolbar.toolbar.items.first, "premise: the toolbar shows its item")
+        XCTAssertTrue(area.validateUserInterfaceItem(back), "premise: the second tab was shown after the first")
+        toolbar.toolbar.validateVisibleItems()
+        XCTAssertFalse(forward.isEnabled, "forward with nothing ahead")
+
+        // Up the responder chain from inside a tab, as a nil-targeted item goes.
+        XCTAssertTrue(mounted.probes[1].field.tryToPerform(#selector(EditorAreaViewController.goBack(_:)), with: nil))
+        XCTAssertEqual(area.activeGroup.selectedTabViewItemIndex, 0, "back went nowhere")
+        XCTAssertFalse(area.validateUserInterfaceItem(back))
+        toolbar.toolbar.validateVisibleItems()
+        XCTAssertTrue(forward.isEnabled, "the toolbar item did not follow the history")
+
+        area.goForward(nil)
+        XCTAssertEqual(area.activeGroup.selectedTabViewItemIndex, 1)
+    }
+
+    /// Xcode's ⌘W: the active editor's selected tab, through `willClose`; with
+    /// no tab left, the window.
+    func testCloseTabClosesTheSelectedTabThenTheWindow() throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        let area = mounted.area
+        let closer = WindowCloseRecorder()
+        mounted.window.styleMask.insert(.closable)
+        mounted.window.delegate = closer
+        let close = NSMenuItem(
+            title: "Close Tab", action: #selector(EditorAreaViewController.closeTab(_:)), keyEquivalent: "")
+
+        area.closeTab(nil)
+        XCTAssertEqual(area.activeGroup.tabViewItems.map(\.label), ["Tab 0"])
+        XCTAssertEqual(mounted.recorder.closed.map(\.title), ["Tab 1"], "the tab closed without telling the host")
+        area.closeTab(nil)
+        XCTAssertTrue(area.activeGroup.tabViewItems.isEmpty)
+        XCTAssertEqual(closer.asked, 0, "a tab's close closed the window")
+
+        XCTAssertTrue(area.validateUserInterfaceItem(close), "nothing to close in a window with no tab")
+        area.closeTab(nil)
+        XCTAssertEqual(closer.asked, 1, "the window was not asked to close")
+    }
+
+    /// A tab is found by its identifier in whichever editor has it, and brought
+    /// forward there; the active editor stays where it is.
+    func testSelectingByIdentifierFindsTheTabInEitherEditor() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let area = mounted.area
+        let left = area.activeGroup
+        left.addTabViewItem(Self.tab("a"))
+        left.addTabViewItem(Self.tab("b"))
+        let right = try XCTUnwrap(area.addGroup(with: Self.tab("c")))
+        right.addTabViewItem(Self.tab("d"))
+        XCTAssertIdentical(area.activeGroup, right, "premise")
+
+        XCTAssertTrue(area.selectTabViewItem(withIdentifier: "a"))
+        XCTAssertEqual(left.selectedTabViewItemIndex, 1)
+        XCTAssertIdentical(area.activeGroup, right, "selecting moved the reader to the other editor")
+        XCTAssertTrue(area.selectTabViewItem(withIdentifier: "c"))
+        XCTAssertEqual(right.selectedTabViewItemIndex, 0)
+        XCTAssertFalse(area.selectTabViewItem(withIdentifier: "z"))
+        XCTAssertEqual(left.selectedTabViewItemIndex, 1, "a miss changed a selection")
+        XCTAssertEqual(right.selectedTabViewItemIndex, 0, "a miss changed a selection")
+    }
+
+    /// Selected by identifier with `pinning`, a temporary tab stays; without, it
+    /// is still the temporary one.
+    func testSelectingByIdentifierPinningKeepsATemporaryTab() {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        let look = Self.tab("b")
+        group.previewTabViewItem = look
+
+        XCTAssertTrue(mounted.area.selectTabViewItem(withIdentifier: "b"))
+        XCTAssertIdentical(group.previewTabViewItem, look, "selecting alone pinned the temporary tab")
+        XCTAssertTrue(mounted.area.selectTabViewItem(withIdentifier: "b", pinning: true))
+        XCTAssertNil(group.previewTabViewItem, "opening the temporary tab left it temporary")
+        XCTAssertEqual(group.tabViewItems.count, 2)
+    }
+
     /// A tab known to the history by its title.
     private static func tab(_ title: String) -> NSTabViewItem {
         let item = NSTabViewItem(viewController: ProbeViewController(title: title))
@@ -1095,7 +1186,7 @@ final class EditorAreaTests: XCTestCase {
     /// split view controller may put a container of its own around each item's
     /// view, which makes `frame` relative to that.
     private func frame(of group: EditorGroupViewController) -> NSRect {
-        group.view.convert(group.view.bounds, to: group.area?.splitView)
+        group.view.convert(group.view.bounds, to: (group.parent as? NSSplitViewController)?.splitView)
     }
 
     private func settle(_ window: NSWindow) {
@@ -1149,16 +1240,15 @@ private final class Recorder: EditorAreaViewControllerDelegate {
     /// The string a dropped pasteboard holds for a drop the host refuses.
     static let refused = "refused"
 
-    /// A tab titled with the dropped string.
+    /// The dropped string, which the tab below is made from.
     func editorArea(
-        _ editorArea: EditorAreaViewController, tabViewItemForDrop draggingInfo: NSDraggingInfo
-    ) -> NSTabViewItem? {
-        guard let title = draggingInfo.draggingPasteboard.string(forType: .string), title != Self.refused
-        else { return nil }
-        return NSTabViewItem(viewController: ProbeViewController(title: title))
+        _ editorArea: EditorAreaViewController, identifierForDrop draggingInfo: NSDraggingInfo
+    ) -> Any? {
+        draggingInfo.draggingPasteboard.string(forType: .string)
     }
 
-    /// A tab for a title the history goes back to, as the host would make one.
+    /// A tab for a dropped title or one the history goes back to, as the host
+    /// would make one.
     func editorArea(
         _ editorArea: EditorAreaViewController, tabViewItemWithIdentifier identifier: Any
     ) -> NSTabViewItem? {
@@ -1166,6 +1256,51 @@ private final class Recorder: EditorAreaViewControllerDelegate {
         let item = NSTabViewItem(viewController: ProbeViewController(title: title))
         item.identifier = title
         return item
+    }
+}
+
+/// A window's toolbar with one item, aimed at `target`.
+@MainActor
+private final class ToolbarWithItem: NSObject, NSToolbarDelegate {
+
+    private static let identifier = NSToolbarItem.Identifier("item")
+    let toolbar = NSToolbar(identifier: "test")
+    private let target: AnyObject
+    private let action: Selector
+
+    init(target: AnyObject, action: Selector) {
+        self.target = target
+        self.action = action
+        super.init()
+        toolbar.delegate = self
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [Self.identifier] }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [Self.identifier] }
+
+    func toolbar(
+        _ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+        item.image = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil)
+        item.label = "Item"
+        item.target = target
+        item.action = action
+        return item
+    }
+}
+
+/// How many times the window was asked to close; never lets it.
+@MainActor
+private final class WindowCloseRecorder: NSObject, NSWindowDelegate {
+
+    var asked = 0
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        asked += 1
+        return false
     }
 }
 

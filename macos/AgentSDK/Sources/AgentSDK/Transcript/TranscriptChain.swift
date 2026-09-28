@@ -39,7 +39,7 @@ struct TranscriptChain {
 
     init(data: Data) {
         let lines = Self.lines(of: data)
-        let decoded = Self.concurrentMap(lines) { decoder, line in try? decoder.decode(Row.self, from: line) }
+        let decoded = lines.concurrentMap { try? JSONDecoder().decode(Row.self, from: $0) }
         var index = 0
         for (lineIndex, line) in lines.enumerated() {
             guard let row = decoded[lineIndex] else { continue }
@@ -64,11 +64,7 @@ struct TranscriptChain {
         }
         threadIsSidechain = !rows.isEmpty && rows.values.allSatisfy(\.isSidechain)
         let boundaries = rows.values.filter { $0.type == "system" && $0.subtype == "compact_boundary" }
-        guard !boundaries.isEmpty else { return }
-        var children: [String: [String]] = [:]
-        for (uuid, row) in rows {
-            if let parent = nearestReal(row.parentUUID) { children[parent, default: []].append(uuid) }
-        }
+        let children = childrenByParent()
         for boundary in boundaries { chainAcross(boundary, children: children) }
     }
 
@@ -76,14 +72,12 @@ struct TranscriptChain {
 
     func messages() -> [Message] {
         guard !clearedByRewind, let leaf = chooseLeaf() else { return [] }
-        return Self.concurrentMap(withParallelResults(walk(from: leaf))) { decoder, uuid in
-            message(uuid, decoder: decoder)
-        }
-        .compactMap { $0 }
+        return withParallelResults(walk(from: leaf)).concurrentMap(message).compactMap { $0 }
     }
 
-    private func message(_ uuid: String, decoder: JSONDecoder) -> Message? {
+    private func message(_ uuid: String) -> Message? {
         guard let row = rows[uuid], let line = row.line, isOnThread(row) else { return nil }
+        let decoder = JSONDecoder()
         switch row.type {
         case "user":
             guard let user = try? decoder.decode(UserMessage.self, from: line), !user.isLocalCommandCaveat
@@ -129,9 +123,6 @@ struct TranscriptChain {
     /// versions wrote the first row after a compaction under the last
     /// preserved row rather than the summary; such a row is moved to the
     /// summary, so the walk passes the boundary.
-    ///
-    /// `children` maps each row to the rows under it, past dropped progress
-    /// rows — so a boundary visits only its preserved rows' children.
     private mutating func chainAcross(_ boundary: Row, children: [String: [String]]) {
         guard let uuid = boundary.uuid, let at = position[uuid] else { return }
         if let before = boundary.logicalParentUUID, rows[before] != nil { parentOverrides[uuid] = before }
@@ -146,6 +137,15 @@ struct TranscriptChain {
                 parentOverrides[child] = preserved.anchor
             }
         }
+    }
+
+    /// Each row's children, through dropped progress rows.
+    private func childrenByParent() -> [String: [String]] {
+        var children: [String: [String]] = [:]
+        for (uuid, row) in rows {
+            if let parent = nearestReal(row.parentUUID) { children[parent, default: []].append(uuid) }
+        }
+        return children
     }
 
     private func chooseLeaf() -> String? {
@@ -348,40 +348,20 @@ struct TranscriptChain {
     /// Non-empty lines, tolerating the NUL padding a torn write leaves. Each
     /// line is a slice sharing `data`'s storage.
     private static func lines(of data: Data) -> [Data] {
-        let ranges = data.withUnsafeBytes { raw -> [Range<Int>] in
-            guard let base = raw.baseAddress else { return [] }
+        // Scan the raw bytes: `Data`'s own collection methods pay an accessor
+        // call per byte.
+        let ranges = data.withUnsafeBytes { bytes -> [Range<Int>] in
             var ranges: [Range<Int>] = []
-            var start = 0
-            while start < raw.count {
-                let newline = memchr(base + start, Int32(UInt8(ascii: "\n")), raw.count - start)
-                let end = newline.map { base.distance(to: $0) } ?? raw.count
-                while start < end, raw[start] == 0 { start += 1 }
-                if start < end { ranges.append(start..<end) }
+            var start = bytes.startIndex
+            while start < bytes.endIndex {
+                let end = bytes[start...].firstIndex(of: UInt8(ascii: "\n")) ?? bytes.endIndex
+                let line = bytes[start..<end].drop { $0 == 0 }
+                if !line.isEmpty { ranges.append(line.startIndex..<line.endIndex) }
                 start = end + 1
             }
             return ranges
         }
-        let offset = data.startIndex
-        return ranges.map { data[(offset + $0.lowerBound)..<(offset + $0.upperBound)] }
-    }
-
-    /// `transform` over `elements` on every core, results in order. Each batch
-    /// has its own decoder; decoding the lines of a long session one by one
-    /// is most of the time it takes to read.
-    private static func concurrentMap<Element, Result>(
-        _ elements: [Element], _ transform: (JSONDecoder, Element) -> Result
-    ) -> [Result] {
-        let batch = 64
-        let batches = (elements.count + batch - 1) / batch
-        return [Result](unsafeUninitializedCapacity: elements.count) { buffer, count in
-            DispatchQueue.concurrentPerform(iterations: batches) { index in
-                let decoder = JSONDecoder()
-                for i in (index * batch)..<min((index + 1) * batch, elements.count) {
-                    (buffer.baseAddress! + i).initialize(to: transform(decoder, elements[i]))
-                }
-            }
-            count = elements.count
-        }
+        return ranges.map { data[(data.startIndex + $0.lowerBound)..<(data.startIndex + $0.upperBound)] }
     }
 }
 

@@ -16,7 +16,7 @@ enum MarkdownInlineBuilder {
 
     static func attributed(
         _ inlines: [MarkdownIR.InlineNode],
-        style: MarkdownStyle,
+        style: TextStyle,
         font: NSFont? = nil,
         color: NSColor? = nil
     ) -> NSAttributedString {
@@ -31,7 +31,7 @@ enum MarkdownInlineBuilder {
 
     private static func attributed(
         _ inline: MarkdownIR.InlineNode,
-        style: MarkdownStyle,
+        style: TextStyle,
         font: NSFont,
         color: NSColor
     ) -> NSAttributedString {

@@ -105,7 +105,7 @@ struct MarkdownMemo {
     /// caller that threw it away would be handing the cache an answer with no
     /// past — see `RowCache.Body`'s note on the case that used to represent that.
     static func measured(
-        _ source: String, width: CGFloat, style: MarkdownStyle = .default
+        _ source: String, width: CGFloat, style: TextStyle = .default
     ) -> (memo: MarkdownMemo, measured: MeasuredBlock) {
         var memo = MarkdownMemo()
         let measured = memo.measure(source, width: width, style: style)
@@ -115,7 +115,7 @@ struct MarkdownMemo {
     /// `source`, parsed and laid out at `width`, taking whatever the previous
     /// call left behind.
     mutating func measure(
-        _ source: String, width: CGFloat, style: MarkdownStyle = .default
+        _ source: String, width: CGFloat, style: TextStyle = .default
     ) -> MeasuredBlock {
         let children = MarkdownBlockBuilder.children(of: MarkdownParser.document(source))
 
@@ -159,7 +159,7 @@ struct MarkdownMemo {
     /// A memo that has never measured anything answers with an empty stack rather
     /// than refusing, which is the same thing `measure` does with an empty
     /// document and needs no case of its own.
-    mutating func remeasure(width: CGFloat, style: MarkdownStyle = .default) -> MeasuredBlock {
+    mutating func remeasure(width: CGFloat, style: TextStyle = .default) -> MeasuredBlock {
         var next = [MarkdownBlockBuilder.Child: Entry](minimumCapacity: order.count)
         var measured: [MeasuredBlock] = []
         measured.reserveCapacity(order.count)
@@ -179,7 +179,7 @@ struct MarkdownMemo {
     /// recipe, or built from nothing — in decreasing order of how often it
     /// happens while a message streams.
     private func resolve(
-        _ child: MarkdownBlockBuilder.Child, width: CGFloat, style: MarkdownStyle
+        _ child: MarkdownBlockBuilder.Child, width: CGFloat, style: TextStyle
     ) -> Entry {
         guard let hit = entries[child] else {
             let block = MarkdownBlockBuilder.make(child, style: style)

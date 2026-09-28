@@ -1,6 +1,6 @@
 import AppKit
 
-/// How markdown *text* is styled: the faces and colours inline spans resolve to.
+/// How a row's *text* is styled: the faces and colours inline spans resolve to.
 ///
 /// Only text. A code card's radius, a quote's bar width, a list's item spacing
 /// and every block's vertical rhythm live on the block types that own them —
@@ -9,9 +9,13 @@ import AppKit
 /// genuinely spans block kinds, because emphasis has to look the same inside a
 /// paragraph, a heading, a quote and a list item.
 ///
+/// In `Layout/`, below both of its readers: the markdown lowering sets a
+/// document's text with it, and `UserMessage` sets a bubble's — so it belongs to
+/// neither, and a block reading it never reaches up into `Markdown/`.
+///
 /// Nothing is public yet: no host has asked to restyle the transcript, and a
 /// style struct is a wide surface to commit to before one does.
-struct MarkdownStyle {
+struct TextStyle {
 
     var bodyFont: NSFont
     var textColor: NSColor
@@ -46,7 +50,7 @@ struct MarkdownStyle {
         return .monospacedSystemFont(ofSize: size, weight: bold ? .semibold : .regular)
     }
 
-    static let `default` = MarkdownStyle(
+    static let `default` = TextStyle(
         bodyFont: .systemFont(ofSize: 14, weight: .regular),
         textColor: .labelColor,
         secondaryColor: .secondaryLabelColor,

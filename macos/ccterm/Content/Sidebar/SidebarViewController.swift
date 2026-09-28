@@ -39,6 +39,11 @@ final class SidebarViewController: NSViewController {
     private lazy var outlineView: NSOutlineView = {
         let outline = NSOutlineView()
         outline.style = .sourceList
+        // Xcode's navigator geometry, which keeps its own size rather than
+        // the system sidebar's.
+        outline.rowSizeStyle = .custom
+        outline.rowHeight = 22
+        outline.indentationPerLevel = 14
         outline.headerView = nil
         outline.floatsGroupRows = false
         outline.allowsMultipleSelection = false
@@ -223,11 +228,11 @@ extension SidebarViewController {
                 addSubview(subview)
             }
             NSLayoutConstraint.activate([
-                image.leadingAnchor.constraint(equalTo: leadingAnchor),
+                image.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
                 image.centerYAnchor.constraint(equalTo: centerYAnchor),
                 image.widthAnchor.constraint(equalToConstant: 16),
                 image.heightAnchor.constraint(equalToConstant: 16),
-                title.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 6),
+                title.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 5),
                 title.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
                 title.centerYAnchor.constraint(equalTo: centerYAnchor),
             ])

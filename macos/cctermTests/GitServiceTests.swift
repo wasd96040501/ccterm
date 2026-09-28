@@ -65,4 +65,17 @@ final class GitServiceTests: XCTestCase {
         let stream = await git.branchUpdates(at: path)
         return try XCTUnwrap(stream, "\(path) is in no repository")
     }
+
+    /// A worktree removed from inside its repository is in no repository: the
+    /// one around its old folder is on another branch.
+    func testARemovedWorktreeHasNothingToFollow() async throws {
+        let worktree = repo.url.appendingPathComponent(".claude/worktrees/wt")
+        try repo.git("worktree", "add", "-q", "-b", "wt-branch", worktree.path)
+        try repo.git("worktree", "remove", worktree.path)
+
+        let removed = await git.branchUpdates(at: worktree.path)
+        XCTAssertNil(removed)
+        let inside = await git.branchUpdates(at: worktree.appendingPathComponent("sub").path)
+        XCTAssertNil(inside)
+    }
 }

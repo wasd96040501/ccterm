@@ -56,9 +56,13 @@ struct GitService: Sendable {
     }
 
     /// The nearest directory at or above `path` that is a repository or a
-    /// worktree's checkout — where its `.git` is. `nil` outside any.
+    /// worktree's checkout — where its `.git` is. `nil` outside any, and when
+    /// `path` no longer exists: a removed worktree's folder
+    /// (`<repo>/.claude/worktrees/<name>`) lies inside the repository it was
+    /// checked out from, which is on another branch.
     private static func repositoryRoot(containing path: String) -> String? {
         var directory = URL(fileURLWithPath: path).standardizedFileURL
+        guard FileManager.default.fileExists(atPath: directory.path) else { return nil }
         while true {
             if FileManager.default.fileExists(atPath: directory.appendingPathComponent(".git").path) {
                 return directory.path

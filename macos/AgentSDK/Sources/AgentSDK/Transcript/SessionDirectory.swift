@@ -26,12 +26,13 @@ public struct SessionDirectory: Sendable, Hashable {
 
     /// Every session's main transcript, most recently modified first. A
     /// missing or unreadable directory answers `[]`; unreadable entries are
-    /// skipped.
+    /// skipped. Project directories are listed in parallel: there can be
+    /// thousands, and each costs a few system calls, not work.
     public func sessions() -> [SessionFile] {
         let projects =
             (try? FileManager.default.contentsOfDirectory(
                 at: url, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles)) ?? []
-        return projects.filter(\.isDirectory).flatMap(Self.sessions(inProject:))
+        return projects.filter(\.isDirectory).concurrentMap(Self.sessions(inProject:)).flatMap { $0 }
             .sorted { $0.modificationDate > $1.modificationDate }
     }
 

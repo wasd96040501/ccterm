@@ -3,7 +3,7 @@ import Foundation
 extension RandomAccessCollection {
     /// `map` with the elements spread across every core; results keep the
     /// collection's order. For work that dwarfs dispatching it — decoding a
-    /// transcript line, not adding two numbers.
+    /// transcript line or listing a directory, not adding two numbers.
     func concurrentMap<Result>(_ transform: (Element) -> Result) -> [Result] {
         let elements = Array(self)
         var results = [Result?](repeating: nil, count: elements.count)

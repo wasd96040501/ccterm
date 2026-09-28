@@ -4,7 +4,7 @@ The app's only test target. Three kinds of test live here:
 
 | Kind | What | Runs on default suite / CI |
 |---|---|---|
-| **Logic tests** (most) | Services and models: worktree provisioning, git probing, title generation, effort / permission-mode vocabulary. Click / keystroke / focus flows are covered by calling the method the control would call, not by synthesizing the event. | yes |
+| **Logic tests** (most) | Stores and services: the session library and its index, a folder's live git branch, sidebar → editor routing. Click / keystroke / focus flows are covered by calling the method the control would call, not by synthesizing the event. | yes |
 | **Measurement probes / harness tests** | Mount a real production view tree off-screen and **assert** on geometry, row-typeset counts, animation curves, hit-testing. See [Measurement probes](#measurement-probes-merge-gates) and [Harness/CLAUDE.md](Harness/CLAUDE.md). | yes — merge gates |
 | **Snapshot tests** (`*SnapshotTests.swift`) | Render a view to a PNG for a human to look at. No golden-image diff. See [Snapshot tests](#snapshot-tests). | **no** — opt-in by name |
 
@@ -23,7 +23,7 @@ XCTest runs **classes in parallel**, each in its own forked process (CI forces 4
 
 ## Recipes
 
-Service test against real on-disk state (the shape of `LibraryStoreTests` / `GitBranchUpdatesTests`):
+Service test against real on-disk state (the shape of `LibraryStoreTests` / `GitServiceTests`):
 
 ```swift
 @MainActor

@@ -135,7 +135,8 @@ final class Extractor: SyntaxVisitor {
                     isObjC: node.attributes.contains {
                         $0.trimmedDescription.hasPrefix("@objc") || $0.trimmedDescription.hasPrefix("@IBAction")
                     },
-                    returnType: node.signature.returnClause?.type.trimmedDescription))
+                    returnType: node.signature.returnClause?.type.trimmedDescription,
+                    isWitness: owner.kind == "extension" && !owner.inherits.isEmpty))
         }
         enterBody(params: node.signature.parameterClause)
         return .visitChildren

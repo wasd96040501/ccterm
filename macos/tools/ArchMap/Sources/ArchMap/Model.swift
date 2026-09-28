@@ -54,6 +54,9 @@ struct Member {
     let isOverride: Bool
     let isObjC: Bool
     let returnType: String?
+    /// Declared in an `extension X: SomeProtocol` — there to satisfy that
+    /// conformance, not chosen as the type's own surface.
+    var isWitness = false
 }
 
 /// An expression some data-flow construct reads from or writes to, with the

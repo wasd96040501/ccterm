@@ -314,18 +314,25 @@ final class Index {
     // MARK: Queries for rendering
 
     /// `public` / `open` members of a package type that nothing outside its
-    /// module touches — candidates for narrowing. Overrides and `@objc`
-    /// witnesses are excluded; so is any name some other module reaches
-    /// through a receiver the map couldn't type.
+    /// module touches — candidates for narrowing. Overrides, `@objc` methods and
+    /// protocol witnesses (declared in a conforming extension, or named by a
+    /// mapped protocol the type adopts) are excluded; so is any name some other
+    /// module reaches through a receiver the map couldn't type.
     func unusedPublicMembers(of type: TypeInfo) -> [String] {
         // Value types' public fields are their data contract; behaviour is what leaks.
         guard ["public", "open"].contains(type.access), type.kind == "class" || type.kind == "actor" else { return [] }
         let uses = resolvedUses[ObjectIdentifier(type)] ?? [:]
+        let required = Set(
+            type.inherits.compactMap { lookup($0, from: type) }.filter { $0.kind == "protocol" }.flatMap {
+                $0.members.map(\.name) + $0.properties.map(\.name)
+            })
         let names =
-            type.members.filter { ["public", "open"].contains($0.access) && !$0.isOverride && !$0.isObjC }.map(\.name)
+            type.members.filter {
+                ["public", "open"].contains($0.access) && !$0.isOverride && !$0.isObjC && !$0.isWitness
+            }.map(\.name)
             + type.properties.filter { !$0.isLet && ($0.modifiers.contains("public") || $0.modifiers.contains("open")) }
             .map(\.name)
-        return Set(names).filter { name in
+        return Set(names).subtracting(required).filter { name in
             let outside = (uses[name] ?? []).contains { $0 != type.module }
             let maybe = unresolvedAccesses.contains { $0.key != type.module && $0.value.contains(name) }
             return !outside && !maybe

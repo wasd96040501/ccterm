@@ -1,6 +1,6 @@
 # TranscriptWorkspace
 
-An IDE-shaped area of up to two editors, left and right, each with its own tabs. **It depends on nothing in the package**, not even `TranscriptKit`: a tab holds any `NSViewController` and the compiler guarantees the area can't reach into it. A transcript doesn't know it's in a tab.
+An IDE-shaped area of up to two editors, left and right, each with its own tabs — a split and tabs, nothing else; what a tab puts over its content (a find bar) is the tab's. **It depends on nothing in the package**, not even `TranscriptKit`: a tab holds any `NSViewController` and the compiler guarantees the area can't reach into it. A transcript doesn't know it's in a tab.
 
 ```
 EditorAreaViewController      NSSplitViewController — the divider, which editor is active
@@ -35,4 +35,3 @@ EditorAreaViewController      NSSplitViewController — the divider, which edito
 ## What a tab's owner routes itself
 
 - **⌘F is not a responder-chain action a view controller answers** — `performTextFinderAction:` is answered only by `NSTextView` (field editor). The demo's Find menu targets its window controller, which forwards to the active editor's tab. That's host logic and stays in the host.
-- **`FindBarView`** is a view + delegate: it reports the query and `NSTextFinder.Action`s, is told the count, and knows nothing about what it searches. No Aa / Contains / replace controls — `TranscriptView.find(_:)` takes no options, and controls that do nothing are worse than none. Return / ⇧Return step; Escape / Done hide; the count reads "No matches" / "1 match" / "N matches"; arrows enable only when there's somewhere to go.

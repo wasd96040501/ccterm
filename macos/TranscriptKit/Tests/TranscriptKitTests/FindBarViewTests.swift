@@ -1,7 +1,7 @@
 import AppKit
 import XCTest
 
-@testable import TranscriptWorkspace
+@testable import TranscriptKitDemo
 
 /// The find bar in a `TestWindow`, typed into through its field editor the way
 /// the keyboard reaches it, and asserted on what it told its delegate.

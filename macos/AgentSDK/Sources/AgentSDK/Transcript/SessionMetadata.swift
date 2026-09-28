@@ -1,6 +1,8 @@
 import Foundation
 
-/// What a transcript records about its session besides the conversation.
+/// What a transcript records about its session besides the conversation:
+/// ``Transcript/metadata``, or ``Transcript/metadata(contentsOf:)`` to read
+/// only this.
 public struct SessionMetadata: Sendable, Equatable {
     /// Set by the user with `/rename`.
     public var customTitle: String?
@@ -27,29 +29,4 @@ public struct SessionMetadata: Sendable, Equatable {
     public var isInteractive: Bool { entrypoint.map { $0 == "cli" } ?? true }
 
     public init() {}
-
-    /// Reads a transcript file's metadata from its first and last 64 KB only,
-    /// so listing many sessions costs the same whatever their length. The CLI appends title and prompt rows as the
-    /// session goes, so the tail holds the latest; ``cwd`` is the first one
-    /// found. ``createdAt`` and ``updatedAt`` are bounds of the rows read, not
-    /// of the whole file.
-    public init(contentsOf url: URL) throws {
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        let size = try handle.seekToEnd()
-        try handle.seek(toOffset: 0)
-        let window = UInt64(Self.sliceSize)
-        var data = try handle.read(upToCount: Self.sliceSize) ?? Data()
-        if size > window * 2 {
-            try handle.seek(toOffset: size - window)
-            // The slices meet mid-line; a torn line on either side is skipped.
-            data.append(UInt8(ascii: "\n"))
-            data.append(try handle.readToEnd() ?? Data())
-        } else if size > window {
-            data.append(try handle.readToEnd() ?? Data())
-        }
-        self = TranscriptChain(data: data).metadata
-    }
-
-    private static let sliceSize = 64 * 1024
 }

@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import UniformTypeIdentifiers
 
 /// The main window's sidebar: the session library as an Xcode-style source
 /// list — projects, their sessions, and under each session its subagents and
@@ -151,7 +152,8 @@ extension SidebarViewController: NSOutlineViewDelegate {
     func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
         guard let item = item as? Item else { return nil }
         let cell = outlineView.makeView(withIdentifier: .sidebarCell, owner: nil) as? NSTableCellView ?? Self.makeCell()
-        cell.imageView?.image = NSImage(systemSymbolName: item.node.kind.symbolName, accessibilityDescription: nil)
+        cell.imageView?.image = item.node.kind.image
+        cell.imageView?.contentTintColor = item.node.kind.tintColor
         cell.textField?.stringValue = item.node.title
         cell.toolTip = item.node.kind == .project ? item.node.id : item.node.title
         return cell
@@ -173,6 +175,7 @@ extension SidebarViewController: NSOutlineViewDelegate {
         let cell = NSTableCellView()
         cell.identifier = .sidebarCell
         let image = NSImageView()
+        image.imageScaling = .scaleProportionallyUpOrDown
         let label = NSTextField(labelWithString: "")
         label.lineBreakMode = .byTruncatingTail
         for subview in [image, label] as [NSView] {
@@ -184,6 +187,8 @@ extension SidebarViewController: NSOutlineViewDelegate {
         NSLayoutConstraint.activate([
             image.leadingAnchor.constraint(equalTo: cell.leadingAnchor),
             image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            image.widthAnchor.constraint(equalToConstant: 16),
+            image.heightAnchor.constraint(equalToConstant: 16),
             label.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 6),
             label.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor),
             label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
@@ -207,13 +212,23 @@ extension SidebarViewController {
 }
 
 extension LibraryNode.Kind {
-    fileprivate var symbolName: String {
+    /// A group is a folder, drawn with the system's folder icon as Finder and
+    /// Xcode draw one; a transcript is a symbol.
+    fileprivate var image: NSImage? {
         switch self {
-        case .project: "folder.fill"
-        case .session: "bubble.left.fill"
-        case .subagents: "person.2.fill"
-        case .workflow: "flowchart.fill"
-        case .agent: "person.crop.circle.fill"
+        case .project, .subagents, .workflow: NSWorkspace.shared.icon(for: .folder)
+        case .session: NSImage(systemSymbolName: "bubble.left.fill", accessibilityDescription: nil)
+        case .agent: NSImage(systemSymbolName: "person.crop.circle.fill", accessibilityDescription: nil)
+        }
+    }
+
+    /// A symbol's own colour, as Xcode's navigator gives each glyph one; left
+    /// unset, a source list tints it with the accent colour. The folder icon
+    /// has its own colours and takes none.
+    fileprivate var tintColor: NSColor? {
+        switch self {
+        case .project, .subagents, .workflow: nil
+        case .session, .agent: .secondaryLabelColor
         }
     }
 }

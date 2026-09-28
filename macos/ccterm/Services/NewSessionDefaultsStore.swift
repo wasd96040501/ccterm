@@ -1,19 +1,14 @@
 import AgentSDK
 import Foundation
 
-/// User-level memory for a fresh "New Session" card's model + permission
-/// mode, persisted across launches in `UserDefaults`.
+/// User-level memory for a new session's model + permission mode,
+/// persisted across launches in `UserDefaults`.
 ///
 /// Per-model effort is handled by [[EffortDefaultStore]] (keyed by model
 /// value). Model and permission mode are global — the user picks them
-/// once, and the next New Session starts from those values regardless of
-/// which project / sessionId comes up.
-///
-/// Writes only fire while the session is still a `.draft`; the pickers
-/// gate on `session.draft != nil` before calling `setModel` /
-/// `setPermissionMode` here. Reads only fire when constructing /
-/// surfacing a fresh draft (picker backfill paths) — `.active` sessions
-/// keep restoring from their `SessionRecord`.
+/// once, and the next new session starts from those values regardless of
+/// which project / sessionId comes up. Only a session that has not started
+/// yet reads or writes here; a started session keeps its own values.
 @MainActor
 final class NewSessionDefaultsStore {
     static let shared = NewSessionDefaultsStore()

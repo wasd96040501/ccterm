@@ -4,9 +4,7 @@ import XCTest
 
 @testable import ccterm
 
-/// Per-frame animation sampler. Generalizes the `PresentationSampler`
-/// that lived inside `TranscriptScrollLivePresentationSnapshotTests`:
-/// instead of only the clip-view origin, it samples **any** view's
+/// Per-frame animation sampler. Samples **any** view's
 /// `layer.presentation()` frame + opacity on every `CADisplayLink` tick,
 /// so a test can assert on the *animation curve* — what the render server
 /// actually composited frame by frame — not just the resting state.
@@ -23,9 +21,8 @@ import XCTest
 /// but the harness window sits at `(-30_000, -30_000)` with
 /// `alphaValue = 0.01`. The screen link fires unconditionally at the
 /// refresh rate — exactly the "sample every refresh tick" behavior we
-/// want. (The render server still composites this window; the sibling
-/// flush probe in `TranscriptScrollFirstFrameSnapshotTests` established
-/// that `presentation()` returns post-flush values here.)
+/// want. (The render server still composites this window, and
+/// `presentation()` returns post-flush values here.)
 @MainActor
 enum AnimationProbe {
 

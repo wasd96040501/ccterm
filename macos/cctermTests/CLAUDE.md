@@ -4,7 +4,7 @@ The app's only test target. Three kinds of test live here:
 
 | Kind | What | Runs on default suite / CI |
 |---|---|---|
-| **Logic tests** (most) | Bridge dispatch, history parsing, block builder, `Session` / `SessionRuntime` transitions. Click / keystroke / focus flows are covered by calling the method the control would call (`session.send(...)`, `controller.handleKey(...)`). | yes |
+| **Logic tests** (most) | Services and models: worktree provisioning, git probing, title generation, effort / permission-mode vocabulary. Click / keystroke / focus flows are covered by calling the method the control would call, not by synthesizing the event. | yes |
 | **Measurement probes / harness tests** | Mount a real production view tree off-screen and **assert** on geometry, row-typeset counts, animation curves, hit-testing. See [Measurement probes](#measurement-probes-merge-gates) and [Harness/CLAUDE.md](Harness/CLAUDE.md). | yes — merge gates |
 | **Snapshot tests** (`*SnapshotTests.swift`) | Render a view to a PNG for a human to look at. No golden-image diff. See [Snapshot tests](#snapshot-tests). | **no** — opt-in by name |
 
@@ -14,7 +14,7 @@ Real-CLI smokes are not XCTests — see [AgentSDK/CLAUDE.md](../AgentSDK/CLAUDE.
 
 XCTest runs **classes in parallel**, each in its own forked process (CI forces 4 workers, `scripts/test-unit.sh`); methods within a class run sequentially. No test may observe another's side effects:
 
-1. **Per-test in-memory dependencies.** Build a fresh `InMemorySessionRepository` (or `CoreDataStack(inMemory: true)`) in `setUp`. Never touch `CoreDataStack.shared`, `SessionManager.shared` or any process-wide singleton.
+1. **Per-test dependencies.** Construct the object under test and its collaborators in `setUp`, injecting in-memory stand-ins at the init seams. Never touch a `.shared` instance or any other process-wide singleton.
 2. **Unique on-disk artifacts.** Write under `FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)` and clean up in teardown. Never a fixed `/tmp/foo` path, never `~/.claude` or `~/.cache/ccterm`.
 3. **No `UserDefaults.standard`.** Inject the value at the call boundary (or a UUID-named suite, as the harness does).
 4. **No `NotificationCenter.default.post`.** Use a dedicated `NotificationCenter()`.
@@ -23,37 +23,31 @@ XCTest runs **classes in parallel**, each in its own forked process (CI forces 4
 
 ## Recipes
 
-Runtime / bridge test:
+Service test against real on-disk state (the shape of `GitProbeTests` / `Worktree*Tests`):
 
 ```swift
 @MainActor
-final class MyBridgeTests: XCTestCase {
-    override func setUpWithError() throws { continueAfterFailure = false }
+final class MyServiceTests: XCTestCase {
+    private var root: URL!
 
-    func testSomething() throws {
-        let repo = InMemorySessionRepository()
-        let runtime = SessionRuntime(sessionId: UUID().uuidString, repository: repo)
-        // drive runtime, assert on its observable state
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    func testSomething() async throws {
+        let service = MyService(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        // drive the public method, assert on its observable state
     }
 }
 ```
 
-History replay — load orchestration lives on the `Session` façade, so wrap the runtime:
-
-```swift
-let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jsonl")
-try jsonlText.write(to: url, atomically: true, encoding: .utf8)
-addTeardownBlock { try? FileManager.default.removeItem(at: url) }
-
-let session = Session(runtime: runtime, cliClientFactory: { _ in FakeCLIClient() })
-session.loadHistory(overrideURL: url)
-let exp = XCTNSPredicateExpectation(
-    predicate: NSPredicate { _, _ in session.historyLoadState == .loaded }, object: nil)
-await fulfillment(of: [exp], timeout: 5)   // backfill is async (off-main producer + main drain)
-// assert on session.controller.blockIds
-```
-
-Shared fixtures live in `Helpers/` (`FakeReversePageSource`, `MessageFixtures`, `TempJSONLFile`, `MountedTranscript`, `ViewSnapshot`, …) — look there before writing a new one.
+Shared fixtures live in `Helpers/` (`ViewSnapshot`) — look there before writing a new one.
 
 ## Measurement probes (merge gates)
 
@@ -62,16 +56,15 @@ Tests that mount a real view and assert on a property at the boundary. They use 
 - **Never give them the `Snapshot` filename suffix** — the runner skips that pattern. Name `<Subject>Tests.swift`; the class name must match the file name.
 - Text reports via `XCTAttachment(string:)` (and a PNG if it helps debugging) are fine.
 - Don't use `ViewSnapshot.render` for them — it carries a long deliberate runloop drain.
-- For new real-tree tests prefer the [Harness](Harness/CLAUDE.md) (`AppKitStage`); `Helpers/MountedTranscript.swift` is the transcript-only mount.
-- Area-owned gates are listed with the invariant they guard: transcript attach / backfill in [NativeTranscript2 §2.19](../ccterm/Content/Chat/NativeTranscript2/CLAUDE.md), SwiftUI host sizing in [Content/Chat](../ccterm/Content/Chat/CLAUDE.md#swiftui-hosts-two-sizing-regimes).
+- For real-tree tests use the [Harness](Harness/CLAUDE.md) (`AppKitStage`); `MainSplitLayoutTests` is the reference.
 
 What the off-screen window (at `(-30_000, -30_000)`, `alphaValue = 0.01`, never key) **cannot** observe:
 
-- A frame the render server actually composited — `bitmapImageRepForCachingDisplay` is a synchronous in-process redraw. For first-composited-frame questions sample `CALayer.presentation()` from a `CADisplayLink` on `NSScreen.main` (not the view's link, which never fires off-screen); `TranscriptScrollLivePresentationSnapshotTests` is the reference.
+- A frame the render server actually composited — `bitmapImageRepForCachingDisplay` is a synchronous in-process redraw. For first-composited-frame questions sample `CALayer.presentation()` from a `CADisplayLink` on `NSScreen.main` (not the view's link, which never fires off-screen); `Harness/AnimationProbe` does this.
 - Key-window / first-responder behavior: hover tracking areas, cursor rects, focus rings.
 - Sibling-view interactions in the real pane and render-server scheduling under load.
 
-When a reported visual glitch doesn't reproduce, **widen the sampled dimensions before declaring it falsified** — e.g. the scroller knob (`verticalScroller.doubleValue`), not just the clip origin (`TranscriptScrollFirstFrameSnapshotTests.testScrollerKnobLandsAtTailAfterScrollToTail`).
+When a reported visual glitch doesn't reproduce, **widen the sampled dimensions before declaring it falsified** — e.g. the scroller knob (`verticalScroller.doubleValue`), not just the clip origin.
 
 ## Snapshot tests
 

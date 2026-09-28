@@ -42,12 +42,6 @@ prds/
 *~
 buildServer.json
 
-# JSCore bundles, compiled from js/ on `make build`. Sources are checked in
-# under js/; outputs land here and are rebuilt on every clone.
-macos/ccterm/Resources/*.js
-
-# Stress-test corpus fetch cache (raw Gutenberg downloads)
-macos/scripts/.stress_corpus_cache/
 xcresult/
 
 # App-icon review renders (`make icon` / design/icon `bun run sheet|variants`)

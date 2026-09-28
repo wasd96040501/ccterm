@@ -68,12 +68,6 @@ jobs:
           cache: true
           cache-dependency-path: thirdparty/fzf/go.sum
 
-      - name: Setup Bun
-        # JSCore syntax-highlight bundle is compiled from js/ by `make js-bundles`.
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: latest
-
       - name: Import Developer ID certificate
         # THIS is how the runner "knows" your signing identity: we decode the
         # .p12 (certificate + private key) and import it into a throwaway
@@ -108,9 +102,6 @@ jobs:
           # Sanity check: the identity must be present, else fail early.
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
           rm -f "$CERT_PATH"
-
-      - name: Compile JSCore bundles
-        run: make js-bundles
 
       - name: Build (Release, signed with Developer ID)
         # Manual signing in CI is more deterministic than Automatic (no

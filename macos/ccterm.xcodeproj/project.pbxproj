@@ -8,8 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		EA5A16ED2F5B000000AA1A46 /* AgentSDK in Frameworks */ = {isa = PBXBuildFile; productRef = EA5A16EE2F5B000000AA1A46 /* AgentSDK */; };
-		EA5A17002F5C000000AA1A47 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = EA5A17012F5C000000AA1A47 /* Markdown */; };
-		EA5A17202F5D000000AA1A48 /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = EA5A17212F5D000000AA1A48 /* SwiftMath */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -47,8 +45,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				EA5A16ED2F5B000000AA1A46 /* AgentSDK in Frameworks */,
-				EA5A17002F5C000000AA1A47 /* Markdown in Frameworks */,
-				EA5A17202F5D000000AA1A48 /* SwiftMath in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -104,8 +100,6 @@
 			name = ccterm;
 			packageProductDependencies = (
 				EA5A16EE2F5B000000AA1A46 /* AgentSDK */,
-				EA5A17012F5C000000AA1A47 /* Markdown */,
-				EA5A17212F5D000000AA1A48 /* SwiftMath */,
 			);
 			productName = ccterm;
 			productReference = 2B3DA4E42F5701A1000987D3 /* ccterm.app */;
@@ -165,8 +159,6 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				EA5A16EF2F5B000000AA1A46 /* XCLocalSwiftPackageReference "AgentSDK" */,
-				EA5A17022F5C000000AA1A47 /* XCRemoteSwiftPackageReference "swift-markdown" */,
-				EA5A17222F5D000000AA1A48 /* XCRemoteSwiftPackageReference "SwiftMath" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2B3DA4E52F5701A1000987D3 /* Products */;
@@ -521,39 +513,10 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		EA5A17022F5C000000AA1A47 /* XCRemoteSwiftPackageReference "swift-markdown" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/swiftlang/swift-markdown";
-			requirement = {
-				kind = exactVersion;
-				version = 0.7.3;
-			};
-		};
-		EA5A17222F5D000000AA1A48 /* XCRemoteSwiftPackageReference "SwiftMath" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/mgriebling/SwiftMath";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.7.1;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
 /* Begin XCSwiftPackageProductDependency section */
 		EA5A16EE2F5B000000AA1A46 /* AgentSDK */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = AgentSDK;
-		};
-		EA5A17012F5C000000AA1A47 /* Markdown */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = EA5A17022F5C000000AA1A47 /* XCRemoteSwiftPackageReference "swift-markdown" */;
-			productName = Markdown;
-		};
-		EA5A17212F5D000000AA1A48 /* SwiftMath */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = EA5A17222F5D000000AA1A48 /* XCRemoteSwiftPackageReference "SwiftMath" */;
-			productName = SwiftMath;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -1,6 +1,6 @@
 # TranscriptKit
 
-Standalone Swift package: a chat transcript view for AppKit, `TranscriptView`, driven by a data source. The app does not use it yet (production still runs `NativeTranscript2`). `README.md` has the public API tour; this file holds the rules for changing it.
+Standalone Swift package: a chat transcript view for AppKit, `TranscriptView`, driven by a data source. The app does not use it yet. `README.md` has the public API tour; this file holds the rules for changing it.
 
 | Target | What | Rules |
 |---|---|---|
@@ -33,7 +33,7 @@ A deviation with no reason in its doc comment is a bug: restore parity or write 
 
 Public API lands when a caller needs it. The rest of `NSTableView`'s surface — `rows(in:)`, `moveRow(at:to:)`, the selection family — is added the day something calls it. A protocol requirement or parameter with one implementer and no consumer is speculation too; take it out until a real caller defines its shape.
 
-## 4. Don't re-grow `NativeTranscript2`
+## 4. Don't re-grow the old renderer
 
 The renderer this replaces reached ~18 000 lines because every new kind of content meant a new block kind, layout file and enum case in several switches. Three rules keep that from recurring:
 

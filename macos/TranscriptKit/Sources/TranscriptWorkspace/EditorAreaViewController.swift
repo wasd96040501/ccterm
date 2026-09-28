@@ -111,6 +111,7 @@ public final class EditorAreaViewController: NSSplitViewController {
     /// drop's tab in `editorArea(_:tabViewItemForDrop:)`.
     public func registerForDraggedTypes(_ types: [NSPasteboard.PasteboardType]) {
         draggedTypes = types
+        groups.forEach { $0.acceptDrops(of: types) }
     }
 
     private(set) var draggedTypes: [NSPasteboard.PasteboardType] = []
@@ -134,6 +135,9 @@ public final class EditorAreaViewController: NSSplitViewController {
     /// whether it is alone.
     public override func insertSplitViewItem(_ splitViewItem: NSSplitViewItem, at index: Int) {
         super.insertSplitViewItem(splitViewItem, at: index)
+        if !draggedTypes.isEmpty {
+            (splitViewItem.viewController as? EditorGroupViewController)?.acceptDrops(of: draggedTypes)
+        }
         groups.forEach { $0.reloadTabBar() }
     }
 

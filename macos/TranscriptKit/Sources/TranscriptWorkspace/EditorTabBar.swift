@@ -13,6 +13,10 @@ protocol EditorTabBarDelegate: AnyObject {
 
     func tabBar(_ tabBar: EditorTabBar, didDoubleClickTabAt index: Int)
 
+    /// Something from outside the editors was dropped into the gap at `index`:
+    /// whether it opened there.
+    func tabBar(_ tabBar: EditorTabBar, openDrop draggingInfo: NSDraggingInfo, at index: Int) -> Bool
+
     /// The menu a right-click on the tab at `index` opens, or `nil` for none.
     func tabBar(_ tabBar: EditorTabBar, menuForTabAt index: Int) -> NSMenu?
 
@@ -657,17 +661,24 @@ final class EditorTabBar: NSView, NSDraggingSource {
         }
     }
 
-    /// A tab over the bar opens a gap where it would drop.
+    /// A tab over the bar opens a gap where it would drop, and so does
+    /// something from outside that the bar takes.
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard let source = sender.draggingSource as? EditorTabBar, source.draggedIndex != nil else {
-            return []
-        }
+        let isTab = (sender.draggingSource as? EditorTabBar)?.draggedIndex != nil
+        guard isTab || carriesOutsideItem(sender) else { return [] }
         let gap = insertionIndex(at: convert(sender.draggingLocation, from: nil))
         if gap != gapIndex {
             gapIndex = gap
             placeTabs(animated: true)
         }
-        return .move
+        return isTab ? .move : .copy
+    }
+
+    /// Whether a drag brings something from outside the editors, of a type
+    /// the bar was registered for beside tabs.
+    private func carriesOutsideItem(_ sender: NSDraggingInfo) -> Bool {
+        !(sender.draggingSource is EditorTabBar)
+            && sender.draggingPasteboard.availableType(from: registeredDraggedTypes.filter { $0 != .editorTab }) != nil
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
@@ -681,6 +692,13 @@ final class EditorTabBar: NSView, NSDraggingSource {
     /// Drops the tab into the gap: the gap closes as the tab takes its place, so
     /// nothing moves. One from this bar is back in it from here on.
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        if carriesOutsideItem(sender) {
+            let gap = gapIndex ?? insertionIndex(at: convert(sender.draggingLocation, from: nil))
+            gapIndex = nil
+            let opened = delegate?.tabBar(self, openDrop: sender, at: gap) ?? false
+            placeTabs(animated: true)
+            return opened
+        }
         guard let source = sender.draggingSource as? EditorTabBar, let dragged = source.draggedIndex
         else {
             closeGap()

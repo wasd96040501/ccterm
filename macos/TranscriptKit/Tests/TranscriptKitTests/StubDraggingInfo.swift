@@ -15,18 +15,23 @@ final class StubDraggingInfo: NSObject, NSDraggingInfo {
     /// In the destination window's coordinates, as AppKit reports it.
     var draggingLocation: NSPoint
     let draggingDestinationWindow: NSWindow?
+    let draggingPasteboard: NSPasteboard
 
+    /// `source` is `nil` for a drag from outside the window, whose content is
+    /// on `pasteboard`.
     @MainActor
-    init(source: NSView, at point: NSPoint, in view: NSView) {
+    init(
+        source: NSView?, at point: NSPoint, in view: NSView, pasteboard: NSPasteboard = NSPasteboard(name: .drag)
+    ) {
         draggingSource = source
         draggingLocation = view.convert(point, to: nil)
         draggingDestinationWindow = view.window
+        draggingPasteboard = pasteboard
     }
 
     var draggingSourceOperationMask: NSDragOperation { .move }
     var draggedImageLocation: NSPoint { draggingLocation }
     var draggedImage: NSImage? { nil }
-    var draggingPasteboard: NSPasteboard { NSPasteboard(name: .drag) }
     var draggingSequenceNumber: Int { 1 }
     var draggingFormation: NSDraggingFormation = .default
     var animatesToDestination = false

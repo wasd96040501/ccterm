@@ -794,6 +794,78 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 1"])
     }
 
+    // MARK: - Drops from outside
+
+    func testSomethingDroppedOnTheBarOpensInTheGap() throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        mounted.area.registerForDraggedTypes([.string])
+        let bar = mounted.area.activeGroup.tabBar
+        var point = center(of: bar, tab: 0)
+        point.x -= bar.rect(forTabAt: 0).width / 4
+
+        let drop = StubDraggingInfo(source: nil, at: point, in: bar, pasteboard: pasteboard("Dropped"))
+        XCTAssertEqual(bar.draggingUpdated(drop), .copy)
+        XCTAssertEqual(bar.gapIndex, 0, "no gap where it would drop")
+        XCTAssertTrue(bar.performDragOperation(drop))
+
+        XCTAssertEqual(mounted.area.activeGroup.tabViewItems.map(\.label), ["Dropped", "Tab 0", "Tab 1"])
+        XCTAssertEqual(mounted.area.activeViewController?.title, "Dropped")
+        XCTAssertNil(bar.gapIndex)
+    }
+
+    func testSomethingDroppedOnTheTrailingHalfOpensInANewEditor() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        mounted.area.registerForDraggedTypes([.string])
+        let content = mounted.area.activeGroup.view
+
+        let drop = StubDraggingInfo(
+            source: nil, at: NSPoint(x: content.bounds.width * 0.75, y: 200), in: content,
+            pasteboard: pasteboard("Dropped"))
+        XCTAssertEqual(content.draggingUpdated(drop), .copy)
+        XCTAssertTrue(content.performDragOperation(drop))
+        settle(mounted.window)
+
+        XCTAssertEqual(mounted.area.groups.map { $0.tabViewItems.map(\.label) }, [["Tab 0"], ["Dropped"]])
+    }
+
+    func testARefusedDropOpensNothingAndLeavesNoGap() throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        mounted.area.registerForDraggedTypes([.string])
+        let bar = mounted.area.activeGroup.tabBar
+
+        let drop = StubDraggingInfo(
+            source: nil, at: center(of: bar, tab: 1), in: bar, pasteboard: pasteboard(Recorder.refused))
+        XCTAssertEqual(bar.draggingUpdated(drop), .copy)
+        XCTAssertFalse(bar.performDragOperation(drop))
+
+        XCTAssertEqual(mounted.area.activeGroup.tabViewItems.map(\.label), ["Tab 0", "Tab 1"])
+        XCTAssertNil(bar.gapIndex)
+    }
+
+    func testATypeNotRegisteredIsNotTaken() throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        let bar = mounted.area.activeGroup.tabBar
+        let content = mounted.area.activeGroup.view
+
+        let overBar = StubDraggingInfo(source: nil, at: center(of: bar, tab: 0), in: bar, pasteboard: pasteboard("x"))
+        let overContent = StubDraggingInfo(
+            source: nil, at: NSPoint(x: 100, y: 200), in: content, pasteboard: pasteboard("x"))
+        XCTAssertEqual(bar.draggingUpdated(overBar), [])
+        XCTAssertEqual(content.draggingUpdated(overContent), [])
+    }
+
+    /// A private pasteboard holding `string`: what a drag from outside carries.
+    private func pasteboard(_ string: String) -> NSPasteboard {
+        let pasteboard = NSPasteboard.withUniqueName()
+        pasteboard.clearContents()
+        pasteboard.setString(string, forType: .string)
+        return pasteboard
+    }
+
     // MARK: - The divider
 
     /// The property the transcript leans on without knowing it is in a split: a
@@ -1000,6 +1072,18 @@ private final class Recorder: EditorAreaViewControllerDelegate {
         _ editorArea: EditorAreaViewController, willClose viewController: NSViewController
     ) {
         closed.append(viewController)
+    }
+
+    /// The string a dropped pasteboard holds for a drop the host refuses.
+    static let refused = "refused"
+
+    /// A tab titled with the dropped string.
+    func editorArea(
+        _ editorArea: EditorAreaViewController, tabViewItemForDrop draggingInfo: NSDraggingInfo
+    ) -> NSTabViewItem? {
+        guard let title = draggingInfo.draggingPasteboard.string(forType: .string), title != Self.refused
+        else { return nil }
+        return NSTabViewItem(viewController: ProbeViewController(title: title))
     }
 }
 

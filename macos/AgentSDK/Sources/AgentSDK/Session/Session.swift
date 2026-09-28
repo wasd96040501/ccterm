@@ -175,8 +175,9 @@ public final class Session: @unchecked Sendable {
     /// The merge is by top-level key: each key in `settings` replaces its
     /// whole runtime value (objects such as ``SettingsKey/permissions`` are
     /// not merged field by field), a key recorded with ``Settings/unset(_:)``
-    /// loses its runtime value and falls back to its launch value, and keys
-    /// not mentioned are kept. Most settings apply from the next request;
+    /// loses its runtime value and falls back to its launch value (except the
+    /// four that reset session state; see ``Settings``), and keys not
+    /// mentioned are kept. Most settings apply from the next request;
     /// `model`, `agent` and `fastMode` wait for the running turn to end, and
     /// this call returns once they are applied.
     ///

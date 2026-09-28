@@ -15,7 +15,11 @@
 //   - a mistyped raw value voids every runtime value (launch values stay)
 //     and is reported in `errors`; fixing it restores them;
 //   - `model` switches the session model (`applied.model`); `effortLevel:
-//     max` applies (`applied.effort`) without staying in the layer.
+//     max` applies (`applied.effort`) without staying in the layer;
+//   - unsetting `effortLevel` resets the session to the model's default
+//     effort even though the layer shows the launch value; `ultracode` is in
+//     force only at xhigh, and unsetting it turns it off; unsetting `model`
+//     returns to Claude Code's default model.
 // Acceptance by the layer is not proof that a key changes behavior mid-session.
 //
 //   swift run SettingsSmoke
@@ -64,6 +68,7 @@ _ = Task {
 var launch = Settings()
 launch[.language] = "french"
 launch[.fastMode] = false
+launch[.effortLevel] = .low
 launch.unset(.outputStyle)
 
 let session = Session(
@@ -112,6 +117,7 @@ let seededLayer = seeded.layer(.session)
 check(seeded.errors.isEmpty, "the launch layer validates")
 check(seededLayer?[.language] == "french", "the launch layer holds language")
 check(seededLayer?[.fastMode] == false, "the launch layer holds fastMode")
+check(seededLayer?[.effortLevel] == .low, "the launch layer holds effortLevel")
 check(seededLayer?["outputStyle"] == nil, "an unset launch key is dropped")
 
 // MARK: - Every cataloged key
@@ -212,7 +218,44 @@ await apply("max effort", maxEffort)
 let runtime = await snapshot("max effort")
 check(runtime.applied.model == effortModel, "model switches the session model (\(runtime.applied.model ?? "nil"))")
 check(runtime.applied.effort == "max", "effortLevel max applies (\(runtime.applied.effort ?? "nil"))")
-check(runtime.layer(.session)?["effortLevel"] == nil, "effortLevel max is not kept in the layer")
+check(runtime.layer(.session)?["effortLevel"] != "max", "effortLevel max is not kept in the layer")
+
+// MARK: - Keys whose unset resets the session
+
+var effortOnly = Settings()
+effortOnly.unset(.effortLevel)
+await apply("unset effortLevel", effortOnly)
+let effortReset = await snapshot("unset effortLevel")
+check(effortReset.layer(.session)?[.effortLevel] == .low, "unset effortLevel shows the launch value in the layer")
+check(
+    effortReset.applied.effort != nil && effortReset.applied.effort != "low" && effortReset.applied.effort != "max",
+    "…but the session runs at the model's default effort (\(effortReset.applied.effort ?? "nil"))")
+
+var ultracodeOn = Settings()
+ultracodeOn[.effortLevel] = .xhigh
+ultracodeOn[.ultracode] = true
+await apply("ultracode", ultracodeOn)
+check(await snapshot("ultracode").applied.ultracode, "ultracode applies at xhigh")
+var lowerEffort = Settings()
+lowerEffort[.effortLevel] = .high
+await apply("effort high", lowerEffort)
+let lowered = await snapshot("effort high")
+check(!lowered.applied.ultracode, "ultracode is not in force below xhigh")
+check(lowered.layer(.session)?[.ultracode] == true, "…while the layer still holds it")
+await apply("ultracode", ultracodeOn)
+var ultracodeOff = Settings()
+ultracodeOff.unset(.ultracode)
+await apply("unset ultracode", ultracodeOff)
+check(!(await snapshot("unset ultracode").applied.ultracode), "unset ultracode turns it off")
+
+var modelOff = Settings()
+modelOff.unset(.model)
+await apply("unset model", modelOff)
+let modelReset = await snapshot("unset model")
+check(modelReset.layer(.session)?["model"] == nil, "unset model removes it from the layer")
+check(
+    modelReset.applied.model != nil && modelReset.applied.model != model,
+    "unset model returns to Claude Code's default model, not the launch model (\(modelReset.applied.model ?? "nil"))")
 
 await session.close()
 log(

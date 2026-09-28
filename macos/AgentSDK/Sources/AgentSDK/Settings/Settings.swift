@@ -21,7 +21,11 @@ import Foundation
 /// **Absent vs. unset.** Assigning `nil` removes the entry from this value,
 /// so applying it leaves that key alone. ``unset(_:)`` records a removal:
 /// applying it withdraws the key's runtime value, so the key falls back to
-/// its launch value, or to the layers beneath when it had none.
+/// its launch value, or to the layers beneath when it had none. Four keys
+/// instead reset the session: `effortLevel` to the model's default effort,
+/// `model` to Claude Code's default model, `agent` to none and `ultracode`
+/// to off — the layer shows the fallback value, but
+/// ``SettingsSnapshot/applied`` shows what the session runs with.
 public struct Settings: Sendable, Equatable {
     /// The entries as JSON, keyed as in `settings.json`. A key recorded by
     /// ``unset(_:)`` maps to `null`.

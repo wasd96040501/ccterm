@@ -161,7 +161,7 @@ final class TranscriptTests: XCTestCase {
             case .user(let summary) = result.messages[4]
         else { return XCTFail() }
         XCTAssertEqual(boundary, .init(trigger: "manual", preTokens: 1000, postTokens: 100))
-        XCTAssertTrue(summary.isSynthetic)
+        XCTAssertEqual(summary.kind, .compactionSummary)
     }
 
     func testBoundaryWithoutItsLastRowStartsTheConversation() {
@@ -235,7 +235,7 @@ final class TranscriptTests: XCTestCase {
         XCTAssertEqual(uuids(result), ["u", "q", "a"])
         guard case .user(let queued) = result.messages[1] else { return XCTFail() }
         XCTAssertEqual(queued.content, [.text("also this")])
-        XCTAssertFalse(queued.isSynthetic)
+        XCTAssertEqual(queued.kind, .prompt)
     }
 
     func testMissingParentFallsBackToRecentRow() {

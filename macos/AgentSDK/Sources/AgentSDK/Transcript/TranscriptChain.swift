@@ -38,10 +38,11 @@ struct TranscriptChain {
     private var threadIsSidechain = false
 
     init(data: Data) {
-        let decoder = JSONDecoder()
+        let lines = Self.lines(of: data)
+        let decoded = lines.concurrentMap { try? JSONDecoder().decode(Row.self, from: $0) }
         var index = 0
-        for (lineIndex, line) in Self.lines(of: data).enumerated() {
-            guard let row = try? decoder.decode(Row.self, from: line) else { continue }
+        for (lineIndex, line) in lines.enumerated() {
+            guard let row = decoded[lineIndex] else { continue }
             if row.isChainRow {
                 guard let uuid = row.uuid else { continue }
                 if row.type == "progress" {
@@ -63,14 +64,15 @@ struct TranscriptChain {
         }
         threadIsSidechain = !rows.isEmpty && rows.values.allSatisfy(\.isSidechain)
         let boundaries = rows.values.filter { $0.type == "system" && $0.subtype == "compact_boundary" }
-        for boundary in boundaries { chainAcross(boundary) }
+        let children = childrenByParent()
+        for boundary in boundaries { chainAcross(boundary, children: children) }
     }
 
     // MARK: - Messages
 
     func messages() -> [Message] {
         guard !clearedByRewind, let leaf = chooseLeaf() else { return [] }
-        return withParallelResults(walk(from: leaf)).compactMap(message)
+        return withParallelResults(walk(from: leaf)).concurrentMap(message).compactMap { $0 }
     }
 
     private func message(_ uuid: String) -> Message? {
@@ -121,7 +123,7 @@ struct TranscriptChain {
     /// versions wrote the first row after a compaction under the last
     /// preserved row rather than the summary; such a row is moved to the
     /// summary, so the walk passes the boundary.
-    private mutating func chainAcross(_ boundary: Row) {
+    private mutating func chainAcross(_ boundary: Row, children: [String: [String]]) {
         guard let uuid = boundary.uuid, let at = position[uuid] else { return }
         if let before = boundary.logicalParentUUID, rows[before] != nil { parentOverrides[uuid] = before }
         guard let preserved = boundary.preserved else { return }
@@ -130,11 +132,20 @@ struct TranscriptChain {
         case .messages(_, let uuids): kept = Set(uuids)
         case .segment(let head, _, let tail): kept = [head, tail]
         }
-        for (child, row) in rows where position[child]! > at && !kept.contains(child) {
-            if let parent = nearestReal(row.parentUUID), kept.contains(parent) {
+        for parent in kept {
+            for child in children[parent] ?? [] where position[child]! > at && !kept.contains(child) {
                 parentOverrides[child] = preserved.anchor
             }
         }
+    }
+
+    /// Each row's children, through dropped progress rows.
+    private func childrenByParent() -> [String: [String]] {
+        var children: [String: [String]] = [:]
+        for (uuid, row) in rows {
+            if let parent = nearestReal(row.parentUUID) { children[parent, default: []].append(uuid) }
+        }
+        return children
     }
 
     private func chooseLeaf() -> String? {
@@ -334,12 +345,25 @@ struct TranscriptChain {
 
     // MARK: - Lines
 
-    /// Non-empty lines, tolerating the NUL padding a torn write leaves.
+    /// Non-empty lines, tolerating the NUL padding a torn write leaves. Each
+    /// line is a slice sharing `data`'s storage.
     private static func lines(of data: Data) -> [Data] {
-        data.split(separator: UInt8(ascii: "\n")).compactMap { line in
-            let trimmed = line.drop { $0 == 0 }
-            return trimmed.isEmpty ? nil : Data(trimmed)
+        // `memchr`, not a Swift loop over the bytes: unoptimized, such a loop
+        // takes tens of seconds on a large session.
+        let ranges = data.withUnsafeBytes { bytes -> [Range<Int>] in
+            guard let base = bytes.baseAddress else { return [] }
+            var ranges: [Range<Int>] = []
+            var start = 0
+            while start < bytes.count {
+                let newline = memchr(base + start, Int32(UInt8(ascii: "\n")), bytes.count - start)
+                let end = newline.map { base.distance(to: $0) } ?? bytes.count
+                let line = bytes[start..<end].drop { $0 == 0 }
+                if !line.isEmpty { ranges.append(line.startIndex..<line.endIndex) }
+                start = end + 1
+            }
+            return ranges
         }
+        return ranges.map { data[(data.startIndex + $0.lowerBound)..<(data.startIndex + $0.upperBound)] }
     }
 }
 

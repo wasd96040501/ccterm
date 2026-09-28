@@ -4,8 +4,9 @@ import Foundation
 
 /// Every transcript someone ran at the CLI's prompt, from the CLI's session
 /// directory, as a tree of `LibraryNode`s: project → session → its subagents
-/// and workflow runs. Sessions run through `claude -p` or an SDK are left
-/// out, and so are those that record no working directory.
+/// and workflow runs. Left out: sessions run through `claude -p` or an SDK,
+/// those that record no working directory, and those run in a temporary or
+/// hidden directory.
 ///
 /// Reads every session once on `start()`, then only the sessions the
 /// directory reports changed.
@@ -80,7 +81,7 @@ final class LibraryStore {
 
     private nonisolated static func entry(for session: SessionFile) -> Entry? {
         guard let metadata = try? SessionMetadata(contentsOf: session.url), metadata.isInteractive,
-            let cwd = metadata.cwd
+            let cwd = metadata.cwd, !isScratch(project(ofDirectory: cwd))
         else { return nil }
         let title =
             [metadata.title, metadata.lastPrompt]
@@ -139,6 +140,14 @@ final class LibraryStore {
     private nonisolated static func project(ofDirectory path: String) -> String {
         guard let range = path.range(of: "/.claude/worktrees/") else { return path }
         return String(path[..<range.lowerBound])
+    }
+
+    /// A directory no one keeps a project in: a temporary one, or one inside
+    /// a hidden directory (`~/.cache/…`) — where scripts and tools run the
+    /// CLI, not people.
+    private nonisolated static func isScratch(_ path: String) -> Bool {
+        ["/tmp/", "/private/tmp/", "/var/folders/", "/private/var/folders/"].contains { path.hasPrefix($0) }
+            || URL(fileURLWithPath: path).pathComponents.contains { $0.hasPrefix(".") }
     }
 
     private static func title(ofProject path: String) -> String {

@@ -29,9 +29,18 @@ final class LibraryStoreTests: XCTestCase {
     }
 
     /// Two project directories that are one repository (one run in a
-    /// worktree), a second repository, and a session with no working
-    /// directory; the newest session spawned a subagent and a workflow run.
+    /// worktree), a second repository, and — none of them shown — sessions
+    /// with no working directory, run through `claude -p`, or run in a
+    /// temporary or hidden directory. The newest shown session spawned a
+    /// subagent and a workflow run.
     static func writeLibrary(_ fixture: SessionDirectoryFixture) throws {
+        let printed = Rows.row([
+            "type": "user", "uuid": "u", "parentUuid": NSNull(), "sessionId": "s", "cwd": "/x/repo",
+            "entrypoint": "sdk-cli", "message": ["role": "user", "content": "hi"],
+        ])
+        try fixture.write("-x-repo/s7.jsonl", [printed, Rows.aiTitle("Printed")], modified: 500)
+        try fixture.write("-private-tmp-probe/s8.jsonl", [Rows.user("u", cwd: "/private/tmp/probe")], modified: 500)
+        try fixture.write("-u--cache-bench/s9.jsonl", [Rows.user("u", cwd: "/u/.cache/bench")], modified: 500)
         try fixture.write("-x-repo/s1.jsonl", [Rows.user("u"), Rows.customTitle("Named")], modified: 300)
         try fixture.write("-x-repo/s1/subagents/agent-a.jsonl", [Rows.user("u")])
         try fixture.write(

@@ -1,6 +1,6 @@
-// Build the sidebar's glyphs: the geometry below → template SVG image sets and
-// light/dark colour sets in macos/ccterm/Assets.xcassets/Sidebar, plus
-// index.html, the design sheet, drawn from the same paths.
+// Build the sidebar's glyphs: the geometry below → template SVG image sets in
+// macos/ccterm/Assets.xcassets/Sidebar, plus index.html, the design sheet,
+// drawn from the same paths. The colours are the system's, not ours.
 //
 //   bun run build
 
@@ -10,6 +10,23 @@ import { join, resolve } from "node:path"
 const ROOT = resolve(import.meta.dir, "../../..")
 const ASSETS = join(ROOT, "macos/ccterm/Assets.xcassets/Sidebar")
 const SHEET = resolve(import.meta.dir, "../index.html")
+
+// MARK: - Colour: the system's, as Xcode colours its file types
+//
+// Xcode's navigator tints each file type's glyph with a system colour (its
+// DVTUserInterfaceKit colour sets doc-green, doc-orange and doc-purple are
+// systemGreen, systemOrange and systemIndigo), and those are made to sit
+// beside the system folder in both appearances. So the glyphs take them too;
+// the app names them (`NSColor.systemGreen`, …) and the system resolves each
+// per appearance. The values here are only for the sheet: macOS 26's.
+
+type SystemColour = { name: string; light: string; dark: string }
+
+const SYSTEM = {
+  green: { name: "systemGreen", light: "#34c759", dark: "#30d158" },
+  orange: { name: "systemOrange", light: "#ff8d28", dark: "#ff9230" },
+  indigo: { name: "systemIndigo", light: "#6155f5", dark: "#6d7cff" },
+} satisfies Record<string, SystemColour>
 
 // MARK: - Geometry: Lamé curves |x/a|ⁿ + |y/b|ⁿ = 1 on the 16-pt grid, y down
 
@@ -44,7 +61,7 @@ type Glyph = {
   geometry: string
   fill: string
   stroke?: string
-  hue: number
+  colour: SystemColour
 }
 
 const GLYPHS: Glyph[] = [
@@ -59,7 +76,7 @@ const GLYPHS: Glyph[] = [
       "M3.4 10.6L8.4 11.4L3.6 14.6Q3.1 14.9 3.1 14.3Z" +
       slot(4.75, 11.25, 5.5, 1.5) +
       slot(4.75, 8.75, 8.5, 1.5),
-    hue: 275, // indigo: the folder's cool family, clearly not its blue
+    colour: SYSTEM.green,
   },
   {
     asset: "SidebarAgent",
@@ -68,7 +85,7 @@ const GLYPHS: Glyph[] = [
     geometry:
       "Lamé star n = 0.8, radius 7.5: four cusps on the axes, sides concave, between the astroid (n = ⅔) and the rhombus (n = 1).",
     fill: lame(8, 8, 7.5, 7.5, 0.8),
-    hue: 50, // coral: the folder's complement, the one warm note
+    colour: SYSTEM.orange,
   },
   {
     asset: "SidebarWorkflow",
@@ -78,66 +95,9 @@ const GLYPHS: Glyph[] = [
       "Two squircle nodes n = 4, 5.5 wide, on the diagonal 8 pt apart; one 1.5-pt connector turning through a 2.5-pt arc.",
     fill: lame(4, 4, 2.75, 2.75, 4) + lame(12, 12, 2.75, 2.75, 4),
     stroke: "M4 6.75V9.5A2.5 2.5 0 0 0 6.5 12H9.25",
-    hue: 160, // mint: the cool family's other side
+    colour: SYSTEM.indigo,
   },
 ]
-
-// MARK: - Colour: as clean as the system folder icon, in its lightness
-//
-// The folder icon is the one colour every sidebar row sits beside, and it is
-// the same in light and dark (measured: tab L 0.70 C 0.117 at hue 230, front
-// L 0.81). So every glyph keeps one colour in both appearances, at the
-// folder's lightness and at the folder's *relative* chroma: the share of the
-// most sRGB can show at that lightness and hue (the folder's is 84%). Equal
-// absolute chroma would not do: a hue whose gamut is wide then reads greyed —
-// muddy — beside the folder. And the hues come from where the gamut is as
-// narrow as the folder's (about 160–290, mint to indigo), so a clean colour
-// there is no louder than the folder either; coral, its complement, is the
-// one warm note.
-
-const LIGHTNESS = 0.7
-
-type RGB = [number, number, number]
-
-function linearSRGB(L: number, C: number, h: number): number[] {
-  const a = C * Math.cos((h * Math.PI) / 180)
-  const b = C * Math.sin((h * Math.PI) / 180)
-  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3
-  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3
-  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3
-  return [
-    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
-    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
-  ]
-}
-
-/** The most chroma sRGB can show at lightness `L` and hue `h`. */
-function maxChroma(L: number, h: number): number {
-  let [lo, hi] = [0, 0.4]
-  for (let i = 0; i < 40; i++) {
-    const mid = (lo + hi) / 2
-    if (linearSRGB(L, mid, h).every((v) => v >= -1e-6 && v <= 1 + 1e-6)) lo = mid
-    else hi = mid
-  }
-  return lo
-}
-
-const CLEAN = 0.117 / maxChroma(LIGHTNESS, 230) // the folder's relative chroma
-
-/** A glyph's chroma: as clean as the folder, at its own hue. */
-const chroma = (h: number) => CLEAN * maxChroma(LIGHTNESS, h)
-
-function oklch(L: number, C: number, h: number): RGB {
-  return linearSRGB(L, C, h).map((v) => {
-    const c = Math.min(1, Math.max(0, v))
-    return Math.round((c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055) * 255)
-  }) as RGB
-}
-
-const tint = (h: number) => oklch(LIGHTNESS, chroma(h), h)
-
-const hex = (c: RGB) => `#${c.map((v) => v.toString(16).padStart(2, "0")).join("")}`
 
 // MARK: - Asset catalog
 
@@ -154,11 +114,6 @@ function svg(glyph: Glyph, colour = "#000000"): string {
   )
 }
 
-function colour(c: RGB) {
-  const [red, green, blue] = c.map((v) => `0x${v.toString(16).padStart(2, "0").toUpperCase()}`)
-  return { "color-space": "srgb", components: { alpha: "1.000", red, green, blue } }
-}
-
 rmSync(ASSETS, { recursive: true, force: true })
 mkdirSync(ASSETS, { recursive: true })
 writeFileSync(join(ASSETS, "Contents.json"), json({ info: INFO }))
@@ -173,15 +128,6 @@ for (const glyph of GLYPHS) {
       images: [{ filename: file, idiom: "universal" }],
       info: INFO,
       properties: { "preserves-vector-representation": true, "template-rendering-intent": "template" },
-    }),
-  )
-  const colours = join(ASSETS, `${glyph.asset}Tint.colorset`)
-  mkdirSync(colours)
-  writeFileSync(
-    join(colours, "Contents.json"),
-    json({
-      colors: [{ color: colour(tint(glyph.hue)), idiom: "universal" }],
-      info: INFO,
     }),
   )
 }
@@ -223,7 +169,7 @@ function sidebar(dark: boolean): string {
     const x = 14 + row.level * 14
     const y = 8 + i * 22
     const glyph = GLYPHS.find((g) => g.asset === row.kind)
-    const ink = row.selected ? "#ffffff" : glyph ? hex(tint(glyph.hue)) : ""
+    const ink = row.selected ? "#ffffff" : glyph ? (dark ? glyph.colour.dark : glyph.colour.light) : ""
     const chevron =
       row.open === undefined
         ? ""
@@ -248,12 +194,12 @@ function sidebar(dark: boolean): string {
 }
 
 const cards = GLYPHS.map((glyph) => {
-  const tone = tint(glyph.hue)
+  const { name, light, dark } = glyph.colour
   return `<section class="card">
-  ${construction(glyph, hex(tone))}
+  ${construction(glyph, light)}
   <div class="title"><h2>${glyph.name}</h2><span>${glyph.role} · <code>${glyph.asset}</code></span></div>
   <p>${glyph.geometry}</p>
-  <div class="swatch"><i style="background:${hex(tone)}"></i><code>oklch(${LIGHTNESS} ${chroma(glyph.hue).toFixed(3)} ${glyph.hue}) · ${Math.round(CLEAN * 100)}% of its gamut · ${hex(tone)}</code></div>
+  <div class="swatch"><i style="background:${light}"></i><i style="background:${dark}"></i><code>${name} · ${light} light · ${dark} dark</code></div>
 </section>`
 }).join("\n")
 
@@ -290,7 +236,7 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 <main>
 <header>
 <h1>Sidebar icons</h1>
-<p class="lede">Every outline is a Lamé curve |x/a|ⁿ + |y/b|ⁿ = 1 on the 16-pt grid · every colour is as clean as the system folder icon, in its lightness, one colour for both appearances</p>
+<p class="lede">Every outline is a Lamé curve |x/a|ⁿ + |y/b|ⁿ = 1 on the 16-pt grid · every colour is a system colour, the ones Xcode gives its file types</p>
 </header>
 <div class="cards">
 ${cards}

@@ -112,8 +112,11 @@ struct Renderer {
         (`sink`, `for-await`, `observes` = withObservationTracking, `swiftui-reads` = SwiftUI body reading an \
         @Observable, `notified-by`, `kvo`), what it **wires** on others (`sets-callback`, `sets-delegate`), \
         what it **creates**, `.shared` singletons it reaches for, and **used by** = which other units touch it \
-        and through which members. Receivers are resolved to types where the map can (`LibraryStore.$nodes`); \
-        otherwise the raw expression is kept. Resolution is syntactic: treat absences as likely, not proven.
+        and through which of its own members (`init` = constructs it). Used-by counts every target — demo and \
+        smoke executables too, even outside the scope; tests are not parsed. Names resolve only within a \
+        file's module and its imports. Receivers are resolved to types where the map can \
+        (`LibraryStore.$nodes`); otherwise the raw expression is kept. Resolution is syntactic: treat \
+        absences as likely, not proven.
         """
 
     // MARK: Unit relations

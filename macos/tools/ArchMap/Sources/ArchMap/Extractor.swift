@@ -181,7 +181,11 @@ final class Extractor: SyntaxVisitor {
             if bodyDepth > 0 {
                 if let type = binding.typeAnnotation?.type {
                     scope.bindings[name] = .type(type.trimmedDescription)
-                } else if let value = binding.initializer?.value {
+                } else if let value = binding.initializer?.value,
+                    value.as(DeclReferenceExprSyntax.self)?.baseName.text != name
+                {
+                    // `let directory = directory` (a capture copy) binds nothing new:
+                    // the name keeps resolving to the outer property or parameter.
                     scope.bindings[name] = .expr(value)
                 }
                 continue

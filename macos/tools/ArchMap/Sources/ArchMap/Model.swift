@@ -112,9 +112,14 @@ final class TypeInfo {
         self.file = file.path
         self.module = file.module
         self.unit = file.unit
+        self.visibleModules = Set(file.imports).union([file.module])
         self.line = line
         self.endLine = endLine
     }
+
+    /// Its own module plus what its file imports: the only places a name it
+    /// uses can resolve to (TranscriptKit's `Transcript` is not AgentSDK's).
+    let visibleModules: Set<String>
 
     var shortName: String { String(name.split(separator: ".").last ?? Substring(name)) }
     var lines: Int { endLine - line + 1 + extensionLines }

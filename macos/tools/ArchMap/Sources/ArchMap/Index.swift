@@ -43,15 +43,19 @@ final class Index {
         if let first = name.split(separator: ".").first, modules.contains(String(first)), name.contains(".") {
             name = String(name.dropFirst(first.count + 1))
         }
-        if let owner, owner.kind != "file" {
+        if let owner, owner.kind != "file", owner.kind != "extension" {
             var prefix = owner.name.split(separator: ".").map(String.init)
             while !prefix.isEmpty {
-                if let hit = byName[(prefix + [name]).joined(separator: ".")]?.first { return hit }
+                if let hit = byName[(prefix + [name]).joined(separator: ".")]?.first(where: {
+                    $0.module == owner.module
+                }) {
+                    return hit
+                }
                 prefix.removeLast()
             }
         }
-        guard let candidates = byName[name] else { return nil }
-        return candidates.first { $0.module == owner?.module } ?? candidates.first
+        let visible = (byName[name] ?? []).filter { owner?.visibleModules.contains($0.module) ?? true }
+        return visible.first { $0.module == owner?.module } ?? visible.first
     }
 
     /// `LibraryStore?`, `any SessionDelegate`, `Optional<Foo>` → the named type; nil for
@@ -203,7 +207,7 @@ final class Index {
     private func mergeExtensions(_ extensions: [TypeInfo]) {
         var foreign: [String: TypeInfo] = [:]
         for ext in extensions {
-            if let target = lookup(ext.name, from: nil) {
+            if let target = lookup(ext.name, from: ext) {
                 target.inherits += ext.inherits.filter { !target.inherits.contains($0) }
                 target.properties += ext.properties
                 target.members += ext.members

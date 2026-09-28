@@ -32,7 +32,7 @@ The simplest architecture in which every unit has **one clear job**, a **small e
 
 Resolution is syntactic. An absent edge is *likely* absent, not proven. Say so in `confidence` when a conclusion leans on an absence.
 
-## Output — exactly this shape, nothing before it
+## Output — exactly this shape, nothing before it, written in {LANGUAGE}
 
 ### Unit semantics
 One line per unit in your shard:

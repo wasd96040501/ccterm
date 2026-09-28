@@ -11,7 +11,8 @@ Reviewers see only `make arch`'s map — never the Swift source. That is the poi
 
 - **Scope** — default `core` (app + every package library). Translate the user's words into a `SCOPE` for `make arch`: `app`, `kit` (TranscriptKit, TranscriptMedia, TranscriptWorkspace), `sdk` (AgentSDK), a path, a unit as the map names it (`AgentSDK/Session`), or a bare directory name (`sidebar`). Several → comma-separated.
 - **Model** — reviewers run on `opus` unless the user names another model. Judging a module's boundaries takes the strongest model available; don't pick `sonnet` or `haiku` on your own. Honour an explicit user choice.
-- **Focus** — if the user asked a specific question ("should LibraryStore be split?", "is TranscriptWorkspace's API clean?"), carry it verbatim as the focus question. Otherwise it's a full review.
+- **Focus** — if the user asked a specific question ("should LibraryStore be split?", "is TranscriptWorkspace's API clean?"), carry it verbatim as the focus question. Otherwise it's a full review. A question about a unit's surface needs its consumers too: add the units in its "used by" column to the scope.
+- **Language** — the report and your reply are in the language the user wrote in; tell reviewers to answer in it too.
 
 ## 2. Build the map
 
@@ -19,7 +20,7 @@ Reviewers see only `make arch`'s map — never the Swift source. That is the poi
 make arch SCOPE=<scope>
 ```
 
-It rewrites `build/arch/` from the working tree every time, so always run it — never trust a map left over from earlier. Then read `build/arch/index.md` yourself (small: modules, unit table, cross-unit data flow, cycles, unreferenced types) and `wc -c build/arch/*.md` for unit file sizes. Don't read the unit files and don't read source — you're the coordinator, and the reviewers' independence from the code is what makes the review useful.
+It rewrites `build/arch/` from the working tree every time, so always run it — never trust a map left over from earlier. One review per worktree at a time: a second `make arch` would swap the map under reviewers still reading it. Then read `build/arch/index.md` yourself (small: modules, unit table, cross-unit data flow, cycles, unreferenced types) and `wc -c build/arch/*.md` for unit file sizes. Don't read the unit files and don't read source — you're the coordinator, and the reviewers' independence from the code is what makes the review useful.
 
 ## 3. Plan shards
 

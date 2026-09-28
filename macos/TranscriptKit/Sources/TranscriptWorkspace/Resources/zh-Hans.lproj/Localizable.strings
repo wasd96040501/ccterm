@@ -1,17 +1,14 @@
 /* Tab context menu item, and the close button's accessibility label. */
 "Close Tab" = "关闭标签页";
 
-/* Tab context menu item: closes every unpinned tab but the one clicked. */
+/* Tab context menu item: closes every tab but the one clicked. */
 "Close Other Tabs" = "关闭其他标签页";
 
-/* Tab context menu item. */
+/* Tab context menu item, and the accessibility label of the temporary tab's hollow pin. */
 "Pin Tab" = "固定标签页";
 
-/* Tab context menu item. */
+/* Tab context menu item, and the accessibility label of a pinned tab's filled pin. */
 "Unpin Tab" = "取消固定标签页";
-
-/* Accessibility label of the pin a pinned tab shows. */
-"Pinned" = "已固定";
 
 /* Tab context menu item when there is one editor: opens a second editor on the right with this tab in it. */
 "Move to New Editor on Right" = "移到右侧新编辑器";

@@ -9,7 +9,8 @@ not PNG snapshots).
 
 > **Real objects only.** The factories assemble production types —
 > `mainSplit` mounts the real `MainSplitViewController` exactly as
-> `MainWindowController` builds it. Nothing is mocked at the controller
+> `MainWindowController` builds it; `mainWindow` mounts the
+> `MainWindowController` itself. Nothing is mocked at the controller
 > layer; when a tree needs state, its factory injects per-stage in-memory
 > dependencies through the production init seams. This is the same
 > engineering rule as the rest of the repo (root `CLAUDE.md` → "Never
@@ -20,8 +21,8 @@ not PNG snapshots).
 
 | File | Role |
 |---|---|
-| [`AppKitStage.swift`](AppKitStage.swift) | Off-screen mount + runloop control (`settle` / `drainUntil` / `sourcePhase`) + `find<T>` subview lookup. The generic `mount(vc:)` entry. |
-| [`AppKitStageFactories.swift`](AppKitStageFactories.swift) | Real-tree factories (`mainSplit`) and queries against what they built (`sidebarWidth` / `detailPaneWidth`). |
+| [`AppKitStage.swift`](AppKitStage.swift) | Off-screen mount + runloop control (`settle` / `drainUntil` / `sourcePhase`) + `find<T>` subview lookup. The generic entries: `mount(_:)` for a view controller in a bare window, `mount(_:)` for a window controller's own window. |
+| [`AppKitStageFactories.swift`](AppKitStageFactories.swift) | Real-tree factories (`mainSplit`, `mainWindow`) and queries against what they built (`sidebarWidth` / `detailPaneWidth`). |
 | [`Geometry.swift`](Geometry.swift) | Region/position assertion vocabulary (`assertContained` / `assertNoOverlap` / `assertCenteredX` / `assertBottomAnchored` / `assertAligned` / `assertWidth` / `assertWithinViewport`) in a chosen ancestor coordinate space, with tolerance + readable diagnostics. |
 | [`AnimationProbe.swift`](AnimationProbe.swift) | `CADisplayLink` per-frame sampler of any view's `layer.presentation()` frame/opacity → an assertable `Timeline` (`assertOpacity` monotonic, `assertNoJump`, `assertFinalOpacity`). |
 | [`InteractionDriver.swift`](InteractionDriver.swift) | Real hit-test routing (`hitTest(at:from:)`, `enclosing`) and the pre-post recipe for gestures that enter AppKit's event-tracking loop. |
@@ -31,7 +32,10 @@ not PNG snapshots).
 Three steps; you touch only the high-level API.
 
 1. **Pick a factory.** The main window's content → `AppKitStage.mainSplit(...)`.
-   Anything else → `AppKitStage.mount(myRealVC, size:)`; when a component
+   What only the real window has — titlebar, toolbar, the safe area under
+   them → `AppKitStage.mainWindow(...)`; it adds no frame autosave (the app
+   sets that in `AppDelegate`), so no test writes the window's frame to the
+   shared defaults. Anything else → `AppKitStage.mount(myRealVC, size:)`; when a component
    gets a real-tree test of its own, add a factory for it here.
 2. **`stage.find(SomeView.self)`** to locate the target in the real tree.
 3. **Assert** with `Geometry` / `AnimationProbe`, or **drive** with

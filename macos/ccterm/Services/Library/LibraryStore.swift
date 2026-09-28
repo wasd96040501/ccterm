@@ -59,6 +59,46 @@ final class LibraryStore {
         if tree != nodes { nodes = tree }
     }
 
+    // MARK: - Queries
+
+    /// The library's nodes from a project down to the transcript at `url`, or
+    /// none if it isn't in the library: `last` is the transcript's node, `first`
+    /// its project — its folder in the sidebar.
+    func path(toTranscriptAt url: URL) -> [LibraryNode] {
+        func path(from node: LibraryNode) -> [LibraryNode]? {
+            if node.transcriptURL == url { return [node] }
+            for child in node.children {
+                if let rest = path(from: child) { return [node] + rest }
+            }
+            return nil
+        }
+        return nodes.lazy.compactMap(path(from:)).first ?? []
+    }
+
+    /// The git branch of the session whose transcript is at `url`, read when
+    /// asked and followed until the consumer stops iterating: the live branch
+    /// of the directory the session runs in (a worktree's own), found in the
+    /// transcript's metadata, or — when that directory is no repository any
+    /// more — the branch the transcript last recorded, once. `nil` while HEAD
+    /// is detached or when neither is known. Reads nothing on the caller's
+    /// thread, and always yields at least once.
+    nonisolated func branchUpdates(ofTranscriptAt url: URL) -> AsyncStream<String?> {
+        AsyncStream { continuation in
+            let task = Task.detached(priority: .userInitiated) {
+                let metadata = try? SessionMetadata(contentsOf: url)
+                guard let root = metadata?.cwd.flatMap(GitUtils.repositoryRoot(containing:)) else {
+                    // The CLI records a detached HEAD as "HEAD".
+                    continuation.yield(metadata?.gitBranch.flatMap { $0 == "HEAD" ? nil : $0 })
+                    continuation.finish()
+                    return
+                }
+                for await branch in GitUtils.currentBranchUpdates(at: root) { continuation.yield(branch) }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
     // MARK: - Reading
 
     private struct Entry: Sendable {

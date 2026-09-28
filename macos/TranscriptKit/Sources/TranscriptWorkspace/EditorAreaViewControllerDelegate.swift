@@ -30,9 +30,21 @@ public protocol EditorAreaViewControllerDelegate: AnyObject {
     func editorArea(
         _ editorArea: EditorAreaViewController, tabViewItemForDrop draggingInfo: NSDraggingInfo
     ) -> NSTabViewItem?
+
+    /// An editor is going back or forward to something whose tab has closed: a
+    /// new tab for `identifier` — what that tab's `NSTabViewItem.identifier` was —
+    /// or `nil` if it can't be shown any more, and history passes over it. The tab
+    /// opens as the editor's temporary tab.
+    func editorArea(
+        _ editorArea: EditorAreaViewController, tabViewItemWithIdentifier identifier: Any
+    ) -> NSTabViewItem?
 }
 
 extension EditorAreaViewControllerDelegate {
+
+    public func editorArea(
+        _ editorArea: EditorAreaViewController, tabViewItemWithIdentifier identifier: Any
+    ) -> NSTabViewItem? { nil }
 
     public func editorArea(
         _ editorArea: EditorAreaViewController, didActivate viewController: NSViewController?

@@ -32,6 +32,17 @@
         }
       }
     },
+    "Back": {
+      "comment": "Toolbar button: back through the active editor's history.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "后退"
+          }
+        }
+      }
+    },
     "Clean": {
       "localizations": {
         "zh-Hans": {
@@ -78,6 +89,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "对话已压缩"
+          }
+        }
+      }
+    },
+    "Forward": {
+      "comment": "Toolbar button: forward through the active editor's history.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前进"
           }
         }
       }

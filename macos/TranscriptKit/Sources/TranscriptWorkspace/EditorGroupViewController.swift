@@ -11,11 +11,12 @@ import AppKit
 /// tab is. Ten tabs cost one on-screen editor, which is the whole of this type's
 /// performance story.
 ///
-/// What is added is the order a pinned tab keeps: the first
-/// `numberOfPinnedTabs` items are the pinned ones, always. Pinning a tab moves it
-/// to the end of that run; unpinning moves it to the start of the rest. A count
-/// rather than a flag per tab because the invariant *is* the order — a set of
-/// pinned tabs could disagree with it, and a count cannot.
+/// What is added is Xcode 26's pin and Xcode's history. **A tab is pinned unless
+/// it is the temporary tab** (`previewTabViewItem`): pinning is keeping, so there
+/// is one state, not a flag beside the temporary tab that could disagree with it.
+/// **The history** is what the editor has shown, by `NSTabViewItem.identifier`,
+/// which this type compares and never looks inside; going back to something whose
+/// tab has closed asks the area's delegate for a new one.
 ///
 /// Everything that crosses editors — moving a tab to the other one, which editor
 /// is active, closing an editor that ran out of tabs — is the enclosing
@@ -26,14 +27,9 @@ public final class EditorGroupViewController: NSViewController {
     private let tabs = NSTabViewController()
     lazy var tabBar = EditorTabBar()
 
-    public private(set) var numberOfPinnedTabs = 0
-
     private var itemObservations: [ObjectIdentifier: [NSKeyValueObservation]] = [:]
 
-    /// Where the content starts: under the tab bar, or at the top when there is
-    /// no bar to be under. One of the two is active at a time.
-    private lazy var contentBelowTabBar = tabs.view.topAnchor.constraint(equalTo: separator.bottomAnchor)
-    private lazy var contentAtTop = tabs.view.topAnchor.constraint(equalTo: view.topAnchor)
+    private var history = History()
 
     private lazy var separator: NSBox = {
         let box = NSBox()
@@ -97,14 +93,18 @@ public final class EditorGroupViewController: NSViewController {
         view.addSubview(dropHighlight)
     }
 
+    /// The bar hangs from the safe area: under a window's toolbar when the editor
+    /// reaches under it (a full-size content view), which is the titlebar's to
+    /// take clicks in — for moving and zooming the window, not for dragging tabs.
     private func configureConstraints() {
         NSLayoutConstraint.activate([
             tabBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
             tabBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
-            tabBar.topAnchor.constraint(equalTo: view.topAnchor, constant: 6),
+            tabBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
             separator.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             separator.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             separator.topAnchor.constraint(equalTo: tabBar.bottomAnchor, constant: 6),
+            tabs.view.topAnchor.constraint(equalTo: separator.bottomAnchor),
             tabs.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tabs.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tabs.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -129,9 +129,10 @@ public final class EditorGroupViewController: NSViewController {
         }
     }
 
-    public var selectedViewController: NSViewController? {
-        tabViewItems.indices.contains(selectedTabViewItemIndex)
-            ? tabViewItems[selectedTabViewItemIndex].viewController : nil
+    public var selectedViewController: NSViewController? { selectedTabViewItem?.viewController }
+
+    private var selectedTabViewItem: NSTabViewItem? {
+        tabViewItems.indices.contains(selectedTabViewItemIndex) ? tabViewItems[selectedTabViewItemIndex] : nil
     }
 
     /// Adds a tab after the others and selects it.
@@ -139,10 +140,9 @@ public final class EditorGroupViewController: NSViewController {
         insertTabViewItem(item, at: tabViewItems.count)
     }
 
-    /// Inserts a tab and selects it. An index inside the pinned tabs is moved to
-    /// just after them: a new tab is never pinned.
+    /// Inserts a tab and selects it.
     public func insertTabViewItem(_ item: NSTabViewItem, at index: Int) {
-        attach(item, pinned: false, at: index)
+        attach(item, at: index)
         tabsDidChange()
     }
 
@@ -150,76 +150,113 @@ public final class EditorGroupViewController: NSViewController {
     /// selected, or the one before when it was the last.
     public func removeTabViewItem(_ item: NSTabViewItem) {
         guard let index = tabViewItems.firstIndex(of: item) else { return }
-        if let area, let viewController = item.viewController {
-            area.delegate?.editorArea(area, willClose: viewController)
-        }
-        detach(at: index)
+        close(at: index)
         tabsDidChange()
     }
 
     /// The tab something was only looked at in — Xcode's temporary tab, its
-    /// title in italics. Setting another closes this one and puts the new one
-    /// in its place, selected; setting `nil` keeps this one as an ordinary
-    /// tab, as double-clicking or pinning it does. A temporary tab moved to the
-    /// other editor is kept there.
+    /// title in italics and its pin hollow. Setting a tab not in the editor
+    /// closes this one and puts the new one in its place, selected, as one change;
+    /// setting one of the editor's tabs makes that the temporary one and pins
+    /// this; setting `nil` pins this, as double-clicking it or its pin does. A
+    /// temporary tab moved to the other editor is pinned there.
     public var previewTabViewItem: NSTabViewItem? {
         get { preview.flatMap { tabViewItems.contains($0) ? $0 : nil } }
         set {
             let current = previewTabViewItem
             guard newValue !== current else { return }
-            if let newValue, !tabViewItems.contains(newValue) {
-                if let current, let index = tabViewItems.firstIndex(of: current) {
-                    removeTabViewItem(current)
-                    insertTabViewItem(newValue, at: index)
-                } else {
-                    addTabViewItem(newValue)
-                }
-            }
             preview = newValue
-            reloadTabBar()
+            guard let newValue, !tabViewItems.contains(newValue) else { return tabsDidChange() }
+            let index = current.flatMap { tabViewItems.firstIndex(of: $0) }
+            if let index { close(at: index) }
+            attach(newValue, at: index ?? tabViewItems.count)
+            tabsDidChange()
         }
     }
 
     private weak var preview: NSTabViewItem?
 
-    public func isTabPinned(at index: Int) -> Bool { index < numberOfPinnedTabs }
+    // MARK: - History
 
-    /// Pins or unpins a tab, moving it to the boundary between the two runs.
-    public func setTabPinned(_ pinned: Bool, at index: Int) {
-        guard tabViewItems.indices.contains(index), isTabPinned(at: index) != pinned else { return }
-        if pinned, tabViewItems[index] === previewTabViewItem { preview = nil }
-        let selected = selectedViewController
-        let item = detach(at: index).item
-        attach(item, pinned: pinned, at: numberOfPinnedTabs)
-        select(selected)
-        tabsDidChange()
+    /// Whether there is something this editor showed before what it shows now.
+    public var canGoBack: Bool { history.entry(at: -1) != nil }
+
+    /// Whether this editor went back from something it can show again.
+    public var canGoForward: Bool { history.entry(at: 1) != nil }
+
+    /// Shows what the editor showed before: its tab if it is still open, else a
+    /// new temporary tab the area's delegate makes for it
+    /// (`editorArea(_:tabViewItemWithIdentifier:)`). What the delegate can't
+    /// make is passed over, and forgotten.
+    public func goBack() {
+        navigate(by: -1)
+    }
+
+    /// Shows what `goBack()` went back from, as `goBack()` shows.
+    public func goForward() {
+        navigate(by: 1)
+    }
+
+    /// Moves `offset` entries along the history to the nearest one that can be
+    /// shown, and shows it. The history moves first, so the tab change showing
+    /// it is what the history already says, and records nothing.
+    private func navigate(by offset: Int) {
+        while let identifier = history.entry(at: offset) {
+            guard let item = tabViewItem(showing: identifier) else {
+                history.remove(at: offset)
+                continue
+            }
+            history.move(by: offset)
+            show(item)
+            return
+        }
+    }
+
+    /// The open tab showing `identifier`, or a new one the area's delegate makes.
+    private func tabViewItem(showing identifier: AnyHashable) -> NSTabViewItem? {
+        if let item = tabViewItems.first(where: { $0.identifier as? AnyHashable == identifier }) { return item }
+        guard let area else { return nil }
+        return area.delegate?.editorArea(area, tabViewItemWithIdentifier: identifier.base)
+    }
+
+    /// Selects `item`, opening it as the temporary tab if it isn't open.
+    private func show(_ item: NSTabViewItem) {
+        if let index = tabViewItems.firstIndex(of: item) {
+            selectedTabViewItemIndex = index
+        } else {
+            previewTabViewItem = item
+        }
     }
 
     // MARK: - Moving between positions and editors
 
+    /// Closes the tab at `index`: the area's delegate told, then the tab taken out.
+    private func close(at index: Int) {
+        if let area, let viewController = tabViewItems[index].viewController {
+            area.delegate?.editorArea(area, willClose: viewController)
+        }
+        detach(at: index)
+    }
+
     /// Takes a tab out without closing it — the half of a move that leaves.
     @discardableResult
-    func detach(at index: Int) -> (item: NSTabViewItem, pinned: Bool) {
+    func detach(at index: Int) -> NSTabViewItem {
         let item = tabViewItems[index]
-        let pinned = isTabPinned(at: index)
         let wasSelected = index == selectedTabViewItemIndex
         itemObservations[ObjectIdentifier(item)] = nil
         tabs.removeTabViewItem(item)
-        if pinned { numberOfPinnedTabs -= 1 }
         if wasSelected, !tabViewItems.isEmpty {
             tabs.selectedTabViewItemIndex = min(index, tabViewItems.count - 1)
         }
-        return (item, pinned)
+        return item
     }
 
-    /// Puts a tab in and selects it, clamped into its own run: a pinned tab
-    /// among the pinned, any other after them. Answers where it went.
+    /// Puts a tab in at `index`, clamped to the tabs there are, and selects it.
+    /// Answers where it went.
     @discardableResult
-    func attach(_ item: NSTabViewItem, pinned: Bool, at index: Int) -> Int {
-        let range = pinned ? 0...numberOfPinnedTabs : numberOfPinnedTabs...tabViewItems.count
-        let index = min(max(index, range.lowerBound), range.upperBound)
+    func attach(_ item: NSTabViewItem, at index: Int) -> Int {
+        let index = min(max(index, 0), tabViewItems.count)
         tabs.insertTabViewItem(item, at: index)
-        if pinned { numberOfPinnedTabs += 1 }
         tabs.selectedTabViewItemIndex = index
         // The bar shows an item's label, image and tooltip, so a change to any of
         // them has to reach it — without this, setting a label after adding the
@@ -238,59 +275,57 @@ public final class EditorGroupViewController: NSViewController {
         return index
     }
 
-    /// Moves a tab within this editor, keeping it in its own run and keeping it
-    /// selected. Answers where it landed.
+    /// Moves a tab within this editor, keeping it selected. Answers where it
+    /// landed.
     func moveTab(at index: Int, to destination: Int) -> Int {
-        let (item, pinned) = detach(at: index)
-        let landed = attach(item, pinned: pinned, at: destination)
+        let landed = attach(detach(at: index), at: destination)
         tabsDidChange()
         return landed
     }
 
-    private func select(_ viewController: NSViewController?) {
-        guard let index = tabViewItems.firstIndex(where: { $0.viewController === viewController })
-        else { return }
-        tabs.selectedTabViewItemIndex = index
-    }
-
-    /// Every change to the tabs ends here: the bar redrawn from them, and the
-    /// area told, since the active editor or the number of editors may have moved
-    /// with it.
+    /// Every change to the tabs ends here: the history told what is shown now,
+    /// the bar redrawn from the tabs, and the area told, since the active editor
+    /// or the number of editors may have moved with it. An empty editor, or a
+    /// tab with no identifier, shows nothing the history could return to.
     func tabsDidChange() {
+        if let identifier = selectedTabViewItem?.identifier as? AnyHashable { history.visit(identifier) }
         reloadTabBar()
         area?.groupDidChangeTabs(self)
     }
 
-    /// Shows the tabs, and the bar only where there is a choice to make or an
-    /// editor to tell apart: more than one tab, or another editor beside this one.
+    /// Shows the tabs. The bar is there while there are any, one or more: it is
+    /// where the tabs are, not a control that appears when there is a choice.
     func reloadTabBar() {
         guard isViewLoaded else { return }
         tabBar.configure(
-            items: tabViewItems.enumerated().map { index, item in
+            items: tabViewItems.map { item in
                 EditorTabBar.Item(
                     id: ObjectIdentifier(item), title: item.label, image: item.image,
-                    toolTip: item.toolTip, isPinned: isTabPinned(at: index), isPreview: item === previewTabViewItem)
+                    toolTip: item.toolTip, isPreview: item === previewTabViewItem)
             },
             selectedIndex: tabViewItems.isEmpty ? nil : selectedTabViewItemIndex)
-        let showsTabBar = tabViewItems.count > 1 || (area?.groups.count ?? 1) > 1
-        tabBar.isHidden = !showsTabBar
-        separator.isHidden = !showsTabBar
-        let (on, off) = showsTabBar ? (contentBelowTabBar, contentAtTop) : (contentAtTop, contentBelowTabBar)
-        off.isActive = false
-        on.isActive = true
+        tabBar.isHidden = tabViewItems.isEmpty
+        separator.isHidden = tabViewItems.isEmpty
         emptyLabel.isHidden = !tabViewItems.isEmpty
+    }
+
+    /// Pins the tab at `index`, or makes it the temporary tab if it is pinned —
+    /// what its pin does.
+    func togglePinned(at index: Int) {
+        guard tabViewItems.indices.contains(index) else { return }
+        let item = tabViewItems[index]
+        previewTabViewItem = item === previewTabViewItem ? nil : item
     }
 
     // MARK: - The tab menu
 
     func menu(forTabAt index: Int) -> NSMenu {
         let menu = NSMenu()
-        let pinned = isTabPinned(at: index)
         menu.addItem(
             item(
-                pinned
-                    ? String(localized: "Unpin Tab", bundle: .module)
-                    : String(localized: "Pin Tab", bundle: .module),
+                tabViewItems[index] === previewTabViewItem
+                    ? String(localized: "Pin Tab", bundle: .module)
+                    : String(localized: "Unpin Tab", bundle: .module),
                 index, #selector(togglePinnedFromMenu(_:))))
         menu.addItem(.separator())
         menu.addItem(
@@ -298,7 +333,7 @@ public final class EditorGroupViewController: NSViewController {
         let others = item(
             String(localized: "Close Other Tabs", bundle: .module), index,
             #selector(closeOthersFromMenu(_:)))
-        others.isEnabled = tabViewItems.indices.contains { $0 != index && !isTabPinned(at: $0) }
+        others.isEnabled = tabViewItems.count > 1
         menu.addItem(others)
         if let area, let title = area.moveMenuTitle(forTabIn: self) {
             menu.addItem(.separator())
@@ -325,7 +360,7 @@ public final class EditorGroupViewController: NSViewController {
 
     @objc private func togglePinnedFromMenu(_ sender: NSMenuItem) {
         guard let index = index(of: sender) else { return }
-        setTabPinned(!isTabPinned(at: index), at: index)
+        togglePinned(at: index)
     }
 
     @objc private func closeFromMenu(_ sender: NSMenuItem) {
@@ -333,11 +368,11 @@ public final class EditorGroupViewController: NSViewController {
         removeTabViewItem(item)
     }
 
-    /// Pinned tabs stay: keeping a tab through exactly this is what pinning it is for.
+    /// Every other tab, pinned or not: a pin keeps a tab from being replaced,
+    /// which is a different thing from being closed on purpose.
     @objc private func closeOthersFromMenu(_ sender: NSMenuItem) {
         guard let kept = sender.representedObject as? NSTabViewItem else { return }
-        for (index, item) in tabViewItems.enumerated().reversed()
-        where item !== kept && !isTabPinned(at: index) {
+        for item in tabViewItems.reversed() where item !== kept {
             removeTabViewItem(item)
         }
     }
@@ -442,9 +477,14 @@ extension EditorGroupViewController: EditorTabBarDelegate {
         open(draggingInfo, at: index)
     }
 
+    /// Pins the temporary tab; a pinned tab stays pinned.
     func tabBar(_ tabBar: EditorTabBar, didDoubleClickTabAt index: Int) {
         guard tabViewItems.indices.contains(index), tabViewItems[index] === previewTabViewItem else { return }
         previewTabViewItem = nil
+    }
+
+    func tabBar(_ tabBar: EditorTabBar, didClickPinOfTabAt index: Int) {
+        togglePinned(at: index)
     }
 
     func tabBar(_ tabBar: EditorTabBar, menuForTabAt index: Int) -> NSMenu? {
@@ -471,6 +511,42 @@ extension EditorGroupViewController: EditorTabBarDelegate {
         guard let sourceGroup = source.delegate as? EditorGroupViewController else { return nil }
         if sourceGroup === self { return moveTab(at: index, to: destination) }
         return area?.moveTab(at: index, of: sourceGroup, to: self, at: destination)
+    }
+}
+
+/// What an editor has shown, as a browser's history: every entry in order and
+/// the one it is at. Identifiers only — which tab shows an entry is the editor's
+/// to find. An offset is a direction and a distance, back negative.
+private struct History {
+
+    private var entries: [AnyHashable] = []
+    private var index = -1
+
+    /// The entry `offset` from the current one, or `nil` past either end.
+    func entry(at offset: Int) -> AnyHashable? {
+        offset != 0 && entries.indices.contains(index + offset) ? entries[index + offset] : nil
+    }
+
+    /// `identifier` is shown now. Unless it is the current entry, that is a new
+    /// step: it follows the current entry, and whatever lay ahead is gone.
+    mutating func visit(_ identifier: AnyHashable) {
+        guard entries.indices.contains(index) ? entries[index] != identifier : true else { return }
+        entries.removeSubrange((index + 1)...)
+        entries.append(identifier)
+        index += 1
+    }
+
+    /// Makes the entry `offset` along the current one.
+    mutating func move(by offset: Int) {
+        guard entry(at: offset) != nil else { return }
+        index += offset
+    }
+
+    /// Forgets the entry `offset` along, keeping the current one current.
+    mutating func remove(at offset: Int) {
+        guard entry(at: offset) != nil else { return }
+        entries.remove(at: index + offset)
+        if offset < 0 { index -= 1 }
     }
 }
 

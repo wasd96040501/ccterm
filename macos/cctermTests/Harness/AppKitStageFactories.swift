@@ -23,6 +23,21 @@ extension AppKitStage {
         return mount(MainSplitViewController(library: library), size: size)
     }
 
+    // MARK: - Main-window factory
+
+    /// Mount the real `MainWindowController` — its titled, full-size-content
+    /// window, its toolbar, and the main split in it — as `AppDelegate` builds
+    /// it, minus the frame autosave the composition root adds. The library is
+    /// as `mainSplit`'s.
+    static func mainWindow(library: LibraryStore? = nil, size: CGSize = defaultWindowSize) -> AppKitStage {
+        let library =
+            library
+            ?? LibraryStore(
+                directory: SessionDirectory(
+                    url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)))
+        return mount(MainWindowController(library: library), size: size)
+    }
+
     // MARK: - Mounted-VC accessors
 
     /// The mounted `MainSplitViewController`, or nil if this stage was built

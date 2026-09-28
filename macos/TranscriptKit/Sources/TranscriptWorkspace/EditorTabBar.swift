@@ -13,6 +13,10 @@ protocol EditorTabBarDelegate: AnyObject {
 
     func tabBar(_ tabBar: EditorTabBar, didDoubleClickTabAt index: Int)
 
+    /// The pin of the tab at `index` was clicked: the tab is to be pinned, or
+    /// unpinned if it is.
+    func tabBar(_ tabBar: EditorTabBar, didClickPinOfTabAt index: Int)
+
     /// Something from outside the editors was dropped into the gap at `index`:
     /// whether it opened there.
     func tabBar(_ tabBar: EditorTabBar, openDrop draggingInfo: NSDraggingInfo, at index: Int) -> Bool
@@ -22,8 +26,7 @@ protocol EditorTabBarDelegate: AnyObject {
 
     /// The tab at `index` of `source` was dragged here and should end up at
     /// `destination` — a final position, whichever bar it came from. Answers
-    /// where it actually landed, which a pinned tab's region may have moved, or
-    /// `nil` if it was refused.
+    /// where it actually landed, or `nil` if it was refused.
     func tabBar(
         _ tabBar: EditorTabBar, moveTabAt index: Int, of source: EditorTabBar,
         to destination: Int
@@ -76,8 +79,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
         var title: String
         var image: NSImage?
         var toolTip: String?
-        var isPinned: Bool
-        /// The temporary tab, its title in italics.
+        /// The temporary tab: its title in italics and its pin hollow.
         var isPreview = false
     }
 
@@ -101,7 +103,11 @@ final class EditorTabBar: NSView, NSDraggingSource {
     /// Where a tab dragged over this bar would drop: the gap opened for it.
     private(set) var gapIndex: Int?
 
-    let closeButton: NSButton = TabCloseButton()
+    let closeButton: NSButton = TabButton()
+
+    /// The hovered tab's pin, at the trailing end: filled on a pinned tab, hollow
+    /// on the temporary one.
+    let pinButton: NSButton = TabButton()
 
     static let height: CGFloat = 28
 
@@ -149,25 +155,42 @@ final class EditorTabBar: NSView, NSDraggingSource {
         wantsLayer = true
         registerForDraggedTypes([.editorTab])
 
-        closeButton.bezelStyle = .smallSquare
-        closeButton.isBordered = false
-        // Safari's: a 12-point disc with the cross cut out of it, which at 12 points
-        // regular the symbol is (measured, ink and cross both). Centring its image
-        // centres the disc — which the symbol's own alignment rect, a text
-        // baseline's, does not.
-        let cross = NSImage(
-            systemSymbolName: "xmark.circle.fill",
-            accessibilityDescription: String(localized: "Close Tab", bundle: .module)
-        )?.withSymbolConfiguration(.init(pointSize: 12, weight: .regular))
-        cross?.alignmentRect = NSRect(origin: .zero, size: cross?.size ?? .zero)
-        closeButton.image = cross
+        closeButton.image = Self.closeImage
         // Safari's measures 80% of the ink, a shade under a label's 85%; the label
         // colour is the system's, and follows the appearance.
         closeButton.contentTintColor = .labelColor
-        closeButton.target = self
         closeButton.action = #selector(closeHovered)
-        closeButton.isHidden = true
-        addSubview(closeButton)
+        // Xcode's pin is a quieter glyph than the close disc, as its title is.
+        pinButton.contentTintColor = .secondaryLabelColor
+        pinButton.action = #selector(togglePinOfHovered)
+        for button in [closeButton, pinButton] {
+            button.bezelStyle = .smallSquare
+            button.isBordered = false
+            button.target = self
+            button.isHidden = true
+            addSubview(button)
+        }
+    }
+
+    /// Safari's close button: a 12-point disc with the cross cut out of it, which
+    /// the symbol is at 12 points regular (measured, ink and cross both).
+    private static let closeImage = symbol(
+        "xmark.circle.fill", String(localized: "Close Tab", bundle: .module), pointSize: 12)
+
+    /// The temporary tab's pin, hollow, and a pinned tab's, filled — each named
+    /// for what pressing it does. Smaller than the close button's disc, as
+    /// Xcode's: a mark on the tab, not a second button of the same weight.
+    private static let pinImage = symbol("pin", String(localized: "Pin Tab", bundle: .module), pointSize: 10)
+    private static let unpinImage = symbol(
+        "pin.fill", String(localized: "Unpin Tab", bundle: .module), pointSize: 10)
+
+    /// A tab button's glyph, regular. Centring the image centres the glyph —
+    /// which the symbol's own alignment rect, a text baseline's, does not.
+    private static func symbol(_ name: String, _ description: String, pointSize: CGFloat) -> NSImage? {
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: description)?
+            .withSymbolConfiguration(.init(pointSize: pointSize, weight: .regular))
+        image?.alignmentRect = NSRect(origin: .zero, size: image?.size ?? .zero)
+        return image
     }
 
     @available(*, unavailable)
@@ -257,20 +280,18 @@ final class EditorTabBar: NSView, NSDraggingSource {
     // MARK: - Geometry
 
     /// Left to right over the bar, a rect for each of `indices`; `gap` puts an
-    /// empty place the width of an unpinned tab before the `gap`-th of them.
+    /// empty place as wide as a tab before the `gap`-th of them.
     ///
-    /// A pinned tab is as wide as its title and the rest share what is left. The
-    /// tabs run end to end of the track, as the segmented control's segments do:
-    /// the margin is inside each tab, around its glass.
+    /// The tabs share the bar equally and run end to end of the track, as the
+    /// segmented control's segments do: the margin is inside each tab, around its
+    /// glass.
     private func slots(for indices: [Int], gap: Int? = nil) -> [NSRect] {
-        let fixed = indices.map { items[$0].isPinned ? Self.pinnedWidth(for: items[$0].title) : 0 }
-        let flexible = fixed.filter { $0 == 0 }.count + (gap == nil ? 0 : 1)
-        let share = flexible > 0 ? max(0, bounds.width - fixed.reduce(0, +)) / CGFloat(flexible) : 0
+        let count = indices.count + (gap == nil ? 0 : 1)
+        let width = count > 0 ? bounds.width / CGFloat(count) : 0
         var x = bounds.minX
         var rects: [NSRect] = []
-        for (position, width) in fixed.enumerated() {
-            if position == gap { x += share }
-            let width = width == 0 ? share : width
+        for position in indices.indices {
+            if position == gap { x += width }
             rects.append(NSRect(x: x, y: bounds.minY, width: width, height: bounds.height))
             x += width
         }
@@ -306,12 +327,6 @@ final class EditorTabBar: NSView, NSDraggingSource {
         let minX = gap > 0 && gap <= rects.count ? rects[gap - 1].maxX : bounds.minX
         let maxX = gap < rects.count ? rects[gap].minX : bounds.maxX
         return NSRect(x: minX, y: bounds.minY, width: maxX - minX, height: bounds.height)
-    }
-
-    /// As wide as its title and pin, and no wider: a pinned tab is kept for
-    /// reaching, not for reading at length.
-    private static func pinnedWidth(for title: String) -> CGFloat {
-        ceil((title as NSString).size(withAttributes: [.font: EditorTabView.font]).width) + 44
     }
 
     // MARK: - Placing the tabs
@@ -372,25 +387,29 @@ final class EditorTabBar: NSView, NSDraggingSource {
         tab.width.constant = frame.width
     }
 
-    /// The hovered tab lights up and shows its close button, Safari's way; no tab
-    /// does while one is being dragged.
+    /// The hovered tab lights up and shows its close button, Safari's way, and its
+    /// pin, Xcode's; no tab does while one is being dragged.
     private func showHover() {
         let hovered = draggedID == nil ? hoveredIndex.flatMap { items.indices.contains($0) ? $0 : nil } : nil
         for (index, item) in items.enumerated() {
             tabs[item.id]?.view.isHovered = index == hovered
         }
-        guard let hovered, !items[hovered].isPinned else {
-            closeButton.isHidden = true
-            return
-        }
-        // On the centre of the glass's leading end, as Safari's sits on its
-        // capsule's: the glass is a capsule 2 points in from the tab, so its end is
-        // a half circle centred half the tab's height in from the tab's edge.
-        let side: CGFloat = 18
+        closeButton.isHidden = hovered == nil
+        pinButton.isHidden = hovered == nil
+        guard let hovered else { return }
+        // Each on the centre of an end of the glass, as Safari's close button sits
+        // on its capsule's: the glass is a capsule 2 points in from the tab, so an
+        // end is a half circle centred half the tab's height in from the tab's edge.
         let tab = rect(forTabAt: hovered)
-        closeButton.frame = NSRect(
-            x: tab.minX + tab.height / 2 - side / 2, y: tab.midY - side / 2, width: side, height: side)
-        closeButton.isHidden = false
+        closeButton.frame = Self.buttonFrame(centredOn: NSPoint(x: tab.minX + tab.height / 2, y: tab.midY))
+        pinButton.frame = Self.buttonFrame(centredOn: NSPoint(x: tab.maxX - tab.height / 2, y: tab.midY))
+        pinButton.image = items[hovered].isPreview ? Self.pinImage : Self.unpinImage
+    }
+
+    /// A tab button's frame: its halo, 18 points across.
+    private static func buttonFrame(centredOn centre: NSPoint) -> NSRect {
+        let side: CGFloat = 18
+        return NSRect(x: centre.x - side / 2, y: centre.y - side / 2, width: side, height: side)
     }
 
     // MARK: - Hover
@@ -426,6 +445,11 @@ final class EditorTabBar: NSView, NSDraggingSource {
     @objc private func closeHovered() {
         guard let hovered = hoveredIndex else { return }
         delegate?.tabBar(self, didCloseTabAt: hovered)
+    }
+
+    @objc private func togglePinOfHovered() {
+        guard let hovered = hoveredIndex else { return }
+        delegate?.tabBar(self, didClickPinOfTabAt: hovered)
     }
 
     // MARK: - Pressing and dragging within the bar
@@ -789,7 +813,7 @@ private final class EditorTabView: NSView {
         content.spacing = 2
         content.translatesAutoresizingMaskIntoConstraints = false
         addSubview(content)
-        // Room at the leading edge for the close button, and as much at the other.
+        // Room at the leading edge for the close button, and at the other for the pin.
         // Short of required: a tab squeezed narrower than the two, as a new one is
         // before it is placed, clips its content rather than breaking the layout.
         let inset: CGFloat = 28
@@ -835,12 +859,7 @@ private final class EditorTabView: NSView {
         label.stringValue = item.title
         label.font =
             item.isPreview ? NSFontManager.shared.convert(Self.font, toHaveTrait: .italicFontMask) : Self.font
-        imageView.image =
-            item.isPinned
-            ? NSImage(
-                systemSymbolName: "pin.fill",
-                accessibilityDescription: String(localized: "Pinned", bundle: .module))
-            : item.image
+        imageView.image = item.image
         imageView.isHidden = imageView.image == nil
         toolTip = item.toolTip ?? item.title
         setAccessibilityLabel(item.title)
@@ -859,14 +878,14 @@ private final class EditorTabView: NSView {
     }
 }
 
-/// The close button: Safari's disc, in a halo while the pointer is over it and a
-/// deeper one while it is pressed.
+/// A tab's close button or pin: a glyph in a halo while the pointer is over it and
+/// a deeper one while it is pressed, as Safari's close button.
 ///
 /// Safari's halo is the tab's own hover fill, 20 points across its 30-point
 /// capsule, and it does not change on a press; the press is ours, one step deeper
 /// in the same family of system fills. Drawn under the glyph in `draw(_:)`, where
 /// a button reads its cell's highlight.
-private final class TabCloseButton: NSButton {
+private final class TabButton: NSButton {
 
     private var isPointerInside = false {
         didSet { needsDisplay = true }

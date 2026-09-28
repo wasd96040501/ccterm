@@ -257,4 +257,31 @@ final class TranscriptTests: XCTestCase {
         XCTAssertTrue(transcript([]).messages.isEmpty)
         XCTAssertTrue(transcript(["garbage"]).messages.isEmpty)
     }
+
+    func testSubagentFileIsItsOwnThread() {
+        let side: [String: JSONValue] = ["isSidechain": true, "agentId": "a1"]
+        let lines = [
+            user("u", parent: nil, "task", extra: side),
+            assistant("a", parent: "u", messageID: "m", text("done"), extra: side),
+        ]
+        XCTAssertEqual(uuids(transcript(lines)), ["u", "a"])
+    }
+
+    func testMetadataReadsOnlyHeadAndTail() throws {
+        let filler = String(repeating: "x", count: 1_000)
+        var lines = [user("u1", parent: nil, "hello")]
+        for index in 0..<200 {
+            lines.append(assistant("a\(index)", parent: "u1", messageID: "m\(index)", text(filler)))
+        }
+        lines.append(line(["type": "ai-title", "aiTitle": "Auto", "sessionId": "s"]))
+        lines.append(line(["type": "custom-title", "customTitle": "Named", "sessionId": "s"]))
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data(lines.joined(separator: "\n").utf8).write(to: url)
+
+        let metadata = try SessionMetadata(contentsOf: url)
+        XCTAssertEqual(metadata.title, "Named")
+        XCTAssertEqual(metadata.cwd, "/repo")
+        XCTAssertThrowsError(try SessionMetadata(contentsOf: url.appendingPathExtension("missing")))
+    }
 }

@@ -15,6 +15,10 @@ import Foundation
 ///    closest earlier row within 5 s.
 /// 5. Splice in the parts of each assistant response that are off the walked
 ///    path: sibling blocks of parallel tool calls and their results.
+///
+/// A subagent's own file (`<session>/subagents/agent-<id>.jsonl`) holds only
+/// sidechain rows; there the sidechain is the conversation, so it is walked
+/// the way a session's main chain is.
 struct TranscriptChain {
     private(set) var metadata = SessionMetadata()
     private var rows: [String: Row] = [:]
@@ -26,6 +30,9 @@ struct TranscriptChain {
     private var parentOverrides: [String: String] = [:]
     private var leafHint: String?
     private var clearedByRewind = false
+    /// Which side of the sidechain split is the conversation: the main chain,
+    /// or — in a subagent's own file — the sidechain.
+    private var threadIsSidechain = false
 
     init(data: Data) {
         let decoder = JSONDecoder()
@@ -51,6 +58,7 @@ struct TranscriptChain {
                 foldMetadata(row)
             }
         }
+        threadIsSidechain = !rows.isEmpty && rows.values.allSatisfy(\.isSidechain)
         let boundaries = rows.values.filter { $0.type == "system" && $0.subtype == "compact_boundary" }
         for boundary in boundaries.sorted(by: { position[$0.uuid!]! < position[$1.uuid!]! }) {
             relink(boundary.preserved)
@@ -65,7 +73,7 @@ struct TranscriptChain {
     }
 
     private func message(_ uuid: String) -> Message? {
-        guard let row = rows[uuid], let line = row.line, !row.isSidechain, !row.isTeam else { return nil }
+        guard let row = rows[uuid], let line = row.line, isOnThread(row) else { return nil }
         let decoder = JSONDecoder()
         switch row.type {
         case "user":
@@ -86,6 +94,10 @@ struct TranscriptChain {
     }
 
     // MARK: - Chain
+
+    private func isOnThread(_ row: Row) -> Bool {
+        row.isSidechain == threadIsSidechain && !row.isTeam
+    }
 
     private func parent(of uuid: String) -> String? {
         var next = parentOverrides[uuid] ?? rows[uuid]?.parentUUID
@@ -126,7 +138,7 @@ struct TranscriptChain {
     }
 
     private func chooseLeaf() -> String? {
-        let mainChain = rows.values.filter { !$0.isSidechain && !$0.isTeam }
+        let mainChain = rows.values.filter(isOnThread)
         var hasChild = Set<String>()
         for row in mainChain {
             if let uuid = row.uuid, let parent = parent(of: uuid) { hasChild.insert(parent) }

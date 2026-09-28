@@ -13,7 +13,8 @@ public struct Transcript: Sendable, Equatable {
     /// The current branch, oldest first: `.user` and `.assistant` messages,
     /// with `.system(.compactBoundary)` where the conversation was compacted.
     /// Prompts the CLI queued while busy are included as user messages.
-    /// Subagent messages live in separate files and are not included.
+    /// Subagent messages live in separate files and are not included; reading
+    /// a subagent's own file gives that subagent's conversation.
     public var messages: [Message]
     public var metadata: SessionMetadata
 

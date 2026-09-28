@@ -147,6 +147,10 @@ final class EditorTabBar: NSView, NSDraggingSource {
         wantsLayer = true
         registerForDraggedTypes([.editorTab])
 
+        track.frame = bounds
+        track.autoresizingMask = [.width, .height]
+        addSubview(track)
+
         closeButton.bezelStyle = .smallSquare
         closeButton.isBordered = false
         // Safari's: a 12-point disc with the cross cut out of it, which at 12 points
@@ -181,18 +185,20 @@ final class EditorTabBar: NSView, NSDraggingSource {
 
     // MARK: - The track
 
-    override var wantsUpdateLayer: Bool { true }
-
-    override func updateLayer() {
-        let fill: NSColor
+    /// The capsule the tabs run in, behind them. A view of its own rather than
+    /// the bar's layer: rounding a view's own layer makes AppKit clip the view,
+    /// and a tab pulled across the bar is drawn past its edge.
+    private let track: NSBox = {
+        let box = NSBox()
+        box.boxType = .custom
+        box.borderWidth = 0
         if #available(macOS 14.0, *) {
-            fill = .secondarySystemFill
+            box.fillColor = .secondarySystemFill
         } else {
-            fill = NSColor.labelColor.withAlphaComponent(0.078)
+            box.fillColor = NSColor.labelColor.withAlphaComponent(0.078)
         }
-        layer?.backgroundColor = fill.cgColor
-        layer?.cornerRadius = bounds.height / 2
-    }
+        return box
+    }()
 
     // MARK: - Content
 
@@ -317,6 +323,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
     /// A new size places the tabs for it, before the pass lays them out.
     override func layout() {
         if bounds.size != placedSize { placeTabs(animated: false) }
+        track.cornerRadius = bounds.height / 2
         super.layout()
     }
 
@@ -439,6 +446,13 @@ final class EditorTabBar: NSView, NSDraggingSource {
     }
 
     // MARK: - Pressing and dragging within the bar
+
+    /// Every press but the close button's is the bar's to track, the track's
+    /// included: it is only the bar's drawing.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return hit === track ? self : hit
+    }
 
     /// Selects on mouse-down, which is when Xcode and Safari select a tab.
     override func mouseDown(with event: NSEvent) {
@@ -626,19 +640,24 @@ final class EditorTabBar: NSView, NSDraggingSource {
         context == .withinApplication ? .move : []
     }
 
-    /// Once it is on its way, the tab turns into its content, under the pointer.
-    /// Changed through the session, so it is the source's image: a bar it passes
-    /// over turns it back into a tab, and AppKit restores this when it leaves.
+    /// Once it is on its way, the tab turns into its content, centred on the
+    /// pointer wherever along the tab it was picked up. Changed through the
+    /// session, so it is the source's image: a bar it passes over turns it back
+    /// into a tab, and AppKit restores this when it leaves.
+    ///
+    /// The pointer is the session's `draggingLocation`, documented as the cursor;
+    /// the point this is handed is not, and was where the image was.
     func draggingSession(_ session: NSDraggingSession, movedTo screenPoint: NSPoint) {
         guard let thumbnail = pendingThumbnail else { return }
         pendingThumbnail = nil
+        let pointer = session.draggingLocation
         session.enumerateDraggingItems(
             options: [], for: nil, classes: [NSPasteboardItem.self], searchOptions: [:]
         ) { item, _, _ in
             let size = thumbnail.size
             item.setDraggingFrame(
                 NSRect(
-                    x: screenPoint.x - size.width / 2, y: screenPoint.y - size.height / 2,
+                    x: pointer.x - size.width / 2, y: pointer.y - size.height / 2,
                     width: size.width, height: size.height),
                 contents: thumbnail)
         }

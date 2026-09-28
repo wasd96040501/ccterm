@@ -237,7 +237,9 @@ public final class EditorGroupViewController: NSViewController {
         area?.groupDidChangeTabs(self)
     }
 
-    private func reloadTabBar() {
+    /// Shows the tabs, and the bar only where there is a choice to make or an
+    /// editor to tell apart: more than one tab, or another editor beside this one.
+    func reloadTabBar() {
         guard isViewLoaded else { return }
         tabBar.configure(
             items: tabViewItems.enumerated().map { index, item in
@@ -246,8 +248,7 @@ public final class EditorGroupViewController: NSViewController {
                     toolTip: item.toolTip, isPinned: isTabPinned(at: index))
             },
             selectedIndex: tabViewItems.isEmpty ? nil : selectedTabViewItemIndex)
-        // A bar is for choosing between tabs, so one tab gets none, as in Safari.
-        let showsTabBar = tabViewItems.count > 1
+        let showsTabBar = tabViewItems.count > 1 || (area?.groups.count ?? 1) > 1
         tabBar.isHidden = !showsTabBar
         separator.isHidden = !showsTabBar
         let (on, off) = showsTabBar ? (contentBelowTabBar, contentAtTop) : (contentAtTop, contentBelowTabBar)

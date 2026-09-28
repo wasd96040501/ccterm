@@ -317,6 +317,26 @@ final class EditorAreaTests: XCTestCase {
             content.convert(content.bounds, to: group.view).maxY, group.view.bounds.maxY, accuracy: 0.5)
     }
 
+    /// Side by side, every editor shows its bar, one tab or not: it is what tells
+    /// the two apart. Back to one editor, a lone tab's bar goes again.
+    func testEveryEditorShowsItsBarWhileThereAreTwo() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let left = mounted.area.activeGroup
+        XCTAssertTrue(left.tabBar.isHidden, "premise: one editor with one tab shows no bar")
+
+        let right = try XCTUnwrap(
+            mounted.area.addGroup(with: NSTabViewItem(viewController: ProbeViewController(title: "Right"))))
+        settle(mounted.window)
+        XCTAssertFalse(left.tabBar.isHidden, "the editor already open hid its bar beside another")
+        XCTAssertFalse(right.tabBar.isHidden, "the editor opened beside it has no bar")
+
+        mounted.area.removeGroup(right)
+        settle(mounted.window)
+        XCTAssertEqual(mounted.area.groups.count, 1, "premise: back to one editor")
+        XCTAssertTrue(left.tabBar.isHidden, "alone again, one tab still shows a bar")
+    }
+
     // MARK: - Pinning
 
     func testPinningMovesTheTabToTheFrontAndKeepsTheSelection() throws {
@@ -608,6 +628,39 @@ final class EditorAreaTests: XCTestCase {
         bar.mouseUp(with: mouse(.leftMouseUp, at: NSPoint(x: start.x, y: start.y + 24), in: bar))
         try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.5)
         XCTAssertEqual(tab.frame, rest, "let go, the tab did not go back into its place")
+    }
+
+    /// A pulled tab is drawn where it has been pulled to, past the bar's edge:
+    /// the track under it is the bar's drawing, not a clip. Read as composited,
+    /// just below the bar, where only the pulled tab's glass can be.
+    func testAPulledTabIsDrawnPastTheBarsEdge() async throws {
+        let mounted = mount(tabs: 3)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        let bar = group.tabBar
+        let start = center(of: bar, tab: 1)
+        let below = group.view.convert(NSPoint(x: start.x, y: bar.bounds.maxY + 3), from: bar)
+
+        func grey() async throws -> CGFloat {
+            group.view.layoutSubtreeIfNeeded()
+            try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.2)
+            let rep = try await WindowCapture.bitmap(of: group.view)
+            let y = group.view.isFlipped ? below.y : group.view.bounds.height - below.y
+            let color = try XCTUnwrap(rep.colorAt(x: Int(below.x), y: Int(y))?.usingColorSpace(.sRGB))
+            return (color.redComponent + color.greenComponent + color.blueComponent) / 3 * 255
+        }
+
+        let before = try await grey()
+        bar.mouseDown(with: mouse(.leftMouseDown, at: start, in: bar))
+        bar.mouseDragged(with: mouse(.leftMouseDragged, at: NSPoint(x: start.x, y: start.y + 24), in: bar))
+        XCTAssertGreaterThan(
+            try tabView(titled: "Tab 1", in: bar).frame.maxY, bar.bounds.maxY + 3,
+            "premise: the pull takes the tab past the point read")
+        let pulled = try await grey()
+        bar.mouseUp(with: mouse(.leftMouseUp, at: start, in: bar))
+
+        XCTAssertGreaterThan(
+            abs(pulled - before), 5, "the pulled tab is cut off at the bar's edge — \(before) → \(pulled)")
     }
 
     /// A tab pulled out turns into its content: the group hands over the selected

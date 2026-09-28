@@ -1232,8 +1232,12 @@ EditorAreaViewController      NSSplitViewController — the divider, which edito
   a tab's owner stops its stream or its load there, before the view controller
   leaves the tree.
 
-**Behaviour, Xcode's unless noted.** An editor with one tab shows no bar,
-as Safari does not: a bar is for choosing between tabs. A new tab selects itself. Closing the selected
+**Behaviour, Xcode's unless noted.** A lone editor with one tab shows no bar, as
+Safari does not: a bar is for choosing between tabs. Side by side, every editor
+shows its bar, one tab or not — it is what tells the two apart — so the area tells
+its groups whenever an editor comes or goes, from `insertSplitViewItem` and
+`removeSplitViewItem`, which every change to the split passes through. A new tab
+selects itself. Closing the selected
 tab selects the one after it. The last tab of the right editor closes that editor;
 the last tab of the only editor leaves it empty, never gone. Pinned tabs come first,
 as wide as their titles, with no close button, and survive Close Other Tabs; the
@@ -1245,7 +1249,9 @@ pointer and, where Safari's does not change, deepens a step while pressed. Along
 its bar a dragged tab stays in the bar under the pointer, and a neighbour whose
 middle its edge passes slides into the place it left, never across the pinned
 boundary; let go, it settles into its own. Pulled across the bar, the tab gives
-on a rubber band (`UIScrollView`'s curve) and springs back if let go; pulled far
+on a rubber band (`UIScrollView`'s curve), drawn past the bar's edge, and springs
+back if let go — which is why the track is a view behind the tabs and not the
+bar's own layer: rounding a view's own layer makes AppKit clip it; pulled far
 enough, it leaves as a drag session, starts as the tab, and turns into a small
 picture of its content — the group's view, drawn by `cacheDisplay` and framed by
 the bar — while the tabs it left close up. Over a bar it turns back into a tab,
@@ -1277,8 +1283,15 @@ than none. Return and ⇧Return step, Escape and Done hide, the count reads
 "No matches" / "1 match" / "N matches", and the arrows are enabled only with
 something to step to.
 
-**Two transcript bugs that editors made visible**, fixed in the transcript and
-tested there — neither is the workspace's to work around:
+**What editors changed in the transcript**, fixed there and tested there — none
+of it is the workspace's to work around:
+
+- A transcript narrowed by the divider ran its text into its edges. The content
+  column keeps a margin either side at any width now (`TranscriptCellView.margin`,
+  AppKit's 20-point window margin). The transcript's, not the split's: the split
+  holds any view controller and knows nothing of columns, and a transcript
+  narrowed by a window wants the same. Not configurable, because nothing has
+  needed another value (§3), and a `.view` row is inset with the text around it.
 
 - A width change that is not a drag — an editor opening beside this one — let
   AppKit animate the visible rows to their new heights, with glyphs already laid

@@ -66,7 +66,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         if Self.isUnderXCTest { return }
 
-        let library = LibraryStore(directory: SessionDirectory(environment: ProcessInfo.processInfo.environment))
+        // The index only saves reading: Caches, which the system may clear.
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(Bundle.main.bundleIdentifier ?? "com.ccterm.app", isDirectory: true)
+        let library = LibraryStore(
+            directory: SessionDirectory(environment: ProcessInfo.processInfo.environment),
+            indexURL: caches.appendingPathComponent("LibraryIndex.plist"))
         self.library = library
         let controller = MainWindowController(library: library)
         // Where the frame persists is the app's configuration, not the window's:

@@ -60,4 +60,15 @@ final class GitBranchUpdatesTests: XCTestCase {
         XCTAssertEqual(GitUtils.repositoryRoot(containing: worktree.path), worktree.standardizedFileURL.path)
         XCTAssertNil(GitUtils.repositoryRoot(containing: repo.url.deletingLastPathComponent().path))
     }
+
+    /// A worktree removed from inside its repository is in no repository: the
+    /// one around its old folder is on another branch.
+    func testARemovedWorktreeHasNoRepositoryRoot() throws {
+        let worktree = repo.url.appendingPathComponent(".claude/worktrees/wt")
+        try repo.git("worktree", "add", "-q", "-b", "wt-branch", worktree.path)
+        try repo.git("worktree", "remove", worktree.path)
+
+        XCTAssertNil(GitUtils.repositoryRoot(containing: worktree.path))
+        XCTAssertNil(GitUtils.repositoryRoot(containing: worktree.appendingPathComponent("sub").path))
+    }
 }

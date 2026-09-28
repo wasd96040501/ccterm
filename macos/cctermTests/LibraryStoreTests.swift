@@ -154,4 +154,88 @@ final class LibraryStoreTests: XCTestCase {
         await waitForNodes { $0.first?.title == "other" }
         XCTAssertEqual(store.nodes.first?.children.first?.title, "Fresh")
     }
+
+    // MARK: - Index
+
+    /// A launch through an index builds what reading every session builds —
+    /// the sessions left out stay out — and so does the next launch, through
+    /// the index the first left.
+    func testALaunchThroughTheIndexBuildsTheSameTree() async throws {
+        try Self.writeLibrary(fixture)
+        let index = try indexURL()
+
+        let first = await launch(indexedAt: index)
+        XCTAssertEqual(first, expectedTree)
+        let second = await launch(indexedAt: index)
+        XCTAssertEqual(second, expectedTree)
+    }
+
+    /// A transcript is read again only when its date moved; one that kept its
+    /// date is what it read as last time.
+    func testALaunchReadsOnlyTranscriptsWrittenSinceTheIndex() async throws {
+        try Self.writeLibrary(fixture)
+        let index = try indexURL()
+        _ = await launch(indexedAt: index)
+
+        try fixture.write("-x-repo/s1.jsonl", [Rows.user("u"), Rows.customTitle("Renamed")], modified: 301)
+        try fixture.write(
+            "-y-other/s3.jsonl", [Rows.user("u", cwd: "/y/other"), Rows.lastPrompt("same date")], modified: 100)
+        let nodes = await launch(indexedAt: index)
+
+        XCTAssertEqual(nodes.first?.children.first?.title, "Renamed")
+        XCTAssertEqual(nodes.last?.children.first?.title, "fix it")
+    }
+
+    /// Side transcripts come and go without their session's transcript
+    /// moving: the index answers for them first, the disk after.
+    func testASubagentStartedBetweenLaunchesIsShown() async throws {
+        try Self.writeLibrary(fixture)
+        let index = try indexURL()
+        _ = await launch(indexedAt: index)
+
+        try fixture.write("-y-other/s3/subagents/agent-c.jsonl", [Rows.user("u")])
+        let nodes = await launch(indexedAt: index) { $0.last?.children.first?.children.isEmpty == false }
+
+        XCTAssertEqual(nodes.last?.children.first?.children.first?.kind, .subagents)
+    }
+
+    func testAnUnreadableIndexReadsEverySession() async throws {
+        try Self.writeLibrary(fixture)
+        let index = try indexURL()
+        try Data("not a plist".utf8).write(to: index)
+
+        let nodes = await launch(indexedAt: index)
+        XCTAssertEqual(nodes, expectedTree)
+    }
+
+    /// A unique path beside no session directory: a file in one would read as
+    /// a change to it.
+    private func indexURL() throws -> URL {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
+        return folder.appendingPathComponent("LibraryIndex.plist")
+    }
+
+    /// The first tree `predicate` holds for that a store started over the
+    /// fixture, with the index at `url`, publishes — once there is an index
+    /// there. The store is stopped after.
+    private func launch(
+        indexedAt url: URL, until predicate: @escaping ([LibraryNode]) -> Bool = { !$0.isEmpty }
+    ) async -> [LibraryNode] {
+        let store = LibraryStore(directory: fixture.directory, indexURL: url)
+        defer { store.stop() }
+        let arrived = expectation(description: "nodes")
+        var published: [LibraryNode] = []
+        let subscription = store.$nodes.first(where: predicate).sink {
+            published = $0
+            arrived.fulfill()
+        }
+        store.start()
+        let written = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in FileManager.default.fileExists(atPath: url.path) }, object: nil)
+        await fulfillment(of: [arrived, written], timeout: 10)
+        subscription.cancel()
+        return published
+    }
 }

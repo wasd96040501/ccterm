@@ -29,7 +29,9 @@ final class LibraryBranchUpdatesTests: XCTestCase {
     /// Run in a folder inside the repository, the session is on the
     /// repository's branch — and on whatever a checkout makes it.
     func testFollowsTheBranchOfTheFolderTheSessionRanIn() async throws {
-        let transcript = try write(cwd: repo.url.appendingPathComponent("Sources").path, recorded: "old")
+        let folder = repo.url.appendingPathComponent("Sources")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let transcript = try write(cwd: folder.path, recorded: "old")
         let branches = BranchRecorder(library.branchUpdates(ofTranscriptAt: transcript))
         defer { branches.stop() }
 
@@ -57,6 +59,20 @@ final class LibraryBranchUpdatesTests: XCTestCase {
 
         await branches.waitForEnd()
         XCTAssertEqual(branches.values, ["gone-branch"])
+    }
+
+    /// A worktree the CLI made inside the repository and removed when the
+    /// session closed: the session was on the worktree's branch, not on the
+    /// repository's around the folder it left.
+    func testARemovedWorktreeInsideTheRepositoryIsTheRecordedBranch() async throws {
+        let worktree = repo.url.appendingPathComponent(".claude/worktrees/wt")
+        try repo.git("worktree", "add", "-q", "-b", "wt-branch", worktree.path)
+        let transcript = try write(cwd: worktree.path, recorded: "wt-branch")
+        try repo.git("worktree", "remove", worktree.path)
+        let branches = BranchRecorder(library.branchUpdates(ofTranscriptAt: transcript))
+
+        await branches.waitForEnd()
+        XCTAssertEqual(branches.values, ["wt-branch"])
     }
 
     /// The CLI records a detached HEAD as "HEAD": no branch.

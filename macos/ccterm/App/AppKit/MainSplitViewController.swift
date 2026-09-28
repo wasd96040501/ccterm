@@ -1,14 +1,17 @@
 import AppKit
+import TranscriptWorkspace
 
-/// The main window's sidebar/detail split. Both sides are empty panes until
-/// the session list and the transcript (`TranscriptKit`) are wired in; the
-/// split itself — thickness limits, collapse, divider autosave — is final.
+/// The main window's sidebar/detail split: the session library on the left,
+/// an Xcode-style editor area — tabs, two editors side by side — on the right.
+/// Routes between them: a node opened in the sidebar becomes a tab, or
+/// selects the tab that already shows it.
 @MainActor
 final class MainSplitViewController: NSSplitViewController {
-    private let sidebarViewController = EmptyPaneViewController()
-    private let detailViewController = EmptyPaneViewController()
+    private let sidebarViewController: SidebarViewController
+    private let editorArea = EditorAreaViewController()
 
-    init() {
+    init(library: LibraryStore) {
+        sidebarViewController = SidebarViewController(library: library)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -28,7 +31,7 @@ final class MainSplitViewController: NSSplitViewController {
         sidebarItem.titlebarSeparatorStyle = .automatic
         addSplitViewItem(sidebarItem)
 
-        let detailItem = NSSplitViewItem(viewController: detailViewController)
+        let detailItem = NSSplitViewItem(viewController: editorArea)
         detailItem.minimumThickness = 680
         detailItem.canCollapse = false
         detailItem.titlebarSeparatorStyle = .none
@@ -40,12 +43,33 @@ final class MainSplitViewController: NSSplitViewController {
         // restores the saved frames on the next layout pass.
         splitView.autosaveName = "ccterm.mainSplit"
     }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        sidebarViewController.delegate = self
+        editorArea.delegate = self
+    }
 }
 
-/// A pane with nothing in it — the stand-in for each side of the split.
-@MainActor
-private final class EmptyPaneViewController: NSViewController {
-    override func loadView() {
-        view = NSView()
+extension MainSplitViewController: SidebarViewControllerDelegate {
+    func sidebarViewController(_ sidebar: SidebarViewController, didOpen node: LibraryNode) {
+        guard let url = node.transcriptURL else { return }
+        for group in editorArea.groups {
+            let index = group.tabViewItems.firstIndex {
+                ($0.viewController as? TranscriptViewController)?.fileURL == url
+            }
+            if let index {
+                group.selectedTabViewItemIndex = index
+                return
+            }
+        }
+        let tab = TranscriptViewController(fileURL: url, title: node.title)
+        editorArea.activeGroup.addTabViewItem(NSTabViewItem(viewController: tab))
+    }
+}
+
+extension MainSplitViewController: EditorAreaViewControllerDelegate {
+    func editorArea(_ editorArea: EditorAreaViewController, willClose viewController: NSViewController) {
+        (viewController as? TranscriptViewController)?.prepareForRemoval()
     }
 }

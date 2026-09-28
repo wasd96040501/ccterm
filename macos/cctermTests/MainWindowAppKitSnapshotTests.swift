@@ -21,7 +21,10 @@ final class MainWindowAppKitSnapshotTests: XCTestCase {
     func testMainSplitSnapshot() throws {
         let size = CGSize(width: 1200, height: 800)
         let image = ViewSnapshot.renderViewController(
-            MainSplitViewController(), size: size, settle: 1.0)
+            MainSplitViewController(
+                library: LibraryStore(
+                    root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))),
+            size: size, settle: 1.0)
 
         let url = ViewSnapshot.writePNG(image, name: "MainWindowAppKit-MainSplit")
         let attachment = XCTAttachment(contentsOfFile: url)

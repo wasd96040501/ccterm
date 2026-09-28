@@ -19,6 +19,10 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var mainWindowController: MainWindowController?
 
+    /// Every transcript on disk, for the main window's sidebar. Process-wide:
+    /// it mirrors a directory the CLI owns, and one scan serves every window.
+    private var library: LibraryStore?
+
     /// Lazy AppKit-rooted Settings window. Created on the first
     /// `showSettingsWindow()` call (⌘, or App > Settings… menu item)
     /// — never at launch, so the OS cannot resurface it from saved
@@ -61,8 +65,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         if Self.isUnderXCTest { return }
 
-        let controller = MainWindowController()
+        let library = LibraryStore(root: Self.projectsDirectory)
+        self.library = library
+        let controller = MainWindowController(library: library)
         mainWindowController = controller
+        library.start()
         controller.showWindow(nil)
         controller.window?.makeKeyAndOrderFront(nil)
     }
@@ -79,6 +86,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    /// Where the CLI keeps transcripts: `$CLAUDE_CONFIG_DIR/projects`, else
+    /// `~/.claude/projects`.
+    private static var projectsDirectory: URL {
+        let config =
+            ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")
+        return config.appendingPathComponent("projects", isDirectory: true)
     }
 
     /// Mirrors `CCTermApp.isUnderXCTest`. The test path installs the

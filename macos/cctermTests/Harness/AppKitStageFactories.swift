@@ -10,9 +10,14 @@ extension AppKitStage {
     // MARK: - Main-split factory
 
     /// Mount the real `MainSplitViewController` — the main window's content
-    /// — exactly as `MainWindowController` constructs it.
-    static func mainSplit(size: CGSize = defaultWindowSize) -> AppKitStage {
-        mount(MainSplitViewController(), size: size)
+    /// — exactly as `MainWindowController` constructs it. The library is
+    /// unstarted unless the caller starts it; by default it is one over a
+    /// directory that doesn't exist, so the sidebar is empty.
+    static func mainSplit(library: LibraryStore? = nil, size: CGSize = defaultWindowSize) -> AppKitStage {
+        let library =
+            library
+            ?? LibraryStore(root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        return mount(MainSplitViewController(library: library), size: size)
     }
 
     // MARK: - Mounted-VC accessors

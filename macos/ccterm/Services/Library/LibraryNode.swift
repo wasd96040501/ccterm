@@ -1,0 +1,27 @@
+import Foundation
+
+/// One node of the session library: a project, a session, a group of a
+/// session's side transcripts, or one side transcript. A value — every scan
+/// builds a new tree, and `id` is what stays the same across them.
+struct LibraryNode: Identifiable, Hashable, Sendable {
+    enum Kind: Hashable, Sendable {
+        /// A working directory. Sessions run in its worktrees are folded in.
+        case project
+        /// A session's main transcript.
+        case session
+        /// A session's subagents.
+        case subagents
+        /// One workflow run; its children are the agents it spawned.
+        case workflow
+        /// One subagent's transcript.
+        case agent
+    }
+
+    /// The path of the file or directory the node stands for.
+    let id: String
+    let kind: Kind
+    let title: String
+    /// The transcript this node opens; `nil` for a group.
+    let transcriptURL: URL?
+    let children: [LibraryNode]
+}

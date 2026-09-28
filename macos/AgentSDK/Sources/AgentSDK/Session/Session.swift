@@ -167,7 +167,7 @@ public final class Session: @unchecked Sendable {
             "set_max_thinking_tokens", ["max_thinking_tokens": tokens.map { .number(Double($0)) } ?? .null])
     }
 
-    /// Changes the session's own settings layer, which sits above user,
+    /// Changes the session's flag settings layer, which sits above user,
     /// project and local settings and below managed policy. The layer is the
     /// launch settings (``SessionConfiguration/settings``) with the runtime
     /// values from every call to this method on top.

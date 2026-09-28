@@ -1,6 +1,6 @@
 import Foundation
 
-public struct RateLimitInfo: JSONParseable, UnknownStrippable {
+public struct LegacyRateLimitInfo: JSONParseable, UnknownStrippable {
     public let _raw: [String: Any]
     public let isUsingOverage: Bool?
     public let overageDisabledReason: String?

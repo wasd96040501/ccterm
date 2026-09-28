@@ -1,7 +1,7 @@
 import Foundation
 
 /// Session launch configuration.
-public struct SessionConfiguration {
+public struct SessionConfiguration: Sendable {
     /// CLI working directory. Maps to `--cwd`.
     public var workingDirectory: URL
 
@@ -56,8 +56,9 @@ public struct SessionConfiguration {
     /// Reasoning effort (low/medium/high/max). Maps to `--effort`.
     public var effort: Effort?
 
-    /// JSON Schema for structured output. Maps to `--output-format`.
-    public var outputFormat: [String: Any]?
+    /// JSON Schema the final answer must match; the result arrives as
+    /// ``ResultMessage/structuredOutput``. Maps to `--json-schema`.
+    public var jsonSchema: JSONValue?
 
     /// MCP server configuration (JSON string or file path). Maps to `--mcp-config`.
     public var mcpConfig: String?
@@ -74,19 +75,13 @@ public struct SessionConfiguration {
     /// On resume, mint a new session ID instead of reusing the original. Use with `resume` or `continueConversation`. Maps to `--fork-session`.
     public var forkSession: Bool
 
-    /// Include partial messages (intermediate assistant states) in the
-    /// stream. Maps to `--include-partial-messages`.
-    ///
-    /// When true, the CLI emits SSE-style `stream_event` envelopes
-    /// (`message_start` / `content_block_start` /
-    /// `content_block_delta` / `content_block_stop` / `message_delta`
-    /// / `message_stop`) interleaved with the regular final envelopes.
-    /// These flow on a **separate** callback —
-    /// `Session.onStreamEvent` — not `onMessage`. Callers that opt in
-    /// must subscribe to `onStreamEvent`; otherwise the deltas land in
-    /// the dispatcher and are silently dropped, wasting CLI bandwidth
-    /// for no UI effect.
+    /// Stream responses as they are generated: the session also emits
+    /// ``Message/streamEvent(_:)`` deltas (and `requesting` statuses) ahead of
+    /// each finished block. Maps to `--include-partial-messages`.
     public var includePartialMessages: Bool
+
+    /// Emit a ``Message/promptSuggestion(_:)`` after each turn.
+    public var promptSuggestions: Bool
 
     /// Which settings sources to load (user/project/local). nil = default; empty array loads nothing. Maps to `--setting-sources`.
     public var settingSources: [String]?
@@ -139,13 +134,14 @@ public struct SessionConfiguration {
         thinking: ThinkingConfig? = nil,
         maxThinkingTokens: Int? = nil,
         effort: Effort? = nil,
-        outputFormat: [String: Any]? = nil,
+        jsonSchema: JSONValue? = nil,
         mcpConfig: String? = nil,
         settings: String? = nil,
         addDirs: [String] = [],
         continueConversation: Bool = false,
         forkSession: Bool = false,
         includePartialMessages: Bool = false,
+        promptSuggestions: Bool = false,
         settingSources: [String]? = nil,
         plugins: [String] = [],
         customCommand: String? = nil,
@@ -173,13 +169,14 @@ public struct SessionConfiguration {
         self.thinking = thinking
         self.maxThinkingTokens = maxThinkingTokens
         self.effort = effort
-        self.outputFormat = outputFormat
+        self.jsonSchema = jsonSchema
         self.mcpConfig = mcpConfig
         self.settings = settings
         self.addDirs = addDirs
         self.continueConversation = continueConversation
         self.forkSession = forkSession
         self.includePartialMessages = includePartialMessages
+        self.promptSuggestions = promptSuggestions
         self.settingSources = settingSources
         self.plugins = plugins
         self.customCommand = customCommand
@@ -193,7 +190,7 @@ public struct SessionConfiguration {
 
 // MARK: - Supporting Types
 
-public enum SystemPromptConfig {
+public enum SystemPromptConfig: Sendable {
     /// Custom system prompt that replaces the default.
     case custom(String)
     /// Use the default prompt and append additional text.
@@ -202,20 +199,20 @@ public enum SystemPromptConfig {
     case empty
 }
 
-public enum ToolsConfig {
+public enum ToolsConfig: Sendable {
     /// Custom tool list. Empty array means no tools.
     case list([String])
     /// Use the default tool set (`claude_code` preset).
     case `default`
 }
 
-public enum ThinkingConfig {
+public enum ThinkingConfig: Sendable {
     case adaptive
     case enabled(budgetTokens: Int)
     case disabled
 }
 
-public enum Effort: String {
+public enum Effort: String, Sendable {
     case low
     case medium
     case high

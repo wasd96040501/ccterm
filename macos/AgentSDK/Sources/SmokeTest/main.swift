@@ -46,7 +46,8 @@ session.onProcessExit = { (code: Int32) in
     if code != 0 { done.signal() }
 }
 
-session.onPermissionRequest = { (request: LegacyPermissionRequest, completion: @escaping (LegacyPermissionDecision) -> Void) in
+session.onPermissionRequest = {
+    (request: LegacyPermissionRequest, completion: @escaping (LegacyPermissionDecision) -> Void) in
     print("[permission] tool=\(request.toolName)")
     completion(.deny(reason: "SmokeTest: auto-deny all tools"))
 }

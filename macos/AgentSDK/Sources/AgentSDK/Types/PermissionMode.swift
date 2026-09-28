@@ -1,6 +1,6 @@
 import Foundation
 
-public enum PermissionMode: String {
+public enum PermissionMode: String, Sendable {
     case auto = "auto"
     case `default` = "default"
     case acceptEdits = "acceptEdits"

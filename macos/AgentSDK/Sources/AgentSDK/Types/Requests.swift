@@ -40,7 +40,7 @@ public enum PermissionSuggestion: JSONParseable, UnknownStrippable {
 
 public struct AddRulesSuggestion: JSONParseable, UnknownStrippable {
     public let _raw: [String: Any]
-    public let rules: [PermissionRule]
+    public let rules: [LegacyPermissionRule]
     public let behavior: String
     public let destination: String
 
@@ -87,13 +87,13 @@ public struct AddDirectoriesSuggestion: JSONParseable, UnknownStrippable {
 
 // MARK: - Permission Rule
 
-public struct PermissionRule: JSONParseable, UnknownStrippable {
+public struct LegacyPermissionRule: JSONParseable, UnknownStrippable {
     public let _raw: [String: Any]
     public let toolName: String
     public let ruleContent: String?
 
     public init(json: Any) throws {
-        let r = try JSONReader(json, context: "PermissionRule")
+        let r = try JSONReader(json, context: "LegacyPermissionRule")
         self._raw = r.dict
         self.toolName = try r.need("toolName", alt: "tool_name")
         self.ruleContent = r.string("ruleContent", alt: "rule_content")
@@ -185,7 +185,8 @@ public struct LegacyPermissionRequest: JSONParseable, UnknownStrippable {
 
 extension LegacyPermissionRequest {
     /// Builds mock data for Previews / tests only.
-    public static func makePreview(requestId: String, toolName: String, input: [String: Any]) -> LegacyPermissionRequest {
+    public static func makePreview(requestId: String, toolName: String, input: [String: Any]) -> LegacyPermissionRequest
+    {
         let dict: [String: Any] = [
             "request_id": requestId,
             "tool_name": toolName,

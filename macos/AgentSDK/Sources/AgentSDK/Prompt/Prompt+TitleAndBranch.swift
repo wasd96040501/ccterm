@@ -61,7 +61,7 @@ extension Prompt {
             do {
                 try proc.run()
             } catch {
-                throw AgentSDKError.launchFailed(underlying: error)
+                throw AgentSDKError.launchFailed(error.localizedDescription)
             }
 
             let timeoutItem = DispatchWorkItem {

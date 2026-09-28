@@ -1,8 +1,8 @@
 import Foundation
 
-extension RateLimitInfo {
+extension LegacyRateLimitInfo {
     public init(json: Any) throws {
-        let r = try JSONReader(json, context: "RateLimitInfo")
+        let r = try JSONReader(json, context: "LegacyRateLimitInfo")
         self._raw = r.dict
         self.isUsingOverage = r.bool("is_using_overage", alt: "isUsingOverage")
         self.overageDisabledReason = r.string("overage_disabled_reason", alt: "overageDisabledReason")
@@ -15,7 +15,7 @@ extension RateLimitInfo {
     public func toJSON() -> Any { _raw }
 }
 
-extension RateLimitInfo {
+extension LegacyRateLimitInfo {
     public func toTypedJSON() -> Any {
         var d: [String: Any] = [:]
         if let v = isUsingOverage { d["is_using_overage"] = v }

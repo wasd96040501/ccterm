@@ -103,7 +103,7 @@ public final class LegacySession {
     /// Binary lookup, environment resolution, and `Process.run()` execute on a
     /// background thread so the caller is not blocked.
     public func start() async throws {
-        guard !isRunning else { throw AgentSDKError.alreadyRunning }
+        guard !isRunning else { throw AgentSDKError.alreadyStarted }
 
         let workingDirectory = configuration.workingDirectory
         let binaryPathOverride = configuration.binaryPath
@@ -164,7 +164,7 @@ public final class LegacySession {
             do {
                 try proc.run()
             } catch {
-                throw AgentSDKError.launchFailed(underlying: error)
+                throw AgentSDKError.launchFailed(error.localizedDescription)
             }
 
             return (proc, stdin, stdout, stderr)
@@ -748,14 +748,8 @@ public final class LegacySession {
             args += ["--effort", level]
         }
 
-        // Output format (structured output JSON schema)
-        if let outputFormat = config.outputFormat,
-            let type = outputFormat["type"] as? String, type == "json_schema",
-            let schema = outputFormat["schema"],
-            let schemaData = try? JSONSerialization.data(withJSONObject: schema),
-            let schemaJSON = String(data: schemaData, encoding: .utf8)
-        {
-            args += ["--json-schema", schemaJSON]
+        if let schema = config.jsonSchema, let data = try? JSONEncoder().encode(schema) {
+            args += ["--json-schema", String(decoding: data, as: UTF8.self)]
         }
 
         args += config.extraArguments
@@ -901,7 +895,9 @@ public final class LegacySession {
 
     // MARK: - Private: Response Building
 
-    private func buildPermissionResponse(request: LegacyPermissionRequest, decision: LegacyPermissionDecision) -> [String: Any] {
+    private func buildPermissionResponse(
+        request: LegacyPermissionRequest, decision: LegacyPermissionDecision
+    ) -> [String: Any] {
         let responseBody: [String: Any]
 
         switch decision {

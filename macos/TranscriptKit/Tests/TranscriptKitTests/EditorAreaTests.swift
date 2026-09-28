@@ -1224,16 +1224,15 @@ private final class Recorder: EditorAreaViewControllerDelegate {
     /// The string a dropped pasteboard holds for a drop the host refuses.
     static let refused = "refused"
 
-    /// A tab titled with the dropped string.
+    /// The dropped string, which the tab below is made from.
     func editorArea(
-        _ editorArea: EditorAreaViewController, tabViewItemForDrop draggingInfo: NSDraggingInfo
-    ) -> NSTabViewItem? {
-        guard let title = draggingInfo.draggingPasteboard.string(forType: .string), title != Self.refused
-        else { return nil }
-        return NSTabViewItem(viewController: ProbeViewController(title: title))
+        _ editorArea: EditorAreaViewController, identifierForDrop draggingInfo: NSDraggingInfo
+    ) -> Any? {
+        draggingInfo.draggingPasteboard.string(forType: .string)
     }
 
-    /// A tab for a title the history goes back to, as the host would make one.
+    /// A tab for a dropped title or one the history goes back to, as the host
+    /// would make one.
     func editorArea(
         _ editorArea: EditorAreaViewController, tabViewItemWithIdentifier identifier: Any
     ) -> NSTabViewItem? {

@@ -27,14 +27,28 @@ public protocol EditorAreaViewControllerDelegate: AnyObject {
     /// Something of a type registered with `registerForDraggedTypes(_:)` was
     /// dropped on the area: the tab it opens, or `nil` to refuse it. Where the
     /// tab goes follows the drop — as a dragged tab's does.
+    ///
+    /// Implement `editorArea(_:identifierForDrop:)` instead: the default answers
+    /// the tab `editorArea(_:tabViewItemWithIdentifier:)` makes for the identifier
+    /// that names, so one factory makes every tab the area asks for. This one goes
+    /// once no host implements it.
     func editorArea(
         _ editorArea: EditorAreaViewController, tabViewItemForDrop draggingInfo: NSDraggingInfo
     ) -> NSTabViewItem?
 
-    /// An editor is going back or forward to something whose tab has closed: a
-    /// new tab for `identifier` — what that tab's `NSTabViewItem.identifier` was —
-    /// or `nil` if it can't be shown any more, and history passes over it. The tab
-    /// opens as the editor's temporary tab.
+    /// Something of a type registered with `registerForDraggedTypes(_:)` was
+    /// dropped on the area: the identifier of what it shows — what its tab's
+    /// `NSTabViewItem.identifier` will be — or `nil` to refuse it. The tab is made
+    /// by `editorArea(_:tabViewItemWithIdentifier:)`, as for history.
+    func editorArea(
+        _ editorArea: EditorAreaViewController, identifierForDrop draggingInfo: NSDraggingInfo
+    ) -> Any?
+
+    /// A new tab for `identifier`, or `nil` if it can't be shown (any more).
+    /// Asked when an editor goes back or forward to something whose tab has
+    /// closed — `identifier` is what that tab's `NSTabViewItem.identifier` was; the
+    /// tab opens as the editor's temporary tab, and one refused is passed over —
+    /// and for a drop, with what `editorArea(_:identifierForDrop:)` answered.
     func editorArea(
         _ editorArea: EditorAreaViewController, tabViewItemWithIdentifier identifier: Any
     ) -> NSTabViewItem?
@@ -56,5 +70,13 @@ extension EditorAreaViewControllerDelegate {
 
     public func editorArea(
         _ editorArea: EditorAreaViewController, tabViewItemForDrop draggingInfo: NSDraggingInfo
-    ) -> NSTabViewItem? { nil }
+    ) -> NSTabViewItem? {
+        self.editorArea(editorArea, identifierForDrop: draggingInfo).flatMap {
+            self.editorArea(editorArea, tabViewItemWithIdentifier: $0)
+        }
+    }
+
+    public func editorArea(
+        _ editorArea: EditorAreaViewController, identifierForDrop draggingInfo: NSDraggingInfo
+    ) -> Any? { nil }
 }

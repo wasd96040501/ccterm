@@ -135,6 +135,7 @@ final class LinkActivationTests: XCTestCase {
 
     // MARK: - Press, drag, release
 
+    @MainActor
     private struct Mounted {
         let transcript: MountedTranscript
         let host: OneRowHost
@@ -146,9 +147,22 @@ final class LinkActivationTests: XCTestCase {
         let recorder: Recorder
     }
 
-    private final class Recorder {
+    /// Takes the transcript's place as the view's delegate. What crosses is the
+    /// run; the address is what this suite is about, so anything without one is
+    /// not something these tests can record.
+    private final class Recorder: BlockViewDelegate {
         var urls: [URL] = []
         var hovers: [URL?] = []
+
+        func blockView(_ view: BlockView, didActivate link: InlineLink) {
+            link.url.map { urls.append($0) }
+        }
+
+        func blockView(_ view: BlockView, didHover url: URL?, at point: CGPoint) {
+            hovers.append(url)
+        }
+
+        func blockView(_ view: BlockView, menu: NSMenu, for event: NSEvent) -> NSMenu? { menu }
     }
 
     /// One markdown row, answered to a real transcript.
@@ -181,10 +195,7 @@ final class LinkActivationTests: XCTestCase {
         let block = cell.block!
 
         let recorder = Recorder()
-        // What crosses is the run; the address is what this suite is about, so
-        // anything without one is not something these tests can record.
-        cell.onLinkActivated = { _, link in link.url.map { recorder.urls.append($0) } }
-        cell.onLinkHovered = { _, url, _ in recorder.hovers.append(url) }
+        cell.delegate = recorder
 
         return Mounted(
             transcript: transcript, host: host, cell: cell, block: block, recorder: recorder)

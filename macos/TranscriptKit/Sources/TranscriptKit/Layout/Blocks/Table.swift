@@ -17,7 +17,7 @@ import AppKit
 /// for the same reason: leaving one cell is the user changing what they are
 /// pointing at, from glyphs to structure.
 ///
-/// **This is the one type besides `ListBuilder` that negotiates.** A stack measures its
+/// **This is the one type besides `MarkdownListBuilder` that negotiates.** A stack measures its
 /// children independently and so cannot size a column to the widest cell in it;
 /// column widths are an agreement between siblings, settled here before anything
 /// is laid out, and never visible outside this file.
@@ -83,13 +83,6 @@ struct Table: Block, @unchecked Sendable {
     /// On odd body rows only. An eye-tracking aid across a wide row, meant to be
     /// near-invisible when you are not using it.
     var zebraBackgroundColor: NSColor = dynamic(dark: 0.04, light: 0.025)
-
-    /// Header cells at the surrounding body size, one weight up. The caller
-    /// supplies the face because the size belongs to the text around the table,
-    /// not to the table.
-    static func headerFont(_ body: NSFont) -> NSFont {
-        .systemFont(ofSize: body.pointSize, weight: .semibold)
-    }
 
     init(header: [ShapedText], rows: [[ShapedText]], alignments: [Alignment]) {
         let columnCount = max(header.count, rows.map(\.count).max() ?? 0)

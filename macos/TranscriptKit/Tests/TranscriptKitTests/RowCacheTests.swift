@@ -62,7 +62,7 @@ final class RowCacheTests: XCTestCase {
         let evicted = rows[try XCTUnwrap(kept.firstIndex(of: false))]
         XCTAssertEqual(
             cache.height(for: evicted, width: Self.width),
-            evicted.content.entry(width: Self.width, reusing: nil)?.height,
+            RowCache.Entry(measuring: evicted.content, width: Self.width, reusing: nil)?.height,
             "an evicted row answers a different height than measuring it does")
     }
 
@@ -98,11 +98,11 @@ final class RowCacheTests: XCTestCase {
     /// comes back evicted, or correcting a resize would make every row resident.
     func testAnEvictedEntryRemeasuresFromItsContentAndStaysEvicted() throws {
         let content = Self.rows(1)[0].content
-        let wide = try XCTUnwrap(content.entry(width: 600, reusing: nil))
+        let wide = try XCTUnwrap(RowCache.Entry(measuring: content, width: 600, reusing: nil))
         let narrow = wide.evicted.remeasured(at: 420)
 
         XCTAssertNotEqual(wide.height, narrow.height, "premise: the two widths lay out differently")
-        XCTAssertEqual(narrow.height, content.entry(width: 420, reusing: nil)?.height)
+        XCTAssertEqual(narrow.height, RowCache.Entry(measuring: content, width: 420, reusing: nil)?.height)
         XCTAssertEqual(narrow.measuredWidth, 420)
         XCTAssertNil(narrow.tree)
     }

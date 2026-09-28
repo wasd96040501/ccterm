@@ -76,4 +76,54 @@ public struct PreparedRows: Sendable {
     /// The whole public surface, and `isEmpty` is deliberately not beside it
     /// (§3): nothing has needed one, and `count == 0` says it.
     public var count: Int { entries.count }
+
+    /// The batch, measured concurrently.
+    ///
+    /// Off the main actor: this type is not isolated, so awaiting this from
+    /// `TranscriptView.prepareRows(_:)` is what hops off. The batch crosses whole,
+    /// identities and all, which `TranscriptRow.ID` is `Sendable` for.
+    ///
+    /// One child task per row rather than a hand-rolled chunking loop, because
+    /// the cooperative pool already caps the number actually running at the core
+    /// count; the extra tasks queue, and a task is cheaper than the document it
+    /// is holding. Results are collected in whatever order they finish, because
+    /// each carries the identity it belongs to — the positional version of this
+    /// had to gather by offset to keep the batch in the order it was given.
+    ///
+    /// **Only the last `RowCache.residentBudget` worth of rows keep their tree**;
+    /// the rest are measured, keep their height, and release the tree in the same
+    /// child task that built it. The cache would evict them on arrival anyway —
+    /// doing it here keeps a batch of history from ever being resident all at once,
+    /// and keeps tearing it down off the main thread. The last rows rather than the
+    /// first because a batch is usually a prepend, and its last rows are the ones
+    /// that land against what the reader is looking at.
+    static func measuring(_ rows: [TranscriptRow], width: CGFloat) async -> PreparedRows {
+        var budget = RowCache.residentBudget
+        var keepsTree = [Bool](repeating: false, count: rows.count)
+        for index in rows.indices.reversed() {
+            budget -= RowCache.cost(of: rows[index].content)
+            guard budget >= 0 else { break }
+            keepsTree[index] = true
+        }
+        return await withTaskGroup(of: (TranscriptRow.ID, RowCache.Entry)?.self) { group in
+            for (row, keepsTree) in zip(rows, keepsTree) {
+                group.addTask {
+                    // Nothing to take from, and stated rather than defaulted: a
+                    // row being prepared does not exist yet, so there is no
+                    // previous version of it anywhere — which is the one thing
+                    // that makes this call safe off the main actor.
+                    guard !Task.isCancelled,
+                        let entry = RowCache.Entry(measuring: row.content, width: width, reusing: nil)
+                    else { return nil }
+                    return (row.id, keepsTree ? entry : entry.evicted)
+                }
+            }
+            var entries = [TranscriptRow.ID: RowCache.Entry](minimumCapacity: rows.count)
+            for await measured in group {
+                guard let measured else { continue }
+                entries[measured.0] = measured.1
+            }
+            return PreparedRows(entries: entries, width: width)
+        }
+    }
 }

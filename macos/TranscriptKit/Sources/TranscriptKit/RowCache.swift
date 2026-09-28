@@ -114,118 +114,6 @@ import AppKit
 /// than pushing out the rows on screen.
 final class RowCache {
 
-    /// One row's answer, and — while it is resident — everything needed to produce
-    /// the next one cheaply.
-    ///
-    /// `Sendable`, because this is also what a background task produces: measuring
-    /// off the main actor and measuring on it end at the same value, so there is
-    /// one shape rather than a "prepared" one and a real one. See
-    /// `TranscriptView.prepareRows(_:)`.
-    struct Entry: Sendable {
-
-        /// What this was built from — what the entry is valid against. The whole
-        /// content rather than its text, for the reason above.
-        var content: TranscriptRowContent
-
-        var measuredWidth: CGFloat
-
-        /// The height `tree` measured to at `measuredWidth` — kept when the tree is
-        /// not, which is what lets the table be answered about every row while only
-        /// a few of them are typeset.
-        var height: CGFloat
-
-        /// The recipe and the typeset lines, or `nil` once evicted.
-        var tree: Tree?
-
-        /// A tree: how the row rebuilds when its content moves, and what it drew.
-        struct Tree: Sendable {
-            var body: Body
-            var measured: MeasuredBlock
-        }
-
-        init(content: TranscriptRowContent, body: Body, measured: MeasuredBlock, measuredWidth: CGFloat) {
-            self.content = content
-            self.measuredWidth = measuredWidth
-            self.height = measured.size.height
-            self.tree = Tree(body: body, measured: measured)
-        }
-
-        var body: Body? { tree?.body }
-        var measured: MeasuredBlock? { tree?.measured }
-
-        /// This entry with only its height left.
-        var evicted: Entry {
-            var entry = self
-            entry.tree = nil
-            return entry
-        }
-
-        /// This entry laid out at a different width, from what it already holds.
-        ///
-        /// **While resident: no source, and therefore no parse and no shaping** —
-        /// the recipe is the whole input. That is what makes this the thing a
-        /// background task can be handed: `MeasuredBlock`, `Block` and
-        /// `MarkdownMemo` are all `Sendable`, and none of this touches main-thread
-        /// state.
-        ///
-        /// **Evicted, it is rebuilt from the content** — parse and shape as well —
-        /// and comes back evicted again, so correcting a height does not quietly
-        /// make every row resident. Both happen here, on whatever thread calls
-        /// this, which is the pool: the tree is released where it was built.
-        ///
-        /// The content is carried through untouched. It is not an input to the
-        /// work — it is what the answer will be checked against when it lands, by
-        /// whoever files it.
-        func remeasured(at width: CGFloat) -> Entry {
-            switch tree?.body {
-            case .markdown(var memo)?:
-                let measured = memo.remeasure(width: width)
-                return Entry(
-                    content: content, body: .markdown(memo), measured: measured,
-                    measuredWidth: width)
-
-            case .block(let block)?:
-                return Entry(
-                    content: content, body: .block(block), measured: block.measure(width),
-                    measuredWidth: width)
-
-            case nil:
-                guard let rebuilt = content.entry(width: width, reusing: nil) else { return self }
-                return rebuilt.evicted
-            }
-        }
-    }
-
-    /// What an entry keeps between versions of its content, which is the one thing
-    /// that differs between the self-drawn cases.
-    ///
-    /// A document is many blocks and grows a token at a time, so what is worth
-    /// keeping is the blocks that did not change. A user's bubble is one block and
-    /// arrives whole, so what is worth keeping is the recipe — which costs nothing
-    /// on a width change and is simply rebuilt when the text moves. Modelling that
-    /// as an enum rather than as two caches keeps one store and one answer to "has
-    /// this row's content moved".
-    ///
-    /// **Two cases, and there was briefly a third.** A `seeded` case carried a
-    /// measurement with no recipe behind it, for entries that had crossed an actor
-    /// boundary back when `Block` was not `Sendable`. It was not a third way of
-    /// keeping something — it was *nothing kept*, which is a hole rather than a
-    /// case, and it cost what a hole here costs: every row that arrived from a
-    /// background task re-parsed **and re-shaped** on the first width change,
-    /// instead of only re-breaking its lines. On a ten-thousand-row transcript
-    /// that is the difference between a resize and a freeze. Nine
-    /// `@unchecked Sendable` annotations retired it, in nine files that each
-    /// already carried the identical annotation one type below.
-    ///
-    /// An evicted entry (`Entry.tree == nil`) is that hole again, on purpose and
-    /// with the difference that made the first one a freeze removed: its rebuild
-    /// runs on the pool (`Entry.remeasured(at:)`), and only for the rows that did
-    /// not fit in `residentBudget` rather than for every row that arrived prepared.
-    enum Body: Sendable {
-        case markdown(MarkdownMemo)
-        case block(Block)
-    }
-
     private var entries: [TranscriptRow.ID: Entry] = [:]
 
     // MARK: - What stays resident
@@ -300,7 +188,7 @@ final class RowCache {
     /// **One entry point for every self-drawn case, and nothing here knows which
     /// case it is serving.** What differs between a document and a bubble is what
     /// the rebuild takes from the previous version, and that lives with the
-    /// content, in `TranscriptRowContent.entry(width:reusing:)` — which is also
+    /// content case, in `Entry.init(measuring:width:reusing:)` — which is also
     /// what `prepareRows(_:)` calls on a background task, so there is one
     /// description of how a row is built rather than one per thread.
     ///
@@ -322,7 +210,9 @@ final class RowCache {
             lastDrawn[row.id] = clock
             return measured
         }
-        guard let entry = row.content.entry(width: width, reusing: previous) else { return nil }
+        guard let entry = Entry(measuring: row.content, width: width, reusing: previous) else {
+            return nil
+        }
         store(entry, for: row.id, drawnAt: clock)
         evictIfNeeded(sparing: row.id)
         return entry.measured
@@ -341,7 +231,9 @@ final class RowCache {
         if let previous, previous.content == row.content, previous.measuredWidth == width {
             return previous.height
         }
-        guard let entry = row.content.entry(width: width, reusing: previous) else { return nil }
+        guard let entry = Entry(measuring: row.content, width: width, reusing: previous) else {
+            return nil
+        }
         store(entry, for: row.id, drawnAt: nil)
         evictIfNeeded(sparing: row.id)
         return entry.height
@@ -398,7 +290,7 @@ final class RowCache {
     /// question, not this store's — it walks its rows outward from the viewport and
     /// claims entries out of this by identity as it passes them, so the rows nearest
     /// the reader are measured first and the walk stops as soon as this is empty.
-    /// See `TranscriptView.staleRowsOutwardFromViewport(at:)`.
+    /// See `RemeasureScheduler.staleRowsOutwardFromViewport(at:)`.
     func entries(measuredAtWidthOtherThan width: CGFloat) -> [TranscriptRow.ID: Entry] {
         entries.filter { $0.value.measuredWidth != width }
     }

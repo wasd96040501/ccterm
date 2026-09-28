@@ -173,13 +173,15 @@ final class ContextMenuTests: XCTestCase {
         defer { mounted.transcript.teardown() }
 
         var proposed: [String] = []
-        mounted.cell.onContextMenu = { _, menu, _ in
+        let answering = MenuAnswer { menu in
             proposed = menu.items.map(\.title)
             menu.addItem(NSMenuItem(title: "Quote", action: nil, keyEquivalent: ""))
             return menu
         }
+        mounted.cell.delegate = answering
 
-        let menu = try XCTUnwrap(rightClick(mounted, at: try word(1, in: mounted)))
+        let point = try word(1, in: mounted)
+        let menu = try XCTUnwrap(withExtendedLifetime(answering) { rightClick(mounted, at: point) })
         XCTAssertEqual(proposed.count, 1, "the host was handed a menu without the transcript's own items on it")
         XCTAssertEqual(menu.items.map(\.title).last, "Quote")
     }
@@ -188,8 +190,26 @@ final class ContextMenuTests: XCTestCase {
         let mounted = try mount("alpha beta gamma")
         defer { mounted.transcript.teardown() }
 
-        mounted.cell.onContextMenu = { _, _, _ in nil }
-        XCTAssertNil(rightClick(mounted, at: try word(1, in: mounted)))
+        let answering = MenuAnswer { _ in nil }
+        mounted.cell.delegate = answering
+        let point = try word(1, in: mounted)
+        withExtendedLifetime(answering) { XCTAssertNil(rightClick(mounted, at: point)) }
+    }
+
+    /// Stands in for the transcript as a view's delegate, answering the menu the
+    /// way a host would.
+    private final class MenuAnswer: BlockViewDelegate {
+        let answer: (NSMenu) -> NSMenu?
+
+        init(_ answer: @escaping (NSMenu) -> NSMenu?) {
+            self.answer = answer
+        }
+
+        func blockView(_ view: BlockView, didActivate link: InlineLink) {}
+        func blockView(_ view: BlockView, didHover url: URL?, at point: CGPoint) {}
+        func blockView(_ view: BlockView, menu: NSMenu, for event: NSEvent) -> NSMenu? {
+            answer(menu)
+        }
     }
 
     // MARK: - The transcript's wiring

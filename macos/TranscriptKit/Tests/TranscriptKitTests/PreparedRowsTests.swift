@@ -161,7 +161,7 @@ final class PreparedRowsTests: XCTestCase {
     ///
     /// **This used to hold two spellings in step and now holds one against
     /// itself**, because there is one: both paths reach
-    /// `TranscriptRowContent.entry(width:reusing:)`, the prepared one with `nil`
+    /// `RowCache.Entry.init(measuring:width:reusing:)`, the prepared one with `nil`
     /// and the on-demand one through `RowCache`'s miss with whatever it had. Which
     /// makes this weaker than it was and still worth keeping — what it now covers
     /// is that passing a *previous entry* does not change the answer, only what it
@@ -246,8 +246,8 @@ final class PreparedRowsTests: XCTestCase {
         // cases, or this test would pass against a cache that checked nothing.
         for source in [Self.userTurn, Self.sources[1]] {
             XCTAssertNotEqual(
-                TranscriptRowContent.markdown(source).entry(width: 600, reusing: nil)?.height,
-                TranscriptRowContent.userMessage(source).entry(width: 600, reusing: nil)?.height,
+                RowCache.Entry(measuring: .markdown(source), width: 600, reusing: nil)?.height,
+                RowCache.Entry(measuring: .userMessage(source), width: 600, reusing: nil)?.height,
                 "this source measures the same either way, so it cannot detect a wrong case")
         }
 
@@ -524,7 +524,7 @@ final class PreparedRowsTests: XCTestCase {
         // Measured at 600 …
         let prepared = await subject.transcript.prepareRows(batch.map(\.described))
         let heightsAt600 = batch.compactMap {
-            TranscriptRowContent.markdown($0.source).entry(width: 600, reusing: nil)?.height
+            RowCache.Entry(measuring: .markdown($0.source), width: 600, reusing: nil)?.height
         }
         // … and inserted at 420.
         subject.setContentWidth(420)
@@ -539,7 +539,7 @@ final class PreparedRowsTests: XCTestCase {
         subject.settle()
 
         let heightsAt420 = batch.compactMap {
-            TranscriptRowContent.markdown($0.source).entry(width: 420, reusing: nil)?.height
+            RowCache.Entry(measuring: .markdown($0.source), width: 420, reusing: nil)?.height
         }
         XCTAssertEqual(heightsAt600.count, batch.count)
         for (index, pair) in zip(heightsAt600, heightsAt420).enumerated() {
@@ -690,7 +690,7 @@ private final class SourceHost: NSObject, TranscriptViewDataSource, TranscriptVi
     /// Prefix marking a source as a user's turn rather than a document — the
     /// other case the transcript draws itself, and the one a suite of `.markdown`
     /// rows alone would never exercise. Its recipe was once spelled in two places
-    /// and is now spelled in one (`TranscriptRowContent.entry(width:reusing:)`),
+    /// and is now spelled in one (`RowCache.Entry.init(measuring:width:reusing:)`),
     /// but it still takes a different branch through the reuse than a document
     /// does: a bubble keeps its block, a document keeps its blocks.
     static let userTurnPrefix = "\u{1}"

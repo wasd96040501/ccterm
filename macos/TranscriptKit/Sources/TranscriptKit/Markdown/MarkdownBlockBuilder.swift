@@ -8,7 +8,7 @@ import AppKit
 /// arithmetic for a quote's indent or a list's marker column inside the type that
 /// owns it, instead of being spread across every call site that builds one.
 ///
-/// It is also the only markdown-aware file below the parser. `Blockquote`, `ListBuilder`,
+/// It is also the only markdown-aware file below the parser. `Blockquote`, `ListRow`,
 /// `BlockStack` and the rest have never heard of `MarkdownIR`, so anything else that
 /// wants to build a row composes them directly without going through here.
 ///
@@ -18,11 +18,11 @@ import AppKit
 /// being the place block behaviour accumulates.
 enum MarkdownBlockBuilder {
 
-    static func make(_ source: String, style: MarkdownStyle = .default) -> Block {
+    static func make(_ source: String, style: TextStyle = .default) -> Block {
         make(MarkdownParser.document(source), style: style)
     }
 
-    static func make(_ document: MarkdownIR.Document, style: MarkdownStyle) -> Block {
+    static func make(_ document: MarkdownIR.Document, style: TextStyle) -> Block {
         BlockStack(children(of: document).map { make($0, style: style) }, spacing: blockSpacing)
     }
 
@@ -54,7 +54,7 @@ enum MarkdownBlockBuilder {
         return children
     }
 
-    static func make(_ child: Child, style: MarkdownStyle) -> Block {
+    static func make(_ child: Child, style: TextStyle) -> Block {
         switch child {
         case .block(let node):
             return block(node, style: style, spacing: blockSpacing)
@@ -72,7 +72,7 @@ enum MarkdownBlockBuilder {
     /// produced — and a rule occupies no index space, so nothing about a
     /// selection running past it changes either.
     private static func notes(
-        _ footnotes: [MarkdownIR.Document.Footnote], style: MarkdownStyle
+        _ footnotes: [MarkdownIR.Document.Footnote], style: TextStyle
     ) -> Block {
         BlockStack([ThematicBreak(), list(footnotes, style: style)], spacing: blockSpacing)
     }
@@ -80,16 +80,16 @@ enum MarkdownBlockBuilder {
     /// The numbered list the notes render as.
     ///
     /// An ordered list, because that is what it is: a numbered marker column
-    /// beside each note's own blocks. `ListBuilder` already settles the column
+    /// beside each note's own blocks. `MarkdownListBuilder` already settles the column
     /// against the widest marker, so a document with ten notes lines `10.` up
     /// with `9.` without this knowing that is a question.
     private static func list(
-        _ footnotes: [MarkdownIR.Document.Footnote], style: MarkdownStyle
+        _ footnotes: [MarkdownIR.Document.Footnote], style: TextStyle
     ) -> Block {
-        ListBuilder.make(
+        MarkdownListBuilder.make(
             items: footnotes.map { note in
-                ListBuilder.Item(
-                    marker: ListBuilder.marker(
+                MarkdownListBuilder.Item(
+                    marker: MarkdownListBuilder.marker(
                         .ordinal(note.number), font: style.bodyFont,
                         color: style.secondaryColor),
                     content: stack(note.blocks, style: style, spacing: tightListSpacing))
@@ -122,7 +122,7 @@ enum MarkdownBlockBuilder {
     private static let tightListSpacing: CGFloat = 6
 
     private static func stack(
-        _ nodes: [MarkdownIR.BlockNode], style: MarkdownStyle, spacing: CGFloat
+        _ nodes: [MarkdownIR.BlockNode], style: TextStyle, spacing: CGFloat
     ) -> BlockStack {
         BlockStack(nodes.map { block($0, style: style, spacing: spacing) }, spacing: spacing)
     }
@@ -132,7 +132,7 @@ enum MarkdownBlockBuilder {
     /// travels at all is that a list is tighter than a document, and a block
     /// inside a list item belongs to the list's rhythm rather than the page's.
     private static func block(
-        _ node: MarkdownIR.BlockNode, style: MarkdownStyle, spacing: CGFloat
+        _ node: MarkdownIR.BlockNode, style: TextStyle, spacing: CGFloat
     ) -> Block {
         switch node {
         case .paragraph(let inlines):
@@ -141,7 +141,7 @@ enum MarkdownBlockBuilder {
         case .heading(let level, let inlines):
             return Heading(
                 level: level,
-                text: text(inlines, style: style, font: Heading.font(level: level)))
+                text: text(inlines, style: style, font: style.headingFont(level: level)))
 
         case .blockquote(let children):
             return Blockquote(stack(children, style: style, spacing: spacing))
@@ -170,10 +170,10 @@ enum MarkdownBlockBuilder {
             // item from the sub-list under it. Which rhythm that is, is the
             // loose/tight distinction and nothing else.
             let listSpacing = list.isTight ? tightListSpacing : blockSpacing
-            return ListBuilder.make(
+            return MarkdownListBuilder.make(
                 items: list.items.enumerated().map { index, item in
-                    ListBuilder.Item(
-                        marker: ListBuilder.marker(
+                    MarkdownListBuilder.Item(
+                        marker: MarkdownListBuilder.marker(
                             kind(for: item, at: index, in: list),
                             font: style.bodyFont, color: style.secondaryColor),
                         content: stack(item.content, style: style, spacing: listSpacing))
@@ -182,7 +182,7 @@ enum MarkdownBlockBuilder {
                 gap: style.bodyFont.pointSize * 0.5)
 
         case .table(let table):
-            let headerFont = Table.headerFont(style.bodyFont)
+            let headerFont = style.tableHeaderFont
             return Table(
                 header: table.header.map { text($0, style: style, font: headerFont) },
                 rows: table.rows.map { row in row.map { text($0, style: style) } },
@@ -194,20 +194,20 @@ enum MarkdownBlockBuilder {
     /// crosses from markdown into something a block can hold. Everything past
     /// this line is width-independent and stays that way until `measure`.
     private static func text(
-        _ inlines: [MarkdownIR.InlineNode], style: MarkdownStyle, font: NSFont? = nil
+        _ inlines: [MarkdownIR.InlineNode], style: TextStyle, font: NSFont? = nil
     ) -> ShapedText {
         ShapedText(MarkdownInlineBuilder.attributed(inlines, style: style, font: font))
     }
 
     /// The language chip, typeset. `nil` for a bare fence or an indented block,
     /// which have no language to name.
-    private static func badge(_ language: String?, style: MarkdownStyle) -> TypesetText? {
+    private static func badge(_ language: String?, style: TextStyle) -> TypesetText? {
         let name = language?.trimmingCharacters(in: .whitespaces).lowercased() ?? ""
         guard !name.isEmpty else { return nil }
         return ShapedText(
             name,
             attributes: [
-                .font: NSFont.systemFont(ofSize: CodeBlock.badgeFontSize, weight: .regular),
+                .font: style.codeBadgeFont,
                 .foregroundColor: style.secondaryColor,
             ]
         ).typeset(width: .greatestFiniteMagnitude)
@@ -226,7 +226,7 @@ enum MarkdownBlockBuilder {
 
     private static func kind(
         for item: MarkdownIR.List.Item, at index: Int, in list: MarkdownIR.List
-    ) -> ListBuilder.Kind {
+    ) -> MarkdownListBuilder.Kind {
         switch item.checkbox {
         case .checked: return .task(checked: true)
         case .unchecked: return .task(checked: false)

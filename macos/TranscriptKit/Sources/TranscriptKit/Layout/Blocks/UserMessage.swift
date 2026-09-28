@@ -99,15 +99,15 @@ struct UserMessage: Block, @unchecked Sendable {
     /// letting it drift away from the message it belongs to.
     var moreTopGap: CGFloat = 6
 
-    init(_ text: ShapedText, style: MarkdownStyle = .default) {
+    init(_ text: ShapedText, style: TextStyle = .default) {
         self.text = text
         self.more = Self.moreRun(style: style)
     }
 
-    /// The body face and colour come from `MarkdownStyle` because that is where
+    /// The body face and colour come from `TextStyle` because that is where
     /// prose gets them, and a user's turn is set at the same size as the answer
     /// under it — two constants for one size would drift apart.
-    init(_ source: String, style: MarkdownStyle = .default) {
+    init(_ source: String, style: TextStyle = .default) {
         self.init(
             ShapedText(
                 source,
@@ -118,7 +118,7 @@ struct UserMessage: Block, @unchecked Sendable {
     /// `↗ More`, built the way `MarkdownInlineBuilder` builds a link: the glyph
     /// in front, the label in the link colour, and the gap between them part of
     /// the symbol's advance rather than a space in the string.
-    private static func moreRun(style: MarkdownStyle) -> ShapedText {
+    private static func moreRun(style: TextStyle) -> ShapedText {
         let run = NSMutableAttributedString(
             attributedString: InlineSymbol(
                 .more, font: style.bodyFont, color: style.linkColor

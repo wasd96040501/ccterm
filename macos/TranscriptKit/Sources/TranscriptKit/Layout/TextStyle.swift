@@ -1,6 +1,6 @@
 import AppKit
 
-/// How markdown *text* is styled: the faces and colours inline spans resolve to.
+/// How a row's *text* is styled: the faces and colours inline spans resolve to.
 ///
 /// Only text. A code card's radius, a quote's bar width, a list's item spacing
 /// and every block's vertical rhythm live on the block types that own them —
@@ -9,9 +9,13 @@ import AppKit
 /// genuinely spans block kinds, because emphasis has to look the same inside a
 /// paragraph, a heading, a quote and a list item.
 ///
+/// In `Layout/`, below both of its readers: the markdown lowering sets a
+/// document's text with it, and `UserMessage` sets a bubble's — so it belongs to
+/// neither, and a block reading it never reaches up into `Markdown/`.
+///
 /// Nothing is public yet: no host has asked to restyle the transcript, and a
 /// style struct is a wide surface to commit to before one does.
-struct MarkdownStyle {
+struct TextStyle {
 
     var bodyFont: NSFont
     var textColor: NSColor
@@ -46,7 +50,37 @@ struct MarkdownStyle {
         return .monospacedSystemFont(ofSize: size, weight: bold ? .semibold : .regular)
     }
 
-    static let `default` = MarkdownStyle(
+    /// h1 26 / h2 22 / h3–h6 18, semibold. Markdown's six levels collapse to
+    /// three visual tiers — chat content rarely goes deeper than h3, and
+    /// shrinking the tail levels toward body size makes them read as emphasis
+    /// rather than as structure.
+    ///
+    /// Here rather than on `Heading`: the block is handed its text already set,
+    /// and the face is decided by whoever sets it — the markdown lowering. What
+    /// the level decides at measure time, the room above, stays on the block.
+    func headingFont(level: Int) -> NSFont {
+        let size: CGFloat
+        switch max(1, level) {
+        case 1: size = 26
+        case 2: size = 22
+        default: size = 18
+        }
+        return .systemFont(ofSize: size, weight: .semibold)
+    }
+
+    /// A table's header cells: the body size, one weight up. The size belongs to
+    /// the text around the table, not to the table.
+    var tableHeaderFont: NSFont {
+        .systemFont(ofSize: bodyFont.pointSize, weight: .semibold)
+    }
+
+    /// The face a code card's language chip is set in. The card lays out
+    /// whatever chip it is handed; the chip's text is set by whoever typesets it.
+    var codeBadgeFont: NSFont {
+        .systemFont(ofSize: 11, weight: .regular)
+    }
+
+    static let `default` = TextStyle(
         bodyFont: .systemFont(ofSize: 14, weight: .regular),
         textColor: .labelColor,
         secondaryColor: .secondaryLabelColor,

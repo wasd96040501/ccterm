@@ -64,11 +64,6 @@ struct CodeBlock: Block, @unchecked Sendable {
     /// the card is, in either mode, for the reason `backgroundColor` gives.
     var badgeBackgroundColor: NSColor = tertiaryFill
 
-    /// The point size the chip's text is set at. Not a property of the card —
-    /// whoever typesets `badge` decides it — but stated here so the one caller
-    /// and the geometry around the chip read from the same number.
-    static let badgeFontSize: CGFloat = 11
-
     init(text: ShapedText, badge: TypesetText? = nil) {
         self.text = text
         self.badge = badge

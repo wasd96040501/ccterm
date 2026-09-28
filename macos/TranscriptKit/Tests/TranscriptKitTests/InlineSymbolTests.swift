@@ -103,7 +103,7 @@ final class InlineSymbolTests: XCTestCase {
     /// against Apple's own inline rendering, which centres on 4.88pt above the
     /// baseline at 14pt against capitals whose centre is 4.93.
     func testGlyphIsAnEmTallAndCentredOnTheCapitals() throws {
-        let font = MarkdownStyle.default.bodyFont
+        let font = TextStyle.default.bodyFont
         let symbol = InlineSymbol(.link, font: font, color: .linkColor)
 
         XCTAssertEqual(
@@ -128,7 +128,7 @@ final class InlineSymbolTests: XCTestCase {
         let source = String(repeating: "word ", count: 30) + "[link](https://x.com)"
         let paragraph = try paragraph(source, width: 200)
         let placement = try XCTUnwrap(paragraph.text.symbols.first)
-        let symbol = InlineSymbol(.link, font: MarkdownStyle.default.bodyFont, color: .linkColor)
+        let symbol = InlineSymbol(.link, font: TextStyle.default.bodyFont, color: .linkColor)
 
         XCTAssertGreaterThan(paragraph.text.lines.count, 1)
         let owning = try XCTUnwrap(
@@ -156,7 +156,7 @@ final class InlineSymbolTests: XCTestCase {
     /// both sides; charging the line for it would open a gap in front of every
     /// link that the reader would see as a stray space.
     func testTheAdvanceIsTheInkRatherThanTheCanvas() {
-        let symbol = InlineSymbol(.link, font: MarkdownStyle.default.bodyFont, color: .linkColor)
+        let symbol = InlineSymbol(.link, font: TextStyle.default.bodyFont, color: .linkColor)
         XCTAssertLessThan(symbol.inkWidth, symbol.box.width)
         XCTAssertEqual(symbol.leadingInset, 0, "nothing sits before the pen")
     }

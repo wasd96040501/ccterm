@@ -253,15 +253,12 @@ public protocol TranscriptViewDelegate: AnyObject {
     /// `TranscriptView.find(_:)` returns immediately and walks the transcript off
     /// the main actor, so this arrives several times for one search: `matches`
     /// climbs while `isComplete` is `false`, then once more with it `true`. A find
-    /// bar reads "4 of 51" from `matches` and
-    /// `TranscriptView.indexOfSelectedFindMatch`, and can show the total as
-    /// provisional until the last call — which is what a browser's counter is
-    /// doing while it settles.
+    /// bar shows `matches`, and can show it as provisional until the last call —
+    /// which is what a browser's counter is doing while it settles.
     ///
-    /// **It fires for a selection change too**, where `matches` has not moved: the
-    /// `4` and the `51` are read from two places and only one of them is an
-    /// argument, so a ⌘G that did not report would leave a find bar showing the
-    /// position the reader was at four presses ago.
+    /// **This is the only channel a find's state crosses by**, so it also fires
+    /// when the current match moves (⌘G) with `matches` unchanged: the call means
+    /// *this is the find's state now*, whatever changed.
     ///
     /// **Not a hit list.** Where the matches in the transcript's own rows *are*
     /// stays inside it, because a position in one is an index into a tree the host

@@ -35,7 +35,7 @@ extension AppKitStage {
             ?? LibraryStore(
                 directory: SessionDirectory(
                     url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)))
-        return mount(MainWindowController(library: library), size: size)
+        return mount(MainWindowController(library: library, git: GitService()), size: size)
     }
 
     // MARK: - Mounted-VC accessors

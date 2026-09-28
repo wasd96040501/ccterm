@@ -79,7 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let library = LibraryStore(directory: SessionDirectory(environment: ProcessInfo.processInfo.environment))
         self.library = library
-        let controller = MainWindowController(library: library)
+        let controller = MainWindowController(library: library, git: GitService())
         // Where the frame persists is the app's configuration, not the window's:
         // a `MainWindowController` built anywhere else writes no defaults.
         controller.windowFrameAutosaveName = "MainWindow"

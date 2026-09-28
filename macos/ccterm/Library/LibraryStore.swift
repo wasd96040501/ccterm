@@ -9,7 +9,8 @@ import Foundation
 /// hidden directory.
 ///
 /// Reads every session once on `start()`, then only the sessions the
-/// directory reports changed.
+/// directory reports changed; reads one transcript, or what it records, when
+/// asked.
 @MainActor
 final class LibraryStore {
     /// Projects, most recently active first; within one, sessions likewise.
@@ -75,28 +76,17 @@ final class LibraryStore {
         return nodes.lazy.compactMap(path(from:)).first ?? []
     }
 
-    /// The git branch of the session whose transcript is at `url`, read when
-    /// asked and followed until the consumer stops iterating: the live branch
-    /// of the directory the session runs in (a worktree's own), found in the
-    /// transcript's metadata, or — when that directory is no repository any
-    /// more — the branch the transcript last recorded, once. `nil` while HEAD
-    /// is detached or when neither is known. Reads nothing on the caller's
-    /// thread, and always yields at least once.
-    nonisolated func branchUpdates(ofTranscriptAt url: URL) -> AsyncStream<String?> {
-        AsyncStream { continuation in
-            let task = Task.detached(priority: .userInitiated) {
-                let metadata = try? SessionMetadata(contentsOf: url)
-                guard let root = metadata?.cwd.flatMap(GitUtils.repositoryRoot(containing:)) else {
-                    // The CLI records a detached HEAD as "HEAD".
-                    continuation.yield(metadata?.gitBranch.flatMap { $0 == "HEAD" ? nil : $0 })
-                    continuation.finish()
-                    return
-                }
-                for await branch in GitUtils.currentBranchUpdates(at: root) { continuation.yield(branch) }
-                continuation.finish()
-            }
-            continuation.onTermination = { _ in task.cancel() }
-        }
+    /// The transcript at `url`, read off the caller's actor.
+    @concurrent
+    nonisolated func transcript(at url: URL) async throws -> Transcript {
+        try Transcript(contentsOf: url)
+    }
+
+    /// What the transcript at `url` records about its session — where it ran,
+    /// on which branch — read off the caller's actor; `nil` if it can't be read.
+    @concurrent
+    nonisolated func metadata(ofTranscriptAt url: URL) async -> SessionMetadata? {
+        try? SessionMetadata(contentsOf: url)
     }
 
     // MARK: - Reading

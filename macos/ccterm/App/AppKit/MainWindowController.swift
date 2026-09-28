@@ -1,3 +1,4 @@
+import AgentSDK
 import AppKit
 
 /// Window controller for the AppKit-rooted main window. The window is
@@ -12,14 +13,16 @@ import AppKit
 @MainActor
 final class MainWindowController: NSWindowController, NSToolbarDelegate {
     private let library: LibraryStore
+    private let git: GitService
     private let splitController: MainSplitViewController
     private let titleView = MainWindowTitleView()
 
     /// The task following the shown transcript's branch.
     private var branchTask: Task<Void, Never>?
 
-    init(library: LibraryStore) {
+    init(library: LibraryStore, git: GitService) {
         self.library = library
+        self.git = git
         splitController = MainSplitViewController(library: library)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1200, height: 860),
@@ -133,8 +136,20 @@ extension MainWindowController: MainSplitViewControllerDelegate {
             show(project: nil, branch: nil)
             return
         }
-        branchTask = Task { [weak self, library] in
-            for await branch in library.branchUpdates(ofTranscriptAt: url) {
+        branchTask = Task { [weak self, library, git] in
+            // The live branch of the folder the session ran in (a worktree's
+            // own); once that is no repository — a worktree removed — the
+            // branch the transcript last recorded.
+            let metadata = await library.metadata(ofTranscriptAt: url)
+            var branches: AsyncStream<String?>?
+            if let cwd = metadata?.cwd { branches = await git.branchUpdates(at: cwd) }
+            guard let branches else {
+                guard !Task.isCancelled else { return }
+                // The CLI records a detached HEAD as "HEAD".
+                self?.show(project: project.title, branch: metadata?.gitBranch.flatMap { $0 == "HEAD" ? nil : $0 })
+                return
+            }
+            for await branch in branches {
                 guard !Task.isCancelled else { return }
                 self?.show(project: project.title, branch: branch)
             }

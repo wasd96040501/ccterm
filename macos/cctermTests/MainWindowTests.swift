@@ -172,6 +172,25 @@ final class MainWindowTests: XCTestCase {
         XCTAssertEqual(stage.window.title, "ccterm")
     }
 
+    /// The CLI records a detached HEAD as "HEAD": no branch under the name.
+    func testARecordedDetachedHeadShowsNoBranch() async throws {
+        let fixture = try SessionDirectoryFixture()
+        defer { fixture.remove() }
+        try LibraryStoreTests.writeLibrary(fixture)
+        try fixture.write(
+            "-x-repo/s1.jsonl", [Self.user(cwd: "/x/repo", branch: "HEAD"), Rows.customTitle("Named")],
+            modified: 300)
+        let library = try await Self.startedLibrary(fixture)
+        defer { library.stop() }
+        let stage = AppKitStage.mainWindow(library: library)
+        defer { stage.teardown() }
+        await stage.settle()
+        let sidebar = try sidebar(of: try XCTUnwrap(stage.mainSplit))
+
+        sidebar.delegate?.sidebarViewController(sidebar, didOpen: try Self.node("Named", in: library))
+        await expect(try titleView(in: stage), shows: "repo", nil)
+    }
+
     /// Alone, the name is centred; a branch coming raises it — moving, not
     /// jumping — and fades in under it, and one going does the reverse.
     func testTheNameRisesAsTheBranchFadesInUnderIt() async throws {

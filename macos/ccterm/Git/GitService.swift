@@ -1,38 +1,30 @@
 import Foundation
 
-enum GitUtils {
-
-    /// Reads the current branch name from `.git/HEAD` without spawning a process.
-    /// Handles both normal repos (`.git/` is a directory) and worktrees (`.git` is a file).
-    /// Returns `nil` if not a git repo or HEAD is detached.
-    nonisolated static func currentBranch(at directory: String) -> String? {
-        guard
-            let headPath = headPath(at: directory),
-            let head = try? String(contentsOfFile: headPath, encoding: .utf8).trimmingCharacters(
-                in: .whitespacesAndNewlines)
-        else {
-            return nil
-        }
-
-        // "ref: refs/heads/main" → "main"
-        let prefix = "ref: refs/heads/"
-        guard head.hasPrefix(prefix) else {
-            return nil  // Detached HEAD
-        }
-        return String(head.dropFirst(prefix.count))
+/// What the app reads from git: which branch a folder's repository is on, and
+/// when that changes. Reads the repository's files; spawns no `git` process.
+struct GitService: Sendable {
+    /// The branch of the repository or worktree checkout that holds
+    /// `directory`, now and then whenever a checkout changes it, until the
+    /// consumer stops iterating; `nil` elements while HEAD is detached. The
+    /// stream itself is `nil` when `directory` is in no repository — so the
+    /// caller can tell "no branch" from "nothing to follow".
+    ///
+    /// Reads nothing on the caller's actor.
+    @concurrent
+    nonisolated func branchUpdates(at directory: String) async -> AsyncStream<String?>? {
+        guard let root = Self.repositoryRoot(containing: directory) else { return nil }
+        return Self.currentBranchUpdates(at: root)
     }
 
     /// The current branch of `directory` as it is now, then again whenever the
-    /// directory holding its HEAD changes — a checkout at the command line
-    /// included — until the consumer stops iterating. Read on a queue of its own;
-    /// `nil` when the folder isn't a repository or HEAD is detached. A change
-    /// there that isn't a checkout yields the same branch again.
+    /// directory holding its HEAD changes, on a queue of its own. A change there
+    /// that isn't a checkout yields the same branch again.
     ///
     /// Watches the directory rather than HEAD itself: git writes `HEAD.lock` and
     /// renames it over HEAD, so the file watched would be the one replaced.
-    nonisolated static func currentBranchUpdates(at directory: String) -> AsyncStream<String?> {
+    private static func currentBranchUpdates(at directory: String) -> AsyncStream<String?> {
         AsyncStream { continuation in
-            let queue = DispatchQueue(label: "GitUtils.currentBranchUpdates", qos: .userInitiated)
+            let queue = DispatchQueue(label: "GitService.branchUpdates", qos: .userInitiated)
             queue.async {
                 continuation.yield(currentBranch(at: directory))
                 guard let headPath = headPath(at: directory) else { return continuation.finish() }
@@ -48,9 +40,24 @@ enum GitUtils {
         }
     }
 
+    /// The branch HEAD names ("ref: refs/heads/main" → "main"); `nil` when HEAD
+    /// is detached or unreadable.
+    private static func currentBranch(at directory: String) -> String? {
+        guard
+            let headPath = headPath(at: directory),
+            let head = try? String(contentsOfFile: headPath, encoding: .utf8).trimmingCharacters(
+                in: .whitespacesAndNewlines)
+        else {
+            return nil
+        }
+        let prefix = "ref: refs/heads/"
+        guard head.hasPrefix(prefix) else { return nil }
+        return String(head.dropFirst(prefix.count))
+    }
+
     /// The nearest directory at or above `path` that is a repository or a
     /// worktree's checkout — where its `.git` is. `nil` outside any.
-    nonisolated static func repositoryRoot(containing path: String) -> String? {
+    private static func repositoryRoot(containing path: String) -> String? {
         var directory = URL(fileURLWithPath: path).standardizedFileURL
         while true {
             if FileManager.default.fileExists(atPath: directory.appendingPathComponent(".git").path) {
@@ -64,7 +71,7 @@ enum GitUtils {
 
     /// Where `directory`'s HEAD is: `.git/HEAD` in a repository, the `gitdir`'s
     /// HEAD in a worktree (where `.git` is a file naming it). `nil` if neither.
-    private nonisolated static func headPath(at directory: String) -> String? {
+    private static func headPath(at directory: String) -> String? {
         let gitPath = (directory as NSString).appendingPathComponent(".git")
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: gitPath, isDirectory: &isDir) else {
@@ -73,7 +80,6 @@ enum GitUtils {
         if isDir.boolValue {
             return (gitPath as NSString).appendingPathComponent("HEAD")
         }
-        // Worktree: .git is a file containing "gitdir: /path/to/.git/worktrees/xxx"
         guard
             let content = try? String(contentsOfFile: gitPath, encoding: .utf8).trimmingCharacters(
                 in: .whitespacesAndNewlines),
@@ -84,11 +90,5 @@ enum GitUtils {
         let gitdir = String(content.dropFirst("gitdir: ".count))
         let resolved = gitdir.hasPrefix("/") ? gitdir : (directory as NSString).appendingPathComponent(gitdir)
         return (resolved as NSString).appendingPathComponent("HEAD")
-    }
-
-    /// Returns `true` if the directory is inside a git repository.
-    static func isGitRepository(at directory: String) -> Bool {
-        let gitPath = (directory as NSString).appendingPathComponent(".git")
-        return FileManager.default.fileExists(atPath: gitPath)
     }
 }

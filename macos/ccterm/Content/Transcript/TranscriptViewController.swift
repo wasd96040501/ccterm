@@ -4,22 +4,27 @@ import TranscriptKit
 
 /// One editor tab: a transcript file, read-only, in a `TranscriptView`.
 ///
-/// Loads once, when it first appears and has its size: the file is read off
-/// the main actor, the last screen shown at once, and the history prepared
-/// off the main actor and prepended behind it a chunk at a time — scroll
-/// anchoring keeps the reader's place while it arrives.
+/// Loads once, when it first appears and has its size: the transcript comes
+/// from the injected `load`, the last screen is shown at once, and the history
+/// prepared off the main actor and prepended behind it a chunk at a time —
+/// scroll anchoring keeps the reader's place while it arrives.
 @MainActor
 final class TranscriptViewController: NSViewController {
     /// The file this tab shows — what the tab is, for finding it again.
     let fileURL: URL
 
+    /// Reads a transcript; `LibraryStore.transcript(at:)`.
+    typealias Load = @Sendable (URL) async throws -> Transcript
+
+    private let load: Load
     private let transcript = TranscriptView()
     private var rows: [TranscriptRow] = []
     private var loadTask: Task<Void, Never>?
     private var hasLoaded = false
 
-    init(fileURL: URL, title: String) {
+    init(fileURL: URL, title: String, load: @escaping Load) {
         self.fileURL = fileURL
+        self.load = load
         super.init(nibName: nil, bundle: nil)
         self.title = title
     }
@@ -54,9 +59,9 @@ final class TranscriptViewController: NSViewController {
         guard !hasLoaded else { return }
         hasLoaded = true
         view.layoutSubtreeIfNeeded()
-        let url = fileURL
+        let (url, load) = (fileURL, load)
         loadTask = Task { [weak self] in
-            let rows = await Task.detached(priority: .userInitiated) { Self.rows(contentsOf: url) }.value
+            let rows = await Task.detached(priority: .userInitiated) { await Self.rows(url, load) }.value
             await self?.show(rows)
             self?.loadTask = nil
         }
@@ -71,10 +76,10 @@ final class TranscriptViewController: NSViewController {
 
     // MARK: - Loading
 
-    private nonisolated static func rows(contentsOf url: URL) -> [TranscriptRow] {
+    private nonisolated static func rows(_ url: URL, _ load: Load) async -> [TranscriptRow] {
         let note: String
         do {
-            let rows = TranscriptRow.rows(for: try Transcript(contentsOf: url))
+            let rows = TranscriptRow.rows(for: try await load(url))
             if !rows.isEmpty { return rows }
             note = String(localized: "This transcript has no messages.")
         } catch {

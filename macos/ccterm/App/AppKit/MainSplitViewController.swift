@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import TranscriptWorkspace
 
 /// The main window's sidebar/detail split: the session library on the left,
@@ -26,7 +27,7 @@ final class MainSplitViewController: NSSplitViewController {
 
     init(library: LibraryStore) {
         self.library = library
-        sidebarViewController = SidebarViewController(library: library)
+        sidebarViewController = SidebarViewController(nodes: library.$nodes.eraseToAnyPublisher())
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -92,7 +93,10 @@ final class MainSplitViewController: NSSplitViewController {
 
     /// A tab for the transcript at `url`, known to the history by that URL.
     private func tab(for node: LibraryNode, at url: URL) -> NSTabViewItem {
-        let item = NSTabViewItem(viewController: TranscriptViewController(fileURL: url, title: node.title))
+        let transcript = TranscriptViewController(fileURL: url, title: node.title) { [library] in
+            try await library.transcript(at: $0)
+        }
+        let item = NSTabViewItem(viewController: transcript)
         item.identifier = url
         return item
     }

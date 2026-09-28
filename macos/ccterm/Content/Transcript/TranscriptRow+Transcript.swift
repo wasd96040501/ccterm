@@ -3,8 +3,9 @@ import Foundation
 import TranscriptKit
 
 nonisolated extension TranscriptRow {
-    /// The rows a read-only transcript shows: what the user typed, what the
-    /// model wrote, one line per tool call, and a rule where the conversation
+    /// The rows a read-only transcript shows: what the user typed — prompts,
+    /// and commands run in the CLI with what they printed — what the model
+    /// wrote, one line per tool call, and a rule where the conversation
     /// was compacted. Thinking, tool results and messages the CLI injected are
     /// left out — they are the working, not the conversation.
     static func rows(for transcript: Transcript) -> [TranscriptRow] {
@@ -13,6 +14,17 @@ nonisolated extension TranscriptRow {
             switch message {
             case .user(let user):
                 guard !user.isSynthetic else { continue }
+                switch user.localCommand {
+                case .input(let command):
+                    rows.append(TranscriptRow(id: "\(index)", content: .userMessage(command)))
+                    continue
+                case .output(let standardOutput, let standardError):
+                    let output = [standardOutput, standardError].filter { !$0.isEmpty }.joined(separator: "\n")
+                    if !output.isEmpty { rows.append(TranscriptRow(id: "\(index)", content: .markdown(output))) }
+                    continue
+                case nil:
+                    break
+                }
                 let text = user.content.compactMap(\.text).joined(separator: "\n\n")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 if !text.isEmpty { rows.append(TranscriptRow(id: "\(index)", content: .userMessage(text))) }

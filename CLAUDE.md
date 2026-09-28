@@ -2,7 +2,7 @@
 
 Native macOS client for Claude Code. Pure AppKit (Swift), programmatic, minimum target macOS 14 (Sonoma).
 
-The app is a window shell — main window with an empty sidebar/detail split, Settings, About — plus UI-free services (worktrees, git probe, model catalog, completion stores). Sessions come from the `AgentSDK` package and the transcript from the `TranscriptKit` package; wiring them into the shell is the next step.
+The app is a main window — a sidebar listing every session transcript on disk (`AgentSDK`'s `SessionDirectory`, grouped by project) beside a tabbed, splittable editor area that shows them read-only (`TranscriptKit`'s view and workspace) — plus Settings, About, and UI-free services (worktrees, git probe, model catalog). Running a live session is not wired yet.
 
 ## Where to read more
 
@@ -24,9 +24,9 @@ ccterm/
 │   ├── ccterm.xcodeproj/
 │   ├── ccterm/               # App sources
 │   │   ├── App/              # CCTermApp + About; AppKit/ holds AppDelegate + main/settings/about window controllers + main split
-│   │   ├── Content/Settings/
-│   │   ├── Models/           # Effort, PermissionMode, SlashCommand
-│   │   ├── Services/         # Session/Worktree, Completion stores, GitProbe, ModelStore, Logging/, …
+│   │   ├── Content/          # Settings/, Sidebar/ (session outline), Transcript/ (a transcript tab)
+│   │   ├── Models/           # Effort, PermissionMode
+│   │   ├── Services/         # Library/ (session tree store), Session/Worktree, GitProbe, ModelStore, Logging/, …
 │   │   ├── Extensions/
 │   │   └── Resources/
 │   ├── cctermTests/          # The app's only test target
@@ -34,7 +34,6 @@ ccterm/
 │   ├── AgentSDK/             # Swift SDK package over the claude CLI
 │   ├── Config.xcconfig
 │   └── scripts/              # build.sh / test.sh / … — invoked via make only
-├── thirdparty/fzf/           # git submodule
 └── Makefile                  # Single build entry point
 ```
 
@@ -43,9 +42,7 @@ Organize by feature, not by file type; a new feature gets a new directory. The X
 ## Prerequisites
 
 - macOS 14+, Xcode (run `xcodebuild -runFirstLaunch` once after install).
-- **Go** — `thirdparty/fzf` is compiled from Go inside an Xcode build phase (`brew install go`).
 - **swift-format** — `brew install swift-format` (not Xcode's bundled copy, which needs Xcode 16+).
-- Submodules initialize on the first `make build` (or `git submodule update --init --recursive`).
 
 ## Commands
 
@@ -75,7 +72,7 @@ After editing a view, verify it visually: find or add its `*SnapshotTests` class
 
 ## CI
 
-Every PR runs `fmt.yml` (`make fmt-check`) and `test.yml` (three jobs: `test` → `make test-unit`, `test-kit` → `make test-kit`, `test-sdk` → `make test-sdk`; the package jobs need no submodules/Go/Xcode project). `test.yml` caches DerivedData (`macos/build/test-dd`), keyed on runner + Xcode + fzf SHA + `.github/cache-salt` + source hash. **If incremental CI builds go bad** (stale `.swiftmodule` link errors that don't reproduce after local `make clean`), edit `.github/cache-salt` and commit to force a cold build.
+Every PR runs `fmt.yml` (`make fmt-check`) and `test.yml` (three jobs: `test` → `make test-unit`, `test-kit` → `make test-kit`, `test-sdk` → `make test-sdk`; the package jobs need no Xcode project). `test.yml` caches DerivedData (`macos/build/test-dd`), keyed on runner + Xcode + `.github/cache-salt` + source hash. **If incremental CI builds go bad** (stale `.swiftmodule` link errors that don't reproduce after local `make clean`), edit `.github/cache-salt` and commit to force a cold build.
 
 ## Logging
 

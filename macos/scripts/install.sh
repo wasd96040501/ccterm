@@ -80,7 +80,7 @@ fi
 
 if [ -n "$IDENTITY" ]; then
   echo "Re-signing with stable identity: $IDENTITY"
-  # --deep re-seals nested Mach-O (Resources/fzf); --options runtime keeps
+  # --deep re-seals any nested code in the bundle; --options runtime keeps
   # the hardened runtime the build set. No --entitlements: the ad-hoc build
   # only carried get-task-allow (debug attach), unneeded for a Release app.
   codesign --force --options runtime --timestamp=none --deep \

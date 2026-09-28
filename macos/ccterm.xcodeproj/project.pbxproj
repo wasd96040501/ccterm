@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		EA5A16ED2F5B000000AA1A46 /* AgentSDK in Frameworks */ = {isa = PBXBuildFile; productRef = EA5A16EE2F5B000000AA1A46 /* AgentSDK */; };
+		EA5A17042F5B000000AA1A46 /* TranscriptKit in Frameworks */ = {isa = PBXBuildFile; productRef = EA5A17022F5B000000AA1A46 /* TranscriptKit */; };
+		EA5A17052F5B000000AA1A46 /* TranscriptWorkspace in Frameworks */ = {isa = PBXBuildFile; productRef = EA5A17032F5B000000AA1A46 /* TranscriptWorkspace */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -45,6 +47,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				EA5A16ED2F5B000000AA1A46 /* AgentSDK in Frameworks */,
+				EA5A17042F5B000000AA1A46 /* TranscriptKit in Frameworks */,
+				EA5A17052F5B000000AA1A46 /* TranscriptWorkspace in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -84,7 +88,6 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 2B3DA50B2F5701A2000987D3 /* Build configuration list for PBXNativeTarget "ccterm" */;
 			buildPhases = (
-				EA5A16F12F5A000000BB2B57 /* Build fzf */,
 				2B3DA4E02F5701A1000987D3 /* Sources */,
 				2B3DA4E12F5701A1000987D3 /* Frameworks */,
 				2B3DA4E22F5701A1000987D3 /* Resources */,
@@ -100,6 +103,8 @@
 			name = ccterm;
 			packageProductDependencies = (
 				EA5A16EE2F5B000000AA1A46 /* AgentSDK */,
+				EA5A17022F5B000000AA1A46 /* TranscriptKit */,
+				EA5A17032F5B000000AA1A46 /* TranscriptWorkspace */,
 			);
 			productName = ccterm;
 			productReference = 2B3DA4E42F5701A1000987D3 /* ccterm.app */;
@@ -159,6 +164,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				EA5A16EF2F5B000000AA1A46 /* XCLocalSwiftPackageReference "AgentSDK" */,
+				EA5A17012F5B000000AA1A46 /* XCLocalSwiftPackageReference "TranscriptKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2B3DA4E52F5701A1000987D3 /* Products */;
@@ -189,20 +195,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		EA5A16F12F5A000000BB2B57 /* Build fzf */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			name = "Build fzf";
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/bash;
-			shellScript = "export PATH=\"/usr/local/go/bin:/opt/homebrew/bin:$HOME/go/bin:$PATH\"\nif ! command -v go &>/dev/null; then\n  echo \"error: Go is required. Install from https://go.dev/dl/\"\n  exit 1\nfi\nFZF_DIR=\"$SRCROOT/../thirdparty/fzf\"\nFZF_BIN=\"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Resources/fzf\"\nif [ ! -f \"$FZF_BIN\" ]; then\n  if [ ! -f \"$FZF_DIR/go.mod\" ]; then\n    git -C \"$SRCROOT/..\" submodule update --init thirdparty/fzf\n  fi\n  cd \"$FZF_DIR\"\n  CGO_ENABLED=0 go build -trimpath -o \"$FZF_BIN\" .\nfi\nif [ -n \"$EXPANDED_CODE_SIGN_IDENTITY\" ]; then\n  TS=\"\"\n  [ \"$EXPANDED_CODE_SIGN_IDENTITY\" != \"-\" ] && TS=\"--timestamp\"\n  codesign --force --options runtime $TS --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$FZF_BIN\"\nfi\n";
-		};
 		EA5A17402F5E000000DD0001 /* Inject git commit */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -511,12 +503,26 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = AgentSDK;
 		};
+		EA5A17012F5B000000AA1A46 /* XCLocalSwiftPackageReference "TranscriptKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = TranscriptKit;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		EA5A16EE2F5B000000AA1A46 /* AgentSDK */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = AgentSDK;
+		};
+		EA5A17022F5B000000AA1A46 /* TranscriptKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EA5A17012F5B000000AA1A46 /* XCLocalSwiftPackageReference "TranscriptKit" */;
+			productName = TranscriptKit;
+		};
+		EA5A17032F5B000000AA1A46 /* TranscriptWorkspace */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EA5A17012F5B000000AA1A46 /* XCLocalSwiftPackageReference "TranscriptKit" */;
+			productName = TranscriptWorkspace;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

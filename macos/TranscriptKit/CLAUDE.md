@@ -1,6 +1,6 @@
 # TranscriptKit
 
-Standalone Swift package: a chat transcript view for AppKit, `TranscriptView`, driven by a data source. The app does not use it yet. `README.md` has the public API tour; this file holds the rules for changing it.
+Standalone Swift package: a chat transcript view for AppKit, `TranscriptView`, driven by a data source. The app's transcript tabs are built on it. `README.md` has the public API tour; this file holds the rules for changing it.
 
 | Target | What | Rules |
 |---|---|---|

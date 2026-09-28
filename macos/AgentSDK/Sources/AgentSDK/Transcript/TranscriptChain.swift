@@ -1,20 +1,25 @@
 import Foundation
 
-/// Rebuilds the current conversation branch from a transcript file, following
-/// the CLI's own `--resume` loader:
+/// Rebuilds the conversation from a transcript file: the branch the user
+/// continued, from its first prompt, through every compaction.
 ///
 /// 1. Index chain rows by uuid. A repeated uuid keeps its first position and
 ///    its last content. Legacy `progress` rows are dropped, and their children
 ///    re-parented to the nearest real ancestor.
-/// 2. Relink each compaction's preserved rows behind its summary, so the
-///    walk skips pre-compaction history.
+/// 2. Chain each compaction boundary to the last row before it
+///    (`logicalParentUuid`). The rows a compaction preserved keep their own
+///    parents, so they appear once, where they were written.
 /// 3. Pick the leaf: walk back from the most recently written terminal row
 ///    of the main chain to its nearest message, unless that does not descend
 ///    from the recorded `last-prompt` leaf (a rewind), which then wins.
-/// 4. Walk `parentUuid` to the root. A missing parent falls back to the
+/// 4. Walk the parents to the root. A missing parent falls back to the
 ///    closest earlier row within 5 s.
 /// 5. Splice in the parts of each assistant response that are off the walked
 ///    path: sibling blocks of parallel tool calls and their results.
+///
+/// A subagent's own file (`<session>/subagents/agent-<id>.jsonl`) holds only
+/// sidechain rows; there the sidechain is the conversation, so it is walked
+/// the way a session's main chain is.
 struct TranscriptChain {
     private(set) var metadata = SessionMetadata()
     private var rows: [String: Row] = [:]
@@ -23,9 +28,14 @@ struct TranscriptChain {
     /// Line index of the latest write.
     private var lastWrite: [String: Int] = [:]
     private var progressParents: [String: String?] = [:]
+    /// Parents that differ from a row's `parentUuid`: compaction boundaries,
+    /// and the rows the CLI continued under a preserved row.
     private var parentOverrides: [String: String] = [:]
     private var leafHint: String?
     private var clearedByRewind = false
+    /// Which side of the sidechain split is the conversation: the main chain,
+    /// or — in a subagent's own file — the sidechain.
+    private var threadIsSidechain = false
 
     init(data: Data) {
         let decoder = JSONDecoder()
@@ -51,10 +61,9 @@ struct TranscriptChain {
                 foldMetadata(row)
             }
         }
+        threadIsSidechain = !rows.isEmpty && rows.values.allSatisfy(\.isSidechain)
         let boundaries = rows.values.filter { $0.type == "system" && $0.subtype == "compact_boundary" }
-        for boundary in boundaries.sorted(by: { position[$0.uuid!]! < position[$1.uuid!]! }) {
-            relink(boundary.preserved)
-        }
+        for boundary in boundaries { chainAcross(boundary) }
     }
 
     // MARK: - Messages
@@ -65,11 +74,13 @@ struct TranscriptChain {
     }
 
     private func message(_ uuid: String) -> Message? {
-        guard let row = rows[uuid], let line = row.line, !row.isSidechain, !row.isTeam else { return nil }
+        guard let row = rows[uuid], let line = row.line, isOnThread(row) else { return nil }
         let decoder = JSONDecoder()
         switch row.type {
         case "user":
-            return (try? decoder.decode(UserMessage.self, from: line)).map(Message.user)
+            guard let user = try? decoder.decode(UserMessage.self, from: line), !user.isLocalCommandCaveat
+            else { return nil }
+            return .user(user)
         case "assistant":
             return (try? decoder.decode(AssistantMessage.self, from: line)).map(Message.assistant)
         case "system" where row.subtype == "compact_boundary":
@@ -87,8 +98,17 @@ struct TranscriptChain {
 
     // MARK: - Chain
 
+    private func isOnThread(_ row: Row) -> Bool {
+        row.isSidechain == threadIsSidechain && !row.isTeam
+    }
+
     private func parent(of uuid: String) -> String? {
-        var next = parentOverrides[uuid] ?? rows[uuid]?.parentUUID
+        nearestReal(parentOverrides[uuid] ?? rows[uuid]?.parentUUID)
+    }
+
+    /// `uuid`, or its nearest ancestor that is not a dropped progress row.
+    private func nearestReal(_ uuid: String?) -> String? {
+        var next = uuid
         var hops = 0
         while let candidate = next, let collapsed = progressParents[candidate], hops < 10_000 {
             next = collapsed
@@ -97,36 +117,28 @@ struct TranscriptChain {
         return next
     }
 
-    /// Re-chains a compaction's preserved rows behind its summary
-    /// (`anchor → first … last`) and moves the anchor's other children to the
-    /// last preserved row. Full compactions (nothing preserved) need nothing:
-    /// the boundary has no parent, so the walk stops there.
-    private mutating func relink(_ preserved: Row.Preserved?) {
-        let anchor: String
-        let first: String
-        let last: String
+    /// Chains a compaction boundary to the last row before it. Some CLI
+    /// versions wrote the first row after a compaction under the last
+    /// preserved row rather than the summary; such a row is moved to the
+    /// summary, so the walk passes the boundary.
+    private mutating func chainAcross(_ boundary: Row) {
+        guard let uuid = boundary.uuid, let at = position[uuid] else { return }
+        if let before = boundary.logicalParentUUID, rows[before] != nil { parentOverrides[uuid] = before }
+        guard let preserved = boundary.preserved else { return }
+        let kept: Set<String>
         switch preserved {
-        case .messages(let messagesAnchor, let uuids):
-            guard let head = uuids.first, let tail = uuids.last, uuids.allSatisfy({ rows[$0] != nil }) else { return }
-            var previous = messagesAnchor
-            for uuid in uuids {
-                parentOverrides[uuid] = previous
-                previous = uuid
-            }
-            (anchor, first, last) = (messagesAnchor, head, tail)
-        case .segment(let head, let segmentAnchor, let tail):
-            if rows[head] != nil { parentOverrides[head] = segmentAnchor }
-            (anchor, first, last) = (segmentAnchor, head, tail)
-        case nil:
-            return
+        case .messages(_, let uuids): kept = Set(uuids)
+        case .segment(let head, _, let tail): kept = [head, tail]
         }
-        for uuid in rows.keys where uuid != first && parent(of: uuid) == anchor {
-            parentOverrides[uuid] = last
+        for (child, row) in rows where position[child]! > at && !kept.contains(child) {
+            if let parent = nearestReal(row.parentUUID), kept.contains(parent) {
+                parentOverrides[child] = preserved.anchor
+            }
         }
     }
 
     private func chooseLeaf() -> String? {
-        let mainChain = rows.values.filter { !$0.isSidechain && !$0.isTeam }
+        let mainChain = rows.values.filter(isOnThread)
         var hasChild = Set<String>()
         for row in mainChain {
             if let uuid = row.uuid, let parent = parent(of: uuid) { hasChild.insert(parent) }
@@ -298,6 +310,7 @@ struct TranscriptChain {
 
     private mutating func fold(_ row: Row) {
         if metadata.cwd == nil { metadata.cwd = row.cwd }
+        if metadata.entrypoint == nil { metadata.entrypoint = row.entrypoint }
         if let branch = row.gitBranch { metadata.gitBranch = branch }
         if let time = row.timestamp {
             if metadata.createdAt.map({ time < $0 }) ?? true { metadata.createdAt = time }
@@ -349,6 +362,8 @@ private struct Row: Decodable {
     let type: String
     let uuid: String?
     let parentUUID: String?
+    /// A compaction boundary's last row before the compaction.
+    let logicalParentUUID: String?
     let sessionID: String?
     let isSidechain: Bool
     let agentID: String?
@@ -366,6 +381,7 @@ private struct Row: Decodable {
     let queuedOrigin: String?
     let cwd: String?
     let gitBranch: String?
+    let entrypoint: String?
     // Metadata rows.
     let customTitle: String?
     let aiTitle: String?
@@ -389,6 +405,7 @@ private struct Row: Decodable {
         type = try c.required(String.self, "type")
         uuid = c.lenient(String.self, "uuid")
         parentUUID = c.lenient(String.self, "parentUuid")
+        logicalParentUUID = c.lenient(String.self, "logicalParentUuid")
         sessionID = c.lenient(String.self, "sessionId")
         isSidechain = c.lenientBool("isSidechain") ?? false
         agentID = c.lenient(String.self, "agentId")
@@ -399,6 +416,7 @@ private struct Row: Decodable {
         subtype = c.lenient(String.self, "subtype")
         cwd = c.lenient(String.self, "cwd")
         gitBranch = c.lenient(String.self, "gitBranch")
+        entrypoint = c.lenient(String.self, "entrypoint")
 
         let message = try? c.nestedContainer(keyedBy: AnyCodingKey.self, forKey: "message")
         let blocks = message?.lenientArray(BlockIDs.self, "content") ?? []

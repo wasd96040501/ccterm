@@ -14,45 +14,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Init submodules (with retry)
-        # actions/checkout's recursive submodule fetch uses --depth=1 and has
-        # no retry; transient network hiccups manifest as "Fetched in
-        # submodule path, but it did not contain <sha>" + "could not read
-        # Username" and fail the whole job. See actions/checkout#748. Do it
-        # ourselves with a small retry loop.
-        run: |
-          for attempt in 1 2 3; do
-            if git submodule update --init --recursive; then
-              exit 0
-            fi
-            echo "::warning::git submodule update failed on attempt $attempt"
-            git submodule deinit -f --all || true
-            sleep $((attempt * 5))
-          done
-          exit 1
-
-      - name: Setup Go
-        # fzf submodule compiles from Go sources inside an Xcode build phase.
-        uses: actions/setup-go@v5
-        with:
-          go-version: stable
-          cache: true
-          cache-dependency-path: thirdparty/fzf/go.sum
-
       - name: Xcode info
         run: |
           xcode-select -p
           xcodebuild -version
           sw_vers
-          go version
 
       - name: Compute cache fingerprint
         id: fp
         run: |
           XCODE=$(xcodebuild -version | head -n1 | awk '{print $2}')
-          FZF_SHA=$(git submodule status thirdparty/fzf | awk '{print $1}' | tr -d ' -+')
           echo "xcode=$XCODE" >> "$GITHUB_OUTPUT"
-          echo "fzf=$FZF_SHA"  >> "$GITHUB_OUTPUT"
 
       # Reuse the same DerivedData layout the test workflow uses so the
       # Debug build can share `.swiftmodule` / `.o` outputs across runs.
@@ -62,9 +34,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: macos/build/debug-dd
-          key: dd-debug-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-fzf${{ steps.fp.outputs.fzf }}-salt${{ hashFiles('.github/cache-salt') }}-src${{ hashFiles('macos/**/*.swift', 'macos/ccterm.xcodeproj/project.pbxproj', 'macos/Config.xcconfig', 'macos/AgentSDK/Package.swift', 'macos/ccterm/Localizable.xcstrings') }}
+          key: dd-debug-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-salt${{ hashFiles('.github/cache-salt') }}-src${{ hashFiles('macos/**/*.swift', 'macos/ccterm.xcodeproj/project.pbxproj', 'macos/Config.xcconfig', 'macos/AgentSDK/Package.swift', 'macos/ccterm/Localizable.xcstrings') }}
           restore-keys: |
-            dd-debug-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-fzf${{ steps.fp.outputs.fzf }}-salt${{ hashFiles('.github/cache-salt') }}-
+            dd-debug-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-salt${{ hashFiles('.github/cache-salt') }}-
 
       - name: Build (Debug)
         run: |

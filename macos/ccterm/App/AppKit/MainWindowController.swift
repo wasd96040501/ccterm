@@ -6,9 +6,10 @@ import AppKit
 /// source phase without SwiftUI commit-pass interleaving.
 @MainActor
 final class MainWindowController: NSWindowController, NSToolbarDelegate {
-    private let splitController = MainSplitViewController()
+    private let splitController: MainSplitViewController
 
-    init() {
+    init(library: LibraryStore) {
+        splitController = MainSplitViewController(library: library)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1200, height: 860),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -19,7 +20,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         window.titleVisibility = .hidden
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 880, height: 540)
+        window.minSize = NSSize(width: 970, height: 540)  // the sidebar's 290 beside the editors' 680
         window.contentViewController = splitController
 
         super.init(window: window)

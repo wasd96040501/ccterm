@@ -46,28 +46,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Init submodules (with retry)
-        # Same retry dance as release.yml — actions/checkout's recursive
-        # submodule fetch has no retry and flakes on transient network hiccups.
-        run: |
-          for attempt in 1 2 3; do
-            if git submodule update --init --recursive; then
-              exit 0
-            fi
-            echo "::warning::git submodule update failed on attempt $attempt"
-            git submodule deinit -f --all || true
-            sleep $((attempt * 5))
-          done
-          exit 1
-
-      - name: Setup Go
-        # fzf submodule compiles from Go sources inside an Xcode build phase.
-        uses: actions/setup-go@v5
-        with:
-          go-version: stable
-          cache: true
-          cache-dependency-path: thirdparty/fzf/go.sum
-
       - name: Import Developer ID certificate
         # THIS is how the runner "knows" your signing identity: we decode the
         # .p12 (certificate + private key) and import it into a throwaway

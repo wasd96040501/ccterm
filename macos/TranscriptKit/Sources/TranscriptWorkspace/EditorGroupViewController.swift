@@ -157,11 +157,37 @@ public final class EditorGroupViewController: NSViewController {
         tabsDidChange()
     }
 
+    /// The tab something was only looked at in — Xcode's temporary tab, its
+    /// title in italics. Setting another closes this one and puts the new one
+    /// in its place, selected; setting `nil` keeps this one as an ordinary
+    /// tab, as double-clicking or pinning it does. A temporary tab moved to the
+    /// other editor is kept there.
+    public var previewTabViewItem: NSTabViewItem? {
+        get { preview.flatMap { tabViewItems.contains($0) ? $0 : nil } }
+        set {
+            let current = previewTabViewItem
+            guard newValue !== current else { return }
+            if let newValue, !tabViewItems.contains(newValue) {
+                if let current, let index = tabViewItems.firstIndex(of: current) {
+                    removeTabViewItem(current)
+                    insertTabViewItem(newValue, at: index)
+                } else {
+                    addTabViewItem(newValue)
+                }
+            }
+            preview = newValue
+            reloadTabBar()
+        }
+    }
+
+    private weak var preview: NSTabViewItem?
+
     public func isTabPinned(at index: Int) -> Bool { index < numberOfPinnedTabs }
 
     /// Pins or unpins a tab, moving it to the boundary between the two runs.
     public func setTabPinned(_ pinned: Bool, at index: Int) {
         guard tabViewItems.indices.contains(index), isTabPinned(at: index) != pinned else { return }
+        if pinned, tabViewItems[index] === previewTabViewItem { preview = nil }
         let selected = selectedViewController
         let item = detach(at: index).item
         attach(item, pinned: pinned, at: numberOfPinnedTabs)
@@ -243,7 +269,7 @@ public final class EditorGroupViewController: NSViewController {
             items: tabViewItems.enumerated().map { index, item in
                 EditorTabBar.Item(
                     id: ObjectIdentifier(item), title: item.label, image: item.image,
-                    toolTip: item.toolTip, isPinned: isTabPinned(at: index))
+                    toolTip: item.toolTip, isPinned: isTabPinned(at: index), isPreview: item === previewTabViewItem)
             },
             selectedIndex: tabViewItems.isEmpty ? nil : selectedTabViewItemIndex)
         let showsTabBar = tabViewItems.count > 1 || (area?.groups.count ?? 1) > 1
@@ -350,6 +376,49 @@ public final class EditorGroupViewController: NSViewController {
         )
     }
 
+    /// Something from outside the editors dropped on the content: on the
+    /// trailing half, while a second editor can open, it opens there; anywhere
+    /// else it becomes this editor's last tab. `nil` when the drag carries
+    /// nothing the area takes. Performing it answers whether it opened.
+    func contentDrop(of drop: NSDraggingInfo, at point: NSPoint) -> (rect: NSRect, perform: () -> Bool)? {
+        guard let area, drop.draggingPasteboard.availableType(from: area.draggedTypes) != nil else { return nil }
+        let content = tabs.view.frame
+        if point.x >= content.midX, !tabViewItems.isEmpty,
+            area.groups.count < EditorAreaViewController.maximumNumberOfGroups
+        {
+            let half = NSRect(x: content.midX, y: content.minY, width: content.width / 2, height: content.height)
+            return (
+                half,
+                {
+                    guard let item = self.tabViewItem(for: drop) else { return false }
+                    area.addGroup(with: item)
+                    return true
+                }
+            )
+        }
+        return (content, { self.open(drop, at: self.tabViewItems.count) })
+    }
+
+    /// Lets the editor take drops of `types` from outside, beside dragged tabs.
+    func acceptDrops(of types: [NSPasteboard.PasteboardType]) {
+        view.registerForDraggedTypes([.editorTab] + types)
+        tabBar.registerForDraggedTypes([.editorTab] + types)
+    }
+
+    /// Opens a drop from outside as a tab at `index`, if the area's delegate
+    /// makes one of it.
+    private func open(_ drop: NSDraggingInfo, at index: Int) -> Bool {
+        guard let item = tabViewItem(for: drop) else { return false }
+        area?.activate(self)
+        insertTabViewItem(item, at: index)
+        return true
+    }
+
+    private func tabViewItem(for drop: NSDraggingInfo) -> NSTabViewItem? {
+        guard let area else { return nil }
+        return area.delegate?.editorArea(area, tabViewItemForDrop: drop)
+    }
+
     func showDropHighlight(_ rect: NSRect?) {
         dropHighlight.isHidden = rect == nil
         guard let rect else { return }
@@ -367,6 +436,15 @@ extension EditorGroupViewController: EditorTabBarDelegate {
     func tabBar(_ tabBar: EditorTabBar, didCloseTabAt index: Int) {
         guard tabViewItems.indices.contains(index) else { return }
         removeTabViewItem(tabViewItems[index])
+    }
+
+    func tabBar(_ tabBar: EditorTabBar, openDrop draggingInfo: NSDraggingInfo, at index: Int) -> Bool {
+        open(draggingInfo, at: index)
+    }
+
+    func tabBar(_ tabBar: EditorTabBar, didDoubleClickTabAt index: Int) {
+        guard tabViewItems.indices.contains(index), tabViewItems[index] === previewTabViewItem else { return }
+        previewTabViewItem = nil
     }
 
     func tabBar(_ tabBar: EditorTabBar, menuForTabAt index: Int) -> NSMenu? {
@@ -416,9 +494,20 @@ private final class EditorGroupView: NSView {
         fatalError("code-only")
     }
 
-    private func drop(for sender: NSDraggingInfo) -> (rect: NSRect, perform: () -> Void)? {
-        guard let source = sender.draggingSource as? EditorTabBar else { return nil }
-        return group?.contentDrop(from: source, at: convert(sender.draggingLocation, from: nil))
+    private func drop(for sender: NSDraggingInfo) -> (rect: NSRect, perform: () -> Bool)? {
+        let point = convert(sender.draggingLocation, from: nil)
+        guard let source = sender.draggingSource as? EditorTabBar else {
+            return group?.contentDrop(of: sender, at: point)
+        }
+        return group?.contentDrop(from: source, at: point).map { drop in
+            (
+                drop.rect,
+                {
+                    drop.perform()
+                    return true
+                }
+            )
+        }
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -428,7 +517,8 @@ private final class EditorGroupView: NSView {
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
         let drop = drop(for: sender)
         group?.showDropHighlight(drop?.rect)
-        return drop == nil ? [] : .move
+        guard drop != nil else { return [] }
+        return sender.draggingSource is EditorTabBar ? .move : .copy
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
@@ -437,9 +527,7 @@ private final class EditorGroupView: NSView {
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         group?.showDropHighlight(nil)
-        guard let drop = drop(for: sender) else { return false }
-        drop.perform()
-        return true
+        return drop(for: sender)?.perform() ?? false
     }
 }
 

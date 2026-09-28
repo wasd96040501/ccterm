@@ -794,6 +794,78 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 1"])
     }
 
+    // MARK: - Drops from outside
+
+    func testSomethingDroppedOnTheBarOpensInTheGap() throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        mounted.area.registerForDraggedTypes([.string])
+        let bar = mounted.area.activeGroup.tabBar
+        var point = center(of: bar, tab: 0)
+        point.x -= bar.rect(forTabAt: 0).width / 4
+
+        let drop = StubDraggingInfo(source: nil, at: point, in: bar, pasteboard: pasteboard("Dropped"))
+        XCTAssertEqual(bar.draggingUpdated(drop), .copy)
+        XCTAssertEqual(bar.gapIndex, 0, "no gap where it would drop")
+        XCTAssertTrue(bar.performDragOperation(drop))
+
+        XCTAssertEqual(mounted.area.activeGroup.tabViewItems.map(\.label), ["Dropped", "Tab 0", "Tab 1"])
+        XCTAssertEqual(mounted.area.activeViewController?.title, "Dropped")
+        XCTAssertNil(bar.gapIndex)
+    }
+
+    func testSomethingDroppedOnTheTrailingHalfOpensInANewEditor() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        mounted.area.registerForDraggedTypes([.string])
+        let content = mounted.area.activeGroup.view
+
+        let drop = StubDraggingInfo(
+            source: nil, at: NSPoint(x: content.bounds.width * 0.75, y: 200), in: content,
+            pasteboard: pasteboard("Dropped"))
+        XCTAssertEqual(content.draggingUpdated(drop), .copy)
+        XCTAssertTrue(content.performDragOperation(drop))
+        settle(mounted.window)
+
+        XCTAssertEqual(mounted.area.groups.map { $0.tabViewItems.map(\.label) }, [["Tab 0"], ["Dropped"]])
+    }
+
+    func testARefusedDropOpensNothingAndLeavesNoGap() throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        mounted.area.registerForDraggedTypes([.string])
+        let bar = mounted.area.activeGroup.tabBar
+
+        let drop = StubDraggingInfo(
+            source: nil, at: center(of: bar, tab: 1), in: bar, pasteboard: pasteboard(Recorder.refused))
+        XCTAssertEqual(bar.draggingUpdated(drop), .copy)
+        XCTAssertFalse(bar.performDragOperation(drop))
+
+        XCTAssertEqual(mounted.area.activeGroup.tabViewItems.map(\.label), ["Tab 0", "Tab 1"])
+        XCTAssertNil(bar.gapIndex)
+    }
+
+    func testATypeNotRegisteredIsNotTaken() throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        let bar = mounted.area.activeGroup.tabBar
+        let content = mounted.area.activeGroup.view
+
+        let overBar = StubDraggingInfo(source: nil, at: center(of: bar, tab: 0), in: bar, pasteboard: pasteboard("x"))
+        let overContent = StubDraggingInfo(
+            source: nil, at: NSPoint(x: 100, y: 200), in: content, pasteboard: pasteboard("x"))
+        XCTAssertEqual(bar.draggingUpdated(overBar), [])
+        XCTAssertEqual(content.draggingUpdated(overContent), [])
+    }
+
+    /// A private pasteboard holding `string`: what a drag from outside carries.
+    private func pasteboard(_ string: String) -> NSPasteboard {
+        let pasteboard = NSPasteboard.withUniqueName()
+        pasteboard.clearContents()
+        pasteboard.setString(string, forType: .string)
+        return pasteboard
+    }
+
     // MARK: - The divider
 
     /// The property the transcript leans on without knowing it is in a split: a
@@ -869,6 +941,55 @@ final class EditorAreaTests: XCTestCase {
         let probes: [ProbeViewController]
     }
 
+    // MARK: - Temporary tab
+
+    /// Xcode's: a look replaces the last look where it stands, and the tab it
+    /// replaces is closed like any other.
+    func testATemporaryTabIsReplacedWhereItStands() throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        let first = ProbeViewController(title: "Look 1")
+
+        group.previewTabViewItem = NSTabViewItem(viewController: first)
+        group.selectedTabViewItemIndex = 0
+        group.previewTabViewItem = NSTabViewItem(viewController: ProbeViewController(title: "Look 2"))
+
+        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 0", "Tab 1", "Look 2"])
+        XCTAssertEqual(group.selectedTabViewItemIndex, 2)
+        XCTAssertTrue(mounted.recorder.closed.contains { $0 === first }, "the replaced tab was not closed")
+        XCTAssertEqual(group.tabBar.items.map(\.isPreview), [false, false, true])
+    }
+
+    func testDoubleClickingTheTemporaryTabKeepsIt() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        group.previewTabViewItem = NSTabViewItem(viewController: ProbeViewController(title: "Look"))
+        settle(mounted.window)
+
+        let bar = group.tabBar
+        let point = center(of: bar, tab: 1)
+        bar.mouseDown(with: mouse(.leftMouseDown, at: point, in: bar, clicks: 2))
+        bar.mouseUp(with: mouse(.leftMouseUp, at: point, in: bar, clicks: 2))
+
+        XCTAssertNil(group.previewTabViewItem)
+        XCTAssertEqual(bar.items.map(\.isPreview), [false, false])
+        group.previewTabViewItem = NSTabViewItem(viewController: ProbeViewController(title: "Next"))
+        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 0", "Look", "Next"])
+    }
+
+    func testPinningTheTemporaryTabKeepsIt() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        group.previewTabViewItem = NSTabViewItem(viewController: ProbeViewController(title: "Look"))
+
+        group.setTabPinned(true, at: 1)
+
+        XCTAssertNil(group.previewTabViewItem)
+    }
+
     private func mount(tabs: Int) -> Mounted {
         let window = TestWindow.make(contentSize: Self.size)
         let area = EditorAreaViewController()
@@ -923,12 +1044,14 @@ final class EditorAreaTests: XCTestCase {
         return try XCTUnwrap(bar.subviews.first { $0.accessibilityLabel() == title }, "no tab titled \(title)")
     }
 
-    private func mouse(_ type: NSEvent.EventType, at point: NSPoint, in view: NSView) -> NSEvent {
+    private func mouse(
+        _ type: NSEvent.EventType, at point: NSPoint, in view: NSView, clicks: Int = 1
+    ) -> NSEvent {
         NSEvent.mouseEvent(
             with: type, location: view.convert(point, to: nil), modifierFlags: [],
             timestamp: ProcessInfo.processInfo.systemUptime,
             windowNumber: view.window?.windowNumber ?? 0, context: nil, eventNumber: 0,
-            clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)!
+            clickCount: clicks, pressure: type == .leftMouseUp ? 0 : 1)!
     }
 }
 
@@ -949,6 +1072,18 @@ private final class Recorder: EditorAreaViewControllerDelegate {
         _ editorArea: EditorAreaViewController, willClose viewController: NSViewController
     ) {
         closed.append(viewController)
+    }
+
+    /// The string a dropped pasteboard holds for a drop the host refuses.
+    static let refused = "refused"
+
+    /// A tab titled with the dropped string.
+    func editorArea(
+        _ editorArea: EditorAreaViewController, tabViewItemForDrop draggingInfo: NSDraggingInfo
+    ) -> NSTabViewItem? {
+        guard let title = draggingInfo.draggingPasteboard.string(forType: .string), title != Self.refused
+        else { return nil }
+        return NSTabViewItem(viewController: ProbeViewController(title: title))
     }
 }
 

@@ -135,7 +135,9 @@ final class TranscriptTests: XCTestCase {
         XCTAssertTrue(cleared.messages.isEmpty)
     }
 
-    func testCompactionWithPreservedSegment() {
+    /// The shape older CLIs wrote: the row after the compaction hangs off the
+    /// last preserved row, not the summary.
+    func testCompactionKeepsEverythingBeforeIt() {
         let lines = [
             user("old1", parent: nil, "ancient"),
             assistant("head", parent: "old1", messageID: "m1", text("kept 1")),
@@ -154,15 +156,15 @@ final class TranscriptTests: XCTestCase {
             user("after", parent: "tail", "next question"),
         ]
         let result = transcript(lines)
-        XCTAssertEqual(uuids(result), ["boundary", "summary", "head", "tail", "after"])
-        guard case .system(.compactBoundary(let boundary)) = result.messages[0],
-            case .user(let summary) = result.messages[1]
+        XCTAssertEqual(uuids(result), ["old1", "head", "tail", "boundary", "summary", "after"])
+        guard case .system(.compactBoundary(let boundary)) = result.messages[3],
+            case .user(let summary) = result.messages[4]
         else { return XCTFail() }
         XCTAssertEqual(boundary, .init(trigger: "manual", preTokens: 1000, postTokens: 100))
         XCTAssertTrue(summary.isSynthetic)
     }
 
-    func testFullCompactionStartsAtBoundary() {
+    func testBoundaryWithoutItsLastRowStartsTheConversation() {
         let lines = [
             user("old1", parent: nil, "ancient"),
             line([
@@ -256,5 +258,32 @@ final class TranscriptTests: XCTestCase {
         XCTAssertEqual(uuids(transcript(lines)), ["u", "a"])
         XCTAssertTrue(transcript([]).messages.isEmpty)
         XCTAssertTrue(transcript(["garbage"]).messages.isEmpty)
+    }
+
+    func testSubagentFileIsItsOwnThread() {
+        let side: [String: JSONValue] = ["isSidechain": true, "agentId": "a1"]
+        let lines = [
+            user("u", parent: nil, "task", extra: side),
+            assistant("a", parent: "u", messageID: "m", text("done"), extra: side),
+        ]
+        XCTAssertEqual(uuids(transcript(lines)), ["u", "a"])
+    }
+
+    func testMetadataReadsOnlyHeadAndTail() throws {
+        let filler = String(repeating: "x", count: 1_000)
+        var lines = [user("u1", parent: nil, "hello")]
+        for index in 0..<200 {
+            lines.append(assistant("a\(index)", parent: "u1", messageID: "m\(index)", text(filler)))
+        }
+        lines.append(line(["type": "ai-title", "aiTitle": "Auto", "sessionId": "s"]))
+        lines.append(line(["type": "custom-title", "customTitle": "Named", "sessionId": "s"]))
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data(lines.joined(separator: "\n").utf8).write(to: url)
+
+        let metadata = try SessionMetadata(contentsOf: url)
+        XCTAssertEqual(metadata.title, "Named")
+        XCTAssertEqual(metadata.cwd, "/repo")
+        XCTAssertThrowsError(try SessionMetadata(contentsOf: url.appendingPathExtension("missing")))
     }
 }

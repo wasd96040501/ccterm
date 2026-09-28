@@ -12,56 +12,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Init submodules (with retry)
-        # actions/checkout's recursive submodule fetch uses --depth=1 and has
-        # no retry; transient network hiccups manifest as "Fetched in
-        # submodule path, but it did not contain <sha>" + "could not read
-        # Username" and fail the whole job. See actions/checkout#748. Do it
-        # ourselves with a small retry loop.
-        run: |
-          for attempt in 1 2 3; do
-            if git submodule update --init --recursive; then
-              exit 0
-            fi
-            echo "::warning::git submodule update failed on attempt $attempt"
-            git submodule deinit -f --all || true
-            sleep $((attempt * 5))
-          done
-          exit 1
-
-      - name: Setup Go
-        # fzf submodule is compiled from Go sources inside an Xcode build phase.
-        # cache-dependency-path points at fzf's go.sum so module downloads are
-        # cached across runs (the toolchain is cached by the action by default).
-        uses: actions/setup-go@v5
-        with:
-          go-version: stable
-          cache: true
-          cache-dependency-path: thirdparty/fzf/go.sum
-
       - name: Xcode info
         run: |
           xcode-select -p
           xcodebuild -version
           sw_vers
-          go version
 
-      # Record toolchain fingerprint for the build cache key. We include the
-      # Xcode version (changes invalidate .swiftmodule ABI) and the fzf submodule
-      # SHA (changes invalidate the in-tree Go build phase output).
+      # Record toolchain fingerprint for the build cache key: the Xcode version
+      # (changes invalidate .swiftmodule ABI).
       - name: Compute cache fingerprint
         id: fp
         run: |
           XCODE=$(xcodebuild -version | head -n1 | awk '{print $2}')
-          FZF_SHA=$(git submodule status thirdparty/fzf | awk '{print $1}' | tr -d ' -+')
           echo "xcode=$XCODE" >> "$GITHUB_OUTPUT"
-          echo "fzf=$FZF_SHA"  >> "$GITHUB_OUTPUT"
 
       # Cache the shared DerivedData so Swift incremental compilation can reuse
       # unchanged .swiftmodule / .o outputs across runs. Key composition:
       #   - runner OS + arch          → CPU/SDK compatibility
       #   - Xcode version             → toolchain ABI
-      #   - fzf submodule SHA         → Go build phase output
       #   - .github/cache-salt        → manual escape hatch (bump to invalidate)
       #   - source hash               → exact match for incremental no-op runs
       # The restore-key drops the source hash so a same-PR retry restores the
@@ -70,9 +38,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: macos/build/test-dd
-          key: dd-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-fzf${{ steps.fp.outputs.fzf }}-salt${{ hashFiles('.github/cache-salt') }}-src${{ hashFiles('macos/**/*.swift', 'macos/ccterm.xcodeproj/project.pbxproj', 'macos/Config.xcconfig', 'macos/AgentSDK/Package.swift', 'macos/ccterm/Localizable.xcstrings') }}
+          key: dd-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-salt${{ hashFiles('.github/cache-salt') }}-src${{ hashFiles('macos/**/*.swift', 'macos/ccterm.xcodeproj/project.pbxproj', 'macos/Config.xcconfig', 'macos/AgentSDK/Package.swift', 'macos/ccterm/Localizable.xcstrings') }}
           restore-keys: |
-            dd-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-fzf${{ steps.fp.outputs.fzf }}-salt${{ hashFiles('.github/cache-salt') }}-
+            dd-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-salt${{ hashFiles('.github/cache-salt') }}-
 
       - name: Run unit tests
         # Pin DerivedData to the in-tree path the Cache step keys off. Local
@@ -92,10 +60,9 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # TranscriptKit is a standalone package: `swift test`, no Xcode project, no
-  # submodules. Its own job rather than a step in `test` so it
-  # doesn't queue behind the app build — and so a red result names the package
-  # instead of the app.
+  # TranscriptKit is a standalone package: `swift test`, no Xcode project.
+  # Its own job rather than a step in `test` so it doesn't queue behind the
+  # app build — and so a red result names the package instead of the app.
   test-kit:
     runs-on: macos-26
     timeout-minutes: 10

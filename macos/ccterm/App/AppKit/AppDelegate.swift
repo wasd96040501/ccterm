@@ -1,3 +1,4 @@
+import AgentSDK
 import AppKit
 import SwiftUI
 
@@ -18,6 +19,10 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var mainWindowController: MainWindowController?
+
+    /// Every transcript on disk, for the main window's sidebar. Process-wide:
+    /// it mirrors a directory the CLI owns, and one scan serves every window.
+    private var library: LibraryStore?
 
     /// Lazy AppKit-rooted Settings window. Created on the first
     /// `showSettingsWindow()` call (⌘, or App > Settings… menu item)
@@ -61,8 +66,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         if Self.isUnderXCTest { return }
 
-        let controller = MainWindowController()
+        let library = LibraryStore(directory: SessionDirectory(environment: ProcessInfo.processInfo.environment))
+        self.library = library
+        let controller = MainWindowController(library: library)
         mainWindowController = controller
+        library.start()
         controller.showWindow(nil)
         controller.window?.makeKeyAndOrderFront(nil)
     }

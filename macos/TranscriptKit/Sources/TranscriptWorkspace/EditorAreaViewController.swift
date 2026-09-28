@@ -106,6 +106,16 @@ public final class EditorAreaViewController: NSSplitViewController {
         }
     }
 
+    /// Lets things of `types` be dropped on the editors — beside tabs dragged
+    /// between them, which need nothing registered. The delegate makes each
+    /// drop's tab in `editorArea(_:tabViewItemForDrop:)`.
+    public func registerForDraggedTypes(_ types: [NSPasteboard.PasteboardType]) {
+        draggedTypes = types
+        groups.forEach { $0.acceptDrops(of: types) }
+    }
+
+    private(set) var draggedTypes: [NSPasteboard.PasteboardType] = []
+
     private func addGroup() -> EditorGroupViewController? {
         guard groups.count < Self.maximumNumberOfGroups else { return nil }
         let group = EditorGroupViewController()
@@ -125,6 +135,9 @@ public final class EditorAreaViewController: NSSplitViewController {
     /// whether it is alone.
     public override func insertSplitViewItem(_ splitViewItem: NSSplitViewItem, at index: Int) {
         super.insertSplitViewItem(splitViewItem, at: index)
+        if !draggedTypes.isEmpty {
+            (splitViewItem.viewController as? EditorGroupViewController)?.acceptDrops(of: draggedTypes)
+        }
         groups.forEach { $0.reloadTabBar() }
     }
 

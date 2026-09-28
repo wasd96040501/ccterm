@@ -13,10 +13,15 @@ import AppKit
 ///
 /// Inside is an `NSTableView` in an `NSScrollView`, its content centred.
 ///
-/// `TranscriptView` is that table's data source and delegate. Rows carrying
-/// `.markdown` / `.userMessage` it answers itself — measuring and
-/// drawing them; `.view` rows it forwards to the host's
+/// `TranscriptView` answers that table's data source and delegate (through
+/// `TableViewAdapter`). Rows carrying `.markdown` / `.userMessage` it answers
+/// itself — measuring and drawing them; `.view` rows it forwards to the host's
 /// `TranscriptViewDelegate` (`heightOfRow`, `viewForRow`).
+///
+/// What is not table glue lives in collaborators it owns: `FindSession` (a
+/// find), `SelectionTracker` (the text selection) and `RemeasureScheduler` (the
+/// off-screen re-measure after a width change), with `RowCache` holding the
+/// measurements all of them share.
 ///
 /// `NSTableView` asks for the height of **far more rows than are visible**, but
 /// not all of them: measured, a ten-thousand-row reload asked about 305, and the

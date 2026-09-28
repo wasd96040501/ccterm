@@ -290,7 +290,7 @@ final class RowCache {
     /// question, not this store's — it walks its rows outward from the viewport and
     /// claims entries out of this by identity as it passes them, so the rows nearest
     /// the reader are measured first and the walk stops as soon as this is empty.
-    /// See `TranscriptView.staleRowsOutwardFromViewport(at:)`.
+    /// See `RemeasureScheduler.staleRowsOutwardFromViewport(at:)`.
     func entries(measuredAtWidthOtherThan width: CGFloat) -> [TranscriptRow.ID: Entry] {
         entries.filter { $0.value.measuredWidth != width }
     }

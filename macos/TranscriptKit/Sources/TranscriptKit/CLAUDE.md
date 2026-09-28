@@ -2,6 +2,16 @@
 
 Invariants of the renderer target. Package-level API rules are in [../../CLAUDE.md](../../CLAUDE.md). Measurements and the reasoning behind a type live in its doc comment; this file lists the rules that span types.
 
+## `TranscriptView` and its collaborators
+
+- **`TranscriptView` is the `NSTableView`-shaped façade and the table glue** — the public API, the row answers (heights, views, binding `BlockView`s), the content width and the synchronous half of a width change, the mutations, and scroll anchoring. Everything else is an internal, non-view collaborator that owns its state and cancels its own `Task`:
+  - `FindSession` — a find: its state, the walk, `FindOverlayView`.
+  - `SelectionTracker` — the text selection and every gesture that changes it (press-to-release loop, context-menu word, Copy).
+  - `RemeasureScheduler` — the off-screen re-measure after a settled width change.
+  - `RowCache` — measurements, shared by all of the above.
+- **A collaborator talks back through one narrow protocol** (`FindSessionOwner`, `SelectionTrackerOwner`, `RemeasureSchedulerOwner`, `TableViewAdapterOwner`, `TranscriptTableViewOwner`) that `TranscriptView` conforms to — never by naming `TranscriptView`, so no internal type cycles back to it; only the public `dataSource` / `delegate` pair does (the `NSTableView` idiom). Rows reach a collaborator through `row(at:)`, the host's delegate only through its owner protocol.
+- **Mutations enter only through `TranscriptView`**, which tells each collaborator what the mutation did (renumber by an insert or removal, keep by identity after a sweep, re-search reloaded rows) inside the same call.
+
 ## Rows, blocks, painting
 
 - A `.markdown` / `.userMessage` row is parsed to `MarkdownIR`, built into blocks (`Layout/Blocks/`), stacked by `BlockStack` (which assigns origins and index bases at stacking time), and drawn by `BlockView` onto `SurfaceLayer`s.

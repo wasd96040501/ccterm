@@ -63,7 +63,7 @@ public struct SessionConfiguration: Sendable {
     /// MCP server configuration (JSON string or file path). Maps to `--mcp-config`.
     public var mcpConfig: String?
 
-    /// The session's own settings layer at launch; change it later with
+    /// The session's flag settings layer at launch; change it later with
     /// ``Session/applySettings(_:)``. Unset keys are dropped here: the layer
     /// starts empty. Maps to `--settings`.
     public var settings: Settings

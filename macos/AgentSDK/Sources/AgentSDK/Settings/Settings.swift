@@ -3,7 +3,7 @@ import Foundation
 /// A `settings.json` object: top-level keys and their values.
 ///
 /// It is what a settings layer holds and what the merged ``SettingsSnapshot/effective``
-/// settings are, and it is how a session's own layer is written — seeded by
+/// settings are, and it is how a session's flag layer is written — seeded by
 /// ``SessionConfiguration/settings`` at launch and changed with
 /// ``Session/applySettings(_:)``.
 ///

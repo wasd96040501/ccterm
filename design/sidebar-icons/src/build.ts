@@ -59,7 +59,7 @@ const GLYPHS: Glyph[] = [
       "M3.4 10.6L8.4 11.4L3.6 14.6Q3.1 14.9 3.1 14.3Z" +
       slot(4.75, 11.25, 5.5, 1.5) +
       slot(4.75, 8.75, 8.5, 1.5),
-    hue: 230, // the folder's own
+    hue: 320, // a quarter turn from the folder
   },
   {
     asset: "SidebarAgent",
@@ -78,7 +78,7 @@ const GLYPHS: Glyph[] = [
       "Two squircle nodes n = 4, 5.5 wide, on the diagonal 8 pt apart; one 1.5-pt connector turning through a 2.5-pt arc.",
     fill: lame(4, 4, 2.75, 2.75, 4) + lame(12, 12, 2.75, 2.75, 4),
     stroke: "M4 6.75V9.5A2.5 2.5 0 0 0 6.5 12H9.25",
-    hue: 320, // a quarter turn from the folder
+    hue: 140, // the other quarter turn
   },
 ]
 
@@ -87,8 +87,9 @@ const GLYPHS: Glyph[] = [
 // The folder icon is the one colour every sidebar row sits beside, and it is
 // the same in light and dark (measured: tab L 0.70 C 0.117, front L 0.81,
 // hue 230). So each glyph takes the folder's tab tone, keeps it in both
-// appearances, and a hue a quarter turn apart from the folder's: its own,
-// its complement, the turn between.
+// appearances, and one of the other three corners of a square on the
+// folder's hue — the folder keeps its own to itself, so no glyph reads as
+// a folder.
 
 const TONE = { L: 0.7, C: 0.12 }
 
@@ -264,7 +265,7 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 <main>
 <header>
 <h1>Sidebar icons</h1>
-<p class="lede">Every outline is a Lamé curve |x/a|ⁿ + |y/b|ⁿ = 1 on the 16-pt grid · every colour is the system folder's tone, OKLCH L 0.70 C 0.12, in both appearances, at hues a quarter turn apart from the folder's 230</p>
+<p class="lede">Every outline is a Lamé curve |x/a|ⁿ + |y/b|ⁿ = 1 on the 16-pt grid · every colour is the system folder's tone, OKLCH L 0.70 C 0.12, in both appearances, on the other corners of a square from the folder's hue, 230</p>
 </header>
 <div class="cards">
 ${cards}

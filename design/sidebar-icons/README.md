@@ -11,10 +11,10 @@ its construction grid, and both appearances in a sidebar.
 - **Colour.** Anchored on the system folder icon, the colour every row sits
   beside. It is the same in light and dark (OKLCH tab L 0.70 C 0.117, hue
   230), so each glyph takes that tone, `oklch(0.70 0.12 h)`, and keeps it in
-  both appearances, as the folder does. The hues are a square on the folder's:
-  the conversation its own 230, the subagent its complement 50, the workflow
-  the quarter turn 320. They differ from the folder and from each other in
-  hue only, never in weight, so no row shouts.
+  both appearances, as the folder does. The hues are the other three corners
+  of a square on the folder's, which keeps 230 to itself: the conversation
+  320, the subagent the complement 50, the workflow 140. They differ from the
+  folder and from each other in hue only, never in weight, so no row shouts.
 - **Flat and restrained.** Filled shapes, no gradients, no outlines. Detail is
   cut out of a shape (1.5-pt slots) rather than drawn on it.
 

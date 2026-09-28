@@ -1,0 +1,107 @@
+import AgentSDK
+import AppKit
+import Combine
+import TranscriptWorkspace
+import XCTest
+
+@testable import ccterm
+
+/// The sidebar mounted in the real main split over a synthetic library:
+/// what its outline shows, what opening a row does, and what a republish
+/// keeps.
+@MainActor
+final class SidebarViewControllerTests: XCTestCase {
+    private var fixture: SessionDirectoryFixture!
+    private var store: LibraryStore!
+    private var stage: AppKitStage!
+    private var outline: NSOutlineView!
+    private var area: EditorAreaViewController!
+
+    override func setUp() async throws {
+        continueAfterFailure = false
+        fixture = try SessionDirectoryFixture()
+        try LibraryStoreTests.writeLibrary(fixture)
+        store = LibraryStore(directory: fixture.directory)
+        stage = AppKitStage.mainSplit(library: store)
+        store.start()
+        await waitForNodes { !$0.isEmpty }
+        await stage.settle()
+        outline = try XCTUnwrap(stage.find(NSOutlineView.self))
+        area = try XCTUnwrap(stage.mainSplit?.splitViewItems[1].viewController as? EditorAreaViewController)
+    }
+
+    override func tearDown() async throws {
+        store.stop()
+        stage.teardown()
+        fixture.remove()
+    }
+
+    private func waitForNodes(_ predicate: @escaping ([LibraryNode]) -> Bool) async {
+        let arrived = expectation(description: "nodes")
+        let subscription = store.$nodes.first(where: predicate).sink { _ in arrived.fulfill() }
+        await fulfillment(of: [arrived], timeout: 10)
+        subscription.cancel()
+    }
+
+    private func titles() -> [String] {
+        (0..<outline.numberOfRows).map { row in
+            (outline.view(atColumn: 0, row: row, makeIfNecessary: true) as? NSTableCellView)?.textField?.stringValue
+                ?? "?"
+        }
+    }
+
+    private func row(titled title: String) throws -> Int {
+        try XCTUnwrap(titles().firstIndex(of: title), "no row titled \(title) in \(titles())")
+    }
+
+    /// What a click on the row does: select it, then the outline's action.
+    private func open(_ title: String) throws {
+        outline.selectRowIndexes([try row(titled: title)], byExtendingSelection: false)
+        outline.sendAction(outline.action, to: outline.target)
+    }
+
+    private func tabs() -> [String] {
+        area.groups.flatMap(\.tabViewItems).compactMap { $0.viewController?.title }
+    }
+
+    // MARK: - Tests
+
+    func testShowsProjectsCollapsed() {
+        XCTAssertEqual(titles(), ["repo", "other"])
+    }
+
+    func testProjectsHoldSessionsAndSessionsHoldTheirAgents() throws {
+        outline.expandItem(outline.item(atRow: 0))
+        outline.expandItem(outline.item(atRow: try row(titled: "Named")))
+        XCTAssertEqual(titles(), ["repo", "Named", String(localized: "Subagents"), "review", "Auto", "other"])
+    }
+
+    func testOpeningASessionOpensATab() throws {
+        outline.expandItem(outline.item(atRow: 0))
+        try open("Named")
+        try open("Auto")
+        try open("Named")
+        XCTAssertEqual(tabs(), ["Named", "Auto"])
+    }
+
+    func testOpeningAGroupOpensNothing() throws {
+        try open("repo")
+        outline.expandItem(outline.item(atRow: 0))
+        outline.expandItem(outline.item(atRow: try row(titled: "Named")))
+        try open(String(localized: "Subagents"))
+        XCTAssertEqual(tabs(), [])
+    }
+
+    func testExpansionAndSelectionSurviveARepublish() async throws {
+        outline.expandItem(outline.item(atRow: 0))
+        outline.selectRowIndexes([try row(titled: "Auto")], byExtendingSelection: false)
+
+        try fixture.write(
+            "-x-repo/s6.jsonl", [SessionDirectoryFixture.user("u"), SessionDirectoryFixture.aiTitle("Newer")])
+        await waitForNodes { $0.first?.children.first?.title == "Newer" }
+        await stage.settle()
+
+        XCTAssertEqual(titles(), ["repo", "Newer", "Named", "Auto", "other"])
+        XCTAssertEqual(outline.selectedRow, try row(titled: "Auto"))
+    }
+}

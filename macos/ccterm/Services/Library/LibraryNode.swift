@@ -17,7 +17,8 @@ struct LibraryNode: Identifiable, Hashable, Sendable {
         case agent
     }
 
-    /// The path of the file or directory the node stands for.
+    /// Stable across scans: a project's directory, a transcript's path, or a
+    /// group's path under its session's.
     let id: String
     let kind: Kind
     let title: String

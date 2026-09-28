@@ -102,6 +102,26 @@
         }
       }
     },
+    "Subagents": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "子代理"
+          }
+        }
+      }
+    },
+    "Untitled Session": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未命名会话"
+          }
+        }
+      }
+    },
     "Version %@ (%@)": {
       "localizations": {
         "zh-Hans": {

@@ -1252,20 +1252,19 @@ boundary; let go, it settles into its own. Pulled across the bar, the tab gives
 on a rubber band (`UIScrollView`'s curve), drawn past the bar's edge, and springs
 back if let go — which is why the track is a view behind the tabs and not the
 bar's own layer: rounding a view's own layer makes AppKit clip it; pulled far
-enough, it leaves as a drag session, starts as the tab, and turns into a small
-picture of its content — the group's view, drawn by `cacheDisplay` and framed by
-the bar — while the tabs it left close up. Over a bar it turns back into a tab,
-the tabs part where it would drop, and it drops into the gap. Both changes of
-image go through the session's own `enumerateDraggingItems`, the source's on the
-first move and the destination's on entering, and AppKit takes a destination's
-change off when the drag leaves: nothing tracks which one is showing. **The item is
-placed once**, as the drag begins — the thumbnail's size, centred on the pointer —
-and only its image components change after: measured, AppKit keeps the pointer
-where the item held it at the start and takes only the size from a frame changed
-later, so a thumbnail re-centred mid-drag stayed wherever along the tab it had been
-picked up. What no test
-can reach is how either change animates — a real session cannot be started from
-one (§5), so that part is the demo's. Dropped on the other editor's content it
+enough, it leaves as a drag session carrying a small picture of its content — the
+group's view, drawn by `cacheDisplay` and framed by the bar — centred on the
+pointer, while the tabs it left close up. Over a bar it turns back into a tab, the
+tabs part where it would drop, and it drops into the gap. The tab is the
+destination's change to the image, made through `enumerateDraggingItems` on
+entering, and AppKit takes it off when the drag leaves: nothing tracks which one
+is showing. **The two images are one size**, the larger of the pair with each drawn
+in the middle: AppKit turns one dragged image into the next by scaling it into the
+new frame about the old centre, and measured, images of two sizes showed a
+thumbnail squashed into a tab's shape with its card showing, a tab narrowing into a
+thumbnail, and a centre left wherever along the tab it had been picked up. What no
+test can reach is how the change looks — a real session cannot be started from one
+(§5), so that part is the demo's. Dropped on the other editor's content it
 goes to the end;
 dropped on the trailing half of its own editor's content it opens a new editor on
 the right (refused for an editor's only tab — that would move the same layout

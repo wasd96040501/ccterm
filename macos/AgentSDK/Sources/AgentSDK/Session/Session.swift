@@ -87,7 +87,8 @@ public final class Session: @unchecked Sendable {
         }
         let process: CLIProcess
         do {
-            process = try await Task.detached { [configuration] in try configuration.makeProcess() }.value
+            process = try await Task.detached { [configuration] in CLIProcess(launch: try configuration.launch()) }
+                .value
         } catch {
             finish(Termination(exitCode: -1, stderr: error.localizedDescription))
             throw error

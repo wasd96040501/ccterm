@@ -10,7 +10,7 @@ import os
 /// line can arrive after it. Writes go through a serial queue and never raise
 /// `SIGPIPE`: writing to a dead child is silently dropped.
 final class CLIProcess: @unchecked Sendable {
-    private let process = Process()
+    private let process: Process
     private let stdin = Pipe()
     private let stdout = Pipe()
     private let stderr = Pipe()
@@ -20,11 +20,8 @@ final class CLIProcess: @unchecked Sendable {
 
     private static let stderrTailLimit = 16 * 1024
 
-    init(executable: String, arguments: [String], workingDirectory: URL, environment: [String: String]) {
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.currentDirectoryURL = workingDirectory
-        process.environment = environment
+    init(launch: CLILaunch) {
+        process = launch.makeProcess()
         process.standardInput = stdin
         process.standardOutput = stdout
         process.standardError = stderr

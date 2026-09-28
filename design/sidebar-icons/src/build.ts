@@ -14,17 +14,20 @@ const SHEET = resolve(import.meta.dir, "../index.html")
 // MARK: - Colour: the system's, as Xcode colours its file types
 //
 // Xcode's navigator tints each file type's glyph with a system colour (its
-// DVTUserInterfaceKit colour sets doc-green, doc-orange and doc-purple are
-// systemGreen, systemOrange and systemIndigo), and those are made to sit
-// beside the system folder in both appearances. So the glyphs take them too;
-// the app names them (`NSColor.systemGreen`, …) and the system resolves each
-// per appearance. The values here are only for the sheet: macOS 26's.
+// DVTUserInterfaceKit colour sets doc-orange, doc-gray and doc-purple are
+// systemOrange, systemGray and systemIndigo), made to sit beside the system
+// folder in both appearances. Its navigator reads blue folders and orange
+// Swift files, complements, with the rest quieter. So here: a conversation,
+// the row there is most of, is orange; a subagent, nested and secondary, is
+// grey; a workflow, rare, is the one cool accent. The app names them
+// (`NSColor.systemOrange`, …) and the system resolves each per appearance.
+// The values here are only for the sheet: macOS 26's.
 
 type SystemColour = { name: string; light: string; dark: string }
 
 const SYSTEM = {
-  green: { name: "systemGreen", light: "#34c759", dark: "#30d158" },
   orange: { name: "systemOrange", light: "#ff8d28", dark: "#ff9230" },
+  gray: { name: "systemGray", light: "#8e8e93", dark: "#98989d" },
   indigo: { name: "systemIndigo", light: "#6155f5", dark: "#6d7cff" },
 } satisfies Record<string, SystemColour>
 
@@ -76,7 +79,7 @@ const GLYPHS: Glyph[] = [
       "M3.4 10.6L8.4 11.4L3.6 14.6Q3.1 14.9 3.1 14.3Z" +
       slot(4.75, 11.25, 5.5, 1.5) +
       slot(4.75, 8.75, 8.5, 1.5),
-    colour: SYSTEM.green,
+    colour: SYSTEM.orange,
   },
   {
     asset: "SidebarAgent",
@@ -85,7 +88,7 @@ const GLYPHS: Glyph[] = [
     geometry:
       "Lamé star n = 0.8, radius 7.5: four cusps on the axes, sides concave, between the astroid (n = ⅔) and the rhombus (n = 1).",
     fill: lame(8, 8, 7.5, 7.5, 0.8),
-    colour: SYSTEM.orange,
+    colour: SYSTEM.gray,
   },
   {
     asset: "SidebarWorkflow",

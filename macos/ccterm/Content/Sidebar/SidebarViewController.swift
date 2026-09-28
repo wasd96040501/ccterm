@@ -302,8 +302,8 @@ extension LibraryNode.Kind {
     fileprivate var tintColor: NSColor? {
         switch self {
         case .project, .subagents: nil
-        case .session: .systemGreen
-        case .agent: .systemOrange
+        case .session: .systemOrange
+        case .agent: .systemGray
         case .workflow: .systemIndigo
         }
     }

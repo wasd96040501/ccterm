@@ -10,11 +10,13 @@ its construction grid, and both appearances in a sidebar.
   and the rhombus (n = 1).
 - **Colour.** The system's, the way Xcode colours its file types. Xcode's
   navigator tints each file type's glyph with a system colour; its colour
-  sets `doc-green`, `doc-orange` and `doc-purple` are `systemGreen`,
-  `systemOrange` and `systemIndigo`. Those colours are made to sit beside the
-  system folder, in both appearances. So the conversation is `systemGreen`,
-  the subagent is `systemOrange` (Swift's family), and the workflow is
-  `systemIndigo`. None of them is a near-miss of the folder's blue.
+  sets `doc-orange`, `doc-gray` and `doc-purple` are `systemOrange`,
+  `systemGray` and `systemIndigo`. Those colours are made to sit beside the
+  system folder in both appearances. Its navigator reads as blue folders and
+  orange Swift files, two complements, with everything else quieter. So:
+  - a conversation, which most rows are, is `systemOrange`;
+  - a subagent, nested and secondary, is `systemGray`;
+  - a workflow, which is rare, is `systemIndigo`, the one cool accent.
 - **Flat and restrained.** Filled shapes, no gradients, no outlines. Detail is
   cut out of a shape (1.5-pt slots) rather than drawn on it.
 

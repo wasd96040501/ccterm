@@ -56,6 +56,19 @@ public final class SourceView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
+    // MARK: - Measuring
+
+    /// The editor's background, for a host that frames the view with its own
+    /// panes.
+    public static var backgroundColor: NSColor { SourceTheme.background }
+
+    /// The height `lineCount` unwrapped lines take, insets included — for a
+    /// host that sizes the view to a short text rather than a pane.
+    public static func height(ofLines lineCount: Int) -> CGFloat {
+        let line = NSLayoutManager().defaultLineHeight(for: SourceTheme.font(dark: false)) * SourceTheme.lineSpacing
+        return ceil(CGFloat(lineCount) * line) + 8
+    }
+
     // MARK: - Navigating
 
     /// Scrolls change `index` of ``SourceDocument/changes`` to a third of the

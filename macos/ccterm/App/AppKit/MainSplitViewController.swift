@@ -11,6 +11,12 @@ import TranscriptWorkspace
 /// and forward walk the active editor's history, which knows each tab by its
 /// transcript's URL (`NSTabViewItem.identifier`).
 ///
+/// What a transcript's cards open — a diff, a file, a command's output — goes
+/// beside the transcript, in the other editor (opened for it when there is
+/// only one), as Xcode's assistant does: in its temporary tab, or a tab that
+/// stays when the reader double-clicked. The history knows those tabs by
+/// their ``ToolDocument/ID``.
+///
 /// The sidebar never collapses: it is where transcripts are opened from, and
 /// the window is always wide enough for it.
 @MainActor
@@ -23,6 +29,8 @@ final class MainSplitViewController: NSSplitViewController {
 
     /// The transcript last reported to the delegate.
     private var shownTranscript: URL?
+    /// Every document opened, for the history to open again.
+    private var documents: [ToolDocument.ID: ToolDocument] = [:]
 
     init(library: LibraryStore) {
         self.library = library
@@ -92,8 +100,17 @@ final class MainSplitViewController: NSSplitViewController {
 
     /// A tab for the transcript at `url`, known to the history by that URL.
     private func tab(for node: LibraryNode, at url: URL) -> NSTabViewItem {
-        let item = NSTabViewItem(viewController: TranscriptViewController(fileURL: url, title: node.title))
+        let controller = TranscriptViewController(fileURL: url, title: node.title)
+        controller.delegate = self
+        let item = NSTabViewItem(viewController: controller)
         item.identifier = url
+        return item
+    }
+
+    /// A tab for `document`, known to the history by its id.
+    private func tab(for document: ToolDocument) -> NSTabViewItem {
+        let item = NSTabViewItem(viewController: ToolDocumentViewController(document: document))
+        item.identifier = document.id
         return item
     }
 
@@ -129,6 +146,40 @@ extension MainSplitViewController: SidebarViewControllerDelegate {
     }
 }
 
+extension MainSplitViewController: TranscriptViewControllerDelegate {
+    /// Selects the document where it is already open; otherwise opens it in
+    /// the editor beside the transcript's.
+    func transcriptViewController(
+        _ controller: TranscriptViewController, open document: ToolDocument, pinned: Bool
+    ) {
+        documents[document.id] = document
+        for group in editorArea.groups {
+            guard
+                let index = group.tabViewItems.firstIndex(where: {
+                    ($0.viewController as? ToolDocumentViewController)?.document.id == document.id
+                })
+            else { continue }
+            group.selectedTabViewItemIndex = index
+            if pinned, group.previewTabViewItem === group.tabViewItems[index] { group.previewTabViewItem = nil }
+            return
+        }
+        let item = tab(for: document)
+        let beside = editorArea.groups.first { group in
+            !group.tabViewItems.contains { $0.viewController === controller }
+        }
+        guard let beside else {
+            let group = editorArea.addGroup(with: item)
+            if !pinned { group?.previewTabViewItem = item }
+            return
+        }
+        if pinned {
+            beside.addTabViewItem(item)
+        } else {
+            beside.previewTabViewItem = item
+        }
+    }
+}
+
 extension MainSplitViewController: NSToolbarItemValidation {
     /// Back and forward are enabled while the active editor has somewhere to go.
     /// Asked by the toolbar as it validates, after every event.
@@ -144,17 +195,22 @@ extension MainSplitViewController: NSToolbarItemValidation {
 extension MainSplitViewController: EditorAreaViewControllerDelegate {
     /// Tells the window when the reader is in another transcript, or in none.
     func editorArea(_ editorArea: EditorAreaViewController, didActivate viewController: NSViewController?) {
-        let transcript = (viewController as? TranscriptViewController)?.fileURL
+        let transcript =
+            (viewController as? TranscriptViewController)?.fileURL
+            ?? (viewController as? ToolDocumentViewController)?.transcriptURL
         guard transcript != shownTranscript else { return }
         shownTranscript = transcript
         delegate?.mainSplitViewController(self, didShowTranscriptAt: transcript)
     }
 
     /// A tab again for a transcript the history goes back to, while the library
-    /// still has it.
+    /// still has it — or for a document opened before.
     func editorArea(
         _ editorArea: EditorAreaViewController, tabViewItemWithIdentifier identifier: Any
     ) -> NSTabViewItem? {
+        if let id = identifier as? ToolDocument.ID {
+            return documents[id].map(tab(for:))
+        }
         guard let url = identifier as? URL, let node = library.path(toTranscriptAt: url).last else { return nil }
         return tab(for: node, at: url)
     }

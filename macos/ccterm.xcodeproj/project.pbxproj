@@ -10,6 +10,7 @@
 		EA5A16ED2F5B000000AA1A46 /* AgentSDK in Frameworks */ = {isa = PBXBuildFile; productRef = EA5A16EE2F5B000000AA1A46 /* AgentSDK */; };
 		EA5A17042F5B000000AA1A46 /* TranscriptKit in Frameworks */ = {isa = PBXBuildFile; productRef = EA5A17022F5B000000AA1A46 /* TranscriptKit */; };
 		EA5A17052F5B000000AA1A46 /* TranscriptWorkspace in Frameworks */ = {isa = PBXBuildFile; productRef = EA5A17032F5B000000AA1A46 /* TranscriptWorkspace */; };
+		EA5A17072F5B000000AA1A46 /* TranscriptSource in Frameworks */ = {isa = PBXBuildFile; productRef = EA5A17062F5B000000AA1A46 /* TranscriptSource */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -49,6 +50,7 @@
 				EA5A16ED2F5B000000AA1A46 /* AgentSDK in Frameworks */,
 				EA5A17042F5B000000AA1A46 /* TranscriptKit in Frameworks */,
 				EA5A17052F5B000000AA1A46 /* TranscriptWorkspace in Frameworks */,
+				EA5A17072F5B000000AA1A46 /* TranscriptSource in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -105,6 +107,7 @@
 				EA5A16EE2F5B000000AA1A46 /* AgentSDK */,
 				EA5A17022F5B000000AA1A46 /* TranscriptKit */,
 				EA5A17032F5B000000AA1A46 /* TranscriptWorkspace */,
+				EA5A17062F5B000000AA1A46 /* TranscriptSource */,
 			);
 			productName = ccterm;
 			productReference = 2B3DA4E42F5701A1000987D3 /* ccterm.app */;
@@ -523,6 +526,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = EA5A17012F5B000000AA1A46 /* XCLocalSwiftPackageReference "TranscriptKit" */;
 			productName = TranscriptWorkspace;
+		};
+		EA5A17062F5B000000AA1A46 /* TranscriptSource */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EA5A17012F5B000000AA1A46 /* XCLocalSwiftPackageReference "TranscriptKit" */;
+			productName = TranscriptSource;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

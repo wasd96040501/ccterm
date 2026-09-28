@@ -16,10 +16,10 @@ import SwiftUI
 ///
 /// Sandboxing / classifier / destructive-warning surfacing from the
 /// upstream are intentionally deferred — the CLI doesn't ship those
-/// fields through `PermissionRequest` today and we can layer them in
+/// fields through `LegacyPermissionRequest` today and we can layer them in
 /// when the SDK grows the structured channel.
 struct PermissionShellCardBody: View {
-    let request: PermissionRequest
+    let request: LegacyPermissionRequest
     let kind: PermissionCardKind
 
     /// Maximum visible height for the embedded command `DiffView`. The
@@ -140,7 +140,7 @@ struct PermissionShellCardBody: View {
 
 #Preview("Bash · simple") {
     PermissionShellCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-1",
             toolName: "Bash",
             input: [
@@ -156,7 +156,7 @@ struct PermissionShellCardBody: View {
 
 #Preview("Bash · multi-line heredoc") {
     PermissionShellCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-2",
             toolName: "Bash",
             input: [
@@ -173,7 +173,7 @@ struct PermissionShellCardBody: View {
 
 #Preview("PowerShell") {
     PermissionShellCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-3",
             toolName: "PowerShell",
             input: [

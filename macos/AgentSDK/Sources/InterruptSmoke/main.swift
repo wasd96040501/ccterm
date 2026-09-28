@@ -71,7 +71,7 @@ let config = SessionConfiguration(
     messageExportDirectory: exportDir
 )
 
-let session = AgentSDK.Session(configuration: config)
+let session = AgentSDK.LegacySession(configuration: config)
 session.lastKnownSessionId = sessionId
 
 // Bug-relevant counters.

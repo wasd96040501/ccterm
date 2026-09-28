@@ -201,7 +201,7 @@ final class SessionRuntime {
     /// in the first place.
     @ObservationIgnored var onTurnFinishedLive: (() -> Void)?
 
-    /// Fired when a new `PermissionRequest` is appended to
+    /// Fired when a new `LegacyPermissionRequest` is appended to
     /// `pendingPermissions` — i.e. the permission card just appeared and
     /// the turn is now blocked on a user decision. Mirrors `onTurnEnded`'s
     /// closure-injected shape: the subscriber (SessionManager →

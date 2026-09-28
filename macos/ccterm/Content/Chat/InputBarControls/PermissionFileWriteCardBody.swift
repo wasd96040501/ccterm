@@ -24,7 +24,7 @@ import SwiftUI
 /// diff sizes to its intrinsic height and a runaway edit caps at
 /// `diffMaxHeight` and scrolls — buttons always stay reachable.
 struct PermissionFileWriteCardBody: View {
-    let request: PermissionRequest
+    let request: LegacyPermissionRequest
     let kind: PermissionCardKind
 
     /// Maximum visible height for the embedded `DiffView`. Hit it and
@@ -150,7 +150,7 @@ struct PermissionFileWriteCardBody: View {
 
 #Preview("Edit · snippet diff") {
     PermissionFileWriteCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-1",
             toolName: "Edit",
             input: [
@@ -167,7 +167,7 @@ struct PermissionFileWriteCardBody: View {
 
 #Preview("Write · create new file") {
     PermissionFileWriteCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-2",
             toolName: "Write",
             input: [
@@ -183,7 +183,7 @@ struct PermissionFileWriteCardBody: View {
 
 #Preview("Write · overwrite /etc/hosts") {
     PermissionFileWriteCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-3",
             toolName: "Write",
             input: [
@@ -199,7 +199,7 @@ struct PermissionFileWriteCardBody: View {
 
 #Preview("Edit · missing path") {
     PermissionFileWriteCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-4",
             toolName: "Edit",
             input: [:]),

@@ -43,13 +43,13 @@ final class FakeCLIClient: CLIClient {
     var lastKnownSessionId: String?
     var onMessage: ((Message2) -> Void)?
     var onStreamEvent: ((Message2StreamEvent) -> Void)?
-    var onPermissionRequest: ((PermissionRequest, @escaping (PermissionDecision) -> Void) -> Void)?
+    var onPermissionRequest: ((LegacyPermissionRequest, @escaping (LegacyPermissionDecision) -> Void) -> Void)?
     var onPermissionCancelled: ((String) -> Void)?
     var onProcessExit: ((Int32) -> Void)?
     var onStderr: ((String) -> Void)?
-    var onHookRequest: ((HookRequest) -> HookResult)?
+    var onHookRequest: ((LegacyHookRequest) -> HookResult)?
     var onMCPRequest: ((MCPRequest) -> MCPResponse)?
-    var onElicitationRequest: ((ElicitationRequest) -> ElicitationResult)?
+    var onElicitationRequest: ((LegacyElicitationRequest) -> ElicitationResult)?
 
     init() {}
 
@@ -205,8 +205,8 @@ final class FakeCLIClient: CLIClient {
     }
 
     func simulatePermissionRequest(
-        _ request: PermissionRequest,
-        completion: @escaping (PermissionDecision) -> Void
+        _ request: LegacyPermissionRequest,
+        completion: @escaping (LegacyPermissionDecision) -> Void
     ) {
         onPermissionRequest?(request, completion)
     }

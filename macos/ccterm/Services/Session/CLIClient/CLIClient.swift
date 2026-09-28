@@ -1,11 +1,11 @@
 import AgentSDK
 import Foundation
 
-/// Thin abstraction over `AgentSDK.Session`. The handle's view of the CLI
+/// Thin abstraction over `AgentSDK.LegacySession`. The handle's view of the CLI
 /// is exactly the methods it actually calls — nothing more. Production
 /// uses `AgentSDKCLIClient`; tests inject `FakeCLIClient` (DEBUG-only).
 ///
-/// **Design**: closure-property callbacks mirror `AgentSDK.Session` 1:1
+/// **Design**: closure-property callbacks mirror `AgentSDK.LegacySession` 1:1
 /// so the production wrapper is the boring forwarding adapter. Async
 /// methods stay async; completion-callback methods keep the completion
 /// form so we don't have to retrofit every call site.
@@ -15,7 +15,7 @@ import Foundation
 /// install callbacks immediately after constructing the client and
 /// before `start()`, then write to those callbacks from background
 /// threads. A reference type with mutable closure properties matches
-/// the existing AgentSDK.Session shape without changing call patterns.
+/// the existing AgentSDK.LegacySession shape without changing call patterns.
 protocol CLIClient: AnyObject {
 
     /// Pre-set this before `start()` so the AgentSDK export writes the
@@ -31,14 +31,14 @@ protocol CLIClient: AnyObject {
     /// runtime folds these into live assistant text + turn token usage; see
     /// `StreamingTurnAssembler`.
     var onStreamEvent: ((Message2StreamEvent) -> Void)? { get set }
-    var onPermissionRequest: ((PermissionRequest, @escaping (PermissionDecision) -> Void) -> Void)?
+    var onPermissionRequest: ((LegacyPermissionRequest, @escaping (LegacyPermissionDecision) -> Void) -> Void)?
     { get set }
     var onPermissionCancelled: ((String) -> Void)? { get set }
     var onProcessExit: ((Int32) -> Void)? { get set }
     var onStderr: ((String) -> Void)? { get set }
-    var onHookRequest: ((HookRequest) -> HookResult)? { get set }
+    var onHookRequest: ((LegacyHookRequest) -> HookResult)? { get set }
     var onMCPRequest: ((MCPRequest) -> MCPResponse)? { get set }
-    var onElicitationRequest: ((ElicitationRequest) -> ElicitationResult)? { get set }
+    var onElicitationRequest: ((LegacyElicitationRequest) -> ElicitationResult)? { get set }
 
     // MARK: Lifecycle
 
@@ -95,7 +95,7 @@ protocol CLIClient: AnyObject {
 
 /// Builds a `CLIClient` from a session configuration. Injected into
 /// `Session` so bootstrap can construct the client without
-/// hard-wiring the `AgentSDK.Session` type. Production default lives on
+/// hard-wiring the `AgentSDK.LegacySession` type. Production default lives on
 /// `AgentSDKCLIClient`; tests pass a closure that returns a
 /// `FakeCLIClient`.
 typealias CLIClientFactory = @MainActor (SessionConfiguration) -> any CLIClient

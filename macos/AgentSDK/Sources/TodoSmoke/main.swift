@@ -2,7 +2,7 @@ import AgentSDK
 import Foundation
 
 // Dump-only smoke focused on the TodoWrite tool. Spawns a real `claude`
-// CLI via AgentSDK.Session, asks it to plan a small task using TodoWrite
+// CLI via AgentSDK.LegacySession, asks it to plan a small task using TodoWrite
 // (which forces multiple consecutive writes), captures every JSONL line
 // the CLI emits, and prints the TodoWrite-shaped payloads so we can
 // confirm:
@@ -84,7 +84,7 @@ let config = SessionConfiguration(
     messageExportDirectory: exportDir
 )
 
-let session = AgentSDK.Session(configuration: config)
+let session = AgentSDK.LegacySession(configuration: config)
 session.lastKnownSessionId = sessionId
 
 var counts: [String: Int] = [:]

@@ -1,7 +1,7 @@
 import AgentSDK
 import Foundation
 
-// Dump-only smoke. Spawns a real `claude` CLI via AgentSDK.Session,
+// Dump-only smoke. Spawns a real `claude` CLI via AgentSDK.LegacySession,
 // sends one prompt, captures every line of JSONL the CLI emits, and
 // prints message-type counts. Two scenarios are selectable by env:
 //
@@ -90,7 +90,7 @@ let config = SessionConfiguration(
     messageExportDirectory: exportDir
 )
 
-let session = AgentSDK.Session(configuration: config)
+let session = AgentSDK.LegacySession(configuration: config)
 session.lastKnownSessionId = sessionId
 
 var counts: [String: Int] = [:]

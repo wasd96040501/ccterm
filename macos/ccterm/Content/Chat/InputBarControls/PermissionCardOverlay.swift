@@ -85,7 +85,7 @@ struct PermissionCardOverlay: View {
 
     /// The four decision actions for a pending permission, packaged so both
     /// the body and `PermissionCardWiringTests` build them the same way. Each
-    /// closure turns a `PermissionRequest` convenience decision into a
+    /// closure turns a `LegacyPermissionRequest` convenience decision into a
     /// `session.respond(to:decision:)` call — keeping the wire-up
     /// (which decision maps to which button, and that `updatedInput` survives)
     /// in one unit-testable place.

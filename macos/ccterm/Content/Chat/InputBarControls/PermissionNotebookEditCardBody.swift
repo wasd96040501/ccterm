@@ -13,7 +13,7 @@ import SwiftUI
 /// follow-up — the v1 card mirrors the same trust budget as the
 /// shell body: "see what the agent proposes, then decide."
 struct PermissionNotebookEditCardBody: View {
-    let request: PermissionRequest
+    let request: LegacyPermissionRequest
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -106,7 +106,7 @@ struct PermissionNotebookEditCardBody: View {
 
 #Preview("replace · python cell") {
     PermissionNotebookEditCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-1",
             toolName: "NotebookEdit",
             input: [
@@ -124,7 +124,7 @@ struct PermissionNotebookEditCardBody: View {
 
 #Preview("insert · markdown cell") {
     PermissionNotebookEditCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-2",
             toolName: "NotebookEdit",
             input: [
@@ -142,7 +142,7 @@ struct PermissionNotebookEditCardBody: View {
 
 #Preview("delete · empty source") {
     PermissionNotebookEditCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-3",
             toolName: "NotebookEdit",
             input: [

@@ -22,7 +22,7 @@ import SwiftUI
 ///   card passes clicks through to the transcript (see
 ///   `PassthroughHostingView`).
 ///
-/// Pure UI: the card receives a `PermissionRequest` plus four decision
+/// Pure UI: the card receives a `LegacyPermissionRequest` plus four decision
 /// callbacks and renders the body. Wiring through to `session.respond(...)`
 /// lives in `PermissionCardOverlay` (`decisionHandlers(for:session:)`) —
 /// keeping this view free of session state so it stays snapshot-friendly.
@@ -33,7 +33,7 @@ import SwiftUI
 /// chrome (header / decision reason / buttons) and delegates the
 /// middle section to the per-kind body.
 struct PermissionCardView: View {
-    let request: PermissionRequest
+    let request: LegacyPermissionRequest
     let onAllowOnce: () -> Void
     let onAllowAlways: () -> Void
     let onDeny: () -> Void
@@ -151,13 +151,13 @@ struct PermissionCardView: View {
 // MARK: - Copy helpers
 
 /// Centralises the user-facing strings derived from a
-/// `PermissionRequest`. Lives next to the view (not on `AgentSDK`)
+/// `LegacyPermissionRequest`. Lives next to the view (not on `AgentSDK`)
 /// because the localized copy is product-shape, not SDK-shape.
 enum PermissionCardCopy {
 
     /// One-line headline. Falls back to a generic verb when the tool
     /// isn't in the curated list.
-    static func title(for request: PermissionRequest) -> String {
+    static func title(for request: LegacyPermissionRequest) -> String {
         let verb = toolVerb(request.toolName, kind: PermissionCardKind.kind(for: request))
         return String(localized: "Claude wants to \(verb)")
     }
@@ -166,7 +166,7 @@ enum PermissionCardCopy {
     /// order Anthropic's CLI prefers for its own preview text.
     /// Consumed by `PermissionFallbackCardBody` for kinds without a
     /// dedicated renderer.
-    static func parameter(for request: PermissionRequest) -> String? {
+    static func parameter(for request: LegacyPermissionRequest) -> String? {
         let candidates = ["command", "file_path", "path", "pattern", "url"]
         for key in candidates {
             if let v = request.rawInput[key] as? String, !v.isEmpty {
@@ -206,7 +206,7 @@ enum PermissionCardCopy {
 /// Generic one-liner body used until each kind ships its own
 /// dedicated renderer. Same shape as before this file was split.
 private struct PermissionFallbackCardBody: View {
-    let request: PermissionRequest
+    let request: LegacyPermissionRequest
 
     var body: some View {
         if let detail = PermissionCardCopy.parameter(for: request) {
@@ -323,7 +323,7 @@ struct PermissionDecisionButton: View {
 
 #Preview("Bash") {
     PermissionCardView(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-1",
             toolName: "Bash",
             input: [
@@ -341,7 +341,7 @@ struct PermissionDecisionButton: View {
 
 #Preview("Edit · file") {
     PermissionCardView(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-2",
             toolName: "Edit",
             input: [
@@ -366,7 +366,7 @@ struct PermissionDecisionButton: View {
         "    case option\(i): return String(localized: \"option-\(i)\")"
     }.joined(separator: "\n")
     return PermissionCardView(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-long-diff",
             toolName: "Edit",
             input: [
@@ -385,7 +385,7 @@ struct PermissionDecisionButton: View {
 
 #Preview("WebFetch") {
     PermissionCardView(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-3",
             toolName: "WebFetch",
             input: [
@@ -403,7 +403,7 @@ struct PermissionDecisionButton: View {
 
 #Preview("EnterPlanMode") {
     PermissionCardView(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-4",
             toolName: "EnterPlanMode",
             input: [:]),
@@ -418,7 +418,7 @@ struct PermissionDecisionButton: View {
 
 #Preview("AskUserQuestion") {
     PermissionCardView(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-ask",
             toolName: "AskUserQuestion",
             input: [
@@ -473,7 +473,7 @@ struct PermissionDecisionButton: View {
 
 #Preview("Fallback · unknown tool") {
     PermissionCardView(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-5",
             toolName: "MysteryTool",
             input: [

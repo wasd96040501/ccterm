@@ -110,7 +110,7 @@ final class PermissionTaskAgentCardBodyTests: XCTestCase {
     // MARK: - Helpers
 
     private func makeBody(input: [String: Any]) -> PermissionTaskAgentCardBody {
-        let req = PermissionRequest.makePreview(
+        let req = LegacyPermissionRequest.makePreview(
             requestId: "task-\(UUID().uuidString)",
             toolName: "Task",
             input: input)

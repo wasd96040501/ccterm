@@ -96,7 +96,7 @@ final class PermissionNotebookEditCardBodyTests: XCTestCase {
     // MARK: - Helpers
 
     private func makeBody(input: [String: Any]) -> PermissionNotebookEditCardBody {
-        let req = PermissionRequest.makePreview(
+        let req = LegacyPermissionRequest.makePreview(
             requestId: "nb-\(UUID().uuidString)",
             toolName: "NotebookEdit",
             input: input)

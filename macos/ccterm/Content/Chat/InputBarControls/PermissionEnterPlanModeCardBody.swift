@@ -17,7 +17,7 @@ import SwiftUI
 /// recognisable on the existing `.barSurface` chrome via the
 /// "wand.and.stars" icon row.
 struct PermissionEnterPlanModeCardBody: View {
-    let request: PermissionRequest
+    let request: LegacyPermissionRequest
 
     /// Bullet copy matching the upstream Ink layout verbatim. Kept
     /// internal (not private) so tests can pin the exact phrasing
@@ -79,7 +79,7 @@ struct PermissionEnterPlanModeCardBody: View {
 
 #Preview("EnterPlanMode") {
     PermissionEnterPlanModeCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-1",
             toolName: "EnterPlanMode",
             input: [:])

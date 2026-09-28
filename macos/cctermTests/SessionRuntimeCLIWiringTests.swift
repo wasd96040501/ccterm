@@ -4,7 +4,7 @@ import XCTest
 @testable import ccterm
 
 /// Verifies `SessionRuntime` routes outgoing operations through the
-/// injected `CLIClient`, not through a hard-wired `AgentSDK.Session`.
+/// injected `CLIClient`, not through a hard-wired `AgentSDK.LegacySession`.
 ///
 /// The handle's runtime contract is exercised end-to-end against
 /// `FakeCLIClient`:

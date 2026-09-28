@@ -56,7 +56,7 @@ final class PermissionExitPlanModeCardBodyTests: XCTestCase {
     )
         -> PermissionExitPlanModeCardBody
     {
-        let req = PermissionRequest.makePreview(
+        let req = LegacyPermissionRequest.makePreview(
             requestId: "exit-\(UUID().uuidString)",
             toolName: toolName,
             input: input)

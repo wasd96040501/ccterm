@@ -15,7 +15,7 @@ import SwiftUI
 /// `description` (when the agent supplied one) is dimmed under the
 /// headline so a chatty MCP doesn't dilute the surface.
 struct PermissionMcpCardBody: View {
-    let request: PermissionRequest
+    let request: LegacyPermissionRequest
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -130,7 +130,7 @@ struct PermissionMcpCardBody: View {
 
 #Preview("Standard server__tool") {
     PermissionMcpCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-1",
             toolName: "mcp__linear__create_issue",
             input: [
@@ -147,7 +147,7 @@ struct PermissionMcpCardBody: View {
 
 #Preview("Nested tool name") {
     PermissionMcpCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-2",
             toolName: "mcp__chrome__tabs__create",
             input: [
@@ -162,7 +162,7 @@ struct PermissionMcpCardBody: View {
 
 #Preview("Empty input") {
     PermissionMcpCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-3",
             toolName: "mcp__weather__current",
             input: [:])

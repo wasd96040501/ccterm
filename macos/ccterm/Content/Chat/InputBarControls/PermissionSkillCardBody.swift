@@ -14,7 +14,7 @@ import SwiftUI
 /// same value the CLI would have echoed when the request was
 /// queued.
 struct PermissionSkillCardBody: View {
-    let request: PermissionRequest
+    let request: LegacyPermissionRequest
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -86,7 +86,7 @@ struct PermissionSkillCardBody: View {
 
 #Preview("Skill · with args") {
     PermissionSkillCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-1",
             toolName: "Skill",
             input: [
@@ -101,7 +101,7 @@ struct PermissionSkillCardBody: View {
 
 #Preview("Skill · no args") {
     PermissionSkillCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-2",
             toolName: "Skill",
             input: [
@@ -115,7 +115,7 @@ struct PermissionSkillCardBody: View {
 
 #Preview("Skill · missing name") {
     PermissionSkillCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-3",
             toolName: "Skill",
             input: [:])

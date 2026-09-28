@@ -693,7 +693,7 @@ final class Session {
 
     /// Reply to a pending permission. Draft phase has no pending
     /// permissions; no-op.
-    func respond(to permissionId: String, decision: PermissionDecision) {
+    func respond(to permissionId: String, decision: LegacyPermissionDecision) {
         runtime?.respond(to: permissionId, decision: decision)
     }
 }

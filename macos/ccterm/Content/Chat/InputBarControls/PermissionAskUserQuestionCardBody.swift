@@ -50,7 +50,7 @@ struct PermissionAskUserQuestionCardBody: View {
 
     // MARK: - Inputs
 
-    let request: PermissionRequest
+    let request: LegacyPermissionRequest
     let onSubmit: ([String: Any]?) -> Void
     let onCancel: () -> Void
 
@@ -587,7 +587,7 @@ private struct AskOptionRowStyle: ButtonStyle {
 
 #Preview("Single-select with Other") {
     PermissionAskUserQuestionCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-single",
             toolName: "AskUserQuestion",
             input: [
@@ -620,7 +620,7 @@ private struct AskOptionRowStyle: ButtonStyle {
 
 #Preview("Multi-select 2 of 3") {
     PermissionAskUserQuestionCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-multi",
             toolName: "AskUserQuestion",
             input: [
@@ -657,7 +657,7 @@ private struct AskOptionRowStyle: ButtonStyle {
 
 #Preview("Empty fallback") {
     PermissionAskUserQuestionCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-empty",
             toolName: "AskUserQuestion",
             input: [:]),

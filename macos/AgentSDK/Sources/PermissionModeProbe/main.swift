@@ -121,7 +121,7 @@ let config = SessionConfiguration(
     allowDangerouslySkipPermissions: false,
     messageExportDirectory: exportDir)
 
-let session = AgentSDK.Session(configuration: config)
+let session = AgentSDK.LegacySession(configuration: config)
 session.lastKnownSessionId = sessionId
 
 // Track which messages carry a permission_mode field.

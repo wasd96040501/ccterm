@@ -1,7 +1,7 @@
 import Foundation
 
 /// Decision returned for a permission request.
-public enum PermissionDecision {
+public enum LegacyPermissionDecision {
     /// Allow this tool call, optionally with an edited input.
     case allow(updatedInput: [String: Any]? = nil)
     /// Allow and remember the rule (applies `permissionSuggestions` by default), with optional input and custom permission updates.

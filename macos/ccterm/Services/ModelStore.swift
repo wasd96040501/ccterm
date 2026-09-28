@@ -96,7 +96,7 @@ final class ModelStore {
             customCommand: customCommand,
             allowDangerouslySkipPermissions: true
         )
-        let session = AgentSDK.Session(configuration: config)
+        let session = AgentSDK.LegacySession(configuration: config)
         do {
             try await session.start()
         } catch {

@@ -14,7 +14,7 @@ import SwiftUI
 /// instead — the user still sees the literal sed command. This body
 /// only takes over when we have enough structure to render a diff.
 struct PermissionSedEditCardBody: View {
-    let request: PermissionRequest
+    let request: LegacyPermissionRequest
 
     /// Cap for the embedded `DiffView`. Short substitutions size to
     /// their intrinsic height; long ones cap here and scroll.
@@ -107,7 +107,7 @@ struct PermissionSedEditCardBody: View {
 
 #Preview("sed -i · readable file") {
     PermissionSedEditCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-1",
             toolName: "Bash",
             input: [
@@ -121,7 +121,7 @@ struct PermissionSedEditCardBody: View {
 
 #Preview("sed -i · missing file") {
     PermissionSedEditCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-2",
             toolName: "Bash",
             input: [

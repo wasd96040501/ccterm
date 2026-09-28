@@ -62,7 +62,7 @@ let config = SessionConfiguration(
     messageExportDirectory: nil
 )
 
-let session = AgentSDK.Session(configuration: config)
+let session = AgentSDK.LegacySession(configuration: config)
 session.lastKnownSessionId = sessionId
 
 // All times in ms relative to T0 (set right before sendMessage).

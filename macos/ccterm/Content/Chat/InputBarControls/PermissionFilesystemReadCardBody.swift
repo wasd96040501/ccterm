@@ -12,7 +12,7 @@ import SwiftUI
 /// showing whichever field is populated. The decision buttons stay
 /// on the shared chrome — no per-tool branching.
 struct PermissionFilesystemReadCardBody: View {
-    let request: PermissionRequest
+    let request: LegacyPermissionRequest
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -128,7 +128,7 @@ struct PermissionFilesystemReadCardBody: View {
 
 #Preview("Read") {
     PermissionFilesystemReadCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-1",
             toolName: "Read",
             input: [
@@ -142,7 +142,7 @@ struct PermissionFilesystemReadCardBody: View {
 
 #Preview("Glob") {
     PermissionFilesystemReadCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-2",
             toolName: "Glob",
             input: [
@@ -157,7 +157,7 @@ struct PermissionFilesystemReadCardBody: View {
 
 #Preview("Grep · with mode") {
     PermissionFilesystemReadCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-3",
             toolName: "Grep",
             input: [

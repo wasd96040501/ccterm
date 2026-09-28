@@ -5,7 +5,7 @@ import Foundation
 /// Usage:
 /// ```swift
 /// let config = SessionConfiguration(workingDirectory: projectURL)
-/// let session = Session(configuration: config)
+/// let session = LegacySession(configuration: config)
 ///
 /// session.onMessage = { message in ... }
 /// session.onPermissionRequest = { request in return .allow }
@@ -18,7 +18,7 @@ import Foundation
 /// session.setModel("claude-sonnet-4-6")
 /// session.interrupt()
 /// ```
-public final class Session {
+public final class LegacySession {
 
     // MARK: - Properties
 
@@ -30,7 +30,7 @@ public final class Session {
     private var stderrPipe: Pipe?
     private let readQueue = DispatchQueue(label: "com.agent-sdk.read", qos: .userInitiated)
     private let stdinQueue = DispatchQueue(label: "com.agent-sdk.stdin")
-    private var pendingPermissions: [String: PermissionRequest] = [:]
+    private var pendingPermissions: [String: LegacyPermissionRequest] = [:]
     private var pendingControlResponses: [String: ([String: Any]) -> Void] = [:]
     /// Current session ID used as the export file name. Pre-set this before `start()`
     /// so the initialize message does not get written to `unknown.jsonl`.
@@ -46,19 +46,19 @@ public final class Session {
     /// CLI requests permission for a tool use. Reply asynchronously via `completion`.
     /// Invoked on `readQueue`; `completion` may be called from any thread.
     public var onPermissionRequest:
-        ((_ request: PermissionRequest, _ completion: @escaping (PermissionDecision) -> Void) -> Void)?
+        ((_ request: LegacyPermissionRequest, _ completion: @escaping (LegacyPermissionDecision) -> Void) -> Void)?
 
     /// CLI cancelled a previous permission request.
     public var onPermissionCancelled: ((_ requestId: String) -> Void)?
 
     /// CLI requests a hook callback. The return value is sent back to the CLI as-is.
-    public var onHookRequest: ((_ request: HookRequest) -> HookResult)?
+    public var onHookRequest: ((_ request: LegacyHookRequest) -> HookResult)?
 
     /// CLI forwards an MCP message. The return value is sent back to the CLI as-is.
     public var onMCPRequest: ((_ request: MCPRequest) -> MCPResponse)?
 
     /// CLI requests user input (elicitation). The return value is sent back to the CLI as-is.
-    public var onElicitationRequest: ((_ request: ElicitationRequest) -> ElicitationResult)?
+    public var onElicitationRequest: ((_ request: LegacyElicitationRequest) -> ElicitationResult)?
 
     /// A complete typed message arrived (assistant, user, system,
     /// result, progress, ...). Each callback is one finalized envelope
@@ -662,7 +662,7 @@ public final class Session {
             args += ["--allow-dangerously-skip-permissions"]
         }
 
-        // Session
+        // LegacySession
         if config.continueConversation {
             args += ["--continue"]
         }
@@ -866,7 +866,7 @@ public final class Session {
 
         switch subtype {
         case "can_use_tool":
-            guard let permReq = try? PermissionRequest(json: merged) else { return }
+            guard let permReq = try? LegacyPermissionRequest(json: merged) else { return }
             pendingPermissions[requestId] = permReq
             if let handler = onPermissionRequest {
                 handler(permReq) { [weak self] decision in
@@ -880,7 +880,7 @@ public final class Session {
             }
 
         case "hook_callback":
-            guard let hookReq = try? HookRequest(json: merged) else { return }
+            guard let hookReq = try? LegacyHookRequest(json: merged) else { return }
             let result = onHookRequest?(hookReq) ?? .success()
             writeJSON(buildHookResponse(requestId: requestId, result: result))
 
@@ -890,7 +890,7 @@ public final class Session {
             writeJSON(buildMCPResponse(requestId: requestId, result: result))
 
         case "elicitation":
-            guard let elReq = try? ElicitationRequest(json: merged) else { return }
+            guard let elReq = try? LegacyElicitationRequest(json: merged) else { return }
             let result = onElicitationRequest?(elReq) ?? .cancel
             writeJSON(buildElicitationResponse(requestId: requestId, result: result))
 
@@ -901,7 +901,7 @@ public final class Session {
 
     // MARK: - Private: Response Building
 
-    private func buildPermissionResponse(request: PermissionRequest, decision: PermissionDecision) -> [String: Any] {
+    private func buildPermissionResponse(request: LegacyPermissionRequest, decision: LegacyPermissionDecision) -> [String: Any] {
         let responseBody: [String: Any]
 
         switch decision {

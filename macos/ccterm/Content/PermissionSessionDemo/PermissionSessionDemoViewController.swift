@@ -257,7 +257,7 @@ final class PermissionSessionDemoViewController: NSViewController {
     fileprivate struct KindFixture: Identifiable {
         let id: String
         let label: String
-        let request: PermissionRequest
+        let request: LegacyPermissionRequest
     }
 
     fileprivate static let kindFixtures: [KindFixture] = [

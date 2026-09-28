@@ -8,7 +8,7 @@ public enum Message2: JSONParseable, UnknownStrippable {
     case progress(Message2Progress)
     case promptSuggestion(PromptSuggestion)
     case queueOperation(QueueOperation)
-    case rateLimitEvent(RateLimitEvent)
+    case rateLimitEvent(LegacyRateLimitEvent)
     case result(Message2Result)
     case streamEvent(Message2StreamEvent)
     case system(System)

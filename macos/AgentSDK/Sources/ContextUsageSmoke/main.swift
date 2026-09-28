@@ -1,7 +1,7 @@
 import AgentSDK
 import Foundation
 
-// Smoke test for `Session.getContextUsage`.
+// Smoke test for `LegacySession.getContextUsage`.
 //
 // Boots a real CLI session in plan mode (so it cannot run any tool that
 // would burn credits), runs `initialize`, fires `getContextUsage`, and
@@ -55,7 +55,7 @@ let config = SessionConfiguration(
     systemPrompt: .custom("You are a smoke harness. Do nothing on your own."),
     maxTurns: 1
 )
-let session = Session(configuration: config)
+let session = LegacySession(configuration: config)
 
 let initDone = DispatchSemaphore(value: 0)
 session.onProcessExit = { (code: Int32) in log("[exit] code=\(code)") }

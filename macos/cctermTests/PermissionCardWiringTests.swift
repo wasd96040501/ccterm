@@ -5,7 +5,7 @@ import XCTest
 
 /// Verifies that the four decision handlers `PermissionCardOverlay` builds
 /// for a `PermissionCardView` — via `decisionHandlers(for:session:)` — route
-/// to the right `PermissionDecision` at the `Session.respond(to:decision:)`
+/// to the right `LegacyPermissionDecision` at the `Session.respond(to:decision:)`
 /// boundary with the right pending `id`, and that the runtime pops the entry
 /// off `pendingPermissions` once a decision has been delivered. We build the
 /// SAME `Handlers` the body builds and invoke each closure (per
@@ -173,7 +173,7 @@ final class PermissionCardWiringTests: XCTestCase {
         captured: CapturedDecisions,
         runtime: SessionRuntime
     ) -> PendingPermission {
-        let request = PermissionRequest.makePreview(
+        let request = LegacyPermissionRequest.makePreview(
             requestId: requestId,
             toolName: "Bash",
             input: ["command": "ls"])
@@ -194,13 +194,13 @@ final class PermissionCardWiringTests: XCTestCase {
 /// side lets the wrong-id guard assert the handler targeted the right
 /// `PendingPermission`.
 private final class CapturedDecisions {
-    private(set) var values: [PermissionDecision] = []
+    private(set) var values: [LegacyPermissionDecision] = []
     private(set) var ids: [String] = []
     var count: Int { values.count }
     var isEmpty: Bool { values.isEmpty }
-    subscript(i: Int) -> PermissionDecision { values[i] }
+    subscript(i: Int) -> LegacyPermissionDecision { values[i] }
 
-    func append(id: String, decision: PermissionDecision) {
+    func append(id: String, decision: LegacyPermissionDecision) {
         ids.append(id)
         values.append(decision)
     }

@@ -142,7 +142,7 @@ final class PermissionShellCardBodyTests: XCTestCase {
     // MARK: - Helpers
 
     private func makeBody(toolName: String, input: [String: Any]) -> PermissionShellCardBody {
-        let req = PermissionRequest.makePreview(
+        let req = LegacyPermissionRequest.makePreview(
             requestId: "shell-\(toolName)",
             toolName: toolName,
             input: input)
@@ -155,7 +155,7 @@ final class PermissionShellCardBodyTests: XCTestCase {
         command: String,
         decisionReason: DecisionReason?,
         suggestions: [PermissionSuggestion]
-    ) -> PermissionRequest {
+    ) -> LegacyPermissionRequest {
         var dict: [String: Any] = [
             "request_id": "shell-\(UUID().uuidString)",
             "tool_name": toolName,
@@ -172,7 +172,7 @@ final class PermissionShellCardBodyTests: XCTestCase {
         case nil:
             break
         }
-        return try! PermissionRequest(json: dict)
+        return try! LegacyPermissionRequest(json: dict)
     }
 
     private func bashRule(_ content: String) -> PermissionSuggestion {

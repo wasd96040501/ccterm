@@ -59,7 +59,7 @@ final class PermissionSedEditCardBodyTests: XCTestCase {
     // MARK: - Helpers
 
     private func makeBody(command: String) -> PermissionSedEditCardBody {
-        let req = PermissionRequest.makePreview(
+        let req = LegacyPermissionRequest.makePreview(
             requestId: "sed-\(UUID().uuidString)",
             toolName: "Bash",
             input: ["command": command])

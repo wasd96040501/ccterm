@@ -33,7 +33,7 @@ extension Message2 {
             let _v: QueueOperation = try _jp(dict)
             self = .queueOperation(_v)
         case "rate_limit_event":
-            let _v: RateLimitEvent = try _jp(dict)
+            let _v: LegacyRateLimitEvent = try _jp(dict)
             self = .rateLimitEvent(_v)
         case "result":
             let _v: Message2Result = try _jp(dict)

@@ -148,7 +148,7 @@ public enum DecisionReason: JSONParseable, UnknownStrippable {
 
 // MARK: - Permission Request
 
-public struct PermissionRequest: JSONParseable, UnknownStrippable {
+public struct LegacyPermissionRequest: JSONParseable, UnknownStrippable {
     public let _raw: [String: Any]
     public let requestId: String
     public let toolName: String
@@ -166,7 +166,7 @@ public struct PermissionRequest: JSONParseable, UnknownStrippable {
     }
 
     public init(json: Any) throws {
-        let r = try JSONReader(json, context: "PermissionRequest")
+        let r = try JSONReader(json, context: "LegacyPermissionRequest")
         self._raw = r.dict
         self.requestId = try r.need("request_id")
         self.toolName = try r.need("tool_name")
@@ -181,23 +181,23 @@ public struct PermissionRequest: JSONParseable, UnknownStrippable {
     public func toJSON() -> Any { _raw }
 }
 
-// MARK: - PermissionRequest Preview
+// MARK: - LegacyPermissionRequest Preview
 
-extension PermissionRequest {
+extension LegacyPermissionRequest {
     /// Builds mock data for Previews / tests only.
-    public static func makePreview(requestId: String, toolName: String, input: [String: Any]) -> PermissionRequest {
+    public static func makePreview(requestId: String, toolName: String, input: [String: Any]) -> LegacyPermissionRequest {
         let dict: [String: Any] = [
             "request_id": requestId,
             "tool_name": toolName,
             "input": input,
         ]
-        return try! PermissionRequest(json: dict)
+        return try! LegacyPermissionRequest(json: dict)
     }
 }
 
-// MARK: - PermissionRequest Convenience
+// MARK: - LegacyPermissionRequest Convenience
 
-extension PermissionRequest {
+extension LegacyPermissionRequest {
 
     private static let toolVerbs: [String: String] = [
         "Bash": "running", "Read": "reading", "Write": "writing to",
@@ -209,7 +209,7 @@ extension PermissionRequest {
         "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\n"
 
     /// Deny without feedback — composes `"User rejected {verb} {desc}"`, `interrupt: true`.
-    public func deny() -> PermissionDecision {
+    public func deny() -> LegacyPermissionDecision {
         let verb = Self.toolVerbs[toolName] ?? "using"
         let desc = describeInput()
         let message =
@@ -220,12 +220,12 @@ extension PermissionRequest {
     }
 
     /// Deny with user-provided feedback — wraps it in the feedback template, `interrupt: false`.
-    public func deny(feedback: String) -> PermissionDecision {
+    public func deny(feedback: String) -> LegacyPermissionDecision {
         .deny(reason: Self.feedbackTemplate + feedback, interrupt: false)
     }
 
     /// Allow once, optionally with a user-edited input.
-    public func allowOnce(updatedInput: [String: Any]? = nil) -> PermissionDecision {
+    public func allowOnce(updatedInput: [String: Any]? = nil) -> LegacyPermissionDecision {
         .allow(updatedInput: updatedInput)
     }
 
@@ -233,7 +233,7 @@ extension PermissionRequest {
     /// defaults to the CLI-supplied `permissionSuggestions`.
     public func allowAlways(
         updatedInput: [String: Any]? = nil, updatedPermissions: [[String: Any]]? = nil
-    ) -> PermissionDecision {
+    ) -> LegacyPermissionDecision {
         let permissions = updatedPermissions ?? permissionSuggestions?.map { $0.toJSON() as! [String: Any] }
         return .allowAlways(updatedInput: updatedInput, updatedPermissions: permissions)
     }
@@ -250,7 +250,7 @@ extension PermissionRequest {
 // MARK: - Hook Request
 
 /// CLI request to execute a hook callback.
-public struct HookRequest: JSONParseable, UnknownStrippable {
+public struct LegacyHookRequest: JSONParseable, UnknownStrippable {
     public let _raw: [String: Any]
     public let requestId: String
     public let callbackId: String
@@ -258,7 +258,7 @@ public struct HookRequest: JSONParseable, UnknownStrippable {
     public let toolUseId: String?
 
     public init(json: Any) throws {
-        let r = try JSONReader(json, context: "HookRequest")
+        let r = try JSONReader(json, context: "LegacyHookRequest")
         self._raw = r.dict
         self.requestId = try r.need("request_id")
         self.callbackId = try r.need("callback_id")
@@ -292,14 +292,14 @@ public struct MCPRequest: JSONParseable, UnknownStrippable {
 // MARK: - Elicitation Request
 
 /// CLI request for user input.
-public struct ElicitationRequest: JSONParseable, UnknownStrippable {
+public struct LegacyElicitationRequest: JSONParseable, UnknownStrippable {
     public let _raw: [String: Any]
     public let requestId: String
     public let message: String
     public let requestedSchema: [String: Any]
 
     public init(json: Any) throws {
-        let r = try JSONReader(json, context: "ElicitationRequest")
+        let r = try JSONReader(json, context: "LegacyElicitationRequest")
         self._raw = r.dict
         self.requestId = try r.need("request_id")
         self.message = try r.need("message")

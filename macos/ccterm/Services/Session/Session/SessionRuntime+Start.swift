@@ -789,8 +789,8 @@ extension SessionRuntime {
     }
 
     fileprivate func enqueuePermission(
-        _ request: PermissionRequest,
-        completion: @escaping (PermissionDecision) -> Void
+        _ request: LegacyPermissionRequest,
+        completion: @escaping (LegacyPermissionDecision) -> Void
     ) {
         let pending = PendingPermission(
             id: request.requestId,

@@ -7,10 +7,10 @@ import Foundation
 /// CLI and removes the entry from the list.
 struct PendingPermission: Identifiable {
     let id: String
-    let request: PermissionRequest
+    let request: LegacyPermissionRequest
     /// Reply to the CLI. The closure removes the entry from
     /// pendingPermissions on its own.
-    let respond: (PermissionDecision) -> Void
+    let respond: (LegacyPermissionDecision) -> Void
 }
 
 /// A slash command advertised by the CLI during initialize.
@@ -32,7 +32,7 @@ struct TurnEndedNotice {
 }
 
 /// Payload for "this session is asking the user to approve a tool
-/// call." Produced by `SessionRuntime` the moment a `PermissionRequest`
+/// call." Produced by `SessionRuntime` the moment a `LegacyPermissionRequest`
 /// is enqueued (the permission card appears) and consumed by the
 /// notification service the same way `TurnEndedNotice` is. A pending
 /// permission *pauses* the turn, so the `.responding` → `.idle` edge

@@ -17,7 +17,7 @@ import SwiftUI
 /// - `model` override surfaced as a secondary chip when set —
 ///   `inherit` is the default and is intentionally hidden.
 struct PermissionTaskAgentCardBody: View {
-    let request: PermissionRequest
+    let request: LegacyPermissionRequest
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -136,7 +136,7 @@ struct PermissionTaskAgentCardBody: View {
 
 #Preview("Explore agent · worktree") {
     PermissionTaskAgentCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-1",
             toolName: "Task",
             input: [
@@ -155,7 +155,7 @@ struct PermissionTaskAgentCardBody: View {
 
 #Preview("Generic sub-task · no chips") {
     PermissionTaskAgentCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-2",
             toolName: "Task",
             input: [
@@ -171,7 +171,7 @@ struct PermissionTaskAgentCardBody: View {
 
 #Preview("Plan agent · model override") {
     PermissionTaskAgentCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-3",
             toolName: "Agent",
             input: [

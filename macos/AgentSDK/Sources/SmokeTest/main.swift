@@ -8,7 +8,7 @@ let config = SessionConfiguration(
     maxTurns: 1
 )
 
-let session = Session(configuration: config)
+let session = LegacySession(configuration: config)
 let done = DispatchSemaphore(value: 0)
 
 session.onMessage = { (message: Message2) in
@@ -46,14 +46,14 @@ session.onProcessExit = { (code: Int32) in
     if code != 0 { done.signal() }
 }
 
-session.onPermissionRequest = { (request: PermissionRequest, completion: @escaping (PermissionDecision) -> Void) in
+session.onPermissionRequest = { (request: LegacyPermissionRequest, completion: @escaping (LegacyPermissionDecision) -> Void) in
     print("[permission] tool=\(request.toolName)")
     completion(.deny(reason: "SmokeTest: auto-deny all tools"))
 }
 
 do {
     try await session.start()
-    print("[info] Session started, sending message...")
+    print("[info] LegacySession started, sending message...")
     session.sendMessage("Say hello in one sentence.")
     done.wait()
 } catch {

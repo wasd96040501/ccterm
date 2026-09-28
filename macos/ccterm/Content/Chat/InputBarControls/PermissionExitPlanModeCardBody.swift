@@ -23,7 +23,7 @@ import SwiftUI
 /// we show a brief note so the user still knows what the request
 /// is — same trust budget, different inputs.
 struct PermissionExitPlanModeCardBody: View {
-    let request: PermissionRequest
+    let request: LegacyPermissionRequest
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -83,7 +83,7 @@ struct PermissionExitPlanModeCardBody: View {
 
 #Preview("ExitPlanMode · with plan") {
     PermissionExitPlanModeCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-1",
             toolName: "ExitPlanMode",
             input: [
@@ -109,7 +109,7 @@ struct PermissionExitPlanModeCardBody: View {
 
 #Preview("ExitPlanModeV2 · file-backed") {
     PermissionExitPlanModeCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-2",
             toolName: "ExitPlanModeV2",
             input: [:])
@@ -121,7 +121,7 @@ struct PermissionExitPlanModeCardBody: View {
 
 #Preview("ExitPlanMode · empty plan") {
     PermissionExitPlanModeCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-3",
             toolName: "ExitPlanMode",
             input: [:])

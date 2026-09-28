@@ -7,7 +7,7 @@ import Cocoa
 /// `initialize` response) is the authoritative source — callers pass it
 /// via `knownCommands` and `complete(...)` takes a fast synchronous
 /// path. In compose mode there is no running CLI yet, so the store
-/// spins up a short-lived `AgentSDK.Session`, drives a single
+/// spins up a short-lived `AgentSDK.LegacySession`, drives a single
 /// `initialize(promptSuggestions: true)`, caches the response, and
 /// stops the subprocess. Cache invalidation is FSEvents-driven on the
 /// usual `.claude/skills` / `.claude/commands` directories under both
@@ -122,7 +122,7 @@ final class SlashCommandStore {
             workingDirectory: URL(fileURLWithPath: key.path),
             plugins: pluginDirs
         )
-        let session = AgentSDK.Session(configuration: config)
+        let session = AgentSDK.LegacySession(configuration: config)
 
         session.onProcessExit = { [weak self] exitCode in
             guard let self else { return }

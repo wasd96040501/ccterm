@@ -1,7 +1,7 @@
 import AgentSDK
 import Foundation
 
-// Smoke test for `Session.askSideQuestion` — the `side_question` control
+// Smoke test for `LegacySession.askSideQuestion` — the `side_question` control
 // request behind the CLI's `/btw` slash command.
 //
 // Boots a real CLI session in plan mode (so it can't run a tool that burns
@@ -59,7 +59,7 @@ let config = SessionConfiguration(
     systemPrompt: .custom("You are a smoke harness. Answer briefly. Do nothing on your own."),
     maxTurns: 1
 )
-let session = Session(configuration: config)
+let session = LegacySession(configuration: config)
 
 // Count `.result` messages so we can prove the side question is "by the way":
 // it must not produce a new turn result on the main stream.

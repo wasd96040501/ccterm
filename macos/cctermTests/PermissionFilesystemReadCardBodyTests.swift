@@ -116,7 +116,7 @@ final class PermissionFilesystemReadCardBodyTests: XCTestCase {
     )
         -> PermissionFilesystemReadCardBody
     {
-        let req = PermissionRequest.makePreview(
+        let req = LegacyPermissionRequest.makePreview(
             requestId: "fs-\(UUID().uuidString)",
             toolName: toolName,
             input: input)

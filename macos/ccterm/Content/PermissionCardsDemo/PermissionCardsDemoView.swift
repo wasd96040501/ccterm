@@ -99,7 +99,7 @@ struct PermissionCardsDemoView: View {
     private struct Item: Identifiable {
         let id: String
         let title: String
-        let request: PermissionRequest
+        let request: LegacyPermissionRequest
     }
 
     /// Round-robin assignment of `items` into `columnCount`
@@ -117,7 +117,7 @@ struct PermissionCardsDemoView: View {
         Item(
             id: "ask-single",
             title: "AskUserQuestion · single-select",
-            request: PermissionRequest.makePreview(
+            request: LegacyPermissionRequest.makePreview(
                 requestId: "demo-ask-single",
                 toolName: "AskUserQuestion",
                 input: [
@@ -148,7 +148,7 @@ struct PermissionCardsDemoView: View {
         Item(
             id: "ask-multi",
             title: "AskUserQuestion · multi-select",
-            request: PermissionRequest.makePreview(
+            request: LegacyPermissionRequest.makePreview(
                 requestId: "demo-ask-multi",
                 toolName: "AskUserQuestion",
                 input: [
@@ -173,7 +173,7 @@ struct PermissionCardsDemoView: View {
         Item(
             id: "ask-multi-question",
             title: "AskUserQuestion · 3 questions in a row",
-            request: PermissionRequest.makePreview(
+            request: LegacyPermissionRequest.makePreview(
                 requestId: "demo-ask-multi-q",
                 toolName: "AskUserQuestion",
                 input: [

@@ -13,7 +13,7 @@ import SwiftUI
 /// No per-domain branching at the button level — the rule the
 /// request would install is opaque, just like every other kind.
 struct PermissionWebFetchCardBody: View {
-    let request: PermissionRequest
+    let request: LegacyPermissionRequest
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -68,7 +68,7 @@ struct PermissionWebFetchCardBody: View {
 
 #Preview("URL · with prompt") {
     PermissionWebFetchCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-1",
             toolName: "WebFetch",
             input: [
@@ -83,7 +83,7 @@ struct PermissionWebFetchCardBody: View {
 
 #Preview("URL · no prompt") {
     PermissionWebFetchCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-2",
             toolName: "WebFetch",
             input: [
@@ -97,7 +97,7 @@ struct PermissionWebFetchCardBody: View {
 
 #Preview("Missing URL") {
     PermissionWebFetchCardBody(
-        request: PermissionRequest.makePreview(
+        request: LegacyPermissionRequest.makePreview(
             requestId: "preview-3",
             toolName: "WebFetch",
             input: [:])

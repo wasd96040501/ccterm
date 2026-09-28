@@ -2,14 +2,14 @@ import AgentSDK
 import Foundation
 
 /// Production `CLIClient` — a thin forwarding adapter over
-/// `AgentSDK.Session`. No state of its own; every method delegates
+/// `AgentSDK.LegacySession`. No state of its own; every method delegates
 /// directly. Tests use `FakeCLIClient` (DEBUG) instead.
 final class AgentSDKCLIClient: CLIClient {
 
-    private let session: AgentSDK.Session
+    private let session: AgentSDK.LegacySession
 
     init(configuration: SessionConfiguration) {
-        self.session = AgentSDK.Session(configuration: configuration)
+        self.session = AgentSDK.LegacySession(configuration: configuration)
     }
 
     /// Match the macOS 26 workaround used by `Session` /
@@ -26,7 +26,7 @@ final class AgentSDKCLIClient: CLIClient {
         set { session.lastKnownSessionId = newValue }
     }
 
-    // MARK: Callbacks (1:1 forward to AgentSDK.Session)
+    // MARK: Callbacks (1:1 forward to AgentSDK.LegacySession)
 
     var onMessage: ((Message2) -> Void)? {
         get { session.onMessage }
@@ -38,7 +38,7 @@ final class AgentSDKCLIClient: CLIClient {
         set { session.onStreamEvent = newValue }
     }
 
-    var onPermissionRequest: ((PermissionRequest, @escaping (PermissionDecision) -> Void) -> Void)?
+    var onPermissionRequest: ((LegacyPermissionRequest, @escaping (LegacyPermissionDecision) -> Void) -> Void)?
     {
         get { session.onPermissionRequest }
         set { session.onPermissionRequest = newValue }
@@ -59,7 +59,7 @@ final class AgentSDKCLIClient: CLIClient {
         set { session.onStderr = newValue }
     }
 
-    var onHookRequest: ((HookRequest) -> HookResult)? {
+    var onHookRequest: ((LegacyHookRequest) -> HookResult)? {
         get { session.onHookRequest }
         set { session.onHookRequest = newValue }
     }
@@ -69,7 +69,7 @@ final class AgentSDKCLIClient: CLIClient {
         set { session.onMCPRequest = newValue }
     }
 
-    var onElicitationRequest: ((ElicitationRequest) -> ElicitationResult)? {
+    var onElicitationRequest: ((LegacyElicitationRequest) -> ElicitationResult)? {
         get { session.onElicitationRequest }
         set { session.onElicitationRequest = newValue }
     }

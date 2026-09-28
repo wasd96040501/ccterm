@@ -115,7 +115,7 @@ extension SessionRuntime {
 
     /// Reply to a pending permission. Calls the respond closure on a hit
     /// (the closure removes the entry from the array); no-op otherwise.
-    func respond(to permissionId: String, decision: PermissionDecision) {
+    func respond(to permissionId: String, decision: LegacyPermissionDecision) {
         guard let pending = pendingPermissions.first(where: { $0.id == permissionId }) else {
             appLog(.info, "SessionRuntime", "respond no-match id=\(permissionId) \(sessionId)")
             return

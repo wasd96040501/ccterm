@@ -6,7 +6,7 @@ import Foundation
 // Verifies, against a real `claude` subprocess:
 //
 //   1. With the flag ON, the CLI emits `stream_event` envelopes and
-//      the SDK delivers each one to `Session.onStreamEvent` as a typed
+//      the SDK delivers each one to `LegacySession.onStreamEvent` as a typed
 //      `Message2StreamEvent` (NOT to `onMessage`).
 //   2. The typed `event` discriminator surfaces all 6 SSE sub-types
 //      (message_start / content_block_start / content_block_delta /
@@ -80,7 +80,7 @@ let config = SessionConfiguration(
     messageExportDirectory: exportDir
 )
 
-let session = AgentSDK.Session(configuration: config)
+let session = AgentSDK.LegacySession(configuration: config)
 session.lastKnownSessionId = sessionId
 
 final class Tally: @unchecked Sendable {

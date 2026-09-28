@@ -2,9 +2,9 @@ import AgentSDK
 import Foundation
 
 /// The effort tiers the model picker offers: the CLI's levels plus
-/// `ultracode`, which is not a CLI effort level but `xhigh` with the CLI's
-/// `ultracode` setting on. Selecting any other tier turns that setting off,
-/// so the tiers stay mutually exclusive.
+/// `ultracode`, which is `xhigh` with the CLI's `ultracode` setting on.
+/// Selecting any other tier turns that setting off, so the tiers stay
+/// mutually exclusive.
 enum Effort: String, CaseIterable {
     case low
     case medium
@@ -24,9 +24,12 @@ enum Effort: String, CaseIterable {
         }
     }
 
-    /// The runtime settings that switch a live session to this tier.
-    var flagSettings: [String: JSONValue] {
-        ["effortLevel": .string(level.rawValue), "ultracode": .bool(self == .ultracode)]
+    /// The settings that put a session in this tier.
+    var settings: AgentSDK.Settings {
+        var settings = AgentSDK.Settings()
+        settings[.effortLevel] = level
+        settings[.ultracode] = self == .ultracode
+        return settings
     }
 
     /// Display label for the effort popover row and the bar's trigger pill.

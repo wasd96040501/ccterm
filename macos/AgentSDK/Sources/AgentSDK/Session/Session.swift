@@ -167,11 +167,30 @@ public final class Session: @unchecked Sendable {
             "set_max_thinking_tokens", ["max_thinking_tokens": tokens.map { .number(Double($0)) } ?? .null])
     }
 
-    /// Merges `settings` into the CLI's runtime settings layer, keyed as in
-    /// `settings.json` (`["effortLevel": "high", "fastMode": true]`). A
-    /// `null` value removes that key from the layer.
-    public func applyFlagSettings(_ settings: [String: JSONValue]) async throws {
-        _ = try await sendControlRequest("apply_flag_settings", ["settings": .object(settings)])
+    /// Changes the session's own settings layer, which sits above user,
+    /// project and local settings and below managed policy. The layer is the
+    /// launch settings (``SessionConfiguration/settings``) with the runtime
+    /// values from every call to this method on top.
+    ///
+    /// The merge is by top-level key: each key in `settings` replaces its
+    /// whole runtime value (objects such as ``SettingsKey/permissions`` are
+    /// not merged field by field), a key recorded with ``Settings/unset(_:)``
+    /// loses its runtime value and falls back to its launch value, and keys
+    /// not mentioned are kept. Most settings apply from the next request;
+    /// `model`, `agent` and `fastMode` wait for the running turn to end, and
+    /// this call returns once they are applied.
+    ///
+    /// The CLI accepts the request even when a value breaks its schema, and
+    /// then ignores every runtime value until the bad one is replaced or
+    /// unset; ``settings()`` reports it in ``SettingsSnapshot/errors``.
+    public func applySettings(_ settings: Settings) async throws {
+        _ = try await sendControlRequest("apply_flag_settings", ["settings": .object(settings.json)])
+    }
+
+    /// The settings as the session sees them: every layer, their merge, and
+    /// the values the session resolved.
+    public func settings() async throws -> SettingsSnapshot {
+        SettingsSnapshot(response: try await sendControlRequest("get_settings"))
     }
 
     /// How the context window is currently spent.

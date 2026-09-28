@@ -23,11 +23,11 @@ final class SessionTests: XCTestCase {
         try? FileManager.default.removeItem(at: directory)
     }
 
-    private func makeSession(promptSuggestions: Bool = false) -> Session {
+    private func makeSession(promptSuggestions: Bool = false, settings: Settings = Settings()) -> Session {
         Session(
             configuration: SessionConfiguration(
                 workingDirectory: directory, binaryPath: directory.appendingPathComponent("claude").path,
-                promptSuggestions: promptSuggestions, inheritsParentEnvironment: true))
+                settings: settings, promptSuggestions: promptSuggestions, inheritsParentEnvironment: true))
     }
 
     /// The raw payload of the next `test_*` probe, skipping everything else.
@@ -264,6 +264,48 @@ final class SessionTests: XCTestCase {
         let cancelled = await probe("test_cancelled", in: &events)
         XCTAssertNotNil(hanging?["request_id"])
         XCTAssertEqual(cancelled?["request_id"], hanging?["request_id"])
+        await session.close()
+    }
+
+    // MARK: - Settings
+
+    func testSettingsSeedAndChangeTheSessionLayer() async throws {
+        var launch = Settings()
+        launch[.fastMode] = true
+        launch[.language] = "french"
+        launch.unset(.outputStyle)  // Dropped at launch: a null would void the layer.
+        let session = makeSession(settings: launch)
+        try await session.start()
+
+        var seeded = try await session.settings()
+        XCTAssertEqual(seeded.layer(.session), Settings(json: ["fastMode": true, "language": "french"]))
+        XCTAssertEqual(seeded.layer(.user)?["theme"], "dark")
+        XCTAssertEqual(seeded.layers.map(\.source), [.user, .session])
+
+        var change = Settings()
+        change[.effortLevel] = .high
+        change[.permissions] = PermissionSettings(additionalDirectories: ["/tmp/extra"])
+        change[.language] = "german"
+        try await session.applySettings(change)
+
+        seeded = try await session.settings()
+        var layer = try XCTUnwrap(seeded.layer(.session))
+        XCTAssertEqual(layer[.fastMode], true)
+        XCTAssertEqual(layer[.effortLevel], .high)
+        XCTAssertEqual(layer[.permissions]?.additionalDirectories, ["/tmp/extra"])
+        XCTAssertEqual(layer[.language], "german")
+        XCTAssertEqual(seeded.effective[.effortLevel], .high)
+        XCTAssertEqual(seeded.applied, SettingsSnapshot.Applied(model: "claude-test", effort: "high"))
+        XCTAssertEqual(seeded.errors, [])
+
+        var withdraw = Settings()
+        withdraw.unset(.language)
+        withdraw.unset(.effortLevel)
+        try await session.applySettings(withdraw)
+        seeded = try await session.settings()
+        layer = try XCTUnwrap(seeded.layer(.session))
+        XCTAssertEqual(layer[.language], "french")
+        XCTAssertNil(layer[.effortLevel])
         await session.close()
     }
 

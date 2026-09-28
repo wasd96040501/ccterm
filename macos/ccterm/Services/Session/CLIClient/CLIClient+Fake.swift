@@ -25,7 +25,7 @@ final class FakeCLIClient: CLIClient {
     private(set) var interruptCalls = 0
     private(set) var modelCalls: [String?] = []
     private(set) var permissionModeCalls: [AgentSDK.PermissionMode] = []
-    private(set) var flagSettingsCalls: [[String: JSONValue]] = []
+    private(set) var settingsCalls: [AgentSDK.Settings] = []
     private(set) var contextUsageCalls = 0
     private(set) var sideQuestions: [String] = []
 
@@ -87,8 +87,8 @@ final class FakeCLIClient: CLIClient {
         permissionModeCalls.append(mode)
     }
 
-    func applyFlagSettings(_ settings: [String: JSONValue]) async throws {
-        flagSettingsCalls.append(settings)
+    func applySettings(_ settings: AgentSDK.Settings) async throws {
+        settingsCalls.append(settings)
     }
 
     func contextUsage() async throws -> ContextUsage {

@@ -63,8 +63,10 @@ public struct SessionConfiguration: Sendable {
     /// MCP server configuration (JSON string or file path). Maps to `--mcp-config`.
     public var mcpConfig: String?
 
-    /// Inline settings JSON or path to a settings file. Maps to `--settings`.
-    public var settings: String?
+    /// The session's own settings layer at launch; change it later with
+    /// ``Session/applySettings(_:)``. Unset keys are dropped here: the layer
+    /// starts empty. Maps to `--settings`.
+    public var settings: Settings
 
     /// Additional working directories. Maps to `--add-dir`.
     public var addDirs: [String]
@@ -136,7 +138,7 @@ public struct SessionConfiguration: Sendable {
         effort: Effort? = nil,
         jsonSchema: JSONValue? = nil,
         mcpConfig: String? = nil,
-        settings: String? = nil,
+        settings: Settings = Settings(),
         addDirs: [String] = [],
         continueConversation: Bool = false,
         forkSession: Bool = false,

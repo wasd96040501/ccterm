@@ -21,7 +21,7 @@ protocol CLIClient: AnyObject {
     func interrupt() async throws
     func setModel(_ model: String?) async throws
     func setPermissionMode(_ mode: AgentSDK.PermissionMode) async throws
-    func applyFlagSettings(_ settings: [String: JSONValue]) async throws
+    func applySettings(_ settings: AgentSDK.Settings) async throws
     func contextUsage() async throws -> ContextUsage
     func askSideQuestion(_ question: String) async throws -> SideQuestionAnswer?
 }

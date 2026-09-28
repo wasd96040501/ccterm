@@ -49,6 +49,10 @@ let package = Package(
             dependencies: ["AgentSDK"]
         ),
         .executableTarget(
+            name: "SettingsSmoke",
+            dependencies: ["AgentSDK"]
+        ),
+        .executableTarget(
             name: "CorpusAudit",
             dependencies: ["AgentSDK"]
         ),

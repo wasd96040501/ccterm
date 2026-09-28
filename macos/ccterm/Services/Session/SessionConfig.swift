@@ -150,9 +150,9 @@ struct SessionConfig: Equatable {
             sessionId: resume ? nil : sessionId,
             resume: resume ? sessionId : nil,
             effort: effort?.level,
-            // The ultracode flag rides in as an inline settings source so it
-            // is live from the first turn.
-            settings: effort == .ultracode ? "{\"ultracode\":true}" : nil,
+            // Ultracode rides in the launch settings so it is live from the
+            // first turn.
+            settings: effort == .ultracode ? Effort.ultracode.settings : AgentSDK.Settings(),
             addDirs: additionalDirectories,
             // Opt into partial messages so the renderer can stream assistant
             // text live and track turn token usage as it accrues (see

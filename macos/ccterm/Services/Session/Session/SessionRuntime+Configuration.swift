@@ -64,7 +64,7 @@ extension SessionRuntime {
             repository.updateExtra(sessionId, with: SessionExtraUpdate(effort: effort.rawValue))
         }
         if isAttached {
-            command("setEffort") { try await $0.applyFlagSettings(effort.flagSettings) }
+            command("setEffort") { try await $0.applySettings(effort.settings) }
         }
     }
 
@@ -81,14 +81,14 @@ extension SessionRuntime {
 
     /// Toggle "fast mode" for the current session. Memory-only (the CLI
     /// flag is documented as not persisted across sessions), pushed to
-    /// the CLI via `applyFlagSettings.fastMode` when attached. Compose
+    /// the CLI via `applySettings` (`fastMode`) when attached. Compose
     /// mode writes are applied at the tail of `bootstrap` via
     /// `flushDeferredFastMode()` so the user's pre-launch toggle is
     /// honored on the first turn.
     func setFastMode(_ enabled: Bool) {
         fastModeEnabled = enabled
         if isAttached {
-            command("setFastMode") { try await $0.applyFlagSettings(["fastMode": .bool(enabled)]) }
+            command("setFastMode") { try await $0.applySettings(Self.settings(.fastMode, enabled)) }
         }
     }
 
@@ -97,7 +97,7 @@ extension SessionRuntime {
     /// off, so we don't have to send an extra RPC to confirm it).
     internal func flushDeferredFastMode() {
         guard fastModeEnabled else { return }
-        command("setFastMode") { try await $0.applyFlagSettings(["fastMode": true]) }
+        command("setFastMode") { try await $0.applySettings(Self.settings(.fastMode, true)) }
     }
 }
 
@@ -105,8 +105,8 @@ extension SessionRuntime {
 
 extension SessionRuntime {
 
-    /// Mutable at runtime via
-    /// `applyFlagSettings.permissions.additionalDirectories`. UI layer
+    /// Mutable at runtime via `applySettings` (the `permissions` setting,
+    /// which this session only uses for its extra directories). UI layer
     /// adds/removes single entries with read-modify-write:
     /// `runtime.setAdditionalDirectories(runtime.additionalDirectories + [path])`.
     func setAdditionalDirectories(_ dirs: [String]) {
@@ -115,10 +115,8 @@ extension SessionRuntime {
             repository.updateExtra(sessionId, with: SessionExtraUpdate(addDirs: dirs))
         }
         if isAttached {
-            let settings: [String: JSONValue] = [
-                "permissions": ["additionalDirectories": .array(dirs.map(JSONValue.string))]
-            ]
-            command("setAdditionalDirectories") { try await $0.applyFlagSettings(settings) }
+            let settings = Self.settings(.permissions, PermissionSettings(additionalDirectories: dirs))
+            command("setAdditionalDirectories") { try await $0.applySettings(settings) }
         }
     }
 }
@@ -149,5 +147,14 @@ extension SessionRuntime {
         if focused {
             hasUnread = false
         }
+    }
+}
+
+extension SessionRuntime {
+    /// Settings holding just `value` for `key`.
+    fileprivate static func settings<Value>(_ key: SettingsKey<Value>, _ value: Value) -> AgentSDK.Settings {
+        var settings = AgentSDK.Settings()
+        settings[key] = value
+        return settings
     }
 }

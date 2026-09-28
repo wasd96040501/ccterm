@@ -68,7 +68,7 @@ extension SessionConfiguration {
         if forkSession { args += ["--fork-session"] }
         if let worktree { args += worktree.isEmpty ? ["--worktree"] : ["--worktree", worktree] }
 
-        if let settings { args += ["--settings", settings] }
+        if let settings = settings.launchArgument { args += ["--settings", settings] }
         if let settingSources { args += ["--setting-sources", settingSources.joined(separator: ",")] }
         for dir in addDirs { args += ["--add-dir", dir] }
         if let mcpConfig { args += ["--mcp-config", mcpConfig] }

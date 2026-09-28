@@ -418,7 +418,7 @@ final class SessionRuntime {
     /// | setter | semantics |
     /// |---|---|
     /// | `setModel` / `setEffort` / `setPermissionMode` | local + db + RPC; CLI's init/config replies are authoritative |
-    /// | `setAdditionalDirectories` | local + db + `applyFlagSettings` RPC |
+    /// | `setAdditionalDirectories` | local + db + `applySettings` RPC |
     /// | `setFastMode` | local + (when attached) RPC |
     /// | `setFocused` | local (does not touch CLI) |
     /// | `respond(to:decision:)` | local (only effective when a pending matches) |
@@ -513,7 +513,7 @@ final class SessionRuntime {
 
     /// Change additional-directories list. **Mutable at runtime** —
     /// attached writes go through
-    /// `applyFlagSettings.permissions.additionalDirectories`. UI layer
+    /// `applySettings` (`permissions.additionalDirectories`). UI layer
     /// adds/removes single entries with read-modify-write:
     /// `runtime.setAdditionalDirectories(runtime.additionalDirectories + [path])`.
     // impl in SessionRuntime+Configuration.swift

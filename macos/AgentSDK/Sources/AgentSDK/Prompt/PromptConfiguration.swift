@@ -15,8 +15,8 @@ public struct PromptConfiguration: Sendable {
     public var jsonSchema: JSONValue?
     /// `--effort`.
     public var effort: Effort?
-    /// Inline settings JSON or a settings file path (`--settings`).
-    public var settings: String?
+    /// Settings layered above user, project and local settings (`--settings`).
+    public var settings: Settings
     /// `--disable-slash-commands`.
     public var disableSlashCommands: Bool
     /// Terminates the CLI after this many seconds.
@@ -33,7 +33,7 @@ public struct PromptConfiguration: Sendable {
 
     public init(
         workingDirectory: URL, model: String? = nil, systemPrompt: String? = nil, tools: [String]? = nil,
-        jsonSchema: JSONValue? = nil, effort: Effort? = nil, settings: String? = nil,
+        jsonSchema: JSONValue? = nil, effort: Effort? = nil, settings: Settings = Settings(),
         disableSlashCommands: Bool = false, timeout: TimeInterval? = nil, binaryPath: String? = nil,
         customCommand: String? = nil, env: [String: String] = [:], inheritsParentEnvironment: Bool = false
     ) {
@@ -63,7 +63,7 @@ public struct PromptConfiguration: Sendable {
             args += ["--json-schema", String(decoding: data, as: UTF8.self)]
         }
         if let effort { args += ["--effort", effort.rawValue] }
-        if let settings { args += ["--settings", settings] }
+        if let settings = settings.launchArgument { args += ["--settings", settings] }
         if disableSlashCommands { args += ["--disable-slash-commands"] }
         args += ["--", message]
 

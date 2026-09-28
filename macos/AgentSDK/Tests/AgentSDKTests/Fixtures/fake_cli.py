@@ -9,6 +9,17 @@ import sys
 
 SESSION = "fake-session"
 
+# The session settings layer, as the CLI keeps it: `--settings` values with
+# `apply_flag_settings` values on top. A null withdraws a runtime value.
+LAUNCH_SETTINGS = {}
+RUNTIME_SETTINGS = {}
+if "--settings" in sys.argv:
+    LAUNCH_SETTINGS.update(json.loads(sys.argv[sys.argv.index("--settings") + 1]))
+
+
+def session_layer():
+    return {**LAUNCH_SETTINGS, **RUNTIME_SETTINGS}
+
 
 def emit(obj):
     sys.stdout.write(json.dumps(obj) + "\n")
@@ -62,6 +73,22 @@ def handle_control(msg):
     elif subtype == "hang":
         # Never answered; the test withdraws it once it knows it arrived.
         emit({"type": "system", "subtype": "test_hanging", "request_id": request_id, "session_id": SESSION})
+    elif subtype == "apply_flag_settings":
+        for key, value in request.get("settings", {}).items():
+            if value is None:
+                RUNTIME_SETTINGS.pop(key, None)
+            else:
+                RUNTIME_SETTINGS[key] = value
+        respond(request_id)
+    elif subtype == "get_settings":
+        layer = session_layer()
+        respond(request_id, {
+            "effective": {"theme": "dark", **layer},
+            "sources": [{"source": "userSettings", "settings": {"theme": "dark"}}]
+            + ([{"source": "flagSettings", "settings": layer}] if layer else []),
+            "applied": {"model": "claude-test", "effort": layer.get("effortLevel"), "advisor": None,
+                        "ultracode": layer.get("ultracode", False)},
+        })
     elif subtype == "side_question":
         respond(request_id, {"response": "Answer: " + request.get("question", ""), "synthetic": False})
     else:

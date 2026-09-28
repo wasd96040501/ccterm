@@ -97,11 +97,22 @@ final class SessionRuntimeCLIWiringTests: XCTestCase {
         runtime.setEffort(.high)
         runtime.setPermissionMode(.acceptEdits)
         runtime.setFastMode(true)
-        await yieldUntil { fake.flagSettingsCalls.count == 2 }
+        await yieldUntil { fake.settingsCalls.count == 2 }
 
         XCTAssertEqual(fake.modelCalls, ["claude-sonnet-4-6"])
         XCTAssertEqual(fake.permissionModeCalls, [PermissionMode.acceptEdits.toSDK()])
-        XCTAssertEqual(fake.flagSettingsCalls, [Effort.high.flagSettings, ["fastMode": true]])
+        XCTAssertEqual(fake.settingsCalls, [Effort.high.settings, AgentSDK.Settings(json: ["fastMode": true])])
+    }
+
+    func testSetAdditionalDirectoriesSendsPermissionsWhenAttached() async {
+        let (runtime, fake) = makeRuntime()
+        await bootstrap(runtime, fake)
+
+        runtime.setAdditionalDirectories(["/extra", "/more"])
+        await yieldUntil { fake.settingsCalls.count == 1 }
+
+        XCTAssertEqual(
+            fake.settingsCalls.first?[.permissions], PermissionSettings(additionalDirectories: ["/extra", "/more"]))
     }
 
     func testSetModelWhileDetachedDoesNotTouchClient() {

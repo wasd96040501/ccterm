@@ -16,7 +16,7 @@
 # Usage (driven by the Makefile `logs` target):
 #   ./scripts/logs.sh                       # Debug product, level info, all categories
 #   CONFIG=release ./scripts/logs.sh        # Release product instead
-#   CATEGORY=SessionRuntime ./scripts/logs.sh   # only one os_log category
+#   CATEGORY=ModelStore ./scripts/logs.sh   # only one os_log category
 #   LEVEL=debug ./scripts/logs.sh           # include .debug lines (default: info)
 
 set -euo pipefail

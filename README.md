@@ -18,7 +18,6 @@ You'll need:
 
 - **macOS 14+** and **Xcode 26.3+** — run `xcodebuild -runFirstLaunch` once after installing.
 - **Go** — the bundled `fzf` submodule is compiled during the build (`brew install go`).
-- **Bun** — used to build the JavaScript bundles (`brew install oven-sh/bun/bun`, or see [bun.sh](https://bun.sh)).
 
 Clone it (submodules and all):
 

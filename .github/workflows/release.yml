@@ -42,14 +42,6 @@ jobs:
           cache: true
           cache-dependency-path: thirdparty/fzf/go.sum
 
-      - name: Setup Bun
-        # JSCore bundles in `macos/ccterm/Resources/*.js` are compiled from
-        # `js/` by `make js-bundles`. Without this the Release build would
-        # ship without the syntax-highlight bundle and assert at launch.
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
       - name: Xcode info
         run: |
           xcode-select -p
@@ -74,14 +66,6 @@ jobs:
           key: dd-release-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-fzf${{ steps.fp.outputs.fzf }}-salt${{ hashFiles('.github/cache-salt') }}-src${{ hashFiles('macos/**/*.swift', 'macos/ccterm.xcodeproj/project.pbxproj', 'macos/Config.xcconfig', 'macos/AgentSDK/Package.swift', 'macos/ccterm/Localizable.xcstrings') }}
           restore-keys: |
             dd-release-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-fzf${{ steps.fp.outputs.fzf }}-salt${{ hashFiles('.github/cache-salt') }}-
-
-      - name: Compile JSCore bundles
-        # Produces `macos/ccterm/Resources/hljs-jscore.js` so the Xcode
-        # Resources copy phase has something to bundle. We invoke xcodebuild
-        # explicitly below (custom -derivedDataPath for the cache step)
-        # instead of going through `make release`, so the js-bundles target
-        # runs standalone.
-        run: make js-bundles
 
       - name: Build (Release)
         run: |

@@ -1,6 +1,6 @@
 # AgentSDK
 
-Swift package over the `claude` CLI: a live `Session` on the stream-json stdio protocol, the typed message model it emits, typed tool inputs/outputs, `Transcript` (a session file resolved the way `--resume` does) and one-shot `Prompt.run`. General-purpose — nothing here knows about ccterm. The app reaches a live CLI only through `CLIClient` (`ccterm/Services/Session/CLIClient/`), which `Session` satisfies directly; app tests inject `FakeCLIClient` there instead of spawning a CLI.
+Swift package over the `claude` CLI: a live `Session` on the stream-json stdio protocol, the typed message model it emits, typed tool inputs/outputs, `Transcript` (a session file resolved the way `--resume` does) and one-shot `Prompt.run`. General-purpose — nothing here knows about ccterm.
 
 ## Layout
 

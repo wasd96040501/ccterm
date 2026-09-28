@@ -41,8 +41,7 @@ import AppKit
 /// disc` with `fillEllipse` instead of emitting a bullet glyph: a character's
 /// size and vertical position ride on whatever font resolves it, and the two
 /// ballot-box characters do not even share an advance width — so a list would
-/// jitter as its items were ticked. `NativeTranscript2` reached the same
-/// conclusion and draws its checkbox as a `CGPath`.
+/// jitter as its items were ticked.
 struct Checkbox: Sendable {
 
     let size: CGFloat

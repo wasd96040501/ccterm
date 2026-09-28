@@ -7,33 +7,32 @@ real events / probe its animation curve and assert on the result. It runs
 on the default `make test-unit` suite + CI (assertion-driven merge gates,
 not PNG snapshots).
 
-> **Real objects only.** The factories assemble production types
-> (`MainSplitViewController` → real `SidebarViewController` + real
-> `DetailRouterViewController` + real `SessionManager`) with in-memory,
-> per-stage dependencies. Nothing is mocked at the controller layer — to
-> test sidebar↔transcript linkage you drive the *real* sidebar and the
-> *real* router, never a stand-in. This is the same engineering rule as
-> the rest of the repo (root `CLAUDE.md` → "Never compromise production
-> code to make tests pass"): the test adapts to the product, not the
-> reverse.
+> **Real objects only.** The factories assemble production types —
+> `mainSplit` mounts the real `MainSplitViewController` exactly as
+> `MainWindowController` builds it. Nothing is mocked at the controller
+> layer; when a tree needs state, its factory injects per-stage in-memory
+> dependencies through the production init seams. This is the same
+> engineering rule as the rest of the repo (root `CLAUDE.md` → "Never
+> compromise production code to make tests pass"): the test adapts to the
+> product, not the reverse.
 
-## The four pieces
+## The pieces
 
 | File | Role |
 |---|---|
 | [`AppKitStage.swift`](AppKitStage.swift) | Off-screen mount + runloop control (`settle` / `drainUntil` / `sourcePhase`) + `find<T>` subview lookup. The generic `mount(vc:)` entry. |
-| [`AppKitStageFactories.swift`](AppKitStageFactories.swift) | Real-tree factories (`mainSplit` / `detailRouter`) with parallel-safe in-memory deps + `SessionSpec` seeding; `sidebarWidth` / `detailPaneWidth` queries. |
-| [`Geometry.swift`](Geometry.swift) | Region/position assertion vocabulary (`assertContained` / `assertCenteredX` / `assertBottomAnchored` / `assertAligned` / `assertWidth` / `assertWithinViewport`) in a chosen ancestor coordinate space, with tolerance + readable diagnostics. |
+| [`AppKitStageFactories.swift`](AppKitStageFactories.swift) | Real-tree factories (`mainSplit`) and queries against what they built (`sidebarWidth` / `detailPaneWidth`). |
+| [`Geometry.swift`](Geometry.swift) | Region/position assertion vocabulary (`assertContained` / `assertNoOverlap` / `assertCenteredX` / `assertBottomAnchored` / `assertAligned` / `assertWidth` / `assertWithinViewport`) in a chosen ancestor coordinate space, with tolerance + readable diagnostics. |
 | [`AnimationProbe.swift`](AnimationProbe.swift) | `CADisplayLink` per-frame sampler of any view's `layer.presentation()` frame/opacity → an assertable `Timeline` (`assertOpacity` monotonic, `assertNoJump`, `assertFinalOpacity`). |
-| [`InteractionDriver.swift`](InteractionDriver.swift) | Synthesized real interactions — `selectSidebarRow` (real outline write-back), `dragSelectVisibleRow` (synthesized `NSEvent` through real `hitTest`/`mouseDown`), `hitTest` / `enclosing` resolution. |
+| [`InteractionDriver.swift`](InteractionDriver.swift) | Real hit-test routing (`hitTest(at:from:)`, `enclosing`) and the pre-post recipe for gestures that enter AppKit's event-tracking loop. |
 
 ## How to add a test for a new component
 
 Three steps; you touch only the high-level API.
 
-1. **Pick a factory.** Sidebar↔detail linkage → `AppKitStage.mainSplit(...)`.
-   Router/chat/transcript only → `AppKitStage.detailRouter(...)`. Anything
-   else → `AppKitStage.mount(myRealVC, size:)`.
+1. **Pick a factory.** The main window's content → `AppKitStage.mainSplit(...)`.
+   Anything else → `AppKitStage.mount(myRealVC, size:)`; when a component
+   gets a real-tree test of its own, add a factory for it here.
 2. **`stage.find(SomeView.self)`** to locate the target in the real tree.
 3. **Assert** with `Geometry` / `AnimationProbe`, or **drive** with
    `stage.driver`.
@@ -42,22 +41,17 @@ Three steps; you touch only the high-level API.
 @MainActor
 final class MyComponentTests: XCTestCase {
     func testLayout() async throws {
-        let fx = AppKitStage.mainSplit(
-            sessions: [.init(title: "A"), .init(title: "B")], initialIndex: 0)
-        defer { fx.teardown() }
-        await fx.stage.settle()
+        let stage = AppKitStage.mainSplit()
+        defer { stage.teardown() }
+        await stage.settle()
 
-        let bar = (fx.stage.router?.currentChild as? ChatSessionViewController)!.restingBarHost!
-        Geometry.assertCenteredX(bar, in: bar.superview!)
-        Geometry.assertContained(bar, in: bar.superview!)
+        let view = try XCTUnwrap(stage.find(MyView.self))
+        Geometry.assertContained(view, in: stage.rootView)
     }
 }
 ```
 
-Worked examples: [`MainSplitLinkageTests`](../MainSplitLinkageTests.swift)
-(layout/region + real sidebar→transcript switch) and
-[`DetailPaneTranscriptHitTestTests`](../DetailPaneTranscriptHitTestTests.swift)
-(synthesized drag-select + permission-card passthrough).
+Worked example: [`MainSplitLayoutTests`](../MainSplitLayoutTests.swift).
 
 ## Window size
 
@@ -71,14 +65,11 @@ window default changes, update them here.
 
 ## Parallel safety
 
-Every factory builds a fresh `InMemorySessionRepository`, a `UserDefaults`
-suite keyed on a UUID, and a temp `InputDraftStore` directory, disposed by
-`teardown()`. No factory touches `CoreDataSessionRepository`,
-`SessionManager.shared`, `~/.claude`, or `UserDefaults.standard` — so
-stages are safe under XCTest's per-class process parallelism (see
-[`../CLAUDE.md`](../CLAUDE.md)). The DI seam that makes this possible is
-`AppState.init`'s `nil`-defaulted parameters: production calls `AppState()`
-unchanged; the harness injects the in-memory stores.
+A factory whose tree needs state builds it per stage — a `UserDefaults`
+suite keyed on a UUID, a temp directory — and registers its disposal as a
+cleanup that `teardown()` runs. No factory touches `~/.claude`, a `.shared`
+instance or `UserDefaults.standard`, so stages are safe under XCTest's
+per-class process parallelism (see [`../CLAUDE.md`](../CLAUDE.md)).
 
 ## What it CANNOT observe (off-screen / non-key-window limits)
 
@@ -90,19 +81,17 @@ replacement. Out of reach:
 - **Key-window / first-responder behavior.** `NSTrackingArea` hover
   (`.activeInKeyWindow`), selection-highlight key-window tinting, cursor
   rects / flashing, focus ring. A test that needs these must run the app.
-- **The real `NSApp.nextEvent(.eventTracking)` drag loop.**
-  `InteractionDriver.dragSelectVisibleRow` pre-posts the dragged + up
-  events so the loop drains synchronously — a faithful approximation of
-  the gesture's *outcome*, but not live hardware event delivery.
+- **The real `NSApp.nextEvent(.eventTracking)` drag loop.** Pre-posting
+  the dragged + up events (see `InteractionDriver`) lets the loop drain
+  synchronously — a faithful approximation of the gesture's *outcome*,
+  but not live hardware event delivery.
 - **Live render-server scheduling under load / occlusion.**
-  `AnimationProbe` samples `presentation()` — verified to return
-  post-flush values in this offscreen setup — but the render server can
-  delay compositing a busy/occluded window in ways a quiet test
-  environment won't reproduce.
+  `AnimationProbe` samples `presentation()` — which returns post-flush
+  values in this offscreen setup — but the render server can delay
+  compositing a busy/occluded window in ways a quiet test environment
+  won't reproduce.
 
 When a user-reported visual glitch does **not** reproduce here, that's a
 signal the bug lives in one of the above layers — expand the probe
-(sample more dimensions: scroller knob, not just clip origin) or reach for
-a live-window scaffold before declaring it falsified. See the transcript
-snapshot tests' notes in [`../CLAUDE.md`](../CLAUDE.md) for prior art on
-this exact lesson.
+(sample more dimensions) or reach for a live-window scaffold before
+declaring it falsified.

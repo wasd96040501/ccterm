@@ -40,7 +40,7 @@ Two stack-trace aliases worth memorising:
 - `__CFRUNLOOP_IS_CALLING_OUT_TO_AN_OBSERVER_CALLBACK_FUNCTION__` → you're inside a runloop observer (almost always CoreAnimation's beforeWaiting flush).
 - `__CFRUNLOOP_IS_SERVICING_THE_MAIN_DISPATCH_QUEUE__` → source phase, draining `DispatchQueue.main`.
 
-Subsystem-specific corollaries (e.g. the transcript's deferred-bind attach and `clip.scroll` choreography, [NativeTranscript2 §1.2](ccterm/Content/Chat/NativeTranscript2/CLAUDE.md)) live next to the code; the diagram above is the only thing that's truly global.
+Subsystem-specific corollaries (e.g. how `TranscriptKit` loads and anchors scroll, [TranscriptKit §5](TranscriptKit/CLAUDE.md)) live next to the code; the diagram above is the only thing that's truly global.
 
 ## AppKit conventions
 

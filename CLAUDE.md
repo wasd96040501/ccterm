@@ -2,6 +2,8 @@
 
 Native macOS client for Claude Code. Pure AppKit (Swift), programmatic, minimum target macOS 14 (Sonoma).
 
+The app is a window shell — main window with an empty sidebar/detail split, Settings, About — plus UI-free services (worktrees, git probe, model catalog, completion stores). Sessions come from the `AgentSDK` package and the transcript from the `TranscriptKit` package; wiring them into the shell is the next step.
+
 ## Where to read more
 
 This file holds repo-wide commands and workflow. Engineering conventions and area rules live next to the code — when you touch an area, read its `CLAUDE.md` first.
@@ -9,11 +11,7 @@ This file holds repo-wide commands and workflow. Engineering conventions and are
 | Area | Doc |
 |---|---|
 | **AppKit conventions + runloop tick model** (layering, DI, containment, views, lists, concurrency) — applies to all Swift | [macos/CLAUDE.md](macos/CLAUDE.md) |
-| Chat UI assembly (MainWindow / Detail router + VCs / transcript swap / SwiftUI host sizing) | [Content/Chat/CLAUDE.md](macos/ccterm/Content/Chat/CLAUDE.md) |
-| Sidebar (outline VC / tree model / context menu / cells) | [Sidebar/CLAUDE.md](macos/ccterm/Sidebar/CLAUDE.md) |
-| `Session` / `SessionRuntime` runtime, render-side comms, mutation rules | [Services/Session/CLAUDE.md](macos/ccterm/Services/Session/CLAUDE.md) |
-| Production transcript renderer (performance contract, layouts, tool rendering) | [NativeTranscript2/CLAUDE.md](macos/ccterm/Content/Chat/NativeTranscript2/CLAUDE.md) |
-| `TranscriptKit` package — next-generation transcript view (API rules, internals, media, workspace, tests) | [macos/TranscriptKit/CLAUDE.md](macos/TranscriptKit/CLAUDE.md) |
+| `TranscriptKit` package — the transcript view (API rules, internals, media, workspace, tests) | [macos/TranscriptKit/CLAUDE.md](macos/TranscriptKit/CLAUDE.md) |
 | App unit tests (parallel safety, snapshots, measurement probes) | [cctermTests/CLAUDE.md](macos/cctermTests/CLAUDE.md) |
 | AppKit verification harness (real-tree mount, geometry / animation / interaction probes) | [cctermTests/Harness/CLAUDE.md](macos/cctermTests/Harness/CLAUDE.md) |
 | AgentSDK package + real-CLI smoke executables | [macos/AgentSDK/CLAUDE.md](macos/AgentSDK/CLAUDE.md) |
@@ -25,18 +23,10 @@ ccterm/
 ├── macos/
 │   ├── ccterm.xcodeproj/
 │   ├── ccterm/               # App sources
-│   │   ├── App/              # AppState; AppKit/ holds AppDelegate + MainWindowController + split + detail router
-│   │   ├── Sidebar/          # SidebarViewController + cell views + group-order store
-│   │   ├── Components/       # Reusable AppKit components (Markdown/ = GFM parser → IR)
-│   │   ├── Content/
-│   │   │   ├── Chat/         # Chat VCs, InputBar, NewSessionConfigurator, Completion
-│   │   │   │   ├── NativeTranscript2/        # NSTableView-based transcript (production)
-│   │   │   │   └── NativeTranscript2Bridge/  # MessageEntry → Block translation, history backfill
-│   │   │   ├── Archive/
-│   │   │   ├── Settings/
-│   │   │   └── TranscriptDemo/, PermissionCardsDemo/, PermissionSessionDemo/   # DEBUG demos + stress harness
-│   │   ├── Models/
-│   │   ├── Services/         # Session/ (Session, SessionRuntime, SessionManager, Worktree), Logging/
+│   │   ├── App/              # CCTermApp + About; AppKit/ holds AppDelegate + main/settings/about window controllers + main split
+│   │   ├── Content/Settings/
+│   │   ├── Models/           # Effort, PermissionMode, SlashCommand
+│   │   ├── Services/         # Session/Worktree, Completion stores, GitProbe, ModelStore, Logging/, …
 │   │   ├── Extensions/
 │   │   └── Resources/
 │   ├── cctermTests/          # The app's only test target

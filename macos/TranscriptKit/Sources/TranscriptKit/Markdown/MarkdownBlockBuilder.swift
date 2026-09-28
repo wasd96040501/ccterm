@@ -102,20 +102,18 @@ enum MarkdownBlockBuilder {
     /// are calibrated against, which is why `Paragraph` asks for nothing of its
     /// own and only headings, code cards and rules add to it.
     ///
-    /// Twelve because that is what `NativeTranscript2` produces: every block is
-    /// its own table row there, each padded six above and six below, so two
-    /// paragraphs land twelve apart. Copying the *result* rather than that
-    /// design's per-block halves is the point — a container that owns its
-    /// spacing does not need each child to carry half of every gap.
+    /// Twelve is the app's established paragraph rhythm. It is one gap owned by
+    /// the container rather than six above and six below each block — a
+    /// container that owns its spacing does not need each child to carry half
+    /// of every gap.
     ///
     /// Not private, because `MarkdownMemo` stacks the children itself and has to
     /// stack them at the same rhythm this does.
     static let blockSpacing: CGFloat = 12
 
     /// The gap inside a **tight** list, at every depth: between items, and
-    /// between the blocks within one item. `NativeTranscript2` states these as
-    /// two constants (`listItemSpacing`, `listIntraItemSpacing`) and gives both
-    /// the same value, so a list has one rhythm no matter how it is shaped.
+    /// between the blocks within one item — one value for both, so a list has
+    /// one rhythm no matter how it is shaped.
     ///
     /// A loose list uses `blockSpacing` instead — which is the whole of what
     /// loose means. HTML gets there by wrapping each item's content in a `<p>`

@@ -52,6 +52,7 @@ let package = Package(
         .executableTarget(
             name: "TranscriptKitDemo",
             dependencies: ["TranscriptKit", "TranscriptMedia", "TranscriptWorkspace"],
+            exclude: ["CLAUDE.md"],
             // `.copy` rather than `.process`: the corpus is a directory the demo
             // enumerates at runtime, so adding another document to it should cost
             // no code change — and `.process` flattens the structure that walk
@@ -62,6 +63,7 @@ let package = Package(
             dependencies: [
                 .product(name: "Markdown", package: "swift-markdown")
             ],
+            exclude: ["CLAUDE.md"],
             resources: [.process("Resources")]
         ),
         // What a transcript host needs and `TranscriptKit` deliberately refuses:
@@ -72,14 +74,16 @@ let package = Package(
         // renderer. Kept in this package rather than in the app so the demo and
         // the app get the same components, and so they stay buildable without an
         // Xcode project.
-        .target(name: "TranscriptMedia", dependencies: ["TranscriptKit"]),
+        .target(name: "TranscriptMedia", dependencies: ["TranscriptKit"], exclude: ["CLAUDE.md"]),
         // No dependencies, on purpose: see the product above.
-        .target(name: "TranscriptWorkspace", resources: [.process("Resources")]),
+        .target(
+            name: "TranscriptWorkspace", exclude: ["CLAUDE.md"], resources: [.process("Resources")]),
         // `swift test`. Kept in the package rather than folded into the app's
         // Xcode test target so the package stays buildable and testable on its
         // own — the point of it being a package. One target for the whole
         // package, so every test mounts through the one harness.
         .testTarget(
-            name: "TranscriptKitTests", dependencies: ["TranscriptKit", "TranscriptWorkspace"]),
+            name: "TranscriptKitTests", dependencies: ["TranscriptKit", "TranscriptWorkspace"],
+            exclude: ["CLAUDE.md"]),
     ]
 )

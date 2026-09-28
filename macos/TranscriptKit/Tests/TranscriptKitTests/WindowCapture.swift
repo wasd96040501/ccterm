@@ -24,7 +24,7 @@ import XCTest
 /// capturing needs no move, no activation and no key window.
 ///
 /// No logic beyond that sequence, per the harness rule in the package's
-/// `CLAUDE.md` §5 — what a capture is *of* is the test's business.
+/// `Tests/TranscriptKitTests/CLAUDE.md` — what a capture is *of* is the test's business.
 @MainActor
 enum WindowCapture {
 

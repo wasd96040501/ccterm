@@ -401,7 +401,7 @@ final class EditorAreaTests: XCTestCase {
     /// and for one moved into a new editor, the two paths that size a tab's view
     /// from nothing. A transcript's host loads at `viewDidAppear` for exactly
     /// this; loading at `viewWillAppear` measured every row at a width of zero
-    /// (root `CLAUDE.md`, "Size before content").
+    /// (`macos/CLAUDE.md`, "Size before content").
     func testATabAppearsAtItsFinalSizeAndNotBefore() async throws {
         let mounted = mount(tabs: 2)
         defer { mounted.window.close() }
@@ -610,7 +610,7 @@ final class EditorAreaTests: XCTestCase {
 
         bar.mouseDown(with: mouse(.leftMouseDown, at: start, in: bar))
         // Short of the edge: a pull to it would start a real drag session, which a
-        // test cannot (`CLAUDE.md` §5).
+        // test cannot (this directory's `CLAUDE.md`).
         for pull: CGFloat in [-10, 6, 11] {
             bar.mouseDragged(
                 with: mouse(.leftMouseDragged, at: NSPoint(x: start.x + 10, y: start.y + pull), in: bar))

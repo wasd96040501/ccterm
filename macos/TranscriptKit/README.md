@@ -1,10 +1,8 @@
 # TranscriptKit
 
 A generic chat-transcript view for AppKit, packaged as a standalone Swift
-package. Minimum platform: macOS 10.15.
-
-> **Status: API skeleton.** The public surface below is the contract; the
-> rendering implementation is not written yet.
+package. Minimum platform: macOS 12. Rules for changing it are in
+[CLAUDE.md](CLAUDE.md).
 
 ## Design
 
@@ -180,5 +178,5 @@ func editorArea(_ area: EditorAreaViewController, willClose viewController: NSVi
 
 Dragging the divider is a live resize for everything under it, so a
 `TranscriptView` in a tab re-measures only its visible rows until the drag ends —
-with nothing in either package knowing about the other. `CLAUDE.md` §9 has the
+with nothing in either package knowing about the other. `Sources/TranscriptWorkspace/CLAUDE.md` has the
 design and the measurements behind it.

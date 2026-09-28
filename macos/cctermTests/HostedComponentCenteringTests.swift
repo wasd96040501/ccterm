@@ -32,8 +32,8 @@ import XCTest
 /// this five-constraint recipe + `[.intrinsicContentSize]` for height is the
 /// canonical "centered, width-capped, shrink-to-fit, bottom-anchored
 /// component" pattern. It is strictly better than the discarded
-/// `GeometryReader` + `PreferenceKey` + manual-height-constraint hack (root
-/// `CLAUDE.md`, "Embedding SwiftUI in AppKit: host sizing"): the host's own
+/// `GeometryReader` + `PreferenceKey` + manual-height-constraint hack
+/// (`Content/Chat/CLAUDE.md`, "SwiftUI hosts: two sizing regimes"): the host's own
 /// intrinsic content size supplies the missing dimension for free, with no
 /// window-collapse risk because the component never pins 4 edges into a
 /// split and never governs its container's size. The DEBUG

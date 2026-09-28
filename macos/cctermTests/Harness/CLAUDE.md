@@ -13,7 +13,7 @@ not PNG snapshots).
 > per-stage dependencies. Nothing is mocked at the controller layer — to
 > test sidebar↔transcript linkage you drive the *real* sidebar and the
 > *real* router, never a stand-in. This is the same engineering rule as
-> the rest of the repo (`../../CLAUDE.md` → "Never compromise production
+> the rest of the repo (root `CLAUDE.md` → "Never compromise production
 > code to make tests pass"): the test adapts to the product, not the
 > reverse.
 

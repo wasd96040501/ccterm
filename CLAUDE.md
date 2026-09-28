@@ -60,6 +60,7 @@ make test-sdk [FILTER=<Class>]       # AgentSDK package tests
 make demo-kit                        # TranscriptKit demo app (foreground; close window to stop)
 make logs [CONFIG=release] [CATEGORY=X] [LEVEL=debug]   # tail unified log of THIS worktree's build
 make appkit-doc SYMBOL=NSTableView   # Apple's DocC for an AppKit symbol
+make arch [SCOPE=core|app|kit|sdk|<dir>|<unit>]   # architecture map → build/arch/ (what /arch-review reads)
 ```
 
 `make build` prints success/failure plus two log paths. On failure read the summary log first; open the full log only if the summary isn't enough — don't `tail`/`cat` it blindly.

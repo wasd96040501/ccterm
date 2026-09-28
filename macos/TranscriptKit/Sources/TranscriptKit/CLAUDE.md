@@ -51,6 +51,7 @@ Invariants of the renderer target. Package-level API rules are in [../../CLAUDE.
 
 ## Find
 
+- **`FindSession` owns a find** — its state, the walk's `Task` (cancelled by a newer find or a refresh) and `FindOverlayView`; `TranscriptView` forwards its public find API there and tells it what each mutation did.
 - **The search runs in the package** — a hit is a range in a row's flat index space, which exists only once the row is built (`**bold**` contains no `bold` in source). **The find bar is the host's**; only the count crosses (`transcriptView(_:didUpdateFindMatches:isComplete:)`), and `endFind()` reports too, so the host never tracks state twice.
 - A hit is `(row identity, range)`. The flat index space doesn't depend on width, so a resize moves highlights with nothing recomputed.
 - **A find reads a markdown row's `RowCache` entry on content alone** (`cachedMeasured(for:width:)` with `nil` width) — a stale-width entry searches as well as a fresh one. Capped user messages are the exception: they pass the width, and the find re-walks once a width change settles.

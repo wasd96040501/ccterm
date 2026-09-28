@@ -20,8 +20,10 @@ import Foundation
 
 let env = ProcessInfo.processInfo.environment
 let home = FileManager.default.homeDirectoryForCurrentUser
-let exportDir = URL(fileURLWithPath: env["AUDIT_EXPORT_DIR"] ?? home.appendingPathComponent(".cache/ccterm/export").path)
-let projectsDir = URL(fileURLWithPath: env["AUDIT_PROJECTS_DIR"] ?? home.appendingPathComponent(".claude/projects").path)
+let exportDir = URL(
+    fileURLWithPath: env["AUDIT_EXPORT_DIR"] ?? home.appendingPathComponent(".cache/ccterm/export").path)
+let projectsDir = URL(
+    fileURLWithPath: env["AUDIT_PROJECTS_DIR"] ?? home.appendingPathComponent(".claude/projects").path)
 let limit = env["AUDIT_LIMIT"].flatMap(Int.init) ?? .max
 
 var counts: [String: Int] = [:]
@@ -109,7 +111,9 @@ let diskStart = Date()
 var transcripts = 0
 var transcriptMessages = 0
 var uuidDump: [String: [String]] = [:]
-let mainFiles = jsonlFiles(under: projectsDir) { $0.path.contains("/subagents/") || $0.lastPathComponent.hasPrefix("agent-") }
+let mainFiles = jsonlFiles(under: projectsDir) {
+    $0.path.contains("/subagents/") || $0.lastPathComponent.hasPrefix("agent-")
+}
 for file in mainFiles.prefix(limit) {
     guard let transcript = try? Transcript(contentsOf: file) else {
         bump("disk.unreadable")

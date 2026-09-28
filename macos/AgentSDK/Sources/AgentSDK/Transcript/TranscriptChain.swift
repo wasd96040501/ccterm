@@ -417,7 +417,8 @@ private struct Row: Decodable {
                 let uuids = kept.lenient([String].self, "uuids"), !uuids.isEmpty
             {
                 preserved = .messages(anchor: anchor, uuids: uuids)
-            } else if let segment = try? compact.nestedContainer(keyedBy: AnyCodingKey.self, forKey: "preservedSegment"),
+            } else if let segment = try? compact.nestedContainer(
+                keyedBy: AnyCodingKey.self, forKey: "preservedSegment"),
                 let head = segment.lenient(String.self, "headUuid"),
                 let anchor = segment.lenient(String.self, "anchorUuid"),
                 let tail = segment.lenient(String.self, "tailUuid")

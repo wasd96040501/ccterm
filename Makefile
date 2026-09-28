@@ -1,9 +1,9 @@
-.PHONY: build release install dmg clean fmt fmt-check test-unit test-kit demo-kit js-bundles logs icon appkit-doc help
+.PHONY: build release install dmg clean fmt fmt-check test-unit test-kit test-sdk demo-kit js-bundles logs icon appkit-doc help
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
 SWIFT_FORMAT := swift-format
-SWIFT_SRC := macos/ccterm macos/cctermTests macos/AgentSDK/Sources macos/TranscriptKit/Sources macos/TranscriptKit/Tests
+SWIFT_SRC := macos/ccterm macos/cctermTests macos/AgentSDK/Sources macos/AgentSDK/Tests macos/TranscriptKit/Sources macos/TranscriptKit/Tests
 PREFIX ?= /Applications
 
 # JSCore bundles — compiled from js/ on demand. Outputs are gitignored; the
@@ -44,6 +44,13 @@ test-kit: ## Run TranscriptKit's package tests (FILTER=SomeTests; snapshots only
 	@cd macos/TranscriptKit && \
 		if [ -n "$(FILTER)" ]; then swift test --filter "$(FILTER)"; \
 		else swift test --skip SnapshotTests; fi
+
+# AgentSDK's own tests: protocol decoding, transcript reconstruction, and
+# `Session` driven over stdio by a scripted fake CLI — no real `claude` needed.
+test-sdk: ## Run AgentSDK's package tests (FILTER=SomeTests)
+	@cd macos/AgentSDK && \
+		if [ -n "$(FILTER)" ]; then swift test --filter "$(FILTER)"; \
+		else swift test; fi
 
 # The package's demo app — a real window over real markdown documents. Rendering
 # has no other check: a probe can assert a row's height, not whether the

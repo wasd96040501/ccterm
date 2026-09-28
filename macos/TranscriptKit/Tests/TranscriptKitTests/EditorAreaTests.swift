@@ -63,16 +63,17 @@ final class EditorAreaTests: XCTestCase {
         let mounted = mount(tabs: 3)
         defer { mounted.window.close() }
         let bar = mounted.area.activeGroup.tabBar
-        mounted.area.activeGroup.setTabPinned(true, at: 1)
+        mounted.area.activeGroup.previewTabViewItem = mounted.area.activeGroup.tabViewItems[1]
         settle(mounted.window)
 
         let rects = (0..<3).map { bar.rect(forTabAt: $0) }
         XCTAssertGreaterThan(bar.bounds.width, 300, "premise: the bar was laid out")
+        XCTAssertEqual(rects[0].minX, bar.bounds.minX, accuracy: 0.5)
         XCTAssertEqual(rects[0].maxX, rects[1].minX, accuracy: 0.5)
         XCTAssertEqual(rects[1].maxX, rects[2].minX, accuracy: 0.5)
         XCTAssertEqual(rects[2].maxX, bar.bounds.maxX, accuracy: 0.5)
-        XCTAssertLessThan(
-            rects[0].width, rects[1].width, "a pinned tab should be narrower than the rest")
+        XCTAssertEqual(
+            rects[0].width, rects[1].width, accuracy: 0.5, "the temporary tab is not as wide as the others")
     }
 
     /// A second editor opening halves the bar, and its tabs go with it.
@@ -287,110 +288,119 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertEqual(mounted.recorder.activated.last.map { $0 == nil }, true)
     }
 
-    /// A bar is for choosing between tabs: one tab shows none, and its content
-    /// takes the bar's place; a second tab brings the bar back above it.
-    func testATabBarShowsOnlyWithMoreThanOneTab() throws {
+    /// The bar is where the tabs are, so it is there with one tab and with none,
+    /// the content always under it.
+    func testTheTabBarShowsWithOneTabAndWithNone() throws {
         let mounted = mount(tabs: 1)
         defer { mounted.window.close() }
         let group = mounted.area.activeGroup
         let content = try XCTUnwrap(mounted.probes[0].view.superview, "premise: the tab's view is mounted")
 
-        XCTAssertTrue(group.tabBar.isHidden, "one tab still shows a bar")
-        XCTAssertEqual(
-            content.convert(content.bounds, to: group.view).maxY, group.view.bounds.maxY, accuracy: 0.5,
-            "the content does not start at the top of the editor")
-
-        group.addTabViewItem(NSTabViewItem(viewController: ProbeViewController(title: "Tab 1")))
-        settle(mounted.window)
-
-        XCTAssertFalse(group.tabBar.isHidden)
+        XCTAssertFalse(group.tabBar.isHidden, "one tab shows no bar")
         let bar = group.tabBar.convert(group.tabBar.bounds, to: group.view)
+        XCTAssertGreaterThan(bar.height, 0, "premise: the bar was laid out")
         XCTAssertLessThanOrEqual(
-            content.convert(content.bounds, to: group.view).maxY, bar.minY,
-            "the content runs under the bar")
+            content.convert(content.bounds, to: group.view).maxY, bar.minY, "the content runs under the bar")
 
-        group.removeTabViewItem(group.tabViewItems[1])
+        group.removeTabViewItem(group.tabViewItems[0])
         settle(mounted.window)
 
-        XCTAssertTrue(group.tabBar.isHidden)
-        XCTAssertEqual(
-            content.convert(content.bounds, to: group.view).maxY, group.view.bounds.maxY, accuracy: 0.5)
+        XCTAssertTrue(group.tabViewItems.isEmpty, "premise: the tab closed")
+        XCTAssertFalse(group.tabBar.isHidden, "an editor with no tabs shows no bar")
     }
 
-    /// Side by side, every editor shows its bar, one tab or not: it is what tells
-    /// the two apart. Back to one editor, a lone tab's bar goes again.
-    func testEveryEditorShowsItsBarWhileThereAreTwo() throws {
+    /// Under a window's toolbar the bar hangs below it, where the titlebar does
+    /// not take the clicks.
+    func testTheTabBarStartsBelowTheSafeArea() throws {
         let mounted = mount(tabs: 1)
         defer { mounted.window.close() }
-        let left = mounted.area.activeGroup
-        XCTAssertTrue(left.tabBar.isHidden, "premise: one editor with one tab shows no bar")
-
-        let right = try XCTUnwrap(
-            mounted.area.addGroup(with: NSTabViewItem(viewController: ProbeViewController(title: "Right"))))
+        let group = mounted.area.activeGroup
+        mounted.window.styleMask.insert(.fullSizeContentView)
+        mounted.window.toolbar = NSToolbar(identifier: "EditorAreaTests")
+        TestWindow.park(mounted.window, contentSize: Self.size)
         settle(mounted.window)
-        XCTAssertFalse(left.tabBar.isHidden, "the editor already open hid its bar beside another")
-        XCTAssertFalse(right.tabBar.isHidden, "the editor opened beside it has no bar")
 
-        mounted.area.removeGroup(right)
-        settle(mounted.window)
-        XCTAssertEqual(mounted.area.groups.count, 1, "premise: back to one editor")
-        XCTAssertTrue(left.tabBar.isHidden, "alone again, one tab still shows a bar")
+        let inset = group.view.safeAreaInsets.top
+        XCTAssertGreaterThan(inset, 0, "premise: the editor reaches under the titlebar")
+        let bar = group.tabBar.convert(group.tabBar.bounds, to: group.view)
+        XCTAssertLessThanOrEqual(bar.maxY, group.view.bounds.maxY - inset, "the bar is under the titlebar")
     }
 
     // MARK: - Pinning
 
-    func testPinningMovesTheTabToTheFrontAndKeepsTheSelection() throws {
+    /// Xcode's pin: on the hovered tab's trailing end, hollow on the temporary tab
+    /// and filled on any other, beside the close button on every tab.
+    func testThePinShowsOnTheHoveredTabHollowWhileItIsTemporary() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        group.previewTabViewItem = NSTabViewItem(viewController: ProbeViewController(title: "Look"))
+        settle(mounted.window)
+        let bar = group.tabBar
+        XCTAssertTrue(bar.pinButton.isHidden, "premise: no tab is hovered")
+
+        bar.mouseMoved(with: mouse(.mouseMoved, at: center(of: bar, tab: 1), in: bar))
+        XCTAssertFalse(bar.pinButton.isHidden, "no pin on the hovered tab")
+        XCTAssertFalse(bar.closeButton.isHidden, "a tab with a pin lost its close button")
+        let tab = bar.rect(forTabAt: 1)
+        XCTAssertTrue(tab.contains(bar.pinButton.frame), "the pin is not on the hovered tab")
+        XCTAssertGreaterThan(bar.pinButton.frame.midX, tab.midX, "the pin is not at the trailing end")
+        XCTAssertEqual(bar.pinButton.image?.accessibilityDescription, Self.title("Pin Tab"))
+
+        bar.mouseMoved(with: mouse(.mouseMoved, at: center(of: bar, tab: 0), in: bar))
+        XCTAssertTrue(bar.rect(forTabAt: 0).contains(bar.pinButton.frame), "the pin did not follow the pointer")
+        XCTAssertEqual(bar.pinButton.image?.accessibilityDescription, Self.title("Unpin Tab"))
+
+        bar.mouseExited(with: mouse(.mouseMoved, at: .zero, in: bar))
+        XCTAssertTrue(bar.pinButton.isHidden, "the pin stayed with no tab hovered")
+    }
+
+    /// The temporary tab's pin pins it, as a double-click does; a pinned tab's
+    /// makes it the temporary tab, and the one that was is pinned.
+    func testThePinPinsTheTemporaryTabAndUnpinsAPinnedOne() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        let look = NSTabViewItem(viewController: ProbeViewController(title: "Look"))
+        group.previewTabViewItem = look
+        settle(mounted.window)
+        let bar = group.tabBar
+
+        bar.mouseMoved(with: mouse(.mouseMoved, at: center(of: bar, tab: 1), in: bar))
+        bar.pinButton.performClick(nil)
+        XCTAssertNil(group.previewTabViewItem, "the pin did not pin the temporary tab")
+        XCTAssertEqual(bar.items.map(\.isPreview), [false, false])
+        XCTAssertEqual(bar.pinButton.image?.accessibilityDescription, Self.title("Unpin Tab"), "the pin is not filled")
+
+        group.previewTabViewItem = NSTabViewItem(viewController: ProbeViewController(title: "Next"))
+        bar.mouseMoved(with: mouse(.mouseMoved, at: center(of: bar, tab: 0), in: bar))
+        bar.pinButton.performClick(nil)
+        XCTAssertIdentical(group.previewTabViewItem, group.tabViewItems[0], "unpinning did not make it temporary")
+        XCTAssertEqual(bar.items.map(\.isPreview), [true, false, false])
+        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 0", "Look", "Next"], "unpinning moved or closed a tab")
+    }
+
+    /// The menu's item is the pin's, and Close Other Tabs closes pinned tabs too:
+    /// a pin keeps a tab from being replaced, not from being closed on purpose.
+    func testTheMenuPinsAndClosesEveryOtherTab() throws {
         let mounted = mount(tabs: 3)
         defer { mounted.window.close() }
         let group = mounted.area.activeGroup
-
-        group.setTabPinned(true, at: 2)
-
-        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 2", "Tab 0", "Tab 1"])
-        XCTAssertTrue(group.isTabPinned(at: 0))
-        XCTAssertFalse(group.isTabPinned(at: 1))
-        XCTAssertIdentical(group.selectedViewController, mounted.probes[2])
-
-        group.setTabPinned(true, at: 2)
-        XCTAssertEqual(
-            group.tabViewItems.map(\.label), ["Tab 2", "Tab 1", "Tab 0"],
-            "a second pin goes after the first, not before it")
-
-        group.setTabPinned(false, at: 0)
-        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 1", "Tab 2", "Tab 0"])
-        XCTAssertEqual(group.numberOfPinnedTabs, 1)
-    }
-
-    func testAPinnedTabHasNoCloseButton() throws {
-        let mounted = mount(tabs: 2)
-        defer { mounted.window.close() }
-        let bar = mounted.area.activeGroup.tabBar
-        mounted.area.activeGroup.setTabPinned(true, at: 1)
-        settle(mounted.window)
-
-        bar.mouseMoved(with: mouse(.mouseMoved, at: center(of: bar, tab: 0), in: bar))
-
-        XCTAssertEqual(bar.hoveredIndex, 0, "premise: the pinned tab is the hovered one")
-        XCTAssertTrue(bar.closeButton.isHidden)
-    }
-
-    func testTheMenuPinsAndClosesTheOthersButNotThePinned() throws {
-        let mounted = mount(tabs: 4)
-        defer { mounted.window.close() }
-        let group = mounted.area.activeGroup
         let bar = group.tabBar
+        group.previewTabViewItem = group.tabViewItems[2]
 
-        let first = try XCTUnwrap(bar.menu(for: mouse(.rightMouseDown, at: center(of: bar, tab: 3), in: bar)))
+        let first = try XCTUnwrap(bar.menu(for: mouse(.rightMouseDown, at: center(of: bar, tab: 2), in: bar)))
         XCTAssertEqual(first.items.first?.title, Self.title("Pin Tab"))
         first.performActionForItem(at: 0)
-        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 3", "Tab 0", "Tab 1", "Tab 2"])
+        XCTAssertNil(group.previewTabViewItem)
+        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 0", "Tab 1", "Tab 2"], "pinning moved the tab")
 
-        let menu = try XCTUnwrap(bar.menu(for: mouse(.rightMouseDown, at: center(of: bar, tab: 2), in: bar)))
-        XCTAssertEqual(menu.items.first?.title, Self.title("Pin Tab"))
+        let menu = try XCTUnwrap(bar.menu(for: mouse(.rightMouseDown, at: center(of: bar, tab: 1), in: bar)))
+        XCTAssertEqual(menu.items.first?.title, Self.title("Unpin Tab"))
         let closeOthers = try XCTUnwrap(menu.items.firstIndex { $0.title == Self.title("Close Other Tabs") })
         menu.performActionForItem(at: closeOthers)
 
-        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 3", "Tab 1"])
+        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 1"])
         XCTAssertEqual(mounted.recorder.closed.count, 2)
     }
 
@@ -642,24 +652,6 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertTrue(drawn, "the image is blank")
 
         XCTAssertNil(group.tabBar(group.tabBar, draggingImageForTabAt: 0), "a tab not on screen was drawn")
-    }
-
-    func testADraggedTabStaysOutOfThePinnedTabs() throws {
-        let mounted = mount(tabs: 3)
-        defer { mounted.window.close() }
-        let group = mounted.area.activeGroup
-        let bar = group.tabBar
-        group.setTabPinned(true, at: 0)
-        settle(mounted.window)
-        let start = center(of: bar, tab: 2)
-
-        bar.mouseDown(with: mouse(.leftMouseDown, at: start, in: bar))
-        bar.mouseDragged(
-            with: mouse(.leftMouseDragged, at: NSPoint(x: bar.bounds.minX, y: start.y), in: bar))
-        bar.mouseUp(with: mouse(.leftMouseUp, at: NSPoint(x: bar.bounds.minX, y: start.y), in: bar))
-
-        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 0", "Tab 2", "Tab 1"])
-        XCTAssertEqual(group.numberOfPinnedTabs, 1)
     }
 
     /// Out of the bar, the tab goes with the drag session: its place stays open
@@ -977,17 +969,6 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertEqual(bar.items.map(\.isPreview), [false, false])
         group.previewTabViewItem = NSTabViewItem(viewController: ProbeViewController(title: "Next"))
         XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 0", "Look", "Next"])
-    }
-
-    func testPinningTheTemporaryTabKeepsIt() throws {
-        let mounted = mount(tabs: 1)
-        defer { mounted.window.close() }
-        let group = mounted.area.activeGroup
-        group.previewTabViewItem = NSTabViewItem(viewController: ProbeViewController(title: "Look"))
-
-        group.setTabPinned(true, at: 1)
-
-        XCTAssertNil(group.previewTabViewItem)
     }
 
     private func mount(tabs: Int) -> Mounted {

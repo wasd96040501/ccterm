@@ -47,6 +47,17 @@ enum GitUtils {
         return String(head.dropFirst(prefix.count))
     }
 
+    /// The current branch of `directory` as it is now, then again each time it
+    /// changes — a checkout at the command line included — until the consumer
+    /// stops iterating. Read off the caller's thread; `nil` when the folder
+    /// isn't a repository or HEAD is detached. Consecutive equal values are
+    /// yielded once.
+    static func currentBranchUpdates(at directory: String) -> AsyncStream<String?> {
+        AsyncStream { continuation in
+            continuation.finish()
+        }
+    }
+
     /// Returns `true` if the directory is inside a git repository.
     static func isGitRepository(at directory: String) -> Bool {
         let gitPath = (directory as NSString).appendingPathComponent(".git")

@@ -4,9 +4,19 @@ import AppKit
 /// created in `applicationDidFinishLaunching` rather than declared as a
 /// SwiftUI `Window` scene, so everything mounted in it runs in AppKit's
 /// source phase without SwiftUI commit-pass interleaving.
+///
+/// Owns the toolbar, laid out as Xcode's over the editors: back and forward
+/// through the active editor's history, then the project the reader is in and
+/// its git branch. Nothing sits over the sidebar, which never collapses, so
+/// there is no sidebar button either.
 @MainActor
 final class MainWindowController: NSWindowController, NSToolbarDelegate {
     private let splitController: MainSplitViewController
+    private let titleView = MainWindowTitleView()
+
+    /// The project the title shows, and the task following its branch.
+    private var project: URL?
+    private var branchTask: Task<Void, Never>?
 
     init(library: LibraryStore) {
         splitController = MainSplitViewController(library: library)
@@ -17,6 +27,8 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
             defer: false)
         window.title = "ccterm"
         window.titlebarAppearsTransparent = true
+        // The toolbar's title item shows it instead (`MainWindowTitleView`);
+        // `title` still names the window in the Window menu and Mission Control.
         window.titleVisibility = .hidden
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
@@ -39,6 +51,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         if !hadSavedFrame {
             window.center()
         }
+        splitController.delegate = self
         installToolbar()
     }
 
@@ -59,16 +72,13 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     // MARK: - NSToolbarDelegate
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        // `.toggleSidebar` + `.sidebarTrackingSeparator` are
-        // system-provided items: NSToolbar synthesizes them, supplies
-        // the standard icon, and wires the action to
-        // `NSSplitViewController.toggleSidebar(_:)` via the responder
-        // chain — they never come through `itemForItemIdentifier`.
-        [.toggleSidebar, .sidebarTrackingSeparator]
+        // `.sidebarTrackingSeparator` is system-provided: it keeps the items
+        // after it over the editors, whatever the sidebar's width.
+        [.sidebarTrackingSeparator, .navigation, .projectTitle, .flexibleSpace]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toggleSidebar, .sidebarTrackingSeparator]
+        toolbarDefaultItemIdentifiers(toolbar)
     }
 
     func toolbar(
@@ -76,6 +86,32 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
         willBeInsertedIntoToolbar flag: Bool
     ) -> NSToolbarItem? {
-        nil
+        switch itemIdentifier {
+        case .navigation: navigationItem()
+        case .projectTitle: titleItem()
+        default: nil
+        }
     }
+
+    /// Back and forward as one control, as Xcode's and Finder's: a momentary
+    /// segmented group, each segment an item of its own that the split validates.
+    private func navigationItem() -> NSToolbarItem {
+        let group = NSToolbarItemGroup(itemIdentifier: .navigation)
+        return group
+    }
+
+    private func titleItem() -> NSToolbarItem {
+        let item = NSToolbarItem(itemIdentifier: .projectTitle)
+        item.view = titleView
+        return item
+    }
+}
+
+extension MainWindowController: MainSplitViewControllerDelegate {
+    func mainSplitViewController(_ split: MainSplitViewController, didShowProjectAt url: URL?) {}
+}
+
+extension NSToolbarItem.Identifier {
+    fileprivate static let navigation = NSToolbarItem.Identifier("ccterm.main.navigation")
+    fileprivate static let projectTitle = NSToolbarItem.Identifier("ccterm.main.projectTitle")
 }

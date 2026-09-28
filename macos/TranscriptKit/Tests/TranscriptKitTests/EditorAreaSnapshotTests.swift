@@ -10,7 +10,8 @@ import XCTest
 /// **For eyes, not a gate.** Skipped by `make test-kit`; run it with
 /// `make test-kit FILTER=EditorAreaSnapshotTests`. What it is for is what
 /// `EditorAreaTests` cannot have an opinion on: that the tab bar reads as Xcode's,
-/// that a pinned tab reads as pinned, that the divider is a hairline, and that the
+/// that a tab's pin reads as Xcode's — hollow on the temporary tab, filled on a
+/// pinned one — that the divider is a hairline, and that the
 /// find bar sits over its transcript the way Xcode's sits over a source file.
 /// Every rectangle under that is asserted there.
 @MainActor
@@ -25,14 +26,14 @@ final class EditorAreaSnapshotTests: XCTestCase {
         TestWindow.park(window, contentSize: size)
 
         let pages = [
-            SnapshotPage(title: "Pinned", rows: Self.rows),
+            SnapshotPage(title: "Transcript 1", rows: Self.rows),
             SnapshotPage(title: "Transcript 2", rows: Self.rows),
             SnapshotPage(title: "A tab with a longer title", rows: Self.rows),
         ]
         for page in pages {
             area.activeGroup.addTabViewItem(NSTabViewItem(viewController: page))
         }
-        area.activeGroup.setTabPinned(true, at: 0)
+        area.activeGroup.previewTabViewItem = area.activeGroup.tabViewItems[2]
         area.activeGroup.selectedTabViewItemIndex = 1
         let right = SnapshotPage(title: "Transcript 4", rows: Self.rows)
         let rightGroup = try XCTUnwrap(area.addGroup(with: NSTabViewItem(viewController: right)))
@@ -40,8 +41,9 @@ final class EditorAreaSnapshotTests: XCTestCase {
             NSTabViewItem(viewController: SnapshotPage(title: "Transcript 5", rows: Self.rows)))
         window.contentView?.layoutSubtreeIfNeeded()
 
-        // The pointer, as a reader would have it: over the left editor's last tab
-        // and on its close button, and over the right editor's selected tab.
+        // The pointer, as a reader would have it: over the left editor's last tab —
+        // the temporary one, its pin hollow — and on its close button, and over the
+        // right editor's selected tab, its pin filled.
         let left = area.groups[0].tabBar
         left.mouseMoved(with: Self.mouseMoved(at: left.rect(forTabAt: 2), in: left))
         left.closeButton.mouseEntered(with: Self.mouseMoved(at: left.closeButton.frame, in: left))

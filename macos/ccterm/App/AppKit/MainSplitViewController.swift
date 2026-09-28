@@ -7,9 +7,16 @@ import TranscriptWorkspace
 /// Routes between them the way Xcode's navigator does: a transcript already
 /// open is selected where it is; otherwise selecting it in the sidebar shows
 /// it in the active editor's temporary tab, and double-clicking it opens a tab
-/// that stays. Dragged from the sidebar, it opens where it is dropped.
+/// that stays. Dragged from the sidebar, it opens where it is dropped. Back
+/// and forward walk the active editor's history, which knows each tab by its
+/// transcript's URL (`NSTabViewItem.identifier`).
+///
+/// The sidebar never collapses: it is where transcripts are opened from, and
+/// the window is always wide enough for it.
 @MainActor
 final class MainSplitViewController: NSSplitViewController {
+    weak var delegate: MainSplitViewControllerDelegate?
+
     private let library: LibraryStore
     private let sidebarViewController: SidebarViewController
     private let editorArea = EditorAreaViewController()
@@ -32,7 +39,8 @@ final class MainSplitViewController: NSSplitViewController {
         // First-launch width when no autosaved divider position exists,
         // clamped into [290, 350]. Once autosave kicks in this is ignored.
         sidebarItem.preferredThicknessFraction = 0.22
-        sidebarItem.canCollapse = true
+        sidebarItem.canCollapse = false
+        sidebarItem.canCollapseFromWindowResize = false
         sidebarItem.titlebarSeparatorStyle = .automatic
         addSplitViewItem(sidebarItem)
 
@@ -43,8 +51,7 @@ final class MainSplitViewController: NSSplitViewController {
         addSplitViewItem(detailItem)
 
         splitView.dividerStyle = .thin
-        // Persist the user's divider position (and collapsed state)
-        // across launches. Set after both items are added — AppKit
+        // Persist the user's divider position across launches. Set after both items are added — AppKit
         // restores the saved frames on the next layout pass.
         splitView.autosaveName = "ccterm.mainSplit"
     }
@@ -68,10 +75,23 @@ final class MainSplitViewController: NSSplitViewController {
         group.removeTabViewItem(group.tabViewItems[group.selectedTabViewItemIndex])
     }
 
+    /// Back through the active editor's history — the toolbar's back button.
+    @objc func goBack(_ sender: Any?) {
+        editorArea.activeGroup.goBack()
+    }
+
+    /// Forward through the active editor's history — the toolbar's forward button.
+    @objc func goForward(_ sender: Any?) {
+        editorArea.activeGroup.goForward()
+    }
+
     // MARK: - Tabs
 
+    /// A tab for the transcript at `url`, known to the history by that URL.
     private func tab(for node: LibraryNode, at url: URL) -> NSTabViewItem {
-        NSTabViewItem(viewController: TranscriptViewController(fileURL: url, title: node.title))
+        let item = NSTabViewItem(viewController: TranscriptViewController(fileURL: url, title: node.title))
+        item.identifier = url
+        return item
     }
 
     /// Selects the tab showing `url` in whichever editor has it, and answers
@@ -116,7 +136,29 @@ extension MainSplitViewController: SidebarViewControllerDelegate {
     }
 }
 
+extension MainSplitViewController: NSToolbarItemValidation {
+    /// Back and forward are enabled while the active editor has somewhere to go.
+    /// Asked by the toolbar as it validates, after every event.
+    func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
+        switch item.action {
+        case #selector(goBack(_:)): editorArea.activeGroup.canGoBack
+        case #selector(goForward(_:)): editorArea.activeGroup.canGoForward
+        default: true
+        }
+    }
+}
+
 extension MainSplitViewController: EditorAreaViewControllerDelegate {
+    /// Framework: tells the window which project the active transcript is in.
+    func editorArea(_ editorArea: EditorAreaViewController, didActivate viewController: NSViewController?) {}
+
+    /// Framework: a tab again for a transcript the history goes back to.
+    func editorArea(
+        _ editorArea: EditorAreaViewController, tabViewItemWithIdentifier identifier: Any
+    ) -> NSTabViewItem? {
+        nil
+    }
+
     func editorArea(_ editorArea: EditorAreaViewController, willClose viewController: NSViewController) {
         (viewController as? TranscriptViewController)?.prepareForRemoval()
     }

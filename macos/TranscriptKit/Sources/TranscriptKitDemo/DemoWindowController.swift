@@ -69,11 +69,18 @@ final class DemoWindowController: NSWindowController {
         group.removeTabViewItem(group.tabViewItems[group.selectedTabViewItemIndex])
     }
 
+    /// The active editor's selected tab.
+    private var selectedTabViewItem: NSTabViewItem? {
+        let group = area.activeGroup
+        return group.tabViewItems.indices.contains(group.selectedTabViewItemIndex)
+            ? group.tabViewItems[group.selectedTabViewItemIndex] : nil
+    }
+
+    /// A tab is pinned unless it is the temporary tab.
     @objc func togglePinnedTab(_ sender: Any?) {
         let group = area.activeGroup
-        let index = group.selectedTabViewItemIndex
-        guard index >= 0 else { return }
-        group.setTabPinned(!group.isTabPinned(at: index), at: index)
+        guard let item = selectedTabViewItem else { return }
+        group.previewTabViewItem = item === group.previewTabViewItem ? nil : item
         refreshPalette()
     }
 
@@ -156,8 +163,7 @@ final class DemoWindowController: NSWindowController {
                 isStreaming: editor?.isStreaming ?? false,
                 coldLoad: editor?.coldLoadStatus ?? "",
                 maxContentWidth: editor?.transcript.maxContentWidth ?? 720,
-                isPinned: group.selectedTabViewItemIndex >= 0
-                    && group.isTabPinned(at: group.selectedTabViewItemIndex)))
+                isPinned: selectedTabViewItem.map { $0 !== group.previewTabViewItem } ?? false))
     }
 }
 
@@ -206,10 +212,9 @@ extension DemoWindowController: NSUserInterfaceValidations {
         case #selector(togglePinnedTab(_:)):
             // The palette's button is retitled by `refreshPalette()`; the menu item
             // is asked here, as it opens.
-            let group = area.activeGroup
-            let index = group.selectedTabViewItemIndex
+            let selected = selectedTabViewItem
             (item as? NSMenuItem)?.title =
-                index >= 0 && group.isTabPinned(at: index) ? "Unpin Tab" : "Pin Tab"
+                selected != nil && selected !== area.activeGroup.previewTabViewItem ? "Unpin Tab" : "Pin Tab"
             return activeEditor != nil
         case #selector(newTab(_:)), #selector(closeEditor(_:)):
             return true

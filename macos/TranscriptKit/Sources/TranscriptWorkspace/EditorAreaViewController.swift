@@ -130,20 +130,13 @@ public final class EditorAreaViewController: NSSplitViewController {
         return group
     }
 
-    /// Every editor coming or going passes through here — `addSplitViewItem` and
-    /// setting `splitViewItems` included — and each editor's bar depends on
-    /// whether it is alone.
+    /// Every editor coming passes through here — `addSplitViewItem` and setting
+    /// `splitViewItems` included — and takes what the area takes.
     public override func insertSplitViewItem(_ splitViewItem: NSSplitViewItem, at index: Int) {
         super.insertSplitViewItem(splitViewItem, at: index)
         if !draggedTypes.isEmpty {
             (splitViewItem.viewController as? EditorGroupViewController)?.acceptDrops(of: draggedTypes)
         }
-        groups.forEach { $0.reloadTabBar() }
-    }
-
-    public override func removeSplitViewItem(_ splitViewItem: NSSplitViewItem) {
-        super.removeSplitViewItem(splitViewItem)
-        groups.forEach { $0.reloadTabBar() }
     }
 
     /// Makes `group` the active editor.
@@ -175,15 +168,13 @@ public final class EditorAreaViewController: NSSplitViewController {
     // MARK: - Moving tabs between editors
 
     /// Moves the tab at `index` of `source` into `destination` at `position`,
-    /// selected there, with the destination made active. A pinned tab stays
-    /// pinned. Answers where it landed.
+    /// selected there, with the destination made active. Answers where it landed.
     @discardableResult
     func moveTab(
         at index: Int, of source: EditorGroupViewController,
         to destination: EditorGroupViewController, at position: Int
     ) -> Int {
-        let (item, pinned) = source.detach(at: index)
-        let landed = destination.attach(item, pinned: pinned, at: position)
+        let landed = destination.attach(source.detach(at: index), at: position)
         activeGroup = destination
         // The destination first: if the source emptied and closes, the active
         // editor is already the one that took the tab.

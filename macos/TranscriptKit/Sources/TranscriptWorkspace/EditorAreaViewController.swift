@@ -152,29 +152,18 @@ public final class EditorAreaViewController: NSSplitViewController {
     }
 
     /// Every editor coming passes through here — `addSplitViewItem` and setting
-    /// `splitViewItems` included — and takes what the area takes.
+    /// `splitViewItems` included — reports to the area, and takes what it takes.
     public override func insertSplitViewItem(_ splitViewItem: NSSplitViewItem, at index: Int) {
         super.insertSplitViewItem(splitViewItem, at: index)
-        if !draggedTypes.isEmpty {
-            (splitViewItem.viewController as? EditorGroupViewController)?.acceptDrops(of: draggedTypes)
-        }
+        guard let group = splitViewItem.viewController as? EditorGroupViewController else { return }
+        group.delegate = self
+        if !draggedTypes.isEmpty { group.acceptDrops(of: draggedTypes) }
     }
 
     /// Makes `group` the active editor.
     func activate(_ group: EditorGroupViewController) {
         guard groups.contains(where: { $0 === group }) else { return }
         activeGroup = group
-        reportActiveViewController()
-    }
-
-    /// Called by a group after every change to its tabs.
-    func groupDidChangeTabs(_ group: EditorGroupViewController) {
-        if group.tabViewItems.isEmpty, groups.count > 1,
-            let item = splitViewItems.first(where: { $0.viewController === group })
-        {
-            removeSplitViewItem(item)
-            if activeGroup === group, let remaining = groups.first { activeGroup = remaining }
-        }
         reportActiveViewController()
     }
 
@@ -240,28 +229,14 @@ public final class EditorAreaViewController: NSSplitViewController {
     }
 
     /// Moves a tab to the other editor, opening one on the right if there is
-    /// only this one.
+    /// only this one. Refused for an editor's only tab when it is the only
+    /// editor: that would leave it empty and closing — the same layout, moved
+    /// over.
     func moveTabToOtherGroup(at index: Int, of source: EditorGroupViewController) {
-        guard canMoveTab(outOf: source),
+        guard groups.count > 1 || source.tabViewItems.count > 1,
             let destination = groups.first(where: { $0 !== source }) ?? addGroup()
         else { return }
         moveTab(at: index, of: source, to: destination, at: destination.tabViewItems.count)
-    }
-
-    /// Whether a tab can leave `group` for the other editor. Moving an editor's
-    /// only tab into a new editor beside it would leave the first one empty and
-    /// closing — the same layout, moved over — so that one is refused.
-    func canMoveTab(outOf group: EditorGroupViewController) -> Bool {
-        groups.count > 1 || group.tabViewItems.count > 1
-    }
-
-    /// What the tab menu calls moving a tab out of `group`.
-    func moveMenuTitle(forTabIn group: EditorGroupViewController) -> String? {
-        guard let index = groups.firstIndex(where: { $0 === group }) else { return nil }
-        if groups.count == 1 { return String(localized: "Move to New Editor on Right", bundle: .module) }
-        return index == 0
-            ? String(localized: "Move to Editor on Right", bundle: .module)
-            : String(localized: "Move to Editor on Left", bundle: .module)
     }
 
     // MARK: - Following the reader
@@ -306,6 +281,60 @@ public final class EditorAreaViewController: NSSplitViewController {
             })
         else { return }
         activate(group)
+    }
+}
+
+extension EditorAreaViewController: EditorGroupViewControllerDelegate {
+
+    func editorGroupWasChosen(_ group: EditorGroupViewController) {
+        activate(group)
+    }
+
+    /// Closes an editor that ran out of tabs, unless it is the only one.
+    func editorGroupDidChangeTabs(_ group: EditorGroupViewController) {
+        if group.tabViewItems.isEmpty, groups.count > 1,
+            let item = splitViewItems.first(where: { $0.viewController === group })
+        {
+            removeSplitViewItem(item)
+            if activeGroup === group, let remaining = groups.first { activeGroup = remaining }
+        }
+        reportActiveViewController()
+    }
+
+    func editorGroup(_ group: EditorGroupViewController, willClose viewController: NSViewController) {
+        delegate?.editorArea(self, willClose: viewController)
+    }
+
+    func editorGroup(
+        _ group: EditorGroupViewController, tabViewItemWithIdentifier identifier: AnyHashable
+    ) -> NSTabViewItem? {
+        delegate?.editorArea(self, tabViewItemWithIdentifier: identifier.base)
+    }
+
+    func editorGroup(
+        _ group: EditorGroupViewController, tabViewItemForDrop draggingInfo: NSDraggingInfo
+    ) -> NSTabViewItem? {
+        delegate?.editorArea(self, tabViewItemForDrop: draggingInfo)
+    }
+
+    func position(of group: EditorGroupViewController) -> EditorGroupViewController.Position {
+        guard groups.count > 1 else { return .only }
+        return groups.first === group ? .left : .right
+    }
+
+    func editorGroup(
+        _ group: EditorGroupViewController, moveTabAt index: Int, of source: EditorGroupViewController,
+        to position: Int
+    ) -> Int {
+        moveTab(at: index, of: source, to: group, at: position)
+    }
+
+    func editorGroup(_ group: EditorGroupViewController, moveTabToOtherGroupAt index: Int) {
+        moveTabToOtherGroup(at: index, of: group)
+    }
+
+    func editorGroup(_ group: EditorGroupViewController, openNewGroupWith item: NSTabViewItem) {
+        addGroup(with: item)
     }
 }
 

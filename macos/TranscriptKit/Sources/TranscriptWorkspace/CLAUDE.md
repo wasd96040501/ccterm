@@ -8,6 +8,8 @@ EditorAreaViewController      NSSplitViewController — the divider, which edito
    └─ NSViewController        one per tab — never looked inside
 ```
 
+**Dependencies run parent to child.** An editor never names the area: it reports up through its weak, internal `EditorGroupViewControllerDelegate`, which only the area implements — so moving a tab across editors, which editor is active, closing an editor that ran out of tabs and every call to the host's delegate live in the area. Only the area makes editors (`EditorGroupViewController.init` is internal).
+
 ## Structure is AppKit's
 
 - **The split is an `NSSplitViewController`** — dragging, cursor, minimum widths, accessibility come with it, and **a divider drag is a live resize** for every view under it (`viewWillStartLiveResize` / `inLiveResize` / `viewDidEndLiveResize`), so a transcript's drag-time rules apply with no coupling. `EditorAreaTests` asserts it.

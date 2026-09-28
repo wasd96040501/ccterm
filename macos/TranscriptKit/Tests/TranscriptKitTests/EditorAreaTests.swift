@@ -1170,7 +1170,7 @@ final class EditorAreaTests: XCTestCase {
     /// split view controller may put a container of its own around each item's
     /// view, which makes `frame` relative to that.
     private func frame(of group: EditorGroupViewController) -> NSRect {
-        group.view.convert(group.view.bounds, to: group.area?.splitView)
+        group.view.convert(group.view.bounds, to: (group.parent as? NSSplitViewController)?.splitView)
     }
 
     private func settle(_ window: NSWindow) {

@@ -19,10 +19,20 @@ import AppKit
 /// tab has closed asks the area's delegate for a new one.
 ///
 /// Everything that crosses editors — moving a tab to the other one, which editor
-/// is active, closing an editor that ran out of tabs — is the enclosing
-/// `EditorAreaViewController`'s, reached as `parent`.
+/// is active, closing an editor that ran out of tabs — and everything that
+/// reaches the host is its `delegate`'s: the area it is in, which this type
+/// never names.
 @MainActor
 public final class EditorGroupViewController: NSViewController {
+
+    /// Where an editor is among the editors — which decides where a tab can move
+    /// out of it to, and what that is called. Two editors at most, so an editor
+    /// that is the only one is one beside which another can open.
+    enum Position {
+        case only, left, right
+    }
+
+    weak var delegate: EditorGroupViewControllerDelegate?
 
     private let tabs = NSTabViewController()
     lazy var tabBar = EditorTabBar()
@@ -52,7 +62,8 @@ public final class EditorGroupViewController: NSViewController {
         return view
     }()
 
-    public init() {
+    /// Made by the area only.
+    init() {
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -60,8 +71,6 @@ public final class EditorGroupViewController: NSViewController {
     required init?(coder: NSCoder) {
         fatalError("code-only")
     }
-
-    var area: EditorAreaViewController? { parent as? EditorAreaViewController }
 
     // MARK: - View
 
@@ -129,7 +138,7 @@ public final class EditorGroupViewController: NSViewController {
         }
     }
 
-    public var selectedViewController: NSViewController? { selectedTabViewItem?.viewController }
+    var selectedViewController: NSViewController? { selectedTabViewItem?.viewController }
 
     var selectedTabViewItem: NSTabViewItem? {
         tabViewItems.indices.contains(selectedTabViewItemIndex) ? tabViewItems[selectedTabViewItemIndex] : nil
@@ -141,7 +150,7 @@ public final class EditorGroupViewController: NSViewController {
     }
 
     /// Inserts a tab and selects it.
-    public func insertTabViewItem(_ item: NSTabViewItem, at index: Int) {
+    func insertTabViewItem(_ item: NSTabViewItem, at index: Int) {
         attach(item, at: index)
         tabsDidChange()
     }
@@ -215,8 +224,7 @@ public final class EditorGroupViewController: NSViewController {
     /// The open tab showing `identifier`, or a new one the area's delegate makes.
     private func tabViewItem(showing identifier: AnyHashable) -> NSTabViewItem? {
         if let item = tabViewItems.first(where: { $0.identifier as? AnyHashable == identifier }) { return item }
-        guard let area else { return nil }
-        return area.delegate?.editorArea(area, tabViewItemWithIdentifier: identifier.base)
+        return delegate?.editorGroup(self, tabViewItemWithIdentifier: identifier)
     }
 
     /// Selects `item`, opening it as the temporary tab if it isn't open.
@@ -232,8 +240,8 @@ public final class EditorGroupViewController: NSViewController {
 
     /// Closes the tab at `index`: the area's delegate told, then the tab taken out.
     private func close(at index: Int) {
-        if let area, let viewController = tabViewItems[index].viewController {
-            area.delegate?.editorArea(area, willClose: viewController)
+        if let viewController = tabViewItems[index].viewController {
+            delegate?.editorGroup(self, willClose: viewController)
         }
         detach(at: index)
     }
@@ -290,7 +298,7 @@ public final class EditorGroupViewController: NSViewController {
     func tabsDidChange() {
         if let identifier = selectedTabViewItem?.identifier as? AnyHashable { history.visit(identifier) }
         reloadTabBar()
-        area?.groupDidChangeTabs(self)
+        delegate?.editorGroupDidChangeTabs(self)
     }
 
     /// Shows the tabs. The bar is there while there are any, one or more: it is
@@ -335,14 +343,31 @@ public final class EditorGroupViewController: NSViewController {
             #selector(closeOthersFromMenu(_:)))
         others.isEnabled = tabViewItems.count > 1
         menu.addItem(others)
-        if let area, let title = area.moveMenuTitle(forTabIn: self) {
+        if let position = delegate?.position(of: self) {
             menu.addItem(.separator())
-            let move = item(title, index, #selector(moveToOtherEditorFromMenu(_:)))
-            move.isEnabled = area.canMoveTab(outOf: self)
+            let move = item(Self.moveMenuTitle(at: position), index, #selector(moveToOtherEditorFromMenu(_:)))
+            move.isEnabled = canMoveTabOut(at: position)
             menu.addItem(move)
         }
         menu.autoenablesItems = false
         return menu
+    }
+
+    /// What the tab menu calls moving a tab out of an editor at `position`.
+    private static func moveMenuTitle(at position: Position) -> String {
+        switch position {
+        case .only: String(localized: "Move to New Editor on Right", bundle: .module)
+        case .left: String(localized: "Move to Editor on Right", bundle: .module)
+        case .right: String(localized: "Move to Editor on Left", bundle: .module)
+        }
+    }
+
+    /// Whether a tab can leave this editor, at `position`, for the other one.
+    /// Moving an editor's only tab into a new editor beside it would leave this
+    /// one empty and closing — the same layout, moved over — so that one is
+    /// refused.
+    private func canMoveTabOut(at position: Position) -> Bool {
+        position != .only || tabViewItems.count > 1
     }
 
     private func item(_ title: String, _ index: Int, _ action: Selector) -> NSMenuItem {
@@ -379,7 +404,7 @@ public final class EditorGroupViewController: NSViewController {
 
     @objc private func moveToOtherEditorFromMenu(_ sender: NSMenuItem) {
         guard let index = index(of: sender) else { return }
-        area?.moveTabToOtherGroup(at: index, of: self)
+        delegate?.editorGroup(self, moveTabToOtherGroupAt: index)
     }
 
     // MARK: - Dropping a tab on the content
@@ -389,24 +414,23 @@ public final class EditorGroupViewController: NSViewController {
     func contentDrop(
         from source: EditorTabBar, at point: NSPoint
     ) -> (rect: NSRect, perform: () -> Void)? {
-        guard let area, let sourceGroup = source.delegate as? EditorGroupViewController,
+        guard let delegate, let sourceGroup = source.delegate as? EditorGroupViewController,
             let dragged = source.draggedIndex
         else { return nil }
         let content = tabs.view.frame
         if sourceGroup === self {
             // Onto its own editor: the trailing half opens a new one on the right.
-            guard point.x >= content.midX, area.canMoveTab(outOf: self),
-                area.groups.count < EditorAreaViewController.maximumNumberOfGroups
+            guard point.x >= content.midX, delegate.position(of: self) == .only, canMoveTabOut(at: .only)
             else { return nil }
             let half = NSRect(
                 x: content.midX, y: content.minY, width: content.width / 2, height: content.height)
-            return (half, { area.moveTabToOtherGroup(at: dragged, of: sourceGroup) })
+            return (half, { delegate.editorGroup(self, moveTabToOtherGroupAt: dragged) })
         }
         return (
             content,
             {
-                area.moveTab(
-                    at: dragged, of: sourceGroup, to: self, at: self.tabViewItems.count)
+                _ = delegate.editorGroup(
+                    self, moveTabAt: dragged, of: sourceGroup, to: self.tabViewItems.count)
             }
         )
     }
@@ -416,17 +440,15 @@ public final class EditorGroupViewController: NSViewController {
     /// else it becomes this editor's last tab. `nil` when the drag carries
     /// nothing the area takes. Performing it answers whether it opened.
     func contentDrop(of drop: NSDraggingInfo, at point: NSPoint) -> (rect: NSRect, perform: () -> Bool)? {
-        guard let area, drop.draggingPasteboard.availableType(from: area.draggedTypes) != nil else { return nil }
+        guard let delegate, drop.draggingPasteboard.availableType(from: acceptedTypes) != nil else { return nil }
         let content = tabs.view.frame
-        if point.x >= content.midX, !tabViewItems.isEmpty,
-            area.groups.count < EditorAreaViewController.maximumNumberOfGroups
-        {
+        if point.x >= content.midX, !tabViewItems.isEmpty, delegate.position(of: self) == .only {
             let half = NSRect(x: content.midX, y: content.minY, width: content.width / 2, height: content.height)
             return (
                 half,
                 {
                     guard let item = self.tabViewItem(for: drop) else { return false }
-                    area.addGroup(with: item)
+                    delegate.editorGroup(self, openNewGroupWith: item)
                     return true
                 }
             )
@@ -436,22 +458,25 @@ public final class EditorGroupViewController: NSViewController {
 
     /// Lets the editor take drops of `types` from outside, beside dragged tabs.
     func acceptDrops(of types: [NSPasteboard.PasteboardType]) {
+        acceptedTypes = types
         view.registerForDraggedTypes([.editorTab] + types)
         tabBar.registerForDraggedTypes([.editorTab] + types)
     }
+
+    /// What from outside the editors this one takes, beside dragged tabs.
+    private var acceptedTypes: [NSPasteboard.PasteboardType] = []
 
     /// Opens a drop from outside as a tab at `index`, if the area's delegate
     /// makes one of it.
     private func open(_ drop: NSDraggingInfo, at index: Int) -> Bool {
         guard let item = tabViewItem(for: drop) else { return false }
-        area?.activate(self)
+        delegate?.editorGroupWasChosen(self)
         insertTabViewItem(item, at: index)
         return true
     }
 
     private func tabViewItem(for drop: NSDraggingInfo) -> NSTabViewItem? {
-        guard let area else { return nil }
-        return area.delegate?.editorArea(area, tabViewItemForDrop: drop)
+        delegate?.editorGroup(self, tabViewItemForDrop: drop)
     }
 
     func showDropHighlight(_ rect: NSRect?) {
@@ -464,7 +489,7 @@ public final class EditorGroupViewController: NSViewController {
 extension EditorGroupViewController: EditorTabBarDelegate {
 
     func tabBar(_ tabBar: EditorTabBar, didSelectTabAt index: Int) {
-        area?.activate(self)
+        delegate?.editorGroupWasChosen(self)
         selectedTabViewItemIndex = index
     }
 
@@ -510,7 +535,7 @@ extension EditorGroupViewController: EditorTabBarDelegate {
     ) -> Int? {
         guard let sourceGroup = source.delegate as? EditorGroupViewController else { return nil }
         if sourceGroup === self { return moveTab(at: index, to: destination) }
-        return area?.moveTab(at: index, of: sourceGroup, to: self, at: destination)
+        return delegate?.editorGroup(self, moveTabAt: index, of: sourceGroup, to: destination)
     }
 }
 

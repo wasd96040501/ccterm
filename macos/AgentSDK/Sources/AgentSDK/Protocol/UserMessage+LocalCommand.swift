@@ -75,25 +75,30 @@ extension UserMessage {
         return nil
     }
 
-    /// The first `tag` in `text`, in any case. Compares bytes: a tag is
-    /// ASCII, and `range(of:options: .caseInsensitive)` folds every character
-    /// of what may be a long body.
+    /// The first `tag` — `<name` or `</name>`, ASCII — in `text`, in any
+    /// case. Bodies can be long: `range(of:options: .caseInsensitive)` folds
+    /// every character of them, and a Swift loop over their bytes is slow
+    /// unoptimized, so this jumps between `<`s with `memchr` and compares
+    /// with `strncasecmp`.
     private static func range(of tag: String, in text: Substring) -> Range<Substring.Index>? {
-        let tag = tag.utf8.map(\.asciiLowercased)
-        let bytes = text.utf8
-        var start = bytes.startIndex
-        while start < bytes.endIndex {
-            if bytes[start...].starts(with: tag, by: { $0.asciiLowercased == $1 }) {
-                return start..<bytes.index(start, offsetBy: tag.count)
+        let length = tag.utf8.count
+        var contiguous = text  // `withUTF8` may copy a bridged string into native storage.
+        let offset = contiguous.withUTF8 { bytes -> Int? in
+            guard let base = UnsafeRawPointer(bytes.baseAddress) else { return nil }
+            var start = 0
+            while start + length <= bytes.count,
+                let open = memchr(base + start, Int32(UInt8(ascii: "<")), bytes.count - start)
+            {
+                let at = base.distance(to: open)
+                if at + length <= bytes.count, strncasecmp(open.assumingMemoryBound(to: CChar.self), tag, length) == 0 {
+                    return at
+                }
+                start = at + 1
             }
-            start = bytes.index(after: start)
+            return nil
         }
-        return nil
-    }
-}
-
-extension UInt8 {
-    fileprivate var asciiLowercased: UInt8 {
-        (UInt8(ascii: "A")...UInt8(ascii: "Z")).contains(self) ? self + 0x20 : self
+        guard let offset else { return nil }
+        let lower = text.utf8.index(text.startIndex, offsetBy: offset)
+        return lower..<text.utf8.index(lower, offsetBy: length)
     }
 }

@@ -348,13 +348,15 @@ struct TranscriptChain {
     /// Non-empty lines, tolerating the NUL padding a torn write leaves. Each
     /// line is a slice sharing `data`'s storage.
     private static func lines(of data: Data) -> [Data] {
-        // Scan the raw bytes: `Data`'s own collection methods pay an accessor
-        // call per byte.
+        // `memchr`, not a Swift loop over the bytes: unoptimized, such a loop
+        // takes tens of seconds on a large session.
         let ranges = data.withUnsafeBytes { bytes -> [Range<Int>] in
+            guard let base = bytes.baseAddress else { return [] }
             var ranges: [Range<Int>] = []
-            var start = bytes.startIndex
-            while start < bytes.endIndex {
-                let end = bytes[start...].firstIndex(of: UInt8(ascii: "\n")) ?? bytes.endIndex
+            var start = 0
+            while start < bytes.count {
+                let newline = memchr(base + start, Int32(UInt8(ascii: "\n")), bytes.count - start)
+                let end = newline.map { base.distance(to: $0) } ?? bytes.count
                 let line = bytes[start..<end].drop { $0 == 0 }
                 if !line.isEmpty { ranges.append(line.startIndex..<line.endIndex) }
                 start = end + 1

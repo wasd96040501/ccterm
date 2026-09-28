@@ -35,15 +35,23 @@ import UniformTypeIdentifiers
 /// reason it is not a dictionary too: a dictionary of decoded bitmaps is a leak
 /// with a slow fuse.
 ///
+/// ## A process-level cache, and internal
+///
 /// A process-level cache with a lifetime is precisely the exception the project's
 /// singleton rule leaves open, and this is the written-down reason: the same
 /// picture appears in the transcript, in the preview it opens into, and again
 /// after being scrolled past and back, and none of those three know about each
-/// other.
+/// other. Nor could one be handed to them: `ImageGridView.height(for:width:)` is
+/// asked from `heightOfRow` with no view built, and the grids themselves come out
+/// of a transcript's recycling pool, made by a closure with no arguments.
+///
+/// So it is reached as `shared`, and only from inside this module. No host sees
+/// it: a host hands over URLs and gets pictures, and what is cached between the
+/// two is this target's business.
 @MainActor
-public final class MediaImageStore {
+final class MediaImageStore {
 
-    public static let shared = MediaImageStore()
+    static let shared = MediaImageStore()
 
     /// What a picture is decoded to for a tile.
     ///
@@ -64,7 +72,7 @@ public final class MediaImageStore {
     /// Square, and that is the load-bearing part: 1.0 falls in `MosaicLayout`'s
     /// neutral `q` bucket (0.8 to 1.2), so a placeholder does not push the group
     /// into an arrangement chosen for shapes it does not have.
-    public static let fallbackSize = CGSize(width: 200, height: 200)
+    static let fallbackSize = CGSize(width: 200, height: 200)
 
     private var sizes: [URL: CGSize] = [:]
     private let images = NSCache<NSURL, NSImage>()
@@ -85,7 +93,7 @@ public final class MediaImageStore {
     /// remote address, a file that is not there, bytes that are not a picture.
     /// This is what makes a remote picture's row a fixed shape — the layout is
     /// decided before the fetch and is not revised when it lands.
-    public func size(of url: URL) -> CGSize {
+    func size(of url: URL) -> CGSize {
         if let known = sizes[url] { return known }
         let measured = Self.readSize(of: url) ?? Self.fallbackSize
         sizes[url] = measured
@@ -146,7 +154,7 @@ public final class MediaImageStore {
     /// that distinction is not an optimisation: a picture that was already in hand
     /// must appear without a fade, or scrolling back over one flickers. Telegram
     /// carries the same distinction as a parameter — `approximateSynchronousValue`.
-    public func cachedImage(for url: URL) -> NSImage? {
+    func cachedImage(for url: URL) -> NSImage? {
         images.object(forKey: url as NSURL)
     }
 
@@ -158,7 +166,7 @@ public final class MediaImageStore {
     /// milliseconds, so a cancelled one costs less than the machinery to cancel
     /// it. The result is cached either way, so a row scrolled past and back finds
     /// it waiting.
-    public func loadImage(for url: URL, completion: @escaping (NSImage?) -> Void) {
+    func loadImage(for url: URL, completion: @escaping (NSImage?) -> Void) {
         if let cached = cachedImage(for: url) { return completion(cached) }
 
         let maxPixel = Self.displayPixelSize
@@ -172,7 +180,7 @@ public final class MediaImageStore {
     /// The picture at its own size, for the preview — which shows it at 1:1 and
     /// shrinks only when it exceeds the screen, so the tile's copy is the wrong
     /// pixels to hand it.
-    public func loadOriginal(for url: URL, completion: @escaping (NSImage?) -> Void) {
+    func loadOriginal(for url: URL, completion: @escaping (NSImage?) -> Void) {
         Task {
             completion(await Self.decode(url, maxPixelSize: nil))
         }

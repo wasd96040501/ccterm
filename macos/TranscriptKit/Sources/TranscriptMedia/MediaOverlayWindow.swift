@@ -128,14 +128,13 @@ public final class MediaOverlayWindow: NSObject {
     /// against the content, which is the whole of what it is for; see `flight`.
     /// Passing `nil` gives a one-view flight, which is correct but shows the
     /// content squashed to the source's proportions for the first frames.
-    @discardableResult
     public static func present(
         _ content: MediaOverlayContent, from sourceRect: NSRect, sourceSnapshot: NSImage?,
         in hostView: NSView
-    ) -> MediaOverlayWindow? {
+    ) {
         guard current == nil, let host = hostView.window,
             let screen = host.screen ?? NSScreen.main
-        else { return nil }
+        else { return }
         // Two hops, because the overlay's window and the host's are different
         // windows on the same screen: view → host window → screen → here.
         let inScreen = host.convertToScreen(hostView.convert(sourceRect, to: nil))
@@ -143,7 +142,6 @@ public final class MediaOverlayWindow: NSObject {
             content: content, sourceRect: inScreen, sourceSnapshot: sourceSnapshot, host: host,
             screen: screen)
         overlay.show()
-        return overlay
     }
 
     private init(
@@ -237,7 +235,7 @@ public final class MediaOverlayWindow: NSObject {
     /// Guarded against re-entry: escape and a click on the mask both land here,
     /// and a second one arriving mid-flight would start a second set of
     /// animations against a window already on its way out.
-    public func dismiss() {
+    func dismiss() {
         guard !isDismissing else { return }
         isDismissing = true
 

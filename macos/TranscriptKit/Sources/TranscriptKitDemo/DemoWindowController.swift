@@ -63,10 +63,12 @@ final class DemoWindowController: NSWindowController {
         area.activeGroup.addTabViewItem(makeTab())
     }
 
+    /// The area's own command, which it answers itself whenever the focus is
+    /// inside it; here for when it is not — the palette's button, or a window
+    /// with no tab focused. Enabled only while there is a tab, so from here it
+    /// never closes the window.
     @objc func closeTab(_ sender: Any?) {
-        let group = area.activeGroup
-        guard group.tabViewItems.indices.contains(group.selectedTabViewItemIndex) else { return }
-        group.removeTabViewItem(group.tabViewItems[group.selectedTabViewItemIndex])
+        area.closeTab(sender)
     }
 
     /// The active editor's selected tab.

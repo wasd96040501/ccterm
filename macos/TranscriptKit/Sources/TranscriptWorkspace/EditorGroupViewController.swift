@@ -131,7 +131,7 @@ public final class EditorGroupViewController: NSViewController {
 
     public var selectedViewController: NSViewController? { selectedTabViewItem?.viewController }
 
-    private var selectedTabViewItem: NSTabViewItem? {
+    var selectedTabViewItem: NSTabViewItem? {
         tabViewItems.indices.contains(selectedTabViewItemIndex) ? tabViewItems[selectedTabViewItemIndex] : nil
     }
 

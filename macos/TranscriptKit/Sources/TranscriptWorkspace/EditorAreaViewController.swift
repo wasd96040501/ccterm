@@ -24,6 +24,11 @@ import AppKit
 /// inside, or holding the first responder — and is reported to the delegate
 /// together with the tab that editor shows. It is what a window's commands aim
 /// at: ⌘F, a new tab, a tool acting on "this transcript".
+///
+/// **The area answers its own commands** — `goBack(_:)`, `goForward(_:)`,
+/// `closeTab(_:)` — as responder actions aimed at the active editor, and
+/// validates them. A host puts them on a menu or a toolbar and implements none
+/// of them.
 @MainActor
 public final class EditorAreaViewController: NSSplitViewController {
 
@@ -106,6 +111,22 @@ public final class EditorAreaViewController: NSSplitViewController {
         }
     }
 
+    /// Selects the open tab whose `NSTabViewItem.identifier` equals `identifier`
+    /// (compared as `AnyHashable`, as the history compares them), in whichever
+    /// editor has it, and answers whether there was one. The active editor stays
+    /// where the reader is: the tab is brought forward in its own editor.
+    @discardableResult
+    public func selectTabViewItem(withIdentifier identifier: Any) -> Bool {
+        guard let identifier = identifier as? AnyHashable else { return false }
+        for group in groups {
+            guard let index = group.tabViewItems.firstIndex(where: { $0.identifier as? AnyHashable == identifier })
+            else { continue }
+            group.selectedTabViewItemIndex = index
+            return true
+        }
+        return false
+    }
+
     /// Lets things of `types` be dropped on the editors — beside tabs dragged
     /// between them, which need nothing registered. The delegate makes each
     /// drop's tab in `editorArea(_:tabViewItemForDrop:)`.
@@ -163,6 +184,41 @@ public final class EditorAreaViewController: NSSplitViewController {
         hasReported = true
         reportedViewController = current
         delegate?.editorArea(self, didActivate: current)
+    }
+
+    // MARK: - Commands
+
+    /// Xcode's ⌘W: closes the active editor's selected tab, or the window when
+    /// there is no tab to close. A standard responder action, so a nil-targeted
+    /// menu item finds it from anything inside the area.
+    @objc public func closeTab(_ sender: Any?) {
+        guard let item = activeGroup.selectedTabViewItem else {
+            view.window?.performClose(sender)
+            return
+        }
+        activeGroup.removeTabViewItem(item)
+    }
+
+    /// Back through the active editor's history — a toolbar's back button.
+    @objc public func goBack(_ sender: Any?) {
+        activeGroup.goBack()
+    }
+
+    /// Forward through the active editor's history — a toolbar's forward button.
+    @objc public func goForward(_ sender: Any?) {
+        activeGroup.goForward()
+    }
+
+    /// Back and forward while the active editor has somewhere to go; Close Tab
+    /// while there is a tab or a window to close. Menu items and toolbar items
+    /// (through `validateToolbarItem(_:)`) alike are asked here, after every event.
+    public override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        switch item.action {
+        case #selector(goBack(_:)): return activeGroup.canGoBack
+        case #selector(goForward(_:)): return activeGroup.canGoForward
+        case #selector(closeTab(_:)): return activeGroup.selectedTabViewItem != nil || view.window != nil
+        default: return super.validateUserInterfaceItem(item)
+        }
     }
 
     // MARK: - Moving tabs between editors
@@ -250,5 +306,15 @@ public final class EditorAreaViewController: NSSplitViewController {
             })
         else { return }
         activate(group)
+    }
+}
+
+/// A toolbar item asks its target `validateToolbarItem(_:)` and nothing else —
+/// measured: without this, an item aimed at the area stays enabled whatever
+/// `validateUserInterfaceItem(_:)` answers. So it is passed to the one switch
+/// menu items are asked.
+extension EditorAreaViewController: NSToolbarItemValidation {
+    public func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
+        validateUserInterfaceItem(item)
     }
 }

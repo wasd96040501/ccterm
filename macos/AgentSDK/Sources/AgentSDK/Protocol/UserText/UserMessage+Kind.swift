@@ -24,7 +24,7 @@ extension UserMessage {
         /// What the command before it printed.
         case commandOutput(standardOutput: String, standardError: String)
         case toolResult(ToolResultBlock)
-        case taskNotification(TaskNotification)
+        case taskNotification(TaskReport)
         /// A message another party sent into the conversation, without the
         /// frame the CLI puts around it.
         case message(from: Sender, text: String)
@@ -51,29 +51,7 @@ extension UserMessage {
         case plugin(name: String)
     }
 
-    public var kind: Kind {
-        if let toolResult { return .toolResult(toolResult) }
-        if isCompactSummary { return .compactionSummary }
-        guard content.count == 1, let text = content[0].text?[...] else { return isSynthetic ? .synthetic : .prompt }
-        switch origin {
-        case "task-notification":
-            return text.topLevelElements.first { $0.name == "task-notification" }.flatMap(TaskNotification.init)
-                .map(Kind.taskNotification) ?? .prompt
-        case "peer", "coordinator", "plugin":
-            return Self.relayedMessage(text) ?? .prompt
-        case "auto-continuation":
-            return .synthetic
-        default:
-            break
-        }
-        if isSynthetic { return .synthetic }
-        if let elements = text.taggedElements { return Self.kind(of: elements) ?? .prompt }
-        switch text.trimmingCharacters(in: .whitespacesAndNewlines) {
-        case "[Request interrupted by user]": return .interruption(duringToolUse: false)
-        case "[Request interrupted by user for tool use]": return .interruption(duringToolUse: true)
-        default: return .prompt
-        }
-    }
+    public var kind: Kind { Kind(self) }
 
     /// The note the CLI files ahead of a local command's messages, telling
     /// the model to disregard them. It is written to the session's file but
@@ -82,12 +60,45 @@ extension UserMessage {
         guard content.count == 1, let text = content[0].text else { return false }
         return text[...].taggedElements?.map(\.name) == ["local-command-caveat"]
     }
+}
+
+extension UserMessage.Kind {
+    /// What `message` is, read from its fields and the markup in its text.
+    init(_ message: UserMessage) {
+        self = Self.reading(message)
+    }
+
+    private static func reading(_ message: UserMessage) -> Self {
+        if let toolResult = message.toolResult { return .toolResult(toolResult) }
+        if message.isCompactSummary { return .compactionSummary }
+        guard message.content.count == 1, let text = message.content[0].text?[...] else {
+            return message.isSynthetic ? .synthetic : .prompt
+        }
+        switch message.origin {
+        case "task-notification":
+            return text.topLevelElements.first { $0.name == "task-notification" }.flatMap(TaskReport.init)
+                .map(Self.taskNotification) ?? .prompt
+        case "peer", "coordinator", "plugin":
+            return relayedMessage(text) ?? .prompt
+        case "auto-continuation":
+            return .synthetic
+        default:
+            break
+        }
+        if message.isSynthetic { return .synthetic }
+        if let elements = text.taggedElements { return kind(of: elements) ?? .prompt }
+        switch text.trimmingCharacters(in: .whitespacesAndNewlines) {
+        case "[Request interrupted by user]": return .interruption(duringToolUse: false)
+        case "[Request interrupted by user for tool use]": return .interruption(duringToolUse: true)
+        default: return .prompt
+        }
+    }
 
     // MARK: - Forms
 
     /// A message whose whole text is elements: a local command, its output,
     /// or one relayed or notifying element. No form repeats an element.
-    private static func kind(of elements: [TaggedElement]) -> Kind? {
+    private static func kind(of elements: [TaggedElement]) -> Self? {
         let names = Set(elements.map(\.name))
         guard names.count == elements.count else { return nil }
         func text(_ name: String) -> String? { elements.first { $0.name == name }?.text }
@@ -103,13 +114,13 @@ extension UserMessage {
                 standardError: text("local-command-stderr") ?? text("bash-stderr") ?? "")
         }
         guard elements.count == 1 else { return nil }
-        return TaskNotification(elements[0]).map(Kind.taskNotification) ?? message(elements[0])
+        return TaskReport(elements[0]).map(Self.taskNotification) ?? message(elements[0])
     }
 
     /// A message the CLI relays under a header naming its sender —
     /// `The coordinator sent a message while you were working:` — and, for
     /// some senders, followed by a note to the model.
-    private static func relayedMessage(_ text: Substring) -> Kind? {
+    private static func relayedMessage(_ text: Substring) -> Self? {
         guard let newline = text.firstIndex(of: "\n"), let sender = sender(inHeader: text[..<newline]) else {
             return nil
         }
@@ -140,14 +151,14 @@ extension UserMessage {
         "This is how Claude Code surfaces a prompt a plugin submits between turns — it starts this turn in the user's place. Address the message above."
 
     /// An element carrying another party's message.
-    private static func message(_ element: TaggedElement) -> Kind? {
+    private static func message(_ element: TaggedElement) -> Self? {
         switch element.name {
         case "agent-message":
             guard let id = element.attributes["from"] else { return nil }
             return .message(from: .agent(id: id), text: report(in: element.body))
         case "cross-session-message":
             guard let address = element.attributes["from"] else { return nil }
-            let sender = Sender.session(
+            let sender = UserMessage.Sender.session(
                 address: address, name: element.attributes["from-name"], mode: element.attributes["from-mode"])
             return .message(from: sender, text: element.text)
         default:

@@ -101,7 +101,7 @@ final class UserMessageKindTests: XCTestCase {
             <note>A task-notification fires each time this agent stops.</note>
             </task-notification>
             """
-        let expected = TaskNotification(
+        let expected = TaskReport(
             summary: #"Agent "Review" finished"#, status: .completed, taskIDs: ["a1"], taskType: "remote_agent",
             toolUseID: "toolu_1", outputFile: "/tmp/a1.output", result: "Looks good & ships: a < b",
             note: "A task-notification fires each time this agent stops.",
@@ -123,7 +123,7 @@ final class UserMessageKindTests: XCTestCase {
             <recovery>Resume with the run id</recovery>
             </task-notification>
             """
-        let expected = TaskNotification(
+        let expected = TaskReport(
             summary: #"Workflow "audit" failed"#, status: .failed, taskIDs: ["w1"],
             usage: .init(agentCount: 4, agentsDone: 2, agentsFailed: 1, agentsSkipped: 1, agentsWithEmptyResult: 0),
             diagnostics: "/tmp/w1/agents", failures: "step 3: timed out", recovery: "Resume with the run id")

@@ -5,19 +5,11 @@ import XCTest
 
 /// Drives `GitProbe` against real `git init`-ed temp directories so the
 /// full lifecycle — cheap `refresh`, heavy `loadHeavy`, cache invalidation
-/// on folder change — is exercised the way the New Session compose card
-/// would in production.
+/// on folder change — is exercised the way a branch picker drives it.
 ///
-/// The first test is the regression net for the bug: on a fresh probe
-/// instance, doing `refresh(nil)` first (mimicking the card mounting
-/// before `Session.draft.cwd` has been seeded) followed by
-/// `refresh(X) + loadHeavy(X)` must populate `branches`. The
-/// pre-extraction code path reproduced "first entry shows empty picker"
-/// because the probe state lived in SwiftUI `@State` storage on the
-/// configurator, and the transition was sensitive to view re-render
-/// timing; the extracted `@Observable` lets us drive the exact same
-/// sequence in a single `XCTestCase` and assert on the result
-/// deterministically.
+/// The first test pins the cold sequence: on a fresh probe instance,
+/// `refresh(nil)` first (a picker mounting before its folder is known)
+/// followed by `refresh(X) + loadHeavy(X)` must populate `branches`.
 @MainActor
 final class GitProbeTests: XCTestCase {
 
@@ -37,31 +29,26 @@ final class GitProbeTests: XCTestCase {
         }
     }
 
-    // MARK: - Cold-mount sequence (regression net for the empty-picker bug)
+    // MARK: - Cold-mount sequence
 
-    /// Mirrors what `ChatSessionViewController` +
-    /// `NewSessionConfigurator` do on a fresh app launch: the
-    /// configurator mounts before `Session.draft.cwd` has been seeded
-    /// (so the first call is `refresh(nil)`), then the parent task
-    /// fills in the draft's cwd and the second `refresh + loadHeavy`
+    /// A picker that mounts before its folder is known calls
+    /// `refresh(nil)` first; once the folder lands, `refresh + loadHeavy`
     /// fires for the real repo path.
     ///
     /// After the second sequence, `branches` MUST contain the repo's
-    /// branches. If this ever returns empty, the compose card's branch
-    /// picker is empty on first entry until the user manually toggles
-    /// folders.
+    /// branches. If this ever returns empty, the picker is empty on first
+    /// entry until the user manually toggles folders.
     func testFirstEntryColdSequencePopulatesBranches() async throws {
         let repo = try makeGitRepo(name: "repo-a", branches: ["main", "feature/a", "feature/b"])
         let probe = GitProbe()
 
-        // Phase 1 — card mounts with nil folderPath (the detail VC
-        // hasn't seeded `Session.draft.cwd` yet).
+        // Phase 1 — picker mounts with nil folderPath.
         probe.refresh(folderPath: nil)
         await probe.loadHeavy(folderPath: nil)
         XCTAssertFalse(probe.isGitRepo, "nil folder must not flip the repo flag")
         XCTAssertTrue(probe.branches.isEmpty, "nil folder must leave branches empty")
 
-        // Phase 2 — draft folder lands. Configurator's `.task(id:
+        // Phase 2 — the folder lands; the picker's `.task(id:
         // folderPath)` re-fires with the real path.
         probe.refresh(folderPath: repo.path)
         await probe.loadHeavy(folderPath: repo.path)
@@ -73,18 +60,16 @@ final class GitProbeTests: XCTestCase {
             "branches must list every local ref after the heavy probe")
     }
 
-    /// The exact production call shape the configurator uses inside its
-    /// `.task(id: folderPath)`. Bug repro target: the configurator's
-    /// `.task` runs as `refresh(folderPath:); await loadHeavy(folderPath:)`
-    /// — the two calls are issued back-to-back inside a single closure,
-    /// and `loadHeavy` reads probe state mutated by `refresh`. If state
-    /// mutation has a visible ordering hazard (the @State storage bug
-    /// the extraction was meant to neutralize), `branches` ends up empty.
+    /// The call shape a picker uses inside its `.task(id: folderPath)`:
+    /// `refresh(folderPath:); await loadHeavy(folderPath:)` back-to-back
+    /// inside a single closure, with `loadHeavy` reading probe state
+    /// mutated by `refresh`. If state mutation had a visible ordering
+    /// hazard, `branches` would end up empty.
     func testTaskClosureShapePopulatesBranches() async throws {
         let repo = try makeGitRepo(name: "task-repo", branches: ["main", "develop"])
         let probe = GitProbe()
 
-        // Same closure shape the configurator uses.
+        // Same closure shape a picker uses.
         let run: () async -> Void = {
             probe.refresh(folderPath: repo.path)
             await probe.loadHeavy(folderPath: repo.path)

@@ -1,11 +1,11 @@
 import Foundation
 import Observation
 
-/// User-defaults-backed list of recently picked project folders shown in
-/// the New Session compose card. Independent of `SessionManager.records`
-/// (the Core Data session list) — recents are a lightweight UI affordance,
-/// not a record of session history, so they live in a place that's cheap
-/// to read, cheap to write, and cheap to wipe.
+/// User-defaults-backed list of recently picked project folders, offered
+/// when starting a new session. Independent of any session list — recents
+/// are a lightweight UI affordance, not a record of session history, so
+/// they live in a place that's cheap to read, cheap to write, and cheap to
+/// wipe.
 ///
 /// Rules:
 ///
@@ -20,11 +20,9 @@ import Observation
 ///   persisted path with `FileManager.fileExists`, and writes the
 ///   pruned shape back. The fileExists pass is what triggers macOS's
 ///   TCC "external volume" prompt when a recent lives on `/Volumes/...`
-///   — eager-loading from `AppState.init` made that prompt fire on
-///   every app launch (and every XCTest fork, since the host app
-///   constructs `AppState` even under XCTest). Deferring to first
-///   read scopes the prompt to "user just opened the New Session
-///   card and is about to need this data."
+///   — loading at construction would fire that prompt on every app
+///   launch (and every XCTest fork). Deferring to first read scopes the
+///   prompt to "user is about to start a session and needs this data."
 @Observable
 @MainActor
 final class RecentProjectsStore {
@@ -34,12 +32,12 @@ final class RecentProjectsStore {
     /// Distinct from `entries`: a folder can be added to recents by just
     /// browsing in the picker, but only counts as "launched" once the user
     /// submits the first message in that draft. Used to pre-fill the next
-    /// New Session card.
+    /// new session.
     private static let lastLaunchedKey = "RecentProjects.lastLaunched.v1"
     /// UserDefaults key for the per-project worktree preference. Stored as
     /// a JSON-encoded `[String: Bool]` keyed by absolute project path. Only
     /// written on launch (so toggling without sending doesn't poison the
-    /// next visit), read back when the compose card pre-fills for a folder.
+    /// next visit), read back when a new session pre-fills for a folder.
     private static let worktreePrefsKey = "RecentProjects.worktreePrefs.v1"
 
     struct Entry: Codable, Hashable, Identifiable {
@@ -66,11 +64,9 @@ final class RecentProjectsStore {
         self.defaults = defaults
     }
 
-    /// macOS 26 SDK workaround — see `Session.deinit` for the
-    /// background. The default `@MainActor` deinit routes through
-    /// `swift_task_deinitOnExecutorImpl` and traps; `nonisolated`
-    /// skips that path. The host-aware reentry test deallocates this
-    /// store on test teardown, which is when the trap fires.
+    /// macOS 26 SDK workaround: the default `@MainActor` deinit routes
+    /// through `swift_task_deinitOnExecutorImpl` and traps; `nonisolated`
+    /// skips that path.
     nonisolated deinit {}
 
     var entries: [Entry] {
@@ -99,7 +95,7 @@ final class RecentProjectsStore {
     /// Record `path` as the last project that successfully launched a
     /// session. Also bumps it to the front of the recents list (a launched
     /// project is by definition a recent one), and persists the user's
-    /// worktree choice for that path so the next compose-card visit
+    /// worktree choice for that path so the next new session in it
     /// pre-fills it.
     func markLaunched(_ path: String, useWorktree: Bool) {
         loadIfNeeded()

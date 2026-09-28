@@ -1,16 +1,16 @@
 import Foundation
 
 /// Identity of a git worktree. Value type, immutable; git-layer dynamic
-/// state (current branch, HEAD) is not tracked here — the caller
-/// (Session / SessionRecord) holds it.
+/// state (current branch, HEAD) is not tracked here — the owning session
+/// holds it.
 ///
 /// Mirrors the `worktree` object claude.app's `p0r.createWorktree`
 /// produces (`{ name, path, baseRepo, sourceBranch, ... }`, slice lines
 /// 143-151), trimmed of sessionId / createdAt and other runtime fields —
-/// SessionRecord owns those in ccterm.
+/// the owning session keeps those.
 ///
-/// Typical flow: `Worktree.create(from:)` → Session persists
-/// path/name to db → LLM-generated rename → `wt.renameBranch(to:)` →
+/// Typical flow: `Worktree.create(from:)` → the session persists
+/// path/name → LLM-generated rename → `wt.renameBranch(to:)` →
 /// `wt.remove()` on archive → `Worktree.restore(at:baseRepo:branch:)` on
 /// unarchive.
 struct Worktree: Equatable, Hashable {

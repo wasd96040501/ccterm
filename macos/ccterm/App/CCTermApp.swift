@@ -41,7 +41,6 @@ struct CCTermApp: App {
         }
         .commands {
             AppCommands(
-                searchBus: appDelegate.searchBus,
                 openSettings: { appDelegate.showSettingsWindow() },
                 openAbout: { appDelegate.showAboutWindow() }
             )
@@ -68,8 +67,8 @@ struct CCTermApp: App {
         // synchronously after spawning the background fetch Task, so
         // this does not block init. Subsequent launches hit the
         // on-disk cache and short-circuit before fetching. Model
-        // loading is intentionally NOT tied to session CLI bootstrap;
-        // see `Session+Start.bootstrap` for the matching note.
+        // loading is intentionally NOT tied to any session's CLI
+        // bootstrap.
         MainActor.assumeIsolated {
             ModelStore.shared.prefetchIfNeeded()
         }
@@ -127,17 +126,13 @@ extension NSWindow {
 }
 
 /// SwiftUI command bar attached to the `Settings { EmptyView() }`
-/// placeholder scene. Survives the AppKit-host migration: SwiftUI's
-/// command system installs these as NSMenuItem instances on the
-/// merged main menu, so the AppKit main window keeps full menu
-/// coverage without an `applicationDidFinishLaunching`-side NSMenu
-/// rebuild. ⌘F focus routes through `TranscriptSearchBus.requestFocus()`,
-/// which the AppKit toolbar's `TranscriptSearchToolbarBridge` picks up
-/// reactively via `withObservationTracking`. ⌘, → `openSettings`,
-/// App > About ccterm → `openAbout` route into
-/// `AppDelegate.show*Window()`, bypassing SwiftUI's scenes entirely.
+/// placeholder scene. SwiftUI's command system installs these as
+/// NSMenuItem instances on the merged main menu, so the AppKit main window
+/// keeps full menu coverage without an `applicationDidFinishLaunching`-side
+/// NSMenu rebuild. ⌘, → `openSettings`, App > About ccterm → `openAbout`
+/// route into `AppDelegate.show*Window()`, bypassing SwiftUI's scenes
+/// entirely.
 struct AppCommands: Commands {
-    let searchBus: TranscriptSearchBus
     let openSettings: @MainActor () -> Void
     let openAbout: @MainActor () -> Void
 
@@ -152,15 +147,6 @@ struct AppCommands: Commands {
                 openSettings()
             }
             .keyboardShortcut(",", modifiers: .command)
-        }
-        // Top-level Find menu — gives ⌘F a stable AppKit responder-chain
-        // route. Routed via `TranscriptSearchBus` so the per-window
-        // subscriber lives behind a stable observation channel.
-        CommandMenu("Find") {
-            Button(action: { searchBus.requestFocus() }) {
-                Text("Find in Transcript")
-            }
-            .keyboardShortcut("f", modifiers: .command)
         }
     }
 }

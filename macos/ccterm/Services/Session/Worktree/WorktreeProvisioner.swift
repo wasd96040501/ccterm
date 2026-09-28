@@ -4,17 +4,15 @@ import Foundation
 /// `git worktree add` + post-create extensions / hooks / file copies)
 /// off the main thread and reports the outcome back as a `Result`.
 ///
-/// Stateless: the handle owns its own `cwd` / `worktreeBranch` /
-/// `status` writes — this type is just the I/O path. Pulled out of
-/// `Session+Start.swift` so the wrapping logic (nil origin →
-/// notGitRepository, creator error → .failure) is testable without
-/// firing a real git subprocess.
+/// Stateless: the caller owns its own `cwd` / `worktreeBranch` /
+/// `status` writes — this type is just the I/O path, so the wrapping
+/// logic (nil origin → notGitRepository, creator error → .failure) is
+/// testable without firing a real git subprocess.
 ///
 /// **Threading**: dispatches to `DispatchQueue.global(qos: .userInitiated)`
-/// rather than `Task.detached`. The old code observed that
-/// detached-task isolation inheritance still pinned the main actor for
-/// the full duration of the git shell-outs — GCD has no such ambiguity.
-/// See the original comment in `Session.ensureStarted`.
+/// rather than `Task.detached`: detached-task isolation inheritance can
+/// still pin the main actor for the full duration of the git shell-outs —
+/// GCD has no such ambiguity.
 enum WorktreeProvisioner {
 
     /// Underlying `git worktree add` call signature. Production wires

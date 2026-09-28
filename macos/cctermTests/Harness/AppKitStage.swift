@@ -4,27 +4,23 @@ import AppKit
 
 /// Off-screen mount + runloop-control scaffold for AppKit verification
 /// tests. The single entry point for standing up a **real** view tree
-/// (real `MainSplitViewController` → real `SidebarViewController` +
-/// real `DetailRouterViewController` + real `SessionManager`, or any
-/// other production `NSViewController`) in a headless window, then
-/// sampling its geometry / driving interactions / probing animation.
+/// (the real `MainSplitViewController`, or any other production
+/// `NSViewController`) in a headless window, then sampling its geometry /
+/// driving interactions / probing animation.
 ///
 /// Why a harness and not ad-hoc per test: every AppKit verification test
-/// before this re-implemented the same four things inline — build an
-/// `alphaValue = 0.01` off-screen window, pin the VC's view to its
-/// edges, `layoutSubtreeIfNeeded`, and hand-roll a `RunLoop.main.run`
-/// drain loop. `AppKitStage` owns all four so a new test is "pick a
-/// factory, `find` the subview, assert with `Geometry` / drive with
-/// `InteractionDriver`."
+/// needs the same four things — an `alphaValue = 0.01` off-screen window,
+/// the VC's view pinned to its edges, `layoutSubtreeIfNeeded`, and a
+/// `RunLoop.main.run` drain loop. `AppKitStage` owns all four so a new
+/// test is "pick a factory, `find` the subview, assert with `Geometry` /
+/// drive with `InteractionDriver`."
 ///
 /// ## Real objects only
 ///
-/// The factories assemble production types with **in-memory, per-stage**
-/// dependencies (a fresh `InMemorySessionRepository`, a `UserDefaults`
-/// suite keyed on a UUID, a temp `InputDraftStore` directory). That
-/// keeps every stage parallel-safe (see `cctermTests/CLAUDE.md`) while
-/// still exercising the real `SessionManager` / sidebar / router wiring
-/// — nothing is mocked at the controller layer.
+/// The factories assemble production types; nothing is mocked at the
+/// controller layer. A factory whose tree needs state injects per-stage,
+/// in-memory dependencies and registers their disposal as a cleanup, so
+/// every stage stays parallel-safe (see `cctermTests/CLAUDE.md`).
 ///
 /// ## What it cannot observe (off-screen / non-key-window limits)
 ///
@@ -148,9 +144,8 @@ final class AppKitStage {
     }
 
     /// Settle async work — the observation hops, deferred attaches, and
-    /// CATransaction commits that a structural change kicks off. Mirrors
-    /// the `Task.sleep` + drain loop that AppKit tests hand-rolled, so a
-    /// selection flip or session swap has landed before you assert.
+    /// CATransaction commits that a structural change kicks off, so it has
+    /// landed before you assert.
     func settle(rounds: Int = 12, perRound: TimeInterval = 0.04) async {
         for _ in 0..<rounds {
             try? await Task.sleep(for: .seconds(perRound))

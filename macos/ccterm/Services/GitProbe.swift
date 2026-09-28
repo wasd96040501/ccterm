@@ -1,11 +1,11 @@
 import Foundation
 import Observation
 
-/// Lazily-loaded git information for a single folder. Owns the @Observable
-/// state read by `BranchPickerView` (branches list, current branch, remote
-/// main, working-tree status summary) so the picker can render the moment
-/// its popover opens, without paying the subprocess cost on the user's
-/// click. The view drives the lifecycle:
+/// Lazily-loaded git information for a single folder. Owns @Observable
+/// state (branches list, current branch, remote main, working-tree status
+/// summary) so a branch picker can render the moment it opens, without
+/// paying the subprocess cost on the user's click. The caller drives the
+/// lifecycle:
 ///
 /// 1. `refresh(folderPath:)` — synchronous, cheap. Reads `.git/HEAD` and
 ///    checks `.git` existence; no subprocesses. Sets `isGitRepo` and
@@ -18,7 +18,7 @@ import Observation
 ///
 /// Both methods accept the folderPath explicitly rather than reading from
 /// internal state. This makes the lifecycle explicit at the call site
-/// (the configurator's `.task(id: folderPath)`) and keeps the probe
+/// (e.g. a SwiftUI `.task(id: folderPath)`) and keeps the probe
 /// directly testable — a unit test constructs one, calls these methods
 /// against a temp git repo, and asserts on the @Observable properties.
 @Observable
@@ -55,9 +55,8 @@ final class GitProbe {
     /// `seedFolderPath` runs the cheap probe (`.git/HEAD` read + `.git`
     /// existence check) synchronously, so the consumer's first frame sees
     /// `isGitRepo` / `currentBranch` already filled in. Without this seed
-    /// the branch pill in the New Session card pops in one frame later
-    /// when `.task(id: folderPath)` fires, shoving the divider, recents,
-    /// and input bar down by a row.
+    /// anything showing the branch pops in one frame later, when the
+    /// caller's first `refresh` fires, and shoves its neighbours down.
     init(seedFolderPath: String? = nil) {
         if let path = seedFolderPath, FileManager.default.fileExists(atPath: path) {
             let repo = GitUtils.isGitRepository(at: path)
@@ -70,7 +69,7 @@ final class GitProbe {
     /// @MainActor class deinit would otherwise route through
     /// `swift_task_deinitOnExecutorImpl`, hitting a macOS 26 SDK bug in
     /// libswift_Concurrency. nonisolated deinit skips the executor-hop
-    /// path and avoids the bug (mirrors `SessionRuntime`).
+    /// path and avoids the bug.
     nonisolated deinit {}
 
     /// Synchronous, cheap probe. Updates `isGitRepo` and `currentBranch`,

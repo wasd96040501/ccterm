@@ -1,40 +1,14 @@
 import AppKit
 
-/// Two-item `NSSplitViewController` that hosts the AppKit-native
-/// `SidebarViewController` on the leading side and a
-/// `DetailRouterViewController` on the trailing side. The router
-/// owns whichever detail child VC the current selection asks for —
-/// see its doc comment for the scaffolding plan. This
-/// `NSSplitViewController` is the window's sidebar/detail split.
+/// The main window's sidebar/detail split. Both sides are empty panes until
+/// the session list and the transcript (`TranscriptKit`) are wired in; the
+/// split itself — thickness limits, collapse, divider autosave — is final.
 @MainActor
 final class MainSplitViewController: NSSplitViewController {
-    let model: MainSelectionModel
-    let appState: AppState
+    private let sidebarViewController = EmptyPaneViewController()
+    private let detailViewController = EmptyPaneViewController()
 
-    let detailRouter: DetailRouterViewController
-    private let sidebarViewController: SidebarViewController
-
-    init(model: MainSelectionModel, appState: AppState) {
-        self.model = model
-        self.appState = appState
-
-        sidebarViewController = SidebarViewController(
-            context: SidebarContext(
-                model: model,
-                sessionManager: appState.sessionManager,
-                groupOrderStore: appState.sidebarGroupOrder,
-                openInService: appState.openInService))
-
-        detailRouter = DetailRouterViewController(
-            context: DetailContext(
-                model: model,
-                sessionManager: appState.sessionManager,
-                recentProjects: appState.recentProjects,
-                inputDraftStore: appState.inputDraftStore,
-                syntaxEngine: appState.syntaxEngine),
-            notifications: appState.notificationService
-        )
-
+    init() {
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -54,7 +28,7 @@ final class MainSplitViewController: NSSplitViewController {
         sidebarItem.titlebarSeparatorStyle = .automatic
         addSplitViewItem(sidebarItem)
 
-        let detailItem = NSSplitViewItem(viewController: detailRouter)
+        let detailItem = NSSplitViewItem(viewController: detailViewController)
         detailItem.minimumThickness = 680
         detailItem.canCollapse = false
         detailItem.titlebarSeparatorStyle = .none
@@ -65,5 +39,13 @@ final class MainSplitViewController: NSSplitViewController {
         // across launches. Set after both items are added — AppKit
         // restores the saved frames on the next layout pass.
         splitView.autosaveName = "ccterm.mainSplit"
+    }
+}
+
+/// A pane with nothing in it — the stand-in for each side of the split.
+@MainActor
+private final class EmptyPaneViewController: NSViewController {
+    override func loadView() {
+        view = NSView()
     }
 }

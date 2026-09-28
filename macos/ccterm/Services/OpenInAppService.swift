@@ -2,7 +2,7 @@ import AppKit
 import Observation
 
 /// App-scope registry of external applications that can open a session's
-/// working directory ("Open in …" in the sidebar context menu).
+/// working directory (an "Open in …" menu).
 ///
 /// Two sources, merged into one ordered `targets` list:
 /// - **Built-ins** (Finder, Terminal) — always shown. They resolve via

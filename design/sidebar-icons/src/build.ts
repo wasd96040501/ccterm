@@ -59,7 +59,7 @@ const GLYPHS: Glyph[] = [
       "M3.4 10.6L8.4 11.4L3.6 14.6Q3.1 14.9 3.1 14.3Z" +
       slot(4.75, 11.25, 5.5, 1.5) +
       slot(4.75, 8.75, 8.5, 1.5),
-    hue: 262,
+    hue: 230, // the folder's own
   },
   {
     asset: "SidebarAgent",
@@ -68,7 +68,7 @@ const GLYPHS: Glyph[] = [
     geometry:
       "Lamé star n = 0.8, radius 7.5: four cusps on the axes, sides concave, between the astroid (n = ⅔) and the rhombus (n = 1).",
     fill: lame(8, 8, 7.5, 7.5, 0.8),
-    hue: 42,
+    hue: 50, // the folder's complement
   },
   {
     asset: "SidebarWorkflow",
@@ -78,14 +78,19 @@ const GLYPHS: Glyph[] = [
       "Two squircle nodes n = 4, 5.5 wide, on the diagonal 8 pt apart; one 1.5-pt connector turning through a 2.5-pt arc.",
     fill: lame(4, 4, 2.75, 2.75, 4) + lame(12, 12, 2.75, 2.75, 4),
     stroke: "M4 6.75V9.5A2.5 2.5 0 0 0 6.5 12H9.25",
-    hue: 172,
+    hue: 320, // a quarter turn from the folder
   },
 ]
 
-// MARK: - Colour: one OKLCH lightness and chroma, the hues apart
+// MARK: - Colour: the system folder icon's own tone, hues on a square from its hue
+//
+// The folder icon is the one colour every sidebar row sits beside, and it is
+// the same in light and dark (measured: tab L 0.70 C 0.117, front L 0.81,
+// hue 230). So each glyph takes the folder's tab tone, keeps it in both
+// appearances, and a hue a quarter turn apart from the folder's: its own,
+// its complement, the turn between.
 
-const LIGHT = { L: 0.6, C: 0.1 }
-const DARK = { L: 0.74, C: 0.09 }
+const TONE = { L: 0.7, C: 0.12 }
 
 type RGB = [number, number, number]
 
@@ -149,14 +154,7 @@ for (const glyph of GLYPHS) {
   writeFileSync(
     join(colours, "Contents.json"),
     json({
-      colors: [
-        { color: colour(oklch(LIGHT.L, LIGHT.C, glyph.hue)), idiom: "universal" },
-        {
-          appearances: [{ appearance: "luminosity", value: "dark" }],
-          color: colour(oklch(DARK.L, DARK.C, glyph.hue)),
-          idiom: "universal",
-        },
-      ],
+      colors: [{ color: colour(oklch(TONE.L, TONE.C, glyph.hue)), idiom: "universal" }],
       info: INFO,
     }),
   )
@@ -199,7 +197,7 @@ function sidebar(dark: boolean): string {
     const x = 14 + row.level * 14
     const y = 8 + i * 22
     const glyph = GLYPHS.find((g) => g.asset === row.kind)
-    const ink = row.selected ? "#ffffff" : glyph ? hex(oklch(dark ? DARK.L : LIGHT.L, dark ? DARK.C : LIGHT.C, glyph.hue)) : ""
+    const ink = row.selected ? "#ffffff" : glyph ? hex(oklch(TONE.L, TONE.C, glyph.hue)) : ""
     const chevron =
       row.open === undefined
         ? ""
@@ -224,14 +222,12 @@ function sidebar(dark: boolean): string {
 }
 
 const cards = GLYPHS.map((glyph) => {
-  const light = oklch(LIGHT.L, LIGHT.C, glyph.hue)
-  const dark = oklch(DARK.L, DARK.C, glyph.hue)
+  const tone = oklch(TONE.L, TONE.C, glyph.hue)
   return `<section class="card">
-  ${construction(glyph, hex(light))}
+  ${construction(glyph, hex(tone))}
   <div class="title"><h2>${glyph.name}</h2><span>${glyph.role} · <code>${glyph.asset}</code></span></div>
   <p>${glyph.geometry}</p>
-  <div class="swatch"><i style="background:${hex(light)}"></i><code>oklch(${LIGHT.L} ${LIGHT.C} ${glyph.hue}) · ${hex(light)}</code></div>
-  <div class="swatch"><i style="background:${hex(dark)}"></i><code>dark oklch(${DARK.L} ${DARK.C} ${glyph.hue}) · ${hex(dark)}</code></div>
+  <div class="swatch"><i style="background:${hex(tone)}"></i><code>oklch(${TONE.L} ${TONE.C} ${glyph.hue}) · ${hex(tone)}</code></div>
 </section>`
 }).join("\n")
 
@@ -268,7 +264,7 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 <main>
 <header>
 <h1>Sidebar icons</h1>
-<p class="lede">Every outline is a Lamé curve |x/a|ⁿ + |y/b|ⁿ = 1 on the 16-pt grid · colours share one OKLCH lightness and chroma, the hues apart</p>
+<p class="lede">Every outline is a Lamé curve |x/a|ⁿ + |y/b|ⁿ = 1 on the 16-pt grid · every colour is the system folder's tone, OKLCH L 0.70 C 0.12, in both appearances, at hues a quarter turn apart from the folder's 230</p>
 </header>
 <div class="cards">
 ${cards}

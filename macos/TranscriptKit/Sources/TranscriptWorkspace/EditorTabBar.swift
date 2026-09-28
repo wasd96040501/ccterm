@@ -529,15 +529,42 @@ final class EditorTabBar: NSView, NSDraggingSource {
 
     // MARK: - Dragging out of the bar
 
-    /// Pulled out, the tab leaves as it looks where it is, and turns into its
-    /// content on the way (`draggingSession(_:movedTo:)`).
+    /// Pulled out, the tab leaves as a tab — freed of the bar, it comes to the
+    /// pointer — and turns into its content on the way
+    /// (`draggingSession(_:movedTo:)`).
+    ///
+    /// **The item is placed once, here: the thumbnail's size, centred on the
+    /// pointer.** Measured, AppKit keeps the pointer where an item held it when the
+    /// drag began, and takes only the size from a frame changed after — so a
+    /// thumbnail re-centred on the way stayed wherever along the tab it had been
+    /// picked up. What changes after this is only what is drawn in the item: its
+    /// image components, which the item does not clip.
     private func beginDraggingSession(tabAt index: Int, with event: NSEvent) {
         guard let glass = tab(at: index)?.view.frame.insetBy(dx: 2, dy: 2) else { return }
+        let thumbnail = Self.thumbnail(of: delegate?.tabBar(self, draggingImageForTabAt: index))
+        let point = convert(event.locationInWindow, from: nil)
+        let frame = NSRect(
+            x: point.x - thumbnail.size.width / 2, y: point.y - thumbnail.size.height / 2,
+            width: thumbnail.size.width, height: thumbnail.size.height)
+        let tab = Self.component(
+            Self.dragImage(for: items[index], size: glass.size), in: frame.size, minX: glass.minX - frame.minX)
         let item = NSDraggingItem(pasteboardWriter: EditorTabDrag())
-        item.setDraggingFrame(glass, contents: Self.dragImage(for: items[index], size: glass.size))
-        pendingThumbnail = delegate?.tabBar(self, draggingImageForTabAt: index).map(Self.thumbnail(of:))
+        item.draggingFrame = frame
+        item.imageComponentsProvider = { [tab] }
+        pendingThumbnail = thumbnail
         dragWillBegin(tabAt: index)
         beginDraggingSession(with: [item], event: event, source: self)
+    }
+
+    /// `image` as the one component of a dragged item `size` big: centred on the
+    /// item, which is centred on the pointer, or starting `minX` along it.
+    private static func component(_ image: NSImage, in size: NSSize, minX: CGFloat? = nil) -> NSDraggingImageComponent {
+        let component = NSDraggingImageComponent(key: .icon)
+        component.contents = image
+        component.frame = NSRect(
+            x: minX ?? (size.width - image.size.width) / 2, y: (size.height - image.size.height) / 2,
+            width: image.size.width, height: image.size.height)
+        return component
     }
 
     /// The bar's half of a tab leaving it as a drag session: the tab is out, and
@@ -595,14 +622,21 @@ final class EditorTabBar: NSView, NSDraggingSource {
     }
 
     /// Content as Safari carries a page pulled out of its bar: small — 112 points
-    /// across, measured — its top, in a thin frame, over a soft shadow. The
-    /// shadow is drawn into the image, so the image is larger than the frame by
-    /// the room it needs.
-    private static func thumbnail(of content: NSImage) -> NSImage {
+    /// across, measured — its top, in a thin frame, over a soft shadow; an empty
+    /// card for a tab with no content to show.
+    ///
+    /// The shadow is drawn into the image, so the image is larger than the card by
+    /// all of the room it needs: an image clips what it draws, and a shadow cut at
+    /// its edge is a grey rectangle.
+    private static func thumbnail(of content: NSImage?) -> NSImage {
         let width: CGFloat = 112
-        let aspect = content.size.width > 0 ? content.size.height / content.size.width : 0
+        let aspect = content.map { $0.size.width > 0 ? $0.size.height / $0.size.width : 0 } ?? 0
         let card = NSRect(x: 0, y: 0, width: width, height: round(width * min(max(aspect, 0.5), 0.75)))
-        let margin: CGFloat = 10
+        // Past where the shadow fades out however the image is drawn: its blur is
+        // in device space, not scaled with the drawing, so drawn a pixel to the
+        // point it reaches some 14 points out — measured past a 10-point margin,
+        // in a drag, as a hard grey edge.
+        let margin: CGFloat = 20
         let size = NSSize(width: card.width + 2 * margin, height: card.height + 2 * margin)
         return NSImage(size: size, flipped: false) { _ in
             let frame = card.offsetBy(dx: margin, dy: margin)
@@ -616,14 +650,16 @@ final class EditorTabBar: NSView, NSDraggingSource {
             NSColor.windowBackgroundColor.setFill()
             outline.fill()
             NSGraphicsContext.restoreGraphicsState()
-            NSGraphicsContext.saveGraphicsState()
-            outline.addClip()
-            // Filling the width, from the top down.
-            let scale = frame.width / max(content.size.width, 1)
-            let drawn = NSSize(width: frame.width, height: content.size.height * scale)
-            content.draw(
-                in: NSRect(x: frame.minX, y: frame.maxY - drawn.height, width: drawn.width, height: drawn.height))
-            NSGraphicsContext.restoreGraphicsState()
+            if let content {
+                NSGraphicsContext.saveGraphicsState()
+                outline.addClip()
+                // Filling the width, from the top down.
+                let scale = frame.width / max(content.size.width, 1)
+                let drawn = NSSize(width: frame.width, height: content.size.height * scale)
+                content.draw(
+                    in: NSRect(x: frame.minX, y: frame.maxY - drawn.height, width: drawn.width, height: drawn.height))
+                NSGraphicsContext.restoreGraphicsState()
+            }
             NSColor.separatorColor.setStroke()
             let border = NSBezierPath(roundedRect: frame.insetBy(dx: 0.25, dy: 0.25), xRadius: 6, yRadius: 6)
             border.lineWidth = 0.5
@@ -640,26 +676,18 @@ final class EditorTabBar: NSView, NSDraggingSource {
         context == .withinApplication ? .move : []
     }
 
-    /// Once it is on its way, the tab turns into its content, centred on the
-    /// pointer wherever along the tab it was picked up. Changed through the
-    /// session, so it is the source's image: a bar it passes over turns it back
-    /// into a tab, and AppKit restores this when it leaves.
-    ///
-    /// The pointer is the session's `draggingLocation`, documented as the cursor;
-    /// the point this is handed is not, and was where the image was.
+    /// Once it is on its way, the tab turns into its content, filling the item
+    /// it was carried in — centred on the pointer. Changed through the session,
+    /// so it is the source's image: a bar it passes over turns it back into a tab,
+    /// and AppKit restores this when it leaves.
     func draggingSession(_ session: NSDraggingSession, movedTo screenPoint: NSPoint) {
         guard let thumbnail = pendingThumbnail else { return }
         pendingThumbnail = nil
-        let pointer = session.draggingLocation
+        let component = Self.component(thumbnail, in: thumbnail.size)
         session.enumerateDraggingItems(
             options: [], for: nil, classes: [NSPasteboardItem.self], searchOptions: [:]
         ) { item, _, _ in
-            let size = thumbnail.size
-            item.setDraggingFrame(
-                NSRect(
-                    x: pointer.x - size.width / 2, y: pointer.y - size.height / 2,
-                    width: size.width, height: size.height),
-                contents: thumbnail)
+            item.imageComponentsProvider = { [component] }
         }
     }
 
@@ -672,25 +700,22 @@ final class EditorTabBar: NSView, NSDraggingSource {
 
     // MARK: NSDraggingDestination
 
-    /// A tab over the bar is a tab again, the size of the place it would take.
-    /// A destination's change to the image lasts while the drag is over it: AppKit
-    /// takes it off on the way out.
+    /// A tab over the bar is a tab again, the size of the place it would take and
+    /// centred on the pointer, as it was drawn leaving its own. A destination's
+    /// change to the image lasts while the drag is over it: AppKit takes it off
+    /// on the way out.
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         let operation = draggingUpdated(sender)
         guard let source = sender.draggingSource as? EditorTabBar, let dragged = source.draggedIndex,
             let gap = gapIndex
         else { return operation }
-        let point = convert(sender.draggingLocation, from: nil)
-        let size = gapRect(at: gap).insetBy(dx: 2, dy: 2).size
-        let image = Self.dragImage(for: source.items[dragged], size: size)
+        let image = Self.dragImage(
+            for: source.items[dragged], size: gapRect(at: gap).insetBy(dx: 2, dy: 2).size)
         sender.enumerateDraggingItems(
             options: [], for: self, classes: [NSPasteboardItem.self], searchOptions: [:]
         ) { item, _, _ in
-            item.setDraggingFrame(
-                NSRect(
-                    x: point.x - size.width / 2, y: point.y - size.height / 2,
-                    width: size.width, height: size.height),
-                contents: image)
+            let component = Self.component(image, in: item.draggingFrame.size)
+            item.imageComponentsProvider = { [component] }
         }
         return operation
     }

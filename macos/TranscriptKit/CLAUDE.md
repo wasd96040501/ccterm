@@ -1258,7 +1258,12 @@ the bar — while the tabs it left close up. Over a bar it turns back into a tab
 the tabs part where it would drop, and it drops into the gap. Both changes of
 image go through the session's own `enumerateDraggingItems`, the source's on the
 first move and the destination's on entering, and AppKit takes a destination's
-change off when the drag leaves: nothing tracks which one is showing. What no test
+change off when the drag leaves: nothing tracks which one is showing. **The item is
+placed once**, as the drag begins — the thumbnail's size, centred on the pointer —
+and only its image components change after: measured, AppKit keeps the pointer
+where the item held it at the start and takes only the size from a frame changed
+later, so a thumbnail re-centred mid-drag stayed wherever along the tab it had been
+picked up. What no test
 can reach is how either change animates — a real session cannot be started from
 one (§5), so that part is the demo's. Dropped on the other editor's content it
 goes to the end;

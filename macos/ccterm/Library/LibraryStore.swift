@@ -99,7 +99,7 @@ final class LibraryStore {
     /// on which branch — read off the caller's actor; `nil` if it can't be read.
     @concurrent
     nonisolated func metadata(ofTranscriptAt url: URL) async -> SessionMetadata? {
-        try? SessionMetadata(contentsOf: url)
+        try? Transcript.metadata(contentsOf: url)
     }
 
     // MARK: - Reading
@@ -191,7 +191,7 @@ final class LibraryStore {
     /// What the session's files read as; throws if its transcript can't be
     /// read.
     private nonisolated static func record(of session: SessionFile) throws -> Record {
-        let metadata = try SessionMetadata(contentsOf: session.url)
+        let metadata = try Transcript.metadata(contentsOf: session.url)
         guard metadata.isInteractive, let cwd = metadata.cwd, !isScratch(project(ofDirectory: cwd)) else {
             return Record(modificationDate: session.modificationDate, summary: nil)
         }

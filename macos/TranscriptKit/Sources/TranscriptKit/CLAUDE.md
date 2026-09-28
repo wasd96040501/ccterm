@@ -10,6 +10,7 @@ Invariants of the renderer target. Package-level API rules are in [../../CLAUDE.
 - **`SurfaceLayer.draw(in:)` makes the view's effective appearance current itself.** A sublayer's draw is CoreAnimation's call and gets no appearance; without this a window with its own appearance draws rows in the system's. In-process `cacheDisplay` hides the bug (it sets appearance on the way) — only a window-server capture shows it.
 - **Layer colours don't follow appearance.** `NSColor`s in a paint list resolve at draw time, so a repaint fixes them; a `CGColor` on a layer (the hover band) must be re-resolved in `viewDidChangeEffectiveAppearance`, and a hand-added layer's `contentsScale` maintained by hand.
 - **The hover band is a `CAShapeLayer`, not a `PaintItem`** — the only thing on its own clock. A paint list has no notion of time; a layer fades on the render server with nothing redrawn. The press tint (8% → 16%) and its geometry (rects inflated 2, corner 4) are Telegram's; each is one constant in `BlockView`.
+- `BlockView` reports clicks, hovers and its context menu to one weak `BlockViewDelegate` — the transcript, set when the view is created, never per bind; the view hands itself back and the transcript resolves its row.
 - A link is anything `link(at:)` answers for — including a truncated user message's More — so band, pointing hand and press-is-a-click are `BlockView`'s one mechanism.
 
 ## Selection

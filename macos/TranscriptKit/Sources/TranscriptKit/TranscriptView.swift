@@ -236,58 +236,41 @@ public final class TranscriptView: NSView {
     ///
     /// One path for every self-drawn case rather than one per case: what differs
     /// between a document and a user's bubble is the tree, and the tree is settled
-    /// by the time this runs. A bubble carries no links today, so three of these
-    /// four lines do nothing for it — which is the point. Nothing here has to know
-    /// which case it is serving, so nothing here has to be revisited when another
-    /// one lands.
+    /// by the time this runs. Nothing here has to know which case it is serving,
+    /// so nothing here has to be revisited when another one lands.
     private func blockView(
         in cell: TranscriptCellView, showing block: MeasuredBlock, forRow row: Int
     ) -> BlockView {
         // Recycled through the cell it was already installed in, so a row
-        // scrolling back into view rebuilds no constraints. Falls back to a fresh
-        // instance when the pool hands over a cell that was serving a `.view` row.
-        let view = cell.hostedView as? BlockView ?? BlockView()
+        // scrolling back into view rebuilds no constraints. A fresh one only when
+        // the pool hands over a cell that was serving a `.view` row — and that is
+        // the one moment its delegate is set.
+        let view = cell.hostedView as? BlockView ?? makeBlockView()
         view.configure(with: block)
         // Its part of the selection — the row may have scrolled out mid-selection
         // and be coming back, or be a new row landing inside one.
         view.selectedRange = selection?.range(inRow: row, length: block.length)
-        // Re-bound on every pass rather than once at construction: the view is
-        // recycled, and `row` is captured only as the fallback for a lookup that
-        // can fail once the view has left the table.
-        view.onLinkActivated = { [weak self] view, link in
-            guard let self else { return }
-            let current = self.row(for: view)
-            switch link.destination {
-            case .url(let url):
-                self.delegate?.transcriptView(
-                    self, didActivate: url, inRow: current >= 0 ? current : row)
-
-            case .more:
-                self.delegate?.transcriptView(
-                    self, didActivateMoreInRow: current >= 0 ? current : row)
-            }
-        }
-        view.onLinkHovered = { [weak self] view, url, point in
-            guard let self else { return }
-            let current = self.row(for: view)
-            self.delegate?.transcriptView(
-                self, didHover: url, at: self.convert(point, from: view),
-                inRow: current >= 0 ? current : row)
-        }
-        // Not `delegate?.transcriptView(…) ?? menu`: optional-chaining a method
-        // that itself returns an optional flattens the two, so a host answering
-        // "show no menu" would be indistinguishable from having no delegate — and
-        // would silently get the default menu instead.
-        view.onContextMenu = { [weak self] view, menu, event in
-            guard let self else { return menu }
-            // Before the host sees the menu: what it acts on is decided here.
-            self.selectForContextMenu(with: event)
-            guard let delegate = self.delegate else { return menu }
-            let current = self.row(for: view)
-            return delegate.transcriptView(
-                self, menu: menu, forRow: current >= 0 ? current : row)
-        }
+        boundRows.setObject(row as NSNumber, forKey: view)
         return view
+    }
+
+    private func makeBlockView() -> BlockView {
+        let view = BlockView()
+        view.delegate = self
+        return view
+    }
+
+    /// The row each self-drawn view was last bound to, for the one moment
+    /// `row(for:)` cannot answer: a view that has already left the table — the
+    /// hover it was showing ends as it goes, and that report still names a row.
+    /// Weak keys, so a view the pool lets go takes its entry with it.
+    private let boundRows = NSMapTable<BlockView, NSNumber>.weakToStrongObjects()
+
+    /// The row `view` is showing now, or the one it was last bound to once it has
+    /// left the table.
+    fileprivate func row(of view: BlockView) -> Int {
+        let current = row(for: view)
+        return current >= 0 ? current : boundRows.object(forKey: view)?.intValue ?? current
     }
 
     /// Reports the row leaving the viewport. What goes back into the pool is the
@@ -2808,6 +2791,35 @@ public final class TranscriptView: NSView {
                 scrollClip(toUnobscuredMinY: rowRect.maxY - visible.height)
             }
         }
+    }
+}
+
+extension TranscriptView: BlockViewDelegate {
+
+    func blockView(_ view: BlockView, didActivate link: InlineLink) {
+        switch link.destination {
+        case .url(let url):
+            delegate?.transcriptView(self, didActivate: url, inRow: row(of: view))
+
+        case .more:
+            delegate?.transcriptView(self, didActivateMoreInRow: row(of: view))
+        }
+    }
+
+    func blockView(_ view: BlockView, didHover url: URL?, at point: CGPoint) {
+        delegate?.transcriptView(
+            self, didHover: url, at: convert(point, from: view), inRow: row(of: view))
+    }
+
+    /// Not `delegate?.transcriptView(…) ?? menu`: optional-chaining a method that
+    /// itself returns an optional flattens the two, so a host answering "show no
+    /// menu" would be indistinguishable from having no delegate — and would
+    /// silently get the default menu instead.
+    func blockView(_ view: BlockView, menu: NSMenu, for event: NSEvent) -> NSMenu? {
+        // Before the host sees the menu: what it acts on is decided here.
+        selectForContextMenu(with: event)
+        guard let delegate else { return menu }
+        return delegate.transcriptView(self, menu: menu, forRow: row(of: view))
     }
 }
 

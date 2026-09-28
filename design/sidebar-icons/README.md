@@ -9,12 +9,18 @@ its construction grid, and both appearances in a sidebar.
   The subagent is a four-cusped star, n = 0.8, between the astroid (n = ⅔)
   and the rhombus (n = 1).
 - **Colour.** Anchored on the system folder icon, the colour every row sits
-  beside. It is the same in light and dark (OKLCH tab L 0.70 C 0.117, hue
-  230), so each glyph takes that tone, `oklch(0.70 0.12 h)`, and keeps it in
-  both appearances, as the folder does. The hues are the other three corners
-  of a square on the folder's, which keeps 230 to itself: the conversation
-  320, the subagent the complement 50, the workflow 140. They differ from the
-  folder and from each other in hue only, never in weight, so no row shouts.
+  beside. The folder is the same in light and dark, so each glyph keeps one
+  colour in both appearances too, at the folder's lightness (OKLCH L 0.70).
+  Its chroma matches the folder's *relative* chroma: the share of the most
+  sRGB can show at that lightness and hue, 84% for the folder. At equal
+  absolute chroma a hue with a wide gamut reads greyed, or muddy, beside the
+  folder. The hues come from where the gamut is as narrow as the folder's,
+  mint to indigo, so a clean colour there is no louder than the folder
+  either:
+  - the conversation is indigo, 275: the folder's cool family, clearly not
+    its blue;
+  - the workflow is mint, 160;
+  - the subagent is coral, 50, the folder's complement and the one warm note.
 - **Flat and restrained.** Filled shapes, no gradients, no outlines. Detail is
   cut out of a shape (1.5-pt slots) rather than drawn on it.
 

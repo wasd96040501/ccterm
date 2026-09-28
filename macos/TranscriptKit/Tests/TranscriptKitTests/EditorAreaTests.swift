@@ -288,9 +288,9 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertEqual(mounted.recorder.activated.last.map { $0 == nil }, true)
     }
 
-    /// The bar is where the tabs are, so it is there with one tab and with none,
-    /// the content always under it.
-    func testTheTabBarShowsWithOneTabAndWithNone() throws {
+    /// The bar is where the tabs are: there with one, the content under it, and
+    /// gone with the last — back where it was with the next.
+    func testTheTabBarShowsWhileThereAreTabs() throws {
         let mounted = mount(tabs: 1)
         defer { mounted.window.close() }
         let group = mounted.area.activeGroup
@@ -306,7 +306,12 @@ final class EditorAreaTests: XCTestCase {
         settle(mounted.window)
 
         XCTAssertTrue(group.tabViewItems.isEmpty, "premise: the tab closed")
-        XCTAssertFalse(group.tabBar.isHidden, "an editor with no tabs shows no bar")
+        XCTAssertTrue(group.tabBar.isHidden, "an editor with no tabs shows an empty bar")
+
+        group.addTabViewItem(NSTabViewItem(viewController: ProbeViewController(title: "Next")))
+        settle(mounted.window)
+        XCTAssertFalse(group.tabBar.isHidden)
+        XCTAssertEqual(group.tabBar.convert(group.tabBar.bounds, to: group.view), bar, "the bar came back elsewhere")
     }
 
     /// Under a window's toolbar the bar hangs below it, where the titlebar does

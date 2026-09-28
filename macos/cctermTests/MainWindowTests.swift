@@ -114,6 +114,7 @@ final class MainWindowTests: XCTestCase {
     func testGoingBackReopensWhatTheTemporaryTabReplaced() async throws {
         let fixture = try SessionDirectoryFixture()
         defer { fixture.remove() }
+        try LibraryStoreTests.writeLibrary(fixture)
         let library = try await Self.startedLibrary(fixture)
         defer { library.stop() }
         let stage = AppKitStage.mainWindow(library: library)
@@ -135,10 +136,17 @@ final class MainWindowTests: XCTestCase {
     // MARK: - Title
 
     /// The title is the active transcript's project — its folder in the
-    /// sidebar — and goes with the last tab.
-    func testTheTitleIsTheActiveTranscriptsProject() async throws {
+    /// sidebar — under its session's branch; it follows the reader from tab to
+    /// tab and goes, at once, with the last.
+    func testTheTitleIsTheActiveTranscriptsProjectAndBranch() async throws {
         let fixture = try SessionDirectoryFixture()
         defer { fixture.remove() }
+        try LibraryStoreTests.writeLibrary(fixture)
+        // "Named" ran on a branch in a folder that is no repository here, so the
+        // branch is the one its transcript recorded.
+        try fixture.write(
+            "-x-repo/s1.jsonl", [Self.user(cwd: "/x/repo", branch: "feature"), Rows.customTitle("Named")],
+            modified: 300)
         let library = try await Self.startedLibrary(fixture)
         defer { library.stop() }
         let stage = AppKitStage.mainWindow(library: library)
@@ -150,85 +158,82 @@ final class MainWindowTests: XCTestCase {
         XCTAssertTrue(title.isHidden, "a title with nothing open")
 
         sidebar.delegate?.sidebarViewController(sidebar, didOpen: try Self.node("Named", in: library))
-        XCTAssertEqual(title.title, "repo")
+        await expect(title, shows: "repo", "feature")
         XCTAssertFalse(title.isHidden)
         XCTAssertEqual(stage.window.title, "repo", "the Window menu names the window something else")
 
         sidebar.delegate?.sidebarViewController(sidebar, didOpen: try Self.node("fix it", in: library))
-        XCTAssertEqual(title.title, "other")
+        await expect(title, shows: "other", nil)
 
         split.closeTab(nil)
-        XCTAssertEqual(title.title, "repo", "closing a tab left the title on the one closed")
+        await expect(title, shows: "repo", "feature")
         split.closeTab(nil)
-        XCTAssertTrue(title.isHidden)
+        XCTAssertTrue(title.isHidden, "the title outlived the last tab")
         XCTAssertEqual(stage.window.title, "ccterm")
     }
 
-    /// Under the project's name, its branch as it is now — read after the
-    /// name, off the main thread — and again after each checkout.
-    func testTheSubtitleIsTheProjectsBranchAsItChanges() async throws {
-        let repo = try GitRepoFixture(name: "project")
-        defer { repo.remove() }
-        let stage = AppKitStage.mainWindow()
-        defer { stage.teardown() }
-        await stage.settle()
-        let controller = try XCTUnwrap(stage.windowController as? MainWindowController)
-        let title = try titleView(in: stage)
-
-        controller.mainSplitViewController(try XCTUnwrap(stage.mainSplit), didShowProjectAt: repo.url)
-        XCTAssertEqual(title.title, "project")
-        await subtitle(of: title, becomes: "main")
-        try repo.git("checkout", "-q", "-b", "feature")
-        await subtitle(of: title, becomes: "feature")
-    }
-
-    /// The branch fades in where it goes: its opacity only rises, and the name
-    /// above it doesn't move — both lines are laid out before either arrives.
-    func testTheBranchFadesInWithoutMovingTheTitle() async throws {
+    /// Alone, the name is centred; a branch coming raises it — moving, not
+    /// jumping — and fades in under it, and one going does the reverse.
+    func testTheNameRisesAsTheBranchFadesInUnderIt() async throws {
         let stage = AppKitStage.mainWindow()
         defer { stage.teardown() }
         await stage.settle()
         let title = try titleView(in: stage)
         let fields = stage.findAll(NSTextField.self, in: title)
-        XCTAssertEqual(fields.count, 2, "premise: a title line and a subtitle line")
-        let (titleLine, subtitleLine) = (fields[0], fields[1])
+        XCTAssertEqual(fields.count, 2, "premise: a name line and a branch line")
+        let (nameLine, branchLine) = (fields[0], fields[1])
+        let frame = { (view: NSView) in view.convert(view.bounds, to: nil) }
         title.title = "project"
         stage.window.layoutIfNeeded()
-        let titleFrame = titleLine.convert(titleLine.bounds, to: nil)
-        // Its line: where it starts and how tall, not how long the text is.
-        let subtitleLineBox = { (frame: NSRect) in NSRect(x: frame.minX, y: frame.minY, width: 0, height: frame.height)
-        }
-        let subtitleFrame = subtitleLineBox(subtitleLine.convert(subtitleLine.bounds, to: nil))
+        XCTAssertEqual(frame(nameLine).midY, frame(title).midY, accuracy: 0.5, "the name alone is off centre")
 
-        let timeline = AnimationProbe.record(subtitleLine, frames: 30, timeout: 1) { title.subtitle = "main" }
-
+        let rise = AnimationProbe.record(nameLine, frames: 40, timeout: 1) { title.subtitle = "main" }
         stage.window.layoutIfNeeded()
-        XCTAssertEqual(titleLine.convert(titleLine.bounds, to: nil), titleFrame, "the name moved when the branch came")
-        XCTAssertEqual(
-            subtitleLineBox(subtitleLine.convert(subtitleLine.bounds, to: nil)), subtitleFrame, "the branch moved in")
-        timeline.assertOpacity(from: 0, to: 1)
+        let lines = frame(nameLine).union(frame(branchLine))
+        XCTAssertEqual(lines.midY, frame(title).midY, accuracy: 0.5, "the two lines are off centre")
+        XCTAssertEqual(frame(branchLine).maxY, frame(nameLine).minY, accuracy: 0.5, "the branch isn't under the name")
+        XCTAssertEqual(branchLine.alphaValue, 1)
+
+        let fadeOut = AnimationProbe.record(branchLine, frames: 40, timeout: 1) { title.subtitle = nil }
+        stage.window.layoutIfNeeded()
+        XCTAssertEqual(frame(nameLine).midY, frame(title).midY, accuracy: 0.5, "the name didn't return to centre")
+
+        let fadeIn = AnimationProbe.record(branchLine, frames: 40, timeout: 1) { title.subtitle = "main" }
+
+        fadeOut.assertOpacity(from: 1, to: 0)
+        fadeIn.assertOpacity(from: 0, to: 1)
+        rise.assertNoJump(.originY, maxStep: 2)
         if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            XCTAssertGreaterThan(
+                Set(rise.composited.compactMap { $0.presentationFrame?.minY }).count, 3,
+                "the name jumped up\n\(rise.report())")
             XCTAssertTrue(
-                timeline.composited.contains { ($0.opacity ?? 0) > 0.05 && ($0.opacity ?? 1) < 0.95 },
-                "the branch popped in\n\(timeline.report())")
+                fadeIn.composited.contains { ($0.opacity ?? 0) > 0.05 && ($0.opacity ?? 1) < 0.95 },
+                "the branch popped in\n\(fadeIn.report())")
         }
-        // Its origin, not its centre: the line widens to the text while still clear.
-        timeline.assertNoJump(.originX, maxStep: 0.5)
-        timeline.assertNoJump(.originY, maxStep: 0.5)
-        add(XCTAttachment(string: timeline.report()))
+        add(XCTAttachment(string: rise.report()))
+        add(XCTAttachment(string: fadeIn.report()))
     }
 
     // MARK: - Fixtures
+
+    typealias Rows = SessionDirectoryFixture
+
+    /// A prompt from a session run in `cwd` on `branch`, as the CLI records it.
+    private static func user(cwd: String, branch: String) -> String {
+        Rows.row([
+            "type": "user", "uuid": "u", "parentUuid": NSNull(), "sessionId": "s", "cwd": cwd, "gitBranch": branch,
+            "message": ["role": "user", "content": "hi"],
+        ])
+    }
 
     private static func session(_ name: String) -> LibraryNode {
         let url = URL(fileURLWithPath: "/nonexistent/\(name).jsonl")
         return LibraryNode(id: url.path, kind: .session, title: name, transcriptURL: url, children: [])
     }
 
-    /// A library over `LibraryStoreTests`' fixture — "Named" in `/x/repo`,
-    /// "fix it" in `/y/other` — read.
+    /// A library over `fixture`, read.
     private static func startedLibrary(_ fixture: SessionDirectoryFixture) async throws -> LibraryStore {
-        try LibraryStoreTests.writeLibrary(fixture)
         let library = LibraryStore(directory: fixture.directory)
         library.start()
         let loaded = XCTestExpectation(description: "library read")
@@ -252,12 +257,17 @@ final class MainWindowTests: XCTestCase {
         return (group.subitems[0], group.subitems[1])
     }
 
-    /// Returns once the title view's subtitle is `branch`, which the window
-    /// controller sets from a task on the main actor — so this awaits, yielding it.
-    private func subtitle(of title: MainWindowTitleView, becomes branch: String) async {
-        let arrived = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in MainActor.assumeIsolated { title.subtitle == branch } }, object: nil)
-        await fulfillment(of: [arrived], timeout: 5)
+    /// Returns once the title view names `project` over `branch`, which the
+    /// window controller sets from a task on the main actor — so this awaits,
+    /// yielding it.
+    private func expect(_ view: MainWindowTitleView, shows project: String, _ branch: String?) async {
+        let shown = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                MainActor.assumeIsolated { view.title == project && view.subtitle == branch }
+            }, object: nil)
+        _ = await XCTWaiter().fulfillment(of: [shown], timeout: 5)
+        XCTAssertEqual(view.title, project, "the name")
+        XCTAssertEqual(view.subtitle, branch, "the branch under \(project)")
     }
 
     private func titleView(in stage: AppKitStage) throws -> MainWindowTitleView {

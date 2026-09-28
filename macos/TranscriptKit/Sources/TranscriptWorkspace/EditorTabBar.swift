@@ -174,18 +174,21 @@ final class EditorTabBar: NSView, NSDraggingSource {
 
     /// Safari's close button: a 12-point disc with the cross cut out of it, which
     /// the symbol is at 12 points regular (measured, ink and cross both).
-    private static let closeImage = symbol("xmark.circle.fill", String(localized: "Close Tab", bundle: .module))
+    private static let closeImage = symbol(
+        "xmark.circle.fill", String(localized: "Close Tab", bundle: .module), pointSize: 12)
 
     /// The temporary tab's pin, hollow, and a pinned tab's, filled — each named
-    /// for what pressing it does.
-    private static let pinImage = symbol("pin", String(localized: "Pin Tab", bundle: .module))
-    private static let unpinImage = symbol("pin.fill", String(localized: "Unpin Tab", bundle: .module))
+    /// for what pressing it does. Smaller than the close button's disc, as
+    /// Xcode's: a mark on the tab, not a second button of the same weight.
+    private static let pinImage = symbol("pin", String(localized: "Pin Tab", bundle: .module), pointSize: 10)
+    private static let unpinImage = symbol(
+        "pin.fill", String(localized: "Unpin Tab", bundle: .module), pointSize: 10)
 
-    /// A tab button's glyph at 12 points regular. Centring the image centres the
-    /// glyph — which the symbol's own alignment rect, a text baseline's, does not.
-    private static func symbol(_ name: String, _ description: String) -> NSImage? {
+    /// A tab button's glyph, regular. Centring the image centres the glyph —
+    /// which the symbol's own alignment rect, a text baseline's, does not.
+    private static func symbol(_ name: String, _ description: String, pointSize: CGFloat) -> NSImage? {
         let image = NSImage(systemSymbolName: name, accessibilityDescription: description)?
-            .withSymbolConfiguration(.init(pointSize: 12, weight: .regular))
+            .withSymbolConfiguration(.init(pointSize: pointSize, weight: .regular))
         image?.alignmentRect = NSRect(origin: .zero, size: image?.size ?? .zero)
         return image
     }

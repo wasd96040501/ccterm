@@ -18,26 +18,26 @@ final class GitBranchUpdatesTests: XCTestCase {
     }
 
     func testYieldsTheBranchAndThenEachCheckout() async throws {
-        let branches = Branches(following: repo.url.path)
+        let branches = BranchRecorder(GitUtils.currentBranchUpdates(at: repo.url.path))
         defer { branches.stop() }
 
-        try await branches.wait(for: "main")
+        await branches.wait(for: "main")
         try repo.git("checkout", "-q", "-b", "feature")
-        try await branches.wait(for: "feature")
+        await branches.wait(for: "feature")
         try repo.git("checkout", "-q", "main")
-        try await branches.wait(for: "main")
+        await branches.wait(for: "main")
     }
 
     /// A worktree's HEAD is its own, found through the `gitdir` its `.git` names.
     func testFollowsAWorktreesOwnBranch() async throws {
         let worktree = repo.url.deletingLastPathComponent().appendingPathComponent("wt")
         try repo.git("worktree", "add", "-q", "-b", "wt-branch", worktree.path)
-        let branches = Branches(following: worktree.path)
+        let branches = BranchRecorder(GitUtils.currentBranchUpdates(at: worktree.path))
         defer { branches.stop() }
 
-        try await branches.wait(for: "wt-branch")
+        await branches.wait(for: "wt-branch")
         try repo.git("-C", worktree.path, "checkout", "-q", "-b", "wt-next")
-        try await branches.wait(for: "wt-next")
+        await branches.wait(for: "wt-next")
     }
 
     func testAFolderThatIsNoRepositoryYieldsNilAndEnds() async throws {
@@ -47,36 +47,17 @@ final class GitBranchUpdatesTests: XCTestCase {
         for await branch in GitUtils.currentBranchUpdates(at: plain.path) { values.append(branch) }
         XCTAssertEqual(values, [nil])
     }
-}
 
-/// A stream followed on the main actor: what it has yielded, and a wait for
-/// the value it yields next.
-@MainActor
-private final class Branches {
-    private(set) var values: [String?] = []
-    private var task: Task<Void, Never>?
-    private var awaited: (branch: String, expectation: XCTestExpectation)?
+    /// A repository starts where its `.git` is, however deep the folder asked
+    /// about; a worktree's checkout is one of its own.
+    func testTheRepositoryRootIsTheNearestFolderWithGit() throws {
+        let deep = repo.url.appendingPathComponent("Sources/App")
+        try FileManager.default.createDirectory(at: deep, withIntermediateDirectories: true)
+        let worktree = repo.url.deletingLastPathComponent().appendingPathComponent("wt")
+        try repo.git("worktree", "add", "-q", "-b", "wt-branch", worktree.path)
 
-    init(following path: String) {
-        task = Task { [weak self] in
-            for await branch in GitUtils.currentBranchUpdates(at: path) { self?.receive(branch) }
-        }
-    }
-
-    func stop() { task?.cancel() }
-
-    private func receive(_ branch: String?) {
-        values.append(branch)
-        if let awaited, awaited.branch == branch { awaited.expectation.fulfill() }
-    }
-
-    /// Returns once the latest value is `branch`.
-    func wait(for branch: String, timeout: TimeInterval = 5) async throws {
-        guard values.last != branch else { return }
-        let expectation = XCTestExpectation(description: "branch becomes \(branch); saw \(values)")
-        awaited = (branch, expectation)
-        defer { awaited = nil }
-        let result = await XCTWaiter().fulfillment(of: [expectation], timeout: timeout)
-        XCTAssertEqual(result, .completed, "never became \(branch); saw \(values)")
+        XCTAssertEqual(GitUtils.repositoryRoot(containing: deep.path), repo.url.standardizedFileURL.path)
+        XCTAssertEqual(GitUtils.repositoryRoot(containing: worktree.path), worktree.standardizedFileURL.path)
+        XCTAssertNil(GitUtils.repositoryRoot(containing: repo.url.deletingLastPathComponent().path))
     }
 }

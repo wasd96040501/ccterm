@@ -28,21 +28,31 @@ final class MainWindowTitleView: NSView {
     var subtitle: String? {
         didSet {
             guard subtitle != oldValue else { return }
-            subtitleField.stringValue = subtitle ?? ""
-            guard subtitle != nil else {
-                subtitleField.alphaValue = 0
-                return
-            }
-            guard oldValue == nil else { return }
+            // One leaving keeps its text while it fades.
+            if let subtitle { subtitleField.stringValue = subtitle }
+            guard (subtitle == nil) != (oldValue == nil) else { return }
+            let shown = subtitle != nil
             NSAnimationContext.runAnimationGroup { context in
                 context.duration =
-                    NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : Self.fadeDuration
-                subtitleField.animator().alphaValue = 1
+                    isHidden || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : Self.duration
+                titleCentre.animator().constant = shown ? -Self.lift : 0
+                subtitleField.animator().alphaValue = shown ? 1 : 0
             }
         }
     }
 
-    private static let fadeDuration: TimeInterval = 0.25
+    private static let duration: TimeInterval = 0.25
+
+    /// How far the name rises for a branch: half the branch's line, so the two
+    /// lines together are centred as the name alone was.
+    private static let lift = subtitleLineHeight / 2
+
+    /// AppKit's lines for a title over a subtitle (measured).
+    private static let titleLineHeight: CGFloat = 16
+    private static let subtitleLineHeight: CGFloat = 14
+
+    /// The name's centre against the view's: 0 alone, `-lift` over a branch.
+    private lazy var titleCentre = titleField.centerYAnchor.constraint(equalTo: centerYAnchor)
 
     private lazy var iconView: NSImageView = {
         let view = NSImageView(image: NSWorkspace.shared.icon(for: .folder))
@@ -83,23 +93,23 @@ final class MainWindowTitleView: NSView {
         }
     }
 
-    /// Icon, then the two lines stacked tight — AppKit's 16-point title line over
-    /// its 14-point subtitle line. The subtitle's line is there empty or not.
+    /// Icon, then the two lines stacked tight, the branch's hanging from the
+    /// name's: tall enough for both, with the name centred until a branch comes.
     private func configureConstraints() {
         NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: Self.titleLineHeight + Self.subtitleLineHeight),
             iconView.leadingAnchor.constraint(equalTo: leadingAnchor),
             iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
             iconView.widthAnchor.constraint(equalToConstant: 24),
             iconView.heightAnchor.constraint(equalToConstant: 24),
             titleField.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 6),
             titleField.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
-            titleField.topAnchor.constraint(equalTo: topAnchor),
-            titleField.heightAnchor.constraint(equalToConstant: 16),
+            titleCentre,
+            titleField.heightAnchor.constraint(equalToConstant: Self.titleLineHeight),
             subtitleField.leadingAnchor.constraint(equalTo: titleField.leadingAnchor),
             subtitleField.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
             subtitleField.topAnchor.constraint(equalTo: titleField.bottomAnchor),
-            subtitleField.heightAnchor.constraint(equalToConstant: 14),
-            subtitleField.bottomAnchor.constraint(equalTo: bottomAnchor),
+            subtitleField.heightAnchor.constraint(equalToConstant: Self.subtitleLineHeight),
         ])
     }
 }

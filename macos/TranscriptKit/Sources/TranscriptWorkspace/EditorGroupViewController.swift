@@ -100,7 +100,7 @@ public final class EditorGroupViewController: NSViewController {
         NSLayoutConstraint.activate([
             tabBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
             tabBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
-            tabBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 6),
+            tabBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
             separator.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             separator.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             separator.topAnchor.constraint(equalTo: tabBar.bottomAnchor, constant: 6),
@@ -304,6 +304,8 @@ public final class EditorGroupViewController: NSViewController {
                     toolTip: item.toolTip, isPreview: item === previewTabViewItem)
             },
             selectedIndex: tabViewItems.isEmpty ? nil : selectedTabViewItemIndex)
+        tabBar.isHidden = tabViewItems.isEmpty
+        separator.isHidden = tabViewItems.isEmpty
         emptyLabel.isHidden = !tabViewItems.isEmpty
     }
 

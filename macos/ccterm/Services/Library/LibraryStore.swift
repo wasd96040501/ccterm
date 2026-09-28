@@ -83,7 +83,20 @@ final class LibraryStore {
     /// is detached or when neither is known. Reads nothing on the caller's
     /// thread, and always yields at least once.
     nonisolated func branchUpdates(ofTranscriptAt url: URL) -> AsyncStream<String?> {
-        AsyncStream { $0.finish() }
+        AsyncStream { continuation in
+            let task = Task.detached(priority: .userInitiated) {
+                let metadata = try? SessionMetadata(contentsOf: url)
+                guard let root = metadata?.cwd.flatMap(GitUtils.repositoryRoot(containing:)) else {
+                    // The CLI records a detached HEAD as "HEAD".
+                    continuation.yield(metadata?.gitBranch.flatMap { $0 == "HEAD" ? nil : $0 })
+                    continuation.finish()
+                    return
+                }
+                for await branch in GitUtils.currentBranchUpdates(at: root) { continuation.yield(branch) }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
 
     // MARK: - Reading

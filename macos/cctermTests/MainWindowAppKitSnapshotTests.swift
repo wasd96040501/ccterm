@@ -75,7 +75,7 @@ final class MainWindowAppKitSnapshotTests: XCTestCase {
     }
 
     /// The whole window — titlebar, toolbar, tab bar under them — with two
-    /// tabs open and a project whose branch is real. Synchronous for the same
+    /// tabs open, the active one's session on a branch. Synchronous for the same
     /// reason as the split's: the branch arrives on a main-actor task. The
     /// sidebar comes out blank: its behind-window material is composited by
     /// the window server, which `cacheDisplay` doesn't reach — the split's
@@ -84,8 +84,11 @@ final class MainWindowAppKitSnapshotTests: XCTestCase {
         let fixture = try SessionDirectoryFixture()
         defer { fixture.remove() }
         try LibraryStoreTests.writeLibrary(fixture)
-        let repo = try GitRepoFixture(name: "ccterm", branch: "toolbar-pin-fixed-sidebar")
-        defer { repo.remove() }
+        let prompt = Rows.row([
+            "type": "user", "uuid": "u", "parentUuid": NSNull(), "sessionId": "s", "cwd": "/x/repo",
+            "gitBranch": "toolbar-pin-fixed-sidebar", "message": ["role": "user", "content": "hi"],
+        ])
+        try fixture.write("-x-repo/s1.jsonl", [prompt, Rows.customTitle("Named")], modified: 300)
         let store = LibraryStore(directory: fixture.directory)
         store.start()
         defer { store.stop() }
@@ -95,11 +98,11 @@ final class MainWindowAppKitSnapshotTests: XCTestCase {
         let split = try XCTUnwrap(stage.mainSplit)
         let sidebar = try XCTUnwrap(split.splitViewItems[0].viewController as? SidebarViewController)
         let sessions = store.nodes.flatMap(\.children)
+        split.sidebarViewController(sidebar, didOpen: sessions[1])
         split.sidebarViewController(sidebar, didOpen: sessions[0])
-        split.sidebarViewController(sidebar, didSelect: sessions[1])
-        let controller = try XCTUnwrap(stage.windowController as? MainWindowController)
-        controller.mainSplitViewController(split, didShowProjectAt: repo.url)
-        stage.drain(seconds: 1)
+        let title = try XCTUnwrap(stage.window.toolbar?.items.compactMap { $0.view as? MainWindowTitleView }.first)
+        XCTAssertTrue(stage.drainUntil(timeout: 5) { title.subtitle != nil }, "the branch never came")
+        stage.drain(seconds: 0.5)
 
         let frameView = try XCTUnwrap(stage.window.contentView?.superview)
         frameView.layoutSubtreeIfNeeded()

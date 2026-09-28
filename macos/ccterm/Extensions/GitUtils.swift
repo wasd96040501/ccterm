@@ -48,6 +48,20 @@ enum GitUtils {
         }
     }
 
+    /// The nearest directory at or above `path` that is a repository or a
+    /// worktree's checkout — where its `.git` is. `nil` outside any.
+    nonisolated static func repositoryRoot(containing path: String) -> String? {
+        var directory = URL(fileURLWithPath: path).standardizedFileURL
+        while true {
+            if FileManager.default.fileExists(atPath: directory.appendingPathComponent(".git").path) {
+                return directory.path
+            }
+            let parent = directory.deletingLastPathComponent()
+            guard parent.path != directory.path else { return nil }
+            directory = parent
+        }
+    }
+
     /// Where `directory`'s HEAD is: `.git/HEAD` in a repository, the `gitdir`'s
     /// HEAD in a worktree (where `.git` is a file naming it). `nil` if neither.
     private nonisolated static func headPath(at directory: String) -> String? {

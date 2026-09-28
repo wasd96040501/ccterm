@@ -464,7 +464,10 @@ public final class TranscriptView: NSView {
     /// with its edges clipped — the trade a block makes when it has a width it
     /// cannot usefully go under (a table, a code block). `0` means it always
     /// follows.
-    public var minContentWidth: CGFloat = 0 {
+    ///
+    /// Internal: no host sets one (§3). It becomes public the day one does, as
+    /// `maxContentWidth`'s counterpart.
+    var minContentWidth: CGFloat = 0 {
         didSet { contentWidthBoundsChanged() }
     }
 
@@ -1762,12 +1765,16 @@ public final class TranscriptView: NSView {
 
     /// The number of matches found so far. Still climbing until the delegate
     /// reports `isComplete`.
-    public var numberOfFindMatches: Int { find?.count ?? 0 }
+    ///
+    /// Internal, like the ordinal below: a host hears the count through
+    /// `transcriptView(_:didUpdateFindMatches:isComplete:)`, the one channel a
+    /// find's state crosses by, so it never keeps a second copy to reconcile.
+    var numberOfFindMatches: Int { find?.count ?? 0 }
 
     /// Which match the reader is on, counting from zero, or `nil` when none is
     /// selected — the walk has not reached the reader yet, there are no matches,
-    /// or the one they were on went away. The `4` in "4 of 51" is this plus one.
-    public var indexOfSelectedFindMatch: Int? {
+    /// or the one they were on went away.
+    var indexOfSelectedFindMatch: Int? {
         guard let find, let selection = find.selection else { return nil }
         if let ordinal = find.ordinal { return ordinal }
         let ordinal = ordinal(of: selection, in: find)
@@ -2084,11 +2091,10 @@ public final class TranscriptView: NSView {
 
     /// Tells the delegate where the find has got to.
     ///
-    /// One funnel rather than a call beside every mutation, because the host reads
-    /// two things here — the count from the argument and the position from
-    /// `indexOfSelectedFindMatch` — and a path that moved the selection without
-    /// reporting would leave a find bar showing "1 of 15" after the reader had
-    /// pressed ⌘G four times.
+    /// One funnel rather than a call beside every mutation: the call means *this
+    /// is the find's state now*, so every path that changes it — the matches, the
+    /// current one, the walk finishing — reports through here, and none can
+    /// forget to.
     private func reportFind() {
         guard let find else { return }
         delegate?.transcriptView(
@@ -2328,9 +2334,9 @@ public final class TranscriptView: NSView {
     /// Called from `sweepCache()`, off the same walk and the same live set, because
     /// the two answer one question — which identities still name a row — and asking
     /// it twice is how the answers come to differ. Not reported here: this runs
-    /// inside a mutation, before the table has been told, and a host reading
-    /// `indexOfSelectedFindMatch` from the report would walk rows the table does
-    /// not have yet. The mutation reports once it is done.
+    /// inside a mutation, before the table has been told, and anything read in
+    /// answer to the report would walk rows the table does not have yet. The
+    /// mutation reports once it is done.
     private func keepFind(_ live: Set<TranscriptRow.ID>) {
         guard var find else { return }
         let gone = find.matches.keys.filter { !live.contains($0) }

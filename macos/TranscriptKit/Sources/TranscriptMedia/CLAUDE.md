@@ -1,6 +1,6 @@
 # TranscriptMedia
 
-The host-side media parts that TranscriptKit §4 keeps out of the renderer, written once so the demo and the app share them. `TranscriptMedia → TranscriptKit` is a build edge: nothing in the renderer can name a window, overlay or grid.
+The host-side media parts that TranscriptKit §4 keeps out of the renderer, written once so the demo and the app share them. It depends on nothing in the package: a grid is a plain `NSView` a host hands the transcript as a `.view` row, so no renderer type is needed, and nothing in the renderer can name a window, overlay or grid.
 
 **The boundary is the name: pictures, how a group of them packs, and the viewer they open into.** A host component that isn't media doesn't go here — it gets its own target or a deliberate rename. Before changing the renderer for something new, ask whether it's picture-shaped (presentation with product decisions, a model the renderer would have to borrow); if so it belongs here.
 

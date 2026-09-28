@@ -26,10 +26,10 @@ let package = Package(
         // Separate product, not a folder inside the other one. `TranscriptKit`'s
         // §4 turns on a boundary — the package draws rows and owns none of the
         // presentation around them — and a boundary both sides can `import`
-        // across is not one. Two
-        // products make the arrow single-direction and the compiler the thing
-        // that holds it: `TranscriptMedia` depends on `TranscriptKit`, and
-        // nothing in `TranscriptKit` can name a window, an overlay or a grid.
+        // across is not one. Two products, with no edge between them, make the
+        // compiler the thing that holds it: nothing in `TranscriptKit` can name a
+        // window, an overlay or a grid, and nothing here needs a renderer type —
+        // a grid is a plain `NSView` a host hands the transcript as a `.view` row.
         .library(name: "TranscriptMedia", targets: ["TranscriptMedia"]),
         // The editor area a transcript is shown in: side-by-side editors, tabs,
         // the find bar an editor carries. Its own product for the same reason as
@@ -74,7 +74,7 @@ let package = Package(
         // renderer. Kept in this package rather than in the app so the demo and
         // the app get the same components, and so they stay buildable without an
         // Xcode project.
-        .target(name: "TranscriptMedia", dependencies: ["TranscriptKit"], exclude: ["CLAUDE.md"]),
+        .target(name: "TranscriptMedia", exclude: ["CLAUDE.md"]),
         // No dependencies, on purpose: see the product above.
         .target(
             name: "TranscriptWorkspace", exclude: ["CLAUDE.md"], resources: [.process("Resources")]),

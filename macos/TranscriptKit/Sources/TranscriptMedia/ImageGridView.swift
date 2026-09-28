@@ -1,5 +1,4 @@
 import AppKit
-import TranscriptKit
 
 /// A transcript row made of pictures, arranged the way Telegram arranges a
 /// grouped-media message.

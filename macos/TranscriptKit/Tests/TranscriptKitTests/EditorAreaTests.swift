@@ -237,13 +237,14 @@ final class EditorAreaTests: XCTestCase {
         let bar = mounted.area.activeGroup.tabBar
         XCTAssertEqual(bar.selectedIndex, 1, "premise: the second tab is the selected one")
 
-        /// Grey at the trailing end of a tab's capsule, where no title reaches.
+        /// Grey near the trailing end of a tab's capsule, where no title reaches,
+        /// clear of the pin's halo.
         func grey(atTab index: Int) async throws -> CGFloat {
             try await WindowCapture.waitForFrames(of: mounted.window, spanning: 0.2)
             let rep = try await WindowCapture.bitmap(of: bar)
             let tab = bar.rect(forTabAt: index)
             let color = try XCTUnwrap(
-                rep.colorAt(x: Int(tab.maxX - 10), y: Int(tab.midY))?.usingColorSpace(.sRGB))
+                rep.colorAt(x: Int(tab.maxX - 34), y: Int(tab.midY))?.usingColorSpace(.sRGB))
             return (color.redComponent + color.greenComponent + color.blueComponent) / 3 * 255
         }
 
@@ -283,7 +284,6 @@ final class EditorAreaTests: XCTestCase {
         settle(mounted.window)
 
         XCTAssertEqual(mounted.area.groups.count, 1)
-        XCTAssertTrue(group.tabBar.isHidden, "an editor with no tabs still shows a tab bar")
         XCTAssertNil(mounted.area.activeViewController)
         XCTAssertEqual(mounted.recorder.activated.last.map { $0 == nil }, true)
     }
@@ -971,6 +971,92 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 0", "Look", "Next"])
     }
 
+    // MARK: - History
+
+    /// Xcode's: back and forward go through what the editor showed, selecting a
+    /// tab that is still open — every tab is known by the identifier AppKit gives
+    /// it — and a new step spends what was ahead.
+    func testBackAndForwardSelectWhatTheEditorShowed() throws {
+        let mounted = mount(tabs: 3)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        XCTAssertTrue(group.canGoBack, "premise: each tab added was shown")
+        XCTAssertFalse(group.canGoForward)
+
+        group.goBack()
+        XCTAssertEqual(group.selectedTabViewItemIndex, 1)
+        XCTAssertIdentical(mounted.recorder.activated.last ?? nil, mounted.probes[1], "going back was not reported")
+        group.goBack()
+        XCTAssertEqual(group.selectedTabViewItemIndex, 0)
+        XCTAssertFalse(group.canGoBack)
+        XCTAssertTrue(group.canGoForward)
+
+        group.goForward()
+        XCTAssertEqual(group.selectedTabViewItemIndex, 1)
+        XCTAssertTrue(group.canGoForward)
+
+        group.selectedTabViewItemIndex = 0
+        XCTAssertFalse(group.canGoForward, "a new step left the old way forward")
+        group.goBack()
+        XCTAssertEqual(group.selectedTabViewItemIndex, 1)
+        XCTAssertEqual(
+            group.tabViewItems.map(\.label), ["Tab 0", "Tab 1", "Tab 2"], "going back opened or moved a tab")
+    }
+
+    /// The temporary tab's looks are history: going back to one it replaced opens
+    /// it again, from the delegate, in the temporary tab — replacing the look it
+    /// went back from, which going forward opens again the same way.
+    func testGoingBackReopensWhatTheTemporaryTabReplaced() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+
+        group.previewTabViewItem = Self.tab("Look 1")
+        group.previewTabViewItem = Self.tab("Look 2")
+        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 0", "Look 2"], "premise: the look was replaced")
+
+        group.goBack()
+        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 0", "Look 1"])
+        XCTAssertEqual(group.selectedTabViewItemIndex, 1)
+        XCTAssertIdentical(group.previewTabViewItem, group.tabViewItems[1], "it did not open as the temporary tab")
+        XCTAssertTrue(group.canGoForward)
+
+        group.goForward()
+        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 0", "Look 2"])
+        XCTAssertTrue(group.canGoBack)
+        XCTAssertFalse(group.canGoForward)
+    }
+
+    /// What the host can no longer show is passed over, and forgotten.
+    func testHistoryPassesOverWhatCannotBeShownAnyMore() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+
+        group.previewTabViewItem = Self.tab("Look 1")
+        group.previewTabViewItem = Self.tab(Recorder.refused)
+        group.previewTabViewItem = Self.tab("Look 2")
+
+        group.goBack()
+        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 0", "Look 1"])
+        group.goForward()
+        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 0", "Look 2"], "forward went somewhere else")
+        XCTAssertFalse(group.canGoForward)
+
+        // Back past the one forgotten, to the tab first shown — still open.
+        group.goBack()
+        group.goBack()
+        XCTAssertEqual(group.selectedTabViewItemIndex, 0)
+        XCTAssertFalse(group.canGoBack, "the refused look was not forgotten")
+    }
+
+    /// A tab known to the history by its title.
+    private static func tab(_ title: String) -> NSTabViewItem {
+        let item = NSTabViewItem(viewController: ProbeViewController(title: title))
+        item.identifier = title
+        return item
+    }
+
     private func mount(tabs: Int) -> Mounted {
         let window = TestWindow.make(contentSize: Self.size)
         let area = EditorAreaViewController()
@@ -1065,6 +1151,16 @@ private final class Recorder: EditorAreaViewControllerDelegate {
         guard let title = draggingInfo.draggingPasteboard.string(forType: .string), title != Self.refused
         else { return nil }
         return NSTabViewItem(viewController: ProbeViewController(title: title))
+    }
+
+    /// A tab for a title the history goes back to, as the host would make one.
+    func editorArea(
+        _ editorArea: EditorAreaViewController, tabViewItemWithIdentifier identifier: Any
+    ) -> NSTabViewItem? {
+        guard let title = identifier as? String, title != Self.refused else { return nil }
+        let item = NSTabViewItem(viewController: ProbeViewController(title: title))
+        item.identifier = title
+        return item
     }
 }
 

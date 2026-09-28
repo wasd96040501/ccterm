@@ -29,11 +29,7 @@ public final class EditorGroupViewController: NSViewController {
 
     private var itemObservations: [ObjectIdentifier: [NSKeyValueObservation]] = [:]
 
-    /// What the editor has shown, oldest first, and what it went back from,
-    /// nearest last; `shownIdentifier` is between the two.
-    private var backList: [AnyHashable] = []
-    private var forwardList: [AnyHashable] = []
-    private var shownIdentifier: AnyHashable?
+    private var history = History()
 
     private lazy var separator: NSBox = {
         let box = NSBox()
@@ -133,9 +129,10 @@ public final class EditorGroupViewController: NSViewController {
         }
     }
 
-    public var selectedViewController: NSViewController? {
-        tabViewItems.indices.contains(selectedTabViewItemIndex)
-            ? tabViewItems[selectedTabViewItemIndex].viewController : nil
+    public var selectedViewController: NSViewController? { selectedTabViewItem?.viewController }
+
+    private var selectedTabViewItem: NSTabViewItem? {
+        tabViewItems.indices.contains(selectedTabViewItemIndex) ? tabViewItems[selectedTabViewItemIndex] : nil
     }
 
     /// Adds a tab after the others and selects it.
@@ -182,22 +179,53 @@ public final class EditorGroupViewController: NSViewController {
     // MARK: - History
 
     /// Whether there is something this editor showed before what it shows now.
-    public var canGoBack: Bool { !backList.isEmpty }
+    public var canGoBack: Bool { history.entry(at: -1) != nil }
 
     /// Whether this editor went back from something it can show again.
-    public var canGoForward: Bool { !forwardList.isEmpty }
+    public var canGoForward: Bool { history.entry(at: 1) != nil }
 
     /// Shows what the editor showed before: its tab if it is still open, else a
     /// new temporary tab the area's delegate makes for it
     /// (`editorArea(_:tabViewItemWithIdentifier:)`). What the delegate can't
-    /// make is passed over.
+    /// make is passed over, and forgotten.
     public func goBack() {
-        // Framework: filled in with the history.
+        navigate(by: -1)
     }
 
     /// Shows what `goBack()` went back from, as `goBack()` shows.
     public func goForward() {
-        // Framework: filled in with the history.
+        navigate(by: 1)
+    }
+
+    /// Moves `offset` entries along the history to the nearest one that can be
+    /// shown, and shows it. The history moves first, so the tab change showing
+    /// it is what the history already says, and records nothing.
+    private func navigate(by offset: Int) {
+        while let identifier = history.entry(at: offset) {
+            guard let item = tabViewItem(showing: identifier) else {
+                history.remove(at: offset)
+                continue
+            }
+            history.move(by: offset)
+            show(item)
+            return
+        }
+    }
+
+    /// The open tab showing `identifier`, or a new one the area's delegate makes.
+    private func tabViewItem(showing identifier: AnyHashable) -> NSTabViewItem? {
+        if let item = tabViewItems.first(where: { $0.identifier as? AnyHashable == identifier }) { return item }
+        guard let area else { return nil }
+        return area.delegate?.editorArea(area, tabViewItemWithIdentifier: identifier.base)
+    }
+
+    /// Selects `item`, opening it as the temporary tab if it isn't open.
+    private func show(_ item: NSTabViewItem) {
+        if let index = tabViewItems.firstIndex(of: item) {
+            selectedTabViewItemIndex = index
+        } else {
+            previewTabViewItem = item
+        }
     }
 
     // MARK: - Moving between positions and editors
@@ -257,16 +285,13 @@ public final class EditorGroupViewController: NSViewController {
 
     /// Every change to the tabs ends here: the history told what is shown now,
     /// the bar redrawn from the tabs, and the area told, since the active editor
-    /// or the number of editors may have moved with it.
+    /// or the number of editors may have moved with it. An empty editor, or a
+    /// tab with no identifier, shows nothing the history could return to.
     func tabsDidChange() {
-        recordShown()
+        if let identifier = selectedTabViewItem?.identifier as? AnyHashable { history.visit(identifier) }
         reloadTabBar()
         area?.groupDidChangeTabs(self)
     }
-
-    /// Framework: the selected tab's identifier joins the history when it is not
-    /// what the history already shows.
-    private func recordShown() {}
 
     /// Shows the tabs. The bar is always there, one tab or none: it is where the
     /// tabs are, not a control that appears when there is a choice.
@@ -484,6 +509,42 @@ extension EditorGroupViewController: EditorTabBarDelegate {
         guard let sourceGroup = source.delegate as? EditorGroupViewController else { return nil }
         if sourceGroup === self { return moveTab(at: index, to: destination) }
         return area?.moveTab(at: index, of: sourceGroup, to: self, at: destination)
+    }
+}
+
+/// What an editor has shown, as a browser's history: every entry in order and
+/// the one it is at. Identifiers only — which tab shows an entry is the editor's
+/// to find. An offset is a direction and a distance, back negative.
+private struct History {
+
+    private var entries: [AnyHashable] = []
+    private var index = -1
+
+    /// The entry `offset` from the current one, or `nil` past either end.
+    func entry(at offset: Int) -> AnyHashable? {
+        offset != 0 && entries.indices.contains(index + offset) ? entries[index + offset] : nil
+    }
+
+    /// `identifier` is shown now. Unless it is the current entry, that is a new
+    /// step: it follows the current entry, and whatever lay ahead is gone.
+    mutating func visit(_ identifier: AnyHashable) {
+        guard entries.indices.contains(index) ? entries[index] != identifier : true else { return }
+        entries.removeSubrange((index + 1)...)
+        entries.append(identifier)
+        index += 1
+    }
+
+    /// Makes the entry `offset` along the current one.
+    mutating func move(by offset: Int) {
+        guard entry(at: offset) != nil else { return }
+        index += offset
+    }
+
+    /// Forgets the entry `offset` along, keeping the current one current.
+    mutating func remove(at offset: Int) {
+        guard entry(at: offset) != nil else { return }
+        entries.remove(at: index + offset)
+        if offset < 0 { index -= 1 }
     }
 }
 

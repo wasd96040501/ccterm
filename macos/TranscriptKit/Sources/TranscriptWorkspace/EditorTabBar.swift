@@ -155,11 +155,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
         wantsLayer = true
         registerForDraggedTypes([.editorTab])
 
-        // Safari's: a 12-point disc with the cross cut out of it, which at 12 points
-        // regular the symbol is (measured, ink and cross both). Centring its image
-        // centres the disc — which the symbol's own alignment rect, a text
-        // baseline's, does not.
-        closeButton.image = Self.symbol("xmark.circle.fill", String(localized: "Close Tab", bundle: .module))
+        closeButton.image = Self.closeImage
         // Safari's measures 80% of the ink, a shade under a label's 85%; the label
         // colour is the system's, and follows the appearance.
         closeButton.contentTintColor = .labelColor
@@ -175,6 +171,15 @@ final class EditorTabBar: NSView, NSDraggingSource {
             addSubview(button)
         }
     }
+
+    /// Safari's close button: a 12-point disc with the cross cut out of it, which
+    /// the symbol is at 12 points regular (measured, ink and cross both).
+    private static let closeImage = symbol("xmark.circle.fill", String(localized: "Close Tab", bundle: .module))
+
+    /// The temporary tab's pin, hollow, and a pinned tab's, filled — each named
+    /// for what pressing it does.
+    private static let pinImage = symbol("pin", String(localized: "Pin Tab", bundle: .module))
+    private static let unpinImage = symbol("pin.fill", String(localized: "Unpin Tab", bundle: .module))
 
     /// A tab button's glyph at 12 points regular. Centring the image centres the
     /// glyph — which the symbol's own alignment rect, a text baseline's, does not.
@@ -386,27 +391,22 @@ final class EditorTabBar: NSView, NSDraggingSource {
         for (index, item) in items.enumerated() {
             tabs[item.id]?.view.isHovered = index == hovered
         }
-        guard let hovered else {
-            closeButton.isHidden = true
-            pinButton.isHidden = true
-            return
-        }
-        // On the centre of the glass's leading end, as Safari's sits on its
-        // capsule's: the glass is a capsule 2 points in from the tab, so its end is
-        // a half circle centred half the tab's height in from the tab's edge.
-        let side: CGFloat = 18
+        closeButton.isHidden = hovered == nil
+        pinButton.isHidden = hovered == nil
+        guard let hovered else { return }
+        // Each on the centre of an end of the glass, as Safari's close button sits
+        // on its capsule's: the glass is a capsule 2 points in from the tab, so an
+        // end is a half circle centred half the tab's height in from the tab's edge.
         let tab = rect(forTabAt: hovered)
-        closeButton.frame = NSRect(
-            x: tab.minX + tab.height / 2 - side / 2, y: tab.midY - side / 2, width: side, height: side)
-        closeButton.isHidden = false
-        // The pin mirrors it at the trailing end.
-        pinButton.frame = NSRect(
-            x: tab.maxX - tab.height / 2 - side / 2, y: tab.midY - side / 2, width: side, height: side)
-        let isPreview = items[hovered].isPreview
-        pinButton.image = Self.symbol(
-            isPreview ? "pin" : "pin.fill",
-            isPreview ? String(localized: "Pin Tab", bundle: .module) : String(localized: "Unpin Tab", bundle: .module))
-        pinButton.isHidden = false
+        closeButton.frame = Self.buttonFrame(centredOn: NSPoint(x: tab.minX + tab.height / 2, y: tab.midY))
+        pinButton.frame = Self.buttonFrame(centredOn: NSPoint(x: tab.maxX - tab.height / 2, y: tab.midY))
+        pinButton.image = items[hovered].isPreview ? Self.pinImage : Self.unpinImage
+    }
+
+    /// A tab button's frame: its halo, 18 points across.
+    private static func buttonFrame(centredOn centre: NSPoint) -> NSRect {
+        let side: CGFloat = 18
+        return NSRect(x: centre.x - side / 2, y: centre.y - side / 2, width: side, height: side)
     }
 
     // MARK: - Hover

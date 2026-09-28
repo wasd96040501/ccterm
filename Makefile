@@ -1,4 +1,4 @@
-.PHONY: build release install dmg clean fmt fmt-check test-unit test-kit test-sdk demo-kit logs icon appkit-doc help
+.PHONY: build release install dmg clean fmt fmt-check test-unit test-kit test-sdk demo-kit logs icon sidebar-icons appkit-doc help
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
@@ -83,6 +83,9 @@ dmg: ## Create DMG installer (usage: make dmg APP=/path/to/ccterm.app)
 # with Xcode 26+, renders every system appearance to design/icon/out/review.png.
 icon: ## Regenerate AppIcon.icon from design/icon (+ review renders in design/icon/out)
 	cd design/icon && bun install --frozen-lockfile && bun run build
+
+sidebar-icons: ## Regenerate the sidebar glyph assets (Assets.xcassets/Sidebar) from design/sidebar-icons
+	cd design/sidebar-icons && bun run build
 
 fmt: ## Format Swift sources and localization strings
 	$(SWIFT_FORMAT) format --parallel --in-place --recursive $(SWIFT_SRC)

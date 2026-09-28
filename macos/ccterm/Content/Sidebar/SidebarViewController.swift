@@ -167,7 +167,7 @@ extension SidebarViewController: NSOutlineViewDelegate {
         guard let item = item as? Item else { return nil }
         let cell = outlineView.makeView(withIdentifier: .sidebarCell, owner: nil) as? Cell ?? Cell()
         cell.imageView?.image = item.node.kind.image
-        cell.imageView?.contentTintColor = item.node.kind.tintColor
+        cell.iconTint = item.node.kind.tintColor
         cell.objectValue = item.node.title
         cell.toolTip = item.node.kind == .project ? item.node.id : item.node.title
         return cell
@@ -213,6 +213,20 @@ extension SidebarViewController {
 
         override var objectValue: Any? {
             didSet { title.stringValue = objectValue as? String ?? "" }
+        }
+
+        /// The icon's own colour. On a selected, focused row it gives way to
+        /// the row's white, as the title does.
+        var iconTint: NSColor? {
+            didSet { showIconTint() }
+        }
+
+        override var backgroundStyle: NSView.BackgroundStyle {
+            didSet { showIconTint() }
+        }
+
+        private func showIconTint() {
+            imageView?.contentTintColor = backgroundStyle == .emphasized ? nil : iconTint
         }
 
         init() {
@@ -272,22 +286,25 @@ extension SidebarViewController {
 
 extension LibraryNode.Kind {
     /// A group is a folder, drawn with the system's folder icon as Finder and
-    /// Xcode draw one; a transcript is a symbol.
+    /// Xcode draw one — except a workflow run, which has its own glyph, as a
+    /// conversation and a subagent do (`design/sidebar-icons`).
     fileprivate var image: NSImage? {
         switch self {
-        case .project, .subagents, .workflow: NSWorkspace.shared.icon(for: .folder)
-        case .session: NSImage(systemSymbolName: "bubble.left.fill", accessibilityDescription: nil)
-        case .agent: NSImage(systemSymbolName: "person.crop.circle.fill", accessibilityDescription: nil)
+        case .project, .subagents: NSWorkspace.shared.icon(for: .folder)
+        case .session: NSImage(resource: .sidebarSession)
+        case .agent: NSImage(resource: .sidebarAgent)
+        case .workflow: NSImage(resource: .sidebarWorkflow)
         }
     }
 
-    /// A symbol's own colour, as Xcode's navigator gives each glyph one; left
-    /// unset, a source list tints it with the accent colour. The folder icon
-    /// has its own colours and takes none.
+    /// A glyph's own colour, as Xcode's navigator gives each file type one.
+    /// The folder icon has its own colours and takes none.
     fileprivate var tintColor: NSColor? {
         switch self {
-        case .project, .subagents, .workflow: nil
-        case .session, .agent: .secondaryLabelColor
+        case .project, .subagents: nil
+        case .session: NSColor(resource: .sidebarSessionTint)
+        case .agent: NSColor(resource: .sidebarAgentTint)
+        case .workflow: NSColor(resource: .sidebarWorkflowTint)
         }
     }
 }

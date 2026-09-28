@@ -23,7 +23,7 @@ XCTest runs **classes in parallel**, each in its own forked process (CI forces 4
 
 ## Recipes
 
-Service test against real on-disk state (the shape of `GitProbeTests` / `Worktree*Tests`):
+Service test against real on-disk state (the shape of `LibraryStoreTests` / `GitBranchUpdatesTests`):
 
 ```swift
 @MainActor

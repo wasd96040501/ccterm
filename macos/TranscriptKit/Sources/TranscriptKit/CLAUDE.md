@@ -33,7 +33,7 @@ Invariants of the renderer target. Package-level API rules are in [../../CLAUDE.
 ## Width changes
 
 - **Mid-drag** (`inLiveResize`, including an `NSSplitView` divider drag) only on-screen rows re-measure.
-- **At the end** (`viewDidEndLiveResize`, or any non-drag width change) `beginRemeasuringOffscreenRows(at:)` re-measures on-screen rows inside the pass and hands the rest — only rows that already had an entry — to the cooperative pool. Rules it depends on:
+- **At the end** (`viewDidEndLiveResize`, or any non-drag width change) the transcript re-measures on-screen rows inside the pass and `RemeasureScheduler` (which owns the `Task`, and cancels one a newer width supersedes) hands the rest — only rows that already had an entry — to the cooperative pool. Rules it depends on:
   - **Order outward from the viewport** (`staleRowsOutwardFromViewport(at:)`) and **publish as produced**: the only window a reader can meet is "time to correct the next screenful".
   - **Invalidate each batch's own rows**, then one full `noteHeightOfRows` at the end. `noteHeightOfRows` re-asks inside the call; a full invalidation with most rows uncorrected measures them all on main.
   - **A sliding window of `activeProcessorCount` tasks**, not the whole set queued at once — thousands of runnable children starve the parent job that has to hop to main.

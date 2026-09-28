@@ -281,9 +281,9 @@ final class TranscriptTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: url) }
         try Data(lines.joined(separator: "\n").utf8).write(to: url)
 
-        let metadata = try SessionMetadata(contentsOf: url)
+        let metadata = try Transcript.metadata(contentsOf: url)
         XCTAssertEqual(metadata.title, "Named")
         XCTAssertEqual(metadata.cwd, "/repo")
-        XCTAssertThrowsError(try SessionMetadata(contentsOf: url.appendingPathExtension("missing")))
+        XCTAssertThrowsError(try Transcript.metadata(contentsOf: url.appendingPathExtension("missing")))
     }
 }

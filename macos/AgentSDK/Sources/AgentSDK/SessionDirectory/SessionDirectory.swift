@@ -5,7 +5,7 @@ import Foundation
 ///
 /// Lists the sessions on disk and reports which of them change; read a
 /// listed file with ``Transcript/init(contentsOf:)`` or
-/// ``SessionMetadata/init(contentsOf:)``.
+/// ``Transcript/metadata(contentsOf:)``.
 public struct SessionDirectory: Sendable, Hashable {
     public let url: URL
 

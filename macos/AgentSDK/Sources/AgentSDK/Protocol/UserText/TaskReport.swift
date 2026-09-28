@@ -1,9 +1,14 @@
 import Foundation
 
 /// What the CLI tells the model about a background task — a command, an
-/// agent, a workflow, a monitor — as a user message of its own. Every field
-/// the CLI writes; which are present depends on the task.
-public struct TaskNotification: Sendable, Equatable {
+/// agent, a workflow, a monitor — as a user message of its own (a
+/// `<task-notification>` element, read as
+/// ``UserMessage/Kind/taskNotification(_:)``). Every field the CLI writes;
+/// which are present depends on the task.
+///
+/// A live ``Session`` also tells its host that a task ended, separately and
+/// in less detail: ``SystemMessage/taskNotification(_:)``.
+public struct TaskReport: Sendable, Equatable {
     /// How the task ended, or `nil` for a notice that is not an ending (a
     /// monitor's event, a goal check-in).
     public enum Status: Sendable, Equatable {
@@ -99,7 +104,7 @@ public struct TaskNotification: Sendable, Equatable {
 
 // MARK: - Reading
 
-extension TaskNotification {
+extension TaskReport {
     /// Reads a `<task-notification>` element; `nil` if it has no summary.
     init?(_ element: TaggedElement) {
         guard element.name == "task-notification" else { return nil }
@@ -135,7 +140,7 @@ extension TaskNotification {
     }
 }
 
-extension TaskNotification.Status {
+extension TaskReport.Status {
     init(_ raw: String) {
         switch raw {
         case "completed": self = .completed

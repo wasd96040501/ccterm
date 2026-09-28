@@ -3,7 +3,7 @@ import Foundation
 /// What the CLI reports once a ``Session`` has started.
 public struct InitializationResult: Sendable, Equatable {
     public struct Model: Sendable, Equatable {
-        /// The id to pass to ``Session/setModel(_:)``.
+        /// The id to set as ``SettingsKey/model``.
         public var value: String
         public var displayName: String
         public var description: String

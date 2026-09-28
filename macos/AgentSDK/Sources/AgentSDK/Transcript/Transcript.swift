@@ -37,4 +37,30 @@ public struct Transcript: Sendable, Equatable {
         messages = chain.messages()
         metadata = chain.metadata
     }
+
+    /// Reads a session file's metadata from its first and last 64 KB only,
+    /// so listing many sessions costs the same whatever their length. The
+    /// CLI appends title and prompt rows as the session goes, so the tail
+    /// holds the latest; ``SessionMetadata/cwd`` is the first one found.
+    /// ``SessionMetadata/createdAt`` and ``SessionMetadata/updatedAt`` are
+    /// bounds of the rows read, not of the whole file.
+    public static func metadata(contentsOf url: URL) throws -> SessionMetadata {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let size = try handle.seekToEnd()
+        try handle.seek(toOffset: 0)
+        let window = UInt64(metadataSliceSize)
+        var data = try handle.read(upToCount: metadataSliceSize) ?? Data()
+        if size > window * 2 {
+            try handle.seek(toOffset: size - window)
+            // The slices meet mid-line; a torn line on either side is skipped.
+            data.append(UInt8(ascii: "\n"))
+            data.append(try handle.readToEnd() ?? Data())
+        } else if size > window {
+            data.append(try handle.readToEnd() ?? Data())
+        }
+        return TranscriptChain(data: data).metadata
+    }
+
+    private static let metadataSliceSize = 64 * 1024
 }

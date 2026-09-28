@@ -38,6 +38,8 @@ final class RecordingHost: NSObject, TranscriptViewDataSource, TranscriptViewDel
     /// How many times `makeView` had to build rather than recycle.
     private(set) var builds = 0
     private(set) var removals: [Int] = []
+    /// Every `didChangeTailFollowing` report, in order.
+    private(set) var tailFollowing: [Bool] = []
 
     init(rowCount: Int, rowHeight: CGFloat = 40) {
         rows = (0..<rowCount).map { _ in Row(height: rowHeight) }
@@ -49,6 +51,7 @@ final class RecordingHost: NSObject, TranscriptViewDataSource, TranscriptViewDel
         viewCalls = 0
         builds = 0
         removals = []
+        tailFollowing = []
     }
 
     // MARK: - Model mutations
@@ -94,6 +97,12 @@ final class RecordingHost: NSObject, TranscriptViewDataSource, TranscriptViewDel
 
     func transcriptView(_ transcriptView: TranscriptView, didRemove view: NSView, forRow row: Int) {
         removals.append(row)
+    }
+
+    func transcriptView(
+        _ transcriptView: TranscriptView, didChangeTailFollowing isFollowingTail: Bool
+    ) {
+        tailFollowing.append(isFollowingTail)
     }
 }
 

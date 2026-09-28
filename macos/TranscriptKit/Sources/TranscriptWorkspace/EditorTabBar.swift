@@ -11,6 +11,8 @@ protocol EditorTabBarDelegate: AnyObject {
 
     func tabBar(_ tabBar: EditorTabBar, didCloseTabAt index: Int)
 
+    func tabBar(_ tabBar: EditorTabBar, didDoubleClickTabAt index: Int)
+
     /// The menu a right-click on the tab at `index` opens, or `nil` for none.
     func tabBar(_ tabBar: EditorTabBar, menuForTabAt index: Int) -> NSMenu?
 
@@ -71,6 +73,8 @@ final class EditorTabBar: NSView, NSDraggingSource {
         var image: NSImage?
         var toolTip: String?
         var isPinned: Bool
+        /// The temporary tab, its title in italics.
+        var isPreview = false
     }
 
     weak var delegate: EditorTabBarDelegate?
@@ -429,6 +433,9 @@ final class EditorTabBar: NSView, NSDraggingSource {
         pressedIndex = index
         pressLocation = point
         select(index)
+        if event.clickCount == 2 {
+            delegate?.tabBar(self, didDoubleClickTabAt: index)
+        }
     }
 
     private func select(_ index: Int) {
@@ -808,6 +815,8 @@ private final class EditorTabView: NSView {
         background.isHidden = !isSelected
         hoverFill.fillColor = isSelected ? .tabHoverOverGlass : .tabHover
         label.stringValue = item.title
+        label.font =
+            item.isPreview ? NSFontManager.shared.convert(Self.font, toHaveTrait: .italicFontMask) : Self.font
         imageView.image =
             item.isPinned
             ? NSImage(

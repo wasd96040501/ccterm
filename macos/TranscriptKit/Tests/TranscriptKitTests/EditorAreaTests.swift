@@ -869,6 +869,55 @@ final class EditorAreaTests: XCTestCase {
         let probes: [ProbeViewController]
     }
 
+    // MARK: - Temporary tab
+
+    /// Xcode's: a look replaces the last look where it stands, and the tab it
+    /// replaces is closed like any other.
+    func testATemporaryTabIsReplacedWhereItStands() throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        let first = ProbeViewController(title: "Look 1")
+
+        group.previewTabViewItem = NSTabViewItem(viewController: first)
+        group.selectedTabViewItemIndex = 0
+        group.previewTabViewItem = NSTabViewItem(viewController: ProbeViewController(title: "Look 2"))
+
+        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 0", "Tab 1", "Look 2"])
+        XCTAssertEqual(group.selectedTabViewItemIndex, 2)
+        XCTAssertTrue(mounted.recorder.closed.contains { $0 === first }, "the replaced tab was not closed")
+        XCTAssertEqual(group.tabBar.items.map(\.isPreview), [false, false, true])
+    }
+
+    func testDoubleClickingTheTemporaryTabKeepsIt() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        group.previewTabViewItem = NSTabViewItem(viewController: ProbeViewController(title: "Look"))
+        settle(mounted.window)
+
+        let bar = group.tabBar
+        let point = center(of: bar, tab: 1)
+        bar.mouseDown(with: mouse(.leftMouseDown, at: point, in: bar, clicks: 2))
+        bar.mouseUp(with: mouse(.leftMouseUp, at: point, in: bar, clicks: 2))
+
+        XCTAssertNil(group.previewTabViewItem)
+        XCTAssertEqual(bar.items.map(\.isPreview), [false, false])
+        group.previewTabViewItem = NSTabViewItem(viewController: ProbeViewController(title: "Next"))
+        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 0", "Look", "Next"])
+    }
+
+    func testPinningTheTemporaryTabKeepsIt() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        group.previewTabViewItem = NSTabViewItem(viewController: ProbeViewController(title: "Look"))
+
+        group.setTabPinned(true, at: 1)
+
+        XCTAssertNil(group.previewTabViewItem)
+    }
+
     private func mount(tabs: Int) -> Mounted {
         let window = TestWindow.make(contentSize: Self.size)
         let area = EditorAreaViewController()
@@ -923,12 +972,14 @@ final class EditorAreaTests: XCTestCase {
         return try XCTUnwrap(bar.subviews.first { $0.accessibilityLabel() == title }, "no tab titled \(title)")
     }
 
-    private func mouse(_ type: NSEvent.EventType, at point: NSPoint, in view: NSView) -> NSEvent {
+    private func mouse(
+        _ type: NSEvent.EventType, at point: NSPoint, in view: NSView, clicks: Int = 1
+    ) -> NSEvent {
         NSEvent.mouseEvent(
             with: type, location: view.convert(point, to: nil), modifierFlags: [],
             timestamp: ProcessInfo.processInfo.systemUptime,
             windowNumber: view.window?.windowNumber ?? 0, context: nil, eventNumber: 0,
-            clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)!
+            clickCount: clicks, pressure: type == .leftMouseUp ? 0 : 1)!
     }
 }
 

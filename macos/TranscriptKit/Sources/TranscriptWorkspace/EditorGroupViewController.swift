@@ -160,20 +160,23 @@ public final class EditorGroupViewController: NSViewController {
     /// The tab something was only looked at in — Xcode's temporary tab, its
     /// title in italics. Setting another closes this one and puts the new one
     /// in its place, selected; setting `nil` keeps this one as an ordinary
-    /// tab, as double-clicking it does.
+    /// tab, as double-clicking or pinning it does. A temporary tab moved to the
+    /// other editor is kept there.
     public var previewTabViewItem: NSTabViewItem? {
-        get { preview }
+        get { preview.flatMap { tabViewItems.contains($0) ? $0 : nil } }
         set {
-            guard newValue !== preview else { return }
+            let current = previewTabViewItem
+            guard newValue !== current else { return }
             if let newValue, !tabViewItems.contains(newValue) {
-                if let preview, let index = tabViewItems.firstIndex(of: preview) {
-                    removeTabViewItem(preview)
+                if let current, let index = tabViewItems.firstIndex(of: current) {
+                    removeTabViewItem(current)
                     insertTabViewItem(newValue, at: index)
                 } else {
                     addTabViewItem(newValue)
                 }
             }
             preview = newValue
+            reloadTabBar()
         }
     }
 
@@ -184,6 +187,7 @@ public final class EditorGroupViewController: NSViewController {
     /// Pins or unpins a tab, moving it to the boundary between the two runs.
     public func setTabPinned(_ pinned: Bool, at index: Int) {
         guard tabViewItems.indices.contains(index), isTabPinned(at: index) != pinned else { return }
+        if pinned, tabViewItems[index] === previewTabViewItem { preview = nil }
         let selected = selectedViewController
         let item = detach(at: index).item
         attach(item, pinned: pinned, at: numberOfPinnedTabs)
@@ -265,7 +269,7 @@ public final class EditorGroupViewController: NSViewController {
             items: tabViewItems.enumerated().map { index, item in
                 EditorTabBar.Item(
                     id: ObjectIdentifier(item), title: item.label, image: item.image,
-                    toolTip: item.toolTip, isPinned: isTabPinned(at: index))
+                    toolTip: item.toolTip, isPinned: isTabPinned(at: index), isPreview: item === previewTabViewItem)
             },
             selectedIndex: tabViewItems.isEmpty ? nil : selectedTabViewItemIndex)
         let showsTabBar = tabViewItems.count > 1 || (area?.groups.count ?? 1) > 1
@@ -389,6 +393,11 @@ extension EditorGroupViewController: EditorTabBarDelegate {
     func tabBar(_ tabBar: EditorTabBar, didCloseTabAt index: Int) {
         guard tabViewItems.indices.contains(index) else { return }
         removeTabViewItem(tabViewItems[index])
+    }
+
+    func tabBar(_ tabBar: EditorTabBar, didDoubleClickTabAt index: Int) {
+        guard tabViewItems.indices.contains(index), tabViewItems[index] === previewTabViewItem else { return }
+        previewTabViewItem = nil
     }
 
     func tabBar(_ tabBar: EditorTabBar, menuForTabAt index: Int) -> NSMenu? {

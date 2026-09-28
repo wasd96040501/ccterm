@@ -4,8 +4,9 @@ import XCTest
 
 @testable import ccterm
 
-/// What opening a sidebar item does to the editor area: a transcript opens as
-/// a tab, once — opening it again selects the tab that already shows it.
+/// What the sidebar's intents do to the editor area, as Xcode's navigator: a
+/// transcript already open is selected where it is; selecting one shows it in
+/// the temporary tab; opening one gives it a tab that stays.
 @MainActor
 final class MainSplitRoutingTests: XCTestCase {
     private var stage: AppKitStage!
@@ -50,7 +51,39 @@ final class MainSplitRoutingTests: XCTestCase {
     func testAGroupOpensNothing() {
         let group = LibraryNode(id: "/p/s", kind: .subagents, title: "Subagents", transcriptURL: nil, children: [])
         split.sidebarViewController(sidebar, didOpen: group)
+        split.sidebarViewController(sidebar, didSelect: group)
         XCTAssertEqual(titles(), [])
+    }
+
+    func testSelectingShowsEachInTheOneTemporaryTab() {
+        split.sidebarViewController(sidebar, didSelect: session("a"))
+        split.sidebarViewController(sidebar, didSelect: session("b"))
+        XCTAssertEqual(titles(), ["b"])
+        XCTAssertEqual(area.activeGroup.previewTabViewItem?.viewController?.title, "b")
+    }
+
+    func testOpeningTheTemporaryTabsItemKeepsIt() {
+        split.sidebarViewController(sidebar, didSelect: session("a"))
+        split.sidebarViewController(sidebar, didOpen: session("a"))
+        split.sidebarViewController(sidebar, didSelect: session("b"))
+        XCTAssertEqual(titles(), ["a", "b"])
+        XCTAssertEqual(area.activeGroup.previewTabViewItem?.viewController?.title, "b")
+    }
+
+    func testSelectingAnOpenItemSelectsItsTab() {
+        split.sidebarViewController(sidebar, didOpen: session("a"))
+        split.sidebarViewController(sidebar, didOpen: session("b"))
+        split.sidebarViewController(sidebar, didSelect: session("a"))
+        XCTAssertEqual(titles(), ["a", "b"])
+        XCTAssertEqual(area.activeViewController?.title, "a")
+        XCTAssertNil(area.activeGroup.previewTabViewItem)
+    }
+
+    func testCloseTabClosesTheActiveTab() {
+        split.sidebarViewController(sidebar, didOpen: session("a"))
+        split.sidebarViewController(sidebar, didOpen: session("b"))
+        split.closeTab(nil)
+        XCTAssertEqual(titles(), ["a"])
     }
 
     private func session(_ name: String) -> LibraryNode {

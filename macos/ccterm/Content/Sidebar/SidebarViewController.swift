@@ -69,6 +69,7 @@ final class SidebarViewController: NSViewController {
         outlineView.dataSource = self
         outlineView.delegate = self
         outlineView.target = self
+        outlineView.action = #selector(click(_:))
         outlineView.doubleAction = #selector(doubleClick(_:))
         library.$nodes
             .receive(on: DispatchQueue.main)
@@ -113,6 +114,14 @@ final class SidebarViewController: NSViewController {
     }
 
     // MARK: - Actions
+
+    /// A click reports its row even when the row was already selected: its tab
+    /// may have closed since.
+    @objc private func click(_ sender: Any?) {
+        guard let item = outlineView.item(atRow: outlineView.clickedRow) as? Item, item.node.transcriptURL != nil
+        else { return }
+        delegate?.sidebarViewController(self, didSelect: item.node)
+    }
 
     @objc private func doubleClick(_ sender: Any?) {
         guard let item = outlineView.item(atRow: outlineView.clickedRow) as? Item else { return }

@@ -20,6 +20,7 @@ EditorAreaViewController      NSSplitViewController — the divider, which edito
 ## Behaviour (Xcode's unless noted)
 
 - A new tab selects itself; closing the selected tab selects the next. The right editor's last tab closes the editor; the only editor's last tab leaves it empty, never gone.
+- **The temporary tab** (`previewTabViewItem`) is Xcode's: its title in italics, replaced where it stands by the next one (the replaced tab closes through `willClose`), kept by a double-click on it, by pinning, or by setting `nil`. Moved to the other editor, it is kept there.
 - **Pinned tabs** come first, sized to their titles, no close button, survive Close Other Tabs. The first `numberOfPinnedTabs` items *are* the pinned ones — a count, because the invariant is order.
 - **Hover is Safari's:** a tab under the pointer lights up one system fill down and shows its close button — Safari's disc on the centre of the leading end, in a halo under the pointer, a step deeper while pressed.
 - **Dragging along the bar** keeps the tab under the pointer and on the track (x only); a neighbour whose middle its edge passes slides into the gap, never across the pinned boundary. It is plain mouse events, no drag session.

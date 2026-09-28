@@ -24,6 +24,7 @@ Invariants of the renderer target. Package-level API rules are in [../../CLAUDE.
 ## `RowCache`: heights for every row, trees for a few
 
 - Entries are keyed by `TranscriptRow.ID` and trusted only while `(content, width)` matches; a stale entry re-measures rather than rendering wrong. Compare **whole `TranscriptRowContent` values**, not their text — the same string measures differently as `.markdown` vs `.userMessage`.
+- **One recipe, on the cache:** `RowCache.Entry.init(measuring:width:reusing:)` is the only place a content case is built and measured — the cache, `PreparedRows.measuring(_:width:)` off-main, a find's walk and Copy all go through it. `TranscriptRowContent` stays a Foundation-only value the host builds; it names no block or memo.
 - Every row keeps its height for its lifetime; typeset trees are held up to `RowCache.residentBudget`, least recently drawn evicted first. An evicted row is re-typeset when drawn, rebuilt off-main on a width change, and built-then-dropped by a find.
 - `removeRows` / `reloadData` walk the data source to find orphaned entries (`sweepCache()`); acceptable because those operations re-tile everything below anyway.
 - An unexplained cost is ours until measured otherwise — check this package's own bookkeeping before blaming `NSTableView`.

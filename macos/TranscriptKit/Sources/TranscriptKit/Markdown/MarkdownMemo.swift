@@ -96,7 +96,7 @@ struct MarkdownMemo {
     /// Written as an empty memo rather than as a call to `MarkdownBlockBuilder`
     /// so that "measured cold" and "measured after a stream" are one code path
     /// with a different starting state, instead of two expressions that have to
-    /// be kept agreeing. `TranscriptRowContent.measured(width:)` is the caller,
+    /// be kept agreeing. `RowCache.Entry.init(measuring:width:reusing:)` is the caller,
     /// and `TranscriptView.prepareRows(_:)` reaches it from a background task —
     /// which is sound for the reason on `Block`: none of this touches
     /// main-thread state, and the generation it allocates is discarded here.

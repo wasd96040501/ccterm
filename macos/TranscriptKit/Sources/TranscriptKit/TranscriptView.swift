@@ -160,7 +160,7 @@ public final class TranscriptView: NSView {
     /// what it is believed against, which is what lets the cache notice a content
     /// change instead of being told about one. **Nothing here names a recipe** —
     /// which case gets built how lives on the case, in
-    /// `TranscriptRowContent.entry(width:reusing:)`, so that the background path
+    /// `RowCache.Entry.init(measuring:width:reusing:)`, so that the background path
     /// and this one cannot describe a row differently.
     private func measuredBlock(for row: TranscriptRow) -> MeasuredBlock? {
         rowCache.measured(for: row, width: contentWidth)
@@ -938,7 +938,7 @@ public final class TranscriptView: NSView {
 
     /// The stale entries, re-measured concurrently, handed over a batch at a time.
     ///
-    /// `nonisolated` for the reason `measure(_:width:)` is: a `static` member of a
+    /// `nonisolated` because a `static` member of a
     /// `@MainActor` type is isolated by default and this one must not be. What
     /// crosses is `RowCache.Entry`, which is `Sendable` and carries its own
     /// recipe — so this is line-breaking and nothing else. No parse, no shaping,
@@ -1676,60 +1676,7 @@ public final class TranscriptView: NSView {
         // measured into one number — which is what lets the whole batch be
         // accepted or dropped on a single comparison.
         let width = contentWidth
-        return await Self.measure(rows, width: width)
-    }
-
-    /// The batch, measured concurrently.
-    ///
-    /// `nonisolated` is the whole point: a `static` member of a `@MainActor` type
-    /// is main-actor isolated by default, and this one must not be — awaiting it
-    /// from `prepareRows` is what hops off. The batch crosses whole, identities
-    /// and all, which `TranscriptRow.ID` is `Sendable` for.
-    ///
-    /// One child task per row rather than a hand-rolled chunking loop, because
-    /// the cooperative pool already caps the number actually running at the core
-    /// count; the extra tasks queue, and a task is cheaper than the document it
-    /// is holding. Results are collected in whatever order they finish, because
-    /// each carries the identity it belongs to — the positional version of this
-    /// had to gather by offset to keep the batch in the order it was given.
-    ///
-    /// **Only the last `RowCache.residentBudget` worth of rows keep their tree**;
-    /// the rest are measured, keep their height, and release the tree in the same
-    /// child task that built it. The cache would evict them on arrival anyway —
-    /// doing it here keeps a batch of history from ever being resident all at once,
-    /// and keeps tearing it down off the main thread. The last rows rather than the
-    /// first because a batch is usually a prepend, and its last rows are the ones
-    /// that land against what the reader is looking at.
-    private nonisolated static func measure(
-        _ rows: [TranscriptRow], width: CGFloat
-    ) async -> PreparedRows {
-        var budget = RowCache.residentBudget
-        var keepsTree = [Bool](repeating: false, count: rows.count)
-        for index in rows.indices.reversed() {
-            budget -= RowCache.cost(of: rows[index].content)
-            guard budget >= 0 else { break }
-            keepsTree[index] = true
-        }
-        return await withTaskGroup(of: (TranscriptRow.ID, RowCache.Entry)?.self) { group in
-            for (row, keepsTree) in zip(rows, keepsTree) {
-                group.addTask {
-                    // Nothing to take from, and stated rather than defaulted: a
-                    // row being prepared does not exist yet, so there is no
-                    // previous version of it anywhere — which is the one thing
-                    // that makes this call safe off the main actor.
-                    guard !Task.isCancelled,
-                        let entry = row.content.entry(width: width, reusing: nil)
-                    else { return nil }
-                    return (row.id, keepsTree ? entry : entry.evicted)
-                }
-            }
-            var entries = [TranscriptRow.ID: RowCache.Entry](minimumCapacity: rows.count)
-            for await measured in group {
-                guard let measured else { continue }
-                entries[measured.0] = measured.1
-            }
-            return PreparedRows(entries: entries, width: width)
-        }
+        return await PreparedRows.measuring(rows, width: width)
     }
 
     // MARK: - Find
@@ -2003,7 +1950,7 @@ public final class TranscriptView: NSView {
 
     /// One slice, matched across every core.
     ///
-    /// `nonisolated` for the reason `measure(_:width:)` is: a `static` member of a
+    /// `nonisolated` because a `static` member of a
     /// `@MainActor` type is main-actor isolated by default, and awaiting this from
     /// `scan` is what hops off. Everything crossing is `Sendable` — a
     /// `MeasuredBlock` because measuring is pure and nothing mutates one after it
@@ -2031,7 +1978,8 @@ public final class TranscriptView: NSView {
                     // call the cache would make, so the two cannot describe a row
                     // differently.
                     let measured =
-                        row.measured ?? row.content.entry(width: width, reusing: nil)?.measured
+                        row.measured
+                        ?? RowCache.Entry(measuring: row.content, width: width, reusing: nil)?.measured
                     return (row.row, row.id, row.content, measured?.ranges(of: query) ?? [])
                 }
             }
@@ -2628,7 +2576,8 @@ public final class TranscriptView: NSView {
             let described = dataSource.transcriptView(self, rowAt: row)
             guard
                 let block = rowCache.cachedMeasured(for: described, width: nil)
-                    ?? described.content.entry(width: contentWidth, reusing: nil)?.measured,
+                    ?? RowCache.Entry(measuring: described.content, width: contentWidth, reusing: nil)?
+                    .measured,
                 let range = selection.range(inRow: row, length: block.length)
             else { continue }
             let text = block.text(from: range.lowerBound, to: range.upperBound)

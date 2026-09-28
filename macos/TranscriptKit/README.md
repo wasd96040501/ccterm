@@ -66,8 +66,12 @@ directly on `NSTableView`:
   Which one applies is decided by where the scroll offset is right now, never
   by which method last ran — dragging to the bottom re-engages tail following
   exactly the way an explicit scroll to the last row does. Both rules cover
-  every mutation that moves geometry, including `noteHeightOfRows`.
-  `scrollToRow(at:scrollPosition:)` is the deliberate exception.
+  every mutation that moves geometry, including `noteHeightOfRows` and a
+  `contentInsets` write — so a floating input bar that grows at the tail lifts
+  the last row with it. `scrollToRow(at:scrollPosition:)` is the deliberate
+  exception. The delegate hears when the viewport arrives at or leaves the tail
+  (`transcriptView(_:didChangeTailFollowing:)`), which is what a "jump to
+  latest" button needs.
 
   `NSTableView` promises none of this: `insertRows(at:withAnimation:)`
   documents only that `numberOfRows` grows and says nothing about the scroll

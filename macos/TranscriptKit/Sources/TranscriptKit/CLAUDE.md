@@ -15,6 +15,7 @@ Invariants of the renderer target. Package-level API rules are in [../../CLAUDE.
 
 - `TextSelection` belongs to the transcript, keyed by row identity and renumbered by every mutation (as the scroll anchor is). Each `BlockView` is handed only its part to draw, the way `NSTableView` sets `isSelected`.
 - The first responder is the table (document view), as with `NSTextView`: it takes focus on press, answers `copy:`, drops the selection when focus leaves.
+- **Keys:** the table answers only the scrolling commands and passes every other key to the next responder **as the event** — never through `NSTableView`'s `keyDown`, which moves a row selection the transcript doesn't have. That is how a host types into its input while the transcript has focus; there is no API for it.
 - A press is tracked to its release in **a tracking loop inside `mouseDown`** (`NSTextView`'s shape). The focus depends on pointer *and* content position, so it is re-read on drag, on a periodic autoscroll tick past an edge, and on scroll-wheel events. Don't dispatch drags to the pressed view: they stop when the hand stops, and the view may already be in the reuse pool.
 - Idle cost is zero: binding a row reads its part from four integers; the loop walks visible rows only when the focus moved.
 - A capped user message allows selecting into its hidden tail ("copy what I sent"); find does not (below).

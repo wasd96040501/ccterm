@@ -689,7 +689,7 @@ final class BlockView: NSView, TranscriptFindHighlighting, SurfaceLayerOwner {
     /// selected unless the click landed inside the selection, and the selection's
     /// responder takes the focus so Copy validates against it. The selection is
     /// the transcript's, so both halves are too — see
-    /// `TranscriptView.selectForContextMenu(with:)`.
+    /// `SelectionTracker.selectForContextMenu(with:)`.
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = NSMenu()
         // `nil` target on purpose: that is what sends it up the responder chain

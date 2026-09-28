@@ -1,5 +1,6 @@
 import AgentSDK
 import AppKit
+import TranscriptWorkspace
 
 /// Window controller for the AppKit-rooted main window. The window is
 /// created in `applicationDidFinishLaunching` rather than declared as a
@@ -91,7 +92,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
 
     /// Back and forward as one control, as Xcode's and Finder's: a momentary
     /// segmented group, each segment a subitem with its own action, aimed at the
-    /// split and validated by it. Navigational, so AppKit keeps it at the leading
+    /// editor area and validated by it. Navigational, so AppKit keeps it at the leading
     /// edge of the title area.
     private func navigationItem() -> NSToolbarItem {
         let back = String(localized: "Back")
@@ -102,12 +103,12 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
                 NSImage(systemSymbolName: "chevron.left", accessibilityDescription: back),
                 NSImage(systemSymbolName: "chevron.right", accessibilityDescription: forward),
             ].compactMap { $0 },
-            selectionMode: .momentary, labels: [back, forward], target: splitController, action: nil)
+            selectionMode: .momentary, labels: [back, forward], target: splitController.editorArea, action: nil)
         for (subitem, action) in zip(
             group.subitems,
-            [#selector(MainSplitViewController.goBack(_:)), #selector(MainSplitViewController.goForward(_:))])
+            [#selector(EditorAreaViewController.goBack(_:)), #selector(EditorAreaViewController.goForward(_:))])
         {
-            subitem.target = splitController
+            subitem.target = splitController.editorArea
             subitem.action = action
         }
         group.isNavigational = true

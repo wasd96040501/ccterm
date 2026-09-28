@@ -36,8 +36,8 @@ final class MainWindowTests: XCTestCase {
         XCTAssertTrue(navigation.isNavigational)
         XCTAssertEqual(
             navigation.subitems.map(\.action),
-            [#selector(MainSplitViewController.goBack(_:)), #selector(MainSplitViewController.goForward(_:))])
-        XCTAssertTrue(navigation.subitems.allSatisfy { $0.target === stage.mainSplit })
+            [#selector(EditorAreaViewController.goBack(_:)), #selector(EditorAreaViewController.goForward(_:))])
+        XCTAssertTrue(navigation.subitems.allSatisfy { $0.target === stage.mainSplit?.editorArea })
         XCTAssertFalse(toolbar.items[2].isBordered, "the title sits in a bezel")
     }
 
@@ -127,9 +127,9 @@ final class MainWindowTests: XCTestCase {
         sidebar.delegate?.sidebarViewController(sidebar, didSelect: try Self.node("fix it", in: library))
         XCTAssertEqual(tabTitles(of: split), ["fix it"], "premise: the look was replaced")
 
-        split.goBack(nil)
+        split.editorArea.goBack(nil)
         XCTAssertEqual(tabTitles(of: split), ["Named"])
-        split.goForward(nil)
+        split.editorArea.goForward(nil)
         XCTAssertEqual(tabTitles(of: split), ["fix it"])
     }
 
@@ -165,9 +165,9 @@ final class MainWindowTests: XCTestCase {
         sidebar.delegate?.sidebarViewController(sidebar, didOpen: try Self.node("fix it", in: library))
         await expect(title, shows: "other", nil)
 
-        split.closeTab(nil)
+        split.editorArea.closeTab(nil)
         await expect(title, shows: "repo", "feature")
-        split.closeTab(nil)
+        split.editorArea.closeTab(nil)
         XCTAssertTrue(title.isHidden, "the title outlived the last tab")
         XCTAssertEqual(stage.window.title, "ccterm")
     }

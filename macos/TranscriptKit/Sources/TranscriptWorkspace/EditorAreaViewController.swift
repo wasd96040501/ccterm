@@ -315,7 +315,10 @@ extension EditorAreaViewController: EditorGroupViewControllerDelegate {
     func editorGroup(
         _ group: EditorGroupViewController, tabViewItemForDrop draggingInfo: NSDraggingInfo
     ) -> NSTabViewItem? {
-        delegate?.editorArea(self, tabViewItemForDrop: draggingInfo)
+        guard let delegate, let identifier = delegate.editorArea(self, identifierForDrop: draggingInfo) else {
+            return nil
+        }
+        return delegate.editorArea(self, tabViewItemWithIdentifier: identifier)
     }
 
     func position(of group: EditorGroupViewController) -> EditorGroupViewController.Position {

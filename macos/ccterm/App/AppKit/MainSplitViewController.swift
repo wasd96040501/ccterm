@@ -20,7 +20,10 @@ final class MainSplitViewController: NSSplitViewController {
 
     private let library: LibraryStore
     private let sidebarViewController: SidebarViewController
-    private let editorArea = EditorAreaViewController()
+
+    /// The tabs. It answers the window's tab commands itself — back, forward,
+    /// Close Tab — and the toolbar aims at it.
+    let editorArea = EditorAreaViewController()
 
     /// The transcript last reported to the delegate.
     private var shownTranscript: URL?
@@ -67,27 +70,16 @@ final class MainSplitViewController: NSSplitViewController {
         editorArea.registerForDraggedTypes([.fileURL])
     }
 
-    // MARK: - Commands
-
-    /// File > Close Tab: the active editor's selected tab, else the window.
-    @objc func closeTab(_ sender: Any?) {
-        let group = editorArea.activeGroup
-        guard group.tabViewItems.indices.contains(group.selectedTabViewItemIndex) else {
-            view.window?.performClose(sender)
-            return
-        }
-        group.removeTabViewItem(group.tabViewItems[group.selectedTabViewItemIndex])
+    /// A tab command sent to nil — ⌘W — reaches the editor area from the
+    /// sidebar too, not only from inside a tab.
+    override func supplementalTarget(forAction action: Selector, sender: Any?) -> Any? {
+        Self.areaCommands.contains(action) ? editorArea : super.supplementalTarget(forAction: action, sender: sender)
     }
 
-    /// Back through the active editor's history — the toolbar's back button.
-    @objc func goBack(_ sender: Any?) {
-        editorArea.activeGroup.goBack()
-    }
-
-    /// Forward through the active editor's history — the toolbar's forward button.
-    @objc func goForward(_ sender: Any?) {
-        editorArea.activeGroup.goForward()
-    }
+    private static let areaCommands: Set<Selector> = [
+        #selector(EditorAreaViewController.goBack(_:)), #selector(EditorAreaViewController.goForward(_:)),
+        #selector(EditorAreaViewController.closeTab(_:)),
+    ]
 
     // MARK: - Tabs
 
@@ -100,48 +92,24 @@ final class MainSplitViewController: NSSplitViewController {
         item.identifier = url
         return item
     }
-
-    /// Selects the tab showing `url` in whichever editor has it, and answers
-    /// it with its editor. The active editor stays where the reader is.
-    private func selectTab(showing url: URL) -> (EditorGroupViewController, NSTabViewItem)? {
-        for group in editorArea.groups {
-            guard
-                let index = group.tabViewItems.firstIndex(where: {
-                    ($0.viewController as? TranscriptViewController)?.fileURL == url
-                })
-            else { continue }
-            group.selectedTabViewItemIndex = index
-            return (group, group.tabViewItems[index])
-        }
-        return nil
-    }
 }
 
 extension MainSplitViewController: SidebarViewControllerDelegate {
     func sidebarViewController(_ sidebar: SidebarViewController, didSelect node: LibraryNode) {
-        guard let url = node.transcriptURL, selectTab(showing: url) == nil else { return }
+        guard let url = node.transcriptURL, !editorArea.selectTabViewItem(withIdentifier: url) else { return }
         editorArea.activeGroup.previewTabViewItem = tab(for: node, at: url)
     }
 
     func sidebarViewController(_ sidebar: SidebarViewController, didOpen node: LibraryNode) {
         guard let url = node.transcriptURL else { return }
-        if let (group, item) = selectTab(showing: url) {
-            if group.previewTabViewItem === item { group.previewTabViewItem = nil }
+        if editorArea.selectTabViewItem(withIdentifier: url) {
+            // Opened, the temporary tab showing it stays.
+            for group in editorArea.groups where group.previewTabViewItem?.identifier as? URL == url {
+                group.previewTabViewItem = nil
+            }
             return
         }
         editorArea.activeGroup.addTabViewItem(tab(for: node, at: url))
-    }
-}
-
-extension MainSplitViewController: NSToolbarItemValidation {
-    /// Back and forward are enabled while the active editor has somewhere to go.
-    /// Asked by the toolbar as it validates, after every event.
-    func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
-        switch item.action {
-        case #selector(goBack(_:)): editorArea.activeGroup.canGoBack
-        case #selector(goForward(_:)): editorArea.activeGroup.canGoForward
-        default: true
-        }
     }
 }
 
@@ -167,13 +135,9 @@ extension MainSplitViewController: EditorAreaViewControllerDelegate {
         (viewController as? TranscriptViewController)?.prepareForRemoval()
     }
 
-    func editorArea(
-        _ editorArea: EditorAreaViewController, tabViewItemForDrop draggingInfo: NSDraggingInfo
-    ) -> NSTabViewItem? {
-        guard
-            let url = draggingInfo.draggingPasteboard.readObjects(forClasses: [NSURL.self])?.first as? URL,
-            let node = library.path(toTranscriptAt: url).last
-        else { return nil }
-        return tab(for: node, at: url)
+    /// A transcript dragged from the sidebar, by its URL — the tab comes from
+    /// `editorArea(_:tabViewItemWithIdentifier:)`, as the history's do.
+    func editorArea(_ editorArea: EditorAreaViewController, identifierForDrop draggingInfo: NSDraggingInfo) -> Any? {
+        draggingInfo.draggingPasteboard.readObjects(forClasses: [NSURL.self])?.first as? URL
     }
 }

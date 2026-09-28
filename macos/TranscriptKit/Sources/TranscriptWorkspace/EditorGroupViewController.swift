@@ -188,21 +188,21 @@ public final class EditorGroupViewController: NSViewController {
     // MARK: - History
 
     /// Whether there is something this editor showed before what it shows now.
-    public var canGoBack: Bool { history.entry(at: -1) != nil }
+    var canGoBack: Bool { history.entry(at: -1) != nil }
 
     /// Whether this editor went back from something it can show again.
-    public var canGoForward: Bool { history.entry(at: 1) != nil }
+    var canGoForward: Bool { history.entry(at: 1) != nil }
 
     /// Shows what the editor showed before: its tab if it is still open, else a
     /// new temporary tab the area's delegate makes for it
     /// (`editorArea(_:tabViewItemWithIdentifier:)`). What the delegate can't
     /// make is passed over, and forgotten.
-    public func goBack() {
+    func goBack() {
         navigate(by: -1)
     }
 
     /// Shows what `goBack()` went back from, as `goBack()` shows.
-    public func goForward() {
+    func goForward() {
         navigate(by: 1)
     }
 

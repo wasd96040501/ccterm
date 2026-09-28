@@ -187,8 +187,8 @@ final class SettingsTests: XCTestCase {
         ]
         let snapshot = SettingsSnapshot(response: response)
         XCTAssertEqual(snapshot.effective[.fastMode], true)
-        XCTAssertEqual(snapshot.layers.map(\.source), [.user, .session, .other("someNewSource")])
-        XCTAssertEqual(snapshot.layer(.session), Settings(json: ["fastMode": true]))
+        XCTAssertEqual(snapshot.layers.map(\.source), [.user, .flag, .other("someNewSource")])
+        XCTAssertEqual(snapshot.layer(.flag), Settings(json: ["fastMode": true]))
         XCTAssertNil(snapshot.layer(.project))
         XCTAssertEqual(
             snapshot.applied, SettingsSnapshot.Applied(model: "claude-opus-5-5", effort: "max", ultracode: true))

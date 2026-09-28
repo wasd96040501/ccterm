@@ -2,7 +2,7 @@
 // `Session.settings()` against the real CLI. No prompt is sent: every check
 // is a control request, so the run spends no tokens.
 //
-// Checks, all on the session's own layer (user settings leak into
+// Checks, all on the session's flag layer (user settings leak into
 // `effective`, so it is not compared):
 //   - `SessionConfiguration.settings` seeds the layer; an unset key in it is
 //     dropped instead of voiding the launch layer;
@@ -113,7 +113,7 @@ func apply(_ name: String, _ settings: Settings) async {
 }
 
 let seeded = await snapshot("launch")
-let seededLayer = seeded.layer(.session)
+let seededLayer = seeded.layer(.flag)
 check(seeded.errors.isEmpty, "the launch layer validates")
 check(seededLayer?[.language] == "french", "the launch layer holds language")
 check(seededLayer?[.fastMode] == false, "the launch layer holds fastMode")
@@ -161,8 +161,8 @@ all[.agent] = "general-purpose"
 await apply("every key", all)
 let full = await snapshot("every key")
 check(full.errors.isEmpty, "every cataloged key validates (\(full.errors.map(\.path)))")
-let fullLayer = full.layer(.session) ?? Settings()
-check(full.layer(.session) != nil, "the session layer survives")
+let fullLayer = full.layer(.flag) ?? Settings()
+check(full.layer(.flag) != nil, "the flag layer survives")
 for (key, value) in all.json.sorted(by: { $0.key < $1.key }) {
     check(fullLayer[key] == value, "\(key) reads back unchanged (sent \(json(value)), got \(json(fullLayer[key])))")
 }
@@ -182,7 +182,7 @@ removal.unset(.disableAllHooks)
 removal[.permissions] = PermissionSettings(allow: [PermissionRule(toolName: "Glob")])
 await apply("unset + permissions", removal)
 let merged = await snapshot("unset + permissions")
-let mergedLayer = merged.layer(.session) ?? Settings()
+let mergedLayer = merged.layer(.flag) ?? Settings()
 check(mergedLayer[.language] == "french", "unset falls back to the launch value (\(json(mergedLayer["language"])))")
 check(mergedLayer["agent"] == nil, "unset removes a key the launch layer lacks")
 check(
@@ -196,7 +196,7 @@ var broken = Settings()
 broken["fastMode"] = "not a bool"
 await apply("mistyped", broken)
 let voided = await snapshot("mistyped")
-let voidedLayer = voided.layer(.session) ?? Settings()
+let voidedLayer = voided.layer(.flag) ?? Settings()
 check(voidedLayer[.bashOutputMaxChars] == nil, "a mistyped value voids every runtime value")
 check(voidedLayer[.language] == "french", "launch values survive a mistyped runtime value")
 check(voided.errors.contains { $0.path == "fastMode" }, "the mistyped value is reported in errors")
@@ -205,7 +205,7 @@ fixed[.fastMode] = false
 await apply("fixed", fixed)
 let restored = await snapshot("fixed")
 check(
-    restored.errors.isEmpty && restored.layer(.session)?[.bashOutputMaxChars] == 20_000, "fixing it restores the layer")
+    restored.errors.isEmpty && restored.layer(.flag)?[.bashOutputMaxChars] == 20_000, "fixing it restores the layer")
 
 // MARK: - Runtime values
 
@@ -218,7 +218,7 @@ await apply("max effort", maxEffort)
 let runtime = await snapshot("max effort")
 check(runtime.applied.model == effortModel, "model switches the session model (\(runtime.applied.model ?? "nil"))")
 check(runtime.applied.effort == "max", "effortLevel max applies (\(runtime.applied.effort ?? "nil"))")
-check(runtime.layer(.session)?["effortLevel"] != "max", "effortLevel max is not kept in the layer")
+check(runtime.layer(.flag)?["effortLevel"] != "max", "effortLevel max is not kept in the layer")
 
 // MARK: - Keys whose unset resets the session
 
@@ -226,7 +226,7 @@ var effortOnly = Settings()
 effortOnly.unset(.effortLevel)
 await apply("unset effortLevel", effortOnly)
 let effortReset = await snapshot("unset effortLevel")
-check(effortReset.layer(.session)?[.effortLevel] == .low, "unset effortLevel shows the launch value in the layer")
+check(effortReset.layer(.flag)?[.effortLevel] == .low, "unset effortLevel shows the launch value in the layer")
 check(
     effortReset.applied.effort != nil && effortReset.applied.effort != "low" && effortReset.applied.effort != "max",
     "…but the session runs at the model's default effort (\(effortReset.applied.effort ?? "nil"))")
@@ -241,7 +241,7 @@ lowerEffort[.effortLevel] = .high
 await apply("effort high", lowerEffort)
 let lowered = await snapshot("effort high")
 check(!lowered.applied.ultracode, "ultracode is not in force below xhigh")
-check(lowered.layer(.session)?[.ultracode] == true, "…while the layer still holds it")
+check(lowered.layer(.flag)?[.ultracode] == true, "…while the layer still holds it")
 await apply("ultracode", ultracodeOn)
 var ultracodeOff = Settings()
 ultracodeOff.unset(.ultracode)
@@ -252,7 +252,7 @@ var modelOff = Settings()
 modelOff.unset(.model)
 await apply("unset model", modelOff)
 let modelReset = await snapshot("unset model")
-check(modelReset.layer(.session)?["model"] == nil, "unset model removes it from the layer")
+check(modelReset.layer(.flag)?["model"] == nil, "unset model removes it from the layer")
 check(
     modelReset.applied.model != nil && modelReset.applied.model != model,
     "unset model returns to Claude Code's default model, not the launch model (\(modelReset.applied.model ?? "nil"))")

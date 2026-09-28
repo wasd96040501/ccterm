@@ -5,8 +5,8 @@ import Foundation
 public struct SettingsSnapshot: Sendable, Equatable {
     /// All layers merged — the values in force.
     public var effective: Settings
-    /// The non-empty layers, lowest precedence first (user, project, local,
-    /// the session's own layer, managed policy).
+    /// The non-empty layers, lowest precedence first: user, project, local,
+    /// flag, managed.
     public var layers: [Layer]
     /// Values the session resolved at runtime, which can differ from the
     /// settings (a model allowlist, an effort level the model lacks).
@@ -37,7 +37,8 @@ public struct SettingsSnapshot: Sendable, Equatable {
         }
     }
 
-    /// Where a layer comes from.
+    /// Where a layer comes from. The names follow the official Agent SDKs
+    /// (`ResolvedSettingSource`).
     public enum Source: Sendable, Hashable {
         /// `~/.claude/settings.json`.
         case user
@@ -45,11 +46,12 @@ public struct SettingsSnapshot: Sendable, Equatable {
         case project
         /// `.claude/settings.local.json` in the project.
         case local
-        /// The session's own layer: ``SessionConfiguration/settings`` with
-        /// the runtime values of ``Session/applySettings(_:)`` on top.
-        case session
-        /// Managed (organization) settings.
-        case policy
+        /// The flag layer, the session's own: ``SessionConfiguration/settings``
+        /// (`--settings`) with the runtime values of
+        /// ``Session/applySettings(_:)`` on top.
+        case flag
+        /// Managed (organization policy) settings.
+        case managed
         case other(String)
 
         init(wireName: String) {
@@ -57,8 +59,8 @@ public struct SettingsSnapshot: Sendable, Equatable {
             case "userSettings": self = .user
             case "projectSettings": self = .project
             case "localSettings": self = .local
-            case "flagSettings": self = .session
-            case "policySettings": self = .policy
+            case "flagSettings": self = .flag
+            case "policySettings": self = .managed
             default: self = .other(wireName)
             }
         }

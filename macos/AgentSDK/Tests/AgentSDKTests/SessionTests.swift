@@ -278,9 +278,9 @@ final class SessionTests: XCTestCase {
         try await session.start()
 
         var seeded = try await session.settings()
-        XCTAssertEqual(seeded.layer(.session), Settings(json: ["fastMode": true, "language": "french"]))
+        XCTAssertEqual(seeded.layer(.flag), Settings(json: ["fastMode": true, "language": "french"]))
         XCTAssertEqual(seeded.layer(.user)?["theme"], "dark")
-        XCTAssertEqual(seeded.layers.map(\.source), [.user, .session])
+        XCTAssertEqual(seeded.layers.map(\.source), [.user, .flag])
 
         var change = Settings()
         change[.effortLevel] = .high
@@ -289,7 +289,7 @@ final class SessionTests: XCTestCase {
         try await session.applySettings(change)
 
         seeded = try await session.settings()
-        var layer = try XCTUnwrap(seeded.layer(.session))
+        var layer = try XCTUnwrap(seeded.layer(.flag))
         XCTAssertEqual(layer[.fastMode], true)
         XCTAssertEqual(layer[.effortLevel], .high)
         XCTAssertEqual(layer[.permissions]?.additionalDirectories, ["/tmp/extra"])
@@ -303,7 +303,7 @@ final class SessionTests: XCTestCase {
         withdraw.unset(.effortLevel)
         try await session.applySettings(withdraw)
         seeded = try await session.settings()
-        layer = try XCTUnwrap(seeded.layer(.session))
+        layer = try XCTUnwrap(seeded.layer(.flag))
         XCTAssertEqual(layer[.language], "french")
         XCTAssertNil(layer[.effortLevel])
         await session.close()

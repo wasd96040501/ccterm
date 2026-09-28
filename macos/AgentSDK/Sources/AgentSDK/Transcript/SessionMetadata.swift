@@ -21,8 +21,7 @@ public struct SessionMetadata: Sendable, Equatable {
     public init() {}
 
     /// Reads a transcript file's metadata from its first and last 64 KB only,
-    /// as the CLI's session picker does, so listing many sessions costs the
-    /// same whatever their length. The CLI appends title and prompt rows as the
+    /// so listing many sessions costs the same whatever their length. The CLI appends title and prompt rows as the
     /// session goes, so the tail holds the latest; ``cwd`` is the first one
     /// found. ``createdAt`` and ``updatedAt`` are bounds of the rows read, not
     /// of the whole file.

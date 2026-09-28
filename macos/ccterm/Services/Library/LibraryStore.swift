@@ -1,7 +1,8 @@
+import AgentSDK
 import Combine
 import Foundation
 
-/// Every transcript under the CLI's projects directory (`~/.claude/projects`),
+/// Every transcript in the CLI's session directory (`~/.claude/projects`),
 /// as a tree of `LibraryNode`s: project → session → its subagents and
 /// workflow runs. The files are the only source; the store scans them off the
 /// main actor and rescans when the directory changes.
@@ -14,10 +15,10 @@ final class LibraryStore {
     /// read downstream as a change.
     @Published private(set) var nodes: [LibraryNode] = []
 
-    private let root: URL
+    private let directory: SessionDirectory
 
-    init(root: URL) {
-        self.root = root
+    init(directory: SessionDirectory) {
+        self.directory = directory
     }
 
     /// Scans once, then keeps scanning as the directory changes.

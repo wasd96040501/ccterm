@@ -1,3 +1,4 @@
+import AgentSDK
 import AppKit
 
 @testable import ccterm
@@ -16,7 +17,9 @@ extension AppKitStage {
     static func mainSplit(library: LibraryStore? = nil, size: CGSize = defaultWindowSize) -> AppKitStage {
         let library =
             library
-            ?? LibraryStore(root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+            ?? LibraryStore(
+                directory: SessionDirectory(
+                    url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)))
         return mount(MainSplitViewController(library: library), size: size)
     }
 

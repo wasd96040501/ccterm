@@ -1,3 +1,4 @@
+import AgentSDK
 import AppKit
 import SwiftUI
 
@@ -65,7 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         if Self.isUnderXCTest { return }
 
-        let library = LibraryStore(root: Self.projectsDirectory)
+        let library = LibraryStore(directory: SessionDirectory(environment: ProcessInfo.processInfo.environment))
         self.library = library
         let controller = MainWindowController(library: library)
         mainWindowController = controller
@@ -86,15 +87,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
-    }
-
-    /// Where the CLI keeps transcripts: `$CLAUDE_CONFIG_DIR/projects`, else
-    /// `~/.claude/projects`.
-    private static var projectsDirectory: URL {
-        let config =
-            ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")
-        return config.appendingPathComponent("projects", isDirectory: true)
     }
 
     /// Mirrors `CCTermApp.isUnderXCTest`. The test path installs the

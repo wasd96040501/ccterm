@@ -13,7 +13,7 @@ final class SidebarViewController: NSViewController {
     private var cancellables = Set<AnyCancellable>()
 
     /// The concrete store rather than a protocol: it has one implementation,
-    /// and `LibraryStore(root:)` over a fixture directory is the test seam.
+    /// and `LibraryStore(directory:)` over a fixture directory is the test seam.
     init(library: LibraryStore) {
         self.library = library
         super.init(nibName: nil, bundle: nil)

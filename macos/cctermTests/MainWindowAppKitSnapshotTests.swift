@@ -1,3 +1,4 @@
+import AgentSDK
 import AppKit
 import XCTest
 
@@ -23,7 +24,8 @@ final class MainWindowAppKitSnapshotTests: XCTestCase {
         let image = ViewSnapshot.renderViewController(
             MainSplitViewController(
                 library: LibraryStore(
-                    root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))),
+                    directory: SessionDirectory(
+                        url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)))),
             size: size, settle: 1.0)
 
         let url = ViewSnapshot.writePNG(image, name: "MainWindowAppKit-MainSplit")

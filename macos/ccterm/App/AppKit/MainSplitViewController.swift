@@ -52,6 +52,9 @@ final class MainSplitViewController: NSSplitViewController {
 }
 
 extension MainSplitViewController: SidebarViewControllerDelegate {
+    /// A transcript opens once: already open in either editor, its tab is
+    /// selected there, and the active editor stays where the reader is —
+    /// nothing in the window aims at the active editor yet.
     func sidebarViewController(_ sidebar: SidebarViewController, didOpen node: LibraryNode) {
         guard let url = node.transcriptURL else { return }
         for group in editorArea.groups {

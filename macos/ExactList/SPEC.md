@@ -361,15 +361,26 @@ public enum Anchoring { case automatic, row(Int), scrollOffset }
 
 ### 8.1 When a commit animates
 
-- **M1: which commits animate.** A commit animates when its duration `T > 0`
-  and Reduce Motion is off
+- **M1: which commits animate.** A commit animates when its batch asks for
+  motion, its duration `T > 0`, and Reduce Motion is off
   (`NSWorkspace.accessibilityDisplayShouldReduceMotion`).
+  - A batch asks for motion as it does in `NSTableView` (characterized) when
+    any of these holds:
+    - it notes a row whose height changed;
+    - it moves a row;
+    - it inserts or removes a row with an effect (any option but `[]`);
+    - the current context allows implicit animation.
+
+    Otherwise nothing moves, and the completion runs on the next turn. An
+    insert or a removal with `[]` asks for no effect, in a group or not. A
+    noted row of the same height asks for nothing, and neither does a row the
+    list measures for any other reason (W4).
   - `T` and the timing function are `NSTableView`'s, read from
     `NSAnimationContext.current` when the batch commits (characterized):
     - Outside any group, `NSTableView` animates for 0.2 s with `.easeOut`,
       which starts at full speed, so a row answers a click on the next frame.
-      The current context reads AppKit's defaults there: 0.25 s and a `nil`
-      timing function.
+      A batch that moves a row takes 0.4 s, all of it. The current context
+      reads AppKit's defaults there: 0.25 s and a `nil` timing function.
     - Inside a group, it uses the group's duration and timing function, and
       `nil` means `.default`.
 
@@ -381,9 +392,9 @@ public enum Anchoring { case automatic, row(Int), scrollOffset }
     does. *Deviation:* that is private API. Where AppKit no longer answers it,
     a group is recognised by what it set: a duration other than 0.25 s, a
     timing function, implicit animation or a completion handler.
-  - Updates animate by default, as `noteHeightOfRows` does in a view-based
-    `NSTableView` (docs). A group with `duration = 0` turns animation off, which
-    is AppKit's own recipe.
+  - A height change animates by default, as `noteHeightOfRows` does in a
+    view-based `NSTableView` (docs). A group with `duration = 0` turns
+    animation off, which is AppKit's own recipe.
   - `reloadData()` and width changes never animate.
   - Scroll requests animate only when the current context's
     `allowsImplicitAnimation` is true. That is the AppKit rule for animating a
@@ -497,7 +508,13 @@ in a commit has a start and an end value for its screen top and its height.
   is in. Positions are continuous (C0) at the moment of the new commit. M4
   holds for the new commit's contribution.
 - **M9: effects.** Inserted and removed rows take `NSTableView.AnimationOptions`:
-  - `[]` and `.effectGap`: reveal or cover only (M2).
+  - `[]` and `.effectGap`: reveal or cover only (M2). `[]` alone asks for no
+    motion (M1); this is its motion in a batch that animates for another
+    reason. *Deviation:* there `NSTableView` shows a row inserted with `[]`
+    at once, full size, with the rows below sliding over it, and drops a row
+    removed with `[]` at once, leaving a blank that the rows below close
+    (characterized). The list opens and closes the gap, so rows never
+    overlap and nothing is blank (M5, M6).
   - `.effectFade`: in addition, opacity goes 0 → 1 on insert and 1 → 0 on
     removal.
   - `.slideUp` / `.slideDown`: in addition, the content inside the clip

@@ -136,7 +136,8 @@ final class PlacementTests: XCTestCase {
         host.count -= 1
         let start = Date()
         var landed = false
-        list.performBatchUpdates({ $0.removeRows(at: [605]) }, completionHandler: { _ in landed = true })
+        list.performBatchUpdates(
+            { $0.removeRows(at: [605], withAnimation: .effectGap) }, completionHandler: { _ in landed = true })
         XCTAssertFalse(reported(leaving, in: host), "not while it animates out")
         let drained = await stage.drain(until: { landed }, timeout: 2)
         XCTAssertTrue(drained)
@@ -231,7 +232,7 @@ final class PlacementTests: XCTestCase {
         XCTAssertEqual(list.row(for: child), 3, "renumbered with its row")
         let leaving = try XCTUnwrap(list.view(atRow: 1))
         host.count -= 1
-        list.removeRows(at: [1])
+        list.removeRows(at: [1], withAnimation: .effectGap)
         XCTAssertNotNil(leaving.superview, "still animating out")
         XCTAssertEqual(list.row(for: leaving), -1)
     }

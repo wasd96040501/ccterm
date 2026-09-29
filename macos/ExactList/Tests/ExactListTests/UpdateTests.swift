@@ -32,7 +32,8 @@ final class UpdateTests: XCTestCase {
         host.count = heights.count
         var done = false
         list.performBatchUpdates(
-            anchoring: .scrollOffset, { $0.insertRows(at: [62, 63]) }, completionHandler: { done = $0 })
+            anchoring: .scrollOffset, { $0.insertRows(at: [62, 63], withAnimation: .effectGap) },
+            completionHandler: { done = $0 })
 
         XCTAssertEqual(list.numberOfRows, 202)
         let frames = ReferenceLayout.frames(heights: heights, spacing: 0, width: width)
@@ -82,9 +83,9 @@ final class UpdateTests: XCTestCase {
         list.performBatchUpdates(
             anchoring: .scrollOffset,
             { updates in
-                updates.insertRows(at: [0])
+                updates.insertRows(at: [0], withAnimation: .effectGap)
                 list.performBatchUpdates(
-                    anchoring: .row(80), { $0.insertRows(at: [0]) },
+                    anchoring: .row(80), { $0.insertRows(at: [0], withAnimation: .effectGap) },
                     completionHandler: { completions.append(($0, Date().timeIntervalSince(start))) })
             }, completionHandler: { completions.append(($0, Date().timeIntervalSince(start))) })
 
@@ -266,7 +267,8 @@ final class UpdateTests: XCTestCase {
 
         var completions: [Bool] = []
         host.count -= 1
-        list.performBatchUpdates({ $0.removeRows(at: [2]) }, completionHandler: { completions.append($0) })
+        list.performBatchUpdates(
+            { $0.removeRows(at: [2], withAnimation: .effectGap) }, completionHandler: { completions.append($0) })
         XCTAssertTrue(try moving(list))
         // The rows that closed the gap brought a new row into P: it is in the
         // list now, beside row 2's view animating out.
@@ -297,7 +299,8 @@ final class UpdateTests: XCTestCase {
     }
 
     /// Always later than the call, on the main thread: for an empty batch, a
-    /// batch in a duration-0 group, and an animated one only after it ends.
+    /// batch in a duration-0 group, one that asks for no motion, and an
+    /// animated one only after it ends.
     func testU8_completionHandlers() async throws {
         let stage = ListStage(size: NSSize(width: 400, height: 300))
         defer { stage.teardown() }
@@ -314,15 +317,18 @@ final class UpdateTests: XCTestCase {
                 list.performBatchUpdates(
                     { $0.insertRows(at: [0]) }, completionHandler: { log.append("still \($0) \(Thread.isMainThread)") })
             }, completionHandler: nil)
+        host.count += 1
+        list.performBatchUpdates(
+            { $0.insertRows(at: [0]) }, completionHandler: { log.append("plain \($0) \(Thread.isMainThread)") })
         XCTAssertEqual(log, [], "never before the call returns")
         await stage.settle()
-        XCTAssertEqual(log, ["empty true true", "still true true"])
+        XCTAssertEqual(log, ["empty true true", "still true true", "plain true true"])
 
         host.count += 1
         let start = Date()
         var elapsed: TimeInterval?
         list.performBatchUpdates(
-            anchoring: .scrollOffset, { $0.insertRows(at: [0]) },
+            anchoring: .scrollOffset, { $0.insertRows(at: [0], withAnimation: .effectGap) },
             completionHandler: { _ in elapsed = Date().timeIntervalSince(start) })
         XCTAssertTrue(try moving(list))
         let drained = await stage.drain(until: { elapsed != nil }, timeout: 2)

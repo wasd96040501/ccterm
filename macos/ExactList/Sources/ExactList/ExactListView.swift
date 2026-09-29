@@ -163,7 +163,7 @@ public final class ExactListView: NSView {
             DispatchQueue.main.async { done(true) }
             return
         }
-        let (duration, timing) = motionTiming()
+        let (duration, timing) = motionTiming(moves: !map.movedRows.isEmpty)
         commit(map: map, anchoring: anchoring, duration: duration, timing: timing, completion: done)
     }
 
@@ -433,6 +433,7 @@ public final class ExactListView: NSView {
             newHeights.setHeight(height, ofRow: row)
         }
         if let newSpacing { newHeights.spacing = newSpacing }
+        let duration = asksForMotion(map, from: oldHeights, to: newHeights) ? duration : 0
         var newStale = stale
         newStale.apply(map)
         newStale.markFresh(fresh)
@@ -562,16 +563,30 @@ public final class ExactListView: NSView {
             insetBottom: insets.bottom)
     }
 
-    /// M1: the current animation context's timing, or none under Reduce Motion.
-    /// M1: `NSTableView`'s timing, 0.2 s `.easeOut` outside any group, else
-    /// the group's, `nil` meaning `.default`; none under Reduce Motion.
-    private func motionTiming() -> (TimeInterval, CAMediaTimingFunction) {
+    /// M1: `NSTableView`'s timing, `.easeOut` outside any group for 0.2 s, or
+    /// 0.4 s when the batch `moves` a row; else the group's, `nil` meaning
+    /// `.default`; none under Reduce Motion.
+    private func motionTiming(moves: Bool = false) -> (TimeInterval, CAMediaTimingFunction) {
         let context = NSAnimationContext.current
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
             return (0, CAMediaTimingFunction(name: .default))
         }
-        guard isInAnimationGroup(context) else { return (0.2, CAMediaTimingFunction(name: .easeOut)) }
+        guard isInAnimationGroup(context) else { return (moves ? 0.4 : 0.2, CAMediaTimingFunction(name: .easeOut)) }
         return (context.duration, context.timingFunction ?? CAMediaTimingFunction(name: .default))
+    }
+
+    /// M1: whether a batch asks for motion, as it does in `NSTableView`: it
+    /// moves a row, inserts or removes one with an effect, or changes a noted
+    /// row's height, or the context allows implicit animation. Rows measured
+    /// for any other reason don't count; they are not the host's change.
+    private func asksForMotion(_ map: RowIndexMap, from old: RowHeights, to new: RowHeights) -> Bool {
+        if !map.movedRows.isEmpty || NSAnimationContext.current.allowsImplicitAnimation { return true }
+        if map.insertions.values.contains(where: { !$0.isEmpty })
+            || map.removals.values.contains(where: { !$0.isEmpty })
+        {
+            return true
+        }
+        return map.notedRows.contains { row in map.oldIndex(forNew: row).map { old[$0] != new[row] } ?? false }
     }
 
     /// Whether an `NSAnimationContext` group is open: AppKit's own state,

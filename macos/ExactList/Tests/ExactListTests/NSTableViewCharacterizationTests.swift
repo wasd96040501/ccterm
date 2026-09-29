@@ -141,6 +141,144 @@ final class NSTableViewCharacterizationTests: XCTestCase {
         XCTAssertEqual(activeInside, true, "in a group that sets nothing")
     }
 
+    /// M1 and M9: a batch animates when something in it asks: a noted row
+    /// whose height changed, a move, an insert or removal with an effect, or
+    /// implicit animation allowed. An insert or removal with no effect asks
+    /// for nothing, in a group or not, nor does a noted row of the same
+    /// height. In a batch that animates, a row inserted with no effect is
+    /// shown at once, full size, as the rows below slide over it, and a row
+    /// removed with no effect is gone at once. A move makes it 0.4 s outside
+    /// a group, for every row in the batch.
+    func testCharacterizesWhatAsksForMotion() async throws {
+        let stage = ListStage(size: NSSize(width: 400, height: 600))
+        defer { stage.teardown() }
+
+        /// Runs `batch` on a fresh table of 40 rows of 30 and returns each
+        /// row's animations as key path to duration, the table's views once
+        /// the call returned, and the row views.
+        func run(
+            _ batch: (NSTableView, RecordingTableHost, HeightsBox) -> Void
+        ) async -> (animations: [Int: [String: TimeInterval]], subviews: Int, table: NSTableView) {
+            let heights = HeightsBox()
+            let host = RecordingTableHost(count: 40) { row, _ in heights.values[row] }
+            let table = host.makeTableView()
+            _ = await stage.mountTable(table, layOutFirst: true)
+            table.wantsLayer = true
+            await stage.settle()
+            batch(table, host, heights)
+            var animations: [Int: [String: TimeInterval]] = [:]
+            for row in 0..<min(table.numberOfRows, 20) {
+                guard let layer = table.rowView(atRow: row, makeIfNecessary: false)?.layer else { continue }
+                for key in layer.animationKeys() ?? [] {
+                    guard let animation = layer.animation(forKey: key) as? CABasicAnimation else { continue }
+                    animations[row, default: [:]][animation.keyPath ?? key] = animation.duration
+                }
+            }
+            let subviews = table.subviews.count
+            _ = await stage.drain(until: { false }, timeout: 0.5)
+            return (animations, subviews, table)
+        }
+        func insert(
+            _ row: Int, _ options: NSTableView.AnimationOptions
+        ) -> (NSTableView, RecordingTableHost, HeightsBox)
+            -> Void
+        {
+            { table, host, heights in
+                heights.values.insert(30, at: row)
+                host.count += 1
+                table.insertRows(at: [row], withAnimation: options)
+            }
+        }
+
+        var result = await run(insert(5, []))
+        XCTAssertEqual(result.animations, [:], "an insert with no effect")
+        XCTAssertEqual(result.subviews, 21, "a view for it at once")
+        result = await run { table, host, heights in
+            heights.values.remove(at: 5)
+            host.count -= 1
+            table.removeRows(at: [5], withAnimation: [])
+        }
+        XCTAssertEqual(result.animations, [:], "a removal with no effect")
+        result = await run { table, host, heights in
+            NSAnimationContext.runAnimationGroup({
+                $0.duration = 0.4
+                insert(5, [])(table, host, heights)
+            })
+        }
+        XCTAssertEqual(result.animations, [:], "an insert with no effect, in a group")
+        result = await run { table, host, heights in
+            table.beginUpdates()
+            insert(5, [])(table, host, heights)
+            table.noteHeightOfRows(withIndexesChanged: [11])
+            table.endUpdates()
+        }
+        XCTAssertEqual(result.animations, [:], "and a noted row of the same height")
+
+        result = await run { table, host, heights in
+            NSAnimationContext.runAnimationGroup({
+                $0.allowsImplicitAnimation = true
+                insert(5, [])(table, host, heights)
+            })
+        }
+        XCTAssertEqual(result.animations[6], ["position": 0.25], "implicit animation: the group's")
+
+        result = await run { table, host, heights in
+            table.beginUpdates()
+            insert(5, [])(table, host, heights)
+            heights.values[11] = 90
+            table.noteHeightOfRows(withIndexesChanged: [11])
+            table.endUpdates()
+        }
+        XCTAssertEqual(result.animations[6], ["position": 0.2], "a height change animates the batch")
+        XCTAssertNil(result.animations[5], "the row inserted with no effect doesn't move")
+        let inserted = try XCTUnwrap(result.table.rowView(atRow: 5, makeIfNecessary: false))
+        XCTAssertEqual(inserted.alphaValue, 1, "it shows at once")
+        XCTAssertEqual(inserted.frame.height, 30, "full size, where row 6 starts: row 6 slides over it")
+
+        result = await run { table, host, heights in
+            table.beginUpdates()
+            heights.values.remove(at: 5)
+            host.count -= 1
+            table.removeRows(at: [5], withAnimation: [])
+            heights.values[9] = 90
+            table.noteHeightOfRows(withIndexesChanged: [9])
+            table.endUpdates()
+        }
+        XCTAssertEqual(result.animations[5], ["position": 0.2], "the rows below close the gap")
+        XCTAssertEqual(result.subviews, 19, "the removed row's view is gone at once")
+
+        result = await run { table, host, heights in
+            table.beginUpdates()
+            insert(5, [])(table, host, heights)
+            insert(12, .effectFade)(table, host, heights)
+            table.endUpdates()
+        }
+        XCTAssertEqual(result.animations[6], ["position": 0.2], "an effect animates the batch")
+
+        result = await run { table, _, heights in
+            heights.values.insert(heights.values.remove(at: 3), at: 8)
+            table.moveRow(at: 3, to: 8)
+        }
+        XCTAssertEqual(result.animations[8], ["position": 0.4], "a move: 0.4 s")
+        result = await run { table, _, heights in
+            table.beginUpdates()
+            heights.values.insert(heights.values.remove(at: 3), at: 8)
+            table.moveRow(at: 3, to: 8)
+            heights.values[12] = 90
+            table.noteHeightOfRows(withIndexesChanged: [12])
+            table.endUpdates()
+        }
+        XCTAssertEqual(result.animations[12], ["bounds": 0.4], "for every row in the batch")
+        result = await run { table, _, heights in
+            NSAnimationContext.runAnimationGroup({
+                $0.duration = 0.3
+                heights.values.insert(heights.values.remove(at: 3), at: 8)
+                table.moveRow(at: 3, to: 8)
+            })
+        }
+        XCTAssertEqual(result.animations[8], ["position": 0.3], "in a group, the group's")
+    }
+
     /// `+[NSAnimationContext _hasActiveGrouping]`, or `nil` if AppKit has no
     /// such method any more.
     private static func hasActiveGrouping() -> Bool? {
@@ -167,5 +305,10 @@ final class NSTableViewCharacterizationTests: XCTestCase {
         XCTAssertTrue(
             widths.contains { abs($0 - finalWidth) > 1 },
             "every height was asked at the final width \(finalWidth): \(Set(widths))")
+    }
+
+    /// Row heights a table's host reads and a batch changes.
+    private final class HeightsBox {
+        var values: [CGFloat] = Array(repeating: 30, count: 40)
     }
 }

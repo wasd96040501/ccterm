@@ -21,7 +21,11 @@ final class MotionTests: XCTestCase {
     /// handler runs once the motion has ended; a duration-0 group,
     /// `reloadData()`, a width change and a scroll request without implicit
     /// animation move nothing, even inside a group that allows implicit
-    /// animation. Reduce Motion: the branch this machine is in (§13).
+    /// animation. A batch that asks for no motion moves nothing: an insert or
+    /// a removal with no effect, even in a group, and a noted row whose height
+    /// is unchanged; with implicit animation allowed it takes the group's
+    /// timing. A move takes 0.4 s outside a group. Reduce Motion: the branch
+    /// this machine is in (§13).
     func testM1_whichCommitsAnimate() async throws {
         guard #available(macOS 14, *) else { throw XCTSkip("the display link needs macOS 14") }
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -39,7 +43,7 @@ final class MotionTests: XCTestCase {
         var old = ReferenceLayout.frames(heights: heights, spacing: 0, width: 1)
         heights.insert(45, at: 22)
         host.count = heights.count
-        list.performBatchUpdates(anchoring: .scrollOffset) { $0.insertRows(at: [22]) }
+        list.performBatchUpdates(anchoring: .scrollOffset) { $0.insertRows(at: [22], withAnimation: .effectGap) }
         var new = ReferenceLayout.frames(heights: heights, spacing: 0, width: 1)
         if reduceMotion {
             try assertStill(list, heights: heights, "Reduce Motion is on: nothing moves")
@@ -113,7 +117,7 @@ final class MotionTests: XCTestCase {
             context.duration = 0
             heights.remove(at: 21)
             host.count = heights.count
-            list.removeRows(at: [21])
+            list.removeRows(at: [21], withAnimation: .effectFade)
         } completionHandler: {
         }
         try assertStill(list, heights: heights, "duration 0")
@@ -144,6 +148,68 @@ final class MotionTests: XCTestCase {
         }
         XCTAssertEqual(offset(of: list), ReferenceLayout.frames(heights: heights, spacing: 0, width: 1)[120].minY)
         try assertStill(list, heights: heights, "a scroll request without implicit animation")
+
+        // No effect asks for no motion, as in NSTableView: outside a group, in
+        // one, and with a noted row whose height is the same.
+        heights.insert(30, at: 122)
+        host.count = heights.count
+        list.insertRows(at: [122])
+        try assertStill(list, heights: heights, "an insert with no effect")
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.5
+            heights.remove(at: 122)
+            host.count = heights.count
+            list.removeRows(at: [122])
+        } completionHandler: {
+        }
+        try assertStill(list, heights: heights, "a removal with no effect, in a group")
+        heights.insert(30, at: 122)
+        host.count = heights.count
+        list.performBatchUpdates {
+            $0.insertRows(at: [122])
+            $0.noteHeightOfRows(withIndexesChanged: [125])
+        }
+        try assertStill(list, heights: heights, "and a noted row whose height is the same")
+
+        // With implicit animation allowed, the group's timing.
+        var o = offset(of: list)
+        old = ReferenceLayout.frames(heights: heights, spacing: 0, width: 1)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.3
+            context.allowsImplicitAnimation = true
+            heights.insert(45, at: 122)
+            host.count = heights.count
+            list.performBatchUpdates(anchoring: .scrollOffset) { $0.insertRows(at: [122]) }
+        } completionHandler: {
+        }
+        new = ReferenceLayout.frames(heights: heights, spacing: 0, width: 1)
+        if !reduceMotion {
+            let rows = try (123..<128).map {
+                Moving(try container(ofRow: $0, in: list), old[$0 - 1], new[$0], at: o, label: "row \($0)")
+            }
+            let timeline = progress(of: rows, in: await record(rows, in: list, for: 0.5))
+            assertTimeline(
+                timeline, duration: 0.3, curve: Self.bezier(0.25, 0.1, 0.25, 1), "no effect, implicit animation")
+        }
+        _ = await stage.drain(until: { self.clocks(in: list) == 0 }, timeout: 2)
+
+        // A move, outside any group: 0.4 s, ease out.
+        o = offset(of: list)
+        old = ReferenceLayout.frames(heights: heights, spacing: 0, width: 1)
+        heights.insert(heights.remove(at: 121), at: 126)
+        list.performBatchUpdates(anchoring: .scrollOffset) { $0.moveRow(at: 121, to: 126) }
+        new = ReferenceLayout.frames(heights: heights, spacing: 0, width: 1)
+        if reduceMotion {
+            try assertStill(list, heights: heights, "Reduce Motion is on: nothing moves")
+        } else {
+            var rows = try (121..<126).map {
+                Moving(try container(ofRow: $0, in: list), old[$0 + 1], new[$0], at: o, label: "row \($0)")
+            }
+            rows.append(Moving(try container(ofRow: 126, in: list), old[121], new[126], at: o, label: "moved"))
+            let timeline = progress(of: rows, in: await record(rows, in: list, for: 0.6))
+            assertTimeline(timeline, duration: 0.4, curve: Self.bezier(0, 0, 0.58, 1), "a move, outside any group")
+        }
+        _ = await stage.drain(until: { self.clocks(in: list) == 0 }, timeout: 2)
     }
 
     /// With linear timing, sampled on every refresh: the model is at the start
@@ -258,26 +324,30 @@ final class MotionTests: XCTestCase {
                 case .midRemoval:
                     heights.removeSubrange(first + 3..<first + 6)
                     host.count = heights.count
-                    list.performBatchUpdates({ $0.removeRows(at: IndexSet(first + 3..<first + 6)) }) {
+                    list.performBatchUpdates({
+                        $0.removeRows(at: IndexSet(first + 3..<first + 6), withAnimation: .effectGap)
+                    }) {
                         finished = $0
                     }
                 case .tallInsert:
                     heights.insert(250, at: first + 2)
                     host.count = heights.count
-                    list.performBatchUpdates({ $0.insertRows(at: [first + 2]) }) { finished = $0 }
+                    list.performBatchUpdates({ $0.insertRows(at: [first + 2], withAnimation: .effectGap) }) {
+                        finished = $0
+                    }
                 case .tailRemoval:
                     heights.removeLast(5)
                     host.count = heights.count
                     list.performBatchUpdates({
-                        $0.removeRows(at: IndexSet(heights.count..<heights.count + 5))
+                        $0.removeRows(at: IndexSet(heights.count..<heights.count + 5), withAnimation: .effectGap)
                     }) { finished = $0 }
                 case .sharedGapWithSpacing:
                     heights.remove(at: first + 4)
                     heights.insert(contentsOf: [70, 20], at: first + 4)
                     host.count = heights.count
                     list.performBatchUpdates({
-                        $0.removeRows(at: [first + 4])
-                        $0.insertRows(at: [first + 4, first + 5])
+                        $0.removeRows(at: [first + 4], withAnimation: .effectGap)
+                        $0.insertRows(at: [first + 4, first + 5], withAnimation: .effectGap)
                     }) { finished = $0 }
                 case .longScroll:
                     list.scrollToRow(1500, at: .top)
@@ -338,7 +408,11 @@ final class MotionTests: XCTestCase {
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 1
             context.timingFunction = linear
-            list.performBatchUpdates(anchoring: .scrollOffset, { $0.insertRows(at: [3, 4]) }) { firstDone = $0 }
+            list.performBatchUpdates(
+                anchoring: .scrollOffset, { $0.insertRows(at: [3, 4], withAnimation: .effectGap) }
+            ) {
+                firstDone = $0
+            }
         } completionHandler: {
         }
         let f1 = ReferenceLayout.frames(heights: heights, spacing: 0, width: 1)
@@ -354,7 +428,9 @@ final class MotionTests: XCTestCase {
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 1
             context.timingFunction = linear
-            list.performBatchUpdates(anchoring: .row(14), { $0.insertRows(at: [13]) }) { secondDone = $0 }
+            list.performBatchUpdates(anchoring: .row(14), { $0.insertRows(at: [13], withAnimation: .effectGap) }) {
+                secondDone = $0
+            }
         } completionHandler: {
         }
         let f2 = ReferenceLayout.frames(heights: heights, spacing: 0, width: 1)
@@ -385,7 +461,7 @@ final class MotionTests: XCTestCase {
         let both = composed[0]
         XCTAssertEqual(anchor.b, 0, "B's anchor has no motion of B's")
         XCTAssertNotEqual(both.b, 0)
-        let samples = await PresentationSampler.record(watched, in: list, for: 1)
+        let samples = await PresentationSampler.record(watched, in: list, for: 1.2)
         var pA: [CGFloat] = []
         var pB: [CGFloat] = []
         for sample in samples {
@@ -419,7 +495,8 @@ final class MotionTests: XCTestCase {
     /// Each effect, inserted and removed, with linear timing: at every sample,
     /// the container's presented opacity for a fade, and the hosted view's
     /// offset inside its container for a slide, in screen coordinates, at the
-    /// `p` the moving rows give.
+    /// `p` the moving rows give. No effect is checked in a batch that animates
+    /// for a height change further down.
     func testM9_effects() async throws {
         guard #available(macOS 14, *) else { throw XCTSkip("the display link needs macOS 14") }
         let options: [(NSTableView.AnimationOptions, String)] = [
@@ -446,11 +523,21 @@ final class MotionTests: XCTestCase {
                     if inserting {
                         heights.insert(50, at: 3)
                         host.count = heights.count
-                        list.performBatchUpdates({ $0.insertRows(at: [3], withAnimation: option) }) { done = $0 }
+                        heights[30] += 5
+                        list.performBatchUpdates(
+                            {
+                                $0.insertRows(at: [3], withAnimation: option)
+                                $0.noteHeightOfRows(withIndexesChanged: [30])
+                            }, completionHandler: { done = $0 })
                     } else {
                         heights.remove(at: 3)
                         host.count = heights.count
-                        list.performBatchUpdates({ $0.removeRows(at: [3], withAnimation: option) }) { done = $0 }
+                        heights[30] += 5
+                        list.performBatchUpdates(
+                            {
+                                $0.removeRows(at: [3], withAnimation: option)
+                                $0.noteHeightOfRows(withIndexesChanged: [30])
+                            }, completionHandler: { done = $0 })
                     }
                 } completionHandler: {
                 }

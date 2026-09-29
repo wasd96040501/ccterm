@@ -515,8 +515,18 @@ in a commit has a start and an end value for its screen top and its height.
     removed with `[]` at once, leaving a blank that the rows below close
     (characterized). The list opens and closes the gap, so rows never
     overlap and nothing is blank (M5, M6).
+
+    *Deviation:* with `.effectGap`, `NSTableView` holds an inserted row
+    hidden at full size while the rows below part, and shows it all at once
+    when they have; a removed row stays at full size while the rows below
+    slide up over it (characterized). The list's row opens from height 0
+    and is drawn at every height on the way, so nothing appears at the end
+    and nothing is covered.
   - `.effectFade`: in addition, opacity goes 0 → 1 on insert and 1 → 0 on
-    removal.
+    removal. *Deviation:* `NSTableView` fades an inserted row in at full
+    size while the rows below slide over it, and fades a removed one out as
+    they slide up over it (characterized). The list fades the row as it
+    opens or closes, so rows never overlap (M5).
   - `.slideUp` / `.slideDown`: in addition, the content inside the clip
     slides by the row's height `h`. In screen coordinates (y down), an
     inserted row's content is offset by `+h·(1 − p)` for `.slideUp` (it rises

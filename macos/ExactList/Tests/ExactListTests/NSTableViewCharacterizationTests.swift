@@ -147,18 +147,24 @@ final class NSTableViewCharacterizationTests: XCTestCase {
     /// for nothing, in a group or not, nor does a noted row of the same
     /// height. In a batch that animates, a row inserted with no effect is
     /// shown at once, full size, as the rows below slide over it, and a row
-    /// removed with no effect is gone at once. A move makes it 0.4 s outside
-    /// a group, for every row in the batch.
+    /// removed with no effect is gone at once. A row inserted with
+    /// `.effectFade` or `.effectGap` is hidden at full size while the rows
+    /// below move, and a row removed with either stays at full size while
+    /// the rows below slide up over it (M9's deviations). A move makes it
+    /// 0.4 s outside a group, for every row in the batch.
     func testCharacterizesWhatAsksForMotion() async throws {
         let stage = ListStage(size: NSSize(width: 400, height: 600))
         defer { stage.teardown() }
 
-        /// Runs `batch` on a fresh table of 40 rows of 30 and returns each
-        /// row's animations as key path to duration, the table's views once
-        /// the call returned, and the row views.
+        /// Runs `batch` on a fresh table of 40 rows of 30 and returns, as
+        /// they were when the call returned, each row's animations as key
+        /// path to duration, each row view's alpha and height, and how many
+        /// views the table held.
         func run(
             _ batch: (NSTableView, RecordingTableHost, HeightsBox) -> Void
-        ) async -> (animations: [Int: [String: TimeInterval]], subviews: Int, table: NSTableView) {
+        ) async -> (
+            animations: [Int: [String: TimeInterval]], alphas: [Int: CGFloat], heights: [Int: CGFloat], subviews: Int
+        ) {
             let heights = HeightsBox()
             let host = RecordingTableHost(count: 40) { row, _ in heights.values[row] }
             let table = host.makeTableView()
@@ -167,8 +173,14 @@ final class NSTableViewCharacterizationTests: XCTestCase {
             await stage.settle()
             batch(table, host, heights)
             var animations: [Int: [String: TimeInterval]] = [:]
+            var alphas: [Int: CGFloat] = [:]
+            var frameHeights: [Int: CGFloat] = [:]
             for row in 0..<min(table.numberOfRows, 20) {
-                guard let layer = table.rowView(atRow: row, makeIfNecessary: false)?.layer else { continue }
+                guard let view = table.rowView(atRow: row, makeIfNecessary: false) else { continue }
+                alphas[row] = view.alphaValue
+                frameHeights[row] = view.frame.height
+                // A row view added by the batch has no layer yet.
+                guard let layer = view.layer else { continue }
                 for key in layer.animationKeys() ?? [] {
                     guard let animation = layer.animation(forKey: key) as? CABasicAnimation else { continue }
                     animations[row, default: [:]][animation.keyPath ?? key] = animation.duration
@@ -176,7 +188,7 @@ final class NSTableViewCharacterizationTests: XCTestCase {
             }
             let subviews = table.subviews.count
             _ = await stage.drain(until: { false }, timeout: 0.5)
-            return (animations, subviews, table)
+            return (animations, alphas, frameHeights, subviews)
         }
         func insert(
             _ row: Int, _ options: NSTableView.AnimationOptions
@@ -231,9 +243,8 @@ final class NSTableViewCharacterizationTests: XCTestCase {
         }
         XCTAssertEqual(result.animations[6], ["position": 0.2], "a height change animates the batch")
         XCTAssertNil(result.animations[5], "the row inserted with no effect doesn't move")
-        let inserted = try XCTUnwrap(result.table.rowView(atRow: 5, makeIfNecessary: false))
-        XCTAssertEqual(inserted.alphaValue, 1, "it shows at once")
-        XCTAssertEqual(inserted.frame.height, 30, "full size, where row 6 starts: row 6 slides over it")
+        XCTAssertEqual(result.alphas[5], 1, "it shows at once")
+        XCTAssertEqual(result.heights[5], 30, "full size, where row 6 starts: row 6 slides over it")
 
         result = await run { table, host, heights in
             table.beginUpdates()
@@ -246,6 +257,19 @@ final class NSTableViewCharacterizationTests: XCTestCase {
         }
         XCTAssertEqual(result.animations[5], ["position": 0.2], "the rows below close the gap")
         XCTAssertEqual(result.subviews, 19, "the removed row's view is gone at once")
+        var stays: Bool?
+        result = await run { table, host, heights in
+            let removed = table.rowView(atRow: 5, makeIfNecessary: false)
+            table.beginUpdates()
+            heights.values.remove(at: 5)
+            host.count -= 1
+            table.removeRows(at: [5], withAnimation: [])
+            heights.values[9] = 90
+            table.noteHeightOfRows(withIndexesChanged: [9])
+            table.endUpdates()
+            stays = removed?.superview != nil
+        }
+        XCTAssertEqual(stays, false, "that view is out of the table")
 
         result = await run { table, host, heights in
             table.beginUpdates()
@@ -254,6 +278,29 @@ final class NSTableViewCharacterizationTests: XCTestCase {
             table.endUpdates()
         }
         XCTAssertEqual(result.animations[6], ["position": 0.2], "an effect animates the batch")
+        XCTAssertEqual(result.alphas[12], 0, ".effectFade: hidden at first")
+        XCTAssertEqual(result.heights[12], 30, "at full size, where row 13 starts: row 13 slides over it")
+        XCTAssertEqual(result.animations[13], ["position": 0.2])
+
+        result = await run(insert(5, .effectGap))
+        XCTAssertEqual(result.alphas[5], 0, ".effectGap: hidden while the rows below part")
+        XCTAssertEqual(result.heights[5], 30, "at full size")
+        XCTAssertEqual(result.animations[6], ["position": 0.2])
+        XCTAssertNil(result.animations[5], "it doesn't move: it shows once they have parted")
+
+        for option in [NSTableView.AnimationOptions.effectGap, .effectFade] {
+            stays = nil
+            result = await run { table, host, heights in
+                let removed = table.rowView(atRow: 5, makeIfNecessary: false)
+                heights.values.remove(at: 5)
+                host.count -= 1
+                table.removeRows(at: [5], withAnimation: option)
+                stays = removed?.superview != nil
+            }
+            XCTAssertEqual(stays, true, "\(option.rawValue): the removed row's view stays")
+            XCTAssertEqual(
+                result.animations[5], ["position": 0.2], "\(option.rawValue): the row below slides up over it")
+        }
 
         result = await run { table, _, heights in
             heights.values.insert(heights.values.remove(at: 3), at: 8)

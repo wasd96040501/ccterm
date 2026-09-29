@@ -215,6 +215,36 @@ final class TranscriptViewAnchoringTests: XCTestCase {
         XCTAssertEqual(offset(mounted), 2808, "content shifted under the reader")
     }
 
+    /// A host opening every list at once: rows inserted after every sixth row,
+    /// each of those rows reloaded, above, at and below the viewport, in one
+    /// group. Near the end, the top row's new place is past the end of the
+    /// content as it was — it still lands there, not where the old content
+    /// stopped.
+    func testABatchGrowingTheContentPastItsOldEndHoldsTheTopRowStill() throws {
+        let (mounted, host) = mount()
+        defer { mounted.teardown() }
+        mounted.scroll(toY: 85 * 54)
+        mounted.settle()
+        XCTAssertEqual(offset(mounted), 85 * 54, "premise: row 85 is at the top")
+
+        mounted.transcript.beginUpdates()
+        var anchor = 85
+        var row = 0
+        while row < host.numberOfRows(in: mounted.transcript) {
+            host.insertRows(4, at: row + 1, height: 24)
+            mounted.transcript.insertRows(at: IndexSet(row + 1..<row + 5))
+            mounted.transcript.reloadRows(at: IndexSet(integer: row))
+            if row < anchor { anchor += 4 }
+            row += 6
+        }
+        mounted.transcript.endUpdates()
+
+        XCTAssertGreaterThan(
+            mounted.transcript.rect(ofRow: anchor).minY, 100 * 54 - 720,
+            "premise: the row's new place is past the old end")
+        XCTAssertEqual(offset(mounted), mounted.transcript.rect(ofRow: anchor).minY, "content shifted under the reader")
+    }
+
     // MARK: - The anchor row itself
 
     /// Nothing to hold still: what was at the top of the viewport is gone. The

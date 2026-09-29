@@ -1535,15 +1535,23 @@ public final class TranscriptView: NSView {
     /// Restores immediately rather than on the next layout pass — waiting would be
     /// a frame drawn at the old offset.
     ///
-    /// The flush is not for the numbers. `rect(ofRow:)` and the document view's
-    /// height both resolve the mutation's geometry on demand, so the arithmetic
-    /// below is right without it — measured, by deleting it and watching every
-    /// offset assertion still pass. It is here so the table has positioned its row
-    /// views before the offset moves, on the reasoning that moving the viewport
-    /// past rows that are still at their old positions is a frame worth not
-    /// drawing. That last part is reasoning, not a measurement: the flicker it was
-    /// first added for turned out to be an implicit animation instead (see
-    /// `suppressImplicitAnimation`), and no assertion can tell the difference.
+    /// The anchor is re-read after scrolling to it: after a large coalesced
+    /// change — a host opening every list at once — the table's geometry for
+    /// rows it hasn't laid out since is provisional, and laying out at the new
+    /// offset corrects it, moving the anchor by hundreds of points. The rows
+    /// around the anchor are final once laid out, so a second pass lands
+    /// (`testABatchGrowingTheContentPastItsOldEndHoldsTheTopRowStill`; one pass
+    /// fails it). A change that leaves the geometry settled costs one pass.
+    ///
+    /// The first layout flush is so the table has positioned its row views before
+    /// the offset moves, on the reasoning that moving the viewport past rows that
+    /// are still at their old positions is a frame worth not drawing. That part is
+    /// reasoning, not a measurement: the flicker it was first added for turned out
+    /// to be an implicit animation instead (see `suppressImplicitAnimation`), and
+    /// no assertion can tell the difference.
+    /// A bound, not a count: every case measured lands on the second.
+    private static let restorePasses = 3
+
     private func restore(_ anchor: ScrollAnchor) {
         tableView.layoutSubtreeIfNeeded()
         switch anchor {
@@ -1555,7 +1563,12 @@ public final class TranscriptView: NSView {
             // row; the clamp is here rather than in the shift so the shift stays
             // arithmetic on indices and needs no row count.
             let clamped = min(row, numberOfRows - 1)
-            scrollClip(toUnobscuredMinY: tableView.rect(ofRow: clamped).minY + offsetFromTop)
+            for _ in 0..<Self.restorePasses {
+                let target = tableView.rect(ofRow: clamped).minY + offsetFromTop
+                scrollClip(toUnobscuredMinY: target)
+                tableView.layoutSubtreeIfNeeded()
+                if abs(tableView.rect(ofRow: clamped).minY - (target - offsetFromTop)) < 0.5 { break }
+            }
         }
     }
 

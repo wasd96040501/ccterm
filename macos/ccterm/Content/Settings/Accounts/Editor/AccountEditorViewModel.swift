@@ -9,39 +9,45 @@ import Foundation
 final class AccountEditorViewModel {
     let mode: AccountEditorMode
     @Published private(set) var presentation: AccountEditorPresentation
+    /// What filling the draft from the `entry` it opened with did, to tell
+    /// once the sheet is up.
+    private(set) var openingNote: String?
 
     private var account: Account
     private var secrets: AccountSecrets
     private var fieldsRevision = 0
     private let takenNames: [String]
     private let commandValidation: LaunchCommandValidation
-    private var command = CommandCheck(isValid: false, error: nil)
+    private var command = CommandCheck(isValid: false, detail: .none)
     private var cancellables = Set<AnyCancellable>()
 
     /// What the command's check says, as the sheet needs it.
     private struct CommandCheck {
         var isValid: Bool
-        var error: String?
+        var detail: ValidationDetail
 
-        init(isValid: Bool, error: String?) {
+        init(isValid: Bool, detail: ValidationDetail) {
             self.isValid = isValid
-            self.error = error
+            self.detail = detail
         }
 
-        init(_ state: LaunchCommandValidation.State) {
-            switch state {
-            case .valid: self.init(isValid: true, error: nil)
-            case .checking: self.init(isValid: false, error: nil)
-            case .invalid(let message): self.init(isValid: false, error: message)
-            }
+        /// `text`: the command the state is for; with none, General's launch
+        /// runs and there is nothing to say.
+        init(_ state: LaunchCommandValidation.State, text: String) {
+            var isValid = false
+            if case .valid = state { isValid = true }
+            let blank = text.trimmingCharacters(in: .whitespaces).isEmpty
+            self.init(isValid: isValid, detail: blank ? .none : state.detail(fallback: nil))
         }
     }
 
+    /// `entry`: what to fill the draft from before the sheet appears.
     /// `takenNames`: the other providers' names, which a name filled from a
     /// paste stays clear of. `commandValidation`: checks the account's launch
     /// command as it is typed; it starts from the command `account` has.
     init(
-        mode: AccountEditorMode, account: Account, secrets: AccountSecrets, takenNames: [String] = [],
+        mode: AccountEditorMode, account: Account, secrets: AccountSecrets, entry: AccountPaste.Entry? = nil,
+        takenNames: [String] = [],
         commandValidation: LaunchCommandValidation
     ) {
         self.mode = mode
@@ -49,7 +55,7 @@ final class AccountEditorViewModel {
         self.secrets = secrets
         self.takenNames = takenNames
         self.commandValidation = commandValidation
-        command = CommandCheck(commandValidation.state)
+        command = CommandCheck(commandValidation.state, text: account.command)
         presentation = Self.present(
             mode: mode, account: account, secrets: secrets, fieldsRevision: 0, command: command)
         // Answers arrive later, on the main actor; the state each carries is
@@ -58,10 +64,11 @@ final class AccountEditorViewModel {
             .dropFirst()
             .sink { [weak self] state in
                 guard let self else { return }
-                command = CommandCheck(state)
+                command = CommandCheck(state, text: self.account.command)
                 update { _, _ in }
             }
             .store(in: &cancellables)
+        if let entry { openingNote = apply(entry) }
     }
 
     /// The draft as saved: rows without a name dropped.
@@ -213,7 +220,7 @@ final class AccountEditorViewModel {
             canSave: canSave && canSaveCommand, baseURLError: baseURLError,
             credentialTitle: authentication == .apiKey ? String(localized: "API key") : String(localized: "Token"),
             maskedCredential: masked(secrets.credential), subscription: details, fields: fields,
-            fieldsRevision: fieldsRevision, environmentRows: rows(secrets.environment), commandError: command.error)
+            fieldsRevision: fieldsRevision, environmentRows: rows(secrets.environment), commandDetail: command.detail)
     }
 
     /// The Authentication menu: each way, and what it sends.

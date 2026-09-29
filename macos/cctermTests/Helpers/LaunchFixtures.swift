@@ -26,6 +26,11 @@ final class FakeProbe: @unchecked Sendable {
         lock.withLock { failures[command] = error }
     }
 
+    /// Makes the launch command `command` answer again.
+    func succeed(_ command: String?) {
+        lock.withLock { failures[command] = nil }
+    }
+
     /// Holds the answer for `command` until the returned gate opens.
     func hold(_ command: String?) -> Gate {
         let gate = Gate()

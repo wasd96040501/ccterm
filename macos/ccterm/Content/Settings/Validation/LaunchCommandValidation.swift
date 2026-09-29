@@ -20,10 +20,27 @@ extension TextValidation where Valid == CLIVersion {
             check: { Self.state(of: await service.check(configuration($0))) })
     }
 
+    /// ``State/detail(fallback:)`` for the current state.
+    func detail(fallback: String?) -> ValidationDetail { state.detail(fallback: fallback) }
+
     private static func state(of check: LaunchCheck) -> State {
         switch check {
         case .valid(let version): .valid(version)
         case .invalid(let message): .invalid(message)
+        }
+    }
+}
+
+extension TextValidation.State where Valid == CLIVersion {
+    /// What a check says under the field: that it is running, the version it
+    /// found, or why the command doesn't run — with `fallback`, what stays in
+    /// use, when there is one.
+    func detail(fallback: String?) -> ValidationDetail {
+        switch self {
+        case .checking: .checking
+        case .valid(let version):
+            ValidationDetail(text: String(localized: "Claude Code \(version.version)"), isError: false)
+        case .invalid(let reason): .problem(reason, fallback: fallback)
         }
     }
 }

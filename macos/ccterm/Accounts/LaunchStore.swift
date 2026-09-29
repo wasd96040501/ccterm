@@ -17,7 +17,8 @@ final class LaunchStore {
     /// What General says.
     @Published private(set) var preferences: LaunchPreferences
     /// The launch General describes: what the session list follows and what
-    /// General checks.
+    /// General checks. Its consumers are General's check today and live
+    /// sessions when they are wired.
     @Published private(set) var general: CLIConfiguration
     /// The launch of the subscription's sessions: its own command, else General's.
     @Published private(set) var subscription: CLIConfiguration
@@ -25,10 +26,14 @@ final class LaunchStore {
     /// first value comes at once — General's folder, else this process's
     /// `CLAUDE_CONFIG_DIR`, else `~/.claude` — and is replaced by what a login
     /// shell says, now and each time ``general`` changes, when that differs.
+    /// A change of General's folder moves it at once, before the shell answers.
     @Published private(set) var sessionDirectory: SessionDirectory
 
     private let defaults: UserDefaults
     private let resolveDirectory: @Sendable (CLIConfiguration) -> SessionDirectory
+    /// Where sessions are without asking a shell, for the current folder; a
+    /// change of it moves ``sessionDirectory`` at once.
+    private var immediateDirectory: SessionDirectory
     private var subscriptionCommand = ""
     private var accountsSubscription: AnyCancellable?
     /// Counts resolutions asked for; only the last one's answer is kept.
@@ -52,11 +57,28 @@ final class LaunchStore {
         let general = LaunchEnvironment.resolve(command: "", general: preferences)
         self.general = general
         subscription = general
-        sessionDirectory = Self.immediateDirectory(for: preferences)
+        immediateDirectory = Self.immediateDirectory(for: preferences)
+        sessionDirectory = immediateDirectory
         accountsSubscription = accounts.sink { [weak self] accounts in
             MainActor.assumeIsolated { self?.accountsDidChange(accounts) }
         }
         resolveSessionDirectory(for: general)
+    }
+
+    /// The launch General would describe if its command were `command`, under
+    /// the current configuration folder: what a check of General's field text
+    /// runs.
+    func configuration(generalCommand command: String) -> CLIConfiguration {
+        var preferences = preferences
+        preferences.command = command
+        return LaunchEnvironment.resolve(command: "", general: preferences)
+    }
+
+    /// The launch of an account whose own command is `command` (empty when it
+    /// has none), under the current General settings: what a check of an
+    /// account's field text runs.
+    func configuration(accountCommand command: String) -> CLIConfiguration {
+        LaunchEnvironment.resolve(command: command, general: preferences)
     }
 
     /// Sets General's launch command; empty runs `claude`. Nothing is checked
@@ -100,6 +122,11 @@ final class LaunchStore {
         if subscription != self.subscription { self.subscription = subscription }
         guard general != self.general else { return }
         self.general = general
+        let immediate = Self.immediateDirectory(for: preferences)
+        if immediate != immediateDirectory {
+            immediateDirectory = immediate
+            if immediate != sessionDirectory { sessionDirectory = immediate }
+        }
         resolveSessionDirectory(for: general)
     }
 

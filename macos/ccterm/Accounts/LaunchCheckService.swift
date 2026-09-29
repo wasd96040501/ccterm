@@ -1,9 +1,10 @@
 import AgentSDK
 import Foundation
 
-/// Tells whether a launch works, by running it with `--version`. Each
-/// configuration is probed once: a second ask gets the answer, and asks made
-/// while it runs share the run.
+/// Tells whether a launch works, by running it with `--version`. Every
+/// ``check(_:)`` runs the probe, so a `claude` installed or upgraded since
+/// shows on the next one; asks made while a run is going share it. The
+/// latest answer per configuration is kept for ``cached(_:)``.
 @MainActor
 final class LaunchCheckService {
     typealias Probe = @Sendable (CLIConfiguration) async throws -> CLIVersion
@@ -19,9 +20,8 @@ final class LaunchCheckService {
         self.probe = probe
     }
 
-    /// The answer for `configuration`, running the probe if nobody has.
+    /// What running `configuration` says now, joining a run already going.
     func check(_ configuration: CLIConfiguration) async -> LaunchCheck {
-        if let result = results[configuration] { return result }
         if let task = running[configuration] { return await task.value }
         var bounded = configuration
         bounded.timeout = timeout

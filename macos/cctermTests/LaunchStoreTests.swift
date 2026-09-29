@@ -135,4 +135,51 @@ final class LaunchStoreTests: XCTestCase {
         await waitFor(launch.$sessionDirectory) { $0.url.path == "/for/last" }
         XCTAssertEqual(seen.values.map(\.url.path), ["/for/default", "/for/fast", "/for/last"])
     }
+
+    func testFieldTextResolvesLikeThePublishedConfigurations() {
+        var subscription = Account.subscription()
+        subscription.command = " own-claude "
+        accounts.send([subscription])
+        let launch = store()
+        launch.setConfigDirectory("~/work/claude")
+        XCTAssertEqual(launch.configuration(generalCommand: launch.preferences.command), launch.general)
+        XCTAssertEqual(launch.configuration(accountCommand: subscription.command), launch.subscription)
+
+        launch.setCommand("orange")
+        XCTAssertEqual(launch.configuration(generalCommand: launch.preferences.command), launch.general)
+        XCTAssertEqual(launch.configuration(accountCommand: subscription.command), launch.subscription)
+        XCTAssertEqual(launch.configuration(generalCommand: "  blue ").customCommand, "blue")
+        XCTAssertEqual(launch.configuration(generalCommand: "blue").env, launch.general.env, "General's folder stays")
+        XCTAssertEqual(launch.configuration(accountCommand: "").customCommand, "orange")
+        XCTAssertEqual(launch.preferences.command, "orange", "asking changes nothing")
+    }
+
+    func testAFolderChangeMovesTheSessionDirectoryBeforeTheShellAnswers() async {
+        let release = DispatchSemaphore(value: 0)
+        let asked = expectation(description: "the shell was asked for the new folder")
+        let launch = store { configuration in
+            if configuration.env["CLAUDE_CONFIG_DIR"] == "/tmp/next" {
+                asked.fulfill()
+                release.wait()
+                return SessionDirectory(url: URL(fileURLWithPath: "/shell/projects"))
+            }
+            return SessionDirectory(url: URL(fileURLWithPath: "/resolved"))
+        }
+        await waitFor(launch.$sessionDirectory) { $0.url.path == "/resolved" }
+
+        launch.setConfigDirectory("/tmp/next")
+        XCTAssertEqual(launch.sessionDirectory.url.path, "/tmp/next/projects", "at once, without the shell")
+        await fulfillment(of: [asked], timeout: 10)
+        release.signal()
+        await waitFor(launch.$sessionDirectory) { $0.url.path == "/shell/projects" }
+    }
+
+    func testACommandChangeLeavesTheSessionDirectoryToTheShell() async {
+        let launch = store()
+        await waitFor(launch.$sessionDirectory) { $0.url.path == "/resolved" }
+        let seen = record(launch.$sessionDirectory)
+        launch.setCommand("orange")
+        XCTAssertEqual(
+            seen.values.count, 1, "only the value it started with: the folder didn’t change, so nothing moves")
+    }
 }

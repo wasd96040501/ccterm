@@ -16,6 +16,7 @@ final class AccountsSettingsViewController: NSViewController {
 
     /// The open account sheet, if any.
     private var editor: AccountEditorViewController?
+    private var editorModel: AccountEditorViewModel?
     /// The account the open sheet edits.
     private var editing: Account?
 
@@ -72,13 +73,13 @@ final class AccountsSettingsViewController: NSViewController {
         _ account: Account, secrets: AccountSecrets, mode: AccountEditorMode, entry: AccountPaste.Entry? = nil
     ) {
         guard editor == nil else { return }
-        let editor = AccountEditorViewController(
-            viewModel: AccountEditorViewModel(
-                mode: mode, account: account, secrets: secrets,
-                takenNames: providerNames(excluding: account.id), commandValidation: commandValidation(for: account)))
+        let model = AccountEditorViewModel(
+            mode: mode, account: account, secrets: secrets, entry: entry,
+            takenNames: providerNames(excluding: account.id), commandValidation: commandValidation(for: account))
+        let editor = AccountEditorViewController(viewModel: model)
         editor.delegate = self
-        if let entry { editor.fill(entry) }
         self.editor = editor
+        editorModel = model
         editing = account
         presentAsSheet(editor)
     }
@@ -87,6 +88,7 @@ final class AccountsSettingsViewController: NSViewController {
         guard let editor else { return }
         dismiss(editor)
         self.editor = nil
+        editorModel = nil
         editing = nil
     }
 
@@ -95,9 +97,7 @@ final class AccountsSettingsViewController: NSViewController {
     private func commandValidation(for account: Account) -> LaunchCommandValidation {
         LaunchCommandValidation(
             check: launchCheck,
-            configuration: { [launch] command in
-                LaunchEnvironment.resolve(command: command, general: launch.preferences)
-            },
+            configuration: { [launch] in launch.configuration(accountCommand: $0) },
             text: account.command)
     }
 
@@ -194,7 +194,7 @@ final class AccountsSettingsViewController: NSViewController {
             Task {
                 do {
                     try await self.subscription.signOut()
-                    if case .subscription = self.editor?.mode { self.dismissEditor() }
+                    if case .subscription = self.editorModel?.mode { self.dismissEditor() }
                 } catch {
                     self.report(error, on: window, while: "signing out")
                 }
@@ -293,7 +293,8 @@ extension AccountsSettingsViewController: AccountEditorViewControllerDelegate {
     }
 
     func accountEditorDidRequestRemoval(_ editor: AccountEditorViewController) {
-        switch editor.mode {
+        guard let mode = editorModel?.mode else { return }
+        switch mode {
         case .subscription(let subscription): confirmSignOut(subscription, on: editor.view.window)
         case .provider: editing.map { confirmDelete($0, on: editor.view.window) }
         case .newProvider: break

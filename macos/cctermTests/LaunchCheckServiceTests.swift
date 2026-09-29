@@ -3,8 +3,9 @@ import XCTest
 
 @testable import ccterm
 
-/// ``LaunchCheckService``: one probe per configuration, shared by asks made
-/// while it runs, bounded by a timeout, and its failures in a few words.
+/// ``LaunchCheckService``: every check probes, asks made while one runs share
+/// it, the latest answer is kept, the probe is bounded by a timeout, and its
+/// failures come in a few words.
 @MainActor
 final class LaunchCheckServiceTests: XCTestCase {
     private let probe = FakeProbe()
@@ -13,19 +14,32 @@ final class LaunchCheckServiceTests: XCTestCase {
         LaunchCheckService(timeout: timeout, probe: probe.probe)
     }
 
-    func testAnAnswerIsKeptPerConfiguration() async {
+    func testTheLatestAnswerIsKeptPerConfiguration() async {
         let service = service()
         let orange = CLIConfiguration(customCommand: "orange")
         XCTAssertNil(service.cached(orange))
         let first = await service.check(orange)
-        let second = await service.check(orange)
         XCTAssertEqual(first, .valid(FakeProbe.version(of: "orange")))
-        XCTAssertEqual(second, first)
         XCTAssertEqual(service.cached(orange), first)
-        XCTAssertEqual(probe.calls.count, 1)
 
         _ = await service.check(CLIConfiguration(customCommand: "orange", env: ["CLAUDE_CONFIG_DIR": "/tmp/x"]))
         XCTAssertEqual(probe.calls.count, 2, "another environment is another launch")
+        XCTAssertEqual(service.cached(orange), first)
+    }
+
+    func testEachCheckRunsTheProbeAndReplacesTheKeptAnswer() async {
+        let service = service()
+        let orange = CLIConfiguration(customCommand: "orange")
+        probe.fail("orange", with: AgentSDKError.binaryNotFound)
+        let missing = await service.check(orange)
+        XCTAssertEqual(missing, .invalid(String(localized: "Not found")))
+        XCTAssertEqual(service.cached(orange), missing)
+
+        probe.succeed("orange")
+        let installed = await service.check(orange)
+        XCTAssertEqual(installed, .valid(FakeProbe.version(of: "orange")))
+        XCTAssertEqual(service.cached(orange), installed)
+        XCTAssertEqual(probe.calls.count, 2)
     }
 
     func testChecksMadeWhileOneRunsShareIt() async {

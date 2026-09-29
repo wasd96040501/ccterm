@@ -14,7 +14,7 @@ import Combine
 final class AccountEditorViewController: NSViewController {
     weak var delegate: AccountEditorViewControllerDelegate?
 
-    var mode: AccountEditorMode { viewModel.mode }
+    private var mode: AccountEditorMode { viewModel.mode }
     private let viewModel: AccountEditorViewModel
     private let environment = EnvironmentVariablesViewController()
     private var cancellables = Set<AnyCancellable>()
@@ -34,6 +34,7 @@ final class AccountEditorViewController: NSViewController {
         self.viewModel = viewModel
         super.init(nibName: nil, bundle: nil)
         preferredContentSize = Self.size
+        if let note = viewModel.openingNote { say(note) }
     }
 
     @available(*, unavailable)
@@ -250,8 +251,8 @@ final class AccountEditorViewController: NSViewController {
         saveButton.isEnabled = presentation.canSave
         baseURLRow.detail = presentation.baseURLError
         baseURLRow.isDetailError = true
-        commandRow.detail = presentation.commandError
-        commandRow.isDetailError = true
+        commandRow.detail = presentation.commandDetail.text
+        commandRow.isDetailError = presentation.commandDetail.isError
         credentialRow.title = presentation.credentialTitle
         credentialField.configure(value: presentation.fields.credential, masked: presentation.maskedCredential)
         let authentication = authenticationPopUp.indexOfItem(
@@ -295,11 +296,6 @@ final class AccountEditorViewController: NSViewController {
     }
 
     // MARK: - Events up
-
-    /// Fills the draft from `entry` and says what it filled.
-    func fill(_ entry: AccountPaste.Entry) {
-        say(viewModel.apply(entry))
-    }
 
     /// Reads `text` — `KEY=value` lines, `export` lines or a whole alias —
     /// into the draft, and says what it filled.

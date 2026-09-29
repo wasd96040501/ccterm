@@ -127,10 +127,12 @@ final class AccountEditorViewModelTests: XCTestCase {
 
         model.setCommand("relay-wrapper")
         XCTAssertFalse(model.presentation.canSave, "the old answer isn't one for this command")
-        await waitFor(model.$presentation) { !$0.canSave && $0.commandError == nil }
+        await waitFor(model.$presentation) { !$0.canSave && $0.commandDetail == .checking }
         await gate.open()
         await waitFor(model.$presentation) { $0.canSave }
-        XCTAssertNil(model.presentation.commandError)
+        XCTAssertEqual(
+            model.presentation.commandDetail.text,
+            String(localized: "Claude Code \(FakeProbe.version(of: nil).version)"))
 
         model.setCommand("")
         XCTAssertTrue(model.presentation.canSave, "General's launch is known")
@@ -141,11 +143,12 @@ final class AccountEditorViewModelTests: XCTestCase {
         let model = newProvider()
         fill(model)
         model.setCommand("missing")
-        await waitFor(model.$presentation) { $0.commandError != nil }
+        await waitFor(model.$presentation) { $0.commandDetail.isError }
         XCTAssertFalse(model.presentation.canSave)
-        XCTAssertEqual(model.presentation.commandError, String(localized: "Not found"))
+        XCTAssertEqual(model.presentation.commandDetail.text, String(localized: "Not found") + ".")
         model.setCommand("")
-        XCTAssertNil(model.presentation.commandError, "General's launch is known, so its answer shows at once")
+        XCTAssertEqual(
+            model.presentation.commandDetail, .none, "General's launch is known, so its answer shows at once")
         XCTAssertTrue(model.presentation.canSave)
     }
 

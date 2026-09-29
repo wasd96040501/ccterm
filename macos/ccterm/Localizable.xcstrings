@@ -241,6 +241,26 @@
         }
       }
     },
+    "Claude Code %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code %@"
+          }
+        }
+      }
+    },
+    "Claude Code’s settings, sign-in and sessions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code 的设置、登录状态和会话"
+          }
+        }
+      }
+    },
     "Click + or paste to add.": {
       "localizations": {
         "zh-Hans": {
@@ -962,6 +982,16 @@
         }
       }
     },
+    "Still using %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仍在使用 %@。"
+          }
+        }
+      }
+    },
     "Subagents": {
       "localizations": {
         "zh-Hans": {
@@ -1048,16 +1078,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "值"
-          }
-        }
-      }
-    },
-    "Version %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "版本 %@"
           }
         }
       }

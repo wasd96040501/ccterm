@@ -181,7 +181,7 @@ final class SettingsSnapshotTests: XCTestCase {
         let store = AccountStore(fileURL: root.appendingPathComponent("\(UUID()).json"), secrets: InMemorySecretStore())
         let (launch, check) = try launchSettings(store)
         let validation = LaunchCommandValidation(
-            check: check, configuration: { LaunchEnvironment.resolve(command: $0, general: launch.preferences) },
+            check: check, configuration: { launch.configuration(accountCommand: $0) },
             text: account.command)
         return AccountEditorViewController(
             viewModel: AccountEditorViewModel(

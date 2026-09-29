@@ -16,12 +16,7 @@ final class GeneralSettingsViewController: NSViewController {
         self.launch = launch
         validation = LaunchCommandValidation(
             check: launchCheck,
-            configuration: { [launch] command in
-                LaunchEnvironment.resolve(
-                    command: "",
-                    general: LaunchPreferences(
-                        command: command, configDirectory: launch.preferences.configDirectory))
-            },
+            configuration: { [launch] in launch.configuration(generalCommand: $0) },
             text: launch.preferences.command, debounce: debounce)
         super.init(nibName: nil, bundle: nil)
     }
@@ -54,21 +49,15 @@ final class GeneralSettingsViewController: NSViewController {
             .store(in: &cancellables)
     }
 
-    /// What the command's check found: the version under the row, the reason
-    /// in red, and — while the field is empty — where `claude` is.
+    /// What the command's check found under the row and, while the field is
+    /// empty, where `claude` is.
     private func show(_ state: LaunchCommandValidation.State) {
-        switch state {
-        case .valid(let version):
-            launchCommandRow.detail = String(localized: "Version \(version.version)")
-            launchCommandRow.isDetailError = false
-            if launchCommandField.stringValue.isEmpty {
-                launchCommandField.placeholderString = (version.executable as NSString).abbreviatingWithTildeInPath
-            }
-        case .invalid(let message):
-            launchCommandRow.detail = message
-            launchCommandRow.isDetailError = true
-        case .checking:
-            break
+        let applied = launch.preferences.command
+        let detail = state.detail(fallback: applied.isEmpty ? "claude" : applied)
+        launchCommandRow.detail = detail.text
+        launchCommandRow.isDetailError = detail.isError
+        if case .valid(let version) = state, launchCommandField.stringValue.isEmpty {
+            launchCommandField.placeholderString = (version.executable as NSString).abbreviatingWithTildeInPath
         }
     }
 

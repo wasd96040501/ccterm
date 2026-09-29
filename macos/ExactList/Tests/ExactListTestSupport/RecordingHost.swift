@@ -24,6 +24,8 @@ public final class RecordingHost: ExactListViewDataSource, ExactListViewDelegate
     /// Answer for `doCommandBy`: which selectors the host claims.
     public var handledCommands: Set<Selector> = []
 
+    private var bound: [ObjectIdentifier: Int] = [:]
+
     public init(count: Int, height: @escaping (_ row: Int, _ width: CGFloat) -> CGFloat) {
         self.count = count
         self.height = height
@@ -36,30 +38,38 @@ public final class RecordingHost: ExactListViewDataSource, ExactListViewDelegate
 
     /// The row each live view was last bound to, by the view's identity.
     public func boundRow(of view: NSView) -> Int? {
-        fatalError("unimplemented: test support")
+        bound[ObjectIdentifier(view)]
     }
 
     public func numberOfRows(in listView: ExactListView) -> Int {
-        fatalError("unimplemented: test support")
+        calls.append(.numberOfRows)
+        return count
     }
 
     public func listView(_ listView: ExactListView, heightOfRow row: Int, width: CGFloat) -> CGFloat {
-        fatalError("unimplemented: test support")
+        calls.append(.heightOfRow(row, width: width))
+        return height(row, width)
     }
 
     public func listView(_ listView: ExactListView, viewForRow row: Int) -> NSView {
-        fatalError("unimplemented: test support")
+        calls.append(.viewForRow(row))
+        let view = listView.makeView(withIdentifier: Self.rowIdentifier) { NSView() }
+        bound[ObjectIdentifier(view)] = row
+        return view
     }
 
     public func listView(_ listView: ExactListView, didRemove view: NSView, forRow row: Int) {
-        fatalError("unimplemented: test support")
+        calls.append(.didRemove(ObjectIdentifier(view), row: row))
     }
 
     public func listView(_ listView: ExactListView, didChangeTailFollowing isFollowingTail: Bool) {
-        fatalError("unimplemented: test support")
+        calls.append(.didChangeTailFollowing(isFollowingTail))
     }
 
     public func listView(_ listView: ExactListView, doCommandBy selector: Selector) -> Bool {
-        fatalError("unimplemented: test support")
+        calls.append(.doCommand(selector))
+        return handledCommands.contains(selector)
     }
+
+    private static let rowIdentifier = NSUserInterfaceItemIdentifier("RecordingHost.row")
 }

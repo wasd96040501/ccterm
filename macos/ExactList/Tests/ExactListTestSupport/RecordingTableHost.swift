@@ -32,22 +32,47 @@ public final class RecordingTableHost: NSObject, NSTableViewDataSource, NSTableV
     /// wired to this host. The configuration matches ExactList's, so the two
     /// are compared like for like.
     public func makeTableView() -> NSTableView {
-        fatalError("unimplemented: test support")
+        let table = NSTableView()
+        let column = NSTableColumn(identifier: Self.columnIdentifier)
+        column.resizingMask = .autoresizingMask
+        table.addTableColumn(column)
+        table.headerView = nil
+        table.style = .plain
+        table.selectionHighlightStyle = .none
+        table.intercellSpacing = .zero
+        table.usesAutomaticRowHeights = false
+        table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
+        table.backgroundColor = .clear
+        table.dataSource = self
+        table.delegate = self
+        return table
     }
 
     public func numberOfRows(in tableView: NSTableView) -> Int {
-        fatalError("unimplemented: test support")
+        calls.append(.numberOfRows)
+        return count
     }
 
     public func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        fatalError("unimplemented: test support")
+        let width = tableView.tableColumns.first?.width ?? 0
+        calls.append(.heightOfRow(row, width: width))
+        return height(row, width)
     }
 
     public func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        fatalError("unimplemented: test support")
+        calls.append(.viewForRow(row))
+        if let view = tableView.makeView(withIdentifier: Self.cellIdentifier, owner: nil) {
+            return view
+        }
+        let view = NSView()
+        view.identifier = Self.cellIdentifier
+        return view
     }
 
     public func tableView(_ tableView: NSTableView, didRemove rowView: NSTableRowView, forRow row: Int) {
-        fatalError("unimplemented: test support")
+        calls.append(.didRemove(ObjectIdentifier(rowView), row: row))
     }
+
+    private static let columnIdentifier = NSUserInterfaceItemIdentifier("RecordingTableHost.column")
+    private static let cellIdentifier = NSUserInterfaceItemIdentifier("RecordingTableHost.cell")
 }

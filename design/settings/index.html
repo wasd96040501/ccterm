@@ -389,27 +389,15 @@ svg { display: block; }
 .link { color: var(--accent-text); }
 .link:active { opacity: .7; }
 
-/* Checked fields: the result is the description line, and a status glyph in
-   a 14 slot 6 after the field, centred on it. Only a checked field has the
-   slot; it stays reserved while empty, so nothing moves when a glyph comes
-   or goes. An unchecked field keeps its full width. checkmark.circle.fill in systemGreen,
-   exclamationmark.circle.fill in systemRed; none while checking. 12 pt at
-   the medium symbol scale: a 14 frame around a 12 circle, the height of the
-   field text's ascender (12.6 at 13 pt), so it spans the value's line
-   without outgrowing it. */
+/* Checked fields: the result is the description line alone, its text and
+   colour; the field keeps the row's usual width and edge. */
 .row .desc .err { color: var(--system-red); }
 .row .desc .path { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .92em; }
-.slotted { display: inline-flex; align-items: center; gap: 6px; height: 16px; }
-.slot { width: 14px; height: 14px; flex: none; display: grid; place-items: center; }
-.slot svg { width: 12px; height: 12px; animation: slot-in .16s ease-out; }
-.slot.ok { color: var(--system-green); }
-.slot.bad { color: var(--system-red); }
-@keyframes slot-in { from { opacity: 0; } }
 
 /* A row just imported: tinted, then fades to the group's fill. */
 .acct.fresh { animation: fresh 2.4s ease-out; }
 @keyframes fresh { 0%, 30% { background: color-mix(in srgb, var(--accent) 14%, transparent); } }
-@media (prefers-reduced-motion: reduce) { .acct.fresh, .slot svg { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .acct.fresh { animation: none; } }
 </style>
 </head>
 <body>
@@ -469,9 +457,6 @@ const G = {
   plus: `<svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M5 .8v8.4M.8 5h8.4"/></svg>`,
   minus: `<svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M.8 5h8.4"/></svg>`,
   warn: `<svg width="14" height="13" viewBox="0 0 14 13" fill="currentColor"><path d="M6.1 1a1 1 0 0 1 1.8 0l5.6 10a1 1 0 0 1-.9 1.5H1.4a1 1 0 0 1-.9-1.5z"/><path d="M7 4.3v3.6" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/><circle cx="7" cy="10" r=".85" fill="#fff"/></svg>`,
-  // checkmark.circle.fill / exclamationmark.circle.fill at 12 pt, medium scale (12 pt circle), drawn at .slot svg's size; one size and weight, so states swap in place
-  okFill: `<svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="7" fill="currentColor"/><path d="M4 7.2 6.1 9.3 10 4.9" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
-  badFill: `<svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="7" fill="currentColor"/><path d="M7 3.6v4.1" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".95" fill="#fff"/></svg>`,
   spinner: `<svg class="spin" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">${[...Array(8)].map((_, i) => `<path d="M7 1.2v2.6" opacity="${(i + 1) / 8}" transform="rotate(${i * 45} 7 7)"/>`).join('')}</svg>`,
   // server.rack, 32 pt, regular weight
   serverRack: `<svg width="34" height="30" viewBox="0 0 34 30" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="1.5" width="30" height="8" rx="2.4"/><rect x="2" y="11" width="30" height="8" rx="2.4"/><rect x="2" y="20.5" width="30" height="8" rx="2.4"/><g fill="currentColor" stroke="none"><circle cx="7" cy="5.5" r="1.2"/><circle cx="7" cy="15" r="1.2"/><circle cx="7" cy="24.5" r="1.2"/></g><path d="M20 5.5h7M20 15h7M20 24.5h7" stroke-linecap="round"/></svg>`,
@@ -692,10 +677,6 @@ function fieldCheck({ kind, value, target = v => v, row, desc, onResult, result 
   return c
 }
 // The result's glyph, at the right end of the description line.
-const slot = r => r?.ok ? `<span class="slot ok" aria-label="Valid">${G.okFill}</span>`
-  : r && !r.pending ? `<span class="slot bad" aria-label="Invalid">${G.badFill}</span>` : '<span class="slot"></span>'
-// A field with its trailing slot; rows without a check pass no result.
-const slotted = (input, r = null) => `<span class="slotted">${input}${slot(r)}</span>`
 const pathText = p => `<span class="path">${esc(p)}</span>`
 // The launch command's description line. `fallback` is what still runs when
 // the check fails (General); a sheet has none, its failure blocks saving.
@@ -711,7 +692,6 @@ function folderDesc(r, fallback) {
 }
 // Paint a checked row in place, so typing never loses focus.
 function paintCheck(rowEl, r, text) {
-  rowEl.querySelector('.slot').outerHTML = slot(r)
   let d = rowEl.querySelector('.desc')
   if (!d) { d = document.createElement('div'); d.className = 'desc'; rowEl.append(d) }
   d.innerHTML = text
@@ -740,10 +720,10 @@ function renderGeneral() {
     <div class="section"><h2>Claude Code</h2><div class="group">
       ${row({ title: 'Launch Command', attrs: 'data-check="launch"',
         desc: commandDesc(launchCheck.result, { fallback: generalCommand() }),
-        trail: slotted(`<input class="field mono" id="launch" spellcheck="false" placeholder="${esc(DETECTED)}" value="${esc(g.launchDraft)}">`, launchCheck.result) })}
+        trail: `<input class="field mono" id="launch" spellcheck="false" placeholder="${esc(DETECTED)}" value="${esc(g.launchDraft)}">` })}
       ${row({ title: 'Configuration Folder', attrs: 'data-check="dir"',
         desc: folderDesc(folderCheck.result, g.configDir || '~/.claude'),
-        trail: slotted(`<input class="field mono" id="config-dir" spellcheck="false" placeholder="${esc(g.configDir.trim() || '~/.claude')}" value="${esc(g.dirDraft)}">`, folderCheck.result) })}
+        trail: `<input class="field mono" id="config-dir" spellcheck="false" placeholder="${esc(g.configDir.trim() || '~/.claude')}" value="${esc(g.dirDraft)}">` })}
     </div></div>`
 }
 const generalChecks = { launch: launchCheck, 'config-dir': folderCheck }
@@ -1045,7 +1025,7 @@ function editAccount(d, isNew, paste) {
 ` + models + `
       <div class="section"><h2>Launch</h2><div class="group">
         ${row({ title: 'Command', attrs: 'data-check="cmd"', desc: sheetCommandDesc(cmdCheck.result),
-          trail: slotted(`<input class="field mono" data-f="command" placeholder="${esc(generalCommand())}" value="${esc(d.command)}" spellcheck="false" style="width:300px">`, cmdCheck.result) })}
+          trail: `<input class="field mono" data-f="command" placeholder="${esc(generalCommand())}" value="${esc(d.command)}" spellcheck="false" style="width:300px">` })}
         ${row({ title: 'Arguments', trail: `<input class="field mono" data-f="args" placeholder="None" value="${esc(d.args)}" spellcheck="false" style="width:300px">` })}
       </div></div>`
     body.scrollTop = top

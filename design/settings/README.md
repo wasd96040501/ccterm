@@ -29,7 +29,8 @@ One group, **Claude Code**:
 
 The check result shows where the value is typed, the way System Settings
 and the Add User sheet report on a field, rather than in an alert on
-commit: a status glyph beside the field, and the row's description line.
+commit: in the row's description line, by its text and colour alone. No
+glyph: a field keeps the row's usual width and edge.
 
 **When it checks.** Typing changes nothing on screen: the last result stays
 until the check runs, 0.5 s after the last keystroke. Return or leaving the
@@ -40,26 +41,12 @@ must be an existing folder.
 
 **What the row shows.**
 
-| State | Description line | Glyph |
-|---|---|---|
-| Checking | *Checking…*, secondary | none (the text says it) |
-| Valid command | *Claude Code 2.1.284*, secondary (the field, or its placeholder, already shows the path) | `checkmark.circle.fill`, systemGreen |
-| Valid folder | *Claude Code's settings, sign-in and sessions*, secondary | `checkmark.circle.fill`, systemGreen |
-| Invalid | the reason in systemRed, then *Still using …* in secondary: **No such file.**, **Not found in PATH.**, **Not executable.**, **Not Claude Code.**, **Didn't print a version.**; **Folder doesn't exist.**, **Not a folder.** | `exclamationmark.circle.fill`, systemRed |
-
-**The status slot.** The glyph sits in a 14 × 14 slot 6 after the field,
-centred on the field. The symbol is 12 at the medium scale, which AppKit
-draws as a 12 circle in a 14 frame: the height of the field text's
-ascender (12.6 at 13), so it spans the value's line. Smaller (the small
-scale's 10, the cap height) reads faint beside the field; larger (13 at
-medium, 14) outgrows the text and reads as a button. Only a checked
-field has the slot, and it stays reserved while empty, so nothing moves
-when a glyph comes or goes; an unchecked field (the sheet's Arguments)
-keeps its full width rather than carry an unexplained gap. The three
-checked rows (Launch Command, Configuration Folder, the sheet's Command)
-place the glyph identically. `exclamationmark.circle.fill`, not `xmark.circle.fill`: the
-x-in-a-circle is the clear button of search and token fields, and would
-read as "clear this".
+| State | Description line |
+|---|---|
+| Checking | *Checking…*, secondary |
+| Valid command | *Claude Code 2.1.284*, secondary (the field, or its placeholder, already shows the path) |
+| Valid folder | *Claude Code's settings, sign-in and sessions*, secondary |
+| Invalid | the reason in systemRed, then *Still using …* in secondary: **No such file.**, **Not found in PATH.**, **Not executable.**, **Not Claude Code.**, **Didn't print a version.**; **Folder doesn't exist.**, **Not a folder.** |
 
 Only a value that passes is saved; a failing one stays in the field until
 it is fixed or Settings closes, and the last good value keeps running. A
@@ -155,7 +142,7 @@ bad URL says so under the field as you type.
 - **Launch**: Command and Arguments, per account (the subscription's
   sheet has them too), so an account can go through its own wrapper
   script. Command is checked like General's, with the same timing,
-  description line and glyph; empty runs General's command, which its
+  description line; empty runs General's command, which its
   placeholder shows. The default button stays disabled until
   the command in the field has passed: while it is unchecked, checking or
   failing (with no *Still using*, since nothing falls back). Return in the
@@ -205,8 +192,6 @@ pixel. The Swift implementation should land on the same numbers:
 | Push button | 24 tall, radius 6, fill black 6 %, no border; 12 padding |
 | Large button | 28 tall, capsule |
 | List bar (**+ \| −**) | 28 tall, hairline above, 4 inset; buttons 20 × 20, radius 5, 10 glyph; divider 1 × 12, 3 each side; hover black 5 % / white 8 %, press black 12 % / white 18 % |
-| Status slot | 14 × 14, 6 after the field, centred on the field; only on a checked field, reserved while empty (the slot ends on the row's content edge) |
-| Status glyph | 12 pt, medium scale: 12 circle, centred in the slot; `checkmark.circle.fill` systemGreen `#34c759` / `#30d158`, `exclamationmark.circle.fill` systemRed `#ff3b30` / `#ff453a`; none while checking |
 | Check timing | 0.5 s after the last keystroke; at once on Return or blur |
 | Pane toast | centred on the detail area, 24 above its bottom; the sheet's toast sits 66 above the sheet's bottom |
 

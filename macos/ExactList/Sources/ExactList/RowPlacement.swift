@@ -55,11 +55,20 @@ final class RowPlacement {
     /// Rows that are new are asked for views. Rows that leave are unmounted
     /// unless `keeping` holds them, which is what `MotionAnimator` uses for rows
     /// still in flight.
+    ///
+    /// A container that leaves is handed straight to a row that arrives in the
+    /// same call, still in the document and usually still holding the view
+    /// the pool gives back, so a scroll step moves no view in or out of the
+    /// hierarchy; that is how `NSTableView` recycles its row views (measured:
+    /// it keeps only the rows it shows). The host still hears `didRemove`
+    /// before `viewForRow` (P2, P3). Containers left over leave the document.
     func place(rows: IndexSet, keeping: IndexSet, heights: RowHeights, width: CGFloat) {
         let wanted = rows.union(keeping).filteredIndexSet { $0 < heights.count }
+        var departed: [RowContainerView] = []
         for (row, container) in containers where !wanted.contains(row) {
-            unmount(container, reporting: row)
+            depart(container, reporting: row)
             containers[row] = nil
+            departed.append(container)
         }
         for row in wanted {
             let frame = NSRect(x: 0, y: heights.top(ofRow: row), width: width, height: heights[row])
@@ -68,14 +77,27 @@ final class RowPlacement {
                 if let view = container.hostedView { _ = container.host(view, height: frame.height) }
                 continue
             }
-            let container = spare.popLast() ?? RowContainerView(row: row)
+            let view = owner?.placement(self, viewForRow: row)
+            let container: RowContainerView
+            if let holder = view?.superview as? RowContainerView,
+                let index = departed.firstIndex(where: { $0 === holder })
+            {
+                container = departed.remove(at: index)
+            } else if let recycled = departed.popLast() {
+                container = recycled
+            } else {
+                container = spare.popLast() ?? RowContainerView(row: row)
+                documentView.addSubview(container)
+            }
             container.row = row
             container.frame = frame
-            if let owner {
-                _ = container.host(owner.placement(self, viewForRow: row), height: frame.height)
-            }
-            documentView.addSubview(container)
+            if let view { _ = container.host(view, height: frame.height) }
             containers[row] = container
+        }
+        for container in departed {
+            container.removeFromSuperview()
+            _ = container.unhost()
+            spare.append(container)
         }
     }
 
@@ -123,13 +145,21 @@ final class RowPlacement {
     }
 
     private func unmount(_ container: RowContainerView, reporting row: Int) {
+        depart(container, reporting: row)
+        container.removeFromSuperview()
+        _ = container.unhost()
+        spare.append(container)
+    }
+
+    /// Takes a container out of its row: its motion ends, and the host hears
+    /// `didRemove` for its view, which goes back to the pool (P3). The view
+    /// stays in the container until another row takes one or the other.
+    private func depart(_ container: RowContainerView, reporting row: Int) {
         container.layer?.removeAllAnimations()
         container.layer?.opacity = 1
         container.layer?.sublayerTransform = CATransform3DIdentity
-        container.removeFromSuperview()
-        if let view = container.unhost() {
+        if let view = container.hostedView {
             owner?.placement(self, didRemove: view, forRow: row)
         }
-        spare.append(container)
     }
 }

@@ -25,6 +25,7 @@ ccterm/
 │   ├── ccterm/               # App sources
 │   │   ├── App/              # CCTermApp + menu commands; AppKit/ holds AppDelegate (composition root) + window controllers + main split
 │   │   ├── Content/          # About/, Settings/, Sidebar/ (session outline), Transcript/ (a transcript tab)
+│   │   ├── Accounts/         # AccountStore (JSON + keychain secrets), SubscriptionService, LaunchSettings
 │   │   ├── Library/          # LibraryStore — the session tree on disk, and reading one transcript
 │   │   ├── Git/              # GitService — a folder's branch, live
 │   │   ├── Logging/          # appLog, main-thread watchdog

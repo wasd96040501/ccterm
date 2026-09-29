@@ -6,7 +6,7 @@ Swift package over the `claude` CLI: a live `Session` on the stream-json stdio p
 
 | Dir | Holds |
 |---|---|
-| `Process/` | Starting the CLI: `CLILaunch` resolves the executable (binary lookup, or a custom launch command through the login shell) and the environment once for `Session` and `Prompt`, which only build arguments; `CLIProcess` (the subprocess and its pipes), `Termination`, `AgentSDKError`. |
+| `Process/` | Starting the CLI: `CLILaunch` resolves the executable (binary lookup, or a custom launch command through the login shell) and the environment once for `Session`, `Prompt` and `Auth`, which only build arguments; `BinaryLocator` (where `claude` is); `CLIProcess` (the subprocess and its pipes), `CLIOutput` (a one-shot run to its exit), `Termination`, `AgentSDKError`. |
 | `Protocol/` | What the CLI says and takes: `Message` (one enum over every line type) and its payloads, `ContentBlock`, `StreamEvent`, `JSONValue`, `Usage`; the values it takes as flags and settings (`PermissionMode`, `Effort`, `PermissionRule`, `PermissionBehavior`) and `SettingsValue`, a value's `settings.json` form; `ToolDefinition` / `ToolOutcome`, how a tool call reads typed (`ToolUseBlock.input(as:)`, `UserMessage.toolOutcome(_:)`); the decoding plumbing every reader shares (`AnyCodingKey`, lenient containers, `concurrentMap`). |
 | `Protocol/UserText/` | What a user message is — typed text, a local command, a task report, another party's message — read from the markup the CLI writes into its text: `UserMessage.kind`, `TaskReport`, `TaggedElement`. |
 | `Tools/` | `Tools.<Name>` — the built-in tools' definitions, typed input/output per tool. |
@@ -15,8 +15,9 @@ Swift package over the `claude` CLI: a live `Session` on the stream-json stdio p
 | `SessionDirectory/` | `SessionDirectory` — the session, subagent and workflow-run files on disk (`SessionFile`, `SubagentFile`, `WorkflowRun`), and which sessions change (FSEvents, mapped to the session a file belongs to). |
 | `Session/` | Talking to a live CLI: `Session` (events, handshake, typed control RPCs), `SessionConfiguration` and its launch flags, `UserInput`, `PermissionRequest` / `PermissionDecision` / `PermissionUpdate`, `InitializationResult`, `ContextUsage`, `RewindResult`, `MessageExporter`. |
 | `Prompt/` | `Prompt.run` — one-shot `claude -p` with a timeout. |
+| `Auth/` | `Auth` — the CLI's own login (`claude auth status / login / logout`), `AuthStatus`, `AuthConfiguration`. |
 
-Directories depend downward only, so the graph stays acyclic: `Process/` and `Protocol/` depend on nothing in the package; `Protocol/UserText/`, `Tools/`, `Settings/`, `Transcript/` and `SessionDirectory/` on `Protocol/`; `Session/` and `Prompt/` on `Process/`, `Protocol/` and `Settings/`. No source file sits at the package root. A type two directories need lives in the lower one, with its conformances.
+Directories depend downward only, so the graph stays acyclic: `Process/` and `Protocol/` depend on nothing in the package; `Protocol/UserText/`, `Tools/`, `Settings/`, `Transcript/` and `SessionDirectory/` on `Protocol/`; `Session/` and `Prompt/` on `Process/`, `Protocol/` and `Settings/`; `Auth/` on `Process/`. No source file sits at the package root. A type two directories need lives in the lower one, with its conformances.
 
 ## Rules
 

@@ -30,11 +30,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// state.
     private var settingsWindowController: SettingsWindowController?
 
+    /// What Settings reads and changes: the accounts, the CLI's claude.ai
+    /// login and the defaults. Built on first use; the accounts live under
+    /// Application Support, their secrets in the login keychain.
+    private lazy var settingsContext: SettingsContext = {
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.ccterm.app"
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(bundleID, isDirectory: true)
+        let launch = LaunchSettings(defaults: .standard, locate: { BinaryLocator.locate() })
+        return SettingsContext(
+            accounts: AccountStore(
+                fileURL: support.appendingPathComponent("Accounts.json"),
+                secrets: KeychainSecretStore(service: bundleID + ".accounts")),
+            subscription: SubscriptionService(auth: CLISubscriptionAuth(launch: launch)),
+            launch: launch)
+    }()
+
     func showSettingsWindow() {
         let controller =
             settingsWindowController
             ?? {
-                let c = SettingsWindowController()
+                let c = SettingsWindowController(context: settingsContext)
+                c.windowFrameAutosaveName = "SettingsWindow"
                 settingsWindowController = c
                 return c
             }()

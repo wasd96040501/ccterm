@@ -82,6 +82,6 @@ final class RowContainerView: NSView {
     }
 
     override func accessibilityChildren() -> [Any]? {
-        hostedView.map { [$0] }
+        hostedView.map { NSAccessibility.unignoredChildren(from: [$0]) }
     }
 }

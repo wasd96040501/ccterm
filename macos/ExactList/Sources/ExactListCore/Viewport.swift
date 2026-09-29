@@ -30,46 +30,46 @@ public struct Viewport: Equatable, Sendable {
 
     /// `o + t`: the top of `U`.
     public var unobscuredTop: CGFloat {
-        fatalError("unimplemented: SPEC §3")
+        offset + insetTop
     }
 
     /// `o + V − b`: the bottom of `U`.
     public var unobscuredBottom: CGFloat {
-        fatalError("unimplemented: SPEC §3")
+        offset + height - insetBottom
     }
 
     /// `q = (V − t − b) / 2`.
     public var overscan: CGFloat {
-        fatalError("unimplemented: SPEC §3")
+        (height - insetTop - insetBottom) / 2
     }
 
     /// The top of `P`: `o + t − q`.
     public var preparedTop: CGFloat {
-        fatalError("unimplemented: SPEC §3")
+        unobscuredTop - overscan
     }
 
     /// The bottom of `P`: `o + V − b + q`.
     public var preparedBottom: CGFloat {
-        fatalError("unimplemented: SPEC §3")
+        unobscuredBottom + overscan
     }
 
     /// `oMin = −t` (G3).
     public var minOffset: CGFloat {
-        fatalError("unimplemented: SPEC G3")
+        -insetTop
     }
 
     /// `oMax = max(oMin, H − V + b)` (G3).
     public func maxOffset(contentHeight: CGFloat) -> CGFloat {
-        fatalError("unimplemented: SPEC G3")
+        max(minOffset, contentHeight - height + insetBottom)
     }
 
     /// `o ≥ oMax − ε` (§3, A8).
     public func isAtTail(contentHeight: CGFloat) -> Bool {
-        fatalError("unimplemented: SPEC A8")
+        offset >= maxOffset(contentHeight: contentHeight) - Viewport.tailTolerance
     }
 
     /// `offset` clamped to `[oMin, oMax]` (A7).
     public func clamped(_ offset: CGFloat, contentHeight: CGFloat) -> CGFloat {
-        fatalError("unimplemented: SPEC A7")
+        min(max(offset, minOffset), maxOffset(contentHeight: contentHeight))
     }
 }

@@ -2,7 +2,7 @@ import AppKit
 import Combine
 
 /// Accounts' API Providers section: a row per provider — or an empty state —
-/// and Add Provider… under the group. Shows the list and reports what the
+/// and Add Provider… (with Import from Clipboard in its menu) under the group. Shows the list and reports what the
 /// person asks for.
 @MainActor
 final class ProvidersSectionViewController: NSViewController {
@@ -27,8 +27,7 @@ final class ProvidersSectionViewController: NSViewController {
     private let emptyView = ProvidersEmptyView()
     private lazy var section = FormSectionView(
         title: String(localized: "API Providers"), content: group, trailingButtons: [addButton])
-    private lazy var addButton = NSButton(
-        title: String(localized: "Add Provider…"), target: self, action: #selector(add(_:)))
+    private let addButton = AddProviderButton()
 
     override func loadView() {
         view = section
@@ -36,7 +35,10 @@ final class ProvidersSectionViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        emptyView.onAdd = { [weak self] in self?.add(nil) }
+        for button in [addButton, emptyView.addButton] {
+            button.onAdd = { [weak self] in self.map { $0.delegate?.providersSectionDidRequestAdd($0) } }
+            button.onImport = { [weak self] in self.map { $0.delegate?.providersSectionDidRequestImport($0) } }
+        }
         show(initialProviders)
         updates
             .receive(on: DispatchQueue.main)
@@ -75,10 +77,6 @@ final class ProvidersSectionViewController: NSViewController {
             item.representedObject = account
         }
         return menu
-    }
-
-    @objc private func add(_ sender: Any?) {
-        delegate?.providersSectionDidRequestAdd(self)
     }
 
     @objc private func open(_ sender: NSMenuItem) {

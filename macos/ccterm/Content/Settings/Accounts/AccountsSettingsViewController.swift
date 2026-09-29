@@ -185,6 +185,10 @@ extension AccountsSettingsViewController: ProvidersSectionViewControllerDelegate
         present(.newProvider(), secrets: AccountSecrets(), mode: .newProvider)
     }
 
+    func providersSectionDidRequestImport(_ section: ProvidersSectionViewController) {
+        paste(nil)
+    }
+
     func providersSection(_ section: ProvidersSectionViewController, didOpen account: Account) {
         open(account, mode: .provider)
     }

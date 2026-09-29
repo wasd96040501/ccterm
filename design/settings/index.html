@@ -199,6 +199,13 @@ svg { display: block; }
 .btn.destructive { color: #e5484d; }
 .btn.small { height: 20px; padding: 0 9px; font-size: 12px; border-radius: 5px; min-width: 0; }
 .btn.icon { min-width: 0; padding: 0; width: 24px; }
+/* NSComboButton (split): the title segment, a hairline, an 18 wide menu segment. */
+.combo { display: inline-flex; position: relative; }
+.combo .btn { min-width: 0; }
+.combo .btn:first-child { border-radius: 6px 0 0 6px; padding-right: 10px; }
+.combo .btn.more { position: relative; border-radius: 0 6px 6px 0; width: 18px; padding: 0; }
+.combo .btn.more::before { content: ""; position: absolute; left: 0; top: 5px; bottom: 5px; width: 1px; background: currentColor; opacity: .18; }
+.combo .btn.more[aria-expanded="true"] { background: var(--fill-press); }
 
 /* Plain in-row text field: right-aligned, borderless, like a grouped Form. */
 .field {
@@ -419,6 +426,7 @@ const G = {
   gear: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"><path d="M7.6 1.6h2.8l.4 2.1 1.4.8 2-.7 1.4 2.4-1.6 1.4v1.6l1.6 1.4-1.4 2.4-2-.7-1.4.8-.4 2.1H7.6l-.4-2.1-1.4-.8-2 .7-1.4-2.4L4 9.8V8.2L2.4 6.8l1.4-2.4 2 .7 1.4-.8z"/><circle cx="9" cy="9" r="2.4"/></svg>`,
   person: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.35"><circle cx="9" cy="9" r="7.6"/><circle cx="9" cy="7.3" r="2.6"/><path d="M4.2 14.6c1-1.9 2.7-2.9 4.8-2.9s3.8 1 4.8 2.9" stroke-linecap="round"/></svg>`,
   updown: `<svg width="8" height="12" viewBox="0 0 8 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4.3 4 1.3l3 3M1 7.7l3 3 3-3"/></svg>`,
+  chevDown: `<svg width="8" height="5" viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l4 4 4-4"/></svg>`,
   check: `<svg width="10" height="12" viewBox="0 0 10 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6.6 3.8 9.6 9 2.4"/></svg>`,
   info: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor"><circle cx="8" cy="8" r="6.9" stroke-width="1.2"/><path d="M8 7.1v4.3" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="4.8" r=".95" fill="currentColor" stroke="none"/></svg>`,
   eye: `<svg width="18" height="12" viewBox="0 0 18 12" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1 6c2-3.3 4.7-5 8-5s6 1.7 8 5c-2 3.3-4.7 5-8 5S3 9.3 1 6z"/><circle cx="9" cy="6" r="2.4"/></svg>`,
@@ -576,6 +584,7 @@ document.addEventListener('keydown', e => {
 /* ---------- Primitives ---------- */
 const row = ({ title, desc = '', trail = '', attrs = '' }) => `
   <div class="row" ${attrs}><div class="title">${title}</div><div class="trail">${trail}</div>${desc ? `<div class="desc">${desc}</div>` : ''}</div>`
+const addProvider = () => `<span class="combo"><button class="btn" data-action="add-provider">Add Provider…</button><button class="btn more" data-action="add-menu" aria-label="More">${G.chevDown}</button></span>`
 const popup = (id, value) => `<button class="popup" data-popup="${id}"><span class="val">${esc(value)}</span><span class="ind">${G.updown}</span></button>`
 
 /* ---------- General ---------- */
@@ -616,10 +625,10 @@ function renderAccounts() {
           <span class="sym">${G.serverRack}</span>
           <div class="t">No API Providers</div>
           <div class="d">Run Claude Code through the Anthropic API, a gateway or a local proxy.</div>
-          <button class="btn" data-action="add-provider">Add Provider…</button>
+          ${addProvider()}
           <div class="hint">Or paste a shell alias here with ⌘V.</div>
         </div>`}</div>
-      ${apis.length ? `<div class="after"><button class="btn" data-action="add-provider">Add Provider…</button></div>` : ''}
+      ${apis.length ? `<div class="after">${addProvider()}</div>` : ''}
     </div>`
 }
 
@@ -629,6 +638,11 @@ pane.addEventListener('click', e => {
   const i = e.target.closest('[data-info]'); if (i) return openAccount(i.dataset.info)
   const act = e.target.closest('[data-action]')?.dataset.action
   if (act === 'add-provider') newProvider()
+  // The menu segment: Import from Clipboard, the same as ⌘V on the pane.
+  if (act === 'add-menu') openMenu(e.target.closest('[data-action]'), [
+    { label: 'Import from Clipboard', key: '⌘V', action: () => navigator.clipboard.readText()
+      .then(t => /[A-Za-z_]\w*=/.test(t) ? newProvider(t) : null).catch(() => {}) },
+  ], { align: 'below' })
   if (act === 'sign-in') signIn()
 })
 pane.addEventListener('dblclick', e => {

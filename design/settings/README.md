@@ -23,7 +23,10 @@ An account is what a session runs as. There are two kinds, one group each:
 With no providers the group holds an empty state, as `ContentUnavailableView`
 draws one: a quiet `server.rack` symbol, **No API Providers**, one line of
 what a provider is for, and **Add Provider…**, which moves in from under the
-group while it's there. **⌘V** on the pane opens a new provider filled
+group while it's there. **Add Provider…** is a split button
+(`NSComboButton`): the button opens a blank provider, its menu holds
+**Import from Clipboard ⌘V**, enabled while the clipboard holds something
+to read. It does what **⌘V** on the pane does: opens a new provider filled
 from the paste, the same reading the variable list does, so an alias
 copied from `~/.zshrc` becomes a provider in one step. The review bar's
 Providers control switches the sample list off to show it.

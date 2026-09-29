@@ -13,7 +13,7 @@ final class FormSectionView: NSView {
     private var buttonConstraints: [NSLayoutConstraint] = []
     private var noButtonConstraints: [NSLayoutConstraint] = []
 
-    init(title: String, content: NSView, trailingButtons: [NSButton] = []) {
+    init(title: String, content: NSView, trailingButtons: [NSView] = []) {
         buttons = NSStackView(views: trailingButtons)
         super.init(frame: .zero)
         let header = NSTextField(labelWithString: title)

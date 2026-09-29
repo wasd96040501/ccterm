@@ -3,10 +3,10 @@ import AppKit
 /// The API Providers group with nothing in it, as `ContentUnavailableView`
 /// draws one: a quiet `server.rack`, “No API Providers”, one line of what a
 /// provider is for, Add Provider…, and a hint that a pasted alias works too.
+/// Its owner wires the button.
 @MainActor
 final class ProvidersEmptyView: NSView {
-    /// Add Provider… was clicked.
-    var onAdd: (() -> Void)?
+    let addButton = AddProviderButton()
 
     private lazy var symbol: NSImageView = {
         let image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: nil)?
@@ -33,9 +33,6 @@ final class ProvidersEmptyView: NSView {
         label.preferredMaxLayoutWidth = 380
         return label
     }()
-
-    private lazy var addButton = NSButton(
-        title: String(localized: "Add Provider…"), target: self, action: #selector(add(_:)))
 
     private lazy var hintLabel: NSTextField = {
         let label = NSTextField(labelWithString: String(localized: "Or paste a shell alias here with ⌘V."))
@@ -77,9 +74,5 @@ final class ProvidersEmptyView: NSView {
             constraints.append(view.centerXAnchor.constraint(equalTo: centerXAnchor))
         }
         NSLayoutConstraint.activate(constraints)
-    }
-
-    @objc private func add(_ sender: Any?) {
-        onAdd?()
     }
 }

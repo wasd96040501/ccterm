@@ -502,6 +502,16 @@
         }
       }
     },
+    "Import from Clipboard": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从剪贴板导入"
+          }
+        }
+      }
+    },
     "Interrupted": {
       "localizations": {
         "zh-Hans": {

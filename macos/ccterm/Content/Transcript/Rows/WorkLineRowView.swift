@@ -219,7 +219,6 @@ final class WorkLineRowView: NSView, PageRowView {
     /// The slot always holds a glyph; only its alpha says whether it shows.
     private func paintAccessory() {
         guard let model else { return }
-        let configuration = NSImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
         let name: String
         var visible = isHovered
         if model.origin != nil {
@@ -233,8 +232,7 @@ final class WorkLineRowView: NSView, PageRowView {
                 name = "arrow.up.right"
             }
         }
-        accessory.image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-            .withSymbolConfiguration(configuration)
+        accessory.image = .symbol(name, pointSize: 10, weight: .semibold)
         accessory.contentTintColor = .tertiaryLabelColor
         accessory.alphaValue = visible ? 1 : 0
     }

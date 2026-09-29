@@ -72,8 +72,7 @@ final class CaptionRowView: NSView, PageRowView {
             glyph.image = NSImage(resource: .sidebarWorkflow)
             glyph.contentTintColor = .systemIndigo
         case .plugin:
-            glyph.image = NSImage(systemSymbolName: "puzzlepiece.extension", accessibilityDescription: nil)?
-                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .regular))
+            glyph.image = .symbol("puzzlepiece.extension", pointSize: 13)
             glyph.contentTintColor = .systemGray
         case .tile:
             break

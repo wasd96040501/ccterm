@@ -174,8 +174,7 @@ final class CapsuleRowView: NSView, PageRowView {
             words.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             count.font = .systemFont(ofSize: 11)
             count.textColor = .tertiaryLabelColor
-            chevron.image = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil)?
-                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold))
+            chevron.image = .symbol("chevron.right", pointSize: 9, weight: .semibold)
             chevron.contentTintColor = .tertiaryLabelColor
 
             let stack = NSStackView(views: [mark, words, count, chevron])

@@ -137,10 +137,7 @@ final class ToolTileView: NSView {
     // MARK: - Glyphs
 
     private static func image(for tile: Tile) -> NSImage? {
-        let configuration = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
-        func symbol(_ name: String) -> NSImage? {
-            NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
-        }
+        func symbol(_ name: String) -> NSImage? { .symbol(name, pointSize: 9, weight: .semibold) }
         switch tile.state {
         case .failed: return symbol("exclamationmark")
         case .stopped: return symbol("stop.fill")

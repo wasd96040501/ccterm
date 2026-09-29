@@ -13,8 +13,7 @@ final class InterruptionRowView: NSView, PageRowView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        icon.image = NSImage(systemSymbolName: "stop.circle", accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .regular))
+        icon.image = .symbol("stop.circle", pointSize: 11)
         icon.contentTintColor = .tertiaryLabelColor
         label.font = .systemFont(ofSize: 11)
         label.textColor = .tertiaryLabelColor

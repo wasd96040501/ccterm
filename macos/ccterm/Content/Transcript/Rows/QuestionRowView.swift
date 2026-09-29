@@ -207,8 +207,7 @@ final class QuestionRowView: NSView, PageRowView {
             item.allowsSeveral
             ? (option.isChosen ? "checkmark.square.fill" : "square")
             : (option.isChosen ? "circle.inset.filled" : "circle")
-        mark.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .regular))
+        mark.image = .symbol(symbol, pointSize: 11)
         mark.contentTintColor = option.isChosen ? .controlAccentColor : .tertiaryLabelColor
         let text = label(
             option.label, font: Self.optionFont, color: option.isChosen ? .labelColor : .tertiaryLabelColor)

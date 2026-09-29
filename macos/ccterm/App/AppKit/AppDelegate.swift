@@ -1,5 +1,6 @@
 import AgentSDK
 import AppKit
+import Combine
 import SwiftUI
 
 /// AppKit-side application delegate and the app's composition root. Owns
@@ -98,8 +99,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(Bundle.main.bundleIdentifier ?? "com.ccterm.app", isDirectory: true)
         let library = LibraryStore(
-            directory: SessionDirectory(environment: ProcessInfo.processInfo.environment),
-            indexURL: caches.appendingPathComponent("LibraryIndex.plist"))
+            directories: Just(SessionDirectory(environment: ProcessInfo.processInfo.environment))
+                .eraseToAnyPublisher(),
+            indexDirectory: caches)
         self.library = library
         let controller = MainWindowController(library: library, git: GitService())
         // Where the frame persists is the app's configuration, not the window's:

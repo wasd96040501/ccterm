@@ -21,7 +21,7 @@ final class SidebarViewControllerTests: XCTestCase {
         continueAfterFailure = false
         fixture = try SessionDirectoryFixture()
         try LibraryStoreTests.writeLibrary(fixture)
-        store = LibraryStore(directory: fixture.directory)
+        store = LibraryStore(directories: Just(fixture.directory).eraseToAnyPublisher())
         stage = AppKitStage.mainSplit(library: store)
         store.start()
         await waitForNodes { !$0.isEmpty }

@@ -255,7 +255,7 @@ final class MainWindowTests: XCTestCase {
 
     /// A library over `fixture`, read.
     private static func startedLibrary(_ fixture: SessionDirectoryFixture) async throws -> LibraryStore {
-        let library = LibraryStore(directory: fixture.directory)
+        let library = LibraryStore(directories: Just(fixture.directory).eraseToAnyPublisher())
         library.start()
         let loaded = XCTestExpectation(description: "library read")
         let subscription = library.$nodes.first { !$0.isEmpty }.sink { _ in loaded.fulfill() }

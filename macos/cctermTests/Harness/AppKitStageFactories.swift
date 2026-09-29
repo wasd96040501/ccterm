@@ -1,5 +1,6 @@
 import AgentSDK
 import AppKit
+import Combine
 
 @testable import ccterm
 
@@ -18,8 +19,10 @@ extension AppKitStage {
         let library =
             library
             ?? LibraryStore(
-                directory: SessionDirectory(
-                    url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)))
+                directories: Just(
+                    SessionDirectory(
+                        url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+                ).eraseToAnyPublisher())
         return mount(MainSplitViewController(library: library), size: size)
     }
 
@@ -33,8 +36,10 @@ extension AppKitStage {
         let library =
             library
             ?? LibraryStore(
-                directory: SessionDirectory(
-                    url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)))
+                directories: Just(
+                    SessionDirectory(
+                        url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+                ).eraseToAnyPublisher())
         return mount(MainWindowController(library: library, git: GitService()), size: size)
     }
 

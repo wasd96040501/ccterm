@@ -24,6 +24,8 @@ nonisolated struct CommandSummary: Sendable, Equatable {
     var stderr = ""
     /// Where the CLI put the whole output when it was too long to keep.
     var persistedPath: String?
+    /// The sentence that leads to `persistedPath`, which follows it.
+    var persistedNote: String?
     /// Whether the document has an output area at all: a command that is
     /// waiting, denied or still preparing has none.
     var hasOutputArea = true
@@ -95,6 +97,9 @@ nonisolated struct CommandSummary: Sendable, Equatable {
             stderr = output.stderr
             note = output.returnCodeInterpretation
             persistedPath = output.persistedOutputPath
+            if persistedPath != nil {
+                persistedNote = String(localized: "Output was too long to keep here. The full output is in")
+            }
             if output.isImage { emptyNote = String(localized: "The output is an image.") }
         } else if let text {
             stdout = text

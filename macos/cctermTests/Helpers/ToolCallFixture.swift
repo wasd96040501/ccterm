@@ -26,12 +26,13 @@ enum ToolCallFixture {
     /// A finished Bash call.
     static func bash(
         _ command: String, description: String? = nil, stdout: String = "", stderr: String = "",
-        interpretation: String? = nil, sandboxOff: Bool = false, duration: TimeInterval? = 3
+        interpretation: String? = nil, persisted: String? = nil, sandboxOff: Bool = false, duration: TimeInterval? = 3
     ) -> ToolCall {
         var input: [String: Any] = ["command": command]
         if let description { input["description"] = description }
         if sandboxOff { input["dangerouslyDisableSandbox"] = true }
         var output: [String: Any] = ["stdout": stdout, "stderr": stderr, "interrupted": false]
+        if let persisted { output["persistedOutputPath"] = persisted }
         if let interpretation { output["returnCodeInterpretation"] = interpretation }
         return call("Bash", json(input), output: json(output), duration: duration)
     }

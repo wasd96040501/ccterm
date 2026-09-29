@@ -108,7 +108,8 @@ public final class DemoFeed: ExactListViewDataSource, ExactListViewDelegate {
 
     private static let rowIdentifier = NSUserInterfaceItemIdentifier("DemoRow")
 
-    private static let words = [
+    /// What rows are made of, here and in `DemoTableFeed`.
+    static let words = [
         "anchor", "viewport", "commit", "exact", "height", "motion", "reflow", "row", "scroll", "layer",
         "prefix", "offset", "tail", "sweep", "gap", "frame", "width", "measure", "list", "glyph",
     ]
@@ -148,8 +149,9 @@ public final class DemoFeed: ExactListViewDataSource, ExactListViewDelegate {
         }
     }
 
-    /// A header line, then a body whose length varies by row.
-    private static func text(for number: Int) -> String {
+    /// A header line, then a body whose length varies by row. `DemoTableFeed`
+    /// makes the same rows.
+    static func text(for number: Int) -> String {
         let header = "Row \(number) — \(words[number % words.count]) \(words[(number * 7) % words.count])"
         let count = 8 + (number * 37) % 70
         let body = (0..<count).map { words[($0 * 3 + number) % words.count] }.joined(separator: " ")

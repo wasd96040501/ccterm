@@ -9,9 +9,10 @@ The same scenarios can be captured frame by frame, off screen, with
 
 ## Look
 
-Run each toolbar scenario and watch it at normal speed, then with the
-Accessibility Inspector's slow-animation setting, or with Shift held on
-systems that honour it.
+The window shows the list beside a plain `NSTableView` holding the same rows,
+and each scenario runs on both: compare them. Run each toolbar scenario and
+watch it at normal speed, then with the Accessibility Inspector's
+slow-animation setting, or with Shift held on systems that honour it.
 
 - **stream**: rows arrive at the bottom, and the viewport follows without a
   jump. The rows at the top slide out of view; none vanishes before it has. Scroll up a little and the arrivals stop moving what you're reading.
@@ -21,7 +22,9 @@ systems that honour it.
 - **toggleClicked**: the header you clicked stays under the pointer while the
   content opens below it, including at the very bottom of the list. The
   card's border and corners follow its height on every frame, and the text
-  never runs across the border.
+  never runs across the border. Collapsing is expanding played backwards:
+  the text is covered line by line, and nothing appears or vanishes at
+  either end.
 - **churnAbove**: rows come and go above the viewport, and what you're
   reading never moves. Run it again while scrolling with two fingers on the
   trackpad, and let go mid-flick: the gesture and its momentum carry on

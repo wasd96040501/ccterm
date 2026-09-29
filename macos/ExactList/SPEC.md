@@ -898,12 +898,13 @@ app and the recordings run the same thing. Every type is `@MainActor`.
 |---|---|---|
 | `DemoScenario` | yes | One case per item on the demo's checklist. |
 | `DemoFeed` | yes | The model, data source and delegate: rows of wrapped text, measured with the typesetter the row view draws with, and the scenarios that change them. |
-| `DemoRowView` | no | One row: a card of wrapped text with a disclosure. |
-| `DemoContentViewController` | yes | An `NSSplitViewController`: a sidebar beside the list. It runs a scenario, and animates the sidebar itself for `toggleSidebar`. |
+| `DemoRowView` | no | One row: a card of wrapped text with a disclosure. It always draws the whole text, cut by the card's padding, so expanding changes only its height and a collapse is an expand played backwards. |
+| `DemoTableFeed` | yes | The same rows and scenarios on a plain `NSTableView`, written as an `NSTableView` host would, for comparing the two side by side. |
+| `DemoContentViewController` | yes | An `NSSplitViewController`: a sidebar beside the list, or, comparing, beside the list and the `DemoTableFeed` table. It runs a scenario on both, and animates the sidebar itself for `toggleSidebar`. |
 
 `ExactListDemo` keeps the app: the delegate, and a window controller that puts
-a `DemoContentViewController` in a titled window with a bar of scenario
-buttons.
+a comparing `DemoContentViewController` in a titled window with a bar of
+scenario buttons. The recordings show the list alone.
 
 **ExactListTestSupport**: a test-only library, in no product. It holds the
 window stage, the recording data source and delegate, the recording

@@ -1,22 +1,23 @@
 import AppKit
 import ExactListDemoSupport
 
-/// The demo window: `DemoContentViewController` under a bar with one button per
+/// The demo window: `DemoContentViewController`, the list beside an
+/// `NSTableView` showing the same rows, under a bar with one button per
 /// scenario in `DemoScenario`.
 @MainActor
 final class DemoWindowController: NSWindowController {
 
     init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 900, height: 640),
+            contentRect: NSRect(x: 0, y: 0, width: 1400, height: 720),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
-        window.title = "ExactList"
+        window.title = "ExactList beside NSTableView"
         window.minSize = NSSize(width: 480, height: 320)
         super.init(window: window)
 
         window.contentViewController = content
-        window.setContentSize(NSSize(width: 900, height: 640))
+        window.setContentSize(NSSize(width: 1400, height: 720))
 
         let buttons = DemoScenario.allCases.enumerated().map { index, scenario in
             let button = NSButton(title: String(describing: scenario), target: self, action: #selector(run(_:)))
@@ -43,7 +44,7 @@ final class DemoWindowController: NSWindowController {
 
     // MARK: - Private
 
-    private let content = DemoContentViewController()
+    private let content = DemoContentViewController(comparing: true)
 
     @objc private func run(_ sender: NSButton) {
         content.run(DemoScenario.allCases[sender.tag])

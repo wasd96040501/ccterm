@@ -3,6 +3,11 @@ import AppKit
 /// One demo row: a block of wrapped text on a rounded card, with a disclosure
 /// that expands it. Its height comes from `height(for:width:)`, from the same
 /// constants its layout uses.
+///
+/// It always draws the whole text, cut by the card's padding: collapsed, the
+/// card is just tall enough for the first line. Expanding or collapsing
+/// changes only the height, so a collapse is an expand played backwards, and
+/// the first and last frames of either are the rows at rest.
 final class DemoRowView: NSView {
 
     /// Reports a press on the disclosure: the host toggles its model and
@@ -30,7 +35,8 @@ final class DemoRowView: NSView {
     }
 
     func configure(text: String, expanded: Bool) {
-        self.text = Self.shown(text, expanded: expanded)
+        self.text = text
+        self.expanded = expanded
         disclosure.state = expanded ? .on : .off
         needsDisplay = true
     }
@@ -51,10 +57,10 @@ final class DemoRowView: NSView {
         NSBezierPath(roundedRect: card.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8).stroke()
         let width = Self.textWidth(in: bounds.width)
         let origin = NSPoint(x: card.minX + Layout.padding + Layout.disclosure + Layout.gap, y: Layout.padding)
-        // While the card is shorter than its text, during a motion, the text
-        // ends inside the border rather than across it.
+        // Only what the card's height leaves room for, inside its padding:
+        // the first line when collapsed, and on the way, whatever fits.
         NSGraphicsContext.saveGraphicsState()
-        NSBezierPath(rect: card.insetBy(dx: 0, dy: 1)).addClip()
+        NSBezierPath(rect: card.insetBy(dx: 0, dy: Layout.padding)).addClip()
         Self.attributed(text).draw(
             with: NSRect(origin: origin, size: NSSize(width: width, height: bounds.height)),
             options: [.usesLineFragmentOrigin, .usesFontLeading])
@@ -72,7 +78,7 @@ final class DemoRowView: NSView {
     }
 
     override func accessibilityLabel() -> String? {
-        text
+        Self.shown(text, expanded: expanded)
     }
 
     // MARK: - Private
@@ -89,6 +95,8 @@ final class DemoRowView: NSView {
     private let disclosure = NSButton()
 
     private var text = ""
+
+    private var expanded = false
 
     @objc private func toggle() {
         onToggle?()

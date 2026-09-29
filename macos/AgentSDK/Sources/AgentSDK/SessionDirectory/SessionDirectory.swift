@@ -164,8 +164,14 @@ extension SessionDirectory {
             }
         }
 
+        /// Never waits: it runs from the stream's `onTermination`, which a task's
+        /// cancellation calls while holding that task's status lock — and a
+        /// report in flight on `queue` is resuming the same task, so it needs
+        /// that lock to finish. Waiting for `queue` here deadlocks. The block
+        /// keeps the watcher alive until the stream is invalidated; a report
+        /// that lands first goes to a finished stream and is dropped.
         func stop() {
-            queue.sync {
+            queue.async { [self] in
                 guard let stream else { return }
                 FSEventStreamStop(stream)
                 FSEventStreamInvalidate(stream)

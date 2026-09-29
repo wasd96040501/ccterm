@@ -61,6 +61,11 @@ final class TextValidation<Valid> {
         }
     }
 
+    // Written out only to keep the optimizer off it: Xcode 26.6's Release build
+    // crashes inlining this generic class's synthesized deinit (EarlyPerfInliner).
+    @_optimize(none)
+    nonisolated deinit {}
+
     /// The field's text changed. A change of the value drops a commit that was
     /// waiting on the answer.
     func textDidChange(_ newText: String) {

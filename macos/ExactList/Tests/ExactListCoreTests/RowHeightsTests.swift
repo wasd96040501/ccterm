@@ -223,6 +223,41 @@ final class RowHeightsTests: XCTestCase {
         XCTAssertLessThan(large.top / small.top, 25, "G5: y(i) is not O(log n)")
         XCTAssertLessThan(large.lookup / small.lookup, 25, "G5: y → i is not O(log n)")
         XCTAssertLessThan(large.set / small.set, 25, "G5: a height change is not O(log n)")
+
+        // A batch: its structural calls, and planning its commit, cost what it
+        // touches. The same batch, around the middle of 1k rows and of 1M.
+        func batchTimings(rowCount: Int) -> (edits: Double, plan: Double) {
+            var rng = SeededGenerator(seed: 0x6510_0000 &+ UInt64(rowCount))
+            let heights = RowHeights((0..<rowCount).map { _ in CGFloat(Int.random(in: 20...80, using: &rng)) })
+            let middle = rowCount / 2
+            let edits: [RowEdit] = (0..<100).flatMap { index -> [RowEdit] in
+                let at = middle - 50 + index
+                return [.insert([at], .effectFade), .remove([at + 1], .effectFade), .noteHeight([at - 20])]
+            }
+            var map = RowIndexMap(oldCount: rowCount)
+            let edit = seconds {
+                map = RowIndexMap(oldCount: rowCount)
+                for edit in edits { map.apply(edit) }
+            }
+            let newHeights = heights.applying(map) { _ in 44 }
+            let top = heights.top(ofRow: middle)
+            let viewport = Viewport(offset: top, height: 600, insetTop: 0, insetBottom: 0)
+            let mounted = IndexSet(integersIn: heights.rows(intersecting: top - 600, top + 1200))
+            var plan: CommitPlan?
+            let planning = seconds {
+                plan = CommitPlanner.plan(
+                    CommitInput(
+                        oldHeights: heights, newHeights: newHeights, map: map, oldViewport: viewport,
+                        newViewport: viewport, anchoring: .automatic, followsTail: false, rescalesAnchor: false,
+                        mountedRows: mounted, animates: true))
+            }
+            XCTAssertFalse(plan?.motions.isEmpty ?? true, "the batch moves rows in view")
+            return (edit, planning)
+        }
+        let smallBatch = batchTimings(rowCount: 1_000)
+        let largeBatch = batchTimings(rowCount: 1_000_000)
+        XCTAssertLessThan(largeBatch.edits / smallBatch.edits, 25, "G5: a structural call is not O(e + r)")
+        XCTAssertLessThan(largeBatch.plan / smallBatch.plan, 25, "G5: planning is not O((e + k + m) · log n)")
     }
 
     func testG6_tolerance() throws {

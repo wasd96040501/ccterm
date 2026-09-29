@@ -105,8 +105,10 @@ public struct RowHeights: Equatable, Sendable {
     /// The heights after `map` (G5): a surviving or moved row keeps its height
     /// unless the batch noted it; inserted and noted rows are asked through
     /// `height`, in ascending new order. O(k · log n) for a batch that
-    /// inserts, removes and moves nothing; otherwise one O(n) copy, run by run,
-    /// and an index rebuilt only after the leading rows the batch leaves alone.
+    /// inserts, removes and moves nothing, after the block copy that writing
+    /// to a value `self` still shares makes; otherwise one O(n) copy, run by
+    /// run, and an index rebuilt only after the leading rows the batch leaves
+    /// alone.
     public func applying(_ map: RowIndexMap, height: (Int) -> CGFloat) -> RowHeights {
         precondition(map.oldCount == count, "ExactList: a map over \(map.oldCount) rows applied to \(count)")
         var asked = map.notedRows

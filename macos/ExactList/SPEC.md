@@ -29,9 +29,11 @@ The list guarantees four things through all of this:
    actually returned. Nothing is sampled or extrapolated.
 2. **Where the reader is looking stays put**, and the rule that decides this is
    stated here and can be controlled per update.
-3. **Changes move on screen with CoreAnimation**, and the moving rows stay in
-   lockstep with the scroll position. The scroll position is never corrected
-   after the fact.
+3. **Changes move on screen through AppKit's animation engine**, and the
+   moving rows stay in lockstep with the scroll position. On every frame of a
+   motion, a row's view really is where it is drawn, so AppKit draws, clips
+   and hit-tests it where the reader sees it. The scroll position is never
+   corrected after the fact.
 4. **The order of setup cannot be wrong.** It is either impossible to express,
    or harmless when it happens.
 
@@ -51,8 +53,8 @@ suite runs on.
 |---|---|---|---|
 | Geometry | Asks the delegate for a few hundred rows' heights and extrapolates the rest. The scroll range is wrong until the reader reaches the end. *Characterized.* | Every row's height comes from the delegate before that row enters the document. Row positions are prefix sums of those heights. | G1–G5 |
 | Scroll position across changes | Not specified. `insertRows` only promises that `numberOfRows` grows (docs). A change above the viewport moves the content. *Characterized.* | Anchoring rules, stated in §6, keep a named row at its screen position through every change, including width and viewport changes. | A1–A9, V1–V5 |
-| Animation vs. scroll position | No API changes the scroll offset as part of an animated update. A host's compensation is a separate write, final while the rows are still sliding (docs: none of the update methods takes an offset). | One commit sets geometry and offset to their final values. The motion is additive CoreAnimation animations whose start values exactly cancel the jump. The anchor row never moves on any frame. | M1–M10 |
-| Interrupting an animation | A new update starts from the model values, so the rows jump. | Additive animations compose: a new update in the middle of an animation keeps every row's presented position continuous. | M8 |
+| Animation vs. scroll position | No API changes the scroll offset as part of an animated update. A host's compensation is a separate write, final while the rows are still sliding (docs: none of the update methods takes an offset). | One commit sets geometry and offset to their final values. The rows then move from where they were to where they belong on every display frame, timed by `NSAnimationContext`, and their start values exactly cancel the jump. The anchor row never moves on any frame. | M1–M10 |
+| Interrupting an animation | A new update starts from the model values, so the rows jump. | Motions compose: a new update in the middle of one adds its own motion on top, so every row's position stays continuous. | M8 |
 | Choosing the behaviour | No per-update control of where the viewport stays. | Every batch takes an `Anchoring` value (`.automatic`, `.row(i)`, `.scrollOffset`). Animation duration and curve come from `NSAnimationContext`, and Reduce Motion is honoured. | A2, M1, M9 |
 | Setup order | The data source is settable at any time. The first load happens when the table first tiles, so loading before layout measures rows at the wrong width. *Characterized.* | The data source and delegate are injected in `init` and cannot be replaced. Loading happens by itself at the first layout that has a real width. No delegate call ever sees a width of zero or less. | L1–L8 |
 | When an update takes effect | Some effects wait for the next layout pass. | Every update is committed before the call returns. `rect(ofRow:)` is final immediately afterwards. | U1 |
@@ -304,8 +306,11 @@ public enum Anchoring { case automatic, row(Int), scrollOffset }
 ## 7. Updates and commits
 
 - **U1: synchronous commit.** A batch commits before the call that announced it
-  returns. After that, every query and every mounted view's model frame is
-  final. During an animation, only the presentation layers differ (§8).
+  returns. After that, every query is final: `numberOfRows`, `rect(ofRow:)`,
+  `row(at:)`, `rows(in:)`. A mounted row that the commit moves is, at that
+  point, where its motion starts, and its container reaches the row's final
+  frame when the motion ends (§8). Without motion, every mounted container is
+  at its final frame when the call returns.
 - **U2: NSTableView's index semantics.** Inside a batch, updates apply
   **incrementally, in call order**: each index refers to the rows as they are
   after the preceding calls. This matches `NSTableView`, whose docs say
@@ -418,18 +423,29 @@ in a commit has a start and an end value for its screen top and its height.
   in the order surviving and inserted rows by new index, then removed rows by
   old index.
 
-  A row's content is laid out once, at its final size, and aligned to the top
-  of its container. The container clips to the presented height, so a growing
-  row is revealed and a shrinking row is covered up.
-- **M3: how it is done.** This is realised with CoreAnimation and nothing else:
-  - The model values are set to their final values.
-  - Each affected row container gets an additive `position.y` animation from
-    `(old screen y − new screen y)` to 0.
-  - Each row whose height changes gets an additive `bounds.size.height`
-    animation from `(old height − new height)` to 0.
-  - All of these share `T` and `f`. Because presented positions are linear in
-    `p`, this reproduces M2 exactly. Nothing runs per frame on the main thread,
-    and no presentation layer is read.
+  A row's view fills its container at every `t`, so it is laid out, and
+  drawn, at each height on the way: a card that grows is a card at every
+  frame, border and corners included, not a finished card uncovered by a
+  mask (P2).
+- **M3: how it is done.** With AppKit's animation engine, on the real frames:
+  - The commit installs the final geometry and offset, and before it returns
+    sets every row with a motion to its start, `p = 0`.
+  - It then animates a clock from 0 to 1: an internal view's `progress`,
+    through `animator()`, inside an `NSAnimationContext` group with `T` and
+    `f`. AppKit calls the clock's setter on the main thread on every display
+    frame, with `p(t)` already shaped by `f`. Nested in the caller's own
+    group, the clock is part of it, so the caller's `completionHandler` runs
+    after the motion.
+  - On every call, each row in the motion gets its model values: its
+    container's document top is its final top plus `(start − end)·(1 − p)`,
+    its height likewise, and its opacity and content offset follow M9. Because
+    screen top is document top minus the offset, which the commit already
+    installed, this is M2 exactly.
+  - No CoreAnimation animation is added to any layer, so the presentation is
+    the model: AppKit sees every row where it is drawn (`visibleRect`,
+    drawing, hit testing), and a row sliding out of the viewport is drawn
+    until it has left. The work per frame is setting the frames of the rows
+    in flight, which M7 bounds.
 - **M4: the anchor is still.** For a row anchor, the anchor row's presented
   screen position is constant for every `t`, unless A7 clamped it, in which
   case it moves along the linear interpolation.
@@ -448,7 +464,9 @@ in a commit has a start and an end value for its screen top and its height.
   row in the presented order and the presented bottom of the last, each bound
   applying while that row is presented; outside them is the space beyond the
   content, as in a still list.
-- **M7: the amplitude cap.** Let `C` be the height of `U`, and a row's `δ` be
+- **M7: the amplitude cap.** It applies to commits; an animated scroll moves
+  the offset itself and has no row motion (S3). Let `C` be the height of `U`,
+  and a row's `δ` be
   its end screen top minus its start screen top. The rows considered are the
   ones M2 gives start and end values to (every surviving, inserted and moved
   row, and every removed row that was mounted before the commit) whose
@@ -458,11 +476,12 @@ in a commit has a start and an end value for its screen top and its height.
   - A uniform scale keeps M2 through M5. Each start value becomes
     `end + k·(start − end)`, which is still a convex combination of two
     layouts, so every gap stays ≥ 0 and the anchor still doesn't move.
-  - It bounds how many rows have to be mounted during a long jump, which
-    includes an animated scroll across the whole list.
-- **M8: interruptions compose.** A commit made while earlier animations are
-  still running adds its own animations on top; it removes none of them.
-  Presented positions are continuous (C0) at the moment of the new commit. M4
+  - It bounds how many rows have to be mounted, and set on every frame, when
+    a commit moves the rows a long way.
+- **M8: interruptions compose.** A commit made while earlier motions are
+  still running adds its own on top, on its own clock; it stops none of them.
+  A row's frame is its final frame plus the remaining part of every motion it
+  is in. Positions are continuous (C0) at the moment of the new commit. M4
   holds for the new commit's contribution.
 - **M9: effects.** Inserted and removed rows take `NSTableView.AnimationOptions`:
   - `[]` and `.effectGap`: reveal or cover only (M2).
@@ -481,7 +500,7 @@ in a commit has a start and an end value for its screen top and its height.
   rows below them.
   - A moved row travels straight from its old screen position to its new one.
     Its old and new slots behave as a removal and an insertion (M5).
-  - A removed row stays mounted until its animation ends. Its host then hears
+  - A removed row stays mounted until its motion ends. Its host then hears
     `didRemove` with row −1, as in `NSTableView`.
 
 ---
@@ -535,16 +554,20 @@ in a commit has a start and an end value for its screen top and its height.
     `P` extended by the height of `U` on each side. `NSTableView` answers the
     same call.
 
-  No other row is mounted. Every mounted container's model frame equals G1's
-  frame for its row. Mounting happens synchronously wherever the offset
+  No other row is mounted. Every mounted container's frame is G1's frame for
+  its row plus the remaining part of every motion it is in (§8), and G1's
+  frame once they have ended. Mounting happens synchronously wherever the offset
   changes, so no row reaches the screen late. AppKit changes the offset by
   two routes, and neither calls the other (measured): `NSClipView.scroll(to:)`
   (the wheel, `scrollToVisible`, `NSView.scroll(_:)`) and `setBoundsOrigin(_:)`
   (`animator()`). Both are covered.
 - **P2: views are asked for only on arrival.** `listView(_:viewForRow:)` is
   called when a row joins the mounted set, and by U6 — never at any other
-  time. The returned view fills its row container, which is `W × h`, and the
-  list sets that frame; the host does not.
+  time. The returned view fills its row container, which is `W × h`, and
+  the list sets that frame; the host does not. During a motion the height is
+  the presented one, which is 0 at an inserted row's start and a removed row's
+  end: a view with Auto Layout inside gives its vertical constraints a
+  priority below required.
 - **P3: `didRemove` on departure.** `listView(_:didRemove:forRow:)` is called
   exactly once for every view that leaves the mounted set, after any animation
   it was part of has ended. The view then goes back into the pool under its
@@ -563,8 +586,9 @@ in a commit has a start and an end value for its screen top and its height.
   assignment silently disables recycling.
 - **P5: row containers are internal.** Each mounted row sits in an internal
   container, the counterpart of `NSTableRowView`. The container carries the
-  clipping and animations of §8, so the host's own view and layer are never
-  given an animation or a mask.
+  motion of §8: its frame, its opacity, and the clip a slide moves the view
+  inside. The host's own view gets a frame (P2), and never an animation, a
+  mask or an opacity.
   *Deviation:* `NSTableRowView` is public so that a host can draw selection;
   this list has no selection (§12).
 - **P7: only mounted views are handed out.** `view(atRow:)` returns the
@@ -596,10 +620,20 @@ in a commit has a start and an end value for its screen top and its height.
   lands exactly on the tail.
   *Deviation:* `NSTableView` has no landing position; the shape is
   `NSCollectionView`'s.
-- **S3: scrolls are commits.** A scroll is a commit with no geometry change
-  whose anchor is its destination: the offset S1 or S2 computes, clamped by
-  G3 (`CommitInput.targetOffset`, which takes the place of anchoring). An
-  animated scroll is therefore M3 with a uniform `δ`, capped by M7.
+- **S3: scrolls.** A scroll's destination `d` is the offset S1 or S2
+  computes, clamped by G3.
+  - Without animation, a scroll is a commit with no geometry change whose
+    anchor is `d` (`CommitInput.targetOffset`, which takes the place of
+    anchoring).
+  - An animated scroll moves the clip view's offset itself, from `o₀`, where
+    it is, to `d`, on a clock like M3's: on every frame the offset is
+    `d + (o₀ − d)·(1 − p)`. Each frame is a scroll like the reader's (P1, W4),
+    so the scroller moves with it, only `P` is mounted, and nothing is capped.
+  - A commit during the flight that moves the offset by `Δ` (§6) moves `d` by
+    `Δ` too, so the flight carries on from where the commit put it.
+  - A scroll by the reader, and `reloadData()`, end the flight where it is. A
+    second animated scroll replaces the first, starting from the live
+    offset.
 - **S4: reader scrolling stays native.** Wheel, trackpad, momentum, elasticity
   and the scroller are `NSScrollView`'s own. A commit during a live scroll
   gesture adjusts the offset as §6 says, and the gesture carries on from there.
@@ -621,8 +655,9 @@ in a commit has a start and an end value for its screen top and its height.
   `n`. `accessibilityVisibleRows()` lists the rows that intersect `U`.
 - **X2: row elements.** Each row element has role `.row`, and its
   `accessibilityIndex()` is the row, and its parent is the table element. Its
-  frame is `rect(ofRow:)` on screen: the committed frame, so during motion it
-  is where the row is going. When the row is mounted, its children are
+  frame is where the row is on screen: `rect(ofRow:)` for a row that isn't
+  moving, and during motion its container's frame, where it is drawn and hit
+  tested (M3), as a moving `NSTableView` row's is. When the row is mounted, its children are
   `NSAccessibility.unignoredChildren(from: [view])` of the host view (the view
   itself if it is an element, else its unignored descendants, as a table row's
   cells are); otherwise it has none.
@@ -667,7 +702,7 @@ and its oracle is independent of the implementation.
 |---|---|---|---|
 | **Core, property-based** (`ExactListCoreTests`, no AppKit) | Seeded random sequences, at least 10 000 batches per property: random heights, inserts, removals, moves, height notes, width changes and viewports. | A naive reference in the test file: an array of heights and linear sums, using only the heights the test itself generated. The planner's output is never its own oracle. | G1–G6, A1–A9, U2, M2, M4, M5, M7, W2, W3, W6 |
 | **Window** (`ExactListTests`) | A real `NSWindow`, titled and at alpha 0.01 (the pattern of `cctermTests/Harness`, copied into the package, which cannot import the app's tests; the display-link sampler needs macOS 14 and is gated by `#available`). AppKit keeps a titled window on screen whatever origin it is given (measured), so it is composited like any window, with a real layout pass, driven only through public API, `NSWindow.setFrame`, a real `NSSplitView` divider (including `animator()`) and synthesized `NSEvent`s. | A recording delegate that logs every call with its width, plus the test's own copy of the heights. | L1–L12, V1–V5, U1, U3–U8, W1, W4, W5, P1–P6, S1–S4, K1 |
-| **Motion, frame by frame** | The same window, with a real commit. Two samplers: (a) a display-link sampler that reads `layer.presentation()` on every refresh, as the render server shows it; (b) deterministic scrubbing that freezes an ancestor layer's `CAMediaTiming` (`speed = 0`, `timeOffset = t`) and reads `presentation()` at chosen `t`. | M2's formulas, evaluated from the test's own old and new heights. | M1–M10 |
+| **Motion, frame by frame** | The same window, with a real commit, sampled on every display refresh until the motion ends: the frames and opacities of the rows' containers and views, as `layer.presentation()` has them, which is what the render server shows. | M2's formulas, from the test's own old and new heights. At each sample, `p` is read off the row that moves farthest, and every other row must be where M2 puts it at that `p`; `p` never decreases, reaches 1 within one frame of `T`, and the last sample is the end layout. | M1–M10 |
 | **Accessibility** | In-process `NSAccessibility` protocol calls, the same methods the accessibility server calls (X1–X4). An `AXObserver` on the test's own process, which is how VoiceOver hears a notification (X5). | Row count, indexes and frames from the test's own model. | X1–X5 |
 | **Characterization** (`NSTableViewCharacterizationTests`) | A real `NSTableView` in the same harness. | Assertions of its actual behaviour, which back §2. | §2 |
 | **Benchmarks** (`ExactListBenchmarks`, `-O` only: `make bench-list`) | The same workloads against ExactList and against `NSTableView`, in one process. | Median wall time, and main-thread time per operation. | B1–B4 |
@@ -796,10 +831,11 @@ Core imports Foundation and CoreGraphics, never AppKit.
 | `ListScrollView` | no | An `NSScrollView` subclass with the fixed configuration (L11). It reports width and viewport changes from `tile()` (W1, V1, V2). |
 | `ListClipView` | no | An `NSClipView` subclass. It reports every change of the bounds origin, so mounting happens in the same turn as the scroll (P1). |
 | `ListDocumentView` | no | The flipped document view: the first responder and keys (K1), `prepareContent(in:)` (P1), and the accessibility table (X1). |
-| `RowContainerView` | no | The `NSTableRowView` counterpart: clipping, the host view's frame, and the accessibility row (X2). |
+| `RowContainerView` | no | The `NSTableRowView` counterpart: the row's motion (its frame, opacity, and the content offset of a slide, clipped), the host view's frame, and the accessibility row (X2). |
 | `RowViewPool` | no | Reuse by identifier (P4). |
 | `RowPlacement` | no | The mounted set, and mounting and unmounting against `P` (P1–P3, P6). |
-| `MotionAnimator` | no | Turns a `CommitPlan` into CoreAnimation animations, retires rows once their animations end, and runs completion handlers (§8, U8). |
+| `MotionAnimator` | no | Runs each commit's motion and each animated scroll on its own `MotionClock`: on every frame it sets the in-flight rows' frames, opacity and content offset, or the offset. It retires rows once their motion ends, and runs completion handlers (§8, S3, U8). |
+| `MotionClock` | no | A hidden view with one animatable property, `progress`, which `animator()` drives from 0 to 1 and which reports every value AppKit sets (M3). |
 | `StaleRowRefresher` | no | Refreshing stale rows on idle turns within the time budget (W5). |
 | `UnmountedRowElement` | no | The `NSAccessibilityElement` for a row that isn't mounted (X3). |
 

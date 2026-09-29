@@ -51,9 +51,14 @@ final class DemoRowView: NSView {
         NSBezierPath(roundedRect: card.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8).stroke()
         let width = Self.textWidth(in: bounds.width)
         let origin = NSPoint(x: card.minX + Layout.padding + Layout.disclosure + Layout.gap, y: Layout.padding)
+        // While the card is shorter than its text, during a motion, the text
+        // ends inside the border rather than across it.
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: card.insetBy(dx: 0, dy: 1)).addClip()
         Self.attributed(text).draw(
             with: NSRect(origin: origin, size: NSSize(width: width, height: bounds.height)),
             options: [.usesLineFragmentOrigin, .usesFontLeading])
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     // MARK: - Accessibility

@@ -1,7 +1,7 @@
 # ExactList
 
 A vertical list for AppKit, with exact row geometry, anchored scrolling and
-CoreAnimation motion. It is an alternative to a single-column, view-based
+motion on AppKit's own animation engine. It is an alternative to a single-column, view-based
 `NSTableView`, and it keeps `NSTableView`'s vocabulary.
 
 - Minimum platform: macOS 12.
@@ -15,7 +15,7 @@ CoreAnimation motion. It is an alternative to a single-column, view-based
 |---|---|---|
 | Row heights | Samples a few hundred rows and extrapolates the rest. | Every row is measured, and positions are exact prefix sums. |
 | Scroll position when rows change | Unspecified. Content above the viewport pushes it around. | Stays put, by a stated rule you can override per update. |
-| Animation | Row slides and the offset correction are separate, so the reader sees a jump. | One commit, then additive CoreAnimation. The anchor row never moves on any frame. |
+| Animation | Row slides and the offset correction are separate, so the reader sees a jump. | One commit, then AppKit's animator sets the real frames on every display frame. The anchor row never moves on any frame, and every row is drawn where it is. |
 | Setup order | Set the data source, mount, lay out, then `reloadData()`, in that order. | Inject at `init` and mount. It loads itself once it has a real width. |
 | Width changes | You call `noteHeightOfRows`. | Rows on screen are re-measured in the same layout pass, and the rest follow on idle turns. |
 

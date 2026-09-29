@@ -170,6 +170,7 @@ final class LifecycleTests: XCTestCase {
         XCTAssertEqual(list.rect(ofRow: 120).minY, 0, "the last scroll request wins")
         let view = try XCTUnwrap(list.view(atRow: 120))
         XCTAssertEqual(animationKeys(around: view), [], "applied without animation")
+        XCTAssertEqual(list.convert(view.bounds, from: view), list.rect(ofRow: 120), "nothing moves")
     }
 
     /// The recorded scroll request beats tail following, which beats the top.

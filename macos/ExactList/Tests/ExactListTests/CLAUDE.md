@@ -12,10 +12,11 @@
   tests. Width comes from the window or from a real `NSSplitView` divider,
   events come through `NSWindow.sendEvent(_:)`, and motion is read from
   `presentation()`.
-- **Motion has two samplers** (`PresentationSampler`):
-  - Scrubbing freezes time and gives exact `t`, which the formula checks use.
-  - The display-link timeline shows what was actually on screen, which the "no
-    jump, no blank" checks use. It needs macOS 14, behind `#available`.
+- **Motion is sampled on every display refresh** (`PresentationSampler`),
+  from what was actually on screen. At each sample `p` is read off the row
+  that moves farthest and every other row must be at M2's place for that `p`;
+  the timeline must fit `T` and the timing function. It needs macOS 14, behind
+  `#available`.
 - **What isn't covered here** is in SPEC §13: pixels and real speech. Those are
   the demo's checklist (`Sources/ExactListDemo/CLAUDE.md`).
 - `NSTableViewCharacterizationTests` backs each "Characterized" claim in SPEC

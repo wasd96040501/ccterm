@@ -2,8 +2,9 @@ import AppKit
 import ExactListCore
 
 /// A vertical list of host views with exact geometry, anchored scrolling and
-/// CoreAnimation motion. It uses `NSTableView`'s vocabulary. SPEC.md is
-/// normative, and each member names the requirements it implements.
+/// motion on AppKit's animation engine. It uses `NSTableView`'s vocabulary.
+/// SPEC.md is normative, and each member names the requirements it
+/// implements.
 ///
 /// This is the only view a host mounts. It owns its scroll view, clip view and
 /// document view, and none of them is public (L2). It loads by itself, at the
@@ -24,6 +25,7 @@ public final class ExactListView: NSView {
         scrollView = ListScrollView(clipView: clip)
         documentView = ListDocumentView(frame: .zero)
         placement = RowPlacement(documentView: documentView)
+        animator = MotionAnimator(clockHost: documentView)
         self.dataSource = dataSource
         self.delegate = delegate
         super.init(frame: .zero)
@@ -217,6 +219,7 @@ public final class ExactListView: NSView {
         let rows = numberOfRowsInDataSource()
         heights = RowHeights((0..<rows).map { measure($0) }, spacing: spacing)
         stale = StaleRows(count: rows)
+        animator.update(heights: heights, width: width)
         let contentHeight = heights.contentHeight
         let offset =
             wasFollowing
@@ -330,7 +333,7 @@ public final class ExactListView: NSView {
     private let documentView: ListDocumentView
     private let pool = RowViewPool()
     private let placement: RowPlacement
-    private let animator = MotionAnimator()
+    private let animator: MotionAnimator
     private let refresher = StaleRowRefresher()
 
     private var phase: ListPhase = .waiting(pendingScroll: nil)
@@ -391,6 +394,7 @@ public final class ExactListView: NSView {
         heights = RowHeights((0..<rows).map { measure($0) }, spacing: spacing)
         stale = StaleRows(count: rows)
         committed = liveViewport()
+        animator.update(heights: heights, width: width)
         let offset: CGFloat =
             if let pending { destination(of: pending) } else if followsTail {
                 committed.maxOffset(contentHeight: heights.contentHeight)
@@ -456,8 +460,10 @@ public final class ExactListView: NSView {
         } while true
 
         let countChanged = map.newCount != map.oldCount
+        var retiring: [Int: RowContainerView] = [:]
+        var containers: [Int: RowContainerView] = [:]
         withoutImplicitAnimation {
-            var retiring = placement.apply(map)
+            retiring = placement.apply(map)
             if duration == 0 {
                 // Nothing animates out: the removed rows leave before the
                 // arriving rows are placed, which then take their containers.
@@ -469,19 +475,28 @@ public final class ExactListView: NSView {
             heights = plan.heights
             stale = newStale
             if let newSpacing { spacing = newSpacing }
+            let oldOffset = committed.offset
             install(offset: plan.offset)
+            // An animated scroll carries on from where this commit put the
+            // offset (S3).
+            animator.shiftScroll(by: committed.offset - oldOffset)
             placement.place(
                 rows: rowsToMount(plan, viewport: committed, heights: heights), keeping: animator.rowsInFlight,
                 heights: heights, width: width)
             placement.reload(rows: map.reloadedRows)
-            var containers: [Int: RowContainerView] = [:]
+            // The rows still moving from earlier commits go on to the new
+            // geometry (M8).
+            animator.update(heights: heights, width: width)
             for motion in plan.motions where motion.kind != .removed {
                 containers[motion.row] = placement.container(forRow: motion.row)
             }
-            animator.animate(
-                plan, containers: containers, retiring: retiring, duration: duration, timing: timing,
-                completion: completion ?? { _ in })
         }
+        // Outside the transaction above: a group nested in an explicit
+        // CATransaction is not waited for by the caller's group (measured),
+        // and M3 makes the caller's completion wait for the motion.
+        animator.animate(
+            plan, containers: containers, retiring: retiring, duration: duration, timing: timing,
+            completion: completion ?? { _ in })
         reportTail()
         if countChanged { NSAccessibility.post(element: documentView, notification: .rowCountChanged) }
         if !stale.isEmpty { refresher.schedule() }
@@ -523,8 +538,8 @@ public final class ExactListView: NSView {
         committed = liveViewport()
     }
 
-    /// Model changes land at once; only `MotionAnimator`'s explicit animations
-    /// move anything. A host may call in from inside an animation group with
+    /// Model changes land at once; only `MotionAnimator`'s clocks move
+    /// anything. A host may call in from inside an animation group with
     /// implicit animation on, which would otherwise animate every frame write.
     private func withoutImplicitAnimation(_ body: () -> Void) {
         let context = NSAnimationContext.current
@@ -584,11 +599,30 @@ public final class ExactListView: NSView {
 
     // MARK: - Scrolling (§11)
 
-    /// S3: a scroll is a commit anchored on its destination.
+    /// S3: without animation, a commit anchored on the destination; animated,
+    /// the offset itself moves there, one frame at a time.
     private func scroll(to offset: CGFloat) {
         let (duration, timing) = motionTiming()
-        let animated = NSAnimationContext.current.allowsImplicitAnimation && duration > 0
-        commit(map: identityMap(), targetOffset: offset, duration: animated ? duration : 0, timing: timing)
+        if NSAnimationContext.current.allowsImplicitAnimation && duration > 0 {
+            animator.scroll(from: committed.offset, to: offset, duration: duration, timing: timing)
+        } else {
+            animator.cancelScroll()
+            commit(map: identityMap(), targetOffset: offset)
+        }
+    }
+
+    /// P1, W4, A8 after the offset moved: mount against the new `P`, measuring
+    /// stale rows first, and re-evaluate tail following.
+    private func didScroll() {
+        committed = liveViewport()
+        if preparedRows().union(animator.rowsInFlight).contains(where: { stale.contains($0) }) {
+            commit(map: identityMap())
+        } else {
+            withoutImplicitAnimation {
+                placement.place(rows: preparedRows(), keeping: animator.rowsInFlight, heights: heights, width: width)
+            }
+            reportTail()
+        }
     }
 
     private func destination(of pending: ListPhase.PendingScroll) -> CGFloat {
@@ -695,18 +729,12 @@ extension ExactListView: ListScrollViewOwner {
 extension ExactListView: ListClipViewOwner {
 
     /// P1, W4, A8: mount against the new `P`, measuring stale rows first, and
-    /// re-evaluate tail following.
+    /// re-evaluate tail following. A scroll that isn't the list's own ends an
+    /// animated scroll where it is (S3).
     func clipViewDidScroll(_ clipView: ListClipView) {
         guard isLoaded, !isAdjusting else { return }
-        committed = liveViewport()
-        if preparedRows().union(animator.rowsInFlight).contains(where: { stale.contains($0) }) {
-            commit(map: identityMap())
-        } else {
-            withoutImplicitAnimation {
-                placement.place(rows: preparedRows(), keeping: animator.rowsInFlight, heights: heights, width: width)
-            }
-            reportTail()
-        }
+        animator.cancelScroll()
+        didScroll()
     }
 }
 
@@ -783,6 +811,18 @@ extension ExactListView: RowPlacementOwner {
 }
 
 extension ExactListView: MotionAnimatorOwner {
+
+    /// S3: one frame of an animated scroll, which is a scroll like the
+    /// reader's, except that it is the list's own.
+    func motionAnimator(_ animator: MotionAnimator, scrollTo offset: CGFloat) {
+        guard isLoaded else { return }
+        let clamped = committed.clamped(offset, contentHeight: heights.contentHeight)
+        isAdjusting = true
+        clipView.setBoundsOrigin(NSPoint(x: 0, y: clamped))
+        scrollView.reflectScrolledClipView(clipView)
+        isAdjusting = false
+        didScroll()
+    }
 
     func motionAnimator(_ animator: MotionAnimator, didFinishCommitRetiring retired: [RowContainerView]) {
         withoutImplicitAnimation {

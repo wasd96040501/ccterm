@@ -37,9 +37,10 @@ public final class DemoFeed: ExactListViewDataSource, ExactListViewDelegate {
                 }
             }
         case .toggleClicked:
-            // What a click on the disclosure of the row in the middle does.
-            let row = list.row(at: NSPoint(x: list.bounds.midX, y: list.bounds.midY))
-            if row >= 0 { toggle(row: row, in: list) }
+            // What a click on the disclosure of the row in the middle does. A
+            // point can fall between two rows, so the first row across a band.
+            let middle = list.rows(in: NSRect(x: 0, y: list.bounds.midY, width: list.bounds.width, height: 40))
+            if let row = middle.first { toggle(row: row, in: list) }
         case .churnAbove:
             if list.rows(in: list.bounds).lowerBound < 12 {
                 list.scrollToRow(min(30, rows.count - 1), at: .top)
@@ -127,8 +128,21 @@ public final class DemoFeed: ExactListViewDataSource, ExactListViewDelegate {
     /// pointer (A2).
     private func toggle(row: Int, in list: ExactListView) {
         rows[row].expanded.toggle()
-        configureView(ofRow: row, in: list)
-        list.performBatchUpdates(anchoring: .row(row)) { $0.noteHeightOfRows(withIndexesChanged: [row]) }
+        guard !rows[row].expanded else {
+            configureView(ofRow: row, in: list)
+            list.performBatchUpdates(anchoring: .row(row)) { $0.noteHeightOfRows(withIndexesChanged: [row]) }
+            return
+        }
+        // Collapsing: the card keeps its text while it shrinks over it, and
+        // shows the one line when it has.
+        let view = list.view(atRow: row)
+        list.performBatchUpdates(anchoring: .row(row)) {
+            $0.noteHeightOfRows(withIndexesChanged: [row])
+        } completionHandler: { [weak self, weak list] _ in
+            guard let self, let list, let view else { return }
+            let now = list.row(for: view)
+            if now >= 0 { configureView(ofRow: now, in: list) }
+        }
     }
 
     private func configureView(ofRow row: Int, in list: ExactListView) {

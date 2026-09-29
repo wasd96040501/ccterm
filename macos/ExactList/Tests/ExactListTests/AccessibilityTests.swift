@@ -42,9 +42,9 @@ final class AccessibilityTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(table.accessibilityRows()).count, 502)
     }
 
-    /// Mounted and unmounted: role, index, parent, the committed frame on
-    /// screen (also mid-motion), and the host view's unignored elements as
-    /// children, which for a plain `NSView` host is its label.
+    /// Mounted and unmounted: role, index, parent, the frame on screen (mid
+    /// motion, where the row is drawn), and the host view's unignored elements
+    /// as children, which for a plain `NSView` host is its label.
     func testX2_rowElements() async throws {
         let stage = ListStage(size: NSSize(width: 400, height: 300))
         defer { stage.teardown() }
@@ -75,18 +75,22 @@ final class AccessibilityTests: XCTestCase {
             }
         }
 
-        // Mid-motion the frame is where the row is going.
+        // Mid-motion the frame is where the row is drawn: at the commit's
+        // return, where it was (U1); once the motion ends, where it went.
+        let before = expectedScreenFrame(list, host, 103)
+        var done = false
         NSAnimationContext.runAnimationGroup(
             { context in
-                context.duration = 1
-                context.allowsImplicitAnimation = true
+                context.duration = 0.3
                 host.heights.insert(contentsOf: [60, 60], at: 101)
-                list.insertRows(at: [101, 102])
+                list.performBatchUpdates({ $0.insertRows(at: [101, 102]) }) { done = $0 }
             }, completionHandler: nil)
         let moving = try XCTUnwrap(table.accessibilityRows())[105]
         XCTAssertEqual(index(of: moving), 105)
-        XCTAssertEqual(
-            frame(of: moving), expectedScreenFrame(list, host, 105), "the committed frame, not the presented")
+        XCTAssertEqual(frame(of: moving), before, "where it is drawn: its motion's start")
+        _ = await stage.drain(until: { done }, timeout: 2)
+        XCTAssertTrue(done)
+        XCTAssertEqual(frame(of: moving), expectedScreenFrame(list, host, 105), "where it went")
     }
 
     /// An unmounted row is a plain accessibility element, the same one each

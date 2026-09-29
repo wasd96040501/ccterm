@@ -1,7 +1,7 @@
 # ExactList
 
 A standalone Swift package: a vertical list for AppKit, `ExactListView`, with
-exact geometry, anchoring and CoreAnimation motion.
+exact geometry, anchoring and motion on AppKit's animation engine.
 
 - [SPEC.md](SPEC.md) is **normative**. It defines every behaviour, the
   structure (§15) and the verification (§13).

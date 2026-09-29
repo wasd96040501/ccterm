@@ -178,8 +178,10 @@ final class PlacementTests: XCTestCase {
         XCTAssertFalse(seen.contains(ObjectIdentifier(fresh)), "not a pooled view of another identifier")
     }
 
-    /// During an animated commit the animations and the clip are on the
-    /// containers; the host's views and layers get neither.
+    /// During an animated commit the motion and the clip are on the
+    /// containers: a container below the noted row is at its motion's start,
+    /// and clips; the host's views fill their containers and get no
+    /// animation, mask, clip or opacity.
     func testP5_rowContainersAreInternal() async throws {
         let stage = ListStage(size: NSSize(width: 400, height: 300))
         defer { stage.teardown() }
@@ -191,15 +193,19 @@ final class PlacementTests: XCTestCase {
 
         heights[3] = 90
         list.noteHeightOfRows(withIndexesChanged: [3])
-        var containerKeys = 0
         list.enumerateAvailableRowViews { view, row in
             XCTAssertFalse(view.superview === document, "row \(row)'s view sits in a container")
+            XCTAssertEqual(view.frame, view.superview?.bounds, "row \(row)'s view fills its container")
             XCTAssertEqual(view.layer?.animationKeys() ?? [], [], "row \(row)'s view is never animated")
             XCTAssertNil(view.layer?.mask)
             XCTAssertFalse(view.layer?.masksToBounds ?? false, "the host's layer isn't clipped by the list")
-            containerKeys += view.superview?.layer?.animationKeys()?.count ?? 0
+            XCTAssertEqual(view.alphaValue, 1)
+            XCTAssertEqual(view.superview?.layer?.masksToBounds, true, "row \(row)'s container clips")
         }
-        XCTAssertGreaterThan(containerKeys, 0, "the containers carry the motion")
+        let below = try XCTUnwrap(list.view(atRow: 5)?.superview)
+        XCTAssertEqual(
+            list.convert(below.bounds, from: below).minY, 5 * 30, "the container moves: at its start, 60 pt above")
+        XCTAssertEqual(list.rect(ofRow: 5).minY, 5 * 30 + 60, "the row is final")
     }
 
     /// A mounted view and its descendants answer their row; anything else,

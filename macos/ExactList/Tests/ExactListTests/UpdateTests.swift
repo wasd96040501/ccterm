@@ -10,8 +10,11 @@ import XCTest
 @MainActor
 final class UpdateTests: XCTestCase {
 
-    /// Before an animated insert returns: the count, every query and every
-    /// mounted view's model frame are final, and the rows in `P` are mounted.
+    /// Before an animated insert returns: the count and every query are
+    /// final, the rows in `P` are mounted, and each mounted row is where its
+    /// motion starts: the rows above as they were, the inserted ones opening
+    /// at zero height under row 61, the rows below where they were. Once the
+    /// motion ends, every mounted row is at its final frame.
     func testU1_synchronousCommit() async throws {
         let stage = ListStage(size: NSSize(width: 400, height: 300))
         defer { stage.teardown() }
@@ -22,23 +25,40 @@ final class UpdateTests: XCTestCase {
         list.scrollToRow(60, at: .top)
         await stage.settle()
         let offset = -list.rect(ofRow: 0).minY
+        let width = list.rect(ofRow: 0).width
+        let old = ReferenceLayout.frames(heights: heights, spacing: 0, width: width)
 
         heights.insert(contentsOf: [45, 35], at: 62)
         host.count = heights.count
-        list.performBatchUpdates(anchoring: .scrollOffset) { $0.insertRows(at: [62, 63]) }
+        var done = false
+        list.performBatchUpdates(
+            anchoring: .scrollOffset, { $0.insertRows(at: [62, 63]) }, completionHandler: { done = $0 })
 
         XCTAssertEqual(list.numberOfRows, 202)
-        let width = list.rect(ofRow: 0).width
         let frames = ReferenceLayout.frames(heights: heights, spacing: 0, width: width)
         for row in [0, 61, 62, 63, 64, 201] {
             XCTAssertEqual(list.rect(ofRow: row), frames[row].offsetBy(dx: 0, dy: -offset), "row \(row)")
         }
         let inP = frames.indices.filter { frames[$0].maxY > offset - 150 && frames[$0].minY < offset + 450 }
+        var views: [(row: Int, view: NSView)] = []
         for row in inP {
             let view = try XCTUnwrap(list.view(atRow: row), "row \(row) in P is mounted")
-            XCTAssertEqual(list.convert(view.bounds, from: view), list.rect(ofRow: row), "row \(row)'s model frame")
+            views.append((row, view))
+            let start: CGRect =
+                switch row {
+                case ..<62: old[row]
+                case 62, 63: CGRect(x: 0, y: old[61].maxY, width: width, height: 0)
+                default: old[row - 2]
+                }
+            XCTAssertEqual(
+                list.convert(view.bounds, from: view), start.offsetBy(dx: 0, dy: -offset),
+                "row \(row) is at its motion's start")
         }
-        XCTAssertFalse(animationKeys(list).isEmpty, "and it is animating: only presentation differs")
+        _ = await stage.drain(until: { done }, timeout: 2)
+        XCTAssertTrue(done)
+        for (row, view) in views {
+            XCTAssertEqual(list.convert(view.bounds, from: view), list.rect(ofRow: row), "row \(row) is final")
+        }
     }
 
     /// The outermost call's anchoring applies to a nested batch, every
@@ -231,10 +251,10 @@ final class UpdateTests: XCTestCase {
         }
     }
 
-    /// With an animation in flight: every animation is removed, the pending
-    /// completion gets `false`, every mounted view (the one animating out
-    /// too) hears `didRemove`, the count and every height are asked again, and
-    /// nothing animates.
+    /// With a motion in flight: every motion stops, the pending completion
+    /// gets `false`, every mounted view (the one animating out too) hears
+    /// `didRemove`, the count and every height are asked again, and nothing
+    /// moves.
     func testU7_reloadData() async throws {
         let stage = ListStage(size: NSSize(width: 400, height: 300))
         defer { stage.teardown() }
@@ -247,7 +267,7 @@ final class UpdateTests: XCTestCase {
         var completions: [Bool] = []
         host.count -= 1
         list.performBatchUpdates({ $0.removeRows(at: [2]) }, completionHandler: { completions.append($0) })
-        XCTAssertFalse(animationKeys(list).isEmpty)
+        XCTAssertTrue(try moving(list))
         // The rows that closed the gap brought a new row into P: it is in the
         // list now, beside row 2's view animating out.
         list.enumerateAvailableRowViews { view, _ in views.append(ObjectIdentifier(view)) }
@@ -255,7 +275,10 @@ final class UpdateTests: XCTestCase {
         host.resetCalls()
         list.reloadData()
         XCTAssertEqual(completions, [], "not synchronously (U8)")
-        XCTAssertEqual(animationKeys(list), [], "every animation removed")
+        XCTAssertFalse(try moving(list), "every motion stopped")
+        list.enumerateAvailableRowViews { view, row in
+            XCTAssertEqual(list.convert(view.bounds, from: view), list.rect(ofRow: row), "row \(row) is final")
+        }
         let removed = Set(host.calls.compactMap { if case .didRemove(let view, _) = $0 { view } else { nil } })
         XCTAssertEqual(removed, Set(views), "every view that was in the list, including the one animating out")
         XCTAssertEqual(host.calls.filter { $0 == .numberOfRows }.count, 1)
@@ -301,7 +324,7 @@ final class UpdateTests: XCTestCase {
         list.performBatchUpdates(
             anchoring: .scrollOffset, { $0.insertRows(at: [0]) },
             completionHandler: { _ in elapsed = Date().timeIntervalSince(start) })
-        XCTAssertFalse(animationKeys(list).isEmpty)
+        XCTAssertTrue(try moving(list))
         let drained = await stage.drain(until: { elapsed != nil }, timeout: 2)
         XCTAssertTrue(drained)
         XCTAssertGreaterThanOrEqual(try XCTUnwrap(elapsed), 0.2, "after the animation ends")
@@ -320,17 +343,18 @@ final class UpdateTests: XCTestCase {
         try XCTUnwrap(list.subviews.compactMap { $0 as? NSScrollView }.first?.documentView)
     }
 
-    /// Animation keys on every layer in the document: containers, including
-    /// the ones animating out, and the hosts' views.
-    private func animationKeys(_ list: ExactListView) -> [String] {
-        guard let document = try? internalDocument(of: list) else { return [] }
+    /// Whether a motion is running: a clock is ticking (M3), and no layer in
+    /// the document carries a CoreAnimation animation either way.
+    private func moving(_ list: ExactListView) throws -> Bool {
+        let document = try internalDocument(of: list)
         var keys: [String] = []
         func walk(_ view: NSView) {
             keys += view.layer?.animationKeys() ?? []
             view.subviews.forEach(walk)
         }
         document.subviews.forEach(walk)
-        return keys
+        XCTAssertEqual(keys, [], "no CoreAnimation animation")
+        return document.subviews.contains { $0 is MotionClock }
     }
 
     private func assertTraps(_ scenario: String, naming id: String, line: UInt = #line) throws {

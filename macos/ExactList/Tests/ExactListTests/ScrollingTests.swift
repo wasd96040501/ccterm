@@ -115,38 +115,113 @@ final class ScrollingTests: XCTestCase {
         XCTAssertEqual(offset(of: list), before)
     }
 
-    /// The destination is final at once. Animated (an implicit-animation
-    /// group), every moving container carries the same additive `position.y`
-    /// from `δ`, and a long jump's `δ` is capped at the height of `U` (M7).
-    /// Outside such a group nothing animates.
-    func testS3_scrollsAreCommits() async throws {
+    /// Without animation a scroll lands at once, and nothing moves. Animated
+    /// (an implicit-animation group), the offset itself moves, sampled on
+    /// every refresh: from where it was, never back, to the destination,
+    /// through every offset on the way however far, mounting only the rows
+    /// in view. A commit during the flight carries it along by its `Δ`; a
+    /// scroll by the reader and `reloadData()` end it where it is; a second
+    /// scroll replaces it from where it is.
+    func testS3_scrolls() async throws {
+        guard #available(macOS 14, *) else { throw XCTSkip("the display link needs macOS 14") }
         let stage = ListStage(size: NSSize(width: 400, height: 300))
         defer { stage.teardown() }
-        let host = RecordingHost(count: 2000) { _, _ in 30 }
+        var heights: [CGFloat] = Array(repeating: 30, count: 2000)
+        let host = RecordingHost(count: heights.count) { row, _ in heights[row] }
         let list = ExactListView(dataSource: host, delegate: host)
         await stage.mount(list)
+        let scrollView = try XCTUnwrap(list.subviews.compactMap { $0 as? NSScrollView }.first)
+        let document = try XCTUnwrap(scrollView.documentView)
+        func clocks() -> Int { document.subviews.filter { $0 is MotionClock }.count }
+        func animated(_ duration: TimeInterval, _ body: () -> Void) {
+            NSAnimationContext.runAnimationGroup(
+                { context in
+                    context.duration = duration
+                    context.allowsImplicitAnimation = true
+                    body()
+                }, completionHandler: nil)
+        }
+        /// The offset on every refresh: the document's presented top is `−o`.
+        func offsets(for seconds: TimeInterval) async -> [CGFloat] {
+            await PresentationSampler.record([document], in: list, for: seconds).compactMap {
+                $0.frames[ObjectIdentifier(document)].map { -$0.minY }
+            }
+        }
 
         list.scrollToRow(20, at: .top)
-        XCTAssertEqual(offset(of: list), 600)
-        XCTAssertEqual(positionDeltas(list), [], "no implicit animation, no motion")
+        XCTAssertEqual(offset(of: list), 600, "without animation: at once")
+        XCTAssertEqual(clocks(), 0, "nothing moves")
 
-        NSAnimationContext.runAnimationGroup(
-            { context in
-                context.allowsImplicitAnimation = true
-                list.scrollToRow(24, at: .top)
-            }, completionHandler: nil)
-        XCTAssertEqual(offset(of: list), 720, "final at once (U1)")
-        XCTAssertEqual(Set(positionDeltas(list)), [120], "a uniform δ: rows start 120 pt lower")
-        await stage.settle()
-        _ = await stage.drain(until: { self.positionDeltas(list).isEmpty }, timeout: 1)
+        // A short one: 600 to 720, never back, over several frames.
+        animated(0.3) { list.scrollToRow(24, at: .top) }
+        XCTAssertEqual(offset(of: list), 600, "it starts where it was")
+        var seen = await offsets(for: 0.45)
+        XCTAssertEqual(seen.last, 720, "it ends at the destination")
+        XCTAssertGreaterThan(Set(seen.filter { $0 > 600 && $0 < 720 }).count, 10, "through the offsets between")
+        XCTAssertEqual(seen, seen.sorted(), "never back")
+        XCTAssertEqual(clocks(), 0)
 
-        NSAnimationContext.runAnimationGroup(
-            { context in
-                context.allowsImplicitAnimation = true
-                list.scrollToRow(1500, at: .top)
-            }, completionHandler: nil)
-        XCTAssertEqual(offset(of: list), 45_000)
-        XCTAssertEqual(Set(positionDeltas(list)), [300], "capped at the height of U")
+        // A long one: every offset on the way, with only the rows in view
+        // mounted.
+        var mostMounted = 0
+        animated(0.4) { list.scrollToRow(1500, at: .top) }
+        seen = await PresentationSampler.record(in: list, for: 0.55) {
+            mostMounted = max(
+                mostMounted, document.subviews.filter { ($0 as? RowContainerView)?.isHidden == false }.count)
+            return [document]
+        }.compactMap { $0.frames[ObjectIdentifier(document)].map { -$0.minY } }
+        XCTAssertEqual(seen.last, 45_000)
+        XCTAssertEqual(seen, seen.sorted(), "never back")
+        XCTAssertLessThan(
+            zip(seen, seen.dropFirst()).map { $1 - $0 }.max() ?? .infinity, 45_000 / 4, "no jump: nothing is capped")
+        XCTAssertLessThan(mostMounted, 40, "only the rows in view are mounted, never the 1480 on the way")
+        XCTAssertEqual(
+            scrollView.verticalScroller?.doubleValue ?? 0, 45_000 / (60_000 - 300), accuracy: 1e-3,
+            "the scroller moved with it")
+
+        // A commit during the flight moves the destination by its Δ: two rows
+        // inserted above the viewport, held by the default anchor, add 60.
+        list.scrollToRow(20, at: .top)
+        animated(0.4) { list.scrollToRow(40, at: .top) }
+        _ = await offsets(for: 0.1)
+        heights.insert(contentsOf: [30, 30], at: 0)
+        host.count = heights.count
+        list.insertRows(at: [0, 1])
+        seen = await offsets(for: 0.5)
+        XCTAssertEqual(seen.last, 1260, "row 40, now 42, at the top")
+        XCTAssertEqual(list.rect(ofRow: 42).minY, 0)
+
+        // A scroll by the reader ends the flight where it is.
+        list.scrollToRow(20, at: .top)
+        animated(0.4) { list.scrollToRow(1000, at: .top) }
+        _ = await offsets(for: 0.1)
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: 1234))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        XCTAssertEqual(clocks(), 0, "the reader's scroll ended it")
+        seen = await offsets(for: 0.4)
+        XCTAssertEqual(Set(seen), [1234], "and it stays where the reader put it")
+
+        // reloadData() ends it too.
+        animated(0.4) { list.scrollToRow(1000, at: .top) }
+        _ = await offsets(for: 0.1)
+        list.reloadData()
+        XCTAssertEqual(clocks(), 0, "reloadData() ended it")
+        let stopped = offset(of: list)
+        XCTAssertNotEqual(stopped, 30_000, "where it was, not the destination")
+        seen = await offsets(for: 0.4)
+        XCTAssertEqual(Set(seen), [stopped])
+
+        // A second scroll replaces the first, from where it is.
+        animated(0.4) { list.scrollToRow(1500, at: .top) }
+        _ = await offsets(for: 0.1)
+        let replacedAt = offset(of: list)
+        XCTAssertGreaterThan(replacedAt, stopped)
+        animated(0.3) { list.scrollToRow(10, at: .top) }
+        XCTAssertEqual(offset(of: list), replacedAt, "it starts where the first one was")
+        seen = await offsets(for: 0.45)
+        XCTAssertEqual(seen.last, 300)
+        XCTAssertEqual(seen, seen.sorted(by: >), "straight back, never on towards the first destination")
+        XCTAssertEqual(clocks(), 0, "one clock, ended")
     }
 
     /// The wheel moves the offset through `NSScrollView` itself, with its own
@@ -187,22 +262,5 @@ final class ScrollingTests: XCTestCase {
     /// `o`: row 0's top is at `−o` in the list's coordinates.
     private func offset(of list: ExactListView) -> CGFloat {
         -list.rect(ofRow: 0).minY
-    }
-
-    /// The `fromValue` of every mounted container's additive `position.y`
-    /// animation (M3), which is `start − end` of its screen top.
-    private func positionDeltas(_ list: ExactListView) -> [CGFloat] {
-        var deltas: [CGFloat] = []
-        list.enumerateAvailableRowViews { view, _ in
-            guard let layer = view.superview?.layer else { return }
-            for key in layer.animationKeys() ?? [] where key.hasSuffix("position.y") {
-                if let animation = layer.animation(forKey: key) as? CABasicAnimation,
-                    let from = animation.fromValue as? CGFloat
-                {
-                    deltas.append(from)
-                }
-            }
-        }
-        return deltas
     }
 }

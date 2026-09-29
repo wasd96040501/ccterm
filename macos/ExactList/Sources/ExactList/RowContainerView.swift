@@ -3,10 +3,11 @@ import AppKit
 /// Where a mounted row sits: `NSTableRowView`'s counterpart, kept internal
 /// (SPEC P5).
 ///
-/// It carries the clipping and the animations of §8, so the host's view and
-/// layer never get either. The hosted view fills the container's width at the
-/// row's final height, aligned to the top; the container clips it to the
-/// presented height (M2). It is also the row's accessibility element (X2).
+/// It carries the motion of §8: `MotionAnimator` sets its frame and opacity on
+/// every frame, and moves the hosted view inside it for a slide (M9), which
+/// the container clips. The hosted view fills the container at every height
+/// (P2), and gets nothing but its frame (P5). It is also the row's
+/// accessibility element (X2).
 final class RowContainerView: NSView {
 
     /// The row this container shows, in the current numbering. −1 once it is
@@ -17,9 +18,11 @@ final class RowContainerView: NSView {
     /// The host's view, or `nil` while the container is in no row.
     private(set) var hostedView: NSView?
 
-    /// The row's height as last measured: the hosted view's height, whatever
-    /// the container's own frame is doing (a removed row's frame ends at 0).
-    private var hostedHeight: CGFloat = 0
+    /// Where the hosted view sits in the container: zero, except while a slide
+    /// moves it (M9).
+    var contentOffset: CGPoint = .zero {
+        didSet { if contentOffset != oldValue { layOutHostedView() } }
+    }
 
     init(row: Int) {
         self.row = row
@@ -35,10 +38,9 @@ final class RowContainerView: NSView {
 
     override var isFlipped: Bool { true }
 
-    /// Puts `view` in the container, sized to `width × height`, and returns the
-    /// view it replaces, if any (U6).
-    func host(_ view: NSView, height: CGFloat) -> NSView? {
-        hostedHeight = height
+    /// Puts `view` in the container, filling it, and returns the view it
+    /// replaces, if any (U6).
+    func host(_ view: NSView) -> NSView? {
         let replaced = hostedView === view ? nil : hostedView
         if replaced != nil || hostedView == nil {
             replaced?.removeFromSuperview()
@@ -51,10 +53,9 @@ final class RowContainerView: NSView {
             addSubview(view)
             hostedView = view
         }
-        // Now, not at the next layout: a commit's frames are final when it
-        // returns (U1), and a pooled view still has its last row's frame.
-        let frame = NSRect(x: 0, y: 0, width: bounds.width, height: height)
-        if view.frame != frame { view.frame = frame }
+        // Now, not at the next layout: a pooled view still has its last row's
+        // frame, and a commit's frames are set when it returns (U1).
+        layOutHostedView()
         return replaced
     }
 
@@ -66,11 +67,17 @@ final class RowContainerView: NSView {
         return view
     }
 
-    /// Lays the hosted view out at the row's final height, whatever the
-    /// container's presented height is (M2).
-    override func layout() {
-        super.layout()
-        hostedView?.frame = NSRect(x: 0, y: 0, width: bounds.width, height: hostedHeight)
+    /// The hosted view follows the container's size on every frame of a
+    /// motion, synchronously, so the view is drawn at each height (M2, P2).
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        layOutHostedView()
+    }
+
+    private func layOutHostedView() {
+        guard let view = hostedView else { return }
+        let frame = NSRect(origin: contentOffset, size: bounds.size)
+        if view.frame != frame { view.frame = frame }
     }
 
     // MARK: - Accessibility row (X2)

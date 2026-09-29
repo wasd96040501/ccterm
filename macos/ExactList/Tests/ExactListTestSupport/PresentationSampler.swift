@@ -3,40 +3,53 @@ import QuartzCore
 
 /// Reads what CoreAnimation presents, frame by frame (SPEC §13, motion).
 ///
-/// Two ways, both real CoreAnimation evaluation:
-/// - **Scrubbing**: freezes an ancestor layer's time (`speed = 0`) and moves its
-///   `timeOffset`, so `presentation()` is evaluated at exactly the `t` asked for.
-///   Deterministic; this is what the formula checks use.
-/// - **Display-link timeline**: samples `presentation()` on every refresh of
-///   `NSScreen.main`, the frames the render server actually showed. macOS 14+.
+/// A display link samples `presentation()` on every refresh of
+/// `NSScreen.main`: the frames and opacities the render server actually
+/// showed. macOS 14+.
 @MainActor
-public final class PresentationSampler {
+public enum PresentationSampler {
 
-    private let root: CALayer
+    /// One display-link sample of the tracked views that are showing (in the
+    /// window, not hidden): their presented frames, in the ancestor's
+    /// coordinates, and their presented opacities.
+    public struct Frame {
+        public let elapsed: TimeInterval
+        public let frames: [ObjectIdentifier: CGRect]
+        public let opacities: [ObjectIdentifier: CGFloat]
 
-    /// The root's local time at the freeze. Animations added underneath while
-    /// frozen begin here.
-    private let frozenAt: CFTimeInterval
-
-    /// Freezes time on `root`, from the next animation added underneath it.
-    public init(freezing root: CALayer) {
-        self.root = root
-        frozenAt = root.convertTime(CACurrentMediaTime(), from: nil)
-        root.speed = 0
-        root.timeOffset = frozenAt
-        CATransaction.flush()
+        public init(
+            elapsed: TimeInterval, frames: [ObjectIdentifier: CGRect], opacities: [ObjectIdentifier: CGFloat]
+        ) {
+            self.elapsed = elapsed
+            self.frames = frames
+            self.opacities = opacities
+        }
     }
 
-    /// Moves the frozen time to `seconds` after the freeze, and flushes.
-    public func scrub(to seconds: TimeInterval) {
-        root.timeOffset = frozenAt + seconds
-        CATransaction.flush()
+    /// Samples `views` on every refresh for `duration`. `ancestor` should be
+    /// flipped, as the list is, so the frames read top-down.
+    @available(macOS 14, *)
+    public static func record(_ views: [NSView], in ancestor: NSView, for duration: TimeInterval) async -> [Frame] {
+        await record(in: ancestor, for: duration) { views }
+    }
+
+    /// Samples, on every refresh for `duration`, the views `views` returns
+    /// then: for views that come and go while it runs.
+    @available(macOS 14, *)
+    public static func record(
+        in ancestor: NSView, for duration: TimeInterval, views: @escaping @MainActor () -> [NSView]
+    ) async -> [Frame] {
+        await withCheckedContinuation { (done: CheckedContinuation<[Frame], Never>) in
+            let recorder = DisplayLinkRecorder(views: views, ancestor: ancestor, duration: duration) { frames in
+                done.resume(returning: frames)
+            }
+            recorder.start()
+        }
     }
 
     /// `view`'s presented frame in `ancestor`'s coordinates, from its layer's
-    /// `presentation()` and every presented ancestor between them. `ancestor`
-    /// should be flipped, as the list is, so the frame reads top-down.
-    public func presentedFrame(of view: NSView, in ancestor: NSView) -> CGRect {
+    /// `presentation()` and every presented ancestor between them.
+    public static func presentedFrame(of view: NSView, in ancestor: NSView) -> CGRect {
         guard let layer = view.layer, let target = ancestor.layer else {
             preconditionFailure("presentedFrame needs layer-backed views")
         }
@@ -45,39 +58,10 @@ public final class PresentationSampler {
         return into.convert(presented.bounds, from: presented)
     }
 
-    /// `view`'s presented opacity.
-    public func presentedOpacity(of view: NSView) -> Float {
+    /// `view`'s own presented opacity.
+    public static func presentedOpacity(of view: NSView) -> CGFloat {
         guard let layer = view.layer else { preconditionFailure("presentedOpacity needs a layer-backed view") }
-        return (layer.presentation() ?? layer).opacity
-    }
-
-    /// Releases the freeze: time carries on from where it was scrubbed to.
-    public func thaw() {
-        let paused = root.timeOffset
-        root.speed = 1
-        root.timeOffset = 0
-        root.beginTime = 0
-        root.beginTime = root.convertTime(CACurrentMediaTime(), from: nil) - paused
-        CATransaction.flush()
-    }
-
-    /// One display-link sample: the presented frames, in `ancestor`'s
-    /// coordinates, of the tracked views that are showing (in the window, not
-    /// hidden).
-    public struct Frame {
-        public let elapsed: TimeInterval
-        public let frames: [ObjectIdentifier: CGRect]
-    }
-
-    /// Samples `views` on every refresh for `duration`, without freezing time.
-    @available(macOS 14, *)
-    public static func record(_ views: [NSView], in ancestor: NSView, for duration: TimeInterval) async -> [Frame] {
-        await withCheckedContinuation { (done: CheckedContinuation<[Frame], Never>) in
-            let recorder = DisplayLinkRecorder(views: views, ancestor: ancestor, duration: duration) { frames in
-                done.resume(returning: frames)
-            }
-            recorder.start()
-        }
+        return CGFloat((layer.presentation() ?? layer).opacity)
     }
 }
 
@@ -87,7 +71,7 @@ public final class PresentationSampler {
 @MainActor
 private final class DisplayLinkRecorder: NSObject {
 
-    private let views: [NSView]
+    private let views: @MainActor () -> [NSView]
     private let ancestor: NSView
     private let duration: TimeInterval
     private let finish: ([PresentationSampler.Frame]) -> Void
@@ -96,7 +80,7 @@ private final class DisplayLinkRecorder: NSObject {
     private var start0: CFTimeInterval = 0
 
     init(
-        views: [NSView], ancestor: NSView, duration: TimeInterval,
+        views: @escaping @MainActor () -> [NSView], ancestor: NSView, duration: TimeInterval,
         finish: @escaping ([PresentationSampler.Frame]) -> Void
     ) {
         self.views = views
@@ -117,21 +101,20 @@ private final class DisplayLinkRecorder: NSObject {
 
     @objc private func tick() {
         let elapsed = CACurrentMediaTime() - start0
-        var sample: [ObjectIdentifier: CGRect] = [:]
-        let into = ancestor.layer.map { $0.presentation() ?? $0 }
-        for view in views {
+        var frames: [ObjectIdentifier: CGRect] = [:]
+        var opacities: [ObjectIdentifier: CGFloat] = [:]
+        for view in views() {
             // A view out of the window or hidden shows nothing, wherever its
             // layer is.
-            guard view.window != nil, !view.isHiddenOrHasHiddenAncestor else { continue }
-            guard let layer = view.layer, let into else { continue }
-            let presented = layer.presentation() ?? layer
-            sample[ObjectIdentifier(view)] = into.convert(presented.bounds, from: presented)
+            guard view.window != nil, !view.isHiddenOrHasHiddenAncestor, view.layer != nil else { continue }
+            frames[ObjectIdentifier(view)] = PresentationSampler.presentedFrame(of: view, in: ancestor)
+            opacities[ObjectIdentifier(view)] = PresentationSampler.presentedOpacity(of: view)
         }
-        frames.append(PresentationSampler.Frame(elapsed: elapsed, frames: sample))
+        self.frames.append(PresentationSampler.Frame(elapsed: elapsed, frames: frames, opacities: opacities))
         if elapsed >= duration {
             link?.invalidate()
             link = nil
-            finish(frames)
+            finish(self.frames)
         }
     }
 }

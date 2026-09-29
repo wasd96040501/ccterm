@@ -14,12 +14,14 @@ Accessibility Inspector's slow-animation setting, or with Shift held on
 systems that honour it.
 
 - **stream**: rows arrive at the bottom, and the viewport follows without a
-  jump. Scroll up a little and the arrivals stop moving what you're reading.
+  jump. The rows at the top slide out of view; none vanishes before it has. Scroll up a little and the arrivals stop moving what you're reading.
   Scroll back to the end and following resumes.
 - **growLastRow**: the last row grows while the viewport follows. Nothing
   behind it flickers.
 - **toggleClicked**: the header you clicked stays under the pointer while the
-  content opens below it, including at the very bottom of the list.
+  content opens below it, including at the very bottom of the list. The
+  card's border and corners follow its height on every frame, and the text
+  never runs across the border.
 - **churnAbove**: rows come and go above the viewport, and what you're
   reading never moves. Run it again while scrolling with two fingers on the
   trackpad, and let go mid-flick: the gesture and its momentum carry on
@@ -29,7 +31,8 @@ systems that honour it.
   any moment.
 - **loadLarge**: 10 000 rows load, and the scroller is right from the first
   frame. Dragging the knob to the end lands on the last row.
-- **scrollToTop**: the scroll animates, and the list is never blank mid-flight.
+- **scrollToTop**: the rows scroll by, the scroller's knob moves with them,
+  and the list is never blank mid-flight.
 - **Reduce Motion** (System Settings › Accessibility › Display): with it on,
   run **churnAbove** and **toggleClicked** again. Every update lands at once,
   with no motion (M1).

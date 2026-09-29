@@ -185,15 +185,18 @@ final class WidthChangeTests: XCTestCase {
         try XCTUnwrap(list.subviews.compactMap { $0 as? NSScrollView }.first)
     }
 
-    /// The mounted rows not shown at the current `W` and at their height for
-    /// it: container and view width, and model height.
+    /// The mounted rows not measured at the current `W`: their view's width,
+    /// and their height for it, in the model and, unless a motion is carrying
+    /// the rows between heights (M2), in the view.
     private func unfresh(_ list: ExactListView, _ host: RecordingHost) throws -> [Int] {
-        let width = try internalScrollView(of: list).contentView.bounds.width
+        let scroll = try internalScrollView(of: list)
+        let width = scroll.contentView.bounds.width
+        let moving = scroll.documentView?.subviews.contains { $0 is MotionClock } ?? false
         var wrong: [Int] = []
         list.enumerateAvailableRowViews { view, row in
             let frame = list.convert(view.bounds, from: view)
             let expected = Self.wrapped(row, width)
-            if abs(frame.width - width) > 1e-9 || abs(frame.height - expected) > 1e-6
+            if abs(frame.width - width) > 1e-9 || (!moving && abs(frame.height - expected) > 1e-6)
                 || abs(list.rect(ofRow: row).height - expected) > 1e-6
             {
                 wrong.append(row)

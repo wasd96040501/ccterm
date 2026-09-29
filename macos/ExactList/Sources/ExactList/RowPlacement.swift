@@ -4,8 +4,9 @@ import ExactListCore
 /// The mounted set: which rows have containers, and where the containers are
 /// (SPEC P1–P3, P6).
 ///
-/// It places at model frames. `MotionAnimator` adds the motion on top, and
-/// hands back the containers whose animations have ended.
+/// It places rows at G1's frames, except rows in flight: their frames belong
+/// to `MotionAnimator` until their motion ends, and it hands back the
+/// containers whose motion has ended.
 @MainActor
 final class RowPlacement {
 
@@ -58,8 +59,8 @@ final class RowPlacement {
 
     /// P1: mounts exactly `rows` plus `keeping`, at G1's frames for `width`.
     /// Rows that are new are asked for views. Rows that leave are unmounted
-    /// unless `keeping` holds them, which is what `MotionAnimator` uses for rows
-    /// still in flight.
+    /// unless `keeping` holds them: the rows still in flight, whose frames
+    /// `MotionAnimator` sets, so they are not touched here.
     ///
     /// No container or view leaves the document here: a view going out of the
     /// window and back makes AppKit rebuild the window's layer tree (P3). An
@@ -82,15 +83,14 @@ final class RowPlacement {
             if let container = containers[row] {
                 // Most rows stay where they were; AppKit's frame setters do
                 // work even for the frame a view already has.
-                if container.frame != frame { container.frame = frame }
-                if let view = container.hostedView { _ = container.host(view, height: frame.height) }
+                if !keeping.contains(row), container.frame != frame { container.frame = frame }
                 continue
             }
             let view = owner?.placement(self, viewForRow: row)
             let container = take(holding: view, from: &departed)
             container.row = row
             container.frame = frame
-            if let view { _ = container.host(view, height: frame.height) }
+            if let view { _ = container.host(view) }
             containers[row] = container
         }
         for container in departed { stow(container) }
@@ -102,7 +102,7 @@ final class RowPlacement {
         for row in rows {
             guard let container = containers[row] else { continue }
             let view = owner.placement(self, viewForRow: row)
-            if let replaced = container.host(view, height: container.frame.height) {
+            if let replaced = container.host(view) {
                 owner.placement(self, didRemove: replaced, forRow: row)
             }
         }
@@ -175,13 +175,13 @@ final class RowPlacement {
         spare.append(container)
     }
 
-    /// Takes a container out of its row: its motion ends, and the host hears
-    /// `didRemove` for its view, which goes back to the pool (P3). The view
-    /// stays in the container until another row takes one or the other.
+    /// Takes a container out of its row: its opacity and content offset go
+    /// back to rest, and the host hears `didRemove` for its view, which goes
+    /// back to the pool (P3). The view stays in the container until another
+    /// row takes one or the other.
     private func depart(_ container: RowContainerView, reporting row: Int) {
-        container.layer?.removeAllAnimations()
-        container.layer?.opacity = 1
-        container.layer?.sublayerTransform = CATransform3DIdentity
+        container.alphaValue = 1
+        container.contentOffset = .zero
         if let view = container.hostedView {
             owner?.placement(self, didRemove: view, forRow: row)
         }

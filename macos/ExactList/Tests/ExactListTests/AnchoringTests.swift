@@ -134,12 +134,16 @@ final class AnchoringTests: XCTestCase {
         contentHeight + bottomInset - list.bounds.height
     }
 
-    /// Animation keys on every mounted row's view and container.
+    /// Everything moving: a motion clock (M3), a CoreAnimation animation on a
+    /// mounted row's view or container, or a mounted row away from its frame.
     private func mountedAnimationKeys(_ list: ExactListView) -> [String] {
         var keys: [String] = []
-        list.enumerateAvailableRowViews { view, _ in
+        let document = list.subviews.compactMap { $0 as? NSScrollView }.first?.documentView
+        keys += (document?.subviews ?? []).filter { $0 is MotionClock }.map { _ in "clock" }
+        list.enumerateAvailableRowViews { view, row in
             keys += view.layer?.animationKeys() ?? []
             keys += view.superview?.layer?.animationKeys() ?? []
+            if list.convert(view.bounds, from: view) != list.rect(ofRow: row) { keys.append("row \(row) moving") }
         }
         return keys
     }

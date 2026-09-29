@@ -18,7 +18,7 @@ nonisolated struct LaunchPreferences: Equatable, Sendable {
         var isDirectory: ObjCBool = false
         let exists = FileManager.default.fileExists(
             atPath: (trimmed as NSString).expandingTildeInPath, isDirectory: &isDirectory)
-        guard exists else { return String(localized: "Folder doesn't exist") }
+        guard exists else { return String(localized: "Folder doesn’t exist") }
         return isDirectory.boolValue ? nil : String(localized: "Not a folder")
     }
 }

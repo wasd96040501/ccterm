@@ -321,7 +321,7 @@
         }
       }
     },
-    "Couldn't start": {
+    "Couldn’t start": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -411,7 +411,7 @@
         }
       }
     },
-    "Didn't print a version": {
+    "Didn’t print a version": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -491,7 +491,7 @@
         }
       }
     },
-    "Folder doesn't exist": {
+    "Folder doesn’t exist": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {

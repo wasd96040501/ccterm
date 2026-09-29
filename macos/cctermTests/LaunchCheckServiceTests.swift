@@ -70,10 +70,10 @@ final class LaunchCheckServiceTests: XCTestCase {
         let slow = await service.check(CLIConfiguration(customCommand: "slow"))
         let stuck = await service.check(CLIConfiguration(customCommand: "stuck"))
         XCTAssertEqual(missing, .invalid(String(localized: "Not found")))
-        XCTAssertEqual(silent, .invalid(String(localized: "Didn't print a version")))
+        XCTAssertEqual(silent, .invalid(String(localized: "Didn’t print a version")))
         XCTAssertEqual(crashing, .invalid("zsh: command not found: crashing"))
         XCTAssertEqual(mute, .invalid(String(localized: "Exited with code \(127)")))
         XCTAssertEqual(slow, .invalid(String(localized: "Timed out")))
-        XCTAssertEqual(stuck, .invalid(String(localized: "Couldn't start")))
+        XCTAssertEqual(stuck, .invalid(String(localized: "Couldn’t start")))
     }
 }

@@ -50,7 +50,7 @@ final class LaunchEnvironmentTests: XCTestCase {
         try Data().write(to: file)
         XCTAssertEqual(
             LaunchPreferences.folderProblem(root.appendingPathComponent("missing").path),
-            String(localized: "Folder doesn't exist"))
+            String(localized: "Folder doesn’t exist"))
         XCTAssertEqual(LaunchPreferences.folderProblem(file.path), String(localized: "Not a folder"))
     }
 }

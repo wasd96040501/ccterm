@@ -88,7 +88,7 @@ nonisolated enum AccountPaste {
 
     /// The providers `entries` make, ready to add: each with its name made
     /// unique among `existingNames` and those before it. Entries without a
-    /// base URL or a credential are left out and counted.
+    /// base URL, a credential or a name (an alias's, else the URL's host) are left out and counted.
     static func importable(
         _ entries: [Entry], existingNames: [String]
     ) -> (
@@ -98,7 +98,9 @@ nonisolated enum AccountPaste {
         var providers: [(Account, AccountSecrets)] = []
         for entry in entries {
             var (account, secrets) = entry.newProvider()
-            guard var provider = account.provider, !provider.baseURL.isEmpty, !secrets.credential.isEmpty else {
+            guard var provider = account.provider, !provider.baseURL.isEmpty, !secrets.credential.isEmpty,
+                !provider.name.trimmingCharacters(in: .whitespaces).isEmpty
+            else {
                 continue
             }
             provider.name = Account.uniqueName(provider.name, among: names)

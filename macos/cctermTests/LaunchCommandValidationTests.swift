@@ -151,7 +151,7 @@ final class LaunchCommandValidationTests: XCTestCase {
 
         validation.commit(root.appendingPathComponent("missing").path) { applied.append($0) }
         await waitFor(validation.$state) {
-            if case .invalid(let problem) = $0 { problem == String(localized: "Folder doesn't exist") } else { false }
+            if case .invalid(let problem) = $0 { problem == String(localized: "Folder doesn’t exist") } else { false }
         }
         XCTAssertEqual(applied, [])
 

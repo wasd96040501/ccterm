@@ -191,6 +191,13 @@ final class AccountPasteTests: XCTestCase {
 
     // MARK: - Importing
 
+    func testImportingSkipsAnEntryThatCannotBeNamed() {
+        let entries = AccountPaste.entries("ANTHROPIC_BASE_URL=not-a-url ANTHROPIC_AUTH_TOKEN=sk-1 claude")
+        let (providers, skipped) = AccountPaste.importable(entries, existingNames: [])
+        XCTAssertTrue(providers.isEmpty)
+        XCTAssertEqual(skipped, 1)
+    }
+
     func testImportingSkipsEntriesWithoutAURLOrACredentialAndNamesTheRestApart() {
         let text = """
             alias relay="ANTHROPIC_BASE_URL=https://relay.example.com ANTHROPIC_AUTH_TOKEN=sk-1 claude"

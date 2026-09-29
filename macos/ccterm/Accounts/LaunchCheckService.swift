@@ -53,9 +53,9 @@ final class LaunchCheckService {
         case .binaryNotFound:
             return String(localized: "Not found")
         case .noVersion:
-            return String(localized: "Didn't print a version")
+            return String(localized: "Didn’t print a version")
         case .launchFailed:
-            return String(localized: "Couldn't start")
+            return String(localized: "Couldn’t start")
         case .versionFailed(let exitCode, let message):
             if message.hasPrefix("Timed out") { return String(localized: "Timed out") }
             return message.isEmpty ? String(localized: "Exited with code \(Int(exitCode))") : message

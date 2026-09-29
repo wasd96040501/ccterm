@@ -26,6 +26,11 @@
   --glass: rgba(255, 255, 255, .78);
   --glass-edge: rgba(0, 0, 0, .1);
   --menu: rgba(246, 246, 246, .86);
+  --hover: rgba(0, 0, 0, .05);
+  --red: #e5484d;
+  --system-green: #34c759;
+  --system-red: #ff3b30;
+  --orange: #d99100;
   --shadow: 0 0 0 .5px rgba(0, 0, 0, .18), 0 22px 60px rgba(0, 0, 0, .22), 0 6px 16px rgba(0, 0, 0, .1);
   color-scheme: light;
 }
@@ -38,6 +43,7 @@
     --accent: #3b85f0; --accent-text: #4c9bff; --switch-off: rgba(255, 255, 255, .14);
     --glass: rgba(60, 60, 62, .72); --glass-edge: rgba(255, 255, 255, .12);
     --menu: rgba(44, 44, 46, .86);
+    --hover: rgba(255, 255, 255, .08); --red: #ff6b66; --orange: #ffb340; --system-green: #30d158; --system-red: #ff453a;
     --shadow: 0 0 0 .5px rgba(0, 0, 0, .8), inset 0 0 0 .5px rgba(255, 255, 255, .12), 0 22px 60px rgba(0, 0, 0, .5);
     color-scheme: dark;
   }
@@ -50,6 +56,7 @@
   --accent: #3b85f0; --accent-text: #4c9bff; --switch-off: rgba(255, 255, 255, .14);
   --glass: rgba(60, 60, 62, .72); --glass-edge: rgba(255, 255, 255, .12);
   --menu: rgba(44, 44, 46, .86);
+  --hover: rgba(255, 255, 255, .08); --red: #ff6b66; --orange: #ffb340; --system-green: #30d158; --system-red: #ff453a;
   --shadow: 0 0 0 .5px rgba(0, 0, 0, .8), inset 0 0 0 .5px rgba(255, 255, 255, .12), 0 22px 60px rgba(0, 0, 0, .5);
   color-scheme: dark;
 }
@@ -196,7 +203,7 @@ svg { display: block; }
 .btn.default:active { filter: brightness(.9); }
 .btn.default:disabled { background: var(--fill); color: var(--label-3); }
 .btn:disabled { color: var(--label-3); }
-.btn.destructive { color: #e5484d; }
+.btn.destructive { color: var(--red); }
 .btn.small { height: 20px; padding: 0 9px; font-size: 12px; border-radius: 5px; min-width: 0; }
 .btn.icon { min-width: 0; padding: 0; width: 24px; }
 /* NSComboButton (split): the title segment, a hairline, an 18 wide menu segment. */
@@ -235,7 +242,7 @@ svg { display: block; }
 .menu .item.hl { background: var(--accent); color: #fff; }
 .menu .item.hl .sub, .menu .item.hl .key { color: rgba(255,255,255,.75); }
 .menu .item:disabled { color: var(--label-3); }
-.menu .item.danger { color: #e5484d; }
+.menu .item.danger { color: var(--red); }
 .menu .sep { height: 1px; margin: 5px 10px; background: var(--sep); background: color-mix(in srgb, var(--label) 12%, transparent); }
 .menu .head { padding: 3px 10px 2px 22px; font-size: 11px; color: var(--label-2); font-weight: 600; }
 .catcher { position: absolute; inset: 0; z-index: 49; }
@@ -310,7 +317,7 @@ svg { display: block; }
 .secret .field { width: 230px; }
 .eye { width: 20px; height: 20px; display: grid; place-items: center; color: var(--label-2); border-radius: 5px; }
 .eye:active { color: var(--label); }
-.row .desc.error { color: #e5484d; }
+.row .desc.error { color: var(--system-red); }
 .row .desc code, .foot code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .92em; }
 
 /* Environment list: lives inside a group, +/− underneath like System Settings lists. */
@@ -333,12 +340,16 @@ svg { display: block; }
   background: var(--win); color: var(--label); box-shadow: 0 0 0 1px var(--accent), 0 0 0 3.5px color-mix(in srgb, var(--accent) 35%, transparent);
   -webkit-user-select: text; user-select: text;
 }
-.env .warn { color: #d99100; display: grid; place-items: center; }
+.env .warn { color: var(--orange); display: grid; place-items: center; }
 .env .empty-list { height: 100%; display: grid; place-items: center; color: var(--label-3); text-align: center; line-height: 18px; }
-.listbar { display: flex; align-items: center; height: 28px; border-top: 1px solid var(--sep); padding: 0 6px; gap: 2px; }
-.listbar button { width: 22px; height: 20px; border-radius: 5px; display: grid; place-items: center; color: var(--label); }
+/* + | − as System Settings draws them: 20 square buttons, radius 5, fill
+   only under the pointer, a 1×12 divider between the two. */
+.listbar { display: flex; align-items: center; height: 28px; border-top: 1px solid var(--sep); padding: 0 4px; }
+.listbar button { width: 20px; height: 20px; border-radius: 5px; display: grid; place-items: center; color: var(--label); flex: none; }
 .listbar button:disabled { color: var(--label-3); }
+.listbar button:hover:not(:disabled) { background: var(--hover); }
 .listbar button:active:not(:disabled) { background: var(--fill-press); }
+.listbar .div { width: 1px; height: 12px; margin: 0 3px; background: color-mix(in srgb, var(--label) 14%, transparent); flex: none; }
 .listbar .hint { margin-left: auto; padding-right: 4px; font-size: 11px; color: var(--label-2); }
 .cb {
   width: 14px; height: 14px; border-radius: 4px; margin: 0 auto; display: grid; place-items: center;
@@ -356,6 +367,7 @@ svg { display: block; }
   background: color-mix(in srgb, var(--label) 88%, transparent); color: var(--win);
   animation: toast 2.8s ease forwards;
 }
+.toast.pane-toast { bottom: 24px; z-index: 6; }
 @keyframes toast { 0% { opacity: 0; transform: translate(-50%, 6px); } 8%, 85% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; } }
 
 /* Alert (NSAlert on a sheet): 260 wide, centred text, side-by-side buttons. */
@@ -376,6 +388,28 @@ svg { display: block; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .link { color: var(--accent-text); }
 .link:active { opacity: .7; }
+
+/* Checked fields: the result is the description line, and a status glyph in
+   a 14 slot 6 after the field, centred on it. Only a checked field has the
+   slot; it stays reserved while empty, so nothing moves when a glyph comes
+   or goes. An unchecked field keeps its full width. checkmark.circle.fill in systemGreen,
+   exclamationmark.circle.fill in systemRed; none while checking. 12 pt at
+   the medium symbol scale: a 14 frame around a 12 circle, the height of the
+   field text's ascender (12.6 at 13 pt), so it spans the value's line
+   without outgrowing it. */
+.row .desc .err { color: var(--system-red); }
+.row .desc .path { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .92em; }
+.slotted { display: inline-flex; align-items: center; gap: 6px; height: 16px; }
+.slot { width: 14px; height: 14px; flex: none; display: grid; place-items: center; }
+.slot svg { width: 12px; height: 12px; animation: slot-in .16s ease-out; }
+.slot.ok { color: var(--system-green); }
+.slot.bad { color: var(--system-red); }
+@keyframes slot-in { from { opacity: 0; } }
+
+/* A row just imported: tinted, then fades to the group's fill. */
+.acct.fresh { animation: fresh 2.4s ease-out; }
+@keyframes fresh { 0%, 30% { background: color-mix(in srgb, var(--accent) 14%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .acct.fresh, .slot svg { animation: none; } }
 </style>
 </head>
 <body>
@@ -390,6 +424,7 @@ svg { display: block; }
     </span>
   </label>
   <button class="btn small" id="copy-alias" title="Then press ⌘V on Accounts, or in a provider's variable list">Copy Sample Alias</button>
+  <button class="btn small" id="copy-batch" title="Two aliases and a bare command: press ⌘V on Accounts">Copy Three Providers</button>
   <label>Appearance
     <span class="seg" id="theme">
       <button data-v="auto" aria-pressed="true">Auto</button><button data-v="light">Light</button><button data-v="dark">Dark</button>
@@ -434,6 +469,9 @@ const G = {
   plus: `<svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M5 .8v8.4M.8 5h8.4"/></svg>`,
   minus: `<svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M.8 5h8.4"/></svg>`,
   warn: `<svg width="14" height="13" viewBox="0 0 14 13" fill="currentColor"><path d="M6.1 1a1 1 0 0 1 1.8 0l5.6 10a1 1 0 0 1-.9 1.5H1.4a1 1 0 0 1-.9-1.5z"/><path d="M7 4.3v3.6" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/><circle cx="7" cy="10" r=".85" fill="#fff"/></svg>`,
+  // checkmark.circle.fill / exclamationmark.circle.fill at 12 pt, medium scale (12 pt circle), drawn at .slot svg's size; one size and weight, so states swap in place
+  okFill: `<svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="7" fill="currentColor"/><path d="M4 7.2 6.1 9.3 10 4.9" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  badFill: `<svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="7" fill="currentColor"/><path d="M7 3.6v4.1" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".95" fill="#fff"/></svg>`,
   spinner: `<svg class="spin" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">${[...Array(8)].map((_, i) => `<path d="M7 1.2v2.6" opacity="${(i + 1) / 8}" transform="rotate(${i * 45} 7 7)"/>`).join('')}</svg>`,
   // server.rack, 32 pt, regular weight
   serverRack: `<svg width="34" height="30" viewBox="0 0 34 30" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="1.5" width="30" height="8" rx="2.4"/><rect x="2" y="11" width="30" height="8" rx="2.4"/><rect x="2" y="20.5" width="30" height="8" rx="2.4"/><g fill="currentColor" stroke="none"><circle cx="7" cy="5.5" r="1.2"/><circle cx="7" cy="15" r="1.2"/><circle cx="7" cy="24.5" r="1.2"/></g><path d="M20 5.5h7M20 15h7M20 24.5h7" stroke-linecap="round"/></svg>`,
@@ -448,7 +486,9 @@ const TABS = [
 const state = {
   tab: 'accounts',
   back: [], fwd: [],
-  general: { launchCommand: '', detected: '~/.local/bin/claude' },
+  // Saved values, and what the fields show while a check runs or fails.
+  general: { launchCommand: '', launchDraft: '', configDir: '', dirDraft: '' },
+  subChecking: false,
   // Shapes follow `claude auth status` and the provider aliases in a real
   // ~/.zshrc; hosts, tokens and the email are placeholders.
   accounts: [
@@ -587,16 +627,149 @@ const row = ({ title, desc = '', trail = '', attrs = '' }) => `
 const addProvider = () => `<span class="combo"><button class="btn" data-action="add-provider">Add Provider…</button><button class="btn more" data-action="add-menu" aria-label="More">${G.chevDown}</button></span>`
 const popup = (id, value) => `<button class="popup" data-popup="${id}"><span class="val">${esc(value)}</span><span class="ind">${G.updown}</span></button>`
 
+/* ---------- Command and folder checks ---------- */
+// Stand-ins for the disk and $PATH, so the mock can run `<command> --version`.
+const DETECTED = '~/.local/bin/claude'
+const FILES = {
+  '~/.local/bin/claude': { exec: true, out: '2.1.284 (Claude Code)' },
+  '/usr/local/bin/claude': { exec: true, out: '2.1.270 (Claude Code)' },
+  '/opt/homebrew/bin/claude': { exec: true, out: '2.1.281 (Claude Code)' },
+  '~/bin/claude-relay': { exec: true, out: '2.1.284 (Claude Code)' },
+  '/usr/bin/python3': { exec: true, out: 'Python 3.9.6' },
+  '/usr/bin/true': { exec: true, out: '' },
+  '~/.zshrc': { exec: false },
+}
+const ON_PATH = { claude: '~/.local/bin/claude', python3: '/usr/bin/python3', true: '/usr/bin/true' }
+const FOLDERS = {
+  '~/.claude': { signedIn: true },
+  '~/.claude-work': { signedIn: false },
+}
+// → { ok, path, version } or { ok: false, error }
+function probeCommand(cmd) {
+  const c = cmd.trim() || DETECTED
+  const path = /[\/~]/.test(c) ? c : ON_PATH[c]
+  if (!path) return { ok: false, error: 'Not found in PATH' }
+  const f = FILES[path]
+  if (!f) return { ok: false, error: 'No such file' }
+  if (!f.exec) return { ok: false, error: 'Not executable' }
+  const v = f.out.match(/^(\d+\.\d+\.\d+) \(Claude Code\)/)
+  if (!v) return { ok: false, error: f.out ? 'Not Claude Code' : 'Didn’t print a version' }
+  return { ok: true, path, version: v[1] }
+}
+// → { ok } or { ok: false, error }
+function probeFolder(dir) {
+  const d = dir.trim().replace(/\/+$/, '') || '~/.claude'
+  if (FOLDERS[d]) return { ok: true }
+  if (FILES[d]) return { ok: false, error: 'Not a folder' }
+  return { ok: false, error: 'Folder doesn’t exist' }
+}
+const checked = new Map()
+// A field's check. Typing changes nothing on screen; 0.5 s after the last
+// keystroke, or at once on Return or leaving the field, the value is checked
+// (a subprocess for a command, so it takes a moment). Only the result for
+// the value still in the field is shown.
+function fieldCheck({ kind, value, target = v => v, row, desc, onResult, result = null }) {
+  const c = { result, checkedFor: result ? value() : null, timer: 0 }
+  c.show = () => { const el = row(); el && paintCheck(el, c.result, desc(c.result)) }
+  c.run = now => {
+    clearTimeout(c.timer)
+    const go = () => {
+      const typed = value()
+      if (typed === c.checkedFor) return
+      c.checkedFor = typed
+      const key = kind + ':' + target(typed).trim()
+      const finish = r => {
+        checked.set(key, r)
+        if (typed !== value()) return
+        c.result = r; onResult?.(r, typed); c.show()
+      }
+      if (checked.has(key)) return finish(checked.get(key))
+      c.result = { pending: true }; c.show()
+      setTimeout(() => finish(kind === 'dir' ? probeFolder(target(typed)) : probeCommand(target(typed))), kind === 'dir' ? 300 : 450)
+    }
+    if (now) go(); else c.timer = setTimeout(go, 500)
+  }
+  return c
+}
+// The result's glyph, at the right end of the description line.
+const slot = r => r?.ok ? `<span class="slot ok" aria-label="Valid">${G.okFill}</span>`
+  : r && !r.pending ? `<span class="slot bad" aria-label="Invalid">${G.badFill}</span>` : '<span class="slot"></span>'
+// A field with its trailing slot; rows without a check pass no result.
+const slotted = (input, r = null) => `<span class="slotted">${input}${slot(r)}</span>`
+const pathText = p => `<span class="path">${esc(p)}</span>`
+// The launch command's description line. `fallback` is what still runs when
+// the check fails (General); a sheet has none, its failure blocks saving.
+function commandDesc(r, { fallback = '' } = {}) {
+  if (!r || r.pending) return 'Checking…'
+  if (!r.ok) return `<span class="err">${esc(r.error)}.</span>${fallback ? ` Still using ${pathText(fallback)}.` : ''}`
+  return `Claude Code ${esc(r.version)}`
+}
+function folderDesc(r, fallback) {
+  if (!r || r.pending) return 'Checking…'
+  if (!r.ok) return `<span class="err">${esc(r.error)}.</span> Still using ${pathText(fallback)}.`
+  return 'Claude Code’s settings, sign-in and sessions'
+}
+// Paint a checked row in place, so typing never loses focus.
+function paintCheck(rowEl, r, text) {
+  rowEl.querySelector('.slot').outerHTML = slot(r)
+  let d = rowEl.querySelector('.desc')
+  if (!d) { d = document.createElement('div'); d.className = 'desc'; rowEl.append(d) }
+  d.innerHTML = text
+}
+// The effective launch command: what an empty sheet field and the subscription check run.
+const generalCommand = () => state.general.launchCommand.trim() || DETECTED
+
 /* ---------- General ---------- */
+const g0 = state.general
+const launchCheck = fieldCheck({
+  kind: 'cmd', value: () => g0.launchDraft, row: () => $('[data-check="launch"]'),
+  desc: r => commandDesc(r, { fallback: generalCommand() }),
+  result: probeCommand(g0.launchCommand),
+  // Only a command that answers --version as Claude Code is saved.
+  onResult: (r, typed) => { if (r.ok && typed.trim() !== g0.launchCommand.trim()) { g0.launchCommand = typed; configChanged() } },
+})
+const folderCheck = fieldCheck({
+  kind: 'dir', value: () => g0.dirDraft, row: () => $('[data-check="dir"]'),
+  desc: r => folderDesc(r, g0.configDir || '~/.claude'),
+  result: probeFolder(g0.configDir),
+  onResult: (r, typed) => { if (r.ok && typed.trim() !== g0.configDir.trim()) { g0.configDir = typed; configChanged() } },
+})
 function renderGeneral() {
   const g = state.general
   $('#pane-general').innerHTML = `
     <div class="section"><h2>Claude Code</h2><div class="group">
-      ${row({ title: 'Launch command',
-        trail: `<input class="field mono" id="launch" spellcheck="false" placeholder="${esc(g.detected)}" value="${esc(g.launchCommand)}">` })}
+      ${row({ title: 'Launch Command', attrs: 'data-check="launch"',
+        desc: commandDesc(launchCheck.result, { fallback: generalCommand() }),
+        trail: slotted(`<input class="field mono" id="launch" spellcheck="false" placeholder="${esc(DETECTED)}" value="${esc(g.launchDraft)}">`, launchCheck.result) })}
+      ${row({ title: 'Configuration Folder', attrs: 'data-check="dir"',
+        desc: folderDesc(folderCheck.result, g.configDir || '~/.claude'),
+        trail: slotted(`<input class="field mono" id="config-dir" spellcheck="false" placeholder="${esc(g.configDir.trim() || '~/.claude')}" value="${esc(g.dirDraft)}">`, folderCheck.result) })}
     </div></div>`
 }
-document.addEventListener('input', e => { if (e.target.id === 'launch') state.general.launchCommand = e.target.value })
+const generalChecks = { launch: launchCheck, 'config-dir': folderCheck }
+document.addEventListener('input', e => {
+  if (e.target.id === 'launch') state.general.launchDraft = e.target.value
+  else if (e.target.id === 'config-dir') state.general.dirDraft = e.target.value
+  else return
+  generalChecks[e.target.id].run(false)
+})
+document.addEventListener('keydown', e => { if (e.key === 'Enter') generalChecks[e.target.id]?.run(true) })
+document.addEventListener('focusout', e => generalChecks[e.target.id]?.run(true))
+// A saved command or folder changes whose sessions the sidebar lists and
+// which sign-in `claude auth status` reads, so the subscription is re-read.
+function configChanged() {
+  state.subChecking = true
+  renderAccounts()
+  clearTimeout(configChanged.t)
+  configChanged.t = setTimeout(() => {
+    state.subChecking = false
+    const signedIn = (FOLDERS[state.general.configDir.trim() || '~/.claude'] || {}).signedIn
+    const sub = subscription()
+    if (!signedIn && sub) { state.parkedSub = sub; state.accounts = state.accounts.filter(a => a !== sub) }
+    if (signedIn && !sub && state.parkedSub) { state.accounts.unshift(state.parkedSub); state.parkedSub = null }
+    renderAccounts()
+  }, 1200)
+}
 
 /* ---------- Accounts ---------- */
 function acctRow(a) {
@@ -605,13 +778,17 @@ function acctRow(a) {
     : `${esc(hostOf(a.baseURL))}<span class="dot">·</span>${esc(a.model || 'Default model')}`
   const name = a.kind === 'subscription' ? a.email : a.name
   const sub = a.kind === 'subscription'
-  return `<div class="acct has-mark" data-acct="${a.id}">${sub ? MARK : PROVIDER_MARK}
+  return `<div class="acct has-mark${a.fresh ? ' fresh' : ''}" data-acct="${a.id}">${sub ? MARK : PROVIDER_MARK}
     <div><div class="name">${esc(name)}</div><div class="meta">${meta}</div></div>
     <div class="trail"><button class="info" data-info="${a.id}" aria-label="Details">${G.info}</button></div></div>`
 }
 function renderAccounts() {
   const sub = subscription(), apis = providers()
-  const subRow = sub ? acctRow(sub) : `
+  const subRow = state.subChecking ? `
+    <div class="acct has-mark"><img class="mark off" src="assets/claude.svg" alt="">
+      <div><div class="name">Subscription</div><div class="meta">Checking…</div></div>
+      <div class="trail">${G.spinner}</div></div>`
+    : sub ? acctRow(sub) : `
     <div class="acct has-mark"><img class="mark off" src="assets/claude.svg" alt="">
       <div><div class="name">Not signed in</div><div class="meta">Use your Claude Pro or Max plan.</div></div>
       <div class="trail"><button class="btn" data-action="sign-in">Sign In…</button></div></div>`
@@ -626,7 +803,7 @@ function renderAccounts() {
           <div class="t">No API Providers</div>
           <div class="d">Run Claude Code through the Anthropic API, a gateway or a local proxy.</div>
           ${addProvider()}
-          <div class="hint">Or paste a shell alias here with ⌘V.</div>
+          <div class="hint">Or press ⌘V to paste shell aliases or commands.</div>
         </div>`}</div>
       ${apis.length ? `<div class="after">${addProvider()}</div>` : ''}
     </div>`
@@ -640,8 +817,7 @@ pane.addEventListener('click', e => {
   if (act === 'add-provider') newProvider()
   // The menu segment: Import from Clipboard, the same as ⌘V on the pane.
   if (act === 'add-menu') openMenu(e.target.closest('[data-action]'), [
-    { label: 'Import from Clipboard', key: '⌘V', action: () => navigator.clipboard.readText()
-      .then(t => /[A-Za-z_]\w*=/.test(t) ? newProvider(t) : null).catch(() => {}) },
+    { label: 'Import from Clipboard', key: '⌘V', action: () => navigator.clipboard.readText().then(importPaste).catch(() => {}) },
   ], { align: 'below' })
   if (act === 'sign-in') signIn()
 })
@@ -702,7 +878,8 @@ const mask = v => !v ? '' : v.length <= 8 ? '•'.repeat(v.length) : v.slice(0, 
 const MANAGED = {
   ANTHROPIC_BASE_URL: 'Base URL', ANTHROPIC_AUTH_TOKEN: 'Auth Token', ANTHROPIC_API_KEY: 'API Key',
   ANTHROPIC_MODEL: 'Model', ANTHROPIC_DEFAULT_OPUS_MODEL: 'Opus', ANTHROPIC_DEFAULT_SONNET_MODEL: 'Sonnet',
-  ANTHROPIC_DEFAULT_HAIKU_MODEL: 'Haiku',
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: 'Haiku', ANTHROPIC_DEFAULT_FABLE_MODEL: 'Fable',
+  CLAUDE_CONFIG_DIR: 'Configuration Folder',
 }
 const validURL = u => { try { const x = new URL(u); return /^https?:$/.test(x.protocol) } catch { return false } }
 
@@ -711,16 +888,96 @@ function openAccount(id) {
   const a = state.accounts.find(x => x.id === id)
   editAccount(structuredClone(a), false)
 }
-function newProvider(paste) {
-  editAccount({ id: 'p' + Date.now(), kind: 'api', name: '', baseURL: '', auth: 'token', secret: '',
-    model: '', opus: '', sonnet: '', haiku: '', fable: '',command: '', args: '', env: [] }, true, paste)
+let lastId = 0
+const blankProvider = () => ({ id: 'p' + Date.now() + '-' + ++lastId, kind: 'api', name: '', baseURL: '', auth: 'token', secret: '',
+  model: '', opus: '', sonnet: '', haiku: '', fable: '', command: '', args: '', env: [] })
+function newProvider(paste) { editAccount(blankProvider(), true, paste) }
+
+/* ---------- Reading a paste ---------- */
+// A paste holds one provider or several. An `alias name="…"` line is one; so
+// is a bare command line (variables, then the command and its flags).
+// `export` and KEY=value lines gather until a command line or a blank line.
+function readLine(src) {
+  const re = /(?:^|\s)(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=("([^"]*)"|'([^']*)'|(\S*))/g
+  const vars = []; let m, end = 0
+  // Only the assignments in front: `--flag=x` after the command stays an argument.
+  while ((m = re.exec(src)) && !src.slice(end, m.index).trim()) { vars.push([m[1], m[3] ?? m[4] ?? m[5] ?? '']); end = re.lastIndex }
+  const cmd = src.slice(end).trim().match(/^(\S+)\s*(.*)$/)
+  return { vars, cmd: cmd?.[1] || '', args: cmd?.[2] || '' }
 }
-// ⌘V on the Accounts pane: a new provider, filled from the paste.
+function parsePaste(text) {
+  const blocks = []; let pending = null
+  const flush = () => { if (pending?.vars.length) blocks.push(pending); pending = null }
+  for (const raw of text.replace(/\\\r?\n/g, ' ').split(/\r?\n/)) {
+    const line = raw.trim()
+    if (!line || line.startsWith('#')) { flush(); continue }
+    const alias = line.match(/^alias\s+([\w.-]+)=(["'])([\s\S]*)\2\s*$/)
+    const l = readLine(alias ? alias[3] : line)
+    if (alias) { flush(); if (l.vars.length) blocks.push({ name: alias[1], ...l }); continue }
+    pending ??= { name: '', vars: [], cmd: '', args: '' }
+    pending.vars.push(...l.vars)
+    if (l.cmd) { pending.cmd = l.cmd; pending.args = l.args; flush() }
+  }
+  flush()
+  return blocks
+}
+// Known keys fill the form's fields, the rest become variables; the command
+// fills Command unless it's plain `claude`, its flags fill Arguments.
+function fillFromBlock(d, b, isSub, taken) {
+  const filled = []
+  for (const [k, v] of b.vars) {
+    if (!isSub && k === 'ANTHROPIC_BASE_URL') { d.baseURL = v; filled.push('Base URL') }
+    else if (!isSub && (k === 'ANTHROPIC_AUTH_TOKEN' || k === 'ANTHROPIC_API_KEY')) { d.secret = v; d.auth = k.endsWith('KEY') ? 'key' : 'token'; filled.push(k.endsWith('KEY') ? 'API key' : 'token') }
+    else if (!isSub && k === 'ANTHROPIC_MODEL') { d.model = v; filled.push('default model') }
+    else if (!isSub && /^ANTHROPIC_DEFAULT_(OPUS|SONNET|HAIKU|FABLE)_MODEL$/.test(k)) { d[k.split('_')[2].toLowerCase()] = v; filled.push(k.split('_')[2][0] + k.split('_')[2].slice(1).toLowerCase()) }
+    else {
+      const ex = d.env.find(x => x.key === k)
+      if (ex) ex.value = v; else d.env.push({ on: true, key: k, value: v })
+      filled.push('var')
+    }
+  }
+  if (b.cmd && b.cmd !== 'claude') { d.command = b.cmd; filled.push('command') }
+  if (b.args) { d.args = b.args; filled.push('arguments') }
+  // The alias name, else the host; a name already taken gets a number.
+  if (!isSub && !d.name.trim()) {
+    const n = b.name || (d.baseURL ? hostOf(d.baseURL).replace(/:\d+$/, '').replace(/^127\.0\.0\.1$|^localhost$/, 'Local Proxy') : '')
+    if (n) { d.name = uniqueName(n, taken ?? new Set(providers().filter(a => a.id !== d.id).map(a => a.name))); filled.push('name') }
+  }
+  return { fields: [...new Set(filled.filter(x => x !== 'var'))], nVars: filled.filter(x => x === 'var').length }
+}
+function uniqueName(n, taken) {
+  let name = n
+  for (let i = 2; taken.has(name); i++) name = `${n} ${i}`
+  taken.add(name)
+  return name
+}
+
+// ⌘V on the pane and Import from Clipboard: one provider opens its sheet,
+// filled; several go straight into the list and a toast counts them.
+function importPaste(text) {
+  const blocks = parsePaste(text); if (!blocks.length) return false
+  if (blocks.length === 1) { newProvider(blocks[0]); return true }
+  const taken = new Set(providers().map(a => a.name))
+  const made = blocks.map(b => { const d = blankProvider(); fillFromBlock(d, b, false, taken); return d })
+  // A provider needs a base URL and a token; one without is skipped.
+  const ok = made.filter(d => validURL(d.baseURL) && d.secret)
+  const skipped = made.length - ok.length
+  state.accounts.push(...ok.map(d => ({ ...d, fresh: true })))
+  renderAll()
+  for (const a of state.accounts) delete a.fresh
+  paneToast((ok.length ? `Imported ${ok.length} provider${ok.length > 1 ? 's' : ''}` : 'No providers imported')
+    + (skipped ? ` · ${skipped} skipped` : ''))
+  return true
+}
+function paneToast(msg) {
+  const host = $('.detail')
+  host.querySelector(':scope > .toast')?.remove()
+  const t = document.createElement('div'); t.className = 'toast pane-toast'; t.textContent = msg
+  host.append(t); setTimeout(() => t.remove(), 2900)
+}
 document.addEventListener('paste', e => {
   if (sheets.length || state.tab !== 'accounts' || e.target.closest?.('input')) return
-  const text = e.clipboardData.getData('text'); if (!/[A-Za-z_]\w*=/.test(text)) return
-  e.preventDefault()
-  newProvider(text)
+  if (importPaste(e.clipboardData.getData('text'))) e.preventDefault()
 })
 
 function editAccount(d, isNew, paste) {
@@ -738,6 +995,15 @@ function editAccount(d, isNew, paste) {
       <button class="btn default" data-role="save">${isNew ? 'Add' : 'Save'}</button>
     </div>`, { cls: 'fixed', onKey })
   const el = s.el, body = el.querySelector('.sheet-body')
+  // Command: empty runs General's command. The same check as General's, but
+  // a failure blocks the default button instead of falling back.
+  const sheetCommandDesc = r => commandDesc(r)
+  const cmdTarget = v => v.trim() || generalCommand()
+  const cmdCheck = fieldCheck({
+    kind: 'cmd', value: () => d.command, target: cmdTarget,
+    row: () => body.querySelector('[data-check="cmd"]'), desc: sheetCommandDesc,
+    result: checked.get('cmd:' + cmdTarget(d.command)), onResult: () => validate(),
+  })
 
   function render() {
     const top = body.scrollTop
@@ -772,17 +1038,19 @@ function editAccount(d, isNew, paste) {
         <div class="thead"><span></span><span>Name</span><span>Value</span><span></span></div>
         <div class="tbody">${envRows()}</div>
         <div class="listbar">
-          <button data-role="add" aria-label="Add variable">${G.plus}</button>
-          <button data-role="remove" aria-label="Remove variable" ${sel < 0 ? 'disabled' : ''}>${G.minus}</button>
-          <span class="hint">Paste <code>KEY=value</code> lines or a whole shell command</span>
+          <button data-role="add" aria-label="Add variable">${G.plus}</button><span class="div"></span><button data-role="remove" aria-label="Remove variable" ${sel < 0 ? 'disabled' : ''}>${G.minus}</button>
+          <span class="hint">Paste <code>KEY=value</code> lines or a command</span>
         </div>
       </div></div>
 ` + models + `
       <div class="section"><h2>Launch</h2><div class="group">
-        ${row({ title: 'Command', trail: `<input class="field mono" data-f="command" placeholder="claude" value="${esc(d.command)}" spellcheck="false" style="width:300px">` })}
+        ${row({ title: 'Command', attrs: 'data-check="cmd"', desc: sheetCommandDesc(cmdCheck.result),
+          trail: slotted(`<input class="field mono" data-f="command" placeholder="${esc(generalCommand())}" value="${esc(d.command)}" spellcheck="false" style="width:300px">`, cmdCheck.result) })}
         ${row({ title: 'Arguments', trail: `<input class="field mono" data-f="args" placeholder="None" value="${esc(d.args)}" spellcheck="false" style="width:300px">` })}
       </div></div>`
     body.scrollTop = top
+    // Opening the sheet or a paste into it commits the command: check it now.
+    cmdCheck.run(true)
     validate()
     edge()
   }
@@ -790,7 +1058,8 @@ function editAccount(d, isNew, paste) {
     if (!d.env.length) return `<div class="empty-list">No Variables<br><span style="font-size:11px">Click + or paste to add.</span></div>`
     const dupes = new Set(d.env.map(v => v.key).filter((k, i, a) => k && a.indexOf(k) !== i))
     return d.env.map((v, i) => {
-      const warn = MANAGED[v.key] ? `Overrides the ${MANAGED[v.key]} field.` : dupes.has(v.key) ? 'Defined more than once; the last one wins.' : ''
+      const warn = v.key === 'CLAUDE_CONFIG_DIR' ? 'Overrides the Configuration Folder in General.'
+        : MANAGED[v.key] ? `Overrides the ${MANAGED[v.key]} field.` : dupes.has(v.key) ? 'Defined more than once; the last one wins.' : ''
       const cell = (f, text, ph) => editing?.i === i && editing.f === f
         ? `<input class="cell" data-cell="${f}" value="${esc(v[f])}" spellcheck="false" autocomplete="off">`
         : `<span class="cell${text ? '' : ' placeholder'}" data-cell="${f}">${text ? esc(text) : ph}</span>`
@@ -811,7 +1080,8 @@ function editAccount(d, isNew, paste) {
     validate()
   }
   function validate() {
-    const ok = isSub || (d.name.trim() && validURL(d.baseURL) && d.secret)
+    const ok = (isSub || (d.name.trim() && validURL(d.baseURL) && d.secret))
+      && cmdCheck.result?.ok && cmdCheck.checkedFor === d.command
     el.querySelector('[data-role="save"]').disabled = !ok
   }
   function edge() { el.querySelector('.sheet-foot').classList.toggle('edge', body.scrollHeight - body.scrollTop - body.clientHeight > 1) }
@@ -880,42 +1150,15 @@ function editAccount(d, isNew, paste) {
     applyPaste(text)
   })
 
-  // Pastes: KEY=value lines, `export KEY=value`, or a whole alias / command line.
-  function applyPaste(text) {
-    const alias = text.match(/^\s*alias\s+([\w-]+)=(["'])([\s\S]*)\2\s*$/)
-    const src = alias ? alias[3] : text
-    const re = /(?:^|\s)(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=("([^"]*)"|'([^']*)'|(\S*))/g
-    const vars = []; let m, lastEnd = 0
-    while ((m = re.exec(src))) { vars.push([m[1], m[3] ?? m[4] ?? m[5] ?? '']); lastEnd = re.lastIndex }
-    if (!vars.length) return toast('Nothing to paste — expected KEY=value')
-    const rest = src.slice(lastEnd).trim()
-    const filled = []
-    for (const [k, v] of vars) {
-      if (!isSub && k === 'ANTHROPIC_BASE_URL') { d.baseURL = v; filled.push('Base URL') }
-      else if (!isSub && (k === 'ANTHROPIC_AUTH_TOKEN' || k === 'ANTHROPIC_API_KEY')) { d.secret = v; d.auth = k.endsWith('KEY') ? 'key' : 'token'; filled.push(k.endsWith('KEY') ? 'API key' : 'token') }
-      else if (!isSub && k === 'ANTHROPIC_MODEL') { d.model = v; filled.push('default model') }
-      else if (!isSub && /^ANTHROPIC_DEFAULT_(OPUS|SONNET|HAIKU|FABLE)_MODEL$/.test(k)) { d[k.split('_')[2].toLowerCase()] = v; filled.push(k.split('_')[2][0] + k.split('_')[2].slice(1).toLowerCase()) }
-      else {
-        const ex = d.env.find(x => x.key === k)
-        if (ex) ex.value = v; else d.env.push({ on: true, key: k, value: v })
-        filled.push('var')
-      }
-    }
-    // What follows the variables is the command: `claude` stays the default.
-    const cmd = rest.match(/^(\S+)\s*(.*)$/)
-    if (cmd) {
-      if (cmd[1] !== 'claude') { d.command = cmd[1]; filled.push('command') }
-      if (cmd[2]) { d.args = cmd[2]; filled.push('arguments') }
-    }
-    if (!isSub && !d.name.trim()) {
-      if (alias) { d.name = alias[1]; filled.push('name') }
-      else if (d.baseURL) d.name = hostOf(d.baseURL).replace(/:\d+$/, '').replace(/^127\.0\.0\.1$|^localhost$/, 'Local Proxy')
-    }
-    const nVars = filled.filter(x => x === 'var').length
-    const fields = [...new Set(filled.filter(x => x !== 'var'))]
+  // A paste into the sheet fills this account from its first provider.
+  function applyPaste(input) {
+    const blocks = typeof input === 'string' ? parsePaste(input) : [input]
+    if (!blocks.length) return toast('Nothing to paste. Expected KEY=value lines or a command.')
+    const { fields, nVars } = fillFromBlock(d, blocks[0], isSub)
     sel = -1; editing = null
     render()
-    toast([fields.length && 'Filled ' + fields.join(', '), nVars && `${nVars} variable${nVars > 1 ? 's' : ''}`].filter(Boolean).join(' and '))
+    const what = [fields.length && 'Filled ' + fields.join(', '), nVars && `${nVars} variable${nVars > 1 ? 's' : ''}`].filter(Boolean).join(' and ')
+    toast(what + (blocks.length > 1 ? ` from the first of ${blocks.length}` : ''))
   }
   function toast(msg) {
     el.querySelector('.toast')?.remove()
@@ -934,6 +1177,7 @@ function editAccount(d, isNew, paste) {
       if (desc) { if (bad) desc.textContent = 'Enter a URL that starts with http:// or https://.'; else desc.remove() }
       desc?.classList.add('error')
     }
+    if (f === 'command') cmdCheck.run(false)
     validate()
   })
   body.addEventListener('focusin', e => {
@@ -943,6 +1187,7 @@ function editAccount(d, isNew, paste) {
     if (e.target.dataset.f === 'secret' && !reveal) { focused = null; e.target.type = 'text'; e.target.value = mask(d.secret) }
     // Re-rendering removes the focused cell too; only a real blur ends the edit.
     if (e.target.matches('input.cell')) setTimeout(() => { if (editing && !body.querySelector('input.cell:focus')) commitEdit() })
+    if (e.target.dataset.f === 'command') cmdCheck.run(true)
   })
   body.addEventListener('click', e => {
     const r = e.target.closest('[data-role]')?.dataset.role
@@ -961,6 +1206,8 @@ function editAccount(d, isNew, paste) {
   }, true)
 
   function onKey(e) {
+    // Return in Command checks it now; the default button follows once it passes.
+    if (e.key === 'Enter' && e.target.dataset?.f === 'command') cmdCheck.run(true)
     if (editing) {
       if (e.key === 'Enter') { e.preventDefault(); commitEdit(); body.querySelector('.env').focus(); return true }
       if (e.key === 'Tab') { e.preventDefault(); commitEdit('next'); return true }
@@ -1080,14 +1327,25 @@ $('#providers').addEventListener('click', e => {
 
 // Review helper: a provider alias in the shape people keep in ~/.zshrc.
 const SAMPLE_ALIAS = `alias relay="CLAUDE_CODE_ATTRIBUTION_HEADER=0 ENABLE_TOOL_SEARCH=false ANTHROPIC_BASE_URL=https://relay.example.com ANTHROPIC_AUTH_TOKEN=sk-relay-example-0000a1b2 API_TIMEOUT_MS=3000000 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 ANTHROPIC_MODEL=claude-opus-5-5[1m] CLAUDE_CODE_EFFORT_LEVEL=xhigh ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-5-5 ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-4-5 claude --permission-mode auto"`
-$('#copy-alias').onclick = async e => {
-  const b = e.currentTarget
-  try { await navigator.clipboard.writeText(SAMPLE_ALIAS) } catch {
-    const t = Object.assign(document.createElement('textarea'), { value: SAMPLE_ALIAS }); document.body.append(t); t.select(); document.execCommand('copy'); t.remove()
+// Review helper: two aliases and a bare command line, pasted at once.
+const SAMPLE_BATCH = `alias work="ANTHROPIC_BASE_URL=https://gateway.example.net ANTHROPIC_API_KEY=sk-ant-example-77f0c3 ANTHROPIC_MODEL=claude-opus-5-5 claude"
+alias kimi='ANTHROPIC_BASE_URL=https://kimi.example.com/anthropic ANTHROPIC_AUTH_TOKEN=sk-kimi-example-5e21 ANTHROPIC_MODEL=kimi-k3 API_TIMEOUT_MS=600000 claude --permission-mode auto'
+ANTHROPIC_BASE_URL=http://127.0.0.1:8790 ANTHROPIC_AUTH_TOKEN=sk-local-example-19ab CLAUDE_CODE_EFFORT_LEVEL=high claude --model claude-sonnet-5-5`
+async function copyText(b, text, done) {
+  try { await navigator.clipboard.writeText(text) } catch {
+    const t = Object.assign(document.createElement('textarea'), { value: text }); document.body.append(t); t.select(); document.execCommand('copy'); t.remove()
   }
-  b.textContent = 'Copied — paste into a variable list'
-  setTimeout(() => { b.textContent = 'Copy Sample Alias' }, 2400)
+  const was = b.textContent
+  b.textContent = done
+  setTimeout(() => { b.textContent = was }, 2400)
 }
+$('#copy-alias').onclick = e => copyText(e.currentTarget, SAMPLE_ALIAS, 'Copied: paste on Accounts or into a variable list')
+$('#copy-batch').onclick = e => copyText(e.currentTarget, SAMPLE_BATCH, 'Copied: press ⌘V on Accounts')
+
+// Saved values were checked when they were saved: the first frame shows them.
+checked.set('cmd:' + g0.launchCommand.trim(), launchCheck.result)
+checked.set('cmd:' + generalCommand(), launchCheck.result)
+checked.set('dir:' + g0.configDir.trim(), folderCheck.result)
 
 function renderAll() { renderNav(); renderGeneral(); renderAccounts() }
 renderAll()

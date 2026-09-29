@@ -54,6 +54,9 @@ XCB_ARGS=(
   DEVELOPMENT_TEAM=
 )
 [ -n "$DERIVED_DATA_PATH" ] && XCB_ARGS+=(-derivedDataPath "$DERIVED_DATA_PATH")
+# `TEST_LANGUAGE=en make test-unit FILTER=…` runs the tests in that language
+# whatever the Mac's own — so a snapshot matches an English design mock.
+[ -n "${TEST_LANGUAGE:-}" ] && XCB_ARGS+=(-testLanguage "$TEST_LANGUAGE")
 
 # Propagate `CI` into the test process. xcodebuild scrubs the env when
 # spawning XCTRunner, but any var prefixed `TEST_RUNNER_` is forwarded

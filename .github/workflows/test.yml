@@ -49,14 +49,18 @@ jobs:
         # each worktree its own cache via the project-path hash.
         env:
           DERIVED_DATA_PATH: ${{ github.workspace }}/macos/build/test-dd
-        run: make test-unit
+        # Under the job's limit, so a hang still reaches the upload below.
+        timeout-minutes: 15
+        run: .github/ci-heartbeat.sh make test-unit
 
       - name: Upload xcresult on failure
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: xcresult
-          path: /tmp/ccterm-utest-*/result.xcresult
+          path: |
+            /tmp/ccterm-utest-*/result.xcresult
+            /tmp/ccterm-utest-*/raw.log
           if-no-files-found: ignore
           retention-days: 7
 

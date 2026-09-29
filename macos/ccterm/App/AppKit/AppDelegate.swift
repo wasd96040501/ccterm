@@ -30,11 +30,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// state.
     private var settingsWindowController: SettingsWindowController?
 
+    /// What Settings reads and changes: the accounts, the CLI's claude.ai
+    /// login and the defaults. Built on first use; the accounts live under
+    /// Application Support, their secrets in the login keychain.
+    private lazy var settingsContext: SettingsContext = {
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.ccterm.app"
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(bundleID, isDirectory: true)
+        let launch = LaunchSettings(defaults: .standard, locate: { BinaryLocator.locate() })
+        return SettingsContext(
+            accounts: AccountStore(
+                fileURL: support.appendingPathComponent("Accounts.json"),
+                secrets: KeychainSecretStore(service: bundleID + ".accounts")),
+            subscription: SubscriptionService(auth: CLISubscriptionAuth(launch: launch)),
+            launch: launch)
+    }()
+
     func showSettingsWindow() {
         let controller =
             settingsWindowController
             ?? {
-                let c = SettingsWindowController()
+                let c = SettingsWindowController(context: settingsContext)
+                c.windowFrameAutosaveName = "SettingsWindow"
                 settingsWindowController = c
                 return c
             }()
@@ -92,6 +109,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         library.start()
         controller.showWindow(nil)
         controller.window?.makeKeyAndOrderFront(nil)
+
+        // Settings opens on what is already known: the CLI's login and where
+        // `claude` is, both read now in the background.
+        let settings = settingsContext
+        Task { await settings.subscription.refresh() }
+        Task.detached { [launch = settings.launch] in _ = launch.locateCLI() }
     }
 
     func applicationShouldHandleReopen(

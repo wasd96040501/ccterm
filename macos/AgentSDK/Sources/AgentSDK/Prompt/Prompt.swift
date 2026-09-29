@@ -13,12 +13,7 @@ public enum Prompt {
     /// CLI; the latter throws ``AgentSDKError/promptFailed(exitCode:stderr:)``.
     public static func run(_ message: String, configuration: PromptConfiguration) async throws -> ResultMessage {
         let process = try await Task.detached { try configuration.launch(message: message).makeProcess() }.value
-        let output = try await withTaskCancellationHandler {
-            try await Task.detached { try collect(process, timeout: configuration.timeout) }.value
-        } onCancel: {
-            process.terminate()
-        }
-        try Task.checkCancellation()
+        let output = try await CLIOutput.run(process, timeout: configuration.timeout)
         guard output.status == 0 else {
             let stderr = output.timedOut ? "Timed out after \(configuration.timeout ?? 0)s" : output.stderr
             throw AgentSDKError.promptFailed(exitCode: output.status, stderr: stderr)
@@ -28,48 +23,5 @@ public enum Prompt {
             throw AgentSDKError.promptFailed(exitCode: 0, stderr: "Unexpected output: \(text)")
         }
         return result
-    }
-
-    private struct Output {
-        var status: Int32
-        var stdout: Data
-        var stderr: String
-        var timedOut: Bool
-    }
-
-    /// Runs the process to exit, draining both pipes concurrently so a full
-    /// stderr pipe cannot stall it. Blocking.
-    private static func collect(_ process: Process, timeout: TimeInterval?) throws -> Output {
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = stdout
-        process.standardError = stderr
-        do {
-            try process.run()
-        } catch {
-            throw AgentSDKError.launchFailed(error.localizedDescription)
-        }
-
-        var timedOut = false
-        let watchdog = DispatchWorkItem {
-            timedOut = true
-            process.terminate()
-        }
-        if let timeout { DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: watchdog) }
-
-        var errorData = Data()
-        let drained = DispatchGroup()
-        DispatchQueue.global().async(group: drained) {
-            errorData = stderr.fileHandleForReading.readDataToEndOfFile()
-        }
-        let outputData = stdout.fileHandleForReading.readDataToEndOfFile()
-        drained.wait()
-        process.waitUntilExit()
-        watchdog.cancel()
-
-        return Output(
-            status: process.terminationStatus, stdout: outputData,
-            stderr: String(decoding: errorData, as: UTF8.self), timedOut: timedOut)
     }
 }

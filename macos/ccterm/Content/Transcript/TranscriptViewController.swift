@@ -284,9 +284,12 @@ extension TranscriptViewController: PageRowViewDelegate {
 
     func rowView(_ rowView: NSView, toggle runID: String, all: Bool) {
         let newValue: RunDisclosure = disclosure(of: runID) == .collapsed ? .expanded : .collapsed
+        // One group, so the place is held once around the whole change.
+        transcript.beginUpdates()
         for entryID in all ? disclosableEntries : [runID] {
             setDisclosure(newValue, of: entryID)
         }
+        transcript.endUpdates()
     }
 
     func rowView(_ rowView: NSView, showAllOf runID: String) {

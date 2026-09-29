@@ -240,8 +240,13 @@ public enum Anchoring { case automatic, row(Int), scrollOffset }
 - **A5: a removed anchor row.** If the anchor row is removed, the anchor passes
   to the first surviving row after it, which keeps its own pre-batch screen
   position. If no row after it survives, the anchor passes to the last
-  surviving row before it, on the same terms. If no row survives at all, the
-  new offset is `oMin`.
+  surviving row before it, on the same terms.
+  - "Surviving" means neither removed nor moved, as in M2. A moved row keeps
+    its pre-batch screen position only as its motion's start, so holding the
+    viewport on it would carry the viewport to wherever the row went.
+  - If rows remain but every one of them was moved, the anchor becomes the
+    offset: `o' = o`, then A7.
+  - If no row remains, the new offset is `oMin`.
 
 ### 6.3 Restoring
 
@@ -361,23 +366,33 @@ in a commit has a start and an end value for its screen top and its height.
   and presented height are `end + (start − end)·(1 − p(t))`. The start and end
   values depend on the kind of row:
   - **Surviving:** start is the old screen top and height; end is the new ones.
-  - **Inserted:** the end is its new frame. It starts at height 0, at the old
-    screen position of the nearest surviving row before it, plus that row's
-    height, plus `s`. If there is no surviving row before it, it starts at the
-    old screen top of the nearest surviving row after it. If no row survives
-    at all, it starts at its own end top.
-  - **Removed:** the reverse. It starts at its old frame. It ends at height 0,
-    at the new screen position of the nearest surviving row before it, plus
-    that row's height, plus `s`, or else at the new screen top of the nearest
-    surviving row after it, or else at its own start top. Only rows that were
-    mounted before the commit are removed with motion; any other removed row
-    is simply gone.
+  - **Inserted:** the end is its new frame. It starts at height 0 where its
+    gap's old contents end, taking the first of these that exists:
+    1. the old screen bottom of the gap's last removed row, plus `s`;
+    2. the old screen bottom of the surviving row before the gap, plus `s`;
+    3. the old screen top of the surviving row after the gap;
+    4. its own end top.
+  - **Removed:** the reverse. It starts at its old frame. It ends at height 0
+    where its gap's new contents begin, taking the first of these that
+    exists:
+    1. the new screen top of the gap's first inserted row;
+    2. the new screen bottom of the surviving row before the gap, plus `s`;
+    3. the new screen top of the surviving row after the gap;
+    4. its own start top.
+
+    Only rows that were mounted before the commit are removed with motion;
+    any other removed row is simply gone.
   - **Moved:** start is its old frame and end is its new frame. It has no
     neighbours (M10).
 
-  "Nearest surviving row" skips inserted, removed and moved rows. "Before"
-  and "after" are in the new order for an inserted row, and in the old order
-  for a removed row.
+  **Gaps.** A **surviving** row is one that is neither inserted, removed nor
+  moved. Surviving rows keep their relative order, so they cut the old and
+  the new layout into the same gaps: before the first surviving row, between
+  two consecutive ones, and after the last. A gap holds removed rows in the
+  old layout and inserted rows in the new one (moved rows belong to no gap).
+  Each rule above looks at the gap's other kind of row first. That is what
+  keeps a removed and an inserted row in the same gap from overlapping: the
+  inserted row opens below the space the removed row is closing.
 
   In a commit that doesn't animate, every row that has a motion has its start
   equal to its end, and no transition.
@@ -403,20 +418,24 @@ in a commit has a start and an end value for its screen top and its height.
 - **M4: the anchor is still.** For a row anchor, the anchor row's presented
   screen position is constant for every `t`, unless A7 clamped it, in which
   case it moves along the linear interpolation.
-- **M5: rows stay contiguous.** Take two rows that are consecutive in the
-  presented order, and neither of which is moved. At every `t`, the gap
-  `presentedTop(i + 1) − presentedBottom(i)` is the linear interpolation between
-  its start and end value. Both of those values are ≥ 0, so rows never overlap.
+- **M5: rows stay contiguous.** The **presented order** is the surviving
+  rows in order, with each gap's removed rows (in old order) and then its
+  inserted rows (in new order) between them. Moved rows are not in it. Take
+  two rows that are consecutive in the presented order. At every `t`, the gap
+  `presentedTop(next) − presentedBottom(row)` is the linear interpolation
+  between its start and end values. Both of those values are ≥ 0, so rows
+  never overlap.
   - If both rows survive and were adjacent before the commit too, the gap is
     exactly `s` at every `t`.
-  - Next to an inserted or removed row, the gap goes from `s` to 0 or from 0 to
-    `s`. That is the space the row opens or closes.
 - **M6: no blank areas.** At every `t`, the presented rows and the spacing
   between them cover `U ∩ [0, H_presented(t)]`.
-- **M7: the amplitude cap.** Let `C` be the height of `U`. If any row whose
-  sweep (the hull of its old and new screen frames) intersects `P` would move
-  more than `C`, every animation in the commit is scaled by the same factor
-  `k = C / max|δ|`.
+- **M7: the amplitude cap.** Let `C` be the height of `U`, and a row's `δ` be
+  its end screen top minus its start screen top. The rows considered are the
+  ones M2 gives start and end values to (every surviving, inserted and moved
+  row, and every removed row that was mounted before the commit) whose
+  unscaled sweep, the hull of their start and end screen intervals, meets
+  `P`. If any of them has `|δ| > C`, every animation in the commit is scaled
+  by the same factor `k = C / max|δ|` over those rows.
   - A uniform scale keeps M2 through M5. Each start value becomes
     `end + k·(start − end)`, which is still a convex combination of two
     layouts, so every gap stays ≥ 0 and the anchor still doesn't move.

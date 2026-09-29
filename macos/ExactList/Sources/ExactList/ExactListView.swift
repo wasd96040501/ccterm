@@ -434,6 +434,9 @@ public final class ExactListView: NSView {
 
         var mountedBefore = placement.mountedRows
         mountedBefore.formUnion(animator.rowsInFlight)
+        // Rows still in flight from an earlier commit stay mounted (P1), so
+        // they are shown too, and must be fresh like the rows in `P` (W4).
+        let inFlight = IndexSet(animator.rowsInFlight.compactMap { map.newIndex(forOld: $0) })
         var plan: CommitPlan
         repeat {
             plan = CommitPlanner.plan(
@@ -443,7 +446,7 @@ public final class ExactListView: NSView {
                     rescalesAnchor: rescales, mountedRows: mountedBefore, animates: duration > 0))
             var after = target
             after.offset = plan.offset
-            let needed = rowsToMount(plan, viewport: after, heights: newHeights).filteredIndexSet {
+            let needed = rowsToMount(plan, viewport: after, heights: newHeights).union(inFlight).filteredIndexSet {
                 newStale.contains($0)
             }
             if needed.isEmpty { break }
@@ -689,7 +692,7 @@ extension ExactListView: ListClipViewOwner {
     func clipViewDidScroll(_ clipView: ListClipView) {
         guard isLoaded, !isAdjusting else { return }
         committed = liveViewport()
-        if preparedRows().contains(where: { stale.contains($0) }) {
+        if preparedRows().union(animator.rowsInFlight).contains(where: { stale.contains($0) }) {
             commit(map: identityMap())
         } else {
             withoutImplicitAnimation {
@@ -732,7 +735,7 @@ extension ExactListView: ListDocumentViewOwner {
     func documentView(_ documentView: ListDocumentView, prepareContentIn rect: NSRect) {
         appKitPrepared = rect
         guard isLoaded, !isAdjusting else { return }
-        if preparedRows().contains(where: { stale.contains($0) }) {
+        if preparedRows().union(animator.rowsInFlight).contains(where: { stale.contains($0) }) {
             commit(map: identityMap())
         } else {
             withoutImplicitAnimation {

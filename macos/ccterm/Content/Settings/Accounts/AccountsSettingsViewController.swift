@@ -37,8 +37,26 @@ final class AccountsSettingsViewController: NSViewController {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
+    /// The pane's note about an import: at the bottom, centred, 24 above it.
+    private let toast = ToastView()
+
     override func loadView() {
-        view = FormView(sections: [subscriptionSection.view, providersSection.view])
+        let form = FormView(sections: [subscriptionSection.view, providersSection.view])
+        let container = NSView()
+        for subview in [form, toast] {
+            subview.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(subview)
+        }
+        NSLayoutConstraint.activate([
+            form.topAnchor.constraint(equalTo: container.topAnchor),
+            form.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            form.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            form.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            toast.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            toast.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -24),
+            toast.widthAnchor.constraint(lessThanOrEqualTo: container.widthAnchor, constant: -40),
+        ])
+        view = container
     }
 
     override func viewDidLoad() {
@@ -141,6 +159,7 @@ final class AccountsSettingsViewController: NSViewController {
         Task {
             do {
                 try await accounts.add(providers)
+                providersSection.flash(providers.map(\.0.id))
                 showImportResult(added: providers.count, skipped: skipped)
             } catch {
                 view.window.map { report(error, on: $0, while: "importing providers") }
@@ -148,10 +167,15 @@ final class AccountsSettingsViewController: NSViewController {
         }
     }
 
-    /// Where the pane will say how many providers an import added and how many
-    /// entries it left out.
-    private func showImportResult(added: Int, skipped: Int) {
+    /// Says on the pane how many providers an import added and how many entries
+    /// it left out: “Imported 3 providers”, “Imported 2 providers · 1 skipped”,
+    /// “No providers imported · 3 skipped”.
+    func showImportResult(added: Int, skipped: Int) {
         appLog(.info, "AccountsSettingsViewController", "import done — \(added) added, \(skipped) skipped")
+        var text =
+            added > 0 ? String(localized: "Imported \(added) providers") : String(localized: "No providers imported")
+        if skipped > 0 { text += " · " + String(localized: "\(skipped) skipped") }
+        toast.show(text)
     }
 
     // MARK: - Confirmations

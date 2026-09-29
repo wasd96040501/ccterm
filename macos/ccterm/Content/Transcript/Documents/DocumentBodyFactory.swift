@@ -3,15 +3,14 @@ import AppKit
 /// Which view controller shows a document under its jump bar — the one
 /// place a kind of document meets its body.
 ///
-/// A subagent's work opens as its conversation — the transcript it wrote,
-/// in a `TranscriptViewController` like the session's own — when that file
-/// is on disk; its report as markdown otherwise.
+/// A subagent's work opens as its conversation — the transcript it wrote —
+/// when that file is on disk, and as its report in markdown otherwise. The
+/// conversation is a transcript tab like the session's own, which this
+/// module doesn't know: `makeConversation` makes it.
 @MainActor
 struct DocumentBodyFactory {
-    /// Reads a subagent's conversation.
-    let loadTranscript: TranscriptViewController.Load
-    /// Where a subagent's conversation reports what the reader opens in it.
-    weak var transcriptDelegate: TranscriptViewControllerDelegate?
+    /// A transcript tab for the conversation at a URL, titled.
+    let makeConversation: @MainActor (URL, String) -> NSViewController
 
     func body(for document: Document) -> NSViewController {
         switch document.content {
@@ -29,10 +28,7 @@ struct DocumentBodyFactory {
             if let agentID = call.agentID {
                 let url = document.reference.conversationURL(ofAgent: agentID)
                 if FileManager.default.fileExists(atPath: url.path) {
-                    let conversation = TranscriptViewController(
-                        fileURL: url, title: DocumentHeader(document).title, load: loadTranscript)
-                    conversation.delegate = transcriptDelegate
-                    return conversation
+                    return makeConversation(url, DocumentHeader(document).title)
                 }
             }
             return MarkdownDocumentViewController(markdown: DocumentMarkdown.markdown(for: document.content))

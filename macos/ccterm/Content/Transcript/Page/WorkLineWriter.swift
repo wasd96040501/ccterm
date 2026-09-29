@@ -87,94 +87,107 @@ nonisolated struct WorkLineWriter {
             default: true
             }
         }
-        func of(_ kind: ToolKind) -> [RunItem] { effective.filter { $0.kind == kind } }
-        func calls(_ kind: ToolKind) -> [ToolCall] { of(kind).flatMap(\.calls) }
-        var clauses: [StyledText] = []
+        // The cases are in the sentence's order.
+        return ToolKind.allCases.flatMap { kind in clauses(of: kind, effective.filter { $0.kind == kind }) }
+    }
 
-        if let clause = files(
-            of(.change),
-            one: { StyledText(localized: String(localized: "Edited \(StyledText.slot(0))"), $0) },
-            two: {
-                StyledText(
-                    localized: String(localized: "Edited \(StyledText.slot(0)) and \(StyledText.slot(1))"), $0, $1)
-            },
-            many: { StyledText(String(localized: "Edited \($0) files")) })
-        {
-            clauses.append(clause)
-        }
-        if let clause = files(
-            of(.create),
-            one: { StyledText(localized: String(localized: "Created \(StyledText.slot(0))"), $0) },
-            two: {
-                StyledText(
-                    localized: String(localized: "Created \(StyledText.slot(0)) and \(StyledText.slot(1))"), $0, $1)
-            },
-            many: { StyledText(String(localized: "Created \($0) files")) })
-        {
-            clauses.append(clause)
-        }
-        let commands = calls(.command).count
-        if commands == 1 { clauses.append(StyledText(String(localized: "Ran a command"))) }
-        if commands > 1 { clauses.append(StyledText(String(localized: "Ran \(commands) commands"))) }
-        let agents = calls(.agent).count
-        if agents == 1 { clauses.append(StyledText(String(localized: "Ran an agent"))) }
-        if agents > 1 { clauses.append(StyledText(String(localized: "Ran \(agents) agents"))) }
-
-        let web = calls(.web)
-        let searches = web.filter { Tools.WebSearch.matches($0.use.name) }.count
-        let fetches = web.count - searches
-        switch (searches > 0, fetches) {
-        case (true, 0): clauses.append(StyledText(String(localized: "Searched the web")))
-        case (true, 1): clauses.append(StyledText(String(localized: "Searched the web and fetched a page")))
-        case (true, let n): clauses.append(StyledText(String(localized: "Searched the web and fetched \(n) pages")))
-        case (false, 0): break
-        case (false, 1): clauses.append(StyledText(String(localized: "Fetched a page")))
-        case (false, let n): clauses.append(StyledText(String(localized: "Fetched \(n) pages")))
-        }
-
-        let lookups = calls(.search)
-        if lookups.count == 1, let pattern = lookups[0].use.input["pattern"]?.stringValue {
-            clauses.append(
-                StyledText(
-                    localized: String(localized: "Searched for \(StyledText.slot(0))"),
-                    StyledText(pattern, style: .code)))
-        } else if lookups.count > 0 {
-            clauses.append(StyledText(String(localized: "Searched \(lookups.count) times")))
-        }
-        if let clause = files(
-            of(.read),
-            one: { StyledText(localized: String(localized: "Read \(StyledText.slot(0))"), $0) },
-            two: {
-                StyledText(localized: String(localized: "Read \(StyledText.slot(0)) and \(StyledText.slot(1))"), $0, $1)
-            },
-            many: { StyledText(String(localized: "Read \($0) files")) })
-        {
-            clauses.append(clause)
-        }
-        if !calls(.tasks).isEmpty { clauses.append(StyledText(String(localized: "Updated the task list"))) }
-        let schedules = calls(.schedule).count
-        if schedules == 1 { clauses.append(StyledText(String(localized: "Scheduled a task"))) }
-        if schedules > 1 { clauses.append(StyledText(String(localized: "Scheduled \(schedules) tasks"))) }
-        let messages = calls(.message).count
-        if messages == 1 { clauses.append(StyledText(String(localized: "Sent a message"))) }
-        if messages > 1 { clauses.append(StyledText(String(localized: "Sent \(messages) messages"))) }
-
-        var servers: [(String, Int)] = []
-        for call in calls(.other) {
-            let server = Self.toolName(call.use.name).server
-            if let index = servers.firstIndex(where: { $0.0 == server }) {
-                servers[index].1 += 1
-            } else {
-                servers.append((server, 1))
+    /// What `items`, all of `kind`, add to a run's sentence: nothing, a
+    /// clause, or — for other tools — one per MCP server.
+    private func clauses(of kind: ToolKind, _ items: [RunItem]) -> [StyledText] {
+        let calls = items.flatMap(\.calls)
+        guard !calls.isEmpty else { return [] }
+        switch kind {
+        case .change:
+            return files(
+                items,
+                one: { StyledText(localized: String(localized: "Edited \(StyledText.slot(0))"), $0) },
+                two: {
+                    StyledText(
+                        localized: String(localized: "Edited \(StyledText.slot(0)) and \(StyledText.slot(1))"), $0, $1)
+                },
+                many: { StyledText(String(localized: "Edited \($0) files")) }
+            ).map { [$0] } ?? []
+        case .create:
+            return files(
+                items,
+                one: { StyledText(localized: String(localized: "Created \(StyledText.slot(0))"), $0) },
+                two: {
+                    StyledText(
+                        localized: String(localized: "Created \(StyledText.slot(0)) and \(StyledText.slot(1))"), $0, $1)
+                },
+                many: { StyledText(String(localized: "Created \($0) files")) }
+            ).map { [$0] } ?? []
+        case .command:
+            return [
+                calls.count == 1
+                    ? StyledText(String(localized: "Ran a command"))
+                    : StyledText(String(localized: "Ran \(calls.count) commands"))
+            ]
+        case .agent:
+            return [
+                calls.count == 1
+                    ? StyledText(String(localized: "Ran an agent"))
+                    : StyledText(String(localized: "Ran \(calls.count) agents"))
+            ]
+        case .web:
+            let searches = calls.filter { Tools.WebSearch.matches($0.use.name) }.count
+            let fetches = calls.count - searches
+            switch (searches > 0, fetches) {
+            case (true, 0): return [StyledText(String(localized: "Searched the web"))]
+            case (true, 1): return [StyledText(String(localized: "Searched the web and fetched a page"))]
+            case (true, let n): return [StyledText(String(localized: "Searched the web and fetched \(n) pages"))]
+            case (false, 1): return [StyledText(String(localized: "Fetched a page"))]
+            case (false, let n): return [StyledText(String(localized: "Fetched \(n) pages"))]
             }
-        }
-        for (server, count) in servers {
-            clauses.append(
+        case .search:
+            if calls.count == 1, let pattern = calls[0].use.input["pattern"]?.stringValue {
+                return [
+                    StyledText(
+                        localized: String(localized: "Searched for \(StyledText.slot(0))"),
+                        StyledText(pattern, style: .code))
+                ]
+            }
+            return [StyledText(String(localized: "Searched \(calls.count) times"))]
+        case .read:
+            return files(
+                items,
+                one: { StyledText(localized: String(localized: "Read \(StyledText.slot(0))"), $0) },
+                two: {
+                    StyledText(
+                        localized: String(localized: "Read \(StyledText.slot(0)) and \(StyledText.slot(1))"), $0, $1)
+                },
+                many: { StyledText(String(localized: "Read \($0) files")) }
+            ).map { [$0] } ?? []
+        case .tasks:
+            return [StyledText(String(localized: "Updated the task list"))]
+        case .schedule:
+            return [
+                calls.count == 1
+                    ? StyledText(String(localized: "Scheduled a task"))
+                    : StyledText(String(localized: "Scheduled \(calls.count) tasks"))
+            ]
+        case .message:
+            return [
+                calls.count == 1
+                    ? StyledText(String(localized: "Sent a message"))
+                    : StyledText(String(localized: "Sent \(calls.count) messages"))
+            ]
+        case .other:
+            var servers: [(String, Int)] = []
+            for call in calls {
+                let server = Self.toolName(call.use.name).server
+                if let index = servers.firstIndex(where: { $0.0 == server }) {
+                    servers[index].1 += 1
+                } else {
+                    servers.append((server, 1))
+                }
+            }
+            return servers.map { server, count in
                 count == 1
                     ? StyledText(String(localized: "Used \(server) once"))
-                    : StyledText(String(localized: "Used \(server) \(count) times")))
+                    : StyledText(String(localized: "Used \(server) \(count) times"))
+            }
         }
-        return clauses
     }
 
     /// A clause about files: named when there are at most two (each a link
@@ -345,7 +358,7 @@ nonisolated struct WorkLineWriter {
             return StyledText(
                 localized: String(localized: "Fetching \(StyledText.slot(0))"),
                 StyledText(host, style: .noun(opens: nil)))
-        default:
+        case .agent, .tasks, .schedule, .message, .other:
             return label(call, standalone: true, opens: call.id).0
         }
     }
@@ -417,7 +430,7 @@ nonisolated struct WorkLineWriter {
                     ))
             }
             return StyledText()
-        default:
+        case .command, .tasks, .schedule, .message, .other:
             if let duration = call.duration, duration >= CorpusThresholds.shownDuration {
                 return StyledText(Self.format(duration))
             }

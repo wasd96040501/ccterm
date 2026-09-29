@@ -61,6 +61,14 @@ nonisolated struct TranscriptPage: Sendable, Equatable {
         }
     }
 
+    /// The document `reference` names in this page, as a tab beside receives
+    /// it; `nil` for something that opens nothing.
+    func document(_ reference: DocumentReference) -> Document? {
+        document(for: reference.id).map {
+            Document(reference: reference, content: $0, workingDirectory: workingDirectory)
+        }
+    }
+
     /// What `id` opens beside the transcript, or `nil` for something that
     /// opens nothing.
     func document(for id: String) -> DocumentContent? {

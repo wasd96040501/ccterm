@@ -118,7 +118,10 @@ final class TranscriptViewController: NSViewController {
         while !pending.isEmpty {
             let chunk = Array(pending.suffix(Self.chunkRows))
             pending.removeLast(chunk.count)
-            let prepared = await transcript.prepareRows(chunk.map(\.transcriptRow))
+            // `.view` rows are measured by their static height; only the
+            // markdown is worth a trip off the main actor.
+            let prepared = await transcript.prepareRows(
+                chunk.map(\.transcriptRow).filter { $0.content != .view })
             guard !Task.isCancelled else { return }
             // No suspension between changing the rows and announcing it.
             rows.insert(contentsOf: chunk, at: 0)
@@ -183,10 +186,7 @@ final class TranscriptViewController: NSViewController {
     /// Opens `id` beside the transcript, as the reader asked.
     private func open(_ id: String, pinned: Bool) {
         select(id)
-        guard let content = page.document(for: id) else { return }
-        let document = Document(
-            reference: DocumentReference(transcriptURL: fileURL, id: id), content: content,
-            workingDirectory: page.workingDirectory)
+        guard let document = page.document(DocumentReference(transcriptURL: fileURL, id: id)) else { return }
         delegate?.transcriptViewController(self, open: document, pinned: pinned)
     }
 

@@ -22,7 +22,6 @@ final class DocumentViewController: NSViewController {
     private let bodyFactory: DocumentBodyFactory
     private var loadTask: Task<Void, Never>?
     private var hasLoaded = false
-    private var body: NSViewController?
 
     private lazy var jumpBar: JumpBarView = {
         let bar = JumpBarView()
@@ -125,12 +124,12 @@ final class DocumentViewController: NSViewController {
         }
     }
 
-    /// Stops a load in flight, and the body's. The editor area calls it
-    /// before the tab leaves the tree.
+    /// Stops the document's load in flight. The editor area calls it before
+    /// the tab leaves the tree; a body with work of its own is the caller's to
+    /// stop — it made it (`DocumentBodyFactory.makeConversation`).
     func prepareForRemoval() {
         loadTask?.cancel()
         loadTask = nil
-        (body as? TranscriptViewController)?.prepareForRemoval()
     }
 
     // MARK: - Showing
@@ -153,7 +152,6 @@ final class DocumentViewController: NSViewController {
     }
 
     private func embed(_ body: NSViewController) {
-        self.body = body
         addChild(body)
         body.view.translatesAutoresizingMaskIntoConstraints = false
         bodyArea.addSubview(body.view)

@@ -11,7 +11,7 @@ Documents/   what opens beside: DocumentViewController (shell) + bodies.
 TranscriptViewController   the tab: page, disclosure, selection, ↑/↓, reveal.
 ```
 
-Dependencies point down only: `Documents/` and `Rows/` read `Page/`; `Page/` reads only `AgentSDK`. `MainSplitViewController` is the coordinator — it creates tabs and routes what a transcript or a document asks for.
+Dependencies point down only, and siblings don't know each other: `Rows/` and `Documents/` read only `Page/`; the tab reads `Page/` and `Rows/`; `Page/` reads only `AgentSDK`. `MainSplitViewController` is the coordinator — the one place that knows both the tab and the documents: it creates tabs, routes what one asks of the other, and makes a subagent's conversation for a document (`DocumentBodyFactory.makeConversation`). `make arch` must show no edge beyond these.
 
 ## Rules
 
@@ -24,6 +24,12 @@ Dependencies point down only: `Documents/` and `Rows/` read `Page/`; `Page/` rea
 - **Live states stay in the model; the builder yields settled ones**, plus `running` for the calls of the last assistant turn. Approval cards, a plan's decision and a question's controls are drawn from `.waiting` states no transcript on disk has; their answers reach `rowView(_:decide:for:)` / `approvalBarView(_:decide:for:)`, which log and stop until a live session exists.
 - **A document is a shell and a body.** `DocumentViewController` loads the `Document` when it first appears, words the jump bar (`DocumentHeader`), shows an approval bar while the call waits, and embeds the body `DocumentBodyFactory` picks. A body is an `NSViewController`: command, source (change / new file / read), markdown, or — for a subagent whose conversation is on disk — a `TranscriptViewController` on `subagents/agent-<id>.jsonl`.
 - **A document's tab identifier is its `DocumentReference`** (transcript URL + id), so history rebuilds it (`editorArea(_:tabViewItemWithIdentifier:)`) and a second open finds it.
+
+## Adding a tool
+
+- **A tool of an existing kind** is one line in `ToolKind.init(_:result:)`. Its row reads the kind's input keys (`command`, `file_path`, `pattern`, `url`, `query`, `description`) and its meta falls back to nothing, so it reads right before it gets words of its own; give it those in its kind's branches of `WorkLineWriter` when it needs them.
+- **A new kind** is a design change (the kinds are the design's closed vocabulary, README "Kinds"). Add the `ToolKind` case and follow the compiler: every place that gives a kind its words, tile or document switches over it exhaustively — no `default:` there.
+- No registry or per-tool protocol: tools are added far more often than kinds, and a tool is one line.
 
 ## Reuse before adding
 

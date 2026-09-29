@@ -102,15 +102,15 @@ final class MainSplitViewController: NSSplitViewController {
             if let document {
                 { _ in document }
             } else {
-                { [library] reference in
-                    let page = TranscriptPage(try await library.transcript(at: reference.transcriptURL))
-                    return page.document(for: reference.id).map {
-                        Document(reference: reference, content: $0, workingDirectory: page.workingDirectory)
-                    }
-                }
+                { [library] in TranscriptPage(try await library.transcript(at: $0.transcriptURL)).document($0) }
             }
-        let bodies = DocumentBodyFactory(
-            loadTranscript: { [library] in try await library.transcript(at: $0) }, transcriptDelegate: self)
+        let bodies = DocumentBodyFactory { [library, weak self] url, title in
+            let conversation = TranscriptViewController(fileURL: url, title: title) {
+                try await library.transcript(at: $0)
+            }
+            conversation.delegate = self
+            return conversation
+        }
         let controller = DocumentViewController(
             reference: reference, title: document.map { DocumentHeader($0).title }, load: load, bodyFactory: bodies)
         controller.delegate = self
@@ -206,8 +206,11 @@ extension MainSplitViewController: EditorAreaViewControllerDelegate {
     }
 
     func editorArea(_ editorArea: EditorAreaViewController, willClose viewController: NSViewController) {
-        (viewController as? TranscriptViewController)?.prepareForRemoval()
-        (viewController as? DocumentViewController)?.prepareForRemoval()
+        // A document's body may be a subagent's conversation, made here.
+        for controller in [viewController] + viewController.children {
+            (controller as? TranscriptViewController)?.prepareForRemoval()
+            (controller as? DocumentViewController)?.prepareForRemoval()
+        }
     }
 
     /// A transcript dragged from the sidebar, by its URL — the tab comes from

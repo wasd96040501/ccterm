@@ -227,7 +227,7 @@ final class AccessibilityTests: XCTestCase {
             if element.accessibilityRole() == .table { return element }
             queue.append(contentsOf: element.accessibilityChildren() ?? [])
         }
-        throw XCTSkip("no table element under the list")
+        return try XCTUnwrap(nil, "no table element under the list")
     }
 
     private func role(of element: Any) -> NSAccessibility.Role? {
@@ -268,104 +268,104 @@ final class AccessibilityTests: XCTestCase {
         let frames = ReferenceLayout.frames(heights: host.heights, spacing: 0, width: 1)
         return frames.indices.filter { frames[$0].maxY > top && frames[$0].minY < bottom }
     }
-}
 
-/// Rows of the given heights, each a plain `NSView` holding a label that
-/// reads "row N": the host view is ignored, its label is the element.
-@MainActor
-private final class LabelHost: ExactListViewDataSource, ExactListViewDelegate {
+    /// Rows of the given heights, each a plain `NSView` holding a label that
+    /// reads "row N": the host view is ignored, its label is the element.
+    @MainActor
+    private final class LabelHost: ExactListViewDataSource, ExactListViewDelegate {
 
-    var heights: [CGFloat]
+        var heights: [CGFloat]
 
-    init(heights: [CGFloat]) {
-        self.heights = heights
-    }
+        init(heights: [CGFloat]) {
+            self.heights = heights
+        }
 
-    func numberOfRows(in listView: ExactListView) -> Int {
-        heights.count
-    }
+        func numberOfRows(in listView: ExactListView) -> Int {
+            heights.count
+        }
 
-    func listView(_ listView: ExactListView, heightOfRow row: Int, width: CGFloat) -> CGFloat {
-        heights[row]
-    }
+        func listView(_ listView: ExactListView, heightOfRow row: Int, width: CGFloat) -> CGFloat {
+            heights[row]
+        }
 
-    func listView(_ listView: ExactListView, viewForRow row: Int) -> NSView {
-        let view = listView.makeView(withIdentifier: NSUserInterfaceItemIdentifier("label")) {
-            let view = NSView()
-            let label = NSTextField(labelWithString: "")
-            label.frame = NSRect(x: 4, y: 2, width: 200, height: 16)
-            view.addSubview(label)
+        func listView(_ listView: ExactListView, viewForRow row: Int) -> NSView {
+            let view = listView.makeView(withIdentifier: NSUserInterfaceItemIdentifier("label")) {
+                let view = NSView()
+                let label = NSTextField(labelWithString: "")
+                label.frame = NSRect(x: 4, y: 2, width: 200, height: 16)
+                view.addSubview(label)
+                return view
+            }
+            label(in: view)?.stringValue = "row \(row)"
             return view
         }
-        label(in: view)?.stringValue = "row \(row)"
-        return view
-    }
 
-    func label(in view: NSView) -> NSTextField? {
-        view.subviews.first as? NSTextField
-    }
-}
-
-/// `AXRowCountChanged` from this process, as a client hears it: an
-/// `AXObserver` on our own pid, registered off the main thread (the main
-/// thread answers the registration), delivered on the main run loop.
-@MainActor
-private final class RowCountRecorder {
-
-    /// "<role> rows <AXRows count>" for each notification.
-    var heard: [String] = []
-
-    private let observer: AXObserver
-    private let application: AXUIElement
-
-    private init(observer: AXObserver, application: AXUIElement) {
-        self.observer = observer
-        self.application = application
-    }
-
-    static func start() async throws -> RowCountRecorder {
-        // An app joins the accessibility runtime as it finishes launching,
-        // which the xctest process never does; without it, registering fails
-        // with kAXErrorNotImplemented (measured).
-        NSApplication.shared.finishLaunching()
-        var made: AXObserver?
-        let callback: AXObserverCallback = { _, element, _, refcon in
-            guard let refcon else { return }
-            let recorder = Unmanaged<RowCountRecorder>.fromOpaque(refcon).takeUnretainedValue()
-            var role: CFTypeRef?
-            AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
-            var count: CFIndex = -1
-            AXUIElementGetAttributeValueCount(element, kAXRowsAttribute as CFString, &count)
-            MainActor.assumeIsolated { recorder.heard.append("\(role.map { "\($0)" } ?? "?") rows \(count)") }
+        func label(in view: NSView) -> NSTextField? {
+            view.subviews.first as? NSTextField
         }
-        let created = AXObserverCreate(getpid(), callback, &made)
-        let observer = try XCTUnwrap(made, "AXObserverCreate: \(created.rawValue)")
-        let recorder = RowCountRecorder(observer: observer, application: AXUIElementCreateApplication(getpid()))
-        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
-        let refcon = Unmanaged.passUnretained(recorder).toOpaque()
-        let box = ObserverBox(observer: observer, application: recorder.application, refcon: refcon)
-        let added = await withCheckedContinuation { continuation in
-            Thread.detachNewThread {
-                continuation.resume(returning: box.add())
+    }
+
+    /// `AXRowCountChanged` from this process, as a client hears it: an
+    /// `AXObserver` on our own pid, registered off the main thread (the main
+    /// thread answers the registration), delivered on the main run loop.
+    @MainActor
+    private final class RowCountRecorder {
+
+        /// "<role> rows <AXRows count>" for each notification.
+        var heard: [String] = []
+
+        private let observer: AXObserver
+        private let application: AXUIElement
+
+        private init(observer: AXObserver, application: AXUIElement) {
+            self.observer = observer
+            self.application = application
+        }
+
+        static func start() async throws -> RowCountRecorder {
+            // An app joins the accessibility runtime as it finishes launching,
+            // which the xctest process never does; without it, registering fails
+            // with kAXErrorNotImplemented (measured).
+            NSApplication.shared.finishLaunching()
+            var made: AXObserver?
+            let callback: AXObserverCallback = { _, element, _, refcon in
+                guard let refcon else { return }
+                let recorder = Unmanaged<RowCountRecorder>.fromOpaque(refcon).takeUnretainedValue()
+                var role: CFTypeRef?
+                AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
+                var count: CFIndex = -1
+                AXUIElementGetAttributeValueCount(element, kAXRowsAttribute as CFString, &count)
+                MainActor.assumeIsolated { recorder.heard.append("\(role.map { "\($0)" } ?? "?") rows \(count)") }
             }
+            let created = AXObserverCreate(getpid(), callback, &made)
+            let observer = try XCTUnwrap(made, "AXObserverCreate: \(created.rawValue)")
+            let recorder = RowCountRecorder(observer: observer, application: AXUIElementCreateApplication(getpid()))
+            CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+            let refcon = Unmanaged.passUnretained(recorder).toOpaque()
+            let box = ObserverBox(observer: observer, application: recorder.application, refcon: refcon)
+            let added = await withCheckedContinuation { continuation in
+                Thread.detachNewThread {
+                    continuation.resume(returning: box.add())
+                }
+            }
+            XCTAssertEqual(added, .success, "AXObserverAddNotification")
+            return recorder
         }
-        XCTAssertEqual(added, .success, "AXObserverAddNotification")
-        return recorder
+
+        func stop() {
+            AXObserverRemoveNotification(observer, application, kAXRowCountChangedNotification as CFString)
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+        }
     }
 
-    func stop() {
-        AXObserverRemoveNotification(observer, application, kAXRowCountChangedNotification as CFString)
-        CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
-    }
-}
+    /// What the registering thread needs; the AX types are thread-safe CF types.
+    private struct ObserverBox: @unchecked Sendable {
+        let observer: AXObserver
+        let application: AXUIElement
+        let refcon: UnsafeMutableRawPointer
 
-/// What the registering thread needs; the AX types are thread-safe CF types.
-private struct ObserverBox: @unchecked Sendable {
-    let observer: AXObserver
-    let application: AXUIElement
-    let refcon: UnsafeMutableRawPointer
-
-    func add() -> AXError {
-        AXObserverAddNotification(observer, application, kAXRowCountChangedNotification as CFString, refcon)
+        func add() -> AXError {
+            AXObserverAddNotification(observer, application, kAXRowCountChangedNotification as CFString, refcon)
+        }
     }
 }

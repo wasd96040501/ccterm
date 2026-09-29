@@ -117,6 +117,13 @@ final class RowIndexMapTests: XCTestCase {
                 entry.old.map { entry.noted ? CGFloat(1000 + row) : CGFloat($0 + 1) } ?? CGFloat(1000 + row)
             }
             if after.values != expectedHeights || after.spacing != 1 { return "applying gave \(after.values)" }
+            // Its geometry is the new heights' own, however much of the old
+            // index it kept: every top against a running sum.
+            var top: CGFloat = 0
+            for row in 0...expectedHeights.count {
+                if after.top(ofRow: row) != top { return "applying: top of row \(row) is \(after.top(ofRow: row))" }
+                if row < expectedHeights.count { top += expectedHeights[row] + 1 }
+            }
             return nil
         }
 

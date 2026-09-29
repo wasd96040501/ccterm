@@ -5,8 +5,8 @@ import CoreGraphics
 ///
 /// Row `i`'s top is `Σ_{k<i} h(k) + i·s` (G1), found through a Fenwick index
 /// over the heights, so a query and a height change are O(log n) (G5). A
-/// structural change rebuilds the whole value, which is O(n) and happens at
-/// commit, once per batch.
+/// structural change copies the heights run by run at commit, once per batch,
+/// and rebuilds the index only from the first row it touches.
 ///
 /// The spacing is kept apart from the sums, so changing it (V3) touches no
 /// entry.
@@ -27,6 +27,14 @@ public struct RowHeights: Equatable, Sendable {
         self.spacing = spacing
         self.heights = heights
         self.index = FenwickIndex(heights)
+    }
+
+    /// Heights already checked, with the index of `base` kept for the first
+    /// `unchanged` rows, which `heights` shares with it.
+    private init(_ heights: [CGFloat], spacing: CGFloat, reusing base: FenwickIndex, unchanged: Int) {
+        self.spacing = spacing
+        self.heights = heights
+        self.index = FenwickIndex(heights, reusing: base, unchanged: unchanged)
     }
 
     /// `n`.
@@ -97,7 +105,8 @@ public struct RowHeights: Equatable, Sendable {
     /// The heights after `map` (G5): a surviving or moved row keeps its height
     /// unless the batch noted it; inserted and noted rows are asked through
     /// `height`, in ascending new order. O(k · log n) for a batch that
-    /// inserts, removes and moves nothing; otherwise one O(n) copy, run by run.
+    /// inserts, removes and moves nothing; otherwise one O(n) copy, run by run,
+    /// and an index rebuilt only after the leading rows the batch leaves alone.
     public func applying(_ map: RowIndexMap, height: (Int) -> CGFloat) -> RowHeights {
         precondition(map.oldCount == count, "ExactList: a map over \(map.oldCount) rows applied to \(count)")
         var asked = map.notedRows
@@ -119,8 +128,15 @@ public struct RowHeights: Equatable, Sendable {
                 asked.insert(integersIn: new..<(new + count))
             }
         }
-        for row in asked { values[row] = height(row) }
-        return RowHeights(values, spacing: spacing)
+        for row in asked {
+            let value = height(row)
+            precondition(value.isFinite && value > 0, "ExactList: a row height must be finite and > 0 (L12)")
+            values[row] = value
+        }
+        var unchanged = 0
+        if case .kept(0, 0, let count) = map.runs.first { unchanged = count }
+        if let first = asked.first { unchanged = min(unchanged, first) }
+        return RowHeights(values, spacing: spacing, reusing: index, unchanged: unchanged)
     }
 
     /// How many leading rows end at or above `y`, with the sum of their heights.
@@ -145,13 +161,29 @@ public struct RowHeights: Equatable, Sendable {
         private var tree: [CGFloat]
 
         init(_ heights: [CGFloat]) {
-            var tree = [CGFloat](repeating: 0, count: heights.count + 1)
-            for i in 1..<tree.count {
-                tree[i] += heights[i - 1]
-                let parent = i + (i & -i)
-                if parent < tree.count {
-                    tree[parent] += tree[i]
+            self.init(heights, reusing: nil, unchanged: 0)
+        }
+
+        /// The index over `heights`, whose first `unchanged` rows are those of
+        /// `base`: node `i` sums rows `(i − lowbit(i), i]`, so the nodes up to
+        /// `unchanged` are `base`'s. Each later node is its row plus its
+        /// children, added in the order a full build adds them. O(n − unchanged).
+        init(_ heights: [CGFloat], reusing base: FenwickIndex?, unchanged: Int) {
+            var tree = [CGFloat]()
+            tree.reserveCapacity(heights.count + 1)
+            if let base, unchanged > 0 {
+                tree += base.tree[0...unchanged]
+            } else {
+                tree.append(0)
+            }
+            for i in tree.count..<(heights.count + 1) {
+                var sum = heights[i - 1]
+                var step = (i & -i) / 2
+                while step > 0 {
+                    sum += tree[i - step]
+                    step /= 2
                 }
+                tree.append(sum)
             }
             self.tree = tree
         }

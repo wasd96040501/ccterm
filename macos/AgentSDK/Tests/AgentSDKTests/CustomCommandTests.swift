@@ -1,5 +1,6 @@
-import AgentSDK
 import XCTest
+
+@testable import AgentSDK
 
 /// Verifies that a user-configured "Launch Command" is turned into an
 /// **interactive login-shell** invocation rather than being space-split and
@@ -21,12 +22,12 @@ final class CustomCommandTests: XCTestCase {
     // MARK: - Shell wrapping shape
 
     func testExecutableIsLoginShell() {
-        let (exe, _) = CustomCommand.shellInvocation("orange", sdkArgs: [])
+        let (exe, _) = CustomCommand.shellInvocation("orange", sdkArgs: [], exports: [:])
         XCTAssertEqual(exe, expectedShell)
     }
 
     func testUsesLoginInteractiveFlags() {
-        let (_, args) = CustomCommand.shellInvocation("orange", sdkArgs: [])
+        let (_, args) = CustomCommand.shellInvocation("orange", sdkArgs: [], exports: [:])
         // `-li` = login + interactive so ~/.zprofile and ~/.zshrc are sourced;
         // `-c` introduces the script. Order matters: -li, then -c, then script.
         XCTAssertEqual(Array(args.prefix(2)), ["-li", "-c"])
@@ -35,7 +36,7 @@ final class CustomCommandTests: XCTestCase {
     }
 
     func testScriptForwardsSdkArgsViaPositionalParams() {
-        let (_, args) = CustomCommand.shellInvocation("orange", sdkArgs: [])
+        let (_, args) = CustomCommand.shellInvocation("orange", sdkArgs: [], exports: [:])
         // The script after `-c` must end in `"$@"` so SDK args land as positional params.
         guard let cIndex = args.firstIndex(of: "-c"), cIndex + 1 < args.count else {
             return XCTFail("missing -c script")
@@ -48,7 +49,7 @@ final class CustomCommandTests: XCTestCase {
     func testAliasNamePassedThroughUntouched() {
         // The crux: `orange` reaches the shell as-is — NOT pre-resolved via
         // `/usr/bin/which`, which never sees shell aliases.
-        let (_, args) = CustomCommand.shellInvocation("orange", sdkArgs: [])
+        let (_, args) = CustomCommand.shellInvocation("orange", sdkArgs: [], exports: [:])
         XCTAssertTrue(args.contains("orange \"$@\""))
         XCTAssertFalse(args.contains { $0.contains("/usr/bin/which") })
     }
@@ -58,7 +59,7 @@ final class CustomCommandTests: XCTestCase {
     func testEnvVarPrefixPreservedInScript() {
         // `X=0 Z=1 claude --` previously made the resolver try to `which X=0`.
         // Now the whole string reaches the shell, which applies X/Z to the launch.
-        let (_, args) = CustomCommand.shellInvocation("X=0 Z=1 claude --", sdkArgs: ["-p", "json"])
+        let (_, args) = CustomCommand.shellInvocation("X=0 Z=1 claude --", sdkArgs: ["-p", "json"], exports: [:])
         guard let cIndex = args.firstIndex(of: "-c") else { return XCTFail("missing -c") }
         XCTAssertEqual(args[cIndex + 1], "X=0 Z=1 claude -- \"$@\"")
     }
@@ -67,7 +68,7 @@ final class CustomCommandTests: XCTestCase {
 
     func testSdkArgsAppendedAfterArgZero() {
         let sdk = ["-p", "--output-format", "stream-json", "--model", "opus"]
-        let (_, args) = CustomCommand.shellInvocation("claude", sdkArgs: sdk)
+        let (_, args) = CustomCommand.shellInvocation("claude", sdkArgs: sdk, exports: [:])
         // Layout: ["-li", "-c", script, $0, sdk...]. $0 is a fixed launch label;
         // every SDK arg follows it, in order, each as its own element.
         XCTAssertEqual(Array(args.suffix(sdk.count)), sdk)
@@ -75,7 +76,7 @@ final class CustomCommandTests: XCTestCase {
     }
 
     func testArgZeroSeparatesScriptFromForwardedArgs() {
-        let (_, args) = CustomCommand.shellInvocation("claude", sdkArgs: ["-p"])
+        let (_, args) = CustomCommand.shellInvocation("claude", sdkArgs: ["-p"], exports: [:])
         // Element 3 is $0 (the shell's own name slot); the SDK args start at $1.
         XCTAssertEqual(args[3], "ccterm-launch")
         XCTAssertEqual(args[4], "-p")
@@ -85,12 +86,12 @@ final class CustomCommandTests: XCTestCase {
         // The old space-split shattered this into separate argv entries; as a
         // forwarded positional param it survives intact.
         let sdk = ["--append-system-prompt", "be terse and kind"]
-        let (_, args) = CustomCommand.shellInvocation("claude", sdkArgs: sdk)
+        let (_, args) = CustomCommand.shellInvocation("claude", sdkArgs: sdk, exports: [:])
         XCTAssertEqual(args.last, "be terse and kind")
     }
 
     func testEmptySdkArgsProducesBareShellInvocation() {
-        let (_, args) = CustomCommand.shellInvocation("claude", sdkArgs: [])
+        let (_, args) = CustomCommand.shellInvocation("claude", sdkArgs: [], exports: [:])
         XCTAssertEqual(args, ["-li", "-c", "claude \"$@\"", "ccterm-launch"])
     }
 
@@ -100,8 +101,21 @@ final class CustomCommandTests: XCTestCase {
         // A quoted path with a space must reach the shell as a single script so the
         // shell's own parser handles the quoting — we must not tokenize it ourselves.
         let cmd = "\"/Users/me/My Tools/claude\" --foo"
-        let (_, args) = CustomCommand.shellInvocation(cmd, sdkArgs: [])
+        let (_, args) = CustomCommand.shellInvocation(cmd, sdkArgs: [], exports: [:])
         guard let cIndex = args.firstIndex(of: "-c") else { return XCTFail("missing -c") }
         XCTAssertEqual(args[cIndex + 1], cmd + " \"$@\"")
+    }
+
+    // MARK: - Exports (configuration.env beats rc files)
+
+    func testExportsPrecedeCommandSortedAndSingleQuoted() {
+        let (_, args) = CustomCommand.shellInvocation(
+            "X=1 claude", sdkArgs: [], exports: ["B": "it's", "A": "a b", "bad-name": "x"])
+        XCTAssertEqual(args[2], "export A='a b'; export B='it'\\''s'; X=1 claude \"$@\"")
+    }
+
+    func testQuoteEscapesSingleQuotes() {
+        XCTAssertEqual(CustomCommand.quote("a'b"), "'a'\\''b'")
+        XCTAssertEqual(CustomCommand.quote(""), "''")
     }
 }

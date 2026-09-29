@@ -7,7 +7,7 @@ public enum Auth {
     /// The login the CLI holds now. The CLI exits 1 when no one is signed in
     /// and still prints the status, so the output is read whatever the exit
     /// code.
-    public static func status(configuration: AuthConfiguration = AuthConfiguration()) async throws -> AuthStatus {
+    public static func status(configuration: CLIConfiguration = CLIConfiguration()) async throws -> AuthStatus {
         let output = try await run(["status", "--json"], configuration: configuration)
         guard !output.timedOut, let status = try? JSONDecoder().decode(AuthStatus.self, from: output.stdout) else {
             let stderr =
@@ -25,12 +25,11 @@ public enum Auth {
     /// finishes when the login is saved. Cancelling the consuming task, or
     /// dropping the stream, ends the CLI and leaves the previous login in
     /// place.
-    public static func login(configuration: AuthConfiguration = AuthConfiguration()) -> AsyncThrowingStream<URL, Error>
-    {
+    public static func login(configuration: CLIConfiguration = CLIConfiguration()) -> AsyncThrowingStream<URL, Error> {
         AsyncThrowingStream { continuation in
             let task = Task.detached {
                 do {
-                    let process = try configuration.launch(["login", "--claudeai"]).makeProcess()
+                    let process = try configuration.launch(["auth", "login", "--claudeai"]).makeProcess()
                     let output = try await CLIOutput.run(process, timeout: nil) { text in
                         if let url = browserURL(in: text) { continuation.yield(url) }
                     }
@@ -47,7 +46,7 @@ public enum Auth {
     }
 
     /// Removes the CLI's login.
-    public static func logout(configuration: AuthConfiguration = AuthConfiguration()) async throws {
+    public static func logout(configuration: CLIConfiguration = CLIConfiguration()) async throws {
         let output = try await run(["logout"], configuration: configuration)
         guard output.status == 0 else {
             let stderr = output.timedOut ? "Timed out after \(configuration.timeout ?? 0)s" : output.stderr
@@ -64,8 +63,8 @@ public enum Auth {
         return URL(string: String(text[range]))
     }
 
-    private static func run(_ arguments: [String], configuration: AuthConfiguration) async throws -> CLIOutput {
-        let process = try await Task.detached { try configuration.launch(arguments).makeProcess() }.value
+    private static func run(_ arguments: [String], configuration: CLIConfiguration) async throws -> CLIOutput {
+        let process = try await Task.detached { try configuration.launch(["auth"] + arguments).makeProcess() }.value
         return try await CLIOutput.run(process, timeout: configuration.timeout)
     }
 }

@@ -145,7 +145,7 @@ final class RowHeightsTests: XCTestCase {
             let height = CGFloat.random(in: 1...1200, using: &rng)
             let offset = CGFloat.random(in: (-top - 200)...(total + 200), using: &rng)
             let viewport = Viewport(offset: offset, height: height, insetTop: top, insetBottom: bottom)
-            let contentHeight = RowHeights(heights, spacing: spacing).contentHeight
+            let contentHeight = total
             let tolerance = 1e-6 * max(1, total)
 
             let minimum = -top

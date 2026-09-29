@@ -22,10 +22,11 @@ final class ValidationDetailTests: XCTestCase {
 
     func testAFailingCommandGivesItsReasonAsASentenceAndWhatStaysInUse() {
         let alone = LaunchCommandValidation.State.invalid("Not found").detail(fallback: nil)
-        XCTAssertEqual(alone, ValidationDetail(text: "Not found.", isError: true))
+        XCTAssertEqual(alone, ValidationDetail(text: String(localized: "\("Not found")."), isError: true))
 
         let kept = LaunchCommandValidation.State.invalid("Not found").detail(fallback: "orange")
-        XCTAssertEqual(kept.text, "Not found. " + String(localized: "Still using \("orange")."))
+        XCTAssertEqual(
+            kept.text, String(localized: "\("Not found").") + " " + String(localized: "Still using \("orange")."))
         XCTAssertTrue(kept.isError)
     }
 
@@ -41,7 +42,9 @@ final class ValidationDetailTests: XCTestCase {
         XCTAssertFalse(valid.isError)
 
         let invalid = FolderValidation.State.invalid("Folder doesn’t exist").detail(fallback: "~/.claude")
-        XCTAssertEqual(invalid.text, "Folder doesn’t exist. " + String(localized: "Still using \("~/.claude")."))
+        XCTAssertEqual(
+            invalid.text,
+            String(localized: "\("Folder doesn’t exist").") + " " + String(localized: "Still using \("~/.claude")."))
         XCTAssertTrue(invalid.isError)
     }
 

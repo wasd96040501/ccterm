@@ -12,6 +12,17 @@
         }
       }
     },
+    "%@ from the first of %lld": {
+      "comment": "A paste into the account sheet held several providers; the sheet took the first.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@（取自 %2$lld 个中的第一个）"
+          }
+        }
+      }
+    },
     "%@.": {
       "comment": "A check's failure reason as a sentence.",
       "localizations": {
@@ -907,16 +918,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "粘贴 %@ 行或一条命令"
-          }
-        }
-      }
-    },
-    "Paste one provider at a time": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "一次只能粘贴一个提供方"
           }
         }
       }

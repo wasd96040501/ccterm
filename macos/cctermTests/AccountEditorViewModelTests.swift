@@ -145,7 +145,7 @@ final class AccountEditorViewModelTests: XCTestCase {
         model.setCommand("missing")
         await waitFor(model.$presentation) { $0.commandDetail.isError }
         XCTAssertFalse(model.presentation.canSave)
-        XCTAssertEqual(model.presentation.commandDetail.text, String(localized: "Not found") + ".")
+        XCTAssertEqual(model.presentation.commandDetail.text, String(localized: "\(String(localized: "Not found"))."))
         model.setCommand("")
         XCTAssertEqual(
             model.presentation.commandDetail, .none, "General's launch is known, so its answer shows at once")
@@ -177,15 +177,16 @@ final class AccountEditorViewModelTests: XCTestCase {
         XCTAssertEqual(model.presentation.fields.name, "relay 2")
     }
 
-    func testTheSheetTakesOneProviderAtATime() {
+    func testSeveralProvidersFillTheSheetFromTheFirst() {
         let model = newProvider()
         let text = """
             alias a="A=1 claude"
             alias b="B=2 claude"
             """
-        XCTAssertEqual(model.paste(text), String(localized: "Paste one provider at a time"))
-        XCTAssertEqual(model.presentation.fields.name, "")
-        XCTAssertTrue(model.presentation.environmentRows.isEmpty)
+        let single = newProvider().paste(#"alias a="A=1 claude""#)
+        XCTAssertEqual(model.paste(text), String(localized: "\(single) from the first of \(2)"))
+        XCTAssertEqual(model.presentation.fields.name, "a")
+        XCTAssertEqual(model.presentation.environmentRows.map(\.name), ["A"])
         XCTAssertEqual(model.paste("nothing here"), String(localized: "Nothing to paste — expected KEY=value"))
     }
 

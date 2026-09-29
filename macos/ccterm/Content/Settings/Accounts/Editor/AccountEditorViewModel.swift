@@ -128,8 +128,9 @@ final class AccountEditorViewModel {
     func paste(_ text: String) -> String {
         let entries = AccountPaste.entries(text)
         guard let entry = entries.first else { return String(localized: "Nothing to paste — expected KEY=value") }
-        guard entries.count == 1 else { return String(localized: "Paste one provider at a time") }
-        return apply(entry)
+        let note = apply(entry)
+        // A sheet holds one provider: several fill it from the first.
+        return entries.count == 1 ? note : String(localized: "\(note) from the first of \(entries.count)")
     }
 
     /// Fills the draft from `entry`; returns what to tell the person. A name it

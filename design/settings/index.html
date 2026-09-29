@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CCTerm Settings</title>
+<style>
+/* 1 CSS px = 1 pt. Every size below is measured from a macOS 27 settings
+   window at 2× (see README.md), so a 2× screenshot of .window lines up
+   pixel for pixel with the real thing. */
+
+:root {
+  --page: #e3e4e6;
+  --win: #ffffff;
+  --sidebar: #eeeff0;
+  --label: rgba(0, 0, 0, .85);
+  --label-2: rgba(0, 0, 0, .5);
+  --label-3: rgba(0, 0, 0, .26);
+  --group: rgba(0, 0, 0, .027);
+  --sep: rgba(0, 0, 0, .037);
+  --fill: rgba(0, 0, 0, .06);
+  --fill-press: rgba(0, 0, 0, .12);
+  --accent: #3b85f0;
+  --accent-text: #1f6fe0;
+  --switch-off: rgba(0, 0, 0, .09);
+  --glass: rgba(255, 255, 255, .78);
+  --glass-edge: rgba(0, 0, 0, .1);
+  --menu: rgba(246, 246, 246, .86);
+  --shadow: 0 0 0 .5px rgba(0, 0, 0, .18), 0 22px 60px rgba(0, 0, 0, .22), 0 6px 16px rgba(0, 0, 0, .1);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #151517; --win: #282828; --sidebar: #303032;
+    --label: rgba(255, 255, 255, .86); --label-2: rgba(255, 255, 255, .55); --label-3: rgba(255, 255, 255, .25);
+    --group: rgba(255, 255, 255, .042); --sep: rgba(255, 255, 255, .06);
+    --fill: rgba(255, 255, 255, .1); --fill-press: rgba(255, 255, 255, .18);
+    --accent: #3b85f0; --accent-text: #4c9bff; --switch-off: rgba(255, 255, 255, .14);
+    --glass: rgba(60, 60, 62, .72); --glass-edge: rgba(255, 255, 255, .12);
+    --menu: rgba(44, 44, 46, .86);
+    --shadow: 0 0 0 .5px rgba(0, 0, 0, .8), inset 0 0 0 .5px rgba(255, 255, 255, .12), 0 22px 60px rgba(0, 0, 0, .5);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #151517; --win: #282828; --sidebar: #303032;
+  --label: rgba(255, 255, 255, .86); --label-2: rgba(255, 255, 255, .55); --label-3: rgba(255, 255, 255, .25);
+  --group: rgba(255, 255, 255, .042); --sep: rgba(255, 255, 255, .06);
+  --fill: rgba(255, 255, 255, .1); --fill-press: rgba(255, 255, 255, .18);
+  --accent: #3b85f0; --accent-text: #4c9bff; --switch-off: rgba(255, 255, 255, .14);
+  --glass: rgba(60, 60, 62, .72); --glass-edge: rgba(255, 255, 255, .12);
+  --menu: rgba(44, 44, 46, .86);
+  --shadow: 0 0 0 .5px rgba(0, 0, 0, .8), inset 0 0 0 .5px rgba(255, 255, 255, .12), 0 22px 60px rgba(0, 0, 0, .5);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--page); }
+body {
+  font: 13px/16px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  color: var(--label);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 24px 16px 48px;
+  cursor: default;
+  -webkit-user-select: none; user-select: none;
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: default; }
+input { font: inherit; color: inherit; }
+svg { display: block; }
+
+/* ---------- Review bar (outside the window) ---------- */
+.review {
+  width: 880px; max-width: 100%;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  margin-bottom: 20px; color: var(--label-2); font-size: 12px;
+}
+.review b { color: var(--label); font-weight: 600; font-size: 13px; }
+.review .spacer { flex: 1; }
+.review label { display: flex; align-items: center; gap: 6px; }
+.seg { display: inline-flex; background: var(--fill); border-radius: 7px; padding: 2px; }
+.seg button { padding: 2px 10px; border-radius: 5px; font-size: 12px; color: var(--label); }
+.seg button[aria-pressed="true"] { background: var(--win); box-shadow: 0 0 0 .5px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.12); }
+
+/* ---------- Window ---------- */
+.stage { max-width: 100%; overflow-x: auto; }
+.window {
+  position: relative;
+  width: 880px; height: 680px;
+  border-radius: 15px;
+  background: var(--win);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  display: flex;
+  isolation: isolate;
+}
+
+/* Sidebar: full height, 180 wide. Rows 32 tall, inset 10, first row at y 52. */
+.sidebar { width: 180px; flex: none; background: var(--sidebar); position: relative; padding-top: 52px; }
+.traffic { position: absolute; top: 19px; left: 19px; display: flex; gap: 9px; }
+.traffic i { width: 14px; height: 14px; border-radius: 50%; display: block; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.12); }
+.traffic i:nth-child(1) { background: #ff5f57; }
+.traffic i:nth-child(2) { background: #febc2e; }
+.traffic i:nth-child(3) { background: #28c840; }
+.window.inactive .traffic i { background: var(--label-3); box-shadow: none; }
+.nav { list-style: none; margin: 0; padding: 0 10px; }
+.nav button {
+  width: 160px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; gap: 0;
+  padding-left: 10px; color: var(--label);
+}
+.nav .glyph { width: 18px; height: 18px; margin-right: 9px; color: var(--accent); flex: none; }
+.nav button[aria-selected="true"] { background: var(--accent); color: #fff; }
+.nav button[aria-selected="true"] .glyph { color: #fff; }
+.window.inactive .nav button[aria-selected="true"] { background: var(--fill-press); color: var(--label); }
+.window.inactive .nav button[aria-selected="true"] .glyph { color: var(--accent); }
+
+/* Detail: toolbar floats over the scrolling form. */
+.detail { flex: 1; position: relative; min-width: 0; }
+.toolbar {
+  position: absolute; inset: 0 0 auto 0; height: 52px; z-index: 5;
+  display: flex; align-items: center; padding-left: 8px;
+  background: linear-gradient(var(--win) 55%, color-mix(in srgb, var(--win) 0%, transparent));
+  pointer-events: none;
+}
+.toolbar > * { pointer-events: auto; }
+.history {
+  width: 73px; height: 36px; border-radius: 18px;
+  display: flex; align-items: center;
+  background: var(--glass);
+  box-shadow: 0 0 0 .5px var(--glass-edge), 0 1px 3px rgba(0,0,0,.06);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+}
+.history button { width: 36px; height: 36px; display: grid; place-items: center; color: var(--label); }
+.history button:disabled { color: var(--label-3); }
+.history .div { width: 1px; height: 18px; background: var(--sep); background: var(--glass-edge); }
+.toolbar h1 { margin: 0 0 0 13px; font-size: 15px; line-height: 20px; font-weight: 600; }
+
+.scroll { position: absolute; inset: 0; overflow-y: auto; padding: 0 20px 20px; }
+.scroll::-webkit-scrollbar { width: 0; }
+.pane { display: none; padding-top: 52px; }
+.pane.active { display: block; }
+
+/* ---------- Grouped form ---------- */
+/* Header baseline sits 13.5 above its group; group-to-group pitch is 56. */
+.section { margin-top: 30px; }
+.section:first-child { margin-top: 20px; }
+.section > h2 {
+  margin: 0; padding: 0 10px 10px; font-size: 13px; line-height: 16px; font-weight: 600;
+  display: flex; align-items: flex-end; justify-content: space-between;
+}
+.group { background: var(--group); border-radius: 12px; }
+/* The trailing control shares the title's line; the description runs
+   underneath it, stopping 62 short of the row's right edge. */
+.row {
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px;
+  align-items: center; min-height: 37px; padding: 10.5px 10px;
+}
+.row + .row::before {
+  content: ""; position: absolute; top: -1px; left: 10px; right: 10px; height: 1px; background: var(--sep);
+}
+.row + .row { margin-top: 1px; }
+.row .title { grid-column: 1; line-height: 16px; min-width: 0; }
+.row .desc { grid-column: 1 / -1; font-size: 11px; line-height: 14px; color: var(--label-2); padding-right: 62px; margin-top: 1px; }
+.row:has(.popup) .desc { margin-top: 3.5px; }
+.row .trail { grid-column: 2; grid-row: 1; display: flex; align-items: center; justify-content: flex-end; gap: 8px; height: 16px; }
+.section > .foot { font-size: 11px; line-height: 14px; color: var(--label-2); padding: 6px 10px 0; }
+.section > .after { display: flex; justify-content: flex-end; gap: 8px; padding-top: 10px; }
+
+/* Popup button: value, 12 gap, 20pt indicator circle. */
+.popup { display: inline-flex; align-items: center; gap: 12px; height: 20px; margin: -2px 2px -2px 0; color: var(--label); }
+.popup .ind { width: 20px; height: 20px; border-radius: 50%; background: var(--fill); display: grid; place-items: center; }
+.popup:active .ind, .popup[aria-expanded="true"] .ind { background: var(--fill-press); }
+
+/* Switch: 36×16 track, 21×13 pill knob inset 1.5. */
+.switch { position: relative; width: 36px; height: 16px; border-radius: 8px; background: var(--switch-off); flex: none; transition: background .2s; }
+.switch::after {
+  content: ""; position: absolute; top: 1.5px; left: 1.5px; width: 21px; height: 13px; border-radius: 6.5px;
+  background: #fff; box-shadow: 0 0 0 .5px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.18);
+  transition: transform .22s cubic-bezier(.3,.7,.3,1.2);
+}
+.switch[aria-checked="true"] { background: var(--accent); }
+.switch[aria-checked="true"]::after { transform: translateX(12px); }
+.switch:active::after { width: 24px; }
+.switch[aria-checked="true"]:active::after { transform: translateX(9px); }
+
+/* Push button: 24 tall, flat fill, 6 radius. */
+.btn {
+  height: 24px; padding: 0 12px; border-radius: 6px; background: var(--fill);
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px; white-space: nowrap; min-width: 64px;
+}
+.btn:active { background: var(--fill-press); }
+.btn.default { background: var(--accent); color: #fff; }
+.btn.default:active { filter: brightness(.9); }
+.btn.default:disabled { background: var(--fill); color: var(--label-3); }
+.btn:disabled { color: var(--label-3); }
+.btn.destructive { color: #e5484d; }
+.btn.small { height: 20px; padding: 0 9px; font-size: 12px; border-radius: 5px; min-width: 0; }
+.btn.icon { min-width: 0; padding: 0; width: 24px; }
+
+/* Plain in-row text field: right-aligned, borderless, like a grouped Form. */
+.field {
+  border: 0; outline: 0; background: none; text-align: right; padding: 0; margin: 0;
+  width: 260px; height: 16px; line-height: 16px; color: var(--label); caret-color: var(--accent);
+  -webkit-user-select: text; user-select: text;
+}
+.field::placeholder { color: var(--label-3); }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .92em; }
+
+/* ---------- Menu (NSMenu look) ---------- */
+.menu {
+  position: absolute; z-index: 50; min-width: 180px; padding: 5px;
+  background: var(--menu); border-radius: 10px;
+  -webkit-backdrop-filter: blur(30px) saturate(1.6); backdrop-filter: blur(30px) saturate(1.6);
+  box-shadow: 0 0 0 .5px rgba(0,0,0,.2), 0 10px 30px rgba(0,0,0,.2);
+  animation: menu-in .12s ease-out;
+}
+@keyframes menu-in { from { opacity: 0; } }
+.menu .item {
+  display: flex; align-items: center; width: 100%; height: 22px; padding: 0 10px 0 22px; border-radius: 5px;
+  position: relative; white-space: nowrap; color: var(--label);
+}
+.menu .item .check { position: absolute; left: 7px; top: 5px; }
+.menu .item .sub { color: var(--label-2); margin-left: 8px; }
+.menu .item .key { margin-left: auto; padding-left: 24px; color: var(--label-2); }
+.menu .item:hover:not(:disabled) { background: var(--accent); color: #fff; }
+.menu .item:hover:not(:disabled) .sub, .menu .item:hover:not(:disabled) .key { color: rgba(255,255,255,.75); }
+.menu .item:disabled { color: var(--label-3); }
+.menu .item.danger { color: #e5484d; }
+.menu .sep { height: 1px; margin: 5px 10px; background: var(--sep); background: color-mix(in srgb, var(--label) 12%, transparent); }
+.menu .head { padding: 3px 10px 2px 22px; font-size: 11px; color: var(--label-2); font-weight: 600; }
+.catcher { position: absolute; inset: 0; z-index: 49; }
+</style>
+</head>
+<body>
+
+<div class="review" role="toolbar" aria-label="Review controls">
+  <b>CCTerm Settings</b>
+  <span>Design review · 1 CSS px = 1 pt</span>
+  <span class="spacer"></span>
+  <label>Appearance
+    <span class="seg" id="theme">
+      <button data-v="auto" aria-pressed="true">Auto</button><button data-v="light">Light</button><button data-v="dark">Dark</button>
+    </span>
+  </label>
+</div>
+
+<div class="stage">
+  <div class="window" id="win">
+    <aside class="sidebar">
+      <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+      <ul class="nav" role="tablist" id="nav"></ul>
+    </aside>
+    <section class="detail">
+      <div class="toolbar">
+        <div class="history">
+          <button id="back" aria-label="Back"><svg width="10" height="16" viewBox="0 0 10 16"><path d="M8 1.5 1.8 8 8 14.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <span class="div"></span>
+          <button id="fwd" aria-label="Forward"><svg width="10" height="16" viewBox="0 0 10 16"><path d="M2 1.5 8.2 8 2 14.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </div>
+        <h1 id="title"></h1>
+      </div>
+      <div class="scroll" id="scroll">
+        <div class="pane" id="pane-general"></div>
+        <div class="pane" id="pane-accounts"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+/* ---------- Glyphs (SF Symbols, redrawn) ---------- */
+const G = {
+  gear: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"><path d="M7.6 1.6h2.8l.4 2.1 1.4.8 2-.7 1.4 2.4-1.6 1.4v1.6l1.6 1.4-1.4 2.4-2-.7-1.4.8-.4 2.1H7.6l-.4-2.1-1.4-.8-2 .7-1.4-2.4L4 9.8V8.2L2.4 6.8l1.4-2.4 2 .7 1.4-.8z"/><circle cx="9" cy="9" r="2.4"/></svg>`,
+  person: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.35"><circle cx="9" cy="9" r="7.6"/><circle cx="9" cy="7.3" r="2.6"/><path d="M4.2 14.6c1-1.9 2.7-2.9 4.8-2.9s3.8 1 4.8 2.9" stroke-linecap="round"/></svg>`,
+  updown: `<svg width="8" height="12" viewBox="0 0 8 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4.3 4 1.3l3 3M1 7.7l3 3 3-3"/></svg>`,
+  check: `<svg width="10" height="12" viewBox="0 0 10 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6.6 3.8 9.6 9 2.4"/></svg>`,
+}
+
+/* ---------- State ---------- */
+const TABS = [
+  { id: 'general', title: 'General', glyph: G.gear },
+  { id: 'accounts', title: 'Accounts', glyph: G.person },
+]
+const state = {
+  tab: 'accounts',
+  back: [], fwd: [],
+  general: { launchCommand: '', detected: '~/.local/bin/claude' },
+  accounts: [
+    { id: 'sub', kind: 'subscription', name: 'Claude Max', email: 'name@example.com' },
+  ],
+  defaultAccount: 'sub',
+}
+
+const $ = (s, r = document) => r.querySelector(s)
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+
+/* ---------- Sidebar + history ---------- */
+function renderNav() {
+  $('#nav').innerHTML = TABS.map(t => `
+    <li><button role="tab" data-tab="${t.id}" aria-selected="${t.id === state.tab}">
+      <span class="glyph">${t.glyph}</span>${t.title}</button></li>`).join('')
+  $('#title').textContent = TABS.find(t => t.id === state.tab).title
+  for (const t of TABS) $('#pane-' + t.id).classList.toggle('active', t.id === state.tab)
+  $('#back').disabled = !state.back.length
+  $('#fwd').disabled = !state.fwd.length
+}
+function go(tab, how = 'push') {
+  if (tab === state.tab) return
+  if (how === 'push') { state.back.push(state.tab); state.fwd = [] }
+  state.tab = tab
+  $('#scroll').scrollTop = 0
+  renderNav()
+}
+$('#nav').addEventListener('mousedown', e => {
+  const b = e.target.closest('[data-tab]'); if (b) go(b.dataset.tab)
+})
+$('#back').onclick = () => { const t = state.back.pop(); state.fwd.push(state.tab); go(t, 'none') }
+$('#fwd').onclick = () => { const t = state.fwd.pop(); state.back.push(state.tab); go(t, 'none') }
+
+/* ---------- Menus ---------- */
+// items: [{label, sub, key, checked, disabled, danger, action}] | 'sep' | {head}
+function openMenu(anchor, items, { align = 'selected', onClose } = {}) {
+  closeMenu()
+  const win = $('#win'), wr = win.getBoundingClientRect(), ar = anchor.getBoundingClientRect()
+  const catcher = document.createElement('div'); catcher.className = 'catcher'
+  const m = document.createElement('div'); m.className = 'menu'; m.setAttribute('role', 'menu')
+  m.innerHTML = items.map((it, i) => it === 'sep' ? '<div class="sep"></div>'
+    : it.head ? `<div class="head">${esc(it.head)}</div>`
+    : `<button class="item${it.danger ? ' danger' : ''}" role="menuitem" data-i="${i}" ${it.disabled ? 'disabled' : ''}>
+        ${it.checked ? `<span class="check">${G.check}</span>` : ''}${esc(it.label)}${it.sub ? `<span class="sub">${esc(it.sub)}</span>` : ''}${it.key ? `<span class="key">${esc(it.key)}</span>` : ''}</button>`).join('')
+  win.append(catcher, m)
+  const mw = m.offsetWidth, mh = m.offsetHeight
+  let left, top
+  if (align === 'selected') {
+    // NSPopUpButton: the checked item sits right over the button's title.
+    const sel = m.querySelector('.check')?.parentElement || m.querySelector('.item')
+    const title = anchor.querySelector('.val') || anchor
+    const tr = title.getBoundingClientRect()
+    left = tr.left - wr.left - 22
+    top = tr.top - wr.top - sel.offsetTop - 3
+    left = Math.min(left, ar.right - wr.left - mw + 8)
+  } else {
+    left = ar.left - wr.left; top = ar.bottom - wr.top + 4
+  }
+  left = Math.max(8, Math.min(left, wr.width - mw - 8))
+  top = Math.max(8, Math.min(top, wr.height - mh - 8))
+  Object.assign(m.style, { left: left + 'px', top: top + 'px' })
+  anchor.setAttribute('aria-expanded', 'true')
+  const close = () => { catcher.remove(); m.remove(); anchor.removeAttribute('aria-expanded'); openMenu.close = null; onClose?.() }
+  openMenu.close = close
+  catcher.addEventListener('mousedown', close)
+  m.addEventListener('mouseup', e => {
+    const b = e.target.closest('.item'); if (!b || b.disabled) return
+    close(); items[+b.dataset.i].action?.()
+  })
+}
+function closeMenu() { openMenu.close?.() }
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && openMenu.close) { e.stopImmediatePropagation(); closeMenu() } }, true)
+
+/* ---------- Primitives ---------- */
+const row = ({ title, desc = '', trail = '', attrs = '' }) => `
+  <div class="row" ${attrs}><div class="title">${title}</div><div class="trail">${trail}</div>${desc ? `<div class="desc">${desc}</div>` : ''}</div>`
+const popup = (id, value) => `<button class="popup" data-popup="${id}"><span class="val">${esc(value)}</span><span class="ind">${G.updown}</span></button>`
+
+/* ---------- General ---------- */
+function accountLabel(a) { return a.kind === 'subscription' ? `${a.name} — ${a.email}` : a.name }
+function renderGeneral() {
+  const g = state.general
+  const def = state.accounts.find(a => a.id === state.defaultAccount)
+  $('#pane-general').innerHTML = `
+    <div class="section"><h2>Claude Code</h2><div class="group">
+      ${row({ title: 'Launch command', desc: `Leave empty to use <span class="mono">claude</span> from your PATH. Found at <span class="mono">${esc(g.detected)}</span>.`,
+        trail: `<input class="field mono" id="launch" spellcheck="false" placeholder="claude" value="${esc(g.launchCommand)}">` })}
+    </div></div>
+    <div class="section"><h2>New Sessions</h2><div class="group">
+      ${row({ title: 'Account', desc: 'Sessions you start from the sidebar use this account. Change it for one session from its toolbar.',
+        trail: popup('default-account', def ? def.name : 'None') })}
+    </div></div>`
+}
+document.addEventListener('input', e => { if (e.target.id === 'launch') state.general.launchCommand = e.target.value })
+document.addEventListener('mousedown', e => {
+  const p = e.target.closest('[data-popup]'); if (!p) return
+  e.preventDefault()
+  if (p.dataset.popup === 'default-account') {
+    const subs = state.accounts.filter(a => a.kind === 'subscription'), apis = state.accounts.filter(a => a.kind === 'api')
+    const item = a => ({ label: a.name, sub: a.kind === 'subscription' ? a.email : a.host, checked: a.id === state.defaultAccount, action: () => setDefault(a.id) })
+    openMenu(p, [...(subs.length ? [{ head: 'Subscription' }, ...subs.map(item)] : []),
+      ...(apis.length ? ['sep', { head: 'API Providers' }, ...apis.map(item)] : [])])
+  }
+})
+function setDefault(id) { state.defaultAccount = id; renderAll() }
+
+/* ---------- Accounts ---------- */
+function renderAccounts() {
+  $('#pane-accounts').innerHTML = `<div class="section"><h2>Subscription</h2><div class="group">${row({ title: 'Coming next' })}</div></div>`
+}
+
+/* ---------- Theme (review control) ---------- */
+$('#theme').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return
+  for (const x of $('#theme').children) x.setAttribute('aria-pressed', x === b)
+  if (b.dataset.v === 'auto') document.documentElement.removeAttribute('data-theme')
+  else document.documentElement.dataset.theme = b.dataset.v
+})
+
+function renderAll() { renderNav(); renderGeneral(); renderAccounts() }
+renderAll()
+</script>
+</body>
+</html>

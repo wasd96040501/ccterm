@@ -23,7 +23,7 @@ final class MotionAnimator {
     /// One commit's animations, until they end.
     private final class Flight {
         let id: Int
-        let containers: [RowContainerView]
+        var containers: [RowContainerView]
         let retiring: [RowContainerView]
         let completion: (Bool) -> Void
         var isCancelled = false
@@ -63,8 +63,16 @@ final class MotionAnimator {
         nextID += 1
         let removedMotions = Set(moving.filter { $0.kind == .removed }.map(\.row))
         var animated: [RowContainerView] = []
+        let flight = Flight(
+            id: id, containers: [], retiring: retiring.filter { removedMotions.contains($0.key) }.map(\.value),
+            completion: completion)
 
         CATransaction.begin()
+        // Before any animation is added: the block waits only for animations
+        // added after it is set (CATransaction docs), and fires at once if none.
+        CATransaction.setCompletionBlock { [weak self] in
+            MainActor.assumeIsolated { self?.land(flight) }
+        }
         for motion in moving {
             let container = motion.kind == .removed ? retiring[motion.row] : containers[motion.row]
             guard let container, let layer = container.layer else { continue }
@@ -84,12 +92,7 @@ final class MotionAnimator {
             addTransition(motion, on: layer, id, duration, timing)
             animated.append(container)
         }
-        let flight = Flight(
-            id: id, containers: animated, retiring: retiring.filter { removedMotions.contains($0.key) }.map(\.value),
-            completion: completion)
-        CATransaction.setCompletionBlock { [weak self] in
-            MainActor.assumeIsolated { self?.land(flight) }
-        }
+        flight.containers = animated
         CATransaction.commit()
         flights.append(flight)
 
@@ -114,14 +117,17 @@ final class MotionAnimator {
     /// the animator's own to change.
     func apply(_ map: RowIndexMap) {}
 
-    /// U7: removes every animation. Outstanding completions get `false`.
+    /// U7: removes every animation, and hands back the containers that were
+    /// animating out. Outstanding completions get `false`, on a later turn
+    /// like every completion (U8).
     func cancelAll() {
         let cancelled = flights
         flights.removeAll()
         for flight in cancelled {
             flight.isCancelled = true
             for container in flight.containers { container.layer?.removeAllAnimations() }
-            flight.completion(false)
+            owner?.motionAnimator(self, didFinishCommitRetiring: flight.retiring)
+            DispatchQueue.main.async { flight.completion(false) }
         }
     }
 

@@ -85,7 +85,11 @@ public final class ExactListView: NSView {
         get { insets }
         set {
             insets = newValue
+            // AppKit re-constrains the clip view here. That is an echo: the
+            // anchor must resolve against the viewport before the change (V2).
+            isAdjusting = true
             scrollView.contentInsets = newValue
+            isAdjusting = false
             syncViewport()
         }
     }

@@ -545,7 +545,13 @@ in a commit has a start and an end value for its screen top and its height.
 - **P3: `didRemove` on departure.** `listView(_:didRemove:forRow:)` is called
   exactly once for every view that leaves the mounted set, after any animation
   it was part of has ended. The view then goes back into the pool under its
-  `identifier`.
+  `identifier`. It may stay in the list's hierarchy, hidden, until a row takes
+  it again: taking a view out of the window and putting one back makes AppKit
+  rebuild the window's layer tree, which costs more than the update itself.
+  `NSTableView` doesn't take them out either (measured: every row view a
+  scroll reported through `didRemove` was still in the window, reused for
+  another row), so a host of either can't read `didRemove` as "out of the
+  window".
 - **P4: reuse.** `makeView(withIdentifier:make:)` returns a pooled view with
   that identifier, or else the result of `make()` with the identifier set.
   *Deviation from `makeView(withIdentifier:owner:)`:* that method returns

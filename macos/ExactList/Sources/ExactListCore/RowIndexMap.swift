@@ -117,6 +117,35 @@ public struct RowIndexMap: Equatable, Sendable {
         rows { $0.isReloaded }
     }
 
+    /// The batch as runs in the new order, covering every new row once (G5).
+    var runs: [RowRun] {
+        var runs: [RowRun] = []
+        for (row, slot) in slots.enumerated() {
+            guard let old = slot.oldRow else {
+                if case .inserted(let new, let count, let transition) = runs.last, transition == slot.transition {
+                    runs[runs.count - 1] = .inserted(new: new, count: count + 1, transition: transition)
+                } else {
+                    runs.append(.inserted(new: row, count: 1, transition: slot.transition))
+                }
+                continue
+            }
+            if slot.isMoved {
+                runs.append(.moved(old: old, new: row))
+            } else if case .kept(let start, let new, let count) = runs.last, start + count == old {
+                runs[runs.count - 1] = .kept(old: start, new: new, count: count + 1)
+            } else {
+                runs.append(.kept(old: old, new: row, count: 1))
+            }
+        }
+        return runs
+    }
+
+    /// Whether the batch inserted, removed or moved anything: whether any row
+    /// changed its index.
+    var isStructural: Bool {
+        slots.count != rowsBefore || slots.enumerated().contains { $0.element.oldRow != $0.offset || $0.element.isMoved }
+    }
+
     /// Whether the batch changed anything at all. An empty batch commits
     /// nothing, and its completion handler still runs (U8).
     public var isEmpty: Bool {

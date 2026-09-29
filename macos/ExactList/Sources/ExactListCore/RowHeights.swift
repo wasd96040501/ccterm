@@ -94,6 +94,24 @@ public struct RowHeights: Equatable, Sendable {
         heights[row] = height
     }
 
+    /// The heights after `map` (G5): a surviving or moved row keeps its height
+    /// unless the batch noted it; inserted and noted rows are asked through
+    /// `height`, in ascending new order. O(k · log n) for a batch that
+    /// inserts, removes and moves nothing; otherwise one O(n) copy, run by run.
+    public func applying(_ map: RowIndexMap, height: (Int) -> CGFloat) -> RowHeights {
+        precondition(map.oldCount == count, "ExactList: a map over \(map.oldCount) rows applied to \(count)")
+        let noted = map.notedRows
+        var values = [CGFloat](repeating: 0, count: map.newCount)
+        for row in 0..<map.newCount {
+            if let was = map.oldIndex(forNew: row), !noted.contains(row) {
+                values[row] = heights[was]
+            } else {
+                values[row] = height(row)
+            }
+        }
+        return RowHeights(values, spacing: spacing)
+    }
+
     /// How many leading rows end at or above `y`, with the sum of their heights.
     private func rowsEnding(atOrAbove y: CGFloat) -> (count: Int, sum: CGFloat) {
         index.lift { k, sum in sum + CGFloat(k - 1) * spacing <= y }

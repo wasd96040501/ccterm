@@ -194,11 +194,21 @@ written they do nothing.
 
   *Deviation from `NSTableView`:* its answers are in document coordinates, and
   here the document view is not public (L2).
-- **G5: cost.**
+- **G5: cost.** `n` is the row count. A batch is kept as runs of rows, never
+  as one entry per row; `e` is the number of runs, `k` the rows the batch
+  names (inserted, removed, moved, noted or reloaded), and `m` the rows M7
+  considers (those whose unscaled sweep meets `P`).
   - Mapping an index to `y`, and `y` to an index: O(log n).
   - A height change: O(log n) per row.
-  - Each structural call inside a batch (insert, remove, move): O(n).
-  - Applying a batch at commit: O(n).
+  - Each structural call inside a batch (insert, remove, move): O(e + r), for
+    the `r` rows it names.
+  - Planning a commit: O((e + k + m) · log n).
+  - Updating the heights at commit: O(k · log n) when the batch inserts,
+    removes and moves nothing; otherwise one O(n) pass that copies the
+    heights run by run and rebuilds the index.
+  - These bounds are what B1 and B2 rest on: `NSTableView`'s own costs don't
+    grow with the rows off screen, so a commit's can't either, beyond that one
+    copy.
 - **G6: tolerance.** Floating-point sums may differ from a naive left-to-right
   sum by at most `1e-6 · max(1, H)` pt. Tests compare with that tolerance and
   no looser.
@@ -745,10 +755,11 @@ Core imports Foundation and CoreGraphics, never AppKit.
 | Type | Owns |
 |---|---|
 | `Anchoring` | The public policy enum (§6.1). |
-| `RowHeights` | The heights, the spacing, and a Fenwick index: G1–G5 queries, insert, remove, move, and set height. |
+| `RowHeights` | The heights, the spacing, and a Fenwick index: G1–G5 queries, set height, and the heights after a batch (`applying(_:height:)`). |
 | `RowEdit` | One update in `NSTableView` semantics: insert, remove, move, note or reload. |
 | `RowTransition` | The insert and remove effects. Its bits are `NSTableView.AnimationOptions`' raw values, so the engine converts between the two without a table (M9). |
-| `RowIndexMap` | The old↔new index mapping of a batch, built incrementally from `RowEdit`s (U2). |
+| `RowIndexMap` | The old↔new index mapping of a batch, built incrementally from `RowEdit`s (U2), kept as `RowRun`s (G5). |
+| `RowRun` | Internal to Core: one run of a batch in the new order, kept, moved or inserted, which is what lets planning, the heights and the stale rows skip the rows a batch didn't touch (G5). |
 | `Viewport` | `o`, `V`, `t`, `b`, and what follows from them: `oMin`/`oMax`, `U`, `P`, and whether the viewport is at the tail. |
 | `ScrollAnchor` | A resolved anchor (tail, row with `d`, or offset): resolution (A1–A3), renumbering (A4, A5), and restoring (A6, A7, W2). |
 | `CommitInput` | Everything a commit is planned from: old and new heights, the map, old and new viewport, anchoring, or instead a scroll's destination (S3), tail following, whether to rescale the anchor (W2), the rows mounted before the commit, and whether it animates. |

@@ -244,9 +244,11 @@ public enum Anchoring { case automatic, row(Int), scrollOffset }
   - "Surviving" means neither removed nor moved, as in M2. A moved row keeps
     its pre-batch screen position only as its motion's start, so holding the
     viewport on it would carry the viewport to wherever the row went.
-  - If rows remain but every one of them was moved, the anchor becomes the
-    offset: `o' = o`, then A7.
-  - If no row remains, the new offset is `oMin`.
+  - If no surviving row remains, the anchor becomes the offset: `o' = o`,
+    then A7. That covers a batch that moved every remaining row, one that
+    replaced every row, and one that emptied the list (where A7 gives
+    `oMin`). A batch that replaces every row is then anchored the way
+    `reloadData()` is (A9).
 
 ### 6.3 Restoring
 

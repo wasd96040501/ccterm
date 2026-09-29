@@ -485,8 +485,10 @@ in a commit has a start and an end value for its screen top and its height.
   animation, anchored. Any width change cancels the pending batch and starts
   again. Each turn measures at least one row, so refreshing ends in a bounded
   number of turns.
-- **W6: never twice at the same width.** No row is asked for its height twice
-  at the same width, unless it was inserted, noted or reloaded (U7) in between.
+- **W6: never twice at the same width.** No row is asked for its height at the
+  width it was last measured at, unless it was inserted, noted or reloaded
+  (U7) since. A row measured at `A`, then at `B`, is asked again when `W`
+  returns to `A`: the list keeps one height per row, not one per width.
 
 > **Note on the no-estimation rule.** Stale rows are the one place where the
 > document isn't exact for the current `W`. Every number in it is still a

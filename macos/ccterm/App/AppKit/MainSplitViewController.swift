@@ -30,7 +30,9 @@ final class MainSplitViewController: NSSplitViewController {
 
     init(library: LibraryStore) {
         self.library = library
-        sidebarViewController = SidebarViewController(nodes: library.$nodes.eraseToAnyPublisher())
+        sidebarViewController = SidebarViewController(
+            nodes: library.$isLoaded.combineLatest(library.$nodes) { isLoaded, nodes in isLoaded ? nodes : nil }
+                .eraseToAnyPublisher())
         super.init(nibName: nil, bundle: nil)
     }
 

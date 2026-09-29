@@ -124,21 +124,17 @@ final class SettingsSnapshotTests: XCTestCase {
         }
     }
 
-    /// The list's + | − bar with the pointer over +, and a command that runs.
-    func testProviderSheetHoveringAdd() throws {
+    /// The list's + | − bar with + held down: the system's own press, nothing
+    /// drawn behind it.
+    func testProviderSheetPressingAdd() throws {
         for appearance in Appearance.allCases {
-            var account = Self.localProxy
-            account.command = "~/bin/claude-relay"
-            let editor = try editorSheet(mode: .provider, account: account, secrets: Self.localProxySecrets)
+            let editor = try editorSheet(mode: .provider, account: Self.localProxy, secrets: Self.localProxySecrets)
             let add = try XCTUnwrap(
                 Self.descendants(of: editor.view, ofType: ListBarButton.self).first)
-            add.mouseEntered(
-                with: NSEvent.enterExitEvent(
-                    with: .mouseEntered, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
-                    context: nil, eventNumber: 0, trackingNumber: 0, userData: nil)!)
+            add.highlight(true)
             render(
                 editor, size: AccountEditorViewController.size, appearance: appearance,
-                name: "Settings-ProviderSheetHover")
+                name: "Settings-ProviderSheetPressed")
         }
     }
 

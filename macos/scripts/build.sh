@@ -48,6 +48,44 @@ if [ -n "$BUILD_SETTINGS" ]; then
   fi
 fi
 
+# --- Signing ---
+#
+# Sign with a real identity whenever the keychain has one, so every build —
+# Debug, Release, installed — carries the same designated requirement. The
+# login keychain trusts an app by that requirement: an ad-hoc build's is its
+# cdhash, new on every rebuild, so each rebuild is a stranger to the accounts'
+# keychain items (and to TCC's folder grants) and macOS asks again.
+#
+# $CODESIGN_IDENTITY (name or SHA-1) picks one; otherwise the first Apple
+# Development identity, else the first valid one. With none (CI), the build
+# stays ad-hoc.
+SIGNING_ARGS=()
+IDENTITIES=$(security find-identity -v -p codesigning 2>/dev/null || true)
+IDENTITY="${CODESIGN_IDENTITY:-}"
+if [ -z "$IDENTITY" ]; then
+  IDENTITY=$(echo "$IDENTITIES" | grep '"Apple Development:' | head -1 | awk '{print $2}' || true)
+fi
+if [ -z "$IDENTITY" ]; then
+  IDENTITY=$(echo "$IDENTITIES" | grep -E '^[[:space:]]*[0-9]+\) [0-9A-F]{40} "' | head -1 | awk '{print $2}' || true)
+fi
+if [ -n "$IDENTITY" ]; then
+  # The team is the certificate's OU; the SHA-1 or name finds the certificate.
+  IDENTITY_NAME=$(echo "$IDENTITIES" | grep -F "$IDENTITY" | head -1 | sed 's/.*"\(.*\)".*/\1/' || true)
+  TEAM=$(security find-certificate -c "${IDENTITY_NAME:-$IDENTITY}" -p 2>/dev/null \
+    | openssl x509 -noout -subject 2>/dev/null \
+    | sed -n 's/.*OU *= *\([A-Z0-9]*\).*/\1/p' || true)
+  echo "Signing as: ${IDENTITY_NAME:-$IDENTITY}${TEAM:+ (team $TEAM)}"
+  SIGNING_ARGS=(CODE_SIGN_STYLE=Manual "CODE_SIGN_IDENTITY=$IDENTITY" PROVISIONING_PROFILE_SPECIFIER=)
+  if [ -n "$TEAM" ]; then SIGNING_ARGS+=("DEVELOPMENT_TEAM=$TEAM"); fi
+  # A development identity entitles the debugger to attach; Release needn't be.
+  if [ "$CONFIGURATION" = "Release" ]; then SIGNING_ARGS+=(CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO); fi
+else
+  echo "Signing ad-hoc: no codesigning identity in the keychain."
+  echo "  The keychain will ask for access to saved accounts again after every rebuild."
+  echo "  Create a free \"Apple Development\" certificate (Xcode → Settings → Accounts →"
+  echo "  Manage Certificates → +) and every later build signs with it."
+fi
+
 START_TIME=$(date +%s)
 
 BUILD_EXIT=0
@@ -57,6 +95,7 @@ xcodebuild \
   -configuration "$CONFIGURATION" \
   -destination 'platform=macOS' \
   SWIFT_STRICT_CONCURRENCY=complete \
+  ${SIGNING_ARGS[@]+"${SIGNING_ARGS[@]}"} \
   build \
   > "$BUILD_LOG" 2>&1 || BUILD_EXIT=$?
 

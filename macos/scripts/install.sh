@@ -60,40 +60,12 @@ if [ ! -d "$DEST" ]; then
   exit 1
 fi
 
-# Re-sign with a stable identity so macOS TCC (Desktop / Documents /
-# Downloads privacy grants) survives across installs. A plain `make
-# release` produces an ad-hoc signature whose designated requirement is a
-# bare cdhash — it changes on every rebuild, so TCC treats each install as
-# a brand-new app and re-prompts for folder access. Signing with a real
-# keychain identity gives a cdhash-independent, team-based requirement that
-# stays put across rebuilds; you grant folder access once.
-#
-# Identity comes from $CODESIGN_IDENTITY if set, else the first valid
-# codesigning identity in the keychain. With none available (e.g. CI), the
-# ad-hoc signature is left untouched.
-IDENTITY="${CODESIGN_IDENTITY:-}"
-if [ -z "$IDENTITY" ]; then
-  IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
-    | sed -n 's/^[[:space:]]*[0-9][0-9]*) \([0-9A-F][0-9A-F]*\) ".*"$/\1/p' \
-    | head -1)
-fi
-
-if [ -n "$IDENTITY" ]; then
-  echo "Re-signing with stable identity: $IDENTITY"
-  # --deep re-seals any nested code in the bundle; --options runtime keeps
-  # the hardened runtime the build set. No --entitlements: the ad-hoc build
-  # only carried get-task-allow (debug attach), unneeded for a Release app.
-  codesign --force --options runtime --timestamp=none --deep \
-    --sign "$IDENTITY" "$DEST"
-  if codesign --verify --deep --strict "$DEST" 2>/dev/null; then
-    echo "Signature verified — TCC grants will persist across installs."
-  else
-    echo "warning: signature verification failed after re-sign" >&2
-  fi
-else
-  echo "No codesigning identity found — leaving ad-hoc signature."
-  echo "  (macOS will re-prompt for Desktop/Documents access on each install.)"
-  echo "  Set CODESIGN_IDENTITY=<name|hash> to re-sign with a stable identity."
+# `make release` already signed the bundle (scripts/build.sh): with a real
+# identity when the keychain has one, which is what keeps keychain and TCC
+# grants across installs.
+if codesign -d "$DEST" 2>&1 | grep -q 'Signature=adhoc'; then
+  echo "warning: installed an ad-hoc signed build — macOS will ask for keychain" >&2
+  echo "  and folder access again after every install (see make release output)." >&2
 fi
 
 INFO_PLIST="$DEST/Contents/Info.plist"

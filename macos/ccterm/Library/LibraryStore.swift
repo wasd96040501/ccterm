@@ -22,6 +22,11 @@ final class LibraryStore {
     /// read downstream as a change.
     @Published private(set) var nodes: [LibraryNode] = []
 
+    /// Whether `nodes` is a read of the directory yet — false only until the
+    /// first read lands, which is what tells an empty library from one not
+    /// read. Set after the `nodes` it vouches for.
+    @Published private(set) var isLoaded = false
+
     private let directories: AnyPublisher<SessionDirectory, Never>
     /// Where each directory's `LibraryIndex` is kept between launches; `nil`
     /// keeps none.
@@ -97,6 +102,7 @@ final class LibraryStore {
         for (session, record) in read { entries[session.url] = record.flatMap { Self.entry(for: session, $0) } }
         let tree = Self.tree(of: entries.values)
         if tree != nodes { nodes = tree }
+        if !isLoaded { isLoaded = true }
     }
 
     /// The index of `directory`, its own file in `folder`: named by a hash of

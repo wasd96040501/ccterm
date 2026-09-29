@@ -14,18 +14,31 @@ final class StaleRowRefresher {
     /// Weak: the list owns this.
     weak var owner: StaleRowRefresherOwner?
 
-    init() {
-        fatalError("unimplemented: SPEC W5")
-    }
+    /// Bumped by every `schedule()` and `cancel()`, so a batch already queued
+    /// by an earlier call sees it has been superseded and does nothing.
+    private var generation = 0
+
+    init() {}
 
     /// Schedules the next batch for an idle turn. Calling again before it runs
     /// cancels the one pending, as a width change does.
     func schedule() {
-        fatalError("unimplemented: SPEC W5")
+        generation += 1
+        let scheduled = generation
+        // The default mode only: not during a live resize or a scroll gesture,
+        // whose tracking modes are exactly the turns that aren't idle.
+        RunLoop.main.perform(inModes: [.default]) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.generation == scheduled, let owner = self.owner else { return }
+                if owner.refreshStaleRows(within: Self.budget), self.generation == scheduled {
+                    self.schedule()
+                }
+            }
+        }
     }
 
     /// Drops the pending batch, if any.
     func cancel() {
-        fatalError("unimplemented: SPEC W5")
+        generation += 1
     }
 }

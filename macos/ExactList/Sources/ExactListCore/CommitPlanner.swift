@@ -14,9 +14,11 @@ public enum CommitPlanner {
         let new = input.newHeights
         let map = input.map
 
-        var anchor = ScrollAnchor.resolve(
-            input.anchoring, heights: old, viewport: input.oldViewport, followsTail: input.followsTail
-        ).mapped(through: map, oldHeights: old, oldViewport: input.oldViewport)
+        var anchor =
+            input.targetOffset.map { ScrollAnchor.offset($0) }
+            ?? ScrollAnchor.resolve(
+                input.anchoring, heights: old, viewport: input.oldViewport, followsTail: input.followsTail
+            ).mapped(through: map, oldHeights: old, oldViewport: input.oldViewport)
         if input.rescalesAnchor, case .row(let row, _) = anchor, let was = map.oldIndex(forNew: row) {
             anchor = anchor.rescaled(fromHeight: old[was], toHeight: new[row])
         }

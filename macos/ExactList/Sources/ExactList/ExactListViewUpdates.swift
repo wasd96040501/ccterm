@@ -12,47 +12,55 @@ extension ExactListView {
     @MainActor
     public final class Updates {
 
+        private var recorded: RowIndexMap
+        private var isOpen = true
+
         /// Starts recording against the `oldCount` rows the batch begins with,
         /// which is what every index is range-checked against (L12).
         init(oldCount: Int) {
-            fatalError("unimplemented: SPEC U3")
+            recorded = RowIndexMap(oldCount: oldCount)
         }
 
         /// The edits so far. Read by the list at commit.
         var map: RowIndexMap {
-            fatalError("unimplemented: SPEC U3")
+            recorded
         }
 
         /// Closes the proxy once its closure has returned. Any later call stops
         /// with a precondition failure (U3).
         func close() {
-            fatalError("unimplemented: SPEC U3")
+            isOpen = false
         }
 
         /// `NSTableView.insertRows(at:withAnimation:)`.
         public func insertRows(at indexes: IndexSet, withAnimation options: NSTableView.AnimationOptions = []) {
-            fatalError("unimplemented: SPEC U2")
+            record(.insert(indexes, RowTransition(rawValue: options.rawValue)))
         }
 
         /// `NSTableView.removeRows(at:withAnimation:)`.
         public func removeRows(at indexes: IndexSet, withAnimation options: NSTableView.AnimationOptions = []) {
-            fatalError("unimplemented: SPEC U2")
+            record(.remove(indexes, RowTransition(rawValue: options.rawValue)))
         }
 
         /// `NSTableView.moveRow(at:to:)`.
         public func moveRow(at oldIndex: Int, to newIndex: Int) {
-            fatalError("unimplemented: SPEC U2")
+            record(.move(from: oldIndex, to: newIndex))
         }
 
         /// `NSTableView.reloadData(forRowIndexes:columnIndexes:)`, without the
         /// columns (U6).
         public func reloadData(forRowIndexes indexes: IndexSet) {
-            fatalError("unimplemented: SPEC U6")
+            record(.reload(indexes))
         }
 
         /// `NSTableView.noteHeightOfRows(withIndexesChanged:)` (U5).
         public func noteHeightOfRows(withIndexesChanged indexes: IndexSet) {
-            fatalError("unimplemented: SPEC U5")
+            record(.noteHeight(indexes))
+        }
+
+        private func record(_ edit: RowEdit) {
+            precondition(isOpen, "ExactList: a batch's Updates used after its closure returned (U3)")
+            recorded.apply(edit)
         }
     }
 }

@@ -16,8 +16,15 @@ final class RowContainerView: NSView {
     /// The host's view, or `nil` while the container is in no row.
     private(set) var hostedView: NSView?
 
+    /// The row's height as last measured: the hosted view's height, whatever
+    /// the container's own frame is doing (a removed row's frame ends at 0).
+    private var hostedHeight: CGFloat = 0
+
     init(row: Int) {
-        fatalError("unimplemented: SPEC P5")
+        self.row = row
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.masksToBounds = true
     }
 
     @available(*, unavailable)
@@ -30,35 +37,49 @@ final class RowContainerView: NSView {
     /// Puts `view` in the container, sized to `width × height`, and returns the
     /// view it replaces, if any (U6).
     func host(_ view: NSView, height: CGFloat) -> NSView? {
-        fatalError("unimplemented: SPEC P2, U6")
+        hostedHeight = height
+        let replaced = hostedView === view ? nil : hostedView
+        if replaced != nil || hostedView == nil {
+            replaced?.removeFromSuperview()
+            view.translatesAutoresizingMaskIntoConstraints = true
+            view.autoresizingMask = []
+            addSubview(view)
+            hostedView = view
+        }
+        needsLayout = true
+        return replaced
     }
 
     /// Takes the hosted view out, for the pool (P3).
     func unhost() -> NSView? {
-        fatalError("unimplemented: SPEC P3")
+        let view = hostedView
+        view?.removeFromSuperview()
+        hostedView = nil
+        return view
     }
 
     /// Lays the hosted view out at the row's final height, whatever the
     /// container's presented height is (M2).
     override func layout() {
-        fatalError("unimplemented: SPEC M2")
+        super.layout()
+        hostedView?.frame = NSRect(x: 0, y: 0, width: bounds.width, height: hostedHeight)
     }
 
     // MARK: - Accessibility row (X2)
 
     override func isAccessibilityElement() -> Bool {
-        fatalError("unimplemented: SPEC X2")
+        true
     }
 
     override func accessibilityRole() -> NSAccessibility.Role? {
-        fatalError("unimplemented: SPEC X2")
+        .row
     }
 
     override func accessibilityIndex() -> Int {
-        fatalError("unimplemented: SPEC X2")
+        row
     }
 
     override func accessibilityChildren() -> [Any]? {
-        fatalError("unimplemented: SPEC X2")
+        hostedView.map { [$0] }
     }
 }

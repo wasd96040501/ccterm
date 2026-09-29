@@ -14,22 +14,28 @@ final class UnmountedRowElement: NSAccessibilityElement {
     var row: Int
 
     init(row: Int, parent: ListDocumentView) {
-        fatalError("unimplemented: SPEC X3")
+        self.row = row
+        super.init()
+        setAccessibilityParent(parent)
     }
 
     override func accessibilityRole() -> NSAccessibility.Role? {
-        fatalError("unimplemented: SPEC X2")
+        .row
     }
 
     override func accessibilityIndex() -> Int {
-        fatalError("unimplemented: SPEC X2")
+        row
     }
 
+    /// The accessibility server calls on the main thread; this class isn't
+    /// main-actor-isolated only because `NSAccessibilityElement` isn't.
     override func accessibilityFrame() -> NSRect {
-        fatalError("unimplemented: SPEC X2")
+        MainActor.assumeIsolated { owner?.screenFrame(ofAccessibilityRow: row) ?? .zero }
     }
 
     override func setAccessibilityFocused(_ accessibilityFocused: Bool) {
-        fatalError("unimplemented: SPEC X3")
+        super.setAccessibilityFocused(accessibilityFocused)
+        guard accessibilityFocused else { return }
+        MainActor.assumeIsolated { owner?.scrollAccessibilityRowToVisible(row) }
     }
 }

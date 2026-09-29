@@ -13,7 +13,13 @@ final class ListScrollView: NSScrollView {
 
     /// Installs a `ListClipView` and the L11 configuration.
     init(clipView: ListClipView) {
-        fatalError("unimplemented: SPEC L11")
+        super.init(frame: .zero)
+        contentView = clipView
+        hasVerticalScroller = true
+        hasHorizontalScroller = false
+        drawsBackground = false
+        automaticallyAdjustsContentInsets = false
+        borderType = .noBorder
     }
 
     @available(*, unavailable)
@@ -22,6 +28,7 @@ final class ListScrollView: NSScrollView {
     }
 
     override func tile() {
-        fatalError("unimplemented: SPEC W1")
+        super.tile()
+        owner?.scrollViewDidTile(self)
     }
 }

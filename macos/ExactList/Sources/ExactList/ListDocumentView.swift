@@ -10,8 +10,13 @@ final class ListDocumentView: NSView {
     /// Weak: the list owns this view.
     weak var owner: ListDocumentViewOwner?
 
+    /// The key being interpreted, so one the list doesn't answer can go up the
+    /// chain as the event itself, and an input method further up composes it.
+    private var interpretedKey: NSEvent?
+
     override init(frame frameRect: NSRect) {
-        fatalError("unimplemented: SPEC K1")
+        super.init(frame: frameRect)
+        wantsLayer = true
     }
 
     @available(*, unavailable)
@@ -24,56 +29,70 @@ final class ListDocumentView: NSView {
     // MARK: - Responder (K1)
 
     override var acceptsFirstResponder: Bool {
-        fatalError("unimplemented: SPEC K1")
+        true
     }
 
     /// A click that no row consumed takes focus, as in `NSTableView`, then goes
     /// up the chain.
     override func mouseDown(with event: NSEvent) {
-        fatalError("unimplemented: SPEC K1")
+        window?.makeFirstResponder(self)
+        super.mouseDown(with: event)
     }
 
     override func keyDown(with event: NSEvent) {
-        fatalError("unimplemented: SPEC K1")
+        interpretedKey = event
+        defer { interpretedKey = nil }
+        interpretKeyEvents([event])
     }
 
     override func doCommand(by selector: Selector) {
-        fatalError("unimplemented: SPEC K1")
+        if owner?.documentView(self, doCommandBy: selector) == true { return }
+        passInterpretedKeyUp()
     }
 
     override func insertText(_ insertString: Any) {
-        fatalError("unimplemented: SPEC K1")
+        passInterpretedKeyUp()
+    }
+
+    private func passInterpretedKeyUp() {
+        guard let interpretedKey else { return }
+        nextResponder?.keyDown(with: interpretedKey)
     }
 
     // MARK: - Responsive scrolling (P1)
 
     override func prepareContent(in rect: NSRect) {
-        fatalError("unimplemented: SPEC P1")
+        super.prepareContent(in: rect)
+        owner?.documentView(self, prepareContentIn: rect)
     }
 
     // MARK: - Accessibility table (X1)
 
     override func isAccessibilityElement() -> Bool {
-        fatalError("unimplemented: SPEC X1")
+        true
     }
 
     override func accessibilityRole() -> NSAccessibility.Role? {
-        fatalError("unimplemented: SPEC X1")
+        .table
     }
 
     override func accessibilityRows() -> [Any]? {
-        fatalError("unimplemented: SPEC X1")
+        guard let owner else { return [] }
+        return (0..<owner.numberOfAccessibilityRows(in: self)).map {
+            owner.documentView(self, accessibilityRowAt: $0)
+        }
     }
 
     override func accessibilityRowCount() -> Int {
-        fatalError("unimplemented: SPEC X1")
+        owner?.numberOfAccessibilityRows(in: self) ?? 0
     }
 
     override func accessibilityVisibleRows() -> [Any]? {
-        fatalError("unimplemented: SPEC X1")
+        guard let owner else { return [] }
+        return owner.accessibilityVisibleRows(in: self).map { owner.documentView(self, accessibilityRowAt: $0) }
     }
 
     override func accessibilityChildren() -> [Any]? {
-        fatalError("unimplemented: SPEC X1")
+        accessibilityRows()
     }
 }

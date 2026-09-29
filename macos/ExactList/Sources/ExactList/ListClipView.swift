@@ -15,7 +15,8 @@ final class ListClipView: NSClipView {
     weak var owner: ListClipViewOwner?
 
     override init(frame frameRect: NSRect) {
-        fatalError("unimplemented: SPEC P1")
+        super.init(frame: frameRect)
+        drawsBackground = false
     }
 
     @available(*, unavailable)
@@ -24,10 +25,12 @@ final class ListClipView: NSClipView {
     }
 
     override func scroll(to newOrigin: NSPoint) {
-        fatalError("unimplemented: SPEC P1")
+        super.scroll(to: newOrigin)
+        owner?.clipViewDidScroll(self)
     }
 
     override func setBoundsOrigin(_ newOrigin: NSPoint) {
-        fatalError("unimplemented: SPEC P1")
+        super.setBoundsOrigin(newOrigin)
+        owner?.clipViewDidScroll(self)
     }
 }

@@ -31,10 +31,10 @@ Providers control switches the sample list off to show it.
 There is no default account. A session picks a model before it starts,
 and each model belongs to an account, so the account follows from it.
 
-Only the subscription carries an icon: Claude's mark, `assets/claude.svg`,
-which is claude.ai's own favicon, unmodified. Providers are plain text rows
-(name, then host · model); a monogram or a generic glyph would add colour
-without telling them apart. Descriptions and footers are left out wherever
+Every row carries a 28 mark: the subscription Claude's, `assets/claude.svg`
+(claude.ai's own favicon, unmodified), every provider the same
+`server.rack` in secondary ink. Providers are told apart by their text
+(name, then host · model), not by per-provider colour. Descriptions and footers are left out wherever
 the label, a placeholder or the group's shape already says it.
 
 Rows are not selectable, as in System Settings. **ⓘ** or a double-click
@@ -44,7 +44,8 @@ Delete (Details and Sign Out for the subscription).
 ## The account sheet
 
 Fixed at 540 × 600 for both kinds, so the window never resizes under it:
-a header (name and host; the Claude mark for the subscription), a scrolling form, and a button bar that gains
+no header (the row that opened it already names the account), a scrolling
+form starting 20 from the top, and a button bar that gains
 a hairline while content runs under it. Destructive action bottom left,
 Cancel and the default button bottom right. Return is the default button,
 Escape and ⌘. cancel. Add stays disabled until the name, a valid http(s)
@@ -52,7 +53,7 @@ URL and a token are in; a bad URL says so under the field as you type.
 
 - **Secrets** show their first three and last four characters
   (`sk-••••••••7c1e`). Focusing the field switches it to a plain secure
-  field; the eye reveals it.
+  field; the eye reveals it. No description: the title says what it is.
 - **Environment Variables** come right after the connection, above the
   fold. The list lives inside its group with **+ −** underneath, the way
   System Settings lists do. Click selects, a second click (or a
@@ -60,6 +61,9 @@ URL and a token are in; a bad URL says so under the field as you type.
   Escape reverts, Space toggles a row's checkbox, Delete removes it. A row
   that sets something the form already owns (`ANTHROPIC_BASE_URL`, …) or
   repeats a name gets a warning glyph.
+- **Models**: Default Model (`ANTHROPIC_MODEL`), then Opus, Sonnet, Haiku
+  and Fable (`ANTHROPIC_DEFAULT_*_MODEL`). An empty field reads
+  *Automatic*: the CLI picks.
 - **Launch**: Command (empty runs `claude`) and Arguments, per account, so
   a provider can go through its own wrapper script.
 - **Paste** into the list takes `KEY=value` lines, `export` lines or a
@@ -88,8 +92,8 @@ pixel. The Swift implementation should land on the same numbers:
 | Window | 880 × 680, corner radius 15 |
 | Sidebar | 180 wide, full height, `#eeeff0` / dark `#303032` |
 | Traffic lights | 14 Ø, centres at y 26, x 26 / 49 / 72 |
-| Sidebar row | 32 tall, inset 10 (160 wide), radius 8, first row at y 52; glyph 18 at x 20, title at x 47 |
-| Sidebar selection | `#3b85f0`, white glyph and title |
+| Sidebar row | 32 tall, inset 10 (160 wide), radius 8, first row at y 52; glyph 17 tall at x 20.5, title at x 47 (as Xcode's Settings) |
+| Sidebar selection | `#3b85f0`, white glyph, white semibold title |
 | Toolbar | 52 tall; back/forward capsule 73 × 36 at x 8, y 8; title 15 semibold at 13 past the capsule |
 | Form inset | groups 20 from the detail's edges; content 10 inside a group |
 | Group | radius 12, fill black 2.7 % (`#f8f8f8` on white) / white 4.2 % |

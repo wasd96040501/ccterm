@@ -109,12 +109,12 @@ svg { display: block; }
 .nav button {
   width: 160px; height: 32px; border-radius: 8px;
   display: flex; align-items: center; gap: 0;
-  padding-left: 10px; color: var(--label);
+  padding-left: 10.5px; color: var(--label);
 }
-.nav .glyph { width: 18px; height: 18px; margin-right: 9px; color: var(--accent); flex: none; }
-.nav button[aria-selected="true"] { background: var(--accent); color: #fff; }
+.nav .glyph { width: 17px; height: 17px; margin-right: 9.5px; color: var(--accent); flex: none; }
+.nav button[aria-selected="true"] { background: var(--accent); color: #fff; font-weight: 600; }
 .nav button[aria-selected="true"] .glyph { color: #fff; }
-.window.inactive .nav button[aria-selected="true"] { background: var(--fill-press); color: var(--label); }
+.window.inactive .nav button[aria-selected="true"] { background: var(--fill-press); color: var(--label); font-weight: 400; }
 .window.inactive .nav button[aria-selected="true"] .glyph { color: var(--accent); }
 
 /* Detail: toolbar floats over the scrolling form. */
@@ -233,13 +233,14 @@ svg { display: block; }
 .catcher { position: absolute; inset: 0; z-index: 49; }
 
 /* ---------- Account rows ---------- */
-/* Same 52 as a title + description row. Only the subscription carries a
-   mark (Claude's own, 28 in front); providers are plain text rows. */
+/* Same 52 as a title + description row, a 28 mark in front: Claude's
+   for the subscription, server.rack for every provider. */
 .acct {
   position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px;
   align-items: center; min-height: 51px; padding: 10.5px 10px;
 }
 .acct.has-mark { grid-template-columns: 28px minmax(0, 1fr) auto; }
+.acct .mark.provider { color: var(--label-2); }
 .acct + .acct::before, .row + .acct::before, .acct + .row::before {
   content: ""; position: absolute; top: -1px; left: 10px; right: 10px; height: 1px; background: var(--sep);
 }
@@ -288,12 +289,8 @@ svg { display: block; }
 :root[data-theme="dark"] .sheet { box-shadow: 0 0 0 .5px rgba(0,0,0,.8), inset 0 0 0 .5px rgba(255,255,255,.12), 0 18px 50px rgba(0,0,0,.5); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sheet { box-shadow: 0 0 0 .5px rgba(0,0,0,.8), inset 0 0 0 .5px rgba(255,255,255,.12), 0 18px 50px rgba(0,0,0,.5); } }
 .sheet.fixed { width: 540px; height: 600px; }
-.sheet-head { display: flex; align-items: center; gap: 12px; padding: 20px 20px 4px; flex: none; }
-.sheet-head .mark { width: 36px; height: 36px; }
-.sheet-head .t { font-weight: 600; }
-.sheet-head .s { font-size: 11px; line-height: 14px; color: var(--label-2); }
 .sheet-body { flex: 1; overflow-y: auto; padding: 0 20px 20px; }
-.sheet-body .section:first-child { margin-top: 16px; }
+.sheet-body .section:first-child { margin-top: 20px; }
 .sheet-body .section { margin-top: 22px; }
 .sheet-foot { flex: none; display: flex; align-items: center; gap: 12px; padding: 14px 20px 20px; position: relative; }
 .sheet-foot.edge::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: var(--sep); }
@@ -450,7 +447,7 @@ const state = {
       org: 'Personal', method: 'Claude.ai', command: '', args: '',
       env: [{ on: true, key: 'CLAUDE_CODE_NO_FLICKER', value: '1' }] },
     { id: 'p1', kind: 'api', name: 'Local Proxy', baseURL: 'http://127.0.0.1:8788', auth: 'token',
-      secret: 'sk-proxy-example-4b0e9d2c7c1e', model: 'claude-opus-5-5[1m]', opus: '', sonnet: '', haiku: '',
+      secret: 'sk-proxy-example-4b0e9d2c7c1e', model: 'claude-opus-5-5[1m]', opus: '', sonnet: '', haiku: '', fable: '',
       command: '', args: '--permission-mode auto',
       env: [
         { on: true, key: 'NO_PROXY', value: '127.0.0.1,localhost' },
@@ -461,7 +458,7 @@ const state = {
         { on: false, key: 'ENABLE_TOOL_SEARCH', value: 'false' },
       ] },
     { id: 'p2', kind: 'api', name: 'Team Relay', baseURL: 'https://relay.example.com', auth: 'token',
-      secret: 'sk-relay-example-91f3a0d85a27', model: 'claude-opus-5-5[1m]', opus: '', sonnet: '', haiku: '',
+      secret: 'sk-relay-example-91f3a0d85a27', model: 'claude-opus-5-5[1m]', opus: '', sonnet: '', haiku: '', fable: '',
       command: '', args: '--permission-mode auto',
       env: [
         { on: true, key: 'API_TIMEOUT_MS', value: '3000000' },
@@ -470,7 +467,7 @@ const state = {
         { on: true, key: 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', value: '1' },
       ] },
     { id: 'p3', kind: 'api', name: 'GLM', baseURL: 'http://127.0.0.1:8788', auth: 'token',
-      secret: 'sk-proxy-example-4b0e9d2c7c1e', model: 'glm-5.2[1m]', opus: 'glm-5.2[1m]', sonnet: 'glm-5.2[1m]', haiku: 'glm-5.2[1m]',
+      secret: 'sk-proxy-example-4b0e9d2c7c1e', model: 'glm-5.2[1m]', opus: 'glm-5.2[1m]', sonnet: 'glm-5.2[1m]', haiku: 'glm-5.2[1m]', fable: '',
       command: '', args: '',
       env: [
         { on: true, key: 'NO_PROXY', value: '127.0.0.1,localhost' },
@@ -482,6 +479,7 @@ const subscription = () => state.accounts.find(a => a.kind === 'subscription')
 const providers = () => state.accounts.filter(a => a.kind === 'api')
 const hostOf = url => { try { return new URL(url).host } catch { return url || 'No base URL' } }
 const MARK = '<img class="mark" src="assets/claude.svg" alt="Claude">'
+const PROVIDER_MARK = `<svg class="mark provider" width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="3.5" y="4.5" width="21" height="5.6" rx="1.6"/><rect x="3.5" y="11.2" width="21" height="5.6" rx="1.6"/><rect x="3.5" y="17.9" width="21" height="5.6" rx="1.6"/><g stroke-linecap="round"><path d="M17 7.3h4.2M17 14h4.2M17 20.7h4.2"/></g><g fill="currentColor" stroke="none"><circle cx="7" cy="7.3" r="1"/><circle cx="7" cy="14" r="1"/><circle cx="7" cy="20.7" r="1"/></g></svg>`
 const APP_ICON = '<img class="appicon" src="../icon/preview.png" alt="">'
 
 const $ = (s, r = document) => r.querySelector(s)
@@ -597,7 +595,7 @@ function acctRow(a) {
     : `${esc(hostOf(a.baseURL))}<span class="dot">·</span>${esc(a.model || 'Default model')}`
   const name = a.kind === 'subscription' ? a.email : a.name
   const sub = a.kind === 'subscription'
-  return `<div class="acct${sub ? ' has-mark' : ''}" data-acct="${a.id}">${sub ? MARK : ''}
+  return `<div class="acct has-mark" data-acct="${a.id}">${sub ? MARK : PROVIDER_MARK}
     <div><div class="name">${esc(name)}</div><div class="meta">${meta}</div></div>
     <div class="trail"><button class="info" data-info="${a.id}" aria-label="Details">${G.info}</button></div></div>`
 }
@@ -700,7 +698,7 @@ function openAccount(id) {
 }
 function newProvider(paste) {
   editAccount({ id: 'p' + Date.now(), kind: 'api', name: '', baseURL: '', auth: 'token', secret: '',
-    model: '', opus: '', sonnet: '', haiku: '',command: '', args: '', env: [] }, true, paste)
+    model: '', opus: '', sonnet: '', haiku: '', fable: '',command: '', args: '', env: [] }, true, paste)
 }
 // ⌘V on the Accounts pane: a new provider, filled from the paste.
 document.addEventListener('paste', e => {
@@ -714,12 +712,8 @@ function editAccount(d, isNew, paste) {
   const isSub = d.kind === 'subscription'
   let sel = -1, editing = null, reveal = false, focused = null
 
-  const head = () => isSub
-    ? `${MARK}<div><div class="t">${esc(d.email)}</div><div class="s">Claude ${esc(d.plan)} subscription</div></div>`
-    : `<div><div class="t">${esc(d.name.trim() || 'New Provider')}</div><div class="s">${isNew ? 'API provider' : esc(hostOf(d.baseURL))}</div></div>`
 
   const s = presentSheet(`
-    <div class="sheet-head"></div>
     <div class="sheet-body"></div>
     <div class="sheet-foot">
       ${isSub ? `<button class="btn destructive" data-role="signout">Sign Out…</button>`
@@ -731,16 +725,13 @@ function editAccount(d, isNew, paste) {
   const el = s.el, body = el.querySelector('.sheet-body')
 
   function render() {
-    el.querySelector('.sheet-head').innerHTML = head()
     const top = body.scrollTop
     const urlBad = !isSub && d.baseURL && !validURL(d.baseURL)
-    const keyName = d.auth === 'key' ? 'ANTHROPIC_API_KEY' : 'ANTHROPIC_AUTH_TOKEN'
     const first = isSub ? `
       <div class="section"><h2>Account</h2><div class="group">
         ${row({ title: 'Email', trail: `<span style="color:var(--label-2)">${esc(d.email)}</span>` })}
         ${row({ title: 'Organization', trail: `<span style="color:var(--label-2)">${esc(d.org)}</span>` })}
         ${row({ title: 'Plan', trail: `<span style="color:var(--label-2)">Claude ${esc(d.plan)}</span><button class="link" data-role="manage">Manage ${G.arrowOut}</button>` })}
-        ${row({ title: 'Signed in with', trail: `<span style="color:var(--label-2)">${esc(d.method)}</span>` })}
       </div></div>`
     : `
       <div class="section"><h2>Connection</h2><div class="group">
@@ -748,17 +739,18 @@ function editAccount(d, isNew, paste) {
         ${row({ title: 'Base URL', desc: urlBad ? 'Enter a URL that starts with http:// or https://.' : '',
           trail: `<input class="field" data-f="baseURL" placeholder="https://api.anthropic.com" value="${esc(d.baseURL)}" spellcheck="false">` })}
         ${row({ title: 'Authentication', trail: popup('auth', d.auth === 'key' ? 'API Key' : 'Auth Token') })}
-        ${row({ title: d.auth === 'key' ? 'API key' : 'Token', desc: `Sent as <code>${keyName}</code>. Stored in your keychain.`,
+        ${row({ title: d.auth === 'key' ? 'API key' : 'Token',
           trail: `<span class="secret"><input class="field mono" data-f="secret" placeholder="Required" spellcheck="false" autocomplete="off"
             type="${reveal || focused === 'secret' ? (reveal ? 'text' : 'password') : 'text'}" value="${esc(reveal || focused === 'secret' ? d.secret : mask(d.secret))}">
             <button class="eye" data-role="reveal" aria-label="${reveal ? 'Hide' : 'Show'}">${reveal ? G.eyeOff : G.eye}</button></span>` })}
       </div></div>`
     const models = isSub ? '' : `
       <div class="section"><h2>Models</h2><div class="group">
-        ${row({ title: 'Model', trail: `<input class="field mono" data-f="model" placeholder="Default" value="${esc(d.model)}" spellcheck="false">` })}
-        ${row({ title: 'Opus', trail: `<input class="field mono" data-f="opus" placeholder="Default" value="${esc(d.opus)}" spellcheck="false">` })}
-        ${row({ title: 'Sonnet', trail: `<input class="field mono" data-f="sonnet" placeholder="Default" value="${esc(d.sonnet)}" spellcheck="false">` })}
-        ${row({ title: 'Haiku', trail: `<input class="field mono" data-f="haiku" placeholder="Default" value="${esc(d.haiku)}" spellcheck="false">` })}
+        ${row({ title: 'Default Model', trail: `<input class="field mono" data-f="model" placeholder="Automatic" value="${esc(d.model)}" spellcheck="false">` })}
+        ${row({ title: 'Opus', trail: `<input class="field mono" data-f="opus" placeholder="Automatic" value="${esc(d.opus)}" spellcheck="false">` })}
+        ${row({ title: 'Sonnet', trail: `<input class="field mono" data-f="sonnet" placeholder="Automatic" value="${esc(d.sonnet)}" spellcheck="false">` })}
+        ${row({ title: 'Haiku', trail: `<input class="field mono" data-f="haiku" placeholder="Automatic" value="${esc(d.haiku)}" spellcheck="false">` })}
+        ${row({ title: 'Fable', trail: `<input class="field mono" data-f="fable" placeholder="Automatic" value="${esc(d.fable)}" spellcheck="false">` })}
       </div></div>`
     body.innerHTML = first + `
       <div class="section"><h2>Environment Variables</h2><div class="group env" tabindex="0">
@@ -886,8 +878,8 @@ function editAccount(d, isNew, paste) {
     for (const [k, v] of vars) {
       if (!isSub && k === 'ANTHROPIC_BASE_URL') { d.baseURL = v; filled.push('Base URL') }
       else if (!isSub && (k === 'ANTHROPIC_AUTH_TOKEN' || k === 'ANTHROPIC_API_KEY')) { d.secret = v; d.auth = k.endsWith('KEY') ? 'key' : 'token'; filled.push(k.endsWith('KEY') ? 'API key' : 'token') }
-      else if (!isSub && k === 'ANTHROPIC_MODEL') { d.model = v; filled.push('model') }
-      else if (!isSub && /^ANTHROPIC_DEFAULT_(OPUS|SONNET|HAIKU)_MODEL$/.test(k)) { d[k.split('_')[2].toLowerCase()] = v; filled.push(k.split('_')[2][0] + k.split('_')[2].slice(1).toLowerCase()) }
+      else if (!isSub && k === 'ANTHROPIC_MODEL') { d.model = v; filled.push('default model') }
+      else if (!isSub && /^ANTHROPIC_DEFAULT_(OPUS|SONNET|HAIKU|FABLE)_MODEL$/.test(k)) { d[k.split('_')[2].toLowerCase()] = v; filled.push(k.split('_')[2][0] + k.split('_')[2].slice(1).toLowerCase()) }
       else {
         const ex = d.env.find(x => x.key === k)
         if (ex) ex.value = v; else d.env.push({ on: true, key: k, value: v })
@@ -920,7 +912,6 @@ function editAccount(d, isNew, paste) {
   body.addEventListener('input', e => {
     const f = e.target.dataset.f; if (!f) return
     d[f] = e.target.value
-    if (f === 'name') el.querySelector('.sheet-head').innerHTML = head()
     if (f === 'baseURL') {
       const bad = d.baseURL && !validURL(d.baseURL), r = e.target.closest('.row')
       let desc = r.querySelector('.desc')

@@ -639,7 +639,7 @@ and its oracle is independent of the implementation.
 | **Core, property-based** (`ExactListCoreTests`, no AppKit) | Seeded random sequences, at least 10 000 batches per property: random heights, inserts, removals, moves, height notes, width changes and viewports. | A naive reference in the test file: an array of heights and linear sums, using only the heights the test itself generated. The planner's output is never its own oracle. | G1–G6, A1–A9, U2, M2, M4, M5, M7, W2, W3, W6 |
 | **Window** (`ExactListTests`) | A real `NSWindow` off screen (the pattern of `cctermTests/Harness`, copied into the package, which cannot import the app's tests; the display-link sampler needs macOS 14 and is gated by `#available`) with a real layout pass, driven only through public API, `NSWindow.setFrame`, a real `NSSplitView` divider (including `animator()`) and synthesized `NSEvent`s. | A recording delegate that logs every call with its width, plus the test's own copy of the heights. | L1–L12, V1–V5, U1, U3–U8, W1, W4, W5, P1–P6, S1–S4, K1 |
 | **Motion, frame by frame** | The same window, with a real commit. Two samplers: (a) a display-link sampler that reads `layer.presentation()` on every refresh, as the render server shows it; (b) deterministic scrubbing that freezes an ancestor layer's `CAMediaTiming` (`speed = 0`, `timeOffset = t`) and reads `presentation()` at chosen `t`. | M2's formulas, evaluated from the test's own old and new heights. | M1–M10 |
-| **Accessibility** | In-process `NSAccessibility` protocol calls, the same methods the accessibility server calls. | Row count and indexes from the test's own model. | X1–X5 |
+| **Accessibility** | In-process `NSAccessibility` protocol calls, the same methods the accessibility server calls (X1–X4). An `AXObserver` on the test's own process, which is how VoiceOver hears a notification (X5). | Row count, indexes and frames from the test's own model. | X1–X5 |
 | **Characterization** (`NSTableViewCharacterizationTests`) | A real `NSTableView` in the same harness. | Assertions of its actual behaviour, which back §2. | §2 |
 | **Benchmarks** (`ExactListBenchmarks`, `-O` only: `make bench-list`) | The same workloads against ExactList and against `NSTableView`, in one process. | Median wall time, and main-thread time per operation. | B1–B4 |
 | **Demo** (`make demo-list`) | Human eyes, and VoiceOver by hand. | The checklist in `Sources/ExactListDemo/CLAUDE.md`. | What pixels and speech can't be asserted for |
@@ -663,6 +663,10 @@ What is **not** automatically covered, stated plainly:
   event queue for one sent through the window (both measured). The window
   tests cover the wheel, and a commit between wheel steps; a commit during a
   live gesture and momentum are the demo's checklist.
+- **X5 without accessibility trust.** An `AXObserver` needs the process
+  trusted for accessibility. Posting a notification leaves no trace in the
+  process itself (measured), so where the test isn't trusted, X5 is skipped
+  and says so.
 
 Benchmarks:
 

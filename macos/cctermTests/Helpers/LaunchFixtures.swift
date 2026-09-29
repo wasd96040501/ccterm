@@ -39,16 +39,26 @@ final class FakeProbe: @unchecked Sendable {
     }
 
     var probe: LaunchCheckService.Probe {
-        { [self] configuration in
-            let (gate, failure, callback) = lock.withLock {
-                recorded.append(configuration)
-                return (gates[configuration.customCommand], failures[configuration.customCommand], callback)
-            }
-            callback?(configuration)
-            await gate?.wait()
-            if let failure { throw failure }
-            return Self.version(of: configuration.customCommand)
+        { [self] configuration in try await answer(configuration) }
+    }
+
+    private func answer(_ configuration: CLIConfiguration) async throws -> CLIVersion {
+        let call: Call = lock.withLock {
+            recorded.append(configuration)
+            let command = configuration.customCommand
+            return Call(gate: gates[command], failure: failures[command], callback: callback)
         }
+        call.callback?(configuration)
+        await call.gate?.wait()
+        if let failure = call.failure { throw failure }
+        return Self.version(of: configuration.customCommand)
+    }
+
+    /// What one call found under the lock.
+    private struct Call: Sendable {
+        var gate: Gate?
+        var failure: Error?
+        var callback: (@Sendable (CLIConfiguration) -> Void)?
     }
 
     /// What the fake reports for `command`.

@@ -13,6 +13,7 @@ This file holds repo-wide commands and workflow. Engineering conventions and are
 | **AppKit conventions + runloop tick model** (layering, DI, containment, views, lists, concurrency) — applies to all Swift | [macos/CLAUDE.md](macos/CLAUDE.md) |
 | The app's transcript tab — page model, run rows, documents beside | [macos/ccterm/Content/Transcript/CLAUDE.md](macos/ccterm/Content/Transcript/CLAUDE.md) |
 | `TranscriptKit` package — the transcript view (API rules, internals, media, workspace, tests) | [macos/TranscriptKit/CLAUDE.md](macos/TranscriptKit/CLAUDE.md) |
+| `ExactList` package — an exact, anchored, animated list for AppKit; `SPEC.md` is normative | [macos/ExactList/CLAUDE.md](macos/ExactList/CLAUDE.md) |
 | App unit tests (parallel safety, snapshots, measurement probes) | [cctermTests/CLAUDE.md](macos/cctermTests/CLAUDE.md) |
 | AppKit verification harness (real-tree mount, geometry / animation / interaction probes) | [cctermTests/Harness/CLAUDE.md](macos/cctermTests/Harness/CLAUDE.md) |
 | AgentSDK package + real-CLI smoke executables | [macos/AgentSDK/CLAUDE.md](macos/AgentSDK/CLAUDE.md) |
@@ -32,6 +33,7 @@ ccterm/
 │   │   └── Resources/
 │   ├── cctermTests/          # The app's only test target
 │   ├── TranscriptKit/        # Standalone SwiftPM package (own tests, own demo)
+│   ├── ExactList/            # Standalone SwiftPM package: the list engine (SPEC.md, own tests, own demo)
 │   ├── AgentSDK/             # Swift SDK package over the claude CLI
 │   ├── Config.xcconfig
 │   └── scripts/              # build.sh / test.sh / … — invoked via make only
@@ -59,6 +61,9 @@ make test-unit FILTER=<Class>[/testMethod]   # one class/method; naming a *Snaps
 make test-kit [FILTER=<Class>]       # TranscriptKit package tests
 make test-sdk [FILTER=<Class>]       # AgentSDK package tests
 make demo-kit                        # TranscriptKit demo app (foreground; close window to stop)
+make test-list [FILTER=<Class>]      # ExactList package tests
+make bench-list                      # ExactList benchmarks against NSTableView (-O)
+make demo-list                       # ExactList demo app
 make logs [CONFIG=release] [CATEGORY=X] [LEVEL=debug]   # tail unified log of THIS worktree's build
 make appkit-doc SYMBOL=NSTableView   # Apple's DocC for an AppKit symbol
 make arch [SCOPE=core|app|kit|sdk|<dir>|<unit>]   # architecture map → build/arch/ (what /arch-review reads)
@@ -68,13 +73,13 @@ make arch [SCOPE=core|app|kit|sdk|<dir>|<unit>]   # architecture map → build/a
 
 ## Tests
 
-Unit tests only — no XCUITest target. Three suites, all merge gates: `cctermTests` (`make test-unit`), TranscriptKit's own (`make test-kit`) and AgentSDK's own (`make test-sdk`); the package suites stay separate so each package is testable without the app. Click / keystroke / focus flows are tested by driving the session / bridge / controller directly. `*SnapshotTests.swift` files render a view to a PNG for **visual review**; they're skipped by default and on CI and run only when named with `FILTER`.
+Unit tests only — no XCUITest target. Four suites, all merge gates: `cctermTests` (`make test-unit`), TranscriptKit's own (`make test-kit`), ExactList's own (`make test-list`) and AgentSDK's own (`make test-sdk`); the package suites stay separate so each package is testable without the app. Click / keystroke / focus flows are tested by driving the session / bridge / controller directly. `*SnapshotTests.swift` files render a view to a PNG for **visual review**; they're skipped by default and on CI and run only when named with `FILTER`.
 
 After editing a view, verify it visually: find or add its `*SnapshotTests` class, `make test-unit FILTER=<Class>`, then `open /tmp/ccterm-screenshots/<Name>.png` and look. Details in [cctermTests/CLAUDE.md](macos/cctermTests/CLAUDE.md).
 
 ## CI
 
-Every PR runs `fmt.yml` (`make fmt-check`) and `test.yml` (three jobs: `test` → `make test-unit`, `test-kit` → `make test-kit`, `test-sdk` → `make test-sdk`; the package jobs need no Xcode project). `test.yml` caches DerivedData (`macos/build/test-dd`), keyed on runner + Xcode + `.github/cache-salt` + source hash. **If incremental CI builds go bad** (stale `.swiftmodule` link errors that don't reproduce after local `make clean`), edit `.github/cache-salt` and commit to force a cold build.
+Every PR runs `fmt.yml` (`make fmt-check`) and `test.yml` (four jobs: `test` → `make test-unit`, `test-kit` → `make test-kit`, `test-list` → `make test-list`, `test-sdk` → `make test-sdk`; the package jobs need no Xcode project). `test.yml` caches DerivedData (`macos/build/test-dd`), keyed on runner + Xcode + `.github/cache-salt` + source hash. **If incremental CI builds go bad** (stale `.swiftmodule` link errors that don't reproduce after local `make clean`), edit `.github/cache-salt` and commit to force a cold build.
 
 ## Logging
 
@@ -113,7 +118,7 @@ Strings live in `Localizable.xcstrings`; source is English, `zh-Hans` is the tra
 - **Commit as you go**, one complete semantic change per commit (a fix + its test; a refactor that leaves the suite green).
 - **History is append-only, on every branch.** Integrate with `git merge origin/main` (or `gh pr update-branch`), never `git rebase`. Never collapse a branch's commits (`reset --soft`, `rebase -i`) — the squash merge does that. Never `git push --force`; if a push is rejected, merge `origin/<branch>` and push again.
 - **Open the PR only when it's ready to merge.** Pushing a branch without a PR runs no workflow (free backup); once a PR exists every push buys a full CI run (~25 min macOS). Draft PRs bill the same.
-- **All gates green locally before opening:** `make fmt-check`, `make test-unit`, `make test-kit`, `make test-sdk` (`make fmt` auto-fixes). Re-run every gate after every fix. A test failure is a real bug — never skip it to get green.
+- **All gates green locally before opening:** `make fmt-check`, `make test-unit`, `make test-kit`, `make test-list`, `make test-sdk` (`make fmt` auto-fixes). Re-run every gate after every fix. A test failure is a real bug — never skip it to get green.
 - **Red CI:** a job that ran no steps is a billing failure — read the annotation (`gh run view <id>`), not the colour. A job that ran and failed is real: `gh run download <run> --dir /tmp/<name>`, reproduce locally, push the verified fix — no speculative commits.
 - **After a squash merge the branch is spent.** `git fetch origin && git checkout -B <fresh-name> origin/main`, delete the old branch locally and remotely. Never `git pull` to "fix" the divergence.
 

@@ -1,9 +1,9 @@
-.PHONY: build release install dmg clean fmt fmt-check test-unit test-kit test-sdk demo-kit logs icon sidebar-icons appkit-doc arch help
+.PHONY: build release install dmg clean fmt fmt-check test-unit test-kit test-sdk test-list bench-list demo-kit demo-list logs icon sidebar-icons appkit-doc arch help
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
 SWIFT_FORMAT := swift-format
-SWIFT_SRC := macos/ccterm macos/cctermTests macos/AgentSDK/Sources macos/AgentSDK/Tests macos/TranscriptKit/Sources macos/TranscriptKit/Tests macos/tools
+SWIFT_SRC := macos/ccterm macos/cctermTests macos/AgentSDK/Sources macos/AgentSDK/Tests macos/TranscriptKit/Sources macos/TranscriptKit/Tests macos/ExactList/Sources macos/ExactList/Tests macos/tools
 PREFIX ?= /Applications
 
 help: ## Show available commands
@@ -39,6 +39,25 @@ test-sdk: ## Run AgentSDK's package tests (FILTER=SomeTests)
 	@cd macos/AgentSDK && \
 		if [ -n "$(FILTER)" ]; then swift test --filter "$(FILTER)"; \
 		else swift test; fi
+
+# ExactList is a standalone package: `swift test`, no Xcode project. The
+# benchmarks are skipped here: they compare against NSTableView and mean
+# something only under -O, which is `bench-list`.
+test-list: ## Run ExactList's package tests (FILTER=SomeTests)
+	@cd macos/ExactList && \
+		if [ -n "$(FILTER)" ]; then swift test --filter "$(FILTER)"; \
+		else swift test --skip ExactListBenchmarks; fi
+
+bench-list: ## Run ExactList's benchmarks against NSTableView (-O)
+	@cd macos/ExactList && swift test -c release --filter ExactListBenchmarks
+
+# The package's demo app: the checklist in Sources/ExactListDemo/CLAUDE.md.
+# The -isysroot is demo-kit's, for the same reason (see there).
+demo-list: ## Run ExactList's demo app
+	@cd macos/ExactList && swift run \
+		-Xswiftc -Xclang-linker -Xswiftc -isysroot \
+		-Xswiftc -Xclang-linker -Xswiftc "$$(xcrun --sdk macosx --show-sdk-path)" \
+		ExactListDemo
 
 # The package's demo app — a real window over real markdown documents. Rendering
 # has no other check: a probe can assert a row's height, not whether the

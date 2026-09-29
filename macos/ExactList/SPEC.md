@@ -119,8 +119,8 @@ written they do nothing.
   - Updates (inserts, removals, moves, reloads, height notes, and
     `reloadData()`) are ignored. The load reads the data source as it is then.
   - `numberOfRows` returns 0, `rect(ofRow:)` returns `.zero`, `row(at:)`
-    returns −1, `view(atRow:makeIfNecessary:)` returns `nil`, and `rows(in:)`
-    returns an empty range.
+    returns −1, `view(atRow:)` returns `nil`, and `rows(in:)` returns an empty
+    range.
   - A scroll request (`scrollRowToVisible`, `scrollToRow(_:at:)`) is recorded.
     The last one wins, and it is applied at the load point without animation.
 - **L6: the initial position** at the load point is, in order of precedence:
@@ -185,13 +185,17 @@ written they do nothing.
     Out of range, it returns `.zero`, as `NSTableView` does.
   - `row(at:)` returns the row whose frame contains the point, or −1. A point
     in a spacing gap belongs to no row.
-  - `rows(in:)` returns the rows whose frames intersect the rect.
+  - `rows(in:)` returns the rows whose frames intersect the rect, as a
+    `Range<Int>`. `NSTableView` returns an `NSRange`, which Swift callers
+    convert straight back.
 
   *Deviation from `NSTableView`:* its answers are in document coordinates, and
   here the document view is not public (L2).
-- **G5: cost.** Mapping an index to `y`, and `y` to an index, is O(log n). A
-  height change is O(log n) per row. A structural change (insert, remove,
-  move) is O(n) per commit, not per row.
+- **G5: cost.**
+  - Mapping an index to `y`, and `y` to an index: O(log n).
+  - A height change: O(log n) per row.
+  - Each structural call inside a batch (insert, remove, move): O(n).
+  - Applying a batch at commit: O(n).
 - **G6: tolerance.** Floating-point sums may differ from a naive left-to-right
   sum by at most `1e-6 · max(1, H)` pt. Tests compare with that tolerance and
   no looser.
@@ -293,7 +297,8 @@ public enum Anchoring { case automatic, row(Int), scrollOffset }
   cannot be queried in the middle of a batch, and nothing can be left
   unbalanced. The proxy stops with a precondition failure if it is used after
   its closure returns. Nested `performBatchUpdates` calls flatten into the
-  outermost one.
+  outermost one. The outermost call's anchoring is the one that applies, and
+  every completion handler runs when the outermost batch's animations end.
   *Deviation from `NSTableView`:* it uses `beginUpdates()`/`endUpdates()`
   instead. A closure makes an unbalanced pair impossible to write, and the
   proxy makes a query against half-applied geometry impossible to write.
@@ -344,19 +349,28 @@ public enum Anchoring { case automatic, row(Int), scrollOffset }
 
 ### 8.2 What the motion is
 
-Let `p(t) = f(t / T)` be the curve's progress, from 0 to 1. Write a row's
-**extent** as `e = h + s`, and `0` for a row that is absent. Old values are
-pre-commit and new values are post-commit.
+Let `p(t) = f(t / T)` be the curve's progress, from 0 to 1. Every row's
+**screen top** is `y − o`: document position minus offset. Every row involved
+in a commit has a start and an end value for its screen top and its height.
 
-- **M2: interpolated extents.** At every `t`, the presented layout is what G1
-  would give if each row's extent were `e_old + (e_new − e_old)·p(t)`, placed
-  so that the anchor's presented screen position is the linear interpolation
-  of its old and new screen positions.
-  - A row's presented height is its interpolated extent minus `s`, but never
-    below 0. The row's content is laid out once, at its final size, and aligned
-    to the top of the row.
-  - The row is clipped to its presented height, so a growing row is revealed
-    and a shrinking row is covered up.
+- **M2: linear interpolation.** At every `t`, each row's presented screen top
+  and presented height are `end + (start − end)·(1 − p(t))`. The start and end
+  values depend on the kind of row:
+  - **Surviving:** start is the old screen top and height; end is the new ones.
+  - **Inserted:** the end is its new frame. It starts at height 0, at the old
+    screen position of the nearest surviving row before it, plus that row's
+    height, plus `s`. If there is no surviving row before it, it starts at the
+    old screen top of the nearest surviving row after it.
+  - **Removed:** the reverse. It starts at its old frame. It ends at height 0,
+    at the new screen position of the nearest surviving row before it, plus
+    that row's height, plus `s`, or else at the new screen top of the nearest
+    surviving row after it.
+  - **Moved:** start is its old frame and end is its new frame. It has no
+    neighbours (M10).
+
+  A row's content is laid out once, at its final size, and aligned to the top
+  of its container. The container clips to the presented height, so a growing
+  row is revealed and a shrinking row is covered up.
 - **M3: how it is done.** This is realised with CoreAnimation and nothing else:
   - The model values are set to their final values.
   - Each affected row container gets an additive `position.y` animation from
@@ -369,18 +383,23 @@ pre-commit and new values are post-commit.
 - **M4: the anchor is still.** For a row anchor, the anchor row's presented
   screen position is constant for every `t`, unless A7 clamped it, in which
   case it moves along the linear interpolation.
-- **M5: rows stay contiguous.** For any two adjacent rows that are neither
-  moved nor mid-cap (M7), at every `t`:
-  `presentedBottom(i) + s = presentedTop(i + 1)`.
-  Inserted and removed rows are included: they grow from, or shrink to, zero
-  extent, and they never overlap a neighbour.
+- **M5: rows stay contiguous.** Take two rows that are consecutive in the
+  presented order, and neither of which is moved. At every `t`, the gap
+  `presentedTop(i + 1) − presentedBottom(i)` is the linear interpolation between
+  its start and end value. Both of those values are ≥ 0, so rows never overlap.
+  - If both rows survive and were adjacent before the commit too, the gap is
+    exactly `s` at every `t`.
+  - Next to an inserted or removed row, the gap goes from `s` to 0 or from 0 to
+    `s`. That is the space the row opens or closes.
 - **M6: no blank areas.** At every `t`, the presented rows and the spacing
   between them cover `U ∩ [0, H_presented(t)]`.
 - **M7: the amplitude cap.** Let `C` be the height of `U`. If any row whose
   sweep (the hull of its old and new screen frames) intersects `P` would move
   more than `C`, every animation in the commit is scaled by the same factor
   `k = C / max|δ|`.
-  - A uniform scale keeps M2 through M5.
+  - A uniform scale keeps M2 through M5. Each start value becomes
+    `end + k·(start − end)`, which is still a convex combination of two
+    layouts, so every gap stays ≥ 0 and the anchor still doesn't move.
   - It bounds how many rows have to be mounted during a long jump, which
     includes an animated scroll across the whole list.
 - **M8: interruptions compose.** A commit made while earlier animations are
@@ -439,13 +458,23 @@ pre-commit and new values are post-commit.
 
 ## 10. Placement, reuse and views
 
-- **P1: exact mounting.** After every commit, the mounted set is exactly:
-  - the rows whose model frame intersects `P`;
-  - the rows that are still mid-animation and whose presented sweep intersects
-    `P`;
-  - the removed rows that are still animating out.
+- **P1: exact mounting.** After every commit, and after every scroll, the
+  mounted set is:
+  - every row whose model frame intersects `P`;
+  - every row whose presented sweep intersects `P` while it is still
+    animating;
+  - every removed row that is still animating out;
+  - every row that AppKit asked to prepare through `prepareContent(in:)` during
+    responsive scrolling. That rect is AppKit's own overdraw, bounded to
+    `P` extended by the height of `U` on each side. `NSTableView` answers the
+    same call.
 
-  Every mounted container's model frame equals G1's frame for its row.
+  No other row is mounted. Every mounted container's model frame equals G1's
+  frame for its row. Mounting happens synchronously wherever the offset
+  changes, so no row reaches the screen late. AppKit changes the offset by
+  two routes, and neither calls the other (measured): `NSClipView.scroll(to:)`
+  (the wheel, `scrollToVisible`, `NSView.scroll(_:)`) and `setBoundsOrigin(_:)`
+  (`animator()`). Both are covered.
 - **P2: views are asked for only on arrival.** `listView(_:viewForRow:)` is
   called when a row joins the mounted set, and by U6 — never at any other
   time. The returned view fills its row container, which is `W × h`, and the
@@ -466,6 +495,10 @@ pre-commit and new values are post-commit.
   given an animation or a mask.
   *Deviation:* `NSTableRowView` is public so that a host can draw selection;
   this list has no selection (§12).
+- **P7: only mounted views are handed out.** `view(atRow:)` returns the
+  mounted view, or `nil`. *Deviation:* `NSTableView`'s
+  `view(atColumn:row:makeIfNecessary:)` can build a view for a row that is not
+  on screen, which would break P1.
 - **P6: `row(for:)`** returns the row of a mounted view or any of its
   descendants, and −1 otherwise, as in `NSTableView`. A view that is animating
   out answers −1.
@@ -510,9 +543,10 @@ pre-commit and new values are post-commit.
   screen. Its children are the host view's accessibility children when the row
   is mounted, and none otherwise.
 - **X3: unmounted rows.** An unmounted row is an `NSAccessibilityElement`,
-  created on demand and dropped when not needed. Asking it to scroll into view
-  (`accessibilityPerformScrollToVisible`), or giving it VoiceOver focus, scrolls
-  as S1 says, which mounts the row.
+  created on demand and dropped when not needed. Giving it accessibility
+  focus (`setAccessibilityFocused(true)`, which is what VoiceOver does as it
+  moves) scrolls as S1 says, and that mounts the row. The protocol has no
+  scroll-to-visible method before macOS 26.
 - **X4: stable elements.** Row elements are renumbered by commits, the same way
   anchors are (A4), so VoiceOver focus survives inserts above it.
 - **X5: notifications.** A commit that changes `n` posts `.rowCountChanged`.
@@ -600,6 +634,7 @@ and fails if any ID is not in some test's name.
 ```
 macos/ExactList/
   Package.swift              ExactList (library) · ExactListDemo (executable)
+                             ExactListTestSupport (test-only library)
                              ExactListCoreTests · ExactListTests · ExactListBenchmarks
   SPEC.md  README.md  CLAUDE.md
   Sources/
@@ -618,12 +653,15 @@ only `ExactList`, which re-exports the one Core type in its API (`Anchoring`).
 |---|---|
 | `Anchoring` | The public policy enum (§6.1). |
 | `RowHeights` | The heights, the spacing, and a Fenwick index: G1–G5 queries, insert, remove, move, and set height. |
-| `RowEdit` | One update in `NSTableView` semantics: insert, remove, move or note. |
+| `RowEdit` | One update in `NSTableView` semantics: insert, remove, move, note or reload. |
+| `RowTransition` | The insert and remove effects. Its bits are `NSTableView.AnimationOptions`' raw values, so the engine converts between the two without a table (M9). |
 | `RowIndexMap` | The old↔new index mapping of a batch, built incrementally from `RowEdit`s (U2). |
 | `Viewport` | `o`, `V`, `t`, `b`, and what follows from them: `oMin`/`oMax`, `U`, `P`, and whether the viewport is at the tail. |
 | `ScrollAnchor` | A resolved anchor (tail, row with `d`, or offset): resolution (A1–A3), renumbering (A4, A5), and restoring (A6, A7, W2). |
-| `CommitPlan` | A commit's outcome: new offset, per-row motion (old and new screen top, old and new height), inserted and removed rows, and the amplitude `k`. |
-| `CommitPlanner` | A pure function: old heights, new heights, map, viewport, anchor and options in; `CommitPlan` out (§7, §8.2). |
+| `CommitInput` | Everything a commit is planned from: old and new heights, the map, old and new viewport, anchoring, tail following, whether to rescale the anchor (W2), the rows mounted before the commit, and whether it animates. |
+| `RowMotion` | One row's start and end screen top and height, and its kind and transition (M2). |
+| `CommitPlan` | A commit's outcome: the new offset, the resolved anchor, the `RowMotion`s, the amplitude `k`, and the tail state afterwards. |
+| `CommitPlanner` | A pure function from `CommitInput` to `CommitPlan` (§6, §7, §8.2). |
 | `StaleRows` | Which rows are stale, and the order to refresh them in, outward from the anchor (§9). |
 
 **ExactList**: the AppKit engine. Every type is `@MainActor`.
@@ -634,8 +672,10 @@ only `ExactList`, which re-exports the one Core type in its API (`Anchoring`).
 | `ExactListView.Updates` | yes | The batch proxy (U3). |
 | `ExactListViewDataSource` | yes | `numberOfRows(in:)`. |
 | `ExactListViewDelegate` | yes | `heightOfRow:width:`, `viewForRow:`, `didRemove:forRow:`, `didChangeTailFollowing:`, `doCommandBy:`. |
-| `ListScrollView` | no | An `NSScrollView` subclass. It reports width changes from `tile()` (W1) and viewport changes. |
-| `ListDocumentView` | no | The flipped document view: the first responder and keys (K1), and the accessibility table (X1). |
+| `ListPhase` | no | Before or after the load point, and what was stored before it: settings and the last scroll request (L3–L6, V5). |
+| `ListScrollView` | no | An `NSScrollView` subclass with the fixed configuration (L11). It reports width and viewport changes from `tile()` (W1, V1, V2). |
+| `ListClipView` | no | An `NSClipView` subclass. It reports every change of the bounds origin, so mounting happens in the same turn as the scroll (P1). |
+| `ListDocumentView` | no | The flipped document view: the first responder and keys (K1), `prepareContent(in:)` (P1), and the accessibility table (X1). |
 | `RowContainerView` | no | The `NSTableRowView` counterpart: clipping, the host view's frame, and the accessibility row (X2). |
 | `RowViewPool` | no | Reuse by identifier (P4). |
 | `RowPlacement` | no | The mounted set, and mounting and unmounting against `P` (P1–P3, P6). |
@@ -644,4 +684,18 @@ only `ExactList`, which re-exports the one Core type in its API (`Anchoring`).
 | `UnmountedRowElement` | no | The `NSAccessibilityElement` for a row that isn't mounted (X3). |
 
 Collaborators never name `ExactListView`. Each talks back through one narrow
-internal protocol that the façade conforms to.
+internal protocol that the façade conforms to: `ListScrollViewOwner`,
+`ListClipViewOwner`, `ListDocumentViewOwner`, `RowPlacementOwner`,
+`MotionAnimatorOwner`, `StaleRowRefresherOwner`, `UnmountedRowElementOwner`.
+
+**ExactListTestSupport**: a test-only library, in no product. It holds the
+window stage, the recording data source and delegate, the recording
+`NSTableView` host that characterization and benchmarks run against, the
+event synthesizer, the presentation sampler, the seeded generator and the
+window-level reference layout that
+`ExactListTests` and `ExactListBenchmarks` share. `ExactListCoreTests` keeps
+its own reference, so Core stays testable with no AppKit linked.
+
+Framework means everything internal or public. Private members are
+implementation: filling in a body may add private stored properties and
+private helpers, and nothing else.

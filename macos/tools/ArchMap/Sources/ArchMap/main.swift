@@ -2,7 +2,11 @@ import Foundation
 import SwiftParser
 import SwiftSyntax
 
-// Usage: ArchMap <macos-dir> <out-dir> [scope]
+// Usage: ArchMap <macos-dir> <out-dir> [scope] [detail]
+//
+// detail: `members` also writes `<unit>.members.md` per unit — inside each
+//   type, its state and who writes it, and how its members call one another
+//   (`MemberMap`).
 //
 // scope: comma/space-separated tokens, each one of
 //   core (default) — the app + every package library (no demos, smokes, tests)
@@ -21,6 +25,11 @@ guard args.count >= 3 else {
 let root = URL(fileURLWithPath: args[1]).standardizedFileURL
 let outDir = URL(fileURLWithPath: args[2]).standardizedFileURL
 let scopeArg = args.count > 3 && !args[3].isEmpty ? args[3] : "core"
+let detail = args.count > 4 ? args[4] : ""
+guard ["", "members"].contains(detail) else {
+    FileHandle.standardError.write("error: DETAIL '\(detail)' is unknown. Use members.\n".data(using: .utf8)!)
+    exit(2)
+}
 
 // MARK: Modules
 
@@ -165,7 +174,18 @@ let header = """
 let renderer = Renderer(index: index, files: sources, units: units, header: header)
 try? fm.removeItem(at: outDir)
 try fm.createDirectory(at: outDir, withIntermediateDirectories: true)
-try renderer.renderIndex().write(to: outDir.appendingPathComponent("index.md"), atomically: true, encoding: .utf8)
+var indexText = renderer.renderIndex()
+if detail == "members" {
+    let map = MemberMap(index: index, files: sources)
+    indexText += "\n## Member maps\n\n"
+    for unit in units {
+        let name = Renderer.fileName(ofUnit: unit).replacingOccurrences(of: ".md", with: ".members.md")
+        try map.render(unit: unit, header: "# \(unit) — members").write(
+            to: outDir.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        indexText += "- [\(unit)](\(name))\n"
+    }
+}
+try indexText.write(to: outDir.appendingPathComponent("index.md"), atomically: true, encoding: .utf8)
 for unit in units {
     try renderer.renderUnit(unit).write(
         to: outDir.appendingPathComponent(Renderer.fileName(ofUnit: unit)), atomically: true, encoding: .utf8)

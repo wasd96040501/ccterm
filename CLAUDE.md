@@ -67,7 +67,7 @@ make demo-list                       # ExactList demo app
 make record-list [FILTER=<name>]     # ExactList demo scenarios captured off screen → /tmp/exactlist-recordings
 make logs [CONFIG=release] [CATEGORY=X] [LEVEL=debug]   # tail unified log of THIS worktree's build
 make appkit-doc SYMBOL=NSTableView   # Apple's DocC for an AppKit symbol
-make arch [SCOPE=core|app|kit|sdk|<dir>|<unit>]   # architecture map → build/arch/ (what /arch-review reads)
+make arch [SCOPE=core|app|kit|sdk|<dir>|<unit>] [DETAIL=members]   # architecture map → build/arch/ (what /arch-review reads); DETAIL=members adds each type's calls and state writers
 ```
 
 `make build` prints success/failure plus two log paths. On failure read the summary log first; open the full log only if the summary isn't enough — don't `tail`/`cat` it blindly.

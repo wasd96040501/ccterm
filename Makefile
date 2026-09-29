@@ -102,8 +102,10 @@ appkit-doc: ## Look up an AppKit symbol (SYMBOL=NSStackView or SYMBOL=NSStackVie
 # plus one file per source directory with each type's dependencies, data flow
 # (@Published, AsyncStream, @Observable, callbacks, delegates) and which of its
 # members other units use. SCOPE takes names or paths, comma-separated.
-arch: ## Map structure + data flow to build/arch/ (SCOPE=core|app|kit|sdk|<dir under macos/>)
-	@swift run --package-path macos/tools/ArchMap --quiet ArchMap "$(CURDIR)/macos" "$(CURDIR)/build/arch" "$(SCOPE)"
+# DETAIL=members adds, per unit, how each type's members call one another and
+# write its state — what a simplification pass reads.
+arch: ## Map structure + data flow to build/arch/ (SCOPE=core|app|kit|sdk|<dir under macos/>, DETAIL=members)
+	@swift run --package-path macos/tools/ArchMap --quiet ArchMap "$(CURDIR)/macos" "$(CURDIR)/build/arch" "$(SCOPE)" "$(DETAIL)"
 
 dmg: ## Create DMG installer (usage: make dmg APP=/path/to/ccterm.app)
 	@test -n "$(APP)" || (echo "Usage: make dmg APP=/path/to/ccterm.app" && exit 1)

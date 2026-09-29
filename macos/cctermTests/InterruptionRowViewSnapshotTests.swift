@@ -8,7 +8,6 @@ import XCTest
 @MainActor
 final class InterruptionRowViewSnapshotTests: XCTestCase {
     func testTheMark() {
-        let (image, _) = SmallRowSnapshot.render([()], of: InterruptionRowView.self, name: "InterruptionRowView")
-        XCTAssertGreaterThan(image.size.height, 0)
+        RowSnapshot.render(InterruptionRowView.self, [()], name: "InterruptionRowView", test: self)
     }
 }

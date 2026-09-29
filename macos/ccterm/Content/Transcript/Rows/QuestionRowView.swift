@@ -112,10 +112,9 @@ final class QuestionRowView: NSView, PageRowView {
     private let tileView = ToolTileView()
     private var itemViews: [ItemViews] = []
     private lazy var submit: NSButton = {
-        let button = NSButton(
-            title: String(localized: "Submit") + "  ⌘↩", target: self, action: #selector(submitPressed(_:)))
-        button.bezelStyle = .rounded
-        button.controlSize = .small
+        let button = PillButton(title: String(localized: "Submit"), keys: "⌘↩", isPrimary: true)
+        button.target = self
+        button.action = #selector(submitPressed(_:))
         button.keyEquivalent = "\r"
         button.keyEquivalentModifierMask = .command
         return button

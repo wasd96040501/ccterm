@@ -10,7 +10,7 @@ import XCTest
 final class ShowMoreRowViewSnapshotTests: XCTestCase {
     func testEveryShape() {
         RowSnapshot.render(
-            ShowMoreRowView.self, [1, 85].map { .init(runID: "r", hidden: $0) }, width: 520, gap: 2,
+            ShowMoreRowView.self, [1, 85].map { .init(runID: "r", hidden: $0) }, gap: 2,
             name: "ShowMoreRowView", test: self)
     }
 }

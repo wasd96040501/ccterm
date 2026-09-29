@@ -40,56 +40,8 @@ final class QuestionRowViewSnapshotTests: XCTestCase {
         ]
     }
 
-    private func panel(_ appearance: NSAppearance.Name, width: CGFloat) throws -> NSView {
-        let models = try models()
-        let pad: CGFloat = 20
-        let gap: CGFloat = 14
-        let heights = models.map { QuestionRowView.height(for: $0, width: width) }
-        let height = heights.reduce(0, +) + gap * CGFloat(models.count - 1) + 2 * pad
-        let panel = FlippedView(frame: NSRect(x: 0, y: 0, width: width + 2 * pad, height: height))
-        panel.appearance = NSAppearance(named: appearance)
-        panel.wantsLayer = true
-        panel.appearance?.performAsCurrentDrawingAppearance {
-            panel.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        }
-        var y = pad
-        for (model, rowHeight) in zip(models, heights) {
-            let view = QuestionRowView()
-            view.configure(with: model)
-            view.frame = NSRect(x: pad, y: y, width: width, height: rowHeight)
-            panel.addSubview(view)
-            y += rowHeight + gap
-        }
-        return panel
-    }
-
-    private final class FlippedView: NSView {
-        override var isFlipped: Bool { true }
-    }
-
     func testEveryState() throws {
-        var panels: [NSView] = []
-        for width: CGFloat in [520, 320] {
-            panels.append(try panel(.aqua, width: width))
-            panels.append(try panel(.darkAqua, width: width))
-        }
-        let total = NSSize(
-            width: panels[0].frame.width + panels[2].frame.width,
-            height: panels[0].frame.height + panels[1].frame.height)
-        let root = FlippedView(frame: NSRect(origin: .zero, size: total))
-        panels[0].setFrameOrigin(NSPoint(x: 0, y: 0))
-        panels[1].setFrameOrigin(NSPoint(x: 0, y: panels[0].frame.height))
-        panels[2].setFrameOrigin(NSPoint(x: panels[0].frame.width, y: 0))
-        panels[3].setFrameOrigin(NSPoint(x: panels[0].frame.width, y: panels[2].frame.height))
-        panels.forEach(root.addSubview)
-        let controller = NSViewController()
-        controller.view = root
-
-        let image = ViewSnapshot.renderViewController(controller, size: total)
-        let url = ViewSnapshot.writePNG(image, name: "QuestionRowView")
-        let attachment = XCTAttachment(contentsOfFile: url)
-        attachment.lifetime = .keepAlways
-        add(attachment)
-        XCTAssertEqual(image.size, total)
+        RowSnapshot.render(
+            QuestionRowView.self, try models(), widths: [520, 320], gap: 14, name: "QuestionRowView", test: self)
     }
 }

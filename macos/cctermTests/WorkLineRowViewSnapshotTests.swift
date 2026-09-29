@@ -78,14 +78,14 @@ final class WorkLineRowViewSnapshotTests: XCTestCase {
     }
 
     func testEveryShape() {
-        RowSnapshot.render(WorkLineRowView.self, rows, width: 520, gap: 2, name: "WorkLineRowView", test: self)
+        RowSnapshot.render(WorkLineRowView.self, rows, gap: 2, name: "WorkLineRowView", test: self)
     }
 
     /// The pointer over a row: the wash, the arrow that opens beside, ↖.
     func testHovered() {
         let rows = [rows[3], rows[4], rows[7], rows[0]]
         RowSnapshot.render(
-            WorkLineRowView.self, rows, width: 520, gap: 2, name: "WorkLineRowViewHovered",
+            WorkLineRowView.self, rows, gap: 2, name: "WorkLineRowViewHovered",
             prepare: { view, _ in
                 let event = NSEvent.enterExitEvent(
                     with: .mouseEntered, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
@@ -96,6 +96,6 @@ final class WorkLineRowViewSnapshotTests: XCTestCase {
 
     func testNarrow() {
         RowSnapshot.render(
-            WorkLineRowView.self, rows, width: 320, gap: 2, name: "WorkLineRowViewNarrow", test: self)
+            WorkLineRowView.self, rows, widths: [320], gap: 2, name: "WorkLineRowViewNarrow", test: self)
     }
 }

@@ -27,7 +27,6 @@ final class CapsuleRowViewSnapshotTests: XCTestCase {
             LocalCommand(id: "6", command: .shell("pwd"), output: "/Users/me/repo\n", errorOutput: ""),
             LocalCommand(id: "7", command: .shell("false"), output: "", errorOutput: "exit 1"),
         ]
-        let (image, _) = SmallRowSnapshot.render(models, of: CapsuleRowView.self, name: "CapsuleRowView")
-        XCTAssertGreaterThan(image.size.height, 0)
+        RowSnapshot.render(CapsuleRowView.self, models, name: "CapsuleRowView", test: self)
     }
 }

@@ -39,6 +39,7 @@ Dependencies point down only, and siblings don't know each other: `Drawing/` rea
 |---|---|
 | A kind's tile, any state | `ToolTileView` |
 | `StyledText` on screen | `attributedString(font:color:)`; `NSColor.addedText` / `.failureText` |
+| A button (Allow, Deny, Submit, Approve, Open…) | `PillButton` — the design's `.btn`, with its `kbd` hint |
 | A line of work (run, item, news) | `WorkLineRowView` |
 | A voice's or plan's words | `.markdown` row (`PageRow.quoted` for a voice) |
 | A document of words | `MarkdownDocumentViewController` + `DocumentMarkdown` |

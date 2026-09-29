@@ -38,16 +38,18 @@ final class ApprovalBarView: NSView {
     }()
 
     private lazy var denyButton: NSButton = {
-        let button = NSButton(title: String(localized: "Deny"), target: self, action: #selector(deny))
-        button.bezelStyle = .rounded
+        let button = PillButton(title: String(localized: "Deny"))
+        button.target = self
+        button.action = #selector(deny)
         button.setContentCompressionResistancePriority(.required, for: .horizontal)
         return button
     }()
 
     /// ⌘↩ answers it, as the card's does.
     private lazy var allowButton: NSButton = {
-        let button = NSButton(title: String(localized: "Allow"), target: self, action: #selector(allow))
-        button.bezelStyle = .rounded
+        let button = PillButton(title: String(localized: "Allow"), isPrimary: true)
+        button.target = self
+        button.action = #selector(allow)
         button.keyEquivalent = "\r"
         button.keyEquivalentModifierMask = .command
         button.setContentCompressionResistancePriority(.required, for: .horizontal)

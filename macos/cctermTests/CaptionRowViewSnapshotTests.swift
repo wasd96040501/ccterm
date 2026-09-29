@@ -17,7 +17,6 @@ final class CaptionRowViewSnapshotTests: XCTestCase {
             Caption(glyph: .tile(Tile(glyph: .plan, state: .done)), text: "Plan"),
             Caption(glyph: .tile(Tile(glyph: .plan, state: .waiting)), text: "Plan · Waiting for your approval"),
         ]
-        let (image, _) = SmallRowSnapshot.render(models, of: CaptionRowView.self, name: "CaptionRowView")
-        XCTAssertGreaterThan(image.size.height, 0)
+        RowSnapshot.render(CaptionRowView.self, models, name: "CaptionRowView", test: self)
     }
 }

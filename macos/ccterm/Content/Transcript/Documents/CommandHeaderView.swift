@@ -166,9 +166,9 @@ final class CommandHeaderView: NSView {
                 ]))
         label.attributedStringValue = text
         label.isSelectable = true
-        let open = NSButton(title: String(localized: "Open"), target: self, action: #selector(openPersisted))
-        open.bezelStyle = .rounded
-        open.controlSize = .small
+        let open = PillButton(title: String(localized: "Open"))
+        open.target = self
+        open.action = #selector(openPersisted)
         let row = NSStackView(views: [Self.icon("info.circle"), label, open])
         row.spacing = 6
         row.alignment = .firstBaseline

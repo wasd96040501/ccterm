@@ -42,11 +42,11 @@ final class ApprovalCardViewSnapshotTests: XCTestCase {
     }
 
     func testEveryShape() {
-        RowSnapshot.render(ApprovalCardView.self, approvals, width: 520, gap: 8, name: "ApprovalCardView", test: self)
+        RowSnapshot.render(ApprovalCardView.self, approvals, gap: 8, name: "ApprovalCardView", test: self)
     }
 
     func testNarrow() {
         RowSnapshot.render(
-            ApprovalCardView.self, approvals, width: 320, gap: 8, name: "ApprovalCardViewNarrow", test: self)
+            ApprovalCardView.self, approvals, widths: [320], gap: 8, name: "ApprovalCardViewNarrow", test: self)
     }
 }

@@ -18,7 +18,6 @@ final class DividerRowViewSnapshotTests: XCTestCase {
             SessionDivider(id: "4", kind: .resumed(Date(timeIntervalSinceNow: -3600 * 30)), summary: nil),
             SessionDivider(id: "5", kind: .pause(Date(timeIntervalSinceNow: -3600 * 24 * 20)), summary: nil),
         ]
-        let (image, _) = SmallRowSnapshot.render(models, of: DividerRowView.self, name: "DividerRowView")
-        XCTAssertGreaterThan(image.size.height, 0)
+        RowSnapshot.render(DividerRowView.self, models, name: "DividerRowView", test: self)
     }
 }

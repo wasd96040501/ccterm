@@ -16,7 +16,6 @@ final class ApprovalCardView: NSView, PageRowView {
 
     private static let titleFont = NSFont.systemFont(ofSize: 13, weight: .medium)
     private static let reasonFont = NSFont.systemFont(ofSize: 12)
-    private static let hintFont = NSFont.systemFont(ofSize: 11)
     /// The card sits 6 below its row's top and 2 above its bottom.
     private static let marginTop: CGFloat = 6
     private static let marginBottom: CGFloat = 2
@@ -34,8 +33,8 @@ final class ApprovalCardView: NSView, PageRowView {
     private let body = ApprovalBodyView()
     private let showAll = NSButton()
     private let reason = NSTextField(wrappingLabelWithString: "")
-    private let deny = NSButton()
-    private let allow = NSButton()
+    private let deny = PillButton(title: String(localized: "Deny"), keys: "⎋")
+    private let allow = PillButton(title: String(localized: "Allow"), keys: "⌘↩", isPrimary: true)
 
     private var model: Approval?
 
@@ -61,12 +60,12 @@ final class ApprovalCardView: NSView, PageRowView {
         showAll.target = self
         showAll.action = #selector(showAllPressed)
 
-        configure(deny, main: String(localized: "Deny"), hint: "⎋")
         deny.keyEquivalent = "\u{1b}"
+        deny.target = self
         deny.action = #selector(denyPressed)
-        configure(allow, main: String(localized: "Allow"), hint: "⌘↩")
         allow.keyEquivalent = "\r"
         allow.keyEquivalentModifierMask = .command
+        allow.target = self
         allow.action = #selector(allowPressed)
 
         for view in [tile, title, body, showAll, reason, deny, allow] { addSubview(view) }
@@ -80,18 +79,6 @@ final class ApprovalCardView: NSView, PageRowView {
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     override var isFlipped: Bool { true }
-
-    private func configure(_ button: NSButton, main: String, hint: String) {
-        button.bezelStyle = .push
-        button.controlSize = .regular
-        button.target = self
-        // No colours of its own: the default button turns its ink white on the
-        // accent fill, and both follow the window's active state.
-        let title = NSMutableAttributedString(string: main, attributes: [.font: NSFont.systemFont(ofSize: 13)])
-        title.append(NSAttributedString(string: "  " + hint, attributes: [.font: Self.hintFont]))
-        button.attributedTitle = title
-        button.setAccessibilityLabel(main)
-    }
 
     // MARK: - Metrics
 

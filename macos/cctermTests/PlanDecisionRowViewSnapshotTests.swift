@@ -9,7 +9,6 @@ import XCTest
 @MainActor
 final class PlanDecisionRowViewSnapshotTests: XCTestCase {
     func testTheButtons() {
-        let (image, _) = SmallRowSnapshot.render(["plan-1"], of: PlanDecisionRowView.self, name: "PlanDecisionRowView")
-        XCTAssertGreaterThan(image.size.height, 0)
+        RowSnapshot.render(PlanDecisionRowView.self, ["plan-1"], name: "PlanDecisionRowView", test: self)
     }
 }

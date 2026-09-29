@@ -27,6 +27,9 @@ systems that honour it.
 - **loadLarge**: 10 000 rows load, and the scroller is right from the first
   frame. Dragging the knob to the end lands on the last row.
 - **scrollToTop**: the scroll animates, and the list is never blank mid-flight.
+- **Reduce Motion** (System Settings › Accessibility › Display): with it on,
+  run **churnAbove** and **toggleClicked** again. Every update lands at once,
+  with no motion (M1).
 
 ## Listen
 

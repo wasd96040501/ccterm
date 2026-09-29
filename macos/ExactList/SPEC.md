@@ -429,8 +429,12 @@ in a commit has a start and an end value for its screen top and its height.
   never overlap.
   - If both rows survive and were adjacent before the commit too, the gap is
     exactly `s` at every `t`.
-- **M6: no blank areas.** At every `t`, the presented rows and the spacing
-  between them cover `U ∩ [0, H_presented(t)]`.
+- **M6: no blank areas.** At every `t`, every point of `U` lies in a
+  presented row, or in a gap of at most `s` between two rows consecutive in
+  the presented order (M5). This holds between the presented top of the first
+  row in the presented order and the presented bottom of the last, each bound
+  applying while that row is presented; outside them is the space beyond the
+  content, as in a still list.
 - **M7: the amplitude cap.** Let `C` be the height of `U`, and a row's `δ` be
   its end screen top minus its start screen top. The rows considered are the
   ones M2 gives start and end values to (every surviving, inserted and moved
@@ -451,9 +455,15 @@ in a commit has a start and an end value for its screen top and its height.
   - `[]` and `.effectGap`: reveal or cover only (M2).
   - `.effectFade`: in addition, opacity goes 0 → 1 on insert and 1 → 0 on
     removal.
-  - `.slideUp` / `.slideDown`: in addition, the content inside the clip is
-    offset vertically by `∓h·(1 − p)`.
-  - `.slideLeft` / `.slideRight`: the same, offset horizontally by `∓W·(1 − p)`.
+  - `.slideUp` / `.slideDown`: in addition, the content inside the clip
+    slides by the row's height `h`. In screen coordinates (y down), an
+    inserted row's content is offset by `+h·(1 − p)` for `.slideUp` (it rises
+    in from below) and `−h·(1 − p)` for `.slideDown`. A removed row's content
+    is offset by `−h·p` for `.slideUp` (it rises out) and `+h·p` for
+    `.slideDown`.
+  - `.slideLeft` / `.slideRight`: the same horizontally, by `W`. `.slideLeft`
+    enters from the right (`+W·(1 − p)`) and leaves to the left (`−W·p`);
+    `.slideRight` is the reverse.
 - **M10: stacking order.** Moved rows are drawn above the others, and removed
   rows below them.
   - A moved row travels straight from its old screen position to its new one.
@@ -663,6 +673,9 @@ What is **not** automatically covered, stated plainly:
   event queue for one sent through the window (both measured). The window
   tests cover the wheel, and a commit between wheel steps; a commit during a
   live gesture and momentum are the demo's checklist.
+- **Reduce Motion on (M1).** It is a system setting, which a test must not
+  change. The test asserts the branch the machine is in; the other is the
+  demo's checklist.
 - **X5 without accessibility trust.** An `AXObserver` needs the process
   trusted for accessibility. Posting a notification leaves no trace in the
   process itself (measured), so where the test isn't trusted, X5 is skipped

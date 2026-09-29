@@ -3,6 +3,8 @@ import XCTest
 
 @testable import ccterm
 
+/// Expected words are built from the same localized keys, so the tests hold
+/// in any language the machine runs in.
 final class ApprovalTests: XCTestCase {
     private func waiting(
         _ name: String, _ input: String, reason: String? = "rm -rf needs approval: it deletes files."
@@ -23,20 +25,21 @@ final class ApprovalTests: XCTestCase {
         XCTAssertEqual(approval.title, "Remove the build cache")
         XCTAssertEqual(approval.body, .command("rm -rf macos/build/test-dd"))
         XCTAssertEqual(approval.reason, "rm -rf needs approval: it deletes files.")
-        XCTAssertEqual(approval.request, "Claude wants to run this command")
+        XCTAssertEqual(approval.request, String(localized: "Claude wants to run this command"))
     }
 
     func testACommandWithoutADescriptionSaysWhatItIs() {
-        XCTAssertEqual(Approval(waiting("Bash", #"{"command":"ls"}"#, reason: nil)).title, "Run a command")
+        XCTAssertEqual(
+            Approval(waiting("Bash", #"{"command":"ls"}"#, reason: nil)).title, String(localized: "Run a command"))
     }
 
     func testAnEditShowsTheLinesItTakesOutAndPutsIn() {
         let approval = Approval(
             waiting("Edit", #"{"file_path":"/r/A.swift","old_string":"a\nb","new_string":"c"}"#, reason: nil))
-        XCTAssertEqual(approval.title, "Edit A.swift")
+        XCTAssertEqual(approval.title, String(localized: "Edit \("A.swift")"))
         XCTAssertEqual(approval.body, .change(removed: ["a", "b"], added: ["c"]))
         XCTAssertNil(approval.reason)
-        XCTAssertEqual(approval.request, "Claude wants to make this edit")
+        XCTAssertEqual(approval.request, String(localized: "Claude wants to make this edit"))
     }
 
     func testAMultiEditShowsEveryEdit() {
@@ -50,15 +53,15 @@ final class ApprovalTests: XCTestCase {
 
     func testANewFileShowsItsContent() {
         let approval = Approval(waiting("Write", #"{"file_path":"/r/B.swift","content":"x\ny"}"#))
-        XCTAssertEqual(approval.title, "Create B.swift")
+        XCTAssertEqual(approval.title, String(localized: "Create \("B.swift")"))
         XCTAssertEqual(approval.body, .change(removed: [], added: ["x", "y"]))
-        XCTAssertEqual(approval.request, "Claude wants to create this file")
+        XCTAssertEqual(approval.request, String(localized: "Claude wants to create this file"))
     }
 
     func testAnyOtherToolIsNamed() {
         let approval = Approval(waiting("WebFetch", #"{"url":"https://example.com"}"#))
-        XCTAssertEqual(approval.title, "Use WebFetch")
+        XCTAssertEqual(approval.title, String(localized: "Use \("WebFetch")"))
         XCTAssertNil(approval.body)
-        XCTAssertEqual(approval.request, "Claude wants to use WebFetch")
+        XCTAssertEqual(approval.request, String(localized: "Claude wants to use \("WebFetch")"))
     }
 }

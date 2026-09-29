@@ -2,6 +2,8 @@ import XCTest
 
 @testable import ccterm
 
+/// Expected words are built from the same localized keys, so the tests hold
+/// in any language the machine runs in.
 final class LocalCommandWordsTests: XCTestCase {
     private func slash(
         _ name: String, _ arguments: String = "", output: String = "", error: String = ""
@@ -47,7 +49,7 @@ final class LocalCommandWordsTests: XCTestCase {
     func testAShellCommandSaysHowLongItsOutputWas() {
         let command = shell("git status", output: (1...12).map { "line \($0)" }.joined(separator: "\n"))
         XCTAssertEqual(command.title, "git status")
-        XCTAssertEqual(command.lineCount, "12 lines")
+        XCTAssertEqual(command.lineCount, String(localized: "\(12) lines"))
         XCTAssertNil(command.inlineOutput)
         XCTAssertFalse(command.isOutputCut)
     }
@@ -62,10 +64,11 @@ final class LocalCommandWordsTests: XCTestCase {
         func label(_ kind: SessionDivider.Kind) -> String { SessionDivider(id: "d", kind: kind).label }
         XCTAssertEqual(
             label(.compacted(automatically: false, preTokens: 168_400, postTokens: 14_000)),
-            "Conversation compacted · 168k → 14k tokens")
+            String(localized: "Conversation compacted") + " · " + String(localized: "\("168k") → \("14k") tokens"))
         XCTAssertEqual(
-            label(.compacted(automatically: true, preTokens: nil, postTokens: nil)), "Compacted automatically")
-        XCTAssertEqual(label(.compacting), "Compacting…")
-        XCTAssertTrue(label(.resumed(Date())).hasPrefix("Resumed · "))
+            label(.compacted(automatically: true, preTokens: nil, postTokens: nil)),
+            String(localized: "Compacted automatically"))
+        XCTAssertEqual(label(.compacting), String(localized: "Compacting…"))
+        XCTAssertTrue(label(.resumed(Date())).hasPrefix(String(localized: "Resumed · \("")")))
     }
 }

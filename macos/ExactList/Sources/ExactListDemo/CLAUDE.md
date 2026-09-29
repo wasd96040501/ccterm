@@ -18,7 +18,9 @@ systems that honour it.
 - **toggleClicked**: the header you clicked stays under the pointer while the
   content opens below it, including at the very bottom of the list.
 - **churnAbove**: rows come and go above the viewport, and what you're
-  reading never moves.
+  reading never moves. Run it again while scrolling with two fingers on the
+  trackpad, and let go mid-flick: the gesture and its momentum carry on
+  smoothly from wherever each commit put the offset, with no jump back (S4).
 - **toggleSidebar**: while the sidebar animates, the text reflows every frame.
   The row at the top keeps its reading position, and no blank area appears at
   any moment.

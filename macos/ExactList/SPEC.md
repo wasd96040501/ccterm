@@ -549,8 +549,15 @@ in a commit has a start and an end value for its screen top and its height.
 ## 11. Scrolling, keyboard, accessibility
 
 - **S1: scrolling to a row.** `scrollRowToVisible(_:)` scrolls the least amount
-  that brings row `i` fully into `U`, as `NSTableView` does. If the row is
-  taller than `U`, the scroll aligns its top.
+  that brings row `i` fully into `U`. If the row is taller than `U`, the scroll
+  aligns its top. A row above the viewport lands at the top of `U`, a row
+  below it lands with its bottom exactly at the bottom of `U`, and a visible
+  row doesn't move.
+  *Deviation from `NSTableView`:* for a row above the viewport, a tall row
+  and a clamped end they land at the same offset, but for a row below it
+  `NSTableView` scrolls past the least amount (16 pt, measured), so "reveal
+  this row" leaves an unexplained gap. The same name is kept, with the exact
+  definition.
 - **S2: scrolling to a position.** `scrollToRow(_:at:)` takes an
   `NSCollectionView.ScrollPosition`. The vertical members `.top`,
   `.centeredVertically`, `.bottom` and `.nearestHorizontalEdge` align the row
@@ -643,6 +650,12 @@ What is **not** automatically covered, stated plainly:
   composites, but the final pixels are only checked by eye in the demo.
 - **Real VoiceOver speech.** Only the accessibility protocol is checked
   automatically; speech is a manual demo checklist.
+- **A live trackpad gesture (S4).** A phased scroll event can't be
+  synthesized in process: `NSScrollView` ignores one handed to
+  `scrollWheel(with:)` and enters a tracking loop that waits on the real
+  event queue for one sent through the window (both measured). The window
+  tests cover the wheel, and a commit between wheel steps; a commit during a
+  live gesture and momentum are the demo's checklist.
 
 Benchmarks:
 

@@ -12,7 +12,7 @@ Documents/   what opens beside: DocumentViewController (shell) + bodies.
 TranscriptViewController   the tab: page, disclosure, selection, ↑/↓, reveal.
 ```
 
-Dependencies point down only, and siblings don't know each other: `Drawing/` reads only `Page/`; `Rows/` reads only `Page/` and `Drawing/`; `Documents/` reads `Page/`, `Drawing/` and AgentSDK's tool types (a body reads its call's typed input and output); the tab reads `Page/` and `Rows/`; `Page/` reads only `AgentSDK`. `MainSplitViewController` is the coordinator — the one place that knows both the tab and the documents: it creates tabs, routes what one asks of the other, and makes a subagent's conversation for a document (`DocumentBodyFactory.makeConversation`). `make arch` must show no edge beyond these.
+Dependencies point down only, and siblings don't know each other: `Drawing/` reads only `Page/`; `Rows/` reads only `Page/` and `Drawing/`; `Documents/` reads `Page/`, `Drawing/` and AgentSDK's tool types (a body reads its call's typed input and output); the tab reads `Page/` and `Rows/`; `Page/` reads only `AgentSDK`. `MainSplitViewController` is the coordinator — the one place that knows both the tab and the documents: it creates tabs, routes what one asks of the other, and makes the transcript tab a subagent's conversation opens as (the document's `makeConversation`). `make arch` must show no edge beyond these.
 
 ## Rules
 

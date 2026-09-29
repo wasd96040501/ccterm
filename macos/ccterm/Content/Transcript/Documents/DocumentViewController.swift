@@ -1,24 +1,27 @@
+import AgentSDK
 import AppKit
 
 /// A tab beside the transcript: one document — a command, a file, a
 /// subagent's conversation, words — under the jump bar every document has.
 ///
-/// The shell only: it loads the document when it first appears (a tab made
-/// again from editor history has only its reference), words the jump bar
-/// from it (`DocumentHeader`), puts an approval bar under it while the call
-/// waits for the reader, and embeds the body `DocumentBodyFactory` picks.
-/// What a body shows is the body's.
+/// The shell only: it reads the document from its transcript when it first
+/// appears, unless it was handed one (a tab made again from editor history
+/// has only its reference); words the tab and the jump bar from it
+/// (`DocumentHeader`); puts an approval bar under it while the call waits
+/// for the reader; and embeds the body `DocumentBodyFactory` picks. What a
+/// body shows is the body's.
 @MainActor
 final class DocumentViewController: NSViewController {
-    /// Reads the document a reference names, or `nil` when it no longer
-    /// exists; off the main actor.
-    typealias Load = @Sendable (DocumentReference) async throws -> Document?
+    /// Reads the transcript at a URL, off the main actor.
+    typealias LoadTranscript = @Sendable (URL) async throws -> Transcript
 
     private let reference: DocumentReference
 
     weak var delegate: DocumentViewControllerDelegate?
 
-    private let load: Load
+    /// What the reader opened, until it is shown.
+    private var document: Document?
+    private let loadTranscript: LoadTranscript
     private let bodyFactory: DocumentBodyFactory
     private var loadTask: Task<Void, Never>?
     private var hasLoaded = false
@@ -60,14 +63,20 @@ final class DocumentViewController: NSViewController {
         return label
     }()
 
-    /// `title` names the tab until the document has loaded and its header
-    /// says; a tab made from history has none to give.
-    init(reference: DocumentReference, title: String?, load: @escaping Load, bodyFactory: DocumentBodyFactory) {
+    /// `document` is what the reader just opened; without one — a tab made
+    /// from history — the shell reads it with `loadTranscript`, and the tab
+    /// has no title until then. `makeConversation` makes the transcript tab
+    /// a subagent's conversation opens as (`DocumentBodyFactory`).
+    init(
+        reference: DocumentReference, document: Document?, loadTranscript: @escaping LoadTranscript,
+        makeConversation: @escaping @MainActor (URL, String) -> NSViewController
+    ) {
         self.reference = reference
-        self.load = load
-        self.bodyFactory = bodyFactory
+        self.document = document
+        self.loadTranscript = loadTranscript
+        bodyFactory = DocumentBodyFactory(makeConversation: makeConversation)
         super.init(nibName: nil, bundle: nil)
-        self.title = title
+        title = document.map { DocumentHeader($0).title }
     }
 
     @available(*, unavailable)
@@ -115,9 +124,16 @@ final class DocumentViewController: NSViewController {
         guard !hasLoaded else { return }
         hasLoaded = true
         view.layoutSubtreeIfNeeded()
-        let (reference, load) = (reference, load)
+        if let document {
+            self.document = nil
+            show(document)
+            return
+        }
+        let (reference, loadTranscript) = (reference, loadTranscript)
         loadTask = Task { [weak self] in
-            let document = await Task.detached(priority: .userInitiated) { try? await load(reference) }.value
+            let document = await Task.detached(priority: .userInitiated) {
+                (try? await loadTranscript(reference.transcriptURL)).flatMap { TranscriptPage($0).document(reference) }
+            }.value
             guard !Task.isCancelled else { return }
             self?.show(document)
             self?.loadTask = nil

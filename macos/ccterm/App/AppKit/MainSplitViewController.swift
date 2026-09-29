@@ -98,21 +98,16 @@ final class MainSplitViewController: NSSplitViewController {
     /// reference. `document` is what the reader just opened; a tab made again
     /// from history reads it from the transcript.
     private func tab(for reference: DocumentReference, document: Document? = nil) -> NSTabViewItem {
-        let load: DocumentViewController.Load =
-            if let document {
-                { _ in document }
-            } else {
-                { [library] in TranscriptPage(try await library.transcript(at: $0.transcriptURL)).document($0) }
-            }
-        let bodies = DocumentBodyFactory { [library, weak self] url, title in
+        let controller = DocumentViewController(
+            reference: reference, document: document,
+            loadTranscript: { [library] in try await library.transcript(at: $0) }
+        ) { [library, weak self] url, title in
             let conversation = TranscriptViewController(fileURL: url, title: title) {
                 try await library.transcript(at: $0)
             }
             conversation.delegate = self
             return conversation
         }
-        let controller = DocumentViewController(
-            reference: reference, title: document.map { DocumentHeader($0).title }, load: load, bodyFactory: bodies)
         controller.delegate = self
         let item = NSTabViewItem(viewController: controller)
         item.identifier = reference

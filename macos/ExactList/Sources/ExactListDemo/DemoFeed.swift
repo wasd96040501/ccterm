@@ -23,11 +23,11 @@ final class DemoFeed: ExactListViewDataSource, ExactListViewDelegate {
                 list.insertRows(at: [rows.count - 1], withAnimation: .effectFade)
             }
         case .growLastRow:
-            guard !rows.isEmpty else { return }
-            rows[rows.count - 1].expanded = true
             repeatEvery(0.08, times: 80) { [weak self, weak list] in
                 guard let self, let list, !rows.isEmpty else { return }
                 let last = rows.count - 1
+                // Expanded in the same commit as the first growth.
+                rows[last].expanded = true
                 rows[last].text += " " + Self.words[(rows[last].text.count / 5) % Self.words.count]
                 configureView(ofRow: last, in: list)
                 NSAnimationContext.runAnimationGroup { context in

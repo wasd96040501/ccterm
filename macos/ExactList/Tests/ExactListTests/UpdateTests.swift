@@ -202,6 +202,33 @@ final class UpdateTests: XCTestCase {
         XCTAssertNotEqual(list.row(for: old2), 2)
         XCTAssertNotEqual(list.row(for: old3), 3)
         XCTAssertFalse(list.view(atRow: 2) === list.view(atRow: 3))
+
+        // A pooled view can still sit in a row's former container, hidden
+        // (P3). Reloading hands it to a mounted row; containers reused later
+        // must not take it back out of that row.
+        var heights: [CGFloat] = Array(repeating: 30, count: 200)
+        let poolHost = RecordingHost(count: heights.count) { row, _ in heights[row] }
+        let pooled = ExactListView(dataSource: poolHost, delegate: poolHost)
+        stage.rootView.subviews.forEach { $0.removeFromSuperview() }
+        await stage.mount(pooled)
+        func still(_ body: () -> Void) {
+            NSAnimationContext.runAnimationGroup {
+                $0.duration = 0
+                body()
+            }
+        }
+        heights[0] = 400  // rows below leave: their containers become spares
+        still { pooled.noteHeightOfRows(withIndexesChanged: [0]) }
+        still { pooled.reloadData(forRowIndexes: [1, 2, 3]) }
+        heights[0] = 30  // rows arrive with none leaving: spares are reused
+        still { pooled.noteHeightOfRows(withIndexesChanged: [0]) }
+        pooled.enumerateAvailableRowViews { view, row in
+            XCTAssertNotNil(view.window, "row \(row)'s view is in the window")
+            XCTAssertFalse(view.isHiddenOrHasHiddenAncestor, "row \(row)'s view shows")
+        }
+        for row in pooled.rows(in: pooled.bounds) {
+            XCTAssertNotNil(pooled.view(atRow: row)?.window, "row \(row) has its view")
+        }
     }
 
     /// With an animation in flight: every animation is removed, the pending

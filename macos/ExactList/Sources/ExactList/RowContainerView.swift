@@ -42,6 +42,10 @@ final class RowContainerView: NSView {
         let replaced = hostedView === view ? nil : hostedView
         if replaced != nil || hostedView == nil {
             replaced?.removeFromSuperview()
+            // A pooled view may still sit in the container its last row left,
+            // hidden (P3): that container lets go of it, or reusing the
+            // container later would take the view out of this row.
+            if let holder = view.superview as? RowContainerView, holder !== self { _ = holder.unhost() }
             view.translatesAutoresizingMaskIntoConstraints = true
             view.autoresizingMask = []
             addSubview(view)

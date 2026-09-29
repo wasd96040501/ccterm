@@ -45,8 +45,12 @@ public enum EventSynthesizer {
         }
     }
 
-    /// A left mouse down and up at `point` in the window.
+    /// A left mouse down and up at `point` in the window, delivered to the view
+    /// under it, which passes it up the responder chain.
     ///
+    /// Through `hitTest`, like the wheel: a test process is never the active
+    /// app, so its windows can't become key, and `NSWindow.sendEvent(_:)`
+    /// spends a click in a window that isn't key on activating it (measured).
     /// The up is posted to the queue before the down is sent, so a view that
     /// tracks the press in a loop of its own finds it waiting.
     public static func click(in window: NSWindow, at point: NSPoint) {
@@ -58,7 +62,10 @@ public enum EventSynthesizer {
             else { preconditionFailure("NSEvent refused a mouse event") }
             return event
         }
+        guard let target = window.contentView?.hitTest(point) else {
+            preconditionFailure("no view under \(point) to take the click")
+        }
         NSApp.postEvent(mouse(.leftMouseUp), atStart: false)
-        window.sendEvent(mouse(.leftMouseDown))
+        target.mouseDown(with: mouse(.leftMouseDown))
     }
 }

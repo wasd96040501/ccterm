@@ -69,9 +69,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The index only saves reading: Caches, which the system may clear.
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(Bundle.main.bundleIdentifier ?? "com.ccterm.app", isDirectory: true)
+        var directories = [SessionDirectory(environment: ProcessInfo.processInfo.environment)]
+        #if DEBUG
+            // A made-up session showing every kind of row, in a directory of
+            // its own under the temporary directory.
+            do {
+                directories.append(SessionDirectory(url: try SampleSession.install()))
+            } catch {
+                appLog(.warning, "AppDelegate", "sample session not written: \(error.localizedDescription)")
+            }
+        #endif
         let library = LibraryStore(
-            directory: SessionDirectory(environment: ProcessInfo.processInfo.environment),
-            indexURL: caches.appendingPathComponent("LibraryIndex.plist"))
+            directories: directories, indexURL: caches.appendingPathComponent("LibraryIndex.plist"))
         self.library = library
         let controller = MainWindowController(library: library)
         // Where the frame persists is the app's configuration, not the window's:

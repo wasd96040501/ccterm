@@ -3,8 +3,8 @@ import Combine
 import Foundation
 
 /// Every transcript someone ran at the CLI's prompt, from the CLI's session
-/// directory, as a tree of `LibraryNode`s: project → session → its subagents
-/// and workflow runs. Left out: sessions run through `claude -p` or an SDK,
+/// directory (and any others given, read as one), as a tree of
+/// `LibraryNode`s: project → session → its subagents and workflow runs. Left out: sessions run through `claude -p` or an SDK,
 /// those that record no working directory, and those run in a temporary or
 /// hidden directory.
 ///
@@ -20,30 +20,34 @@ final class LibraryStore {
     /// read downstream as a change.
     @Published private(set) var nodes: [LibraryNode] = []
 
-    private let directory: SessionDirectory
+    private let directories: [SessionDirectory]
     /// Where the `LibraryIndex` is kept between launches; `nil` keeps none.
     private let indexURL: URL?
     private var task: Task<Void, Never>?
     /// What each shown session read as, by transcript.
     private var entries: [URL: Entry] = [:]
 
-    init(directory: SessionDirectory, indexURL: URL? = nil) {
-        self.directory = directory
+    convenience init(directory: SessionDirectory, indexURL: URL? = nil) {
+        self.init(directories: [directory], indexURL: indexURL)
+    }
+
+    init(directories: [SessionDirectory], indexURL: URL? = nil) {
+        self.directories = directories
         self.indexURL = indexURL
     }
 
-    /// Reads every session, then keeps up with the directory.
+    /// Reads every session, then keeps up with the directories.
     func start() {
         guard task == nil else { return }
-        let directory = directory
+        let directories = directories
         let indexURL = indexURL
         task = Task { [weak self] in
             // Watching starts before the listing, so nothing written between
             // the two is missed.
-            let changes = directory.changes()
-            // The tree as soon as the directory is listed: the index answers
-            // for every transcript unchanged since it was written.
-            let launch = await Self.launch(directory, indexedAt: indexURL)
+            let changes = Self.changes(in: directories)
+            // The tree as soon as the directories are listed: the index
+            // answers for every transcript unchanged since it was written.
+            let launch = await Self.launch(directories, indexedAt: indexURL)
             self?.update(launch.records)
             // Then the side transcripts the index answered for, as they are on
             // disk: they come and go without their session's transcript
@@ -122,18 +126,33 @@ final class LibraryStore {
 
     private typealias Record = LibraryIndex.Record
 
-    /// Every session in `directory`: what the index at `indexURL` records for
-    /// those unchanged since — `indexed` — and what the rest read as. `nil`
-    /// for a session that can't be read.
+    /// Every directory's changes as one stream. Each directory's watch starts
+    /// here, before this returns.
+    private nonisolated static func changes(in directories: [SessionDirectory]) -> AsyncStream<[SessionFile]> {
+        let streams = directories.map { $0.changes() }
+        guard streams.count > 1 else { return streams.first ?? AsyncStream { $0.finish() } }
+        return AsyncStream { continuation in
+            let forwarding = streams.map { stream in
+                Task {
+                    for await sessions in stream { continuation.yield(sessions) }
+                }
+            }
+            continuation.onTermination = { _ in forwarding.forEach { $0.cancel() } }
+        }
+    }
+
+    /// Every session in `directories`: what the index at `indexURL` records
+    /// for those unchanged since — `indexed` — and what the rest read as.
+    /// `nil` for a session that can't be read.
     @concurrent
     private nonisolated static func launch(
-        _ directory: SessionDirectory, indexedAt indexURL: URL?
+        _ directories: [SessionDirectory], indexedAt indexURL: URL?
     ) async
         -> (records: [SessionFile: Record?], indexed: [SessionFile], index: LibraryIndex)
     {
         let clock = ContinuousClock()
         let start = clock.now
-        let sessions = directory.sessions()
+        let sessions = directories.flatMap { $0.sessions() }
         let index = indexURL.map(LibraryIndex.init(contentsOf:)) ?? LibraryIndex()
         var records: [SessionFile: Record?] = [:]
         var unread: [SessionFile] = []

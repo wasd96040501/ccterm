@@ -83,6 +83,30 @@ final class SourceViewSnapshotTests: XCTestCase {
         try await capture(SourceDocument(terminalOutput: output), named: "SourceView-output")
     }
 
+    /// Built before it has a size, sized by constraints, then scrolled to a
+    /// change — the way an editor tab shows one.
+    func testComparisonSizedLaterAndScrolled() async throws {
+        let size = NSSize(width: 620, height: 300)
+        let window = TestWindow.make(contentSize: size)
+        defer { window.close() }
+        let view = SourceView(document: SourceDocument(old: Self.original, new: Self.edited, language: .swift))
+        let host = NSView(frame: NSRect(origin: .zero, size: size))
+        window.contentView = host
+        view.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(view)
+        NSLayoutConstraint.activate([
+            view.topAnchor.constraint(equalTo: host.topAnchor, constant: 28),
+            view.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+            view.bottomAnchor.constraint(equalTo: host.bottomAnchor),
+        ])
+        window.layoutIfNeeded()
+        view.scrollToChange(at: 3)
+        window.displayIfNeeded()
+        let url = try await WindowCapture.capture(window, named: "SourceView-scrolled")
+        add(XCTAttachment(contentsOfFile: url))
+    }
+
     private func capture(_ document: SourceDocument, named name: String) async throws {
         let size = NSSize(width: 620, height: 460)
         let window = TestWindow.make(contentSize: size)

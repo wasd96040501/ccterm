@@ -212,9 +212,14 @@ public final class TranscriptView: NSView {
             return nil
         }
 
+        let pool: NSUserInterfaceItemIdentifier =
+            switch described.content {
+            case .markdown, .userMessage: TranscriptCellView.Pool.drawn
+            case .view: TranscriptCellView.Pool.hosted
+            }
         let cell =
-            tableView.makeView(withIdentifier: TranscriptCellView.identifier, owner: nil)
-            as? TranscriptCellView ?? TranscriptCellView()
+            tableView.makeView(withIdentifier: pool, owner: nil) as? TranscriptCellView
+            ?? TranscriptCellView(pool: pool)
 
         let hosted: NSView
         switch described.content {
@@ -247,9 +252,9 @@ public final class TranscriptView: NSView {
         in cell: TranscriptCellView, showing block: MeasuredBlock, forRow row: Int
     ) -> BlockView {
         // Recycled through the cell it was already installed in, so a row
-        // scrolling back into view rebuilds no constraints. A fresh one only when
-        // the pool hands over a cell that was serving a `.view` row — and that is
-        // the one moment its delegate is set.
+        // scrolling back into view rebuilds no constraints. A fresh one only for
+        // a new cell — drawn rows have a pool of their own — and that is the
+        // one moment its delegate is set.
         let view = cell.hostedView as? BlockView ?? makeBlockView()
         view.configure(with: block)
         // Its part of the selection — the row may have scrolled out mid-selection

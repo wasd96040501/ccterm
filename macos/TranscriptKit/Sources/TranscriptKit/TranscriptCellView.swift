@@ -33,7 +33,15 @@ import AppKit
 @MainActor
 final class TranscriptCellView: NSView {
 
-    static let identifier = NSUserInterfaceItemIdentifier("TranscriptKit.cell")
+    /// Two pools, one per kind of content: a cell keeps the view it hosted
+    /// while it waits, so a cell handed back for the other kind would throw
+    /// its view away and build one — every time a reply follows a host row.
+    enum Pool {
+        /// Rows the transcript draws itself (a `BlockView`).
+        static let drawn = NSUserInterfaceItemIdentifier("TranscriptKit.cell.drawn")
+        /// `.view` rows, hosting the delegate's view.
+        static let hosted = NSUserInterfaceItemIdentifier("TranscriptKit.cell.hosted")
+    }
 
     /// The view the host handed over for this row, still installed while the
     /// cell sits in the reuse pool — the two recycle as a pair, so a row coming
@@ -44,9 +52,9 @@ final class TranscriptCellView: NSView {
     private var minContentWidth: CGFloat = 0
     private var maxContentWidth: CGFloat = .greatestFiniteMagnitude
 
-    init() {
+    init(pool: NSUserInterfaceItemIdentifier) {
         super.init(frame: .zero)
-        identifier = Self.identifier
+        identifier = pool
     }
 
     @available(*, unavailable)

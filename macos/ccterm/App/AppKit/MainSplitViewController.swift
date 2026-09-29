@@ -100,14 +100,14 @@ final class MainSplitViewController: NSSplitViewController {
     private func tab(for reference: DocumentReference, document: Document? = nil) -> NSTabViewItem {
         let controller = DocumentViewController(
             reference: reference, document: document,
-            loadTranscript: { [library] in try await library.transcript(at: $0) }
-        ) { [library, weak self] url, title in
-            let conversation = TranscriptViewController(fileURL: url, title: title) {
-                try await library.transcript(at: $0)
-            }
-            conversation.delegate = self
-            return conversation
-        }
+            loadTranscript: { [library] in try await library.transcript(at: $0) },
+            makeConversation: { [library, weak self] url, title in
+                let conversation = TranscriptViewController(fileURL: url, title: title) {
+                    try await library.transcript(at: $0)
+                }
+                conversation.delegate = self
+                return conversation
+            })
         controller.delegate = self
         let item = NSTabViewItem(viewController: controller)
         item.identifier = reference

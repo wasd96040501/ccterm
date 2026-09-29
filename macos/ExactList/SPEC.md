@@ -205,7 +205,10 @@ written they do nothing.
   - Planning a commit: O((e + k + m) · log n).
   - Updating the heights at commit: O(k · log n) when the batch inserts,
     removes and moves nothing; otherwise one O(n) pass that copies the
-    heights run by run and rebuilds the index.
+    heights run by run and rebuilds the index from the first row the batch
+    touches. Either way the commit keeps the old heights to plan from, so the
+    new ones start as a memory copy of them: O(n), but a block copy, not a
+    pass over the rows.
   - These bounds are what B1 and B2 rest on: `NSTableView`'s own costs don't
     grow with the rows off screen, so a commit's can't either, beyond that one
     copy.

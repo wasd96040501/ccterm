@@ -5,7 +5,7 @@ import AppKit
 /// row, not indented like its items — it takes the column's full width.
 @MainActor
 final class ApprovalCardView: NSView, PageRowView {
-    typealias Model = ToolCall
+    typealias Model = Approval
 
     weak var delegate: PageRowViewDelegate?
 
@@ -20,7 +20,7 @@ final class ApprovalCardView: NSView, PageRowView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    static func height(for model: ToolCall, width: CGFloat) -> CGFloat { 120 }
+    static func height(for model: Approval, width: CGFloat) -> CGFloat { 120 }
 
-    func configure(with model: ToolCall) {}
+    func configure(with model: Approval) {}
 }

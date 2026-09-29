@@ -27,8 +27,8 @@ extension PageRow {
             WorkLineRowView.height(for: workLine(isSelected: false, flashes: false), width: width)
         case .showMore(let runID, let hidden):
             ShowMoreRowView.height(for: .init(runID: runID, hidden: hidden), width: width)
-        case .approval(let call):
-            ApprovalCardView.height(for: call, width: width)
+        case .approval(let approval):
+            ApprovalCardView.height(for: approval, width: width)
         case .command(let command):
             CapsuleRowView.height(for: command, width: width)
         case .divider(let divider):
@@ -39,8 +39,8 @@ extension PageRow {
             CaptionRowView.height(for: caption, width: width)
         case .question(let question):
             QuestionRowView.height(for: question, width: width)
-        case .planDecision(let plan):
-            PlanDecisionRowView.height(for: plan, width: width)
+        case .planDecision(let callID):
+            PlanDecisionRowView.height(for: callID, width: width)
         }
     }
 
@@ -63,8 +63,8 @@ extension PageRow {
             return view(WorkLineRowView.self, workLine(isSelected: isSelected, flashes: flashes))
         case .showMore(let runID, let hidden):
             return view(ShowMoreRowView.self, .init(runID: runID, hidden: hidden))
-        case .approval(let call):
-            return view(ApprovalCardView.self, call)
+        case .approval(let approval):
+            return view(ApprovalCardView.self, approval)
         case .command(let command):
             return view(CapsuleRowView.self, command)
         case .divider(let divider):
@@ -75,8 +75,8 @@ extension PageRow {
             return view(CaptionRowView.self, caption)
         case .question(let question):
             return view(QuestionRowView.self, question)
-        case .planDecision(let plan):
-            return view(PlanDecisionRowView.self, plan)
+        case .planDecision(let callID):
+            return view(PlanDecisionRowView.self, callID)
         }
     }
 

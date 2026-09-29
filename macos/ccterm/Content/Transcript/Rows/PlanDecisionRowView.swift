@@ -4,7 +4,8 @@ import AppKit
 /// (07-talk.md "ExitPlanMode").
 @MainActor
 final class PlanDecisionRowView: NSView, PageRowView {
-    typealias Model = Plan
+    /// The plan's call id — what a decision answers.
+    typealias Model = String
 
     weak var delegate: PageRowViewDelegate?
 
@@ -19,7 +20,7 @@ final class PlanDecisionRowView: NSView, PageRowView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    static func height(for model: Plan, width: CGFloat) -> CGFloat { 32 }
+    static func height(for model: String, width: CGFloat) -> CGFloat { 32 }
 
-    func configure(with model: Plan) {}
+    func configure(with model: String) {}
 }

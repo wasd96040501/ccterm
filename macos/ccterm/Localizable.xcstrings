@@ -2,6 +2,17 @@
   "sourceLanguage": "en",
   "strings": {
     "": {},
+    "%@ → %@ tokens": {
+      "comment": "Token counts before and after a compaction, e.g. 168k → 14k tokens.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ → %2$@ token"
+          }
+        }
+      }
+    },
     "%lld background tasks finished": {
       "localizations": {
         "zh-Hans": {
@@ -68,6 +79,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 个在后台"
+          }
+        }
+      }
+    },
+    "%lld lines": {
+      "comment": "How many lines a ! command printed, in its capsule.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 行"
           }
         }
       }
@@ -204,6 +226,47 @@
         }
       }
     },
+    "Claude wants to create this file": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 想创建此文件"
+          }
+        }
+      }
+    },
+    "Claude wants to make this edit": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 想进行此编辑"
+          }
+        }
+      }
+    },
+    "Claude wants to run this command": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 想运行此命令"
+          }
+        }
+      }
+    },
+    "Claude wants to use %@": {
+      "comment": "%@ is a tool's name.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 想使用 %@"
+          }
+        }
+      }
+    },
     "Close Tab": {
       "localizations": {
         "zh-Hans": {
@@ -244,12 +307,53 @@
         }
       }
     },
+    "Compacted automatically": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已自动压缩"
+          }
+        }
+      }
+    },
+    "Compacting…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在压缩…"
+          }
+        }
+      }
+    },
+    "Conversation compacted": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对话已压缩"
+          }
+        }
+      }
+    },
     "Coordinator": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "协调者"
+          }
+        }
+      }
+    },
+    "Create %@": {
+      "comment": "%@ is a file name.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建 %@"
           }
         }
       }
@@ -300,6 +404,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "文稿"
+          }
+        }
+      }
+    },
+    "Edit %@": {
+      "comment": "%@ is a file name.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑 %@"
           }
         }
       }
@@ -585,6 +700,27 @@
         }
       }
     },
+    "Resumed · %@": {
+      "comment": "%@ is a day and time.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已恢复 · %@"
+          }
+        }
+      }
+    },
+    "Run a command": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行命令"
+          }
+        }
+      }
+    },
     "Running %lld calls": {
       "localizations": {
         "zh-Hans": {
@@ -831,6 +967,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "更新了任务列表"
+          }
+        }
+      }
+    },
+    "Use %@": {
+      "comment": "%@ is a tool's name.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 %@"
           }
         }
       }

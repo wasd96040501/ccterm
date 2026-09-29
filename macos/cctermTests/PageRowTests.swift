@@ -50,7 +50,7 @@ final class PageRowTests: XCTestCase {
         XCTAssertEqual(
             rows.map(\.kind),
             [
-                .caption(Caption(glyph: .sender(.coordinator), text: "Coordinator")),
+                .caption(Caption(glyph: .coordinator, text: "Coordinator")),
                 .markdown("> Found it.\n>\n> Two more."),
             ])
     }

@@ -1,4 +1,3 @@
-import AgentSDK
 import Foundation
 
 /// One row of a transcript tab's `TranscriptView`: what a page entry becomes
@@ -45,7 +44,7 @@ nonisolated struct PageRow: Sendable, Equatable, Identifiable {
         case runItem(RunItem)
         /// *Show N more*: `hidden` items past the list's end.
         case showMore(runID: String, hidden: Int)
-        case approval(ToolCall)
+        case approval(Approval)
         case newsLine(NewsRun, RunDisclosure)
         case newsItem(TaskNews)
         case command(LocalCommand)
@@ -53,7 +52,8 @@ nonisolated struct PageRow: Sendable, Equatable, Identifiable {
         case interruption
         case caption(Caption)
         case question(Question)
-        case planDecision(Plan)
+        /// Keep Planning / Approve for the plan of call `callID`.
+        case planDecision(callID: String)
     }
 
     let id: ID
@@ -100,7 +100,7 @@ nonisolated extension PageRow {
                 }
             }
             if let waiting = run.waitingCall {
-                rows.append(row(.approval, .approval(waiting)))
+                rows.append(row(.approval, .approval(Approval(waiting))))
             }
             return rows
         case .news(let news):
@@ -117,19 +117,15 @@ nonisolated extension PageRow {
         case .interruption:
             return [row(.main, .interruption)]
         case .voice(let voice):
-            return [
-                row(.caption, .caption(Caption(glyph: .sender(voice.sender), text: voice.name))),
-                row(.body, .markdown(Self.quoted(voice.text))),
-            ]
+            return [row(.caption, .caption(voice.caption)), row(.body, .markdown(Self.quoted(voice.text)))]
         case .question(let question):
             return [row(.main, .question(question))]
         case .plan(let plan):
-            let tile = Tile(glyph: .plan, state: plan.isWaiting ? .waiting : .done)
             var rows = [
-                row(.caption, .caption(Caption(glyph: .tile(tile), text: plan.caption))),
+                row(.caption, .caption(plan.caption)),
                 row(.body, .markdown(plan.text)),
             ]
-            if plan.isWaiting { rows.append(row(.decision, .planDecision(plan))) }
+            if plan.isWaiting { rows.append(row(.decision, .planDecision(callID: plan.id))) }
             return rows
         }
     }

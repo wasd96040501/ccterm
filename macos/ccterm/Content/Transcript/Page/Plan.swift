@@ -16,8 +16,11 @@ nonisolated struct Plan: Sendable, Equatable, Identifiable {
         if case .waiting = call.state { true } else { false }
     }
 
-    /// The words of the caption over the plan.
-    var caption: String {
-        isWaiting ? String(localized: "Plan · Waiting for your approval") : String(localized: "Plan")
+    /// The caption over the plan: its tile, coral while it waits, and
+    /// *Plan · Waiting for your approval* / *Plan*.
+    var caption: Caption {
+        Caption(
+            glyph: .tile(Tile(glyph: .plan, state: isWaiting ? .waiting : .done)),
+            text: isWaiting ? String(localized: "Plan · Waiting for your approval") : String(localized: "Plan"))
     }
 }

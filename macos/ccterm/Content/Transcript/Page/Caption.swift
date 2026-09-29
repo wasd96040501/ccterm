@@ -1,4 +1,3 @@
-import AgentSDK
 import Foundation
 
 /// The 20-pt line above words someone other than Claude put on the page — a
@@ -6,7 +5,7 @@ import Foundation
 nonisolated struct Caption: Sendable, Equatable {
     enum Glyph: Sendable, Equatable {
         /// The sidebar's glyph for that party, in the sidebar's colour.
-        case sender(UserMessage.Sender)
+        case subagent, session, coordinator, plugin
         /// A tool tile — a plan's, coral while it waits for the reader.
         case tile(Tile)
     }

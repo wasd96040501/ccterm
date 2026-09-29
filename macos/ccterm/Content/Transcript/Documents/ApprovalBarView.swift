@@ -19,6 +19,6 @@ final class ApprovalBarView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    /// `call` is waiting (`ToolCallState.waiting`).
-    func configure(with call: ToolCall) {}
+    /// The tile, `request`, `reason`; the buttons answer `approval.id`.
+    func configure(with approval: Approval) {}
 }

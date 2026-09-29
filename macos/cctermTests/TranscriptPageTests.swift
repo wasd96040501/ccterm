@@ -40,7 +40,8 @@ final class TranscriptPageTests: XCTestCase {
         s.result("c1")
         s.call(
             "q", "AskUserQuestion",
-            #"{"questions":[{"question":"Which?","header":"H","options":[],"multiSelect":false}]}"#)
+            #"{"questions":[{"question":"Which?","header":"H","options":[{"label":"A","description":"First"},{"label":"B","description":""}],"multiSelect":false}]}"#
+        )
         s.result("q", output: #"{"questions":[],"answers":{"Which?":"A"}}"#)
         s.call("c2", "Bash", bash("Test"))
         s.result("c2")
@@ -48,7 +49,17 @@ final class TranscriptPageTests: XCTestCase {
         let entries = s.page.entries
         XCTAssertEqual(entries.map(\.id), ["c1", "q", "c2"])
         guard case .question(let question) = entries[1] else { return XCTFail("\(entries[1])") }
-        XCTAssertEqual(question.answers, ["Which?": "A"])
+        XCTAssertEqual(
+            question.items,
+            [
+                Question.Item(
+                    header: "H", text: "Which?",
+                    options: [
+                        .init(label: "A", detail: "First", isChosen: true),
+                        .init(label: "B", detail: "", isChosen: false),
+                    ], allowsSeveral: false)
+            ])
+        XCTAssertEqual(question.tile, Tile(glyph: .question, state: .done))
     }
 
     func testConsecutiveEditsToOneFileAreOneItem() {

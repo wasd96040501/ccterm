@@ -6,4 +6,19 @@ nonisolated struct Document: Sendable, Equatable {
     let reference: DocumentReference
     let content: DocumentContent
     let workingDirectory: String?
+
+    /// What the approval bar over it asks, while the call it is about waits
+    /// for the reader.
+    var approval: Approval? {
+        let call: ToolCall? =
+            switch content {
+            case .command(let call), .newFile(let call), .read(let call), .search(let call), .web(let call),
+                .agent(let call), .other(let call):
+                call
+            case .change(let calls): calls.last
+            case .shellCommand, .taskList, .news, .commandOutput, .compactionSummary: nil
+            }
+        guard let call, case .waiting = call.state else { return nil }
+        return Approval(call)
+    }
 }

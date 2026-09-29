@@ -12,4 +12,17 @@ nonisolated struct Voice: Sendable, Equatable, Identifiable {
     let name: String
     /// What they said, as markdown.
     let text: String
+
+    /// The caption over their words: the sidebar's glyph for the party, and
+    /// their name.
+    var caption: Caption {
+        let glyph: Caption.Glyph =
+            switch sender {
+            case .agent: .subagent
+            case .session: .session
+            case .coordinator: .coordinator
+            case .plugin: .plugin
+            }
+        return Caption(glyph: glyph, text: name)
+    }
 }

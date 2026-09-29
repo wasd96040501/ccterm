@@ -144,8 +144,8 @@ final class DocumentViewController: NSViewController {
         let header = DocumentHeader(document)
         title = header.title
         jumpBar.configure(with: header)
-        if let waiting = Self.waitingCall(in: document.content) {
-            approvalBar.configure(with: waiting)
+        if let approval = document.approval {
+            approvalBar.configure(with: approval)
             approvalBar.isHidden = false
         }
         embed(bodyFactory.body(for: document))
@@ -161,20 +161,6 @@ final class DocumentViewController: NSViewController {
             body.view.trailingAnchor.constraint(equalTo: bodyArea.trailingAnchor),
             body.view.bottomAnchor.constraint(equalTo: bodyArea.bottomAnchor),
         ])
-    }
-
-    /// The call a document is about, while it waits for the reader.
-    private static func waitingCall(in content: DocumentContent) -> ToolCall? {
-        let call: ToolCall? =
-            switch content {
-            case .command(let call), .newFile(let call), .read(let call), .search(let call), .web(let call),
-                .agent(let call), .other(let call):
-                call
-            case .change(let calls): calls.last
-            default: nil
-            }
-        guard let call, case .waiting = call.state else { return nil }
-        return call
     }
 }
 

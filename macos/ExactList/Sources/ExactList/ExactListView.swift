@@ -487,15 +487,16 @@ public final class ExactListView: NSView {
         return rows
     }
 
-    /// The rows intersecting `P`, and AppKit's own overdraw within a viewport
-    /// of it (P1).
+    /// The rows intersecting `P`, and AppKit's own overdraw within the height
+    /// of `U` of it (P1).
     private func preparedRows(viewport: Viewport? = nil, heights: RowHeights? = nil) -> IndexSet {
         let viewport = viewport ?? committed
         let heights = heights ?? self.heights
         var rows = IndexSet(integersIn: heights.rows(intersecting: viewport.preparedTop, viewport.preparedBottom))
         if let requested = appKitPrepared {
-            let lower = max(requested.minY, viewport.preparedTop - viewport.height)
-            let upper = min(requested.maxY, viewport.preparedBottom + viewport.height)
+            let reach = viewport.unobscuredBottom - viewport.unobscuredTop
+            let lower = max(requested.minY, viewport.preparedTop - reach)
+            let upper = min(requested.maxY, viewport.preparedBottom + reach)
             if lower < upper { rows.formUnion(IndexSet(integersIn: heights.rows(intersecting: lower, upper))) }
         }
         return rows

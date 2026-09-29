@@ -35,7 +35,7 @@ final class ProvidersEmptyView: NSView {
     }()
 
     private lazy var hintLabel: NSTextField = {
-        let label = NSTextField(labelWithString: String(localized: "Or paste a shell alias here with ⌘V."))
+        let label = NSTextField(labelWithString: String(localized: "Or press ⌘V to paste shell aliases or commands."))
         label.font = .systemFont(ofSize: 11)
         label.textColor = .tertiaryLabelColor
         return label

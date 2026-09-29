@@ -33,6 +33,16 @@
         }
       }
     },
+    "%lld skipped": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已跳过 %lld 个"
+          }
+        }
+      }
+    },
     "%lld variables": {
       "localizations": {
         "en": {
@@ -593,6 +603,34 @@
         }
       }
     },
+    "Imported %lld providers": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Imported %lld provider"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Imported %lld providers"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已导入 %lld 个提供方"
+          }
+        }
+      }
+    },
     "Interrupted": {
       "localizations": {
         "zh-Hans": {
@@ -743,6 +781,16 @@
         }
       }
     },
+    "No providers imported": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未导入提供方"
+          }
+        }
+      }
+    },
     "None": {
       "localizations": {
         "zh-Hans": {
@@ -813,12 +861,12 @@
         }
       }
     },
-    "Or paste a shell alias here with ⌘V.": {
+    "Or press ⌘V to paste shell aliases or commands.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "也可以在这里用 ⌘V 粘贴一个 shell 别名。"
+            "value": "也可以按 ⌘V 粘贴 shell 别名或命令。"
           }
         }
       }
@@ -843,12 +891,22 @@
         }
       }
     },
-    "Paste %@ lines or a whole shell command": {
+    "Overrides the Configuration Folder in General.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "粘贴 %@ 行或一整条 shell 命令"
+            "value": "会覆盖“通用”中的配置文件夹。"
+          }
+        }
+      }
+    },
+    "Paste %@ lines or a command": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴 %@ 行或一条命令"
           }
         }
       }

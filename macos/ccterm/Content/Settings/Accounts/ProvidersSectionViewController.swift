@@ -10,6 +10,8 @@ final class ProvidersSectionViewController: NSViewController {
 
     private let providers: AnyPublisher<[Account], Never>
     private var cancellables = Set<AnyCancellable>()
+    /// The rows on show, by account.
+    private var rows: [UUID: AccountRowView] = [:]
 
     /// `providers`: the provider accounts, now and each time the list changes;
     /// must deliver on the main actor, and its current value on subscribing, so
@@ -54,15 +56,22 @@ final class ProvidersSectionViewController: NSViewController {
             group.setRows([emptyView])
             return
         }
+        rows = [:]
         group.setRows(
             providers.compactMap { account in
                 guard let provider = account.provider else { return nil }
                 let row = AccountRowView()
+                rows[account.id] = row
                 row.configure(with: AccountRowContent(provider: provider))
                 row.onOpen = { [weak self] in self.map { $0.delegate?.providersSection($0, didOpen: account) } }
                 row.menu = menu(for: account)
                 return row
             })
+    }
+
+    /// Tints the rows of the providers with these ids, as just imported.
+    func flash(_ ids: [UUID]) {
+        for id in ids { rows[id]?.flash() }
     }
 
     private func menu(for account: Account) -> NSMenu {

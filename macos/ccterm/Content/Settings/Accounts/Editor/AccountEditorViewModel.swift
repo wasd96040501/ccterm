@@ -235,6 +235,8 @@ final class AccountEditorViewModel {
             let warning: String? =
                 if let field = managedNames[variable.name] {
                     String(localized: "Overrides the \(field) field.")
+                } else if variable.name == "CLAUDE_CONFIG_DIR" {
+                    String(localized: "Overrides the Configuration Folder in General.")
                 } else if !variable.name.isEmpty, names.filter({ $0 == variable.name }).count > 1 {
                     String(localized: "Defined more than once; the last one wins.")
                 } else {

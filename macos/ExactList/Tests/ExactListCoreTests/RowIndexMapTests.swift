@@ -82,6 +82,41 @@ final class RowIndexMapTests: XCTestCase {
             if map.notedRows != model.indexes(\.noted) { return "notedRows \(Array(map.notedRows))" }
             if map.reloadedRows != model.indexes(\.reloaded) { return "reloadedRows \(Array(map.reloadedRows))" }
             if map.isEmpty != edits.isEmpty { return "isEmpty \(map.isEmpty) after \(edits.count) edits" }
+
+            // The runs (G5) tile the new rows in order, and say what the model says.
+            var next = 0
+            for run in map.runs {
+                if run.newStart != next || run.count < 1 { return "runs \(map.runs) don't tile the rows" }
+                for row in run.newStart..<(run.newStart + run.count) {
+                    let entry = model.rows[row]
+                    switch run {
+                    case .kept(let old, let new, _):
+                        if entry.old != old + (row - new) || entry.moved { return "runs: \(run) at row \(row)" }
+                    case .moved(let old, _):
+                        if entry.old != old || !entry.moved { return "runs: \(run) at row \(row)" }
+                    case .inserted(_, _, let transition):
+                        if entry.old != nil || entry.transition != transition { return "runs: \(run) at row \(row)" }
+                    }
+                }
+                next += run.count
+            }
+            if next != model.rows.count { return "runs cover \(next) rows of \(model.rows.count)" }
+            let structural = model.rows.map(\.old) != Array(0..<oldCount) || model.rows.contains(where: \.moved)
+            if map.isStructural != structural { return "isStructural \(map.isStructural)" }
+
+            // The heights after the batch: kept unless noted; the rest asked in order.
+            let before = RowHeights((0..<oldCount).map { CGFloat($0 + 1) }, spacing: 1)
+            var asked: [Int] = []
+            let after = before.applying(map) { row in
+                asked.append(row)
+                return CGFloat(1000 + row)
+            }
+            let expectedAsked = model.rows.indices.filter { model.rows[$0].old == nil || model.rows[$0].noted }
+            if asked != expectedAsked { return "applying asked \(asked), expected \(expectedAsked)" }
+            let expectedHeights = model.rows.enumerated().map { row, entry in
+                entry.old.map { entry.noted ? CGFloat(1000 + row) : CGFloat($0 + 1) } ?? CGFloat(1000 + row)
+            }
+            if after.values != expectedHeights || after.spacing != 1 { return "applying gave \(after.values)" }
             return nil
         }
 

@@ -25,7 +25,10 @@ public enum CommitPlanner {
         var after = input.newViewport
         after.offset = anchor.restoredOffset(heights: new, viewport: after)
 
-        var motions = Self.motions(input, offset: after.offset)
+        // M7: the rows that could be seen move, and the largest distance among them.
+        let preparedTop = after.insetTop - after.overscan
+        let preparedBottom = after.height - after.insetBottom + after.overscan
+        var motions = Self.motions(input, offset: after.offset, top: preparedTop, bottom: preparedBottom)
         if !input.animates {
             for i in motions.indices {
                 motions[i].startTop = motions[i].endTop
@@ -34,9 +37,6 @@ public enum CommitPlanner {
             }
         }
 
-        // M7: the rows that could be seen move, and the largest distance among them.
-        let preparedTop = after.insetTop - after.overscan
-        let preparedBottom = after.height - after.insetBottom + after.overscan
         let reach = max(0, after.height - after.insetTop - after.insetBottom)
         let largest =
             motions.lazy.filter { Self.sweeps($0, preparedTop, preparedBottom) }
@@ -57,81 +57,110 @@ public enum CommitPlanner {
             isFollowingTail: input.followsTail && after.isAtTail(contentHeight: new.contentHeight))
     }
 
-    /// M2's start and end for every row, before M7 and before filtering by `P`:
-    /// new rows by new index, then the removed rows that were mounted, by old
-    /// index.
-    private static func motions(_ input: CommitInput, offset: CGFloat) -> [RowMotion] {
+    /// M2's start and end for every row that M7 could consider, before M7 and
+    /// before the final filter by `P`: new rows by new index, then the removed
+    /// rows that were mounted, by old index.
+    ///
+    /// Only rows whose sweep can meet `P` are worked out (G5). Surviving rows
+    /// keep their order in both layouts, and so do their tops and bottoms, so
+    /// the ones whose hull meets `P` are one contiguous stretch of them, found
+    /// by searching each layout. Inserted, moved and removed rows are the
+    /// batch's own, and each is worked out.
+    private static func motions(
+        _ input: CommitInput, offset: CGFloat, top: CGFloat, bottom: CGFloat
+    ) -> [RowMotion] {
         let old = input.oldHeights
         let new = input.newHeights
         let map = input.map
         let oldOffset = input.oldViewport.offset
         let spacing = new.spacing
-        let moved = map.movedRows
-        let insertions = map.insertions
-
-        // A surviving row is neither inserted, removed nor moved.
-        let survivesNew = (0..<map.newCount).map { map.oldIndex(forNew: $0) != nil && !moved.contains($0) }
-        let survivesOld = (0..<map.oldCount).map { row in
-            map.newIndex(forOld: row).map { !moved.contains($0) } ?? false
-        }
-        let before = nearest(survivesNew, ascending: true)
-        let after = nearest(survivesNew, ascending: false)
-        let beforeOld = nearest(survivesOld, ascending: true)
-        let afterOld = nearest(survivesOld, ascending: false)
-
-        // The survivors cut both layouts into the same gaps: gap g lies just
-        // before the g-th survivor in both orders. Each rule looks at its gap's
-        // other kind of row first, so a gap's removed rows close above the space
-        // its inserted rows open (M2, M5).
-        let gapOfNew = gapIndexes(survivesNew)
-        let gapOfOld = gapIndexes(survivesOld)
-        var lastRemoved: [Int: Int] = [:]
-        for row in 0..<map.oldCount where map.newIndex(forOld: row) == nil {
-            lastRemoved[gapOfOld[row]] = row
-        }
-        var firstInserted: [Int: Int] = [:]
-        for row in (0..<map.newCount).reversed() where map.oldIndex(forNew: row) == nil {
-            firstInserted[gapOfNew[row]] = row
-        }
+        let runs = map.runs
 
         func oldTop(_ row: Int) -> CGFloat { old.top(ofRow: row) - oldOffset }
         func newTop(_ row: Int) -> CGFloat { new.top(ofRow: row) - offset }
 
+        // The survivors, run by run, in an order both layouts share.
+        let kept = Survivors(runs: runs)
         var motions: [RowMotion] = []
-        motions.reserveCapacity(map.newCount)
-        for row in 0..<map.newCount {
-            let endTop = newTop(row)
-            let endHeight = new[row]
-            if let was = map.oldIndex(forNew: row) {
+
+        // The stretch of survivors whose hull meets P: from the first whose
+        // bottom (start or end) is below P's top, to the last whose top (start
+        // or end) is above P's bottom. Without animation the start is the end,
+        // so the old layout doesn't widen it.
+        var first = new.firstRow(endingBelow: top + offset).flatMap { kept.first(atOrAfterNew: $0) }
+        var last = kept.last(atOrBeforeNew: rowsStarting(in: new, below: bottom + offset) - 1)
+        if input.animates {
+            if let fromOld = old.firstRow(endingBelow: top + oldOffset).flatMap({ kept.first(atOrAfterOld: $0) }) {
+                first = min(first ?? fromOld, fromOld)
+            }
+            if let fromOld = kept.last(atOrBeforeOld: rowsStarting(in: old, below: bottom + oldOffset) - 1) {
+                last = max(last ?? fromOld, fromOld)
+            }
+        }
+        if let first, let last, first <= last {
+            for run in kept.runs where run.new <= last && run.new + run.count > first {
+                for row in max(first, run.new)...min(last, run.new + run.count - 1) {
+                    let was = run.old + (row - run.new)
+                    motions.append(
+                        RowMotion(
+                            kind: .surviving, row: row, startTop: oldTop(was), endTop: newTop(row),
+                            startHeight: old[was], endHeight: new[row], transition: []))
+                }
+            }
+        }
+
+        // The removed rows, in old order, for the gap rules.
+        let removed = map.removals.keys.sorted()
+
+        for run in runs {
+            switch run {
+            case .kept:
+                continue
+            case .moved(let was, let row):
                 motions.append(
                     RowMotion(
-                        kind: moved.contains(row) ? .moved : .surviving, row: row, startTop: oldTop(was),
-                        endTop: endTop, startHeight: old[was], endHeight: endHeight, transition: []))
-                continue
+                        kind: .moved, row: row, startTop: oldTop(was), endTop: newTop(row), startHeight: old[was],
+                        endHeight: new[row], transition: []))
+            case .inserted(let start, let count, let transition):
+                // The gap: the survivors on either side, in both numberings.
+                let before = kept.last(atOrBeforeNew: start - 1)
+                let after = kept.first(atOrAfterNew: start + count)
+                let oldBefore = before.flatMap { map.oldIndex(forNew: $0) } ?? -1
+                let oldAfter = after.flatMap { map.oldIndex(forNew: $0) } ?? map.oldCount
+                let lastRemoved = Self.last(in: removed, above: oldBefore, below: oldAfter)
+                for row in start..<(start + count) {
+                    let endTop = newTop(row)
+                    var startTop = endTop
+                    if let lastRemoved {
+                        startTop = oldTop(lastRemoved) + old[lastRemoved] + spacing
+                    } else if before != nil {
+                        startTop = oldTop(oldBefore) + old[oldBefore] + spacing
+                    } else if after != nil {
+                        startTop = oldTop(oldAfter)
+                    }
+                    motions.append(
+                        RowMotion(
+                            kind: .inserted, row: row, startTop: startTop, endTop: endTop, startHeight: 0,
+                            endHeight: new[row], transition: transition))
+                }
             }
-            var startTop = endTop
-            if let removed = lastRemoved[gapOfNew[row]] {
-                startTop = oldTop(removed) + old[removed] + spacing
-            } else if let neighbour = before[row], let was = map.oldIndex(forNew: neighbour) {
-                startTop = oldTop(was) + old[was] + spacing
-            } else if let neighbour = after[row], let was = map.oldIndex(forNew: neighbour) {
-                startTop = oldTop(was)
-            }
-            motions.append(
-                RowMotion(
-                    kind: .inserted, row: row, startTop: startTop, endTop: endTop, startHeight: 0,
-                    endHeight: endHeight, transition: insertions[row] ?? []))
         }
-        for (row, transition) in map.removals.sorted(by: { $0.key < $1.key })
-        where input.mountedRows.contains(row) {
+        motions.sort { $0.row < $1.row }
+
+        let removals = map.removals
+        for row in input.mountedRows where row < map.oldCount {
+            guard let transition = removals[row] else { continue }
             let startTop = oldTop(row)
+            let before = kept.last(atOrBeforeOld: row - 1)
+            let after = kept.first(atOrAfterOld: row + 1)
+            let firstInserted = kept.firstInserted(in: runs, above: before ?? -1, below: after ?? map.newCount)
             var endTop = startTop
-            if let inserted = firstInserted[gapOfOld[row]] {
-                endTop = newTop(inserted)
-            } else if let neighbour = beforeOld[row], let now = map.newIndex(forOld: neighbour) {
-                endTop = newTop(now) + new[now] + spacing
-            } else if let neighbour = afterOld[row], let now = map.newIndex(forOld: neighbour) {
-                endTop = newTop(now)
+            if let firstInserted {
+                endTop = newTop(firstInserted)
+            } else if let before {
+                endTop = newTop(before) + new[before] + spacing
+            } else if let after {
+                endTop = newTop(after)
             }
             motions.append(
                 RowMotion(
@@ -141,29 +170,95 @@ public enum CommitPlanner {
         return motions
     }
 
-    /// For each index, how many flagged indexes come strictly before it: the
-    /// gap it falls in, when the flags mark the surviving rows.
-    private static func gapIndexes(_ flags: [Bool]) -> [Int] {
-        var result = [Int](repeating: 0, count: flags.count)
-        var count = 0
-        for i in flags.indices {
-            result[i] = count
-            if flags[i] { count += 1 }
-        }
-        return result
+    /// How many rows of `heights` start above document `y`.
+    private static func rowsStarting(in heights: RowHeights, below y: CGFloat) -> Int {
+        heights.rows(intersecting: -.infinity, y).upperBound
     }
 
-    /// For each index, the nearest other index strictly before it (or after
-    /// it, when not `ascending`) where `flags` is true.
-    private static func nearest(_ flags: [Bool], ascending: Bool) -> [Int?] {
-        var result = [Int?](repeating: nil, count: flags.count)
-        var last: Int?
-        let order = ascending ? Array(flags.indices) : flags.indices.reversed()
-        for i in order {
-            result[i] = last
-            if flags[i] { last = i }
+    /// The largest of the sorted `rows` strictly between `lower` and `upper`.
+    private static func last(in rows: [Int], above lower: Int, below upper: Int) -> Int? {
+        var low = 0
+        var high = rows.count
+        while low < high {
+            let mid = (low + high) / 2
+            if rows[mid] < upper { low = mid + 1 } else { high = mid }
         }
-        return result
+        guard low > 0, rows[low - 1] > lower else { return nil }
+        return rows[low - 1]
+    }
+
+    /// The kept runs of a batch, which are in the same order by old row as by
+    /// new row, so either numbering can be searched.
+    private struct Survivors {
+
+        let runs: [(old: Int, new: Int, count: Int)]
+
+        init(runs: [RowRun]) {
+            self.runs = runs.compactMap {
+                guard case .kept(let old, let new, let count) = $0 else { return nil }
+                return (old, new, count)
+            }
+        }
+
+        /// The first surviving row at or after new row `row`, by new index.
+        func first(atOrAfterNew row: Int) -> Int? {
+            let index = firstRun { $0.new + $0.count > row }
+            guard index < runs.count else { return nil }
+            return max(row, runs[index].new)
+        }
+
+        /// The last surviving row at or before new row `row`, by new index.
+        func last(atOrBeforeNew row: Int) -> Int? {
+            let index = firstRun { $0.new > row } - 1
+            guard index >= 0 else { return nil }
+            return min(row, runs[index].new + runs[index].count - 1)
+        }
+
+        /// The first surviving row at or after old row `row`, by new index.
+        func first(atOrAfterOld row: Int) -> Int? {
+            let index = firstRun { $0.old + $0.count > row }
+            guard index < runs.count else { return nil }
+            let run = runs[index]
+            return run.new + max(0, row - run.old)
+        }
+
+        /// The last surviving row at or before old row `row`, by new index.
+        func last(atOrBeforeOld row: Int) -> Int? {
+            let index = firstRun { $0.old > row } - 1
+            guard index >= 0 else { return nil }
+            let run = runs[index]
+            return run.new + min(run.count - 1, row - run.old)
+        }
+
+        /// The first inserted row strictly between new rows `lower` and `upper`.
+        func firstInserted(in all: [RowRun], above lower: Int, below upper: Int) -> Int? {
+            var low = 0
+            var high = all.count
+            while low < high {
+                let mid = (low + high) / 2
+                if all[mid].newStart + all[mid].count <= lower + 1 { low = mid + 1 } else { high = mid }
+            }
+            for run in all[low...] {
+                guard run.newStart < upper else { return nil }
+                if case .inserted(let start, let count, _) = run, start + count > lower + 1 {
+                    let row = max(start, lower + 1)
+                    return row < upper ? row : nil
+                }
+            }
+            return nil
+        }
+
+        /// The index of the first run for which `isPast` holds; `isPast` must
+        /// hold for a suffix of the runs.
+        private func firstRun(where isPast: ((old: Int, new: Int, count: Int)) -> Bool) -> Int {
+            var low = 0
+            var high = runs.count
+            while low < high {
+                let mid = (low + high) / 2
+                if isPast(runs[mid]) { high = mid } else { low = mid + 1 }
+            }
+            return low
+        }
     }
 
     /// Whether the hull of a motion's start and end screen intervals meets

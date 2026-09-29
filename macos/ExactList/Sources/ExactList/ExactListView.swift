@@ -418,21 +418,17 @@ public final class ExactListView: NSView {
     ) {
         let oldHeights = heights
         let target = newViewport ?? committed
-        let noted = map.notedRows
-        var fresh = IndexSet()
-        var values = [CGFloat](repeating: 0, count: map.newCount)
-        for row in 0..<map.newCount {
-            if let height = measured[row] {
-                values[row] = height
-                fresh.insert(row)
-            } else if let was = map.oldIndex(forNew: row), !noted.contains(row) {
-                values[row] = oldHeights[was]
-            } else {
-                values[row] = measure(row)
-                fresh.insert(row)
-            }
+        // Inserted and noted rows are asked, in ascending order; rows measured
+        // already keep that measurement (G5: no pass over untouched rows).
+        var fresh = IndexSet(measured.keys)
+        var newHeights = oldHeights.applying(map) { row in
+            fresh.insert(row)
+            return measured[row] ?? measure(row)
         }
-        var newHeights = RowHeights(values, spacing: newSpacing ?? spacing)
+        for (row, height) in measured where newHeights[row] != height {
+            newHeights.setHeight(height, ofRow: row)
+        }
+        if let newSpacing { newHeights.spacing = newSpacing }
         var newStale = stale
         newStale.apply(map)
         newStale.markFresh(fresh)

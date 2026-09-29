@@ -100,15 +100,26 @@ public struct RowHeights: Equatable, Sendable {
     /// inserts, removes and moves nothing; otherwise one O(n) copy, run by run.
     public func applying(_ map: RowIndexMap, height: (Int) -> CGFloat) -> RowHeights {
         precondition(map.oldCount == count, "ExactList: a map over \(map.oldCount) rows applied to \(count)")
-        let noted = map.notedRows
-        var values = [CGFloat](repeating: 0, count: map.newCount)
-        for row in 0..<map.newCount {
-            if let was = map.oldIndex(forNew: row), !noted.contains(row) {
-                values[row] = heights[was]
-            } else {
-                values[row] = height(row)
+        var asked = map.notedRows
+        guard map.isStructural else {
+            var result = self
+            for row in asked { result.setHeight(height(row), ofRow: row) }
+            return result
+        }
+        var values: [CGFloat] = []
+        values.reserveCapacity(map.newCount)
+        for run in map.runs {
+            switch run {
+            case .kept(let old, _, let count):
+                values += heights[old..<(old + count)]
+            case .moved(let old, _):
+                values.append(heights[old])
+            case .inserted(let new, let count, _):
+                values += repeatElement(0, count: count)
+                asked.insert(integersIn: new..<(new + count))
             }
         }
+        for row in asked { values[row] = height(row) }
         return RowHeights(values, spacing: spacing)
     }
 

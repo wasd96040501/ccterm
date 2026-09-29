@@ -203,7 +203,7 @@ final class ExactListBenchmarks: XCTestCase {
                     tableStage.window.layoutIfNeeded()
                     table.reloadData()
                 })
-            XCTAssertGreaterThan(table.numberOfRows, 0, "the table loaded")
+            XCTAssertTrue(tableHost.calls.contains(.numberOfRows), "the table loaded")
             tableStage.teardown()
         }
         Self.report("B4 load", list: listLoads, table: tableLoads)

@@ -37,9 +37,21 @@ public struct StaleRows: Equatable, Sendable {
     /// rows drop out.
     public mutating func apply(_ map: RowIndexMap) {
         precondition(map.oldCount == count, "ExactList: a map over \(map.oldCount) rows applied to \(count)")
+        guard map.isStructural else { return }
+        // Run by run, so a list that is all stale after a width change costs
+        // O(runs), not O(n) (G5).
         var renumbered = IndexSet()
-        for row in stale {
-            if let new = map.newIndex(forOld: row) { renumbered.insert(new) }
+        for run in map.runs {
+            switch run {
+            case .kept(let old, let new, let count):
+                var kept = stale.intersection(IndexSet(integersIn: old..<(old + count)))
+                kept.shift(startingAt: 0, by: new - old)
+                renumbered.formUnion(kept)
+            case .moved(let old, let new):
+                if stale.contains(old) { renumbered.insert(new) }
+            case .inserted:
+                break
+            }
         }
         stale = renumbered
         count = map.newCount

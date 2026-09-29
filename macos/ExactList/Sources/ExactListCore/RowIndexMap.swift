@@ -4,37 +4,46 @@ import Foundation
 /// rows need asking again at commit (SPEC U2, U5, U6).
 ///
 /// Built one `RowEdit` at a time, in call order, which is `NSTableView`'s
-/// incremental semantics. Each structural edit costs O(n) (G5).
+/// incremental semantics. The batch is kept as `RowRun`s, so an untouched
+/// stretch of rows costs one entry however long it is: a structural edit is
+/// O(e + r) for `e` runs and the `r` rows it names, and a lookup O(log e)
+/// (G5).
 public struct RowIndexMap: Equatable, Sendable {
-
-    /// One row in the current numbering.
-    private struct Slot: Equatable, Sendable {
-        /// The row's old index, or `nil` if the batch inserted it.
-        var oldRow: Int?
-        /// The transition it was inserted with.
-        var transition: RowTransition = []
-        var isMoved = false
-        var isNoted = false
-        var isReloaded = false
-    }
 
     private let rowsBefore: Int
 
-    private var slots: [Slot]
+    /// The runs in new order, each starting where the previous one ends, with
+    /// adjacent runs merged wherever they continue each other: two maps that
+    /// number the rows the same way hold the same runs.
+    private var batch: [RowRun]
 
-    /// Each old row's current index, or `nil` once removed.
-    private var newIndexes: [Int?]
+    private var rowsAfter: Int
+
+    /// The kept and moved runs as `(old, new, count)`, sorted by old row: the
+    /// reverse lookup.
+    private var byOld: [OldSpan]
 
     private var removed: [Int: RowTransition] = [:]
 
+    /// Surviving or moved rows the batch noted or reloaded, by old index.
+    private var noted = IndexSet()
+    private var reloaded = IndexSet()
+
     private var isEdited = false
 
-    /// An identity map over `oldCount` rows: the start of every batch.
+    private struct OldSpan: Equatable, Sendable {
+        var old: Int
+        var new: Int
+        var count: Int
+    }
+
+    /// An identity map over `oldCount` rows: the start of every batch. O(1).
     public init(oldCount: Int) {
         precondition(oldCount >= 0, "ExactList: a row count can't be negative")
         rowsBefore = oldCount
-        slots = (0..<oldCount).map { Slot(oldRow: $0) }
-        newIndexes = Array(0..<oldCount)
+        rowsAfter = oldCount
+        batch = oldCount > 0 ? [.kept(old: 0, new: 0, count: oldCount)] : []
+        byOld = oldCount > 0 ? [OldSpan(old: 0, new: 0, count: oldCount)] : []
     }
 
     /// Rows before the batch.
@@ -45,7 +54,7 @@ public struct RowIndexMap: Equatable, Sendable {
     /// Rows after the edits so far. This is what L10 checks the data source
     /// against.
     public var newCount: Int {
-        slots.count
+        rowsAfter
     }
 
     /// Applies one edit. Stops with a precondition failure on an index out of
@@ -59,37 +68,45 @@ public struct RowIndexMap: Equatable, Sendable {
             remove(rows, transition)
         case .move(let from, let to):
             precondition(
-                slots.indices.contains(from), "ExactList: moveRow(at: \(from)) out of range 0..<\(newCount) (L12)")
-            precondition(slots.indices.contains(to), "ExactList: moveRow(to: \(to)) out of range 0..<\(newCount) (L12)")
-            var slot = slots.remove(at: from)
-            if slot.oldRow != nil { slot.isMoved = true }
-            slots.insert(slot, at: to)
-            reindex()
+                from >= 0 && from < rowsAfter, "ExactList: moveRow(at: \(from)) out of range 0..<\(newCount) (L12)")
+            precondition(to >= 0 && to < rowsAfter, "ExactList: moveRow(to: \(to)) out of range 0..<\(newCount) (L12)")
+            move(from, to)
         case .noteHeight(let rows):
-            mark(rows) { $0.isNoted = true }
+            mark(rows) { $0.noted.insert($1) }
         case .reload(let rows):
-            mark(rows) { $0.isReloaded = true }
+            mark(rows) { $0.reloaded.insert($1) }
         }
     }
 
-    /// Where old row `row` ended up, or `nil` if it was removed.
+    /// Where old row `row` ended up, or `nil` if it was removed. O(log e).
     public func newIndex(forOld row: Int) -> Int? {
-        precondition(newIndexes.indices.contains(row), "ExactList: old row \(row) out of range 0..<\(oldCount)")
-        return newIndexes[row]
+        precondition(row >= 0 && row < rowsBefore, "ExactList: old row \(row) out of range 0..<\(oldCount)")
+        var low = 0
+        var high = byOld.count
+        while low < high {
+            let mid = (low + high) / 2
+            if byOld[mid].old + byOld[mid].count <= row { low = mid + 1 } else { high = mid }
+        }
+        guard low < byOld.count, byOld[low].old <= row else { return nil }
+        return byOld[low].new + (row - byOld[low].old)
     }
 
-    /// Which old row new row `row` was, or `nil` if it was inserted.
+    /// Which old row new row `row` was, or `nil` if it was inserted. O(log e).
     public func oldIndex(forNew row: Int) -> Int? {
-        precondition(slots.indices.contains(row), "ExactList: new row \(row) out of range 0..<\(newCount)")
-        return slots[row].oldRow
+        precondition(row >= 0 && row < rowsAfter, "ExactList: new row \(row) out of range 0..<\(newCount)")
+        switch batch[run(containing: row)] {
+        case .kept(let old, let new, _): return old + (row - new)
+        case .moved(let old, _): return old
+        case .inserted: return nil
+        }
     }
 
     /// Inserted rows, in the new numbering, with the transition each was
     /// inserted with.
     public var insertions: [Int: RowTransition] {
         var insertions: [Int: RowTransition] = [:]
-        for (row, slot) in slots.enumerated() where slot.oldRow == nil {
-            insertions[row] = slot.transition
+        for case .inserted(let new, let count, let transition) in batch {
+            for row in new..<(new + count) { insertions[row] = transition }
         }
         return insertions
     }
@@ -102,48 +119,32 @@ public struct RowIndexMap: Equatable, Sendable {
 
     /// Moved rows, in the new numbering (M10).
     public var movedRows: IndexSet {
-        rows { $0.isMoved }
+        var rows = IndexSet()
+        for case .moved(_, let new) in batch { rows.insert(new) }
+        return rows
     }
 
     /// Surviving rows whose height must be asked for again, in the new
     /// numbering (U5). Inserted rows are not included; they are always asked.
     public var notedRows: IndexSet {
-        rows { $0.isNoted }
+        renumbered(noted)
     }
 
     /// Surviving rows whose view must be asked for again, in the new numbering
     /// (U6).
     public var reloadedRows: IndexSet {
-        rows { $0.isReloaded }
+        renumbered(reloaded)
     }
 
     /// The batch as runs in the new order, covering every new row once (G5).
     var runs: [RowRun] {
-        var runs: [RowRun] = []
-        for (row, slot) in slots.enumerated() {
-            guard let old = slot.oldRow else {
-                if case .inserted(let new, let count, let transition) = runs.last, transition == slot.transition {
-                    runs[runs.count - 1] = .inserted(new: new, count: count + 1, transition: transition)
-                } else {
-                    runs.append(.inserted(new: row, count: 1, transition: slot.transition))
-                }
-                continue
-            }
-            if slot.isMoved {
-                runs.append(.moved(old: old, new: row))
-            } else if case .kept(let start, let new, let count) = runs.last, start + count == old {
-                runs[runs.count - 1] = .kept(old: start, new: new, count: count + 1)
-            } else {
-                runs.append(.kept(old: old, new: row, count: 1))
-            }
-        }
-        return runs
+        batch
     }
 
     /// Whether the batch inserted, removed or moved anything: whether any row
     /// changed its index.
     var isStructural: Bool {
-        slots.count != rowsBefore || slots.enumerated().contains { $0.element.oldRow != $0.offset || $0.element.isMoved }
+        rowsAfter != rowsBefore || batch.count > 1 || batch.contains { if case .kept = $0 { false } else { true } }
     }
 
     /// Whether the batch changed anything at all. An empty batch commits
@@ -155,67 +156,157 @@ public struct RowIndexMap: Equatable, Sendable {
     /// U2: `rows` are in the numbering after the insert, so the rows between
     /// them keep their order and fill the gaps.
     private mutating func insert(_ rows: IndexSet, _ transition: RowTransition) {
-        guard let last = rows.last else { return }
+        guard let first = rows.first, let last = rows.last else { return }
         precondition(
-            rows.first! >= 0 && last < slots.count + rows.count,
-            "ExactList: insertRows(at:) index \(last) out of range 0..<\(slots.count + rows.count) (L12)")
-        var result: [Slot] = []
-        result.reserveCapacity(slots.count + rows.count)
-        var source = 0
+            first >= 0 && last < rowsAfter + rows.count,
+            "ExactList: insertRows(at:) index \(last) out of range 0..<\(rowsAfter + rows.count) (L12)")
         for range in rows.rangeView {
-            let kept = range.lowerBound - result.count
-            result += slots[source..<(source + kept)]
-            source += kept
-            result += repeatElement(Slot(oldRow: nil, transition: transition), count: range.count)
+            let at = split(at: range.lowerBound)
+            batch.insert(.inserted(new: range.lowerBound, count: range.count, transition: transition), at: at)
+            shift(from: at + 1, by: range.count)
+            rowsAfter += range.count
         }
-        result += slots[source...]
-        slots = result
-        reindex()
+        normalize()
     }
 
     /// U2: `rows` are in the numbering before the removal.
     private mutating func remove(_ rows: IndexSet, _ transition: RowTransition) {
-        guard let last = rows.last else { return }
+        guard let first = rows.first, let last = rows.last else { return }
         precondition(
-            rows.first! >= 0 && last < slots.count,
-            "ExactList: removeRows(at:) index \(last) out of range 0..<\(slots.count) (L12)")
-        var result: [Slot] = []
-        result.reserveCapacity(slots.count - rows.count)
-        var source = 0
-        for range in rows.rangeView {
-            result += slots[source..<range.lowerBound]
-            for slot in slots[range] {
-                if let oldRow = slot.oldRow { removed[oldRow] = transition }
+            first >= 0 && last < rowsAfter,
+            "ExactList: removeRows(at:) index \(last) out of range 0..<\(rowsAfter) (L12)")
+        for range in rows.rangeView.reversed() {
+            // Lower first: a split shifts the indexes of the runs after it.
+            let start = split(at: range.lowerBound)
+            let end = split(at: range.upperBound)
+            for run in batch[start..<end] {
+                switch run {
+                case .kept(let old, _, let count):
+                    for row in old..<(old + count) { removed[row] = transition }
+                    noted.remove(integersIn: old..<(old + count))
+                    reloaded.remove(integersIn: old..<(old + count))
+                case .moved(let old, _):
+                    removed[old] = transition
+                    noted.remove(old)
+                    reloaded.remove(old)
+                case .inserted:
+                    break
+                }
             }
-            source = range.upperBound
+            batch.removeSubrange(start..<end)
+            shift(from: start, by: -range.count)
+            rowsAfter -= range.count
         }
-        result += slots[source...]
-        slots = result
-        reindex()
+        normalize()
     }
 
-    /// Flags surviving rows; inserted rows are asked for everything anyway.
-    private mutating func mark(_ rows: IndexSet, _ flag: (inout Slot) -> Void) {
-        guard let last = rows.last else { return }
-        precondition(
-            rows.first! >= 0 && last < slots.count, "ExactList: row \(last) out of range 0..<\(slots.count) (L12)")
-        for row in rows where slots[row].oldRow != nil {
-            flag(&slots[row])
+    /// A move takes the row out and puts it back at `to`; a row that was there
+    /// before the batch is moved from then on, even back to its own place.
+    private mutating func move(_ from: Int, _ to: Int) {
+        let start = split(at: from)
+        _ = split(at: from + 1)
+        var run = batch.remove(at: start)
+        shift(from: start, by: -1)
+        if case .kept(let old, _, _) = run { run = .moved(old: old, new: to) }
+        run = Self.starting(run, at: to)
+        rowsAfter -= 1
+        let at = split(at: to)
+        batch.insert(run, at: at)
+        shift(from: at + 1, by: 1)
+        rowsAfter += 1
+        normalize()
+    }
+
+    /// Flags surviving and moved rows; inserted rows are asked for everything
+    /// anyway.
+    private mutating func mark(_ rows: IndexSet, _ flag: (inout RowIndexMap, Int) -> Void) {
+        guard let first = rows.first, let last = rows.last else { return }
+        precondition(first >= 0 && last < rowsAfter, "ExactList: row \(last) out of range 0..<\(rowsAfter) (L12)")
+        for row in rows {
+            if let old = oldIndex(forNew: row) { flag(&self, old) }
         }
     }
 
-    private mutating func reindex() {
-        newIndexes = Array(repeating: nil, count: rowsBefore)
-        for (row, slot) in slots.enumerated() {
-            if let oldRow = slot.oldRow { newIndexes[oldRow] = row }
+    /// The index of the run that holds new row `row`.
+    private func run(containing row: Int) -> Int {
+        var low = 0
+        var high = batch.count - 1
+        while low < high {
+            let mid = (low + high + 1) / 2
+            if batch[mid].newStart <= row { low = mid } else { high = mid - 1 }
+        }
+        return low
+    }
+
+    /// Splits runs so one starts at new row `row`, and returns its index
+    /// (`batch.count` when `row` is the end).
+    private mutating func split(at row: Int) -> Int {
+        guard row < rowsAfter else { return batch.count }
+        let index = run(containing: row)
+        let run = batch[index]
+        let offset = row - run.newStart
+        guard offset > 0 else { return index }
+        switch run {
+        case .kept(let old, let new, let count):
+            batch[index] = .kept(old: old, new: new, count: offset)
+            batch.insert(.kept(old: old + offset, new: row, count: count - offset), at: index + 1)
+        case .inserted(let new, let count, let transition):
+            batch[index] = .inserted(new: new, count: offset, transition: transition)
+            batch.insert(.inserted(new: row, count: count - offset, transition: transition), at: index + 1)
+        case .moved:
+            preconditionFailure("a moved run holds one row")
+        }
+        return index + 1
+    }
+
+    private mutating func shift(from index: Int, by delta: Int) {
+        guard delta != 0 else { return }
+        for i in index..<batch.count {
+            batch[i] = Self.starting(batch[i], at: batch[i].newStart + delta)
         }
     }
 
-    private func rows(where flagged: (Slot) -> Bool) -> IndexSet {
+    /// Merges runs that continue each other, and rebuilds the reverse lookup.
+    private mutating func normalize() {
+        var merged: [RowRun] = []
+        merged.reserveCapacity(batch.count)
+        for run in batch where run.count > 0 {
+            switch (merged.last, run) {
+            case (.kept(let old, let new, let count)?, .kept(let nextOld, _, let nextCount))
+            where old + count == nextOld:
+                merged[merged.count - 1] = .kept(old: old, new: new, count: count + nextCount)
+            case (.inserted(let new, let count, let transition)?, .inserted(_, let nextCount, let nextTransition))
+            where transition == nextTransition:
+                merged[merged.count - 1] = .inserted(new: new, count: count + nextCount, transition: transition)
+            default:
+                merged.append(run)
+            }
+        }
+        batch = merged
+        byOld = batch.compactMap { run in
+            switch run {
+            case .kept(let old, let new, let count): OldSpan(old: old, new: new, count: count)
+            case .moved(let old, let new): OldSpan(old: old, new: new, count: 1)
+            case .inserted: nil
+            }
+        }
+        .sorted { $0.old < $1.old }
+    }
+
+    private func renumbered(_ oldRows: IndexSet) -> IndexSet {
         var rows = IndexSet()
-        for (row, slot) in slots.enumerated() where flagged(slot) {
-            rows.insert(row)
+        for old in oldRows {
+            if let new = newIndex(forOld: old) { rows.insert(new) }
         }
         return rows
+    }
+
+    /// `run`, starting at new row `row`.
+    private static func starting(_ run: RowRun, at row: Int) -> RowRun {
+        switch run {
+        case .kept(let old, _, let count): .kept(old: old, new: row, count: count)
+        case .moved(let old, _): .moved(old: old, new: row)
+        case .inserted(_, let count, let transition): .inserted(new: row, count: count, transition: transition)
+        }
     }
 }

@@ -125,24 +125,12 @@ public final class DemoFeed: ExactListViewDataSource, ExactListViewDelegate {
     }
 
     /// Expands or collapses `row`, anchored on it so it stays under the
-    /// pointer (A2).
+    /// pointer (A2). The content changes first and the height follows, as with
+    /// `NSTableView` (P2): nothing changes when the motion ends.
     private func toggle(row: Int, in list: ExactListView) {
         rows[row].expanded.toggle()
-        guard !rows[row].expanded else {
-            configureView(ofRow: row, in: list)
-            list.performBatchUpdates(anchoring: .row(row)) { $0.noteHeightOfRows(withIndexesChanged: [row]) }
-            return
-        }
-        // Collapsing: the card keeps its text while it shrinks over it, and
-        // shows the one line when it has.
-        let view = list.view(atRow: row)
-        list.performBatchUpdates(anchoring: .row(row)) {
-            $0.noteHeightOfRows(withIndexesChanged: [row])
-        } completionHandler: { [weak self, weak list] _ in
-            guard let self, let list, let view else { return }
-            let now = list.row(for: view)
-            if now >= 0 { configureView(ofRow: now, in: list) }
-        }
+        configureView(ofRow: row, in: list)
+        list.performBatchUpdates(anchoring: .row(row)) { $0.noteHeightOfRows(withIndexesChanged: [row]) }
     }
 
     private func configureView(ofRow row: Int, in list: ExactListView) {

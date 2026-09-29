@@ -563,10 +563,29 @@ public final class ExactListView: NSView {
     }
 
     /// M1: the current animation context's timing, or none under Reduce Motion.
+    /// M1: `NSTableView`'s timing, 0.2 s `.easeOut` outside any group, else
+    /// the group's, `nil` meaning `.default`; none under Reduce Motion.
     private func motionTiming() -> (TimeInterval, CAMediaTimingFunction) {
         let context = NSAnimationContext.current
-        let duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : context.duration
-        return (duration, context.timingFunction ?? CAMediaTimingFunction(name: .easeInEaseOut))
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            return (0, CAMediaTimingFunction(name: .default))
+        }
+        guard isInAnimationGroup(context) else { return (0.2, CAMediaTimingFunction(name: .easeOut)) }
+        return (context.duration, context.timingFunction ?? CAMediaTimingFunction(name: .default))
+    }
+
+    /// Whether an `NSAnimationContext` group is open: AppKit's own state,
+    /// which `NSTableView` reads through `+_hasActiveGrouping` and no public
+    /// API exposes (M1's deviation). Where AppKit doesn't answer, a group is
+    /// recognised by what it set.
+    private func isInAnimationGroup(_ context: NSAnimationContext) -> Bool {
+        let selector = NSSelectorFromString("_hasActiveGrouping")
+        if let method = class_getClassMethod(NSAnimationContext.self, selector) {
+            typealias Query = @convention(c) (AnyClass, Selector) -> Bool
+            return unsafeBitCast(method_getImplementation(method), to: Query.self)(NSAnimationContext.self, selector)
+        }
+        return context.duration != 0.25 || context.timingFunction != nil || context.allowsImplicitAnimation
+            || context.completionHandler != nil
     }
 
     // MARK: - Width and viewport (§6.4, §9)

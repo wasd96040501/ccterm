@@ -94,7 +94,7 @@ final class UpdateTests: XCTestCase {
         XCTAssertTrue(drained)
         for (finished, elapsed) in completions {
             XCTAssertTrue(finished)
-            XCTAssertGreaterThanOrEqual(elapsed, 0.2, "after the 0.25 s animation, not before")
+            XCTAssertGreaterThanOrEqual(elapsed, 0.2 - 1.0 / 60, "after the 0.2 s animation, not before")
         }
     }
 
@@ -327,7 +327,8 @@ final class UpdateTests: XCTestCase {
         XCTAssertTrue(try moving(list))
         let drained = await stage.drain(until: { elapsed != nil }, timeout: 2)
         XCTAssertTrue(drained)
-        XCTAssertGreaterThanOrEqual(try XCTUnwrap(elapsed), 0.2, "after the animation ends")
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(elapsed), 0.2 - 1.0 / 60, "after the 0.2 s animation ends")
+        XCTAssertFalse(try moving(list), "and nothing moves any more")
     }
 
     // MARK: - Helpers

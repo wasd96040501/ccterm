@@ -14,9 +14,10 @@ import XCTest
 @MainActor
 final class MotionTests: XCTestCase {
 
-    /// Outside any group, an update animates for AppKit's 0.25 s with
-    /// `.easeInEaseOut`, checked against the curve's own control points; a
-    /// group's duration and timing are what it uses, and its completion
+    /// Outside any group, an update animates as `NSTableView`'s do, for 0.2 s
+    /// with `.easeOut`, checked against the curve's own control points; a
+    /// group's duration is what it uses, with `.default` for a `nil` timing
+    /// function, and a group's timing function is what it uses; its completion
     /// handler runs once the motion has ended; a duration-0 group,
     /// `reloadData()`, a width change and a scroll request without implicit
     /// animation move nothing, even inside a group that allows implicit
@@ -33,7 +34,7 @@ final class MotionTests: XCTestCase {
         list.scrollToRow(20, at: .top)
         await stage.settle()
 
-        // Outside any group: 0.25 s, ease in–ease out. Row 22 opens under
+        // Outside any group: 0.2 s, ease out. Row 22 opens under
         // row 21, and the rows below it move down.
         var old = ReferenceLayout.frames(heights: heights, spacing: 0, width: 1)
         heights.insert(45, at: 22)
@@ -52,7 +53,26 @@ final class MotionTests: XCTestCase {
                     at: 600, label: "inserted"))
             assertAtStart(rows, in: list)
             let timeline = progress(of: rows, in: await record(rows, in: list, for: 0.4))
-            assertTimeline(timeline, duration: 0.25, curve: Self.easeInEaseOut, "outside any group")
+            assertTimeline(timeline, duration: 0.2, curve: Self.bezier(0, 0, 0.58, 1), "outside any group")
+        }
+        _ = await stage.drain(until: { self.clocks(in: list) == 0 }, timeout: 2)
+
+        // A group that sets nothing: its own 0.25 s and `.default`, as in
+        // NSTableView, though the context reads as it does outside one.
+        old = ReferenceLayout.frames(heights: heights, spacing: 0, width: 1)
+        NSAnimationContext.runAnimationGroup { _ in
+            heights[24] = 50
+            list.noteHeightOfRows(withIndexesChanged: [24])
+        } completionHandler: {
+        }
+        new = ReferenceLayout.frames(heights: heights, spacing: 0, width: 1)
+        if !reduceMotion {
+            let rows = try (24..<29).map {
+                Moving(try container(ofRow: $0, in: list), old[$0], new[$0], at: 600, label: "row \($0)")
+            }
+            let timeline = progress(of: rows, in: await record(rows, in: list, for: 0.4))
+            assertTimeline(
+                timeline, duration: 0.25, curve: Self.bezier(0.25, 0.1, 0.25, 1), "a group that sets nothing")
         }
         _ = await stage.drain(until: { self.clocks(in: list) == 0 }, timeout: 2)
 
@@ -63,7 +83,6 @@ final class MotionTests: XCTestCase {
         var motionEnded: TimeInterval?
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.6
-            context.timingFunction = CAMediaTimingFunction(name: .linear)
             heights[23] = 70
             list.performBatchUpdates({ $0.noteHeightOfRows(withIndexesChanged: [23]) }) { _ in
                 motionEnded = CACurrentMediaTime()
@@ -80,7 +99,8 @@ final class MotionTests: XCTestCase {
             }
             assertAtStart(rows, in: list)
             let timeline = progress(of: rows, in: await record(rows, in: list, for: 0.8))
-            assertTimeline(timeline, duration: 0.6, curve: { $0 }, "a group's duration and timing")
+            assertTimeline(
+                timeline, duration: 0.6, curve: Self.bezier(0.25, 0.1, 0.25, 1), "a group's duration, .default")
             _ = await stage.drain(until: { groupEnded != nil }, timeout: 2)
             let ended = try XCTUnwrap(groupEnded, "the group's completion handler ran")
             let landed = try XCTUnwrap(motionEnded, "the motion ended first")
@@ -780,18 +800,21 @@ final class MotionTests: XCTestCase {
         return reach >= to ? nil : reach
     }
 
-    /// `.easeInEaseOut`'s progress at time fraction `x`: the cubic Bézier
-    /// with control points (0.42, 0) and (0.58, 1), solved by bisection.
-    private static func easeInEaseOut(_ x: CGFloat) -> CGFloat {
-        func bezier(_ s: CGFloat, _ a: CGFloat, _ b: CGFloat) -> CGFloat {
+    /// A timing curve's progress at time fraction `x`: the cubic Bézier from
+    /// (0, 0) to (1, 1) with control points (x1, y1) and (x2, y2), solved by
+    /// bisection. The points are the curve's own, as CoreAnimation defines it.
+    private static func bezier(_ x1: CGFloat, _ y1: CGFloat, _ x2: CGFloat, _ y2: CGFloat) -> (CGFloat) -> CGFloat {
+        func cubic(_ s: CGFloat, _ a: CGFloat, _ b: CGFloat) -> CGFloat {
             3 * (1 - s) * (1 - s) * s * a + 3 * (1 - s) * s * s * b + s * s * s
         }
-        var low: CGFloat = 0
-        var high: CGFloat = 1
-        for _ in 0..<60 {
-            let mid = (low + high) / 2
-            if bezier(mid, 0.42, 0.58) < x { low = mid } else { high = mid }
+        return { x in
+            var low: CGFloat = 0
+            var high: CGFloat = 1
+            for _ in 0..<60 {
+                let mid = (low + high) / 2
+                if cubic(mid, x1, x2) < x { low = mid } else { high = mid }
+            }
+            return cubic((low + high) / 2, y1, y2)
         }
-        return bezier((low + high) / 2, 0, 1)
     }
 }

@@ -364,10 +364,23 @@ public enum Anchoring { case automatic, row(Int), scrollOffset }
 - **M1: which commits animate.** A commit animates when its duration `T > 0`
   and Reduce Motion is off
   (`NSWorkspace.accessibilityDisplayShouldReduceMotion`).
-  - `T` and the timing function are `NSAnimationContext.current.duration` and
-    `.timingFunction`, read when the batch commits. Outside any group, AppKit's
-    values are 0.25 s and `nil`, and this was measured. `nil` means
-    `.easeInEaseOut`.
+  - `T` and the timing function are `NSTableView`'s, read from
+    `NSAnimationContext.current` when the batch commits (characterized):
+    - Outside any group, `NSTableView` animates for 0.2 s with `.easeOut`,
+      which starts at full speed, so a row answers a click on the next frame.
+      The current context reads AppKit's defaults there: 0.25 s and a `nil`
+      timing function.
+    - Inside a group, it uses the group's duration and timing function, and
+      `nil` means `.default`.
+
+    Whether a group is open is AppKit's own state. `NSTableView` asks
+    `+[NSAnimationContext _hasActiveGrouping]` (traced), and no public API
+    says: the current context is the same object, with the same values,
+    inside a group that sets nothing and outside any group (characterized).
+    The list asks the same method, so it times every update as `NSTableView`
+    does. *Deviation:* that is private API. Where AppKit no longer answers it,
+    a group is recognised by what it set: a duration other than 0.25 s, a
+    timing function, implicit animation or a completion handler.
   - Updates animate by default, as `noteHeightOfRows` does in a view-based
     `NSTableView` (docs). A group with `duration = 0` turns animation off, which
     is AppKit's own recipe.
@@ -568,6 +581,13 @@ in a commit has a start and an end value for its screen top and its height.
   the presented one, which is 0 at an inserted row's start and a removed row's
   end: a view with Auto Layout inside gives its vertical constraints a
   priority below required.
+  - What a view shows on the way is its own layout at each height. As with
+    `NSTableView`, which sets a cell view to its final size before the motion
+    starts (characterized), a host configures a row's content for its new
+    state before it notes the new height, so nothing changes when the motion
+    ends. Anything of its own that should move with the row goes through
+    `animator()` in the same group, which runs on the same duration and curve
+    (M3).
 - **P3: `didRemove` on departure.** `listView(_:didRemove:forRow:)` is called
   exactly once for every view that leaves the mounted set, after any animation
   it was part of has ended. The view then goes back into the pool under its

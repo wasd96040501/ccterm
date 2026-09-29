@@ -140,7 +140,8 @@ final class PlacementTests: XCTestCase {
         XCTAssertFalse(reported(leaving, in: host), "not while it animates out")
         let drained = await stage.drain(until: { landed }, timeout: 2)
         XCTAssertTrue(drained)
-        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(start), 0.2)
+        // NSTableView's 0.2 s, less the frame AppKit's clock may end on.
+        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(start), 0.2 - 1.0 / 60)
         let departures = host.calls.compactMap {
             if case .didRemove(let view, let row) = $0, view == ObjectIdentifier(leaving) { row } else { nil }
         }

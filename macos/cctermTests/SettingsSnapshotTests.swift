@@ -368,19 +368,48 @@ final class SettingsSnapshotTests: XCTestCase {
     private func render(
         _ controller: NSViewController, size: CGSize, appearance: Appearance, name: String, settle: TimeInterval = 0.6
     ) {
-        controller.view.appearance = NSAppearance(named: appearance.named)
-        // The views draw no background of their own, and a dark render on a
-        // transparent PNG reads as blank.
-        controller.view.wantsLayer = true
-        controller.view.effectiveAppearance.performAsCurrentDrawingAppearance {
-            controller.view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        }
-        let image = ViewSnapshot.renderViewController(controller, size: size, settle: settle)
+        // The panes draw no background of their own — the window does — and a
+        // dark render on a transparent PNG reads as blank. A scroll view at the
+        // root ignores a layer colour, so the pane sits on a backdrop instead.
+        let backdrop = Backdrop(controller)
+        backdrop.view.appearance = NSAppearance(named: appearance.named)
+        let image = ViewSnapshot.renderViewController(backdrop, size: size, settle: settle)
         let url = ViewSnapshot.writePNG(image, name: "\(name)-\(appearance.rawValue)")
         let attachment = XCTAttachment(contentsOfFile: url)
         attachment.name = "\(name)-\(appearance.rawValue).png"
         attachment.lifetime = .keepAlways
         add(attachment)
         XCTAssertGreaterThanOrEqual(image.size.width, size.width - 1)
+    }
+
+    /// A pane on the window's background colour, filling it edge to edge.
+    private final class Backdrop: NSViewController {
+        private let pane: NSViewController
+
+        init(_ pane: NSViewController) {
+            self.pane = pane
+            super.init(nibName: nil, bundle: nil)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+        override func loadView() {
+            view = Fill()
+            addChild(pane)
+            pane.view.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(pane.view)
+            NSLayoutConstraint.activate([
+                pane.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                pane.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                pane.view.topAnchor.constraint(equalTo: view.topAnchor),
+                pane.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            ])
+        }
+
+        private final class Fill: NSView {
+            override var wantsUpdateLayer: Bool { true }
+            override func updateLayer() { layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor }
+        }
     }
 }

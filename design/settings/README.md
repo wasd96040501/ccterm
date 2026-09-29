@@ -46,7 +46,7 @@ must be an existing folder.
 | Checking | *Checking…*, secondary |
 | Valid command | *Claude Code 2.1.284*, secondary (the field, or its placeholder, already shows the path) |
 | Valid folder | *Claude Code's settings, sign-in and sessions*, secondary |
-| Invalid | the reason in systemRed, then *Still using …* in secondary: **No such file.**, **Not found in PATH.**, **Not executable.**, **Not Claude Code.**, **Didn't print a version.**; **Folder doesn't exist.**, **Not a folder.** |
+| Invalid | the reason in systemRed, then *Still using …* in secondary: **Not found.**, **Not executable.**, **Didn't print a version.**, **Timed out.**, or the command's own last error line; **Folder doesn't exist.**, **Not a folder.** |
 
 Only a value that passes is saved; a failing one stays in the field until
 it is fixed or Settings closes, and the last good value keeps running. A

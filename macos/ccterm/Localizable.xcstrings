@@ -822,6 +822,16 @@
         }
       }
     },
+    "Not executable": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不可执行"
+          }
+        }
+      }
+    },
     "Not found": {
       "localizations": {
         "zh-Hans": {

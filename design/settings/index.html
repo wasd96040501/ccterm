@@ -633,12 +633,12 @@ const FOLDERS = {
 function probeCommand(cmd) {
   const c = cmd.trim() || DETECTED
   const path = /[\/~]/.test(c) ? c : ON_PATH[c]
-  if (!path) return { ok: false, error: 'Not found in PATH' }
+  if (!path) return { ok: false, error: 'Not found' }
   const f = FILES[path]
-  if (!f) return { ok: false, error: 'No such file' }
+  if (!f) return { ok: false, error: 'Not found' }
   if (!f.exec) return { ok: false, error: 'Not executable' }
   const v = f.out.match(/^(\d+\.\d+\.\d+) \(Claude Code\)/)
-  if (!v) return { ok: false, error: f.out ? 'Not Claude Code' : 'Didn’t print a version' }
+  if (!v) return { ok: false, error: 'Didn’t print a version' }
   return { ok: true, path, version: v[1] }
 }
 // → { ok } or { ok: false, error }

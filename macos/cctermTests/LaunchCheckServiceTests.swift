@@ -73,7 +73,9 @@ final class LaunchCheckServiceTests: XCTestCase {
         probe.fail("silent", with: AgentSDKError.noVersion(output: "hello"))
         probe.fail(
             "crashing", with: AgentSDKError.versionFailed(exitCode: 1, message: "zsh: command not found: crashing"))
-        probe.fail("mute", with: AgentSDKError.versionFailed(exitCode: 127, message: ""))
+        probe.fail("mute", with: AgentSDKError.versionFailed(exitCode: 3, message: ""))
+        probe.fail("unknown", with: AgentSDKError.versionFailed(exitCode: 127, message: "zsh:1: command not found: x"))
+        probe.fail("locked", with: AgentSDKError.versionFailed(exitCode: 126, message: "zsh:1: permission denied: x"))
         probe.fail("slow", with: AgentSDKError.versionFailed(exitCode: 15, message: "Timed out after 10.0s"))
         probe.fail("stuck", with: AgentSDKError.launchFailed("no such file"))
 
@@ -83,11 +85,15 @@ final class LaunchCheckServiceTests: XCTestCase {
         let mute = await service.check(CLIConfiguration(customCommand: "mute"))
         let slow = await service.check(CLIConfiguration(customCommand: "slow"))
         let stuck = await service.check(CLIConfiguration(customCommand: "stuck"))
+        let unknown = await service.check(CLIConfiguration(customCommand: "unknown"))
+        let locked = await service.check(CLIConfiguration(customCommand: "locked"))
         XCTAssertEqual(missing, .invalid(String(localized: "Not found")))
         XCTAssertEqual(silent, .invalid(String(localized: "Didn’t print a version")))
         XCTAssertEqual(crashing, .invalid("zsh: command not found: crashing"))
-        XCTAssertEqual(mute, .invalid(String(localized: "Exited with code \(127)")))
+        XCTAssertEqual(mute, .invalid(String(localized: "Exited with code \(3)")))
         XCTAssertEqual(slow, .invalid(String(localized: "Timed out")))
         XCTAssertEqual(stuck, .invalid(String(localized: "Couldn’t start")))
+        XCTAssertEqual(unknown, .invalid(String(localized: "Not found")))
+        XCTAssertEqual(locked, .invalid(String(localized: "Not executable")))
     }
 }

@@ -58,7 +58,12 @@ final class LaunchCheckService {
             return String(localized: "Couldn’t start")
         case .versionFailed(let exitCode, let message):
             if message.hasPrefix("Timed out") { return String(localized: "Timed out") }
-            return message.isEmpty ? String(localized: "Exited with code \(Int(exitCode))") : message
+            // The shell's own codes for a command it couldn't find or run.
+            switch exitCode {
+            case 127: return String(localized: "Not found")
+            case 126: return String(localized: "Not executable")
+            default: return message.isEmpty ? String(localized: "Exited with code \(Int(exitCode))") : message
+            }
         default:
             return error.localizedDescription
         }

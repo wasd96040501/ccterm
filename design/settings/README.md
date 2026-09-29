@@ -20,6 +20,14 @@ An account is what a session runs as. There are two kinds, one group each:
   key, optional model names, environment variables, a launch command and
   its arguments: everything a shell alias used to carry.
 
+With no providers the group holds an empty state, as `ContentUnavailableView`
+draws one: a quiet `server.rack` symbol, **No API Providers**, one line of
+what a provider is for, and **Add Provider…**, which moves in from under the
+group while it's there. **⌘V** on the pane opens a new provider filled
+from the paste, the same reading the variable list does, so an alias
+copied from `~/.zshrc` becomes a provider in one step. The review bar's
+Providers control switches the sample list off to show it.
+
 There is no default account. A session picks a model before it starts,
 and each model belongs to an account, so the account follows from it.
 

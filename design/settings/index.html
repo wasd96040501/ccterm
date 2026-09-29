@@ -259,8 +259,16 @@ svg { display: block; }
 .group > .acct:first-child.pressed { border-radius: 12px 12px 0 0; }
 .group > .acct:last-child.pressed { border-radius: 0 0 12px 12px; }
 .group > .acct:only-child.pressed { border-radius: 12px; }
-.empty { padding: 18px 10px; text-align: center; color: var(--label-2); }
-.empty .t { color: var(--label); margin-bottom: 2px; }
+/* Empty list: ContentUnavailableView inside the group — a quiet symbol, a
+   title, one line of why, and the action; the Add button under the group
+   stands aside while it's here. */
+.empty { padding: 26px 40px 24px; text-align: center; color: var(--label-2); display: flex; flex-direction: column; align-items: center; }
+.empty .sym { color: var(--label-3); margin-bottom: 10px; }
+.empty .t { color: var(--label); font-weight: 600; margin-bottom: 3px; }
+.empty .d { font-size: 11px; line-height: 14px; max-width: 380px; margin-bottom: 14px; }
+.empty .btn { color: var(--label); }
+.empty .hint { font-size: 11px; line-height: 14px; margin-top: 10px; color: var(--label-3); }
+.empty .hint kbd { font: inherit; }
 
 /* ---------- Sheets ---------- */
 /* Tahoe sheets float 14 below the window top, centred, over a faint scrim. */
@@ -371,7 +379,12 @@ svg { display: block; }
   <b>CCTerm Settings</b>
   <span>Design review · 1 CSS px = 1 pt</span>
   <span class="spacer"></span>
-  <button class="btn small" id="copy-alias" title="Then open a provider, click its variable list and press ⌘V">Copy Sample Alias</button>
+  <label>Providers
+    <span class="seg" id="providers">
+      <button data-v="sample" aria-pressed="true">Sample</button><button data-v="none">None</button>
+    </span>
+  </label>
+  <button class="btn small" id="copy-alias" title="Then press ⌘V on Accounts, or in a provider's variable list">Copy Sample Alias</button>
   <label>Appearance
     <span class="seg" id="theme">
       <button data-v="auto" aria-pressed="true">Auto</button><button data-v="light">Light</button><button data-v="dark">Dark</button>
@@ -416,6 +429,8 @@ const G = {
   minus: `<svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M.8 5h8.4"/></svg>`,
   warn: `<svg width="14" height="13" viewBox="0 0 14 13" fill="currentColor"><path d="M6.1 1a1 1 0 0 1 1.8 0l5.6 10a1 1 0 0 1-.9 1.5H1.4a1 1 0 0 1-.9-1.5z"/><path d="M7 4.3v3.6" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/><circle cx="7" cy="10" r=".85" fill="#fff"/></svg>`,
   spinner: `<svg class="spin" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">${[...Array(8)].map((_, i) => `<path d="M7 1.2v2.6" opacity="${(i + 1) / 8}" transform="rotate(${i * 45} 7 7)"/>`).join('')}</svg>`,
+  // server.rack, 32 pt, regular weight
+  serverRack: `<svg width="34" height="30" viewBox="0 0 34 30" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="1.5" width="30" height="8" rx="2.4"/><rect x="2" y="11" width="30" height="8" rx="2.4"/><rect x="2" y="20.5" width="30" height="8" rx="2.4"/><g fill="currentColor" stroke="none"><circle cx="7" cy="5.5" r="1.2"/><circle cx="7" cy="15" r="1.2"/><circle cx="7" cy="24.5" r="1.2"/></g><path d="M20 5.5h7M20 15h7M20 24.5h7" stroke-linecap="round"/></svg>`,
   arrowOut: `<svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:0"><path d="M2 7 7.3 1.7M3 1.5h4.5V6"/></svg>`,
 }
 
@@ -598,8 +613,14 @@ function renderAccounts() {
     </div>
     <div class="section"><h2>API Providers</h2>
       <div class="group">${apis.length ? apis.map(acctRow).join('') : `
-        <div class="empty"><div class="t">No API Providers</div>Connect Claude Code to the Anthropic API, a gateway or a proxy.</div>`}</div>
-      <div class="after"><button class="btn" data-action="add-provider">Add Provider…</button></div>
+        <div class="empty">
+          <span class="sym">${G.serverRack}</span>
+          <div class="t">No API Providers</div>
+          <div class="d">Run Claude Code through the Anthropic API, a gateway or a local proxy.</div>
+          <button class="btn" data-action="add-provider">Add Provider…</button>
+          <div class="hint">Or paste a shell alias here with ⌘V.</div>
+        </div>`}</div>
+      ${apis.length ? `<div class="after"><button class="btn" data-action="add-provider">Add Provider…</button></div>` : ''}
     </div>`
 }
 
@@ -677,12 +698,19 @@ function openAccount(id) {
   const a = state.accounts.find(x => x.id === id)
   editAccount(structuredClone(a), false)
 }
-function newProvider() {
+function newProvider(paste) {
   editAccount({ id: 'p' + Date.now(), kind: 'api', name: '', baseURL: '', auth: 'token', secret: '',
-    model: '', opus: '', sonnet: '', haiku: '',command: '', args: '', env: [] }, true)
+    model: '', opus: '', sonnet: '', haiku: '',command: '', args: '', env: [] }, true, paste)
 }
+// ⌘V on the Accounts pane: a new provider, filled from the paste.
+document.addEventListener('paste', e => {
+  if (sheets.length || state.tab !== 'accounts' || e.target.closest?.('input')) return
+  const text = e.clipboardData.getData('text'); if (!/[A-Za-z_]\w*=/.test(text)) return
+  e.preventDefault()
+  newProvider(text)
+})
 
-function editAccount(d, isNew) {
+function editAccount(d, isNew, paste) {
   const isSub = d.kind === 'subscription'
   let sel = -1, editing = null, reveal = false, focused = null
 
@@ -961,7 +989,8 @@ function editAccount(d, isNew) {
   })
 
   render()
-  if (isNew) setTimeout(() => body.querySelector('[data-f="name"]').focus(), 60)
+  if (paste) applyPaste(paste)
+  else if (isNew) setTimeout(() => body.querySelector('[data-f="name"]').focus(), 60)
 }
 
 /* ---------- Alerts ---------- */
@@ -1031,6 +1060,16 @@ $('#theme').addEventListener('click', e => {
   for (const x of $('#theme').children) x.setAttribute('aria-pressed', x === b)
   if (b.dataset.v === 'auto') document.documentElement.removeAttribute('data-theme')
   else document.documentElement.dataset.theme = b.dataset.v
+})
+
+// Review helper: the providers as sampled, or none, to see the empty list.
+const SAMPLE_PROVIDERS = structuredClone(providers())
+$('#providers').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return
+  for (const x of $('#providers').children) x.setAttribute('aria-pressed', x === b)
+  state.accounts = state.accounts.filter(a => a.kind !== 'api')
+  if (b.dataset.v === 'sample') state.accounts.push(...structuredClone(SAMPLE_PROVIDERS))
+  go('accounts'); renderAll()
 })
 
 // Review helper: a provider alias in the shape people keep in ~/.zshrc.

@@ -59,6 +59,39 @@ final class SettingsSnapshotTests: XCTestCase {
         }
     }
 
+    /// General while both fields are being checked: the fields stay put and
+    /// the descriptions read "Checking…".
+    func testGeneralChecking() throws {
+        for appearance in Appearance.allCases {
+            let store = AccountStore(
+                fileURL: root.appendingPathComponent("\(UUID()).json"), secrets: InMemorySecretStore())
+            let (launch, check) = try launchSettings(
+                store, command: "~/bin/claude-relay", folder: "~/.claude-work",
+                probe: { _ in
+                    try await Task.sleep(for: .seconds(3600))
+                    throw AgentSDKError.binaryNotFound
+                }, seeded: false)
+            render(
+                GeneralSettingsViewController(launch: launch, launchCheck: check), size: paneSize,
+                appearance: appearance, name: "Settings-GeneralChecking", settle: 0.02)
+        }
+    }
+
+    /// General with a command that isn't found and a folder that doesn't exist:
+    /// the reason in red, then what still runs.
+    func testGeneralInvalid() throws {
+        for appearance in Appearance.allCases {
+            let store = AccountStore(
+                fileURL: root.appendingPathComponent("\(UUID()).json"), secrets: InMemorySecretStore())
+            let (launch, check) = try launchSettings(
+                store, command: "claude-nope", folder: "~/.claude-nope",
+                probe: { _ in throw AgentSDKError.binaryNotFound }, seeded: false)
+            render(
+                GeneralSettingsViewController(launch: launch, launchCheck: check), size: paneSize,
+                appearance: appearance, name: "Settings-GeneralInvalid")
+        }
+    }
+
     func testProviderSheet() throws {
         for appearance in Appearance.allCases {
             let editor = try editorSheet(mode: .provider, account: Self.localProxy, secrets: Self.localProxySecrets)
@@ -152,14 +185,20 @@ final class SettingsSnapshotTests: XCTestCase {
 
     /// The settings the panes read: defaults in a private suite, a session
     /// directory that isn't looked up, and a launch that checks out.
-    private func launchSettings(_ accounts: AccountStore) throws -> (LaunchStore, LaunchCheckService) {
-        let launch = LaunchStore(
-            defaults: UserDefaults(suiteName: UUID().uuidString)!, accounts: accounts.$accounts.eraseToAnyPublisher(),
-            resolveDirectory: { _ in SessionDirectory(url: URL(fileURLWithPath: "/tmp/none")) })
-        let check = LaunchCheckService(probe: { _ in
+    private func launchSettings(
+        _ accounts: AccountStore, command: String = "", folder: String = "",
+        probe: @escaping LaunchCheckService.Probe = { _ in
             CLIVersion(executable: "/Users/me/.local/bin/claude", version: "2.1.284")
-        })
-        _ = try seeded { await check.check(launch.general) }
+        }, seeded seed: Bool = true
+    ) throws -> (LaunchStore, LaunchCheckService) {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        if !command.isEmpty { defaults.set(command, forKey: "customCLICommand") }
+        if !folder.isEmpty { defaults.set(folder, forKey: "claudeConfigDirectory") }
+        let launch = LaunchStore(
+            defaults: defaults, accounts: accounts.$accounts.eraseToAnyPublisher(),
+            resolveDirectory: { _ in SessionDirectory(url: URL(fileURLWithPath: "/Users/me/.claude/projects")) })
+        let check = LaunchCheckService(probe: probe)
+        if seed { _ = try self.seeded { await check.check(launch.general) } }
         return (launch, check)
     }
 
@@ -225,9 +264,11 @@ final class SettingsSnapshotTests: XCTestCase {
         return try XCTUnwrap(result).get()
     }
 
-    private func render(_ controller: NSViewController, size: CGSize, appearance: Appearance, name: String) {
+    private func render(
+        _ controller: NSViewController, size: CGSize, appearance: Appearance, name: String, settle: TimeInterval = 0.6
+    ) {
         controller.view.appearance = NSAppearance(named: appearance.named)
-        let image = ViewSnapshot.renderViewController(controller, size: size, settle: 0.6)
+        let image = ViewSnapshot.renderViewController(controller, size: size, settle: settle)
         let url = ViewSnapshot.writePNG(image, name: "\(name)-\(appearance.rawValue)")
         let attachment = XCTAttachment(contentsOfFile: url)
         attachment.name = "\(name)-\(appearance.rawValue).png"

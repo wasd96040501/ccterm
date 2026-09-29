@@ -311,6 +311,16 @@
         }
       }
     },
+    "Configuration Folder": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置文件夹"
+          }
+        }
+      }
+    },
     "Connection": {
       "localizations": {
         "zh-Hans": {
@@ -602,7 +612,7 @@
         }
       }
     },
-    "Launch command": {
+    "Launch Command": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {

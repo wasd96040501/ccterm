@@ -23,6 +23,13 @@ final class FormRowView: NSView {
         didSet { updateDetail() }
     }
 
+    /// With ``isDetailError``: how many characters from the start are the
+    /// problem, in red; the rest — what still applies — keeps the secondary
+    /// ink. `nil` colours the whole line.
+    var detailErrorLength: Int? {
+        didSet { updateDetail() }
+    }
+
     var title: String {
         get { titleLabel.stringValue }
         set { titleLabel.stringValue = newValue }
@@ -88,8 +95,11 @@ final class FormRowView: NSView {
         text.enumerateAttribute(.font, in: whole) { font, range, _ in
             if font == nil { text.addAttribute(.font, value: NSFont.systemFont(ofSize: 11), range: range) }
         }
-        let color: NSColor = isDetailError ? .systemRed : .secondaryLabelColor
-        text.addAttribute(.foregroundColor, value: color, range: whole)
+        text.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: whole)
+        if isDetailError {
+            let red = NSRange(location: 0, length: min(detailErrorLength ?? text.length, text.length))
+            text.addAttribute(.foregroundColor, value: NSColor.systemRed, range: red)
+        }
         let paragraph = NSMutableParagraphStyle()
         paragraph.minimumLineHeight = 14
         paragraph.maximumLineHeight = 14

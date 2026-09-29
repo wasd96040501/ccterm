@@ -28,7 +28,20 @@ enum ReferenceGeometry {
     /// `Array.insert` and `Array.remove`. `nil` marks an inserted row. Only the
     /// input type is shared with the code under test.
     static func replay(oldCount: Int, edits: [RowEdit]) -> [Int?] {
-        fatalError("unimplemented: test support")
+        var rows: [Int?] = Array(0..<oldCount)
+        for edit in edits {
+            switch edit {
+            case .insert(let indexes, _):
+                for index in indexes { rows.insert(nil, at: index) }
+            case .remove(let indexes, _):
+                for index in indexes.reversed() { rows.remove(at: index) }
+            case .move(let from, let to):
+                rows.insert(rows.remove(at: from), at: to)
+            case .noteHeight, .reload:
+                break
+            }
+        }
+        return rows
     }
 
     /// M2 at progress `p`: `end + (start − end)·(1 − p)`.

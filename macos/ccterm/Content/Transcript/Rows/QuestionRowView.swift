@@ -86,6 +86,12 @@ final class QuestionRowView: NSView, PageRowView {
         }
     }
 
+    /// A question's options: their own superview, so radio buttons group by
+    /// question, and top-down like the row.
+    private final class OptionsView: NSView {
+        override var isFlipped: Bool { true }
+    }
+
     private struct OptionViews {
         /// Live: a radio button or checkbox with the label as its title.
         var button: NSButton?
@@ -167,7 +173,7 @@ final class QuestionRowView: NSView, PageRowView {
             text.maximumNumberOfLines = 0
             text.lineBreakMode = .byWordWrapping
             text.cell?.wraps = true
-            let container = NSView()
+            let container = OptionsView()
             let optionViews = item.options.map { option in
                 makeOption(option, of: item, waiting: model.isWaiting, in: container)
             }

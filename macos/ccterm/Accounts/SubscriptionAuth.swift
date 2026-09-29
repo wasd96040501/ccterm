@@ -32,7 +32,7 @@ nonisolated struct CLISubscriptionAuth: SubscriptionAuth {
         try await Auth.logout(configuration: configuration)
     }
 
-    private var configuration: AuthConfiguration {
-        AuthConfiguration(customCommand: launch.command(for: nil))
+    private var configuration: CLIConfiguration {
+        CLIConfiguration(customCommand: launch.command(for: nil))
     }
 }

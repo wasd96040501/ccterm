@@ -112,6 +112,32 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertEqual(emissions, [[], expectedTree])
     }
 
+    /// Loaded once the first read lands, with the tree it read already there.
+    func testIsLoadedWithTheFirstTree() async throws {
+        try Self.writeLibrary(fixture)
+        XCTAssertFalse(store.isLoaded)
+        let loaded = expectation(description: "loaded")
+        var treeWhenLoaded: [LibraryNode]?
+        let subscription = store.$isLoaded.first { $0 }.sink { [store] _ in
+            treeWhenLoaded = store?.nodes
+            loaded.fulfill()
+        }
+        store.start()
+        await fulfillment(of: [loaded], timeout: 10)
+        subscription.cancel()
+        XCTAssertEqual(treeWhenLoaded, expectedTree)
+    }
+
+    /// An empty directory is loaded too: read, and nothing in it.
+    func testAnEmptyDirectoryIsLoaded() async {
+        let loaded = expectation(description: "loaded")
+        let subscription = store.$isLoaded.first { $0 }.sink { _ in loaded.fulfill() }
+        store.start()
+        await fulfillment(of: [loaded], timeout: 10)
+        subscription.cancel()
+        XCTAssertEqual(store.nodes, [])
+    }
+
     func testAnEmptyDirectoryPublishesNothingNew() async {
         await expectNoPublish(within: 2) { store.start() }
         XCTAssertEqual(emissions, [[]])

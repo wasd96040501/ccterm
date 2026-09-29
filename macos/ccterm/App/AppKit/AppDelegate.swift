@@ -5,7 +5,7 @@ import SwiftUI
 
 /// AppKit-side application delegate and the app's composition root. Owns
 /// the main window's lifecycle — creating it from
-/// `applicationDidFinishLaunching` instead of declaring a SwiftUI `Window`
+/// `applicationWillFinishLaunching` instead of declaring a SwiftUI `Window`
 /// scene — and every auxiliary window's (lazy `SettingsWindowController` /
 /// `AboutWindowController`), so the OS can't resurface them from saved
 /// state at the next launch and SwiftUI can't auto-open them as the
@@ -21,7 +21,7 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var mainWindowController: MainWindowController?
 
-    // The object graph, built once in `applicationDidFinishLaunching`; nil in
+    // The object graph, built once in `applicationWillFinishLaunching`; nil in
     // a hosted test run, which builds none of it.
 
     /// Every account: the subscription's settings and the API providers. They
@@ -96,11 +96,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         UserDefaults.standard.set(0, forKey: "NSInitialToolTipDelay")
         MainThreadWatchdog.start()
+        assemble()
+        // The Dock bounces the icon until this returns — measured: waiting in
+        // `applicationDidFinishLaunching` instead, it has stopped by then. So
+        // the wait for the main window reads as the app launching, not as an
+        // app open with no window. The run loop keeps turning meanwhile: the
+        // library's read lands, and the window shows, through it.
+        let deadline = Date(timeIntervalSinceNow: 2)
+        while mainWindowController?.window?.isVisible == false, Date() < deadline {
+            RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.05))
+        }
     }
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        if Self.isUnderXCTest { return }
-
+    /// Builds the object graph and asks for the main window.
+    private func assemble() {
         let bundleID = Bundle.main.bundleIdentifier ?? "com.ccterm.app"
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(bundleID, isDirectory: true)
@@ -129,8 +138,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.windowFrameAutosaveName = "MainWindow"
         mainWindowController = controller
         library.start()
-        controller.showWindow(nil)
-        controller.window?.makeKeyAndOrderFront(nil)
+        // A second: twice what a launch with the library's index takes (0.5 s
+        // over ~3,800 sessions); a first launch, reading every session, takes
+        // seconds and opens on the sidebar loading instead.
+        controller.showWindow(whenLoadedWithin: .seconds(1))
 
         // Settings opens on what is already known: the login is read as the
         // subscription service is built; whether the CLI runs, now.

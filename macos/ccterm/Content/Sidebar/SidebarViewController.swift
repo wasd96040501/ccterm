@@ -6,6 +6,9 @@ import UniformTypeIdentifiers
 /// list — projects, their sessions, and under each session its subagents and
 /// workflow runs, every row an icon and a title.
 ///
+/// Until the library's first read it shows that it is loading, as System
+/// Settings does: a small spinner beside a line of secondary text.
+///
 /// Selecting a row with a transcript reports `didSelect`, double-clicking it
 /// `didOpen`; a double click on a group toggles it. A row with a transcript
 /// drags as its file.
@@ -13,7 +16,7 @@ import UniformTypeIdentifiers
 final class SidebarViewController: NSViewController {
     weak var delegate: SidebarViewControllerDelegate?
 
-    private let nodes: AnyPublisher<[LibraryNode], Never>
+    private let nodes: AnyPublisher<[LibraryNode]?, Never>
     private var cancellables = Set<AnyCancellable>()
 
     /// The outline's items. `NSOutlineView` tells items apart by identity and
@@ -26,9 +29,9 @@ final class SidebarViewController: NSViewController {
     /// republish isn't reported again.
     private var reportedSelection: String?
 
-    /// `nodes`: the library's tree, current value first, then each change —
-    /// `LibraryStore.$nodes`.
-    init(nodes: AnyPublisher<[LibraryNode], Never>) {
+    /// `nodes`: the library's tree, current value first, then each change;
+    /// `nil` until the library is first read. Delivers on the main actor.
+    init(nodes: AnyPublisher<[LibraryNode]?, Never>) {
         self.nodes = nodes
         super.init(nibName: nil, bundle: nil)
     }
@@ -63,6 +66,29 @@ final class SidebarViewController: NSViewController {
         return scroll
     }()
 
+    private lazy var spinner: NSProgressIndicator = {
+        let spinner = NSProgressIndicator()
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.isIndeterminate = true
+        spinner.isDisplayedWhenStopped = false
+        return spinner
+    }()
+
+    private lazy var loadingLabel: NSTextField = {
+        let label = NSTextField(labelWithString: String(localized: "Loading…"))
+        label.textColor = .secondaryLabelColor
+        return label
+    }()
+
+    private lazy var loadingView: NSStackView = {
+        let stack = NSStackView(views: [spinner, loadingLabel])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 6
+        return stack
+    }()
+
     override func loadView() {
         view = NSView()
     }
@@ -76,9 +102,10 @@ final class SidebarViewController: NSViewController {
         outlineView.target = self
         outlineView.action = #selector(click(_:))
         outlineView.doubleAction = #selector(doubleClick(_:))
+        // Sunk directly: the current value lands now, so a window shown on the
+        // library's first read shows its tree, not the spinner.
         nodes
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] nodes in self?.show(nodes) }
+            .sink { [weak self] nodes in MainActor.assumeIsolated { self?.show(nodes) } }
             .store(in: &cancellables)
     }
 
@@ -86,6 +113,8 @@ final class SidebarViewController: NSViewController {
         scrollView.documentView = outlineView
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scrollView)
+        loadingView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(loadingView)
     }
 
     private func configureConstraints() {
@@ -94,12 +123,16 @@ final class SidebarViewController: NSViewController {
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            loadingView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            loadingView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
         ])
     }
 
     // MARK: - Data
 
-    private func show(_ nodes: [LibraryNode]) {
+    private func show(_ nodes: [LibraryNode]?) {
+        showLoading(nodes == nil)
+        guard let nodes else { return }
         let selected = outlineView.item(atRow: outlineView.selectedRow) as? Item
         var kept: [String: Item] = [:]
         func item(for node: LibraryNode) -> Item {
@@ -116,6 +149,11 @@ final class SidebarViewController: NSViewController {
             let row = outlineView.row(forItem: selected)
             if row >= 0 { outlineView.selectRowIndexes([row], byExtendingSelection: false) }
         }
+    }
+
+    private func showLoading(_ loading: Bool) {
+        loadingView.isHidden = !loading
+        if loading { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
     }
 
     // MARK: - Actions

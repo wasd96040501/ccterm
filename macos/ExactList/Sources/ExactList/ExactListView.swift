@@ -204,8 +204,13 @@ public final class ExactListView: NSView {
     public func reloadData() {
         requireOutsideCallbacks("reloadData")
         guard isLoaded else { return }
-        animator.cancelAll()
-        placement.removeAll()
+        // Unmounting under a host's implicit-animation group would have AppKit
+        // fade the views out, and pooled views would carry that fade into the
+        // rows they're reused for.
+        withoutImplicitAnimation {
+            animator.cancelAll()
+            placement.removeAll()
+        }
         accessibilityElements.removeAll()
         refresher.cancel()
         let wasFollowing = isFollowingTail

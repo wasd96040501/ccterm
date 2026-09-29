@@ -266,6 +266,113 @@ svg { display: block; }
 .group > .acct:only-child.pressed { border-radius: 12px; }
 .empty { padding: 18px 10px; text-align: center; color: var(--label-2); }
 .empty .t { color: var(--label); margin-bottom: 2px; }
+
+/* ---------- Sheets ---------- */
+/* Tahoe sheets float 14 below the window top, centred, over a faint scrim. */
+.layer { position: absolute; inset: 0; z-index: 40; display: flex; justify-content: center; align-items: flex-start; }
+.layer.scrim { background: rgba(0, 0, 0, .06); animation: fade .2s ease-out; }
+.layer.closing { animation: fade .18s ease-in reverse forwards; }
+@keyframes fade { from { opacity: 0; } }
+.sheet {
+  position: relative; margin-top: 14px; border-radius: 18px; background: var(--win);
+  box-shadow: 0 0 0 .5px rgba(0,0,0,.16), 0 18px 50px rgba(0,0,0,.22), 0 4px 12px rgba(0,0,0,.08);
+  display: flex; flex-direction: column; overflow: hidden;
+  animation: sheet-in .32s cubic-bezier(.2, .9, .25, 1);
+}
+.layer.closing .sheet { animation: sheet-out .18s ease-in forwards; }
+@keyframes sheet-in { from { transform: translateY(-18px) scale(.985); opacity: 0; } }
+@keyframes sheet-out { to { transform: translateY(-12px) scale(.985); opacity: 0; } }
+:root[data-theme="dark"] .sheet { box-shadow: 0 0 0 .5px rgba(0,0,0,.8), inset 0 0 0 .5px rgba(255,255,255,.12), 0 18px 50px rgba(0,0,0,.5); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sheet { box-shadow: 0 0 0 .5px rgba(0,0,0,.8), inset 0 0 0 .5px rgba(255,255,255,.12), 0 18px 50px rgba(0,0,0,.5); } }
+.sheet.fixed { width: 540px; height: 600px; }
+.sheet-head { display: flex; align-items: center; gap: 12px; padding: 20px 20px 4px; flex: none; }
+.sheet-head .tile { width: 36px; height: 36px; border-radius: 9px; font-size: 16px; }
+.sheet-head .t { font-weight: 600; }
+.sheet-head .s { font-size: 11px; line-height: 14px; color: var(--label-2); }
+.sheet-body { flex: 1; overflow-y: auto; padding: 0 20px 20px; }
+.sheet-body::-webkit-scrollbar { width: 0; }
+.sheet-body .section:first-child { margin-top: 16px; }
+.sheet-body .section { margin-top: 22px; }
+.sheet-foot { flex: none; display: flex; align-items: center; gap: 12px; padding: 14px 20px 20px; position: relative; }
+.sheet-foot.edge::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: var(--sep); }
+.sheet-foot .spacer { flex: 1; }
+.sheet-foot .btn { min-width: 76px; }
+
+/* Secure field: masked with its last four, eye to reveal. */
+.secret { display: flex; align-items: center; gap: 6px; }
+.secret .field { width: 230px; }
+.eye { width: 20px; height: 20px; display: grid; place-items: center; color: var(--label-2); border-radius: 5px; }
+.eye:active { color: var(--label); }
+.row .desc.error { color: #e5484d; }
+.row .desc code, .foot code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .92em; }
+
+/* Environment list: lives inside a group, +/− underneath like System Settings lists. */
+.env { outline: none; }
+.env .thead, .env .tr { display: grid; grid-template-columns: 30px minmax(0, 1.6fr) minmax(0, 1fr) 22px; align-items: center; }
+.env .thead { height: 28px; font-size: 11px; color: var(--label-2); padding: 0 10px 0 0; border-bottom: 1px solid var(--sep); }
+.env .thead span:nth-child(2), .env .thead span:nth-child(3) { padding-left: 6px; }
+.env .tbody { height: 128px; overflow-y: auto; padding: 4px 5px; }
+.env .tbody::-webkit-scrollbar { width: 0; }
+.env .tr { height: 24px; border-radius: 6px; padding-right: 5px; }
+.env .tr .cell { padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; line-height: 24px; }
+.env .tr.off .cell { color: var(--label-3); }
+.env .tr .cell.placeholder { color: var(--label-3); font-family: inherit; font-size: 13px; }
+.env .tr.sel { background: var(--fill-press); }
+.env:focus-within .tr.sel, .env:focus .tr.sel { background: var(--accent); }
+.env:focus .tr.sel .cell, .env:focus-within .tr.sel:not(.editing) .cell { color: #fff; }
+.env:focus .tr.sel .warn, .env:focus-within .tr.sel .warn { color: #fff; }
+.env .tr.editing { background: transparent !important; }
+.env .tr input.cell {
+  width: calc(100% - 4px); margin: 0 2px; height: 20px; line-height: 20px; padding: 0 4px; border: 0; outline: 0; border-radius: 4px;
+  background: var(--win); color: var(--label); box-shadow: 0 0 0 1px var(--accent), 0 0 0 3.5px color-mix(in srgb, var(--accent) 35%, transparent);
+  -webkit-user-select: text; user-select: text;
+}
+.env .warn { color: #d99100; display: grid; place-items: center; }
+.env .empty-list { height: 100%; display: grid; place-items: center; color: var(--label-3); text-align: center; line-height: 18px; }
+.listbar { display: flex; align-items: center; height: 28px; border-top: 1px solid var(--sep); padding: 0 6px; gap: 2px; }
+.listbar button { width: 22px; height: 20px; border-radius: 5px; display: grid; place-items: center; color: var(--label); }
+.listbar button:disabled { color: var(--label-3); }
+.listbar button:active:not(:disabled) { background: var(--fill-press); }
+.listbar .hint { margin-left: auto; padding-right: 4px; font-size: 11px; color: var(--label-2); }
+.cb {
+  width: 14px; height: 14px; border-radius: 4px; margin: 0 auto; display: grid; place-items: center;
+  background: var(--win); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--label) 22%, transparent); color: #fff;
+}
+.cb[aria-checked="true"] { background: var(--accent); box-shadow: none; }
+.cb svg { width: 9px; height: 10px; }
+.cb[aria-checked="false"] svg { display: none; }
+.env:focus .tr.sel .cb[aria-checked="true"], .env:focus-within .tr.sel .cb[aria-checked="true"] { background: #fff; color: var(--accent); }
+
+/* Toast inside a sheet: says what a paste just did. */
+.toast {
+  position: absolute; left: 50%; bottom: 66px; transform: translateX(-50%); z-index: 3;
+  padding: 6px 12px; border-radius: 14px; font-size: 12px; white-space: nowrap;
+  background: color-mix(in srgb, var(--label) 88%, transparent); color: var(--win);
+  animation: toast 2.8s ease forwards;
+}
+@keyframes toast { 0% { opacity: 0; transform: translate(-50%, 6px); } 8%, 85% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; } }
+
+/* Alert (NSAlert on a sheet): 260 wide, centred text, side-by-side buttons. */
+.alert { width: 260px; margin-top: 90px; padding: 20px 16px 16px; text-align: center; }
+.alert .tile { width: 52px; height: 52px; border-radius: 12px; margin: 0 auto 12px; font-size: 22px; }
+.alert .tile svg { width: 24px; height: 24px; }
+.alert .t { font-weight: 600; margin-bottom: 6px; }
+.alert .m { font-size: 11px; line-height: 14px; color: var(--label); margin-bottom: 16px; }
+.alert .btns { display: flex; gap: 8px; }
+.alert .btns .btn { flex: 1; min-width: 0; height: 28px; border-radius: 14px; }
+
+/* Sign-in wait */
+.signin { width: 380px; padding: 24px 24px 20px; text-align: center; }
+.signin .tile { width: 52px; height: 52px; border-radius: 12px; margin: 0 auto 12px; }
+.signin .tile svg { width: 24px; height: 24px; }
+.signin .t { font-weight: 600; font-size: 15px; line-height: 20px; margin-bottom: 4px; }
+.signin .m { color: var(--label-2); font-size: 12px; line-height: 16px; margin-bottom: 18px; }
+.signin .wait { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--label-2); font-size: 12px; margin-bottom: 20px; }
+.signin .btns { display: flex; justify-content: space-between; }
+.spin { width: 14px; height: 14px; animation: spin 1s steps(8) infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.link { color: var(--accent-text); }
+.link:active { opacity: .7; }
 </style>
 </head>
 <body>
@@ -313,6 +420,13 @@ const G = {
   check: `<svg width="10" height="12" viewBox="0 0 10 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6.6 3.8 9.6 9 2.4"/></svg>`,
   info: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor"><circle cx="8" cy="8" r="6.9" stroke-width="1.2"/><path d="M8 7.1v4.3" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="4.8" r=".95" fill="currentColor" stroke="none"/></svg>`,
   spark: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.2c.5 3.4 1.4 5.2 6.8 6.8-5.4 1.6-6.3 3.4-6.8 6.8-.5-3.4-1.4-5.2-6.8-6.8C6.6 6.4 7.5 4.6 8 1.2z"/></svg>`,
+  eye: `<svg width="18" height="12" viewBox="0 0 18 12" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1 6c2-3.3 4.7-5 8-5s6 1.7 8 5c-2 3.3-4.7 5-8 5S3 9.3 1 6z"/><circle cx="9" cy="6" r="2.4"/></svg>`,
+  eyeOff: `<svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1 7c2-3.3 4.7-5 8-5s6 1.7 8 5c-2 3.3-4.7 5-8 5S3 10.3 1 7z"/><circle cx="9" cy="7" r="2.4"/><path d="M2.5 1.2 15.5 12.8" stroke-linecap="round"/></svg>`,
+  plus: `<svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M5 .8v8.4M.8 5h8.4"/></svg>`,
+  minus: `<svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M.8 5h8.4"/></svg>`,
+  warn: `<svg width="14" height="13" viewBox="0 0 14 13" fill="currentColor"><path d="M6.1 1a1 1 0 0 1 1.8 0l5.6 10a1 1 0 0 1-.9 1.5H1.4a1 1 0 0 1-.9-1.5z"/><path d="M7 4.3v3.6" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/><circle cx="7" cy="10" r=".85" fill="#fff"/></svg>`,
+  spinner: `<svg class="spin" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">${[...Array(8)].map((_, i) => `<path d="M7 1.2v2.6" opacity="${(i + 1) / 8}" transform="rotate(${i * 45} 7 7)"/>`).join('')}</svg>`,
+  arrowOut: `<svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:0"><path d="M2 7 7.3 1.7M3 1.5h4.5V6"/></svg>`,
   personFill: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="5.4" r="2.9"/><path d="M2.6 13.6c.7-2.6 2.8-4 5.4-4s4.7 1.4 5.4 4c.1.5-.2.9-.7.9H3.3c-.5 0-.8-.4-.7-.9z"/></svg>`,
 }
 
@@ -529,12 +643,397 @@ function duplicate(id) {
   state.accounts.splice(state.accounts.indexOf(a) + 1, 0, copy)
   renderAll()
 }
-// Sheets land in the next step; until then these are stubs.
-function openAccount(id) {}
-function newProvider() {}
-function signIn() {}
-function confirmDelete(id) {}
-function confirmSignOut() {}
+/* ---------- Sheet stack ---------- */
+// Each sheet: { el, onKey(e) → handled? }. Alerts stack on top of sheets.
+const sheets = []
+function presentSheet(html, { cls = '', onKey, scrim = true } = {}) {
+  closeMenu()
+  const layer = document.createElement('div')
+  layer.className = 'layer' + (scrim && !sheets.length ? ' scrim' : '')
+  layer.innerHTML = `<div class="sheet ${cls}" role="dialog" aria-modal="true">${html}</div>`
+  $('#win').append(layer)
+  const s = { layer, el: layer.firstElementChild, onKey }
+  sheets.push(s)
+  return s
+}
+function dismissSheet(s = sheets.at(-1)) {
+  if (!s) return
+  sheets.splice(sheets.indexOf(s), 1)
+  s.layer.classList.add('closing')
+  setTimeout(() => s.layer.remove(), 190)
+}
+document.addEventListener('keydown', e => {
+  const s = sheets.at(-1); if (!s || openMenu.close) return
+  if (s.onKey?.(e)) return
+  if (e.key === 'Escape' || (e.metaKey && e.key === '.')) { e.preventDefault(); s.el.querySelector('[data-role="cancel"]')?.click() }
+  else if (e.key === 'Enter' && !e.isComposing) {
+    const d = s.el.querySelector('.btn.default'); if (d && !d.disabled) { e.preventDefault(); d.click() }
+  }
+})
+
+const SECRET_KEY = /KEY|TOKEN|SECRET|PASSWORD/i
+const mask = v => !v ? '' : v.length <= 8 ? '•'.repeat(v.length) : v.slice(0, 3) + '••••••••' + v.slice(-4)
+// Keys the sheet sets from its own fields; the env list flags them.
+const MANAGED = {
+  ANTHROPIC_BASE_URL: 'Base URL', ANTHROPIC_AUTH_TOKEN: 'Auth Token', ANTHROPIC_API_KEY: 'API Key',
+  ANTHROPIC_MODEL: 'Model', ANTHROPIC_DEFAULT_OPUS_MODEL: 'Opus', ANTHROPIC_DEFAULT_SONNET_MODEL: 'Sonnet',
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: 'Haiku',
+}
+const validURL = u => { try { const x = new URL(u); return /^https?:$/.test(x.protocol) } catch { return false } }
+
+/* ---------- Account sheet (subscription or API provider) ---------- */
+function openAccount(id) {
+  const a = state.accounts.find(x => x.id === id)
+  editAccount(structuredClone(a), false)
+}
+function newProvider() {
+  editAccount({ id: 'p' + Date.now(), kind: 'api', name: '', baseURL: '', auth: 'token', secret: '',
+    model: '', opus: '', sonnet: '', haiku: '', args: '', env: [] }, true)
+}
+
+function editAccount(d, isNew) {
+  const isSub = d.kind === 'subscription'
+  let sel = -1, editing = null, reveal = false, focused = null
+  const makeDefault = { on: state.defaultAccount === d.id }
+
+  const head = () => isSub
+    ? `<span class="tile sub">${G.spark}</span><div><div class="t">${esc(d.email)}</div><div class="s">Claude ${esc(d.plan)} subscription</div></div>`
+    : `<span class="tile api">${esc(d.name.trim() ? monogram(d.name) : '?')}</span><div><div class="t">${esc(d.name.trim() || 'New Provider')}</div><div class="s">${isNew ? 'API provider' : esc(hostOf(d.baseURL))}</div></div>`
+
+  const s = presentSheet(`
+    <div class="sheet-head"></div>
+    <div class="sheet-body"></div>
+    <div class="sheet-foot">
+      ${isSub ? `<button class="btn destructive" data-role="signout">Sign Out…</button>`
+        : isNew ? '' : `<button class="btn destructive" data-role="delete">Delete…</button>`}
+      <span class="spacer"></span>
+      <button class="btn" data-role="cancel">Cancel</button>
+      <button class="btn default" data-role="save">${isNew ? 'Add' : 'Save'}</button>
+    </div>`, { cls: 'fixed', onKey })
+  const el = s.el, body = el.querySelector('.sheet-body')
+
+  function render() {
+    el.querySelector('.sheet-head').innerHTML = head()
+    const top = body.scrollTop
+    const urlBad = !isSub && d.baseURL && !validURL(d.baseURL)
+    const keyName = d.auth === 'key' ? 'ANTHROPIC_API_KEY' : 'ANTHROPIC_AUTH_TOKEN'
+    const first = isSub ? `
+      <div class="section"><h2>Account</h2><div class="group">
+        ${row({ title: 'Email', trail: `<span style="color:var(--label-2)">${esc(d.email)}</span>` })}
+        ${row({ title: 'Organization', trail: `<span style="color:var(--label-2)">${esc(d.org)}</span>` })}
+        ${row({ title: 'Plan', trail: `<span style="color:var(--label-2)">Claude ${esc(d.plan)}</span><button class="link" data-role="manage">Manage ${G.arrowOut}</button>` })}
+        ${row({ title: 'Signed in with', trail: `<span style="color:var(--label-2)">${esc(d.method)}</span>` })}
+      </div></div>`
+    : `
+      <div class="section"><h2>Connection</h2><div class="group">
+        ${row({ title: 'Name', trail: `<input class="field" data-f="name" placeholder="Required" value="${esc(d.name)}" spellcheck="false">` })}
+        ${row({ title: 'Base URL', desc: urlBad ? 'Enter a URL that starts with http:// or https://.' : '',
+          trail: `<input class="field" data-f="baseURL" placeholder="https://api.anthropic.com" value="${esc(d.baseURL)}" spellcheck="false">` })}
+        ${row({ title: 'Authentication', trail: popup('auth', d.auth === 'key' ? 'API Key' : 'Auth Token') })}
+        ${row({ title: d.auth === 'key' ? 'API key' : 'Token', desc: `Sent as <code>${keyName}</code>. Stored in your keychain.`,
+          trail: `<span class="secret"><input class="field mono" data-f="secret" placeholder="Required" spellcheck="false" autocomplete="off"
+            type="${reveal || focused === 'secret' ? (reveal ? 'text' : 'password') : 'text'}" value="${esc(reveal || focused === 'secret' ? d.secret : mask(d.secret))}">
+            <button class="eye" data-role="reveal" aria-label="${reveal ? 'Hide' : 'Show'}">${reveal ? G.eyeOff : G.eye}</button></span>` })}
+      </div></div>`
+    const models = isSub ? '' : `
+      <div class="section"><h2>Models</h2><div class="group">
+        ${row({ title: 'Model', trail: `<input class="field mono" data-f="model" placeholder="Default" value="${esc(d.model)}" spellcheck="false">` })}
+        ${row({ title: 'Opus', trail: `<input class="field mono" data-f="opus" placeholder="Default" value="${esc(d.opus)}" spellcheck="false">` })}
+        ${row({ title: 'Sonnet', trail: `<input class="field mono" data-f="sonnet" placeholder="Default" value="${esc(d.sonnet)}" spellcheck="false">` })}
+        ${row({ title: 'Haiku', trail: `<input class="field mono" data-f="haiku" placeholder="Default" value="${esc(d.haiku)}" spellcheck="false">` })}
+      </div><div class="foot">Empty fields use Claude Code’s defaults. The model names go to the provider as written.</div></div>`
+    body.innerHTML = first + `
+      <div class="section"><h2>Environment Variables</h2><div class="group env" tabindex="0">
+        <div class="thead"><span></span><span>Name</span><span>Value</span><span></span></div>
+        <div class="tbody">${envRows()}</div>
+        <div class="listbar">
+          <button data-role="add" aria-label="Add variable">${G.plus}</button>
+          <button data-role="remove" aria-label="Remove variable" ${sel < 0 ? 'disabled' : ''}>${G.minus}</button>
+          <span class="hint">Paste <code>KEY=value</code> lines or a whole shell command</span>
+        </div>
+      </div></div>
+` + models + `
+      <div class="section"><h2>Launch</h2><div class="group">
+        ${row({ title: 'Arguments', trail: `<input class="field mono" data-f="args" placeholder="None" value="${esc(d.args)}" spellcheck="false" style="width:300px">` })}
+        ${row({ title: 'Use for new sessions', trail: `<button class="switch" role="switch" data-role="default" aria-checked="${makeDefault.on}"></button>` })}
+      </div></div>`
+    body.scrollTop = top
+    validate()
+    edge()
+  }
+  function envRows() {
+    if (!d.env.length) return `<div class="empty-list">No Variables<br><span style="font-size:11px">Click + or paste to add.</span></div>`
+    const dupes = new Set(d.env.map(v => v.key).filter((k, i, a) => k && a.indexOf(k) !== i))
+    return d.env.map((v, i) => {
+      const warn = MANAGED[v.key] ? `Overrides the ${MANAGED[v.key]} field.` : dupes.has(v.key) ? 'Defined more than once; the last one wins.' : ''
+      const cell = (f, text, ph) => editing?.i === i && editing.f === f
+        ? `<input class="cell" data-cell="${f}" value="${esc(v[f])}" spellcheck="false" autocomplete="off">`
+        : `<span class="cell${text ? '' : ' placeholder'}" data-cell="${f}">${text ? esc(text) : ph}</span>`
+      return `<div class="tr${i === sel ? ' sel' : ''}${v.on ? '' : ' off'}${editing?.i === i ? ' editing' : ''}" data-i="${i}">
+        <span class="cb" role="checkbox" aria-checked="${v.on}">${G.check}</span>
+        ${cell('key', v.key, 'Name')}
+        ${cell('value', SECRET_KEY.test(v.key) && !(editing?.i === i) ? mask(v.value) : v.value, 'Value')}
+        <span class="warn" title="${esc(warn)}">${warn ? G.warn : ''}</span></div>`
+    }).join('')
+  }
+  function renderEnv() {
+    body.querySelector('.tbody').innerHTML = envRows()
+    body.querySelector('[data-role="remove"]').disabled = sel < 0
+    const inp = body.querySelector('input.cell')
+    if (inp) { inp.focus(); inp.select() }
+    else if (document.activeElement === document.body || !body.contains(document.activeElement)) body.querySelector('.env').focus()
+    body.querySelector('.tr.sel')?.scrollIntoView({ block: 'nearest' })
+    validate()
+  }
+  function validate() {
+    const ok = isSub || (d.name.trim() && validURL(d.baseURL) && d.secret)
+    el.querySelector('[data-role="save"]').disabled = !ok
+  }
+  function edge() { el.querySelector('.sheet-foot').classList.toggle('edge', body.scrollHeight - body.scrollTop - body.clientHeight > 1) }
+  body.addEventListener('scroll', edge)
+
+  // Env list: click selects; click on a selected cell or double-click edits.
+  function commitEdit(move) {
+    if (!editing) return
+    const inp = body.querySelector('input.cell')
+    const v = d.env[editing.i]
+    if (inp) v[editing.f] = editing.f === 'key' ? inp.value.trim().toUpperCase().replace(/\s+/g, '_') : inp.value
+    const was = editing; editing = null
+    if (!v.key && !v.value) { d.env.splice(was.i, 1); sel = Math.min(sel, d.env.length - 1) }
+    else if (move === 'next' && was.f === 'key') editing = { i: was.i, f: 'value' }
+    renderEnv()
+  }
+  function cancelEdit() {
+    const v = d.env[editing.i], i = editing.i
+    editing = null
+    if (!v.key && !v.value) { d.env.splice(i, 1); sel = Math.min(sel, d.env.length - 1) }
+    renderEnv()
+  }
+  function addVar() {
+    commitEdit()
+    d.env.push({ on: true, key: '', value: '' })
+    sel = d.env.length - 1; editing = { i: sel, f: 'key' }
+    renderEnv()
+  }
+  function removeVar() {
+    if (sel < 0) return
+    d.env.splice(sel, 1); sel = Math.min(sel, d.env.length - 1); editing = null
+    renderEnv()
+  }
+
+  body.addEventListener('mousedown', e => {
+    const tr = e.target.closest('.tr')
+    if (!tr) {
+      if (editing && !e.target.closest('input.cell')) commitEdit()
+      return
+    }
+    if (e.target.closest('input.cell')) return
+    e.preventDefault()
+    const i = +tr.dataset.i
+    if (e.target.closest('.cb')) { d.env[i].on = !d.env[i].on; sel = i; renderEnv(); return }
+    const cell = e.target.closest('[data-cell]')?.dataset.cell
+    if (editing) commitEdit()
+    if (i === sel && cell && e.detail === 1) {
+      // Second click on a selected row edits, after a beat, as NSTableView does.
+      clearTimeout(editAccount.t)
+      editAccount.t = setTimeout(() => { if (sel === i && !editing) { editing = { i, f: cell }; renderEnv() } }, 280)
+    }
+    sel = i
+    renderEnv()
+    body.querySelector('.env').focus()
+  })
+  body.addEventListener('dblclick', e => {
+    const tr = e.target.closest('.tr'), cell = e.target.closest('[data-cell]')?.dataset.cell
+    if (!tr || !cell || e.target.closest('input')) return
+    clearTimeout(editAccount.t)
+    sel = +tr.dataset.i; editing = { i: sel, f: cell }; renderEnv()
+  })
+  body.addEventListener('paste', e => {
+    if (e.target.closest('input')) return
+    const text = e.clipboardData.getData('text'); if (!text.trim()) return
+    e.preventDefault()
+    applyPaste(text)
+  })
+
+  // Pastes: KEY=value lines, `export KEY=value`, or a whole alias / command line.
+  function applyPaste(text) {
+    const alias = text.match(/^\s*alias\s+([\w-]+)=(["'])([\s\S]*)\2\s*$/)
+    const src = alias ? alias[3] : text
+    const re = /(?:^|\s)(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=("([^"]*)"|'([^']*)'|(\S*))/g
+    const vars = []; let m, lastEnd = 0
+    while ((m = re.exec(src))) { vars.push([m[1], m[3] ?? m[4] ?? m[5] ?? '']); lastEnd = re.lastIndex }
+    if (!vars.length) return toast('Nothing to paste — expected KEY=value')
+    const rest = src.slice(lastEnd).trim()
+    const filled = []
+    for (const [k, v] of vars) {
+      if (!isSub && k === 'ANTHROPIC_BASE_URL') { d.baseURL = v; filled.push('Base URL') }
+      else if (!isSub && (k === 'ANTHROPIC_AUTH_TOKEN' || k === 'ANTHROPIC_API_KEY')) { d.secret = v; d.auth = k.endsWith('KEY') ? 'key' : 'token'; filled.push(k.endsWith('KEY') ? 'API key' : 'token') }
+      else if (!isSub && k === 'ANTHROPIC_MODEL') { d.model = v; filled.push('model') }
+      else if (!isSub && /^ANTHROPIC_DEFAULT_(OPUS|SONNET|HAIKU)_MODEL$/.test(k)) { d[k.split('_')[2].toLowerCase()] = v; filled.push(k.split('_')[2][0] + k.split('_')[2].slice(1).toLowerCase()) }
+      else {
+        const ex = d.env.find(x => x.key === k)
+        if (ex) ex.value = v; else d.env.push({ on: true, key: k, value: v })
+        filled.push('var')
+      }
+    }
+    const cmd = rest.match(/^claude\b\s*(.*)$/)
+    if (cmd && cmd[1]) { d.args = cmd[1]; filled.push('arguments') }
+    if (!isSub && !d.name.trim()) {
+      if (alias) { d.name = alias[1]; filled.push('name') }
+      else if (d.baseURL) d.name = hostOf(d.baseURL).replace(/:\d+$/, '').replace(/^127\.0\.0\.1$|^localhost$/, 'Local Proxy')
+    }
+    const nVars = filled.filter(x => x === 'var').length
+    const fields = [...new Set(filled.filter(x => x !== 'var'))]
+    sel = -1; editing = null
+    render()
+    toast([fields.length && 'Filled ' + fields.join(', '), nVars && `${nVars} variable${nVars > 1 ? 's' : ''}`].filter(Boolean).join(' and '))
+  }
+  function toast(msg) {
+    el.querySelector('.toast')?.remove()
+    const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg
+    el.append(t); setTimeout(() => t.remove(), 2900)
+  }
+
+  // Fields
+  body.addEventListener('input', e => {
+    const f = e.target.dataset.f; if (!f) return
+    d[f] = e.target.value
+    if (f === 'name') el.querySelector('.sheet-head').innerHTML = head()
+    if (f === 'baseURL') {
+      const bad = d.baseURL && !validURL(d.baseURL), r = e.target.closest('.row')
+      let desc = r.querySelector('.desc')
+      if (bad && !desc) { desc = document.createElement('div'); desc.className = 'desc error'; r.append(desc) }
+      if (desc) { if (bad) desc.textContent = 'Enter a URL that starts with http:// or https://.'; else desc.remove() }
+      desc?.classList.add('error')
+    }
+    validate()
+  })
+  body.addEventListener('focusin', e => {
+    if (e.target.dataset.f === 'secret' && !reveal) { focused = 'secret'; e.target.type = 'password'; e.target.value = d.secret; e.target.select() }
+  })
+  body.addEventListener('focusout', e => {
+    if (e.target.dataset.f === 'secret' && !reveal) { focused = null; e.target.type = 'text'; e.target.value = mask(d.secret) }
+    if (e.target.matches('input.cell') && editing && !body.contains(e.relatedTarget)) commitEdit()
+  })
+  body.addEventListener('click', e => {
+    const r = e.target.closest('[data-role]')?.dataset.role
+    if (r === 'reveal') { reveal = !reveal; render() }
+    if (r === 'add') addVar()
+    if (r === 'remove') removeVar()
+    if (r === 'default') { makeDefault.on = !makeDefault.on; e.target.setAttribute('aria-checked', makeDefault.on) }
+    if (r === 'manage') toast('Opens claude.ai in your browser')
+  })
+  body.addEventListener('mousedown', e => {
+    const p = e.target.closest('[data-popup="auth"]'); if (!p) return
+    e.preventDefault(); e.stopPropagation()
+    openMenu(p, [
+      { label: 'Auth Token', sub: 'Authorization: Bearer', checked: d.auth === 'token', action: () => { d.auth = 'token'; render() } },
+      { label: 'API Key', sub: 'x-api-key', checked: d.auth === 'key', action: () => { d.auth = 'key'; render() } },
+    ])
+  }, true)
+
+  function onKey(e) {
+    if (editing) {
+      if (e.key === 'Enter') { e.preventDefault(); commitEdit(); body.querySelector('.env').focus(); return true }
+      if (e.key === 'Tab') { e.preventDefault(); commitEdit('next'); return true }
+      if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); body.querySelector('.env').focus(); return true }
+      return true
+    }
+    if (document.activeElement === body.querySelector('.env')) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault(); if (!d.env.length) return true
+        sel = Math.max(0, Math.min(d.env.length - 1, sel + (e.key === 'ArrowDown' ? 1 : -1))); renderEnv(); return true
+      }
+      if ((e.key === 'Backspace' || e.key === 'Delete') && sel >= 0) { e.preventDefault(); removeVar(); return true }
+      if (e.key === 'Enter' && sel >= 0) { e.preventDefault(); editing = { i: sel, f: 'value' }; renderEnv(); return true }
+      if (e.key === ' ' && sel >= 0) { e.preventDefault(); d.env[sel].on = !d.env[sel].on; renderEnv(); return true }
+    }
+    return false
+  }
+
+  // Footer
+  el.querySelector('.sheet-foot').addEventListener('click', e => {
+    const r = e.target.closest('[data-role]')?.dataset.role
+    if (r === 'cancel') dismissSheet(s)
+    if (r === 'save') {
+      commitEdit()
+      d.env = d.env.filter(v => v.key)
+      const i = state.accounts.findIndex(x => x.id === d.id)
+      if (i >= 0) state.accounts[i] = d; else state.accounts.push(d)
+      if (makeDefault.on) state.defaultAccount = d.id
+      else if (state.defaultAccount === d.id) state.defaultAccount = state.accounts.find(x => x.id !== d.id)?.id ?? null
+      dismissSheet(s); renderAll()
+    }
+    if (r === 'delete') confirmDelete(d.id, () => dismissSheet(s))
+    if (r === 'signout') confirmSignOut(() => dismissSheet(s))
+  })
+
+  render()
+  if (isNew) setTimeout(() => body.querySelector('[data-f="name"]').focus(), 60)
+}
+
+/* ---------- Alerts ---------- */
+function showAlert({ tile, title, message, confirm, destructive, onConfirm }) {
+  const s = presentSheet(`${tile}<div class="t">${title}</div><div class="m">${message}</div>
+    <div class="btns"><button class="btn default" data-role="cancel">Cancel</button>
+    <button class="btn${destructive ? ' destructive' : ''}" data-role="ok">${confirm}</button></div>`, { cls: 'alert' })
+  s.el.addEventListener('click', e => {
+    const r = e.target.closest('[data-role]')?.dataset.role
+    if (r === 'cancel') dismissSheet(s)
+    if (r === 'ok') { dismissSheet(s); onConfirm() }
+  })
+}
+function confirmDelete(id, then) {
+  const a = state.accounts.find(x => x.id === id)
+  showAlert({
+    tile: `<span class="tile api">${esc(monogram(a.name))}</span>`,
+    title: `Delete “${esc(a.name)}”?`,
+    message: 'Its token is removed from your keychain. Sessions already running keep going until they end.',
+    confirm: 'Delete', destructive: true,
+    onConfirm: () => {
+      then?.()
+      state.accounts = state.accounts.filter(x => x.id !== id)
+      if (state.defaultAccount === id) state.defaultAccount = state.accounts[0]?.id ?? null
+      renderAll()
+    },
+  })
+}
+function confirmSignOut(then) {
+  const a = subscription()
+  showAlert({
+    tile: `<span class="tile sub">${G.spark}</span>`,
+    title: `Sign out of ${esc(a.email)}?`,
+    message: 'New sessions can’t use your subscription until you sign in again. Your API providers aren’t affected.',
+    confirm: 'Sign Out', destructive: true,
+    onConfirm: () => {
+      then?.()
+      state.accounts = state.accounts.filter(x => x.kind !== 'subscription')
+      if (state.defaultAccount === a.id) state.defaultAccount = providers()[0]?.id ?? null
+      state.signedOut = a
+      renderAll()
+    },
+  })
+}
+
+/* ---------- Sign in ---------- */
+function signIn() {
+  const s = presentSheet(`
+    <span class="tile sub">${G.spark}</span>
+    <div class="t">Sign in to Claude</div>
+    <div class="m">Continue in your browser. CCTerm finishes signing in when you approve access.</div>
+    <div class="wait">${G.spinner}Waiting for your browser…</div>
+    <div class="btns"><button class="link" data-role="again">Open Browser Again</button><button class="btn" data-role="cancel">Cancel</button></div>`, { cls: 'signin' })
+  const done = setTimeout(() => {
+    if (!sheets.includes(s)) return
+    const a = state.signedOut || { id: 'sub', kind: 'subscription', name: 'Claude Max', plan: 'Max', email: 'name@example.com', org: 'Personal', method: 'Claude.ai', args: '', env: [] }
+    state.accounts.unshift(a); if (!state.defaultAccount) state.defaultAccount = a.id
+    dismissSheet(s); renderAll()
+  }, 2600)
+  s.el.addEventListener('click', e => {
+    const r = e.target.closest('[data-role]')?.dataset.role
+    if (r === 'cancel') { clearTimeout(done); dismissSheet(s) }
+  })
+}
 
 /* ---------- Theme (review control) ---------- */
 $('#theme').addEventListener('click', e => {

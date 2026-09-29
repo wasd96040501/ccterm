@@ -328,4 +328,39 @@ final class PageRowViewContractTests: XCTestCase {
     func testPlanDecisionRowView() {
         assertContract(PlanDecisionRowView.self, [RowFixture(name: "waiting", model: "plan-1")])
     }
+
+    func testQuestionRowView() throws {
+        func questions(_ json: String) throws -> [Tools.AskUserQuestion.Question] {
+            try JSONDecoder().decode(Tools.AskUserQuestion.Input.self, from: Data(#"{"questions":\#(json)}"#.utf8))
+                .questions
+        }
+        func question(_ json: String, answers: [String: String], waiting: Bool = false) throws -> Question {
+            let use = ToolUseBlock(id: "q", name: "AskUserQuestion", input: MessageScript.json("{}"))
+            let call = ToolCall(
+                use: use, result: nil, kind: .other, state: waiting ? .waiting(reason: nil) : .done, startedAt: nil,
+                finishedAt: nil)
+            return Question(call: call, questions: try questions(json), answers: answers)
+        }
+        let one =
+            #"[{"question":"Which library should we use for date formatting?","header":"Auth method","options":[{"label":"date-fns","description":"Small, tree-shakeable"},{"label":"Moment","description":""}],"multiSelect":false}]"#
+        let long =
+            #"[{"question":"Which of these approaches to reworking the tab bar do you want me to take, given that the split editor keeps its own tab strip and both must keep working when a document opens beside the transcript?","header":"","options":[{"label":"A very long option label that will not fit a narrow split editor at all","description":"and a description that is just as long as the label is, so both must truncate"},{"label":"Short","description":"x"}],"multiSelect":false}]"#
+        let several =
+            #"[{"question":"Which platforms?","header":"Targets","options":[{"label":"macOS","description":"14+"},{"label":"iOS","description":""},{"label":"visionOS","description":"Later"}],"multiSelect":true},{"question":"Ship it?","header":"Release","options":[{"label":"Yes","description":""},{"label":"No","description":""}],"multiSelect":false}]"#
+        let answered = try question(one, answers: ["Which library should we use for date formatting?": "date-fns"])
+        let otherAnswer = try question(one, answers: ["Which library should we use for date formatting?": "Moment"])
+        let unanswered = try question(one, answers: [:])
+        let severalAnswered = try question(several, answers: ["Which platforms?": "macOS, iOS", "Ship it?": "Yes"])
+        let severalOther = try question(several, answers: ["Which platforms?": "visionOS", "Ship it?": "No"])
+        let fixtures = [
+            RowFixture(name: "answered", model: answered, sameGeometry: [otherAnswer, unanswered]),
+            RowFixture(name: "long text and options", model: try question(long, answers: [:])),
+            RowFixture(name: "several questions", model: severalAnswered, sameGeometry: [severalOther]),
+            RowFixture(name: "waiting", model: try question(one, answers: [:], waiting: true)),
+            RowFixture(name: "waiting, long", model: try question(long, answers: [:], waiting: true)),
+            RowFixture(
+                name: "waiting, several", model: try question(several, answers: [:], waiting: true)),
+        ]
+        assertContract(QuestionRowView.self, fixtures)
+    }
 }

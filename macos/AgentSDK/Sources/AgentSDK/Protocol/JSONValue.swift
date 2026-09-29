@@ -70,7 +70,7 @@ extension JSONValue {
     /// Decodes this value into `type` (snake_case keys stay as written; map
     /// them with `CodingKeys`).
     public func decode<T: Decodable>(_ type: T.Type) throws -> T {
-        try JSONDecoder().decode(T.self, from: JSONEncoder().encode(self))
+        try JSONValueDecoder.unbox(T.self, self, [])
     }
 }
 

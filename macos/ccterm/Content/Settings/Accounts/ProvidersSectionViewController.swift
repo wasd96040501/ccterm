@@ -8,15 +8,14 @@ import Combine
 final class ProvidersSectionViewController: NSViewController {
     weak var delegate: ProvidersSectionViewControllerDelegate?
 
-    private let initialProviders: [Account]
-    private let updates: AnyPublisher<[Account], Never>
+    private let providers: AnyPublisher<[Account], Never>
     private var cancellables = Set<AnyCancellable>()
 
-    /// `providers`: the provider accounts now, shown from the first frame;
-    /// `updates`: the list each time it changes.
-    init(providers: [Account], updates: AnyPublisher<[Account], Never>) {
-        initialProviders = providers
-        self.updates = updates
+    /// `providers`: the provider accounts, now and each time the list changes;
+    /// must deliver on the main actor, and its current value on subscribing, so
+    /// the first frame is already right.
+    init(providers: AnyPublisher<[Account], Never>) {
+        self.providers = providers
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -38,10 +37,11 @@ final class ProvidersSectionViewController: NSViewController {
         for button in [addButton, emptyView.addButton] {
             button.onAdd = { [weak self] in self.map { $0.delegate?.providersSectionDidRequestAdd($0) } }
             button.onImport = { [weak self] in self.map { $0.delegate?.providersSectionDidRequestImport($0) } }
+            button.isImportEnabled = { [weak self] in
+                self.flatMap { $0.delegate?.providersSectionCanImport($0) } ?? false
+            }
         }
-        show(initialProviders)
-        updates
-            .receive(on: DispatchQueue.main)
+        providers
             .sink { [weak self] providers in self?.show(providers) }
             .store(in: &cancellables)
     }

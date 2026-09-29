@@ -47,14 +47,40 @@ final class AccountStore {
     func save(_ account: Account, secrets accountSecrets: AccountSecrets) async throws {
         try await serialized { [self] in
             try await writeSecrets(accountSecrets, for: account.id)
-            var next = accounts
-            if let index = next.firstIndex(where: { $0.id == account.id }) {
-                next[index] = account
-            } else {
-                next.append(account)
-            }
-            try commit(next)
+            try commit(Self.merged(account, into: accounts))
         }
+    }
+
+    /// Adds each account, or replaces the one with its id — all in one write:
+    /// either every one is kept or, when writing fails, none.
+    func add(_ entries: [(Account, AccountSecrets)]) async throws {
+        guard !entries.isEmpty else { return }
+        try await serialized { [self] in
+            var written: [UUID] = []
+            do {
+                for (account, accountSecrets) in entries {
+                    try await writeSecrets(accountSecrets, for: account.id)
+                    written.append(account.id)
+                }
+                try commit(entries.reduce(accounts) { Self.merged($1.0, into: $0) })
+            } catch {
+                let store = secrets
+                let kept = Set(accounts.map(\.id))
+                let orphans = written.filter { !kept.contains($0) }
+                try? await Task.detached { for id in orphans { try? store.removeData(for: id) } }.value
+                throw error
+            }
+        }
+    }
+
+    private static func merged(_ account: Account, into accounts: [Account]) -> [Account] {
+        var next = accounts
+        if let index = next.firstIndex(where: { $0.id == account.id }) {
+            next[index] = account
+        } else {
+            next.append(account)
+        }
+        return next
     }
 
     /// A copy of the provider, secrets and all, right after it, named
@@ -65,7 +91,8 @@ final class AccountStore {
             guard let original = accounts.first(where: { $0.id == id }), var provider = original.provider else {
                 return nil
             }
-            provider.name = String(localized: "\(provider.name) Copy")
+            provider.name = Account.uniqueName(
+                String(localized: "\(provider.name) Copy"), among: providers.compactMap { $0.provider?.name })
             let copy = Account(
                 id: UUID(), kind: .provider(provider), command: original.command, arguments: original.arguments)
             try await writeSecrets(try await secrets(for: id), for: copy.id)

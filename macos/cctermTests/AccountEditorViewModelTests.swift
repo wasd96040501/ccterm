@@ -1,14 +1,43 @@
+import AgentSDK
 import XCTest
 
 @testable import ccterm
 
 /// What the account sheet shows, derived from its draft: when it can be
 /// saved, the Base URL's error, the credential row, masking, variable
-/// warnings, and what a paste fills.
+/// warnings, what a paste fills, and that saving waits for the launch command
+/// to run.
 @MainActor
 final class AccountEditorViewModelTests: XCTestCase {
-    private func newProvider() -> AccountEditorViewModel {
-        AccountEditorViewModel(mode: .newProvider, account: .newProvider(), secrets: AccountSecrets())
+    private let probe = FakeProbe()
+    private var check: LaunchCheckService!
+
+    /// General's launch, known to work, as when the app has just started.
+    override func setUp() async throws {
+        check = LaunchCheckService(probe: probe.probe)
+        _ = await check.check(CLIConfiguration())
+    }
+
+    private func newProvider(takenNames: [String] = []) -> AccountEditorViewModel {
+        model(account: .newProvider(), takenNames: takenNames)
+    }
+
+    private func model(
+        account: Account, secrets: AccountSecrets = AccountSecrets(), takenNames: [String] = []
+    ) -> AccountEditorViewModel {
+        let validation = LaunchCommandValidation(
+            check: check, configuration: { LaunchEnvironment.resolve(command: $0, general: LaunchPreferences()) },
+            text: account.command, debounce: .zero)
+        return AccountEditorViewModel(
+            mode: .newProvider, account: account, secrets: secrets, takenNames: takenNames,
+            commandValidation: validation)
+    }
+
+    /// A draft that is complete but for its launch command.
+    private func fill(_ model: AccountEditorViewModel) {
+        model.setName("Relay")
+        model.setBaseURL("https://relay.example.com")
+        model.setCredential("sk-example")
     }
 
     func testANewProviderNeedsANameAValidURLAndACredential() {
@@ -58,8 +87,8 @@ final class AccountEditorViewModelTests: XCTestCase {
     }
 
     func testSecretLookingValuesAreMaskedAndManagedOrRepeatedNamesWarn() {
-        let model = AccountEditorViewModel(
-            mode: .newProvider, account: .newProvider(),
+        let model = model(
+            account: .newProvider(),
             secrets: AccountSecrets(environment: [
                 EnvironmentVariable(name: "MY_TOKEN", value: "tok-0123456789"),
                 EnvironmentVariable(name: "ANTHROPIC_BASE_URL", value: "https://other.example.com"),
@@ -88,6 +117,73 @@ final class AccountEditorViewModelTests: XCTestCase {
         XCTAssertEqual(presentation.fields.arguments, "--permission-mode auto")
         XCTAssertEqual(presentation.environmentRows.map(\.name), ["API_TIMEOUT_MS"])
         XCTAssertTrue(presentation.canSave)
+    }
+
+    func testSavingWaitsForTheCommandToRun() async {
+        let model = newProvider()
+        fill(model)
+        XCTAssertTrue(model.presentation.canSave, "no command runs General's, which is known")
+        let gate = probe.hold("relay-wrapper")
+
+        model.setCommand("relay-wrapper")
+        XCTAssertFalse(model.presentation.canSave, "the old answer isn't one for this command")
+        await waitFor(model.$presentation) { !$0.canSave && $0.commandError == nil }
+        await gate.open()
+        await waitFor(model.$presentation) { $0.canSave }
+        XCTAssertNil(model.presentation.commandError)
+
+        model.setCommand("")
+        XCTAssertTrue(model.presentation.canSave, "General's launch is known")
+    }
+
+    func testACommandThatDoesNotRunBlocksSavingAndSaysWhy() async {
+        probe.fail("missing", with: AgentSDKError.binaryNotFound)
+        let model = newProvider()
+        fill(model)
+        model.setCommand("missing")
+        await waitFor(model.$presentation) { $0.commandError != nil }
+        XCTAssertFalse(model.presentation.canSave)
+        XCTAssertEqual(model.presentation.commandError, String(localized: "Not found"))
+        model.setCommand("")
+        XCTAssertNil(model.presentation.commandError, "General's launch is known, so its answer shows at once")
+        XCTAssertTrue(model.presentation.canSave)
+    }
+
+    func testAPastedCommandIsCheckedToo() async {
+        let model = newProvider()
+        let gate = probe.hold("my-proxy")
+        _ = model.paste("ANTHROPIC_BASE_URL=https://relay.example.com ANTHROPIC_AUTH_TOKEN=sk-1 my-proxy")
+        XCTAssertFalse(model.presentation.canSave)
+        await gate.open()
+        await waitFor(model.$presentation) { $0.canSave }
+        XCTAssertEqual(model.presentation.fields.command, "my-proxy")
+    }
+
+    func testAnAccountOpenedWithACommandStartsChecked() async {
+        var account = Account.newProvider()
+        account.command = "orange"
+        let model = model(account: account)
+        fill(model)
+        XCTAssertFalse(model.presentation.canSave)
+        await waitFor(model.$presentation) { $0.canSave }
+    }
+
+    func testAPastedNameStaysClearOfTheOthers() {
+        let model = newProvider(takenNames: ["relay"])
+        _ = model.paste(#"alias relay="ANTHROPIC_BASE_URL=https://relay.example.com ANTHROPIC_AUTH_TOKEN=sk-1 claude""#)
+        XCTAssertEqual(model.presentation.fields.name, "relay 2")
+    }
+
+    func testTheSheetTakesOneProviderAtATime() {
+        let model = newProvider()
+        let text = """
+            alias a="A=1 claude"
+            alias b="B=2 claude"
+            """
+        XCTAssertEqual(model.paste(text), String(localized: "Paste one provider at a time"))
+        XCTAssertEqual(model.presentation.fields.name, "")
+        XCTAssertTrue(model.presentation.environmentRows.isEmpty)
+        XCTAssertEqual(model.paste("nothing here"), String(localized: "Nothing to paste — expected KEY=value"))
     }
 
     func testRowsWithoutANameAreNotSaved() {

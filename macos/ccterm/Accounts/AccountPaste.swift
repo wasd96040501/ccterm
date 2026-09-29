@@ -1,48 +1,115 @@
+import AgentSDK
 import Foundation
 
-/// Text pasted into an account's variable list, read the way people keep
-/// provider settings: `KEY=value` lines, `export KEY=value` lines, or a whole
-/// `alias name="KEY=value … claude --flags"`.
-nonisolated struct AccountPaste: Equatable {
-    /// The alias's name, when the text was one.
-    var aliasName: String?
-    var variables: [(name: String, value: String)]
-    /// The word after the variables — the command they prefix — if any.
-    var command: String?
-    /// What follows the command.
-    var arguments: String?
+/// Text pasted to make providers, read the way people keep them in a shell
+/// profile: `KEY=value` lines, `export KEY=value` lines, a launch line
+/// (`KEY=value … claude --flags`) or `alias name="KEY=value … claude --flags"`.
+/// A whole `~/.zshrc` can be pasted; what isn't a provider's settings is
+/// skipped.
+nonisolated enum AccountPaste {
+    /// One provider's worth of a paste.
+    struct Entry: Equatable {
+        /// The alias's name, when the entry was one.
+        var name: String?
+        var variables: [Assignment]
+        /// The word after the variables — the command they prefix — if any.
+        var command: String?
+        /// What follows the command.
+        var arguments: String?
 
-    /// `nil` when the text sets no variable.
-    init?(_ text: String) {
-        let alias = text.firstMatch(of: #/^\s*alias\s+([\w-]+)=(["'])([\s\S]*)\2\s*$/#)
-        let source = alias.map { String($0.output.3) } ?? text
-        aliasName = alias.map { String($0.output.1) }
-
-        let assignment = #/(?:^|\s)(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=("([^"]*)"|'([^']*)'|(\S*))/#
-        variables = []
-        var end = source.startIndex
-        for match in source.matches(of: assignment) {
-            let value = match.output.3 ?? match.output.4 ?? match.output.5 ?? ""
-            variables.append((String(match.output.1), String(value)))
-            end = match.range.upperBound
+        init(name: String? = nil, variables: [Assignment], command: String? = nil, arguments: String? = nil) {
+            self.name = name
+            self.variables = variables
+            self.command = command
+            self.arguments = arguments
         }
-        guard !variables.isEmpty else { return nil }
 
-        let rest = source[end...].trimmingCharacters(in: .whitespacesAndNewlines)
-        if let first = rest.firstMatch(of: #/^(\S+)\s*([\s\S]*)$/#) {
-            command = String(first.output.1)
-            let arguments = String(first.output.2)
-            self.arguments = arguments.isEmpty ? nil : arguments
+        init(name: String? = nil, _ line: LaunchLine) {
+            self.init(
+                name: name, variables: line.variables.map { Assignment(name: $0.name, value: $0.value) },
+                command: line.command, arguments: line.arguments)
         }
     }
 
-    static func == (lhs: AccountPaste, rhs: AccountPaste) -> Bool {
-        lhs.aliasName == rhs.aliasName && lhs.command == rhs.command && lhs.arguments == rhs.arguments
-            && lhs.variables.map(\.name) == rhs.variables.map(\.name)
-            && lhs.variables.map(\.value) == rhs.variables.map(\.value)
+    struct Assignment: Equatable {
+        var name: String
+        var value: String
     }
 
-    /// What applying a paste changed.
+    /// The entries in `text`, in order:
+    /// - each `alias name="…"` (or `'…'`) whose body sets a variable, named by
+    ///   the alias;
+    /// - each line that sets variables in front of a command;
+    /// - each run of bare `KEY=value` / `export KEY=value` lines, ended by a
+    ///   blank line or by a command line, which joins it (a command line
+    ///   without variables joins only when it runs `claude`).
+    ///
+    /// Comments (`#…`) and lines that set no variable are skipped.
+    static func entries(_ text: String) -> [Entry] {
+        var entries: [Entry] = []
+        var run: [Assignment] = []
+        func endRun() {
+            if !run.isEmpty { entries.append(Entry(variables: run)) }
+            run = []
+        }
+        for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.isEmpty {
+                endRun()
+                continue
+            }
+            if line.hasPrefix("#") { continue }
+            if let alias = line.firstMatch(of: #/^alias\s+([\w-]+)=(["'])([\s\S]*)\2$/#) {
+                endRun()
+                if let launch = LaunchLine(String(alias.output.3)), !launch.variables.isEmpty {
+                    entries.append(Entry(name: String(alias.output.1), launch))
+                }
+                continue
+            }
+            guard let launch = LaunchLine(line) else { continue }
+            if launch.command == nil {
+                run += Entry(launch).variables
+            } else if !launch.variables.isEmpty || isClaude(launch.command) {
+                var entry = Entry(launch)
+                entry.variables.insert(contentsOf: run, at: 0)
+                run = []
+                if !entry.variables.isEmpty { entries.append(entry) }
+            } else {
+                endRun()
+            }
+        }
+        endRun()
+        return entries
+    }
+
+    private static func isClaude(_ command: String?) -> Bool {
+        command.map { ($0 as NSString).lastPathComponent == "claude" } ?? false
+    }
+
+    /// The providers `entries` make, ready to add: each with its name made
+    /// unique among `existingNames` and those before it. Entries without a
+    /// base URL or a credential are left out and counted.
+    static func importable(
+        _ entries: [Entry], existingNames: [String]
+    ) -> (
+        providers: [(Account, AccountSecrets)], skipped: Int
+    ) {
+        var names = existingNames
+        var providers: [(Account, AccountSecrets)] = []
+        for entry in entries {
+            var (account, secrets) = entry.newProvider()
+            guard var provider = account.provider, !provider.baseURL.isEmpty, !secrets.credential.isEmpty else {
+                continue
+            }
+            provider.name = Account.uniqueName(provider.name, among: names)
+            names.append(provider.name)
+            account.kind = .provider(provider)
+            providers.append((account, secrets))
+        }
+        return (providers, entries.count - providers.count)
+    }
+
+    /// What applying an entry changed.
     struct Result: Equatable {
         /// The account's own fields that were filled, in the order they were.
         var fields: [Field] = []
@@ -55,17 +122,27 @@ nonisolated struct AccountPaste: Equatable {
         case credential(Account.Authentication)
         case model, opus, sonnet, haiku, fable, command, arguments
     }
+}
 
-    /// Fills `account` and `secrets` from the paste: variables the account has
+extension AccountPaste.Entry {
+    /// A new provider filled from the entry.
+    func newProvider() -> (Account, AccountSecrets) {
+        var account = Account.newProvider()
+        var secrets = AccountSecrets()
+        _ = apply(to: &account, secrets: &secrets)
+        return (account, secrets)
+    }
+
+    /// Fills `account` and `secrets` from the entry: variables the account has
     /// fields for (a provider's base URL, credential and models) go there, the
     /// rest into the list — replacing a variable of the same name. A command
     /// other than `claude` becomes the account's command.
-    func apply(to account: inout Account, secrets: inout AccountSecrets) -> Result {
-        var result = Result()
+    func apply(to account: inout Account, secrets: inout AccountSecrets) -> AccountPaste.Result {
+        var result = AccountPaste.Result()
         var provider = account.provider
-        func fill(_ field: Field) { if !result.fields.contains(field) { result.fields.append(field) } }
+        func fill(_ field: AccountPaste.Field) { if !result.fields.contains(field) { result.fields.append(field) } }
 
-        for (name, value) in variables {
+        for (name, value) in variables.map({ ($0.name, $0.value) }) {
             switch (name, provider != nil) {
             case ("ANTHROPIC_BASE_URL", true):
                 provider?.baseURL = value
@@ -109,8 +186,8 @@ nonisolated struct AccountPaste: Equatable {
             fill(.arguments)
         }
         if var named = provider, named.name.trimmingCharacters(in: .whitespaces).isEmpty {
-            if let aliasName {
-                named.name = aliasName
+            if let name {
+                named.name = name
                 fill(.name)
             } else if let host = URL(string: named.baseURL)?.host() {
                 named.name = ["127.0.0.1", "localhost"].contains(host) ? String(localized: "Local Proxy") : host

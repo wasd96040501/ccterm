@@ -18,6 +18,8 @@ struct AccountEditorPresentation: Equatable {
     var fields: Fields
     var fieldsRevision: Int
     var environmentRows: [EnvironmentRow]
+    /// Under Command, in red: why the launch command doesn't run; `nil` hides it.
+    var commandError: String?
 
     struct Fields: Equatable {
         var name = ""

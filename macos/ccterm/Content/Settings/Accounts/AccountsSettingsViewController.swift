@@ -8,6 +8,8 @@ import Combine
 @MainActor
 final class AccountsSettingsViewController: NSViewController {
     private let accounts: AccountStore
+    private let launch: LaunchStore
+    private let launchCheck: LaunchCheckService
     private let subscription: SubscriptionService
     private let subscriptionSection: SubscriptionSectionViewController
     private let providersSection: ProvidersSectionViewController
@@ -17,16 +19,17 @@ final class AccountsSettingsViewController: NSViewController {
     /// The account the open sheet edits.
     private var editing: Account?
 
-    init(accounts: AccountStore, subscription: SubscriptionService) {
+    init(
+        accounts: AccountStore, launch: LaunchStore, launchCheck: LaunchCheckService,
+        subscription: SubscriptionService
+    ) {
         self.accounts = accounts
+        self.launch = launch
+        self.launchCheck = launchCheck
         self.subscription = subscription
-        // Each section starts from the state as it is now, so the pane's
-        // first frame is already right; changes follow.
-        subscriptionSection = SubscriptionSectionViewController(
-            state: subscription.state, updates: subscription.$state.dropFirst().eraseToAnyPublisher())
+        subscriptionSection = SubscriptionSectionViewController(states: subscription.$state.eraseToAnyPublisher())
         providersSection = ProvidersSectionViewController(
-            providers: accounts.providers,
-            updates: accounts.$accounts.dropFirst().map { $0.filter { $0.provider != nil } }.eraseToAnyPublisher())
+            providers: accounts.$accounts.map { $0.filter { $0.provider != nil } }.eraseToAnyPublisher())
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -64,12 +67,17 @@ final class AccountsSettingsViewController: NSViewController {
         }
     }
 
-    /// `paste`: text to fill the draft from before the sheet appears.
-    private func present(_ account: Account, secrets: AccountSecrets, mode: AccountEditorMode, paste: String? = nil) {
+    /// `entry`: what to fill the draft from before the sheet appears.
+    private func present(
+        _ account: Account, secrets: AccountSecrets, mode: AccountEditorMode, entry: AccountPaste.Entry? = nil
+    ) {
         guard editor == nil else { return }
-        let editor = AccountEditorViewController(mode: mode, account: account, secrets: secrets)
+        let editor = AccountEditorViewController(
+            viewModel: AccountEditorViewModel(
+                mode: mode, account: account, secrets: secrets,
+                takenNames: providerNames(excluding: account.id), commandValidation: commandValidation(for: account)))
         editor.delegate = self
-        if let paste { editor.fill(from: paste) }
+        if let entry { editor.fill(entry) }
         self.editor = editor
         editing = account
         presentAsSheet(editor)
@@ -82,12 +90,68 @@ final class AccountsSettingsViewController: NSViewController {
         editing = nil
     }
 
-    /// ⌘V on the pane: a new provider, filled from what was copied — an
-    /// alias out of `~/.zshrc` becomes a provider in one step.
+    /// Checks `account`'s launch command as it is typed: what it launches, under
+    /// General's settings.
+    private func commandValidation(for account: Account) -> LaunchCommandValidation {
+        LaunchCommandValidation(
+            check: launchCheck,
+            configuration: { [launch] command in
+                LaunchEnvironment.resolve(command: command, general: launch.preferences)
+            },
+            text: account.command)
+    }
+
+    private func providerNames(excluding id: UUID) -> [String] {
+        accounts.providers.filter { $0.id != id }.compactMap { $0.provider?.name }
+    }
+
+    // MARK: - Import
+
+    /// Whether the clipboard holds something to import.
+    private var canImport: Bool {
+        NSPasteboard.general.string(forType: .string).map { !AccountPaste.entries($0).isEmpty } ?? false
+    }
+
+    /// ⌘V on the pane: providers out of what was copied — an alias in
+    /// `~/.zshrc` becomes a provider in one step. One provider opens in the
+    /// sheet to be looked over; several are added to the list.
     @objc func paste(_ sender: Any?) {
-        guard editor == nil, let text = NSPasteboard.general.string(forType: .string), AccountPaste(text) != nil
-        else { return }
-        present(.newProvider(), secrets: AccountSecrets(), mode: .newProvider, paste: text)
+        guard editor == nil, let text = NSPasteboard.general.string(forType: .string) else { return }
+        let entries = AccountPaste.entries(text)
+        switch entries.count {
+        case 0:
+            return
+        case 1:
+            present(.newProvider(), secrets: AccountSecrets(), mode: .newProvider, entry: entries[0])
+        default:
+            importProviders(entries)
+        }
+    }
+
+    private func importProviders(_ entries: [AccountPaste.Entry]) {
+        let (providers, skipped) = AccountPaste.importable(
+            entries, existingNames: accounts.providers.compactMap { $0.provider?.name })
+        appLog(
+            .info, "AccountsSettingsViewController",
+            "import — \(entries.count) entries, \(providers.count) importable, \(skipped) skipped")
+        guard !providers.isEmpty else {
+            showImportResult(added: 0, skipped: skipped)
+            return
+        }
+        Task {
+            do {
+                try await accounts.add(providers)
+                showImportResult(added: providers.count, skipped: skipped)
+            } catch {
+                view.window.map { report(error, on: $0, while: "importing providers") }
+            }
+        }
+    }
+
+    /// Where the pane will say how many providers an import added and how many
+    /// entries it left out.
+    private func showImportResult(added: Int, skipped: Int) {
+        appLog(.info, "AccountsSettingsViewController", "import done — \(added) added, \(skipped) skipped")
     }
 
     // MARK: - Confirmations
@@ -187,6 +251,10 @@ extension AccountsSettingsViewController: ProvidersSectionViewControllerDelegate
 
     func providersSectionDidRequestImport(_ section: ProvidersSectionViewController) {
         paste(nil)
+    }
+
+    func providersSectionCanImport(_ section: ProvidersSectionViewController) -> Bool {
+        canImport
     }
 
     func providersSection(_ section: ProvidersSectionViewController, didOpen account: Account) {

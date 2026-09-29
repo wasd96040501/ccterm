@@ -321,6 +321,16 @@
         }
       }
     },
+    "Couldn't start": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法启动"
+          }
+        }
+      }
+    },
     "Default Model": {
       "localizations": {
         "zh-Hans": {
@@ -401,6 +411,16 @@
         }
       }
     },
+    "Didn't print a version": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未输出版本号"
+          }
+        }
+      }
+    },
     "Duplicate": {
       "localizations": {
         "zh-Hans": {
@@ -441,6 +461,16 @@
         }
       }
     },
+    "Exited with code %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已退出，退出码 %lld"
+          }
+        }
+      }
+    },
     "Fable": {
       "localizations": {
         "zh-Hans": {
@@ -457,6 +487,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "已填入%@"
+          }
+        }
+      }
+    },
+    "Folder doesn't exist": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件夹不存在"
           }
         }
       }
@@ -672,6 +712,26 @@
         }
       }
     },
+    "Not a folder": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不是文件夹"
+          }
+        }
+      }
+    },
+    "Not found": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未找到"
+          }
+        }
+      }
+    },
     "Not signed in": {
       "localizations": {
         "zh-Hans": {
@@ -748,6 +808,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "粘贴 %@ 行或一整条 shell 命令"
+          }
+        }
+      }
+    },
+    "Paste one provider at a time": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一次只能粘贴一个提供方"
           }
         }
       }
@@ -932,6 +1002,16 @@
         }
       }
     },
+    "Timed out": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超时"
+          }
+        }
+      }
+    },
     "Token": {
       "localizations": {
         "zh-Hans": {
@@ -968,6 +1048,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "值"
+          }
+        }
+      }
+    },
+    "Version %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "版本 %@"
           }
         }
       }

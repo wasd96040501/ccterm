@@ -1,7 +1,12 @@
+import AgentSDK
 import AppKit
+import Combine
 import XCTest
 
 @testable import ccterm
+
+// Combine has a `Subscription` too.
+private typealias Subscription = ccterm.Subscription
 
 /// Visual review for the Settings panes and sheets, in light and dark, with
 /// the sample accounts of `design/settings/index.html` — so each PNG can be
@@ -28,37 +33,35 @@ final class SettingsSnapshotTests: XCTestCase {
 
     func testAccounts() throws {
         for appearance in Appearance.allCases {
-            let pane = AccountsSettingsViewController(
-                accounts: try seeded { try await self.sampleStore() },
-                subscription: try seeded { await self.signedIn() })
+            let store = try seeded { try await self.sampleStore() }
+            let pane = try accountsPane(store, subscription: try seeded { await self.signedIn() })
             render(pane, size: paneSize, appearance: appearance, name: "Settings-Accounts")
         }
     }
 
     func testAccountsWithoutProviders() throws {
         for appearance in Appearance.allCases {
-            let pane = AccountsSettingsViewController(
-                accounts: AccountStore(
-                    fileURL: root.appendingPathComponent("\(UUID()).json"), secrets: InMemorySecretStore()),
-                subscription: try seeded { await self.signedOut() })
+            let store = AccountStore(
+                fileURL: root.appendingPathComponent("\(UUID()).json"), secrets: InMemorySecretStore())
+            let pane = try accountsPane(store, subscription: try seeded { await self.signedOut() })
             render(pane, size: paneSize, appearance: appearance, name: "Settings-AccountsEmpty")
         }
     }
 
     func testGeneral() throws {
         for appearance in Appearance.allCases {
-            let launch = LaunchSettings(
-                defaults: UserDefaults(suiteName: UUID().uuidString)!, locate: { "/Users/me/.local/bin/claude" })
+            let store = AccountStore(
+                fileURL: root.appendingPathComponent("\(UUID()).json"), secrets: InMemorySecretStore())
+            let (launch, check) = try launchSettings(store)
             render(
-                GeneralSettingsViewController(launch: launch), size: paneSize, appearance: appearance,
-                name: "Settings-General")
+                GeneralSettingsViewController(launch: launch, launchCheck: check), size: paneSize,
+                appearance: appearance, name: "Settings-General")
         }
     }
 
     func testProviderSheet() throws {
         for appearance in Appearance.allCases {
-            let editor = AccountEditorViewController(
-                mode: .provider, account: Self.localProxy, secrets: Self.localProxySecrets)
+            let editor = try editorSheet(mode: .provider, account: Self.localProxy, secrets: Self.localProxySecrets)
             render(
                 editor, size: AccountEditorViewController.size, appearance: appearance, name: "Settings-ProviderSheet")
         }
@@ -66,8 +69,7 @@ final class SettingsSnapshotTests: XCTestCase {
 
     func testNewProviderSheet() throws {
         for appearance in Appearance.allCases {
-            let editor = AccountEditorViewController(
-                mode: .newProvider, account: .newProvider(), secrets: AccountSecrets())
+            let editor = try editorSheet(mode: .newProvider, account: .newProvider(), secrets: AccountSecrets())
             render(
                 editor, size: AccountEditorViewController.size, appearance: appearance,
                 name: "Settings-NewProviderSheet")
@@ -76,7 +78,7 @@ final class SettingsSnapshotTests: XCTestCase {
 
     func testSubscriptionSheet() throws {
         for appearance in Appearance.allCases {
-            let editor = AccountEditorViewController(
+            let editor = try editorSheet(
                 mode: .subscription(Self.subscription), account: .subscription(),
                 secrets: AccountSecrets(
                     environment: [EnvironmentVariable(name: "CLAUDE_CODE_NO_FLICKER", value: "1")]))
@@ -148,23 +150,66 @@ final class SettingsSnapshotTests: XCTestCase {
         return store
     }
 
+    /// The settings the panes read: defaults in a private suite, a session
+    /// directory that isn't looked up, and a launch that checks out.
+    private func launchSettings(_ accounts: AccountStore) throws -> (LaunchStore, LaunchCheckService) {
+        let launch = LaunchStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!, accounts: accounts.$accounts.eraseToAnyPublisher(),
+            resolveDirectory: { _ in SessionDirectory(url: URL(fileURLWithPath: "/tmp/none")) })
+        let check = LaunchCheckService(probe: { _ in
+            CLIVersion(executable: "/Users/me/.local/bin/claude", version: "2.1.284")
+        })
+        _ = try seeded { await check.check(launch.general) }
+        return (launch, check)
+    }
+
+    private func accountsPane(
+        _ accounts: AccountStore, subscription: SubscriptionService
+    ) throws
+        -> AccountsSettingsViewController
+    {
+        let (launch, check) = try launchSettings(accounts)
+        return AccountsSettingsViewController(
+            accounts: accounts, launch: launch, launchCheck: check, subscription: subscription)
+    }
+
+    private func editorSheet(
+        mode: AccountEditorMode, account: Account, secrets: AccountSecrets
+    ) throws
+        -> AccountEditorViewController
+    {
+        let store = AccountStore(fileURL: root.appendingPathComponent("\(UUID()).json"), secrets: InMemorySecretStore())
+        let (launch, check) = try launchSettings(store)
+        let validation = LaunchCommandValidation(
+            check: check, configuration: { LaunchEnvironment.resolve(command: $0, general: launch.preferences) },
+            text: account.command)
+        return AccountEditorViewController(
+            viewModel: AccountEditorViewModel(
+                mode: mode, account: account, secrets: secrets, commandValidation: validation))
+    }
+
     private func signedIn() async -> SubscriptionService {
-        let service = SubscriptionService(auth: StubAuth(subscription: Self.subscription))
+        let service = SubscriptionService(
+            auth: StubAuth(subscription: Self.subscription),
+            configurations: Just(CLIConfiguration()).eraseToAnyPublisher())
         await service.refresh()
         return service
     }
 
     private func signedOut() async -> SubscriptionService {
-        let service = SubscriptionService(auth: StubAuth(subscription: nil))
+        let service = SubscriptionService(
+            auth: StubAuth(subscription: nil), configurations: Just(CLIConfiguration()).eraseToAnyPublisher())
         await service.refresh()
         return service
     }
 
     private struct StubAuth: SubscriptionAuth {
         let subscription: Subscription?
-        func current() async throws -> Subscription? { subscription }
-        func signIn() -> AsyncThrowingStream<URL, Error> { AsyncThrowingStream { $0.finish() } }
-        func signOut() async throws {}
+        func current(_ configuration: CLIConfiguration) async throws -> Subscription? { subscription }
+        func signIn(_ configuration: CLIConfiguration) -> AsyncThrowingStream<URL, Error> {
+            AsyncThrowingStream { $0.finish() }
+        }
+        func signOut(_ configuration: CLIConfiguration) async throws {}
     }
 
     /// Runs async seeding to its end from a synchronous test, so the run

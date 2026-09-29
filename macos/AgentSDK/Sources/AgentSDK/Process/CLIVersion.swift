@@ -7,6 +7,12 @@ public struct CLIVersion: Hashable, Sendable {
     /// The `major.minor.patch` the CLI printed for `--version`.
     public let version: String
 
+    /// A version by hand, for tests and previews; a real one comes from ``probe(_:)``.
+    public init(executable: String, version: String) {
+        self.executable = executable
+        self.version = version
+    }
+
     /// Runs `<launch> --version` for `configuration` off the main thread, bounded
     /// by its `timeout`.
     ///

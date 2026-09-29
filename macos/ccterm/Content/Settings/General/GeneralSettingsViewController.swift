@@ -1,14 +1,28 @@
+import AgentSDK
 import AppKit
+import Combine
 
 /// General: the command that starts Claude Code. Empty runs the `claude`
-/// found on this Mac, whose path the empty field shows.
+/// found on this Mac, whose path the empty field shows. The command is
+/// checked as it is typed and reaches ``LaunchStore`` only once it runs.
 @MainActor
 final class GeneralSettingsViewController: NSViewController {
-    private let launch: LaunchSettings
-    private var locateTask: Task<Void, Never>?
+    private let launch: LaunchStore
+    private let validation: LaunchCommandValidation
+    private var cancellables = Set<AnyCancellable>()
 
-    init(launch: LaunchSettings) {
+    /// `debounce`: how long typing pauses before the command is checked.
+    init(launch: LaunchStore, launchCheck: LaunchCheckService, debounce: Duration = .milliseconds(500)) {
         self.launch = launch
+        validation = LaunchCommandValidation(
+            check: launchCheck,
+            configuration: { [launch] command in
+                LaunchEnvironment.resolve(
+                    command: "",
+                    general: LaunchPreferences(
+                        command: command, configDirectory: launch.preferences.configDirectory))
+            },
+            text: launch.preferences.command, debounce: debounce)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -16,40 +30,55 @@ final class GeneralSettingsViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     private lazy var launchCommandField = FormTextField(placeholder: "claude", monospaced: true)
+    private lazy var launchCommandRow = FormRowView(
+        title: String(localized: "Launch command"), accessory: launchCommandField)
 
     override func loadView() {
         view = FormView(sections: [
             FormSectionView(
                 title: String(localized: "Claude Code"),
-                content: FormGroupView(rows: [
-                    FormRowView(title: String(localized: "Launch command"), accessory: launchCommandField)
-                ]))
+                content: FormGroupView(rows: [launchCommandRow]))
         ])
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        launchCommandField.stringValue = launch.command
+        launchCommandField.stringValue = launch.preferences.command
+        launchCommandField.delegate = self
         launchCommandField.target = self
         launchCommandField.action = #selector(commitLaunchCommand(_:))
-        // The path is looked up at launch; only if that hasn't finished does
-        // the placeholder change under the person.
-        if let located = launch.locatedCLI {
-            showLocated(located)
-        } else {
-            locateTask = Task { [weak self, launch] in
-                let path = await Task.detached { launch.locateCLI() }.value
-                self?.showLocated(path)
+        // The validation delivers on the main actor and its current state
+        // arrives on subscribing, so the first frame is already right.
+        validation.$state
+            .sink { [weak self] state in self?.show(state) }
+            .store(in: &cancellables)
+    }
+
+    /// What the command's check found: the version under the row, the reason
+    /// in red, and — while the field is empty — where `claude` is.
+    private func show(_ state: LaunchCommandValidation.State) {
+        switch state {
+        case .valid(let version):
+            launchCommandRow.detail = String(localized: "Version \(version.version)")
+            launchCommandRow.isDetailError = false
+            if launchCommandField.stringValue.isEmpty {
+                launchCommandField.placeholderString = (version.executable as NSString).abbreviatingWithTildeInPath
             }
+        case .invalid(let message):
+            launchCommandRow.detail = message
+            launchCommandRow.isDetailError = true
+        case .checking:
+            break
         }
     }
 
-    private func showLocated(_ path: String?) {
-        guard let path else { return }
-        launchCommandField.placeholderString = (path as NSString).abbreviatingWithTildeInPath
-    }
-
     @objc private func commitLaunchCommand(_ sender: NSTextField) {
-        launch.command = sender.stringValue
+        validation.commit(sender.stringValue) { [launch] command in launch.setCommand(command) }
+    }
+}
+
+extension GeneralSettingsViewController: NSTextFieldDelegate {
+    func controlTextDidChange(_ notification: Notification) {
+        validation.textDidChange(launchCommandField.stringValue)
     }
 }

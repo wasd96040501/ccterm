@@ -85,6 +85,69 @@ final class AccountStoreTests: XCTestCase {
         XCTAssertEqual(copied.credential, "a")
     }
 
+    func testDuplicatingTwiceNamesTheCopiesApart() async throws {
+        let store = AccountStore(fileURL: fileURL, secrets: InMemorySecretStore())
+        let relay = Self.provider("Relay")
+        try await store.save(relay, secrets: AccountSecrets(credential: "a"))
+        let first = try await store.duplicate(relay.id)
+        let second = try await store.duplicate(relay.id)
+        let copy = String(localized: "\("Relay") Copy")
+        XCTAssertEqual(first?.provider?.name, copy)
+        XCTAssertEqual(second?.provider?.name, "\(copy) 2")
+    }
+
+    func testAddWritesEveryAccountAndItsSecretsInOneCommit() async throws {
+        let secrets = InMemorySecretStore()
+        let store = AccountStore(fileURL: fileURL, secrets: secrets)
+        let existing = Self.provider("Existing")
+        try await store.save(existing, secrets: AccountSecrets(credential: "e"))
+        let first = Self.provider("First")
+        let second = Self.provider("Second")
+        let published = record(store.$accounts)
+
+        try await store.add([
+            (first, AccountSecrets(credential: "1")), (second, AccountSecrets(credential: "2")),
+        ])
+
+        XCTAssertEqual(store.providers.map(\.id), [existing.id, first.id, second.id])
+        XCTAssertEqual(published.values.count, 2, "the current list, then one for the whole batch")
+        let one = try await store.secrets(for: first.id)
+        let two = try await store.secrets(for: second.id)
+        XCTAssertEqual([one.credential, two.credential], ["1", "2"])
+        let reopened = AccountStore(fileURL: fileURL, secrets: secrets)
+        XCTAssertEqual(reopened.providers.map(\.id), [existing.id, first.id, second.id])
+    }
+
+    func testAddingNothingWritesNothing() async throws {
+        let store = AccountStore(fileURL: fileURL, secrets: InMemorySecretStore())
+        try await store.add([])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
+    }
+
+    func testAFailedAddKeepsNoAccountAndNoSecrets() async throws {
+        let secrets = InMemorySecretStore()
+        let store = AccountStore(fileURL: fileURL, secrets: secrets)
+        // The accounts file's folder is a file, so the commit cannot land.
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data().write(to: root.appendingPathComponent("Support"))
+        let relay = Self.provider("Relay")
+        do {
+            try await store.add([(relay, AccountSecrets(credential: "a"))])
+            XCTFail("the write should have failed")
+        } catch {}
+        XCTAssertTrue(store.providers.isEmpty)
+        XCTAssertFalse(secrets.accounts.contains(relay.id))
+    }
+
+    func testNamesAreMadeUniqueWithANumber() {
+        XCTAssertEqual(Account.uniqueName("Relay", among: []), "Relay")
+        XCTAssertEqual(Account.uniqueName("Relay", among: ["Other"]), "Relay")
+        XCTAssertEqual(Account.uniqueName("Relay", among: ["Relay"]), "Relay 2")
+        XCTAssertEqual(Account.uniqueName("Relay", among: ["Relay", "Relay 2"]), "Relay 3")
+        XCTAssertEqual(Account.uniqueName("relay", among: ["Relay"]), "relay 2", "case does not tell names apart")
+        XCTAssertEqual(Account.uniqueName("Relay", among: ["Relay", "Relay 3"]), "Relay 2")
+    }
+
     func testRemoveDeletesTheSecretsToo() async throws {
         let secrets = InMemorySecretStore()
         let store = AccountStore(fileURL: fileURL, secrets: secrets)

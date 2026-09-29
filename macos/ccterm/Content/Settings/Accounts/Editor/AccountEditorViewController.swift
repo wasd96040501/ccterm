@@ -14,7 +14,7 @@ import Combine
 final class AccountEditorViewController: NSViewController {
     weak var delegate: AccountEditorViewControllerDelegate?
 
-    let mode: AccountEditorMode
+    var mode: AccountEditorMode { viewModel.mode }
     private let viewModel: AccountEditorViewModel
     private let environment = EnvironmentVariablesViewController()
     private var cancellables = Set<AnyCancellable>()
@@ -30,9 +30,8 @@ final class AccountEditorViewController: NSViewController {
     /// The page Manage opens: the plan's billing on claude.ai.
     static let manageURL = URL(string: "https://claude.ai/settings/billing")!
 
-    init(mode: AccountEditorMode, account: Account, secrets: AccountSecrets) {
-        self.mode = mode
-        viewModel = AccountEditorViewModel(mode: mode, account: account, secrets: secrets)
+    init(viewModel: AccountEditorViewModel) {
+        self.viewModel = viewModel
         super.init(nibName: nil, bundle: nil)
         preferredContentSize = Self.size
     }
@@ -79,6 +78,7 @@ final class AccountEditorViewController: NSViewController {
         ]
 
     private lazy var commandField = FormTextField(placeholder: "claude", width: 300, monospaced: true)
+    private lazy var commandRow = FormRowView(title: String(localized: "Command"), accessory: commandField)
     private lazy var argumentsField = FormTextField(
         placeholder: String(localized: "None"), width: 300, monospaced: true)
 
@@ -153,11 +153,9 @@ final class AccountEditorViewController: NSViewController {
         }
         credentialField.onChange = { [weak self] credential in self?.viewModel.setCredential(credential) }
         form.onContentBelowChange = { [weak self] below in self?.barHairline.isHidden = !below }
-        // The first frame shows the draft as it is; later changes follow.
-        show(viewModel.presentation)
+        // The view model delivers on the main actor and its current value on
+        // subscribing, so the first frame shows the draft as it is.
         viewModel.$presentation
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
             .sink { [weak self] presentation in self?.show(presentation) }
             .store(in: &cancellables)
     }
@@ -238,7 +236,7 @@ final class AccountEditorViewController: NSViewController {
             FormSectionView(
                 title: String(localized: "Launch"),
                 content: FormGroupView(rows: [
-                    FormRowView(title: String(localized: "Command"), accessory: commandField),
+                    commandRow,
                     FormRowView(title: String(localized: "Arguments"), accessory: argumentsField),
                 ])))
         return sections
@@ -252,6 +250,8 @@ final class AccountEditorViewController: NSViewController {
         saveButton.isEnabled = presentation.canSave
         baseURLRow.detail = presentation.baseURLError
         baseURLRow.isDetailError = true
+        commandRow.detail = presentation.commandError
+        commandRow.isDetailError = true
         credentialRow.title = presentation.credentialTitle
         credentialField.configure(value: presentation.fields.credential, masked: presentation.maskedCredential)
         let authentication = authenticationPopUp.indexOfItem(
@@ -296,12 +296,21 @@ final class AccountEditorViewController: NSViewController {
 
     // MARK: - Events up
 
+    /// Fills the draft from `entry` and says what it filled.
+    func fill(_ entry: AccountPaste.Entry) {
+        say(viewModel.apply(entry))
+    }
+
     /// Reads `text` — `KEY=value` lines, `export` lines or a whole alias —
     /// into the draft, and says what it filled.
-    /// Before the sheet is up, the note waits for it to appear.
-    func fill(from text: String) {
+    private func fill(from text: String) {
+        say(viewModel.paste(text))
+    }
+
+    /// Shows a note about what a paste did. Before the sheet is up, it waits
+    /// for it to appear.
+    private func say(_ summary: String) {
         wasFilled = true
-        let summary = viewModel.paste(text)
         if isViewLoaded, view.window != nil { toast.show(summary) } else { pendingToast = summary }
     }
 

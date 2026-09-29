@@ -2,7 +2,7 @@ import XCTest
 
 @testable import ccterm
 
-/// Back and forward through the Settings panes, and which launch command wins.
+/// Back and forward through the Settings panes.
 final class SettingsHistoryTests: XCTestCase {
     func testBackAndForwardWalkThePanesVisited() {
         var history = SettingsHistory(.accounts)
@@ -26,19 +26,5 @@ final class SettingsHistoryTests: XCTestCase {
         XCTAssertTrue(history.canGoForward, "staying put keeps forward")
         history.go(to: .general)
         XCTAssertFalse(history.canGoForward)
-    }
-
-    func testAnAccountsCommandWinsOverTheOneInGeneral() throws {
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
-        let launch = LaunchSettings(defaults: defaults, locate: { nil })
-        var account = Account.newProvider()
-        XCTAssertNil(launch.command(for: account))
-        launch.command = "  orange  "
-        XCTAssertEqual(launch.command, "orange")
-        XCTAssertEqual(launch.command(for: account), "orange")
-        account.command = "relay-wrapper"
-        XCTAssertEqual(launch.command(for: account), "relay-wrapper")
-        launch.command = ""
-        XCTAssertNil(defaults.object(forKey: "customCLICommand"))
     }
 }

@@ -397,6 +397,16 @@
         }
       }
     },
+    "Copy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制"
+          }
+        }
+      }
+    },
     "Create %@": {
       "comment": "%@ is a file name.",
       "localizations": {
@@ -569,16 +579,6 @@
         }
       }
     },
-    "File": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "文件"
-          }
-        }
-      }
-    },
     "Forward": {
       "comment": "Toolbar button: forward through the active editor's history.",
       "localizations": {
@@ -650,6 +650,36 @@
         }
       }
     },
+    "Lines %lld–%lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 %1$lld–%2$lld 行"
+          }
+        }
+      }
+    },
+    "Lines %lld–%lld of %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 %1$lld–%2$lld 行，共 %3$lld 行"
+          }
+        }
+      }
+    },
+    "Local": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地"
+          }
+        }
+      }
+    },
     "Local command output": {
       "localizations": {
         "zh-Hans": {
@@ -690,6 +720,46 @@
         }
       }
     },
+    "No output": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无输出"
+          }
+        }
+      }
+    },
+    "Open": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开"
+          }
+        }
+      }
+    },
+    "Output appears when the command finishes.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命令结束后显示输出。"
+          }
+        }
+      }
+    },
+    "Output was too long to keep here. The full output is in": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输出过长，未在此保留。完整输出位于"
+          }
+        }
+      }
+    },
     "PDF": {
       "localizations": {
         "zh-Hans": {
@@ -716,6 +786,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "计划 · 等待你的批准"
+          }
+        }
+      }
+    },
+    "Preparing": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "准备中"
           }
         }
       }
@@ -810,6 +890,16 @@
         }
       }
     },
+    "Replace all": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部替换"
+          }
+        }
+      }
+    },
     "Result": {
       "localizations": {
         "zh-Hans": {
@@ -841,6 +931,16 @@
         }
       }
     },
+    "Running": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行中"
+          }
+        }
+      }
+    },
     "Running %lld calls": {
       "localizations": {
         "zh-Hans": {
@@ -857,6 +957,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在运行 %lld 条命令"
+          }
+        }
+      }
+    },
+    "Running in background": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "后台运行中"
+          }
+        }
+      }
+    },
+    "Sandbox off": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沙盒已关闭"
           }
         }
       }
@@ -1031,6 +1151,26 @@
         }
       }
     },
+    "Show all %lld lines": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示全部 %lld 行"
+          }
+        }
+      }
+    },
+    "Show in Transcript": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在对话中显示"
+          }
+        }
+      }
+    },
     "Specify the command to launch Claude. Leave empty to auto-detect `claude` in your system.": {
       "localizations": {
         "zh-Hans": {
@@ -1111,12 +1251,52 @@
         }
       }
     },
+    "The output is an image.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输出是一张图片。"
+          }
+        }
+      }
+    },
     "This document is no longer in the transcript.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "此文稿已不在对话记录中。"
+          }
+        }
+      }
+    },
+    "This file was read as a PDF.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此文件已作为 PDF 读取。"
+          }
+        }
+      }
+    },
+    "This file was read as a notebook.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此文件已作为 Notebook 读取。"
+          }
+        }
+      }
+    },
+    "This file was read as an image.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此文件已作为图片读取。"
           }
         }
       }
@@ -1141,12 +1321,32 @@
         }
       }
     },
+    "Timed out after %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 后超时"
+          }
+        }
+      }
+    },
     "Unchanged": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "无变化"
+          }
+        }
+      }
+    },
+    "Unchanged since it was last read.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自上次读取后未更改。"
           }
         }
       }
@@ -1242,6 +1442,16 @@
         }
       }
     },
+    "You edited this change before accepting it": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你在接受前修改了此更改"
+          }
+        }
+      }
+    },
     "You ran": {
       "localizations": {
         "zh-Hans": {
@@ -1254,6 +1464,16 @@
     },
     "ccterm": {},
     "claude": {},
+    "exit %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出码 %lld"
+          }
+        }
+      }
+    },
     "in %@": {
       "localizations": {
         "zh-Hans": {

@@ -539,19 +539,34 @@ nonisolated struct WorkLineWriter {
     /// line may not be in).
     static func format(_ duration: TimeInterval) -> String {
         let seconds = Int(duration.rounded())
+        let formatter =
+            switch seconds {
+            case ..<60: secondsFormatter
+            case ..<600: minutesAndSecondsFormatter
+            case ..<3600: minutesFormatter
+            default: hoursAndMinutesFormatter
+            }
+        return formatter.string(from: TimeInterval(seconds)) ?? "\(seconds)s"
+    }
+
+    // Made once each: making a formatter is most of what formatting a
+    // duration costs, and a page formats one per line. Foundation's
+    // formatters are safe to share across threads, pages being built off
+    // the main actor.
+    nonisolated(unsafe) private static let secondsFormatter = durationFormatter([.second])
+    nonisolated(unsafe) private static let minutesAndSecondsFormatter = durationFormatter([.minute, .second])
+    nonisolated(unsafe) private static let minutesFormatter = durationFormatter([.minute])
+    nonisolated(unsafe) private static let hoursAndMinutesFormatter = durationFormatter([.hour, .minute])
+
+    private static func durationFormatter(_ units: NSCalendar.Unit) -> DateComponentsFormatter {
         let formatter = DateComponentsFormatter()
         var calendar = Calendar.current
         calendar.locale = Locale(identifier: Bundle.main.preferredLocalizations.first ?? "en")
         formatter.calendar = calendar
         formatter.unitsStyle = .abbreviated
         formatter.maximumUnitCount = 2
-        switch seconds {
-        case ..<60: formatter.allowedUnits = [.second]
-        case ..<600: formatter.allowedUnits = [.minute, .second]
-        case ..<3600: formatter.allowedUnits = [.minute]
-        default: formatter.allowedUnits = [.hour, .minute]
-        }
-        return formatter.string(from: TimeInterval(seconds)) ?? "\(seconds)s"
+        formatter.allowedUnits = units
+        return formatter
     }
 
     private static func fileName(_ path: String) -> String {

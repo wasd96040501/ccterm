@@ -15,23 +15,28 @@ An account is what a session runs as. There are two kinds, one group each:
 
 - **Subscription**: at most one, because the CLI holds one claude.ai login.
   Signed out, the group holds a single row with **Sign In…**, which waits on
-  the browser. The footer says why there's only one.
+  the browser. The group has no Add button; its shape is the rule.
 - **API Providers**: any number. A provider is a base URL, a token or API
-  key, optional model names, environment variables and launch arguments:
-  everything a shell alias used to carry.
+  key, optional model names, environment variables, a launch command and
+  its arguments: everything a shell alias used to carry.
 
-One account is the default for new sessions. It wears the page's only
-accent badge, and General's **New Sessions › Account** popup picks the
-same thing from the other side.
+There is no default account. A session picks a model before it starts,
+and each model belongs to an account, so the account follows from it.
+
+Only the subscription carries an icon: Claude's mark, `assets/claude.svg`,
+which is claude.ai's own favicon, unmodified. Providers are plain text rows
+(name, then host · model); a monogram or a generic glyph would add colour
+without telling them apart. Descriptions and footers are left out wherever
+the label, a placeholder or the group's shape already says it.
 
 Rows are not selectable, as in System Settings. **ⓘ** or a double-click
-opens the account's sheet; right-click offers Details, Use for New
-Sessions, Duplicate and Delete (Sign Out for the subscription).
+opens the account's sheet; right-click offers Details, Duplicate and
+Delete (Details and Sign Out for the subscription).
 
 ## The account sheet
 
 Fixed at 540 × 600 for both kinds, so the window never resizes under it:
-a header (tile, name, host), a scrolling form, and a button bar that gains
+a header (name and host; the Claude mark for the subscription), a scrolling form, and a button bar that gains
 a hairline while content runs under it. Destructive action bottom left,
 Cancel and the default button bottom right. Return is the default button,
 Escape and ⌘. cancel. Add stays disabled until the name, a valid http(s)
@@ -47,13 +52,16 @@ URL and a token are in; a bad URL says so under the field as you type.
   Escape reverts, Space toggles a row's checkbox, Delete removes it. A row
   that sets something the form already owns (`ANTHROPIC_BASE_URL`, …) or
   repeats a name gets a warning glyph.
+- **Launch**: Command (empty runs `claude`) and Arguments, per account, so
+  a provider can go through its own wrapper script.
 - **Paste** into the list takes `KEY=value` lines, `export` lines or a
   whole `alias name="… claude --flags"`: known keys fill the form's
-  fields, the rest become rows, trailing `claude` flags become Arguments
-  and the alias name becomes the provider name. A toast says what was
-  filled.
-- Delete and Sign Out confirm through an alert stacked on the sheet;
-  Cancel is its default button.
+  fields, the rest become rows, the trailing command and flags fill
+  Command (unless it's plain `claude`) and Arguments, and the alias name
+  becomes the provider name. A toast says what was filled.
+- Delete and Sign Out confirm through an alert stacked on the sheet. Like
+  every NSAlert it shows the app's icon (`../icon/preview.png`); Cancel is
+  its default button.
 
 Popup and context menus open with the checked item over the control, stay
 open after a quick click and pick on press-drag-release, like AppKit's.

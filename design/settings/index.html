@@ -233,31 +233,26 @@ svg { display: block; }
 .catcher { position: absolute; inset: 0; z-index: 49; }
 
 /* ---------- Account rows ---------- */
-/* Same 52 as a title + description row, with a 28 tile in front. */
+/* Same 52 as a title + description row. Only the subscription carries a
+   mark (Claude's own, 28 in front); providers are plain text rows. */
 .acct {
-  position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; column-gap: 10px;
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px;
   align-items: center; min-height: 51px; padding: 10.5px 10px;
 }
+.acct.has-mark { grid-template-columns: 28px minmax(0, 1fr) auto; }
 .acct + .acct::before, .row + .acct::before, .acct + .row::before {
-  content: ""; position: absolute; top: -1px; left: 48px; right: 10px; height: 1px; background: var(--sep);
+  content: ""; position: absolute; top: -1px; left: 10px; right: 10px; height: 1px; background: var(--sep);
 }
 .acct + .acct, .row + .acct, .acct + .row { margin-top: 1px; }
 .acct .name { line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .acct .meta { font-size: 11px; line-height: 14px; color: var(--label-2); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .acct .meta .dot { margin: 0 4px; }
 .acct .trail { display: flex; align-items: center; gap: 10px; }
-.tile {
-  width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center;
-  color: #fff; font-size: 13px; font-weight: 600; letter-spacing: -.2px;
-  box-shadow: inset 0 0 0 .5px rgba(0,0,0,.08), inset 0 1px 0 rgba(255,255,255,.18);
-}
-.tile.sub { background: linear-gradient(#f0935a, #e0712f); }
-.tile.api { background: linear-gradient(#a3a8b1, #7f848d); }
-.tile.off { background: var(--fill); color: var(--label-2); box-shadow: none; }
-.badge {
-  font-size: 11px; line-height: 16px; font-weight: 500; padding: 0 7px; border-radius: 8px;
-  color: var(--accent-text); background: color-mix(in srgb, var(--accent) 13%, transparent);
-}
+/* assets/claude.svg is claude.ai's favicon, unmodified. */
+.mark { width: 28px; height: 28px; display: block; }
+.mark.off { filter: grayscale(1); opacity: .45; }
+/* An NSAlert shows the app's icon. */
+.appicon { width: 64px; height: 64px; display: block; margin: -4px auto 8px; }
 .info { width: 20px; height: 20px; display: grid; place-items: center; color: var(--label-2); border-radius: 50%; }
 .info:active { color: var(--label); }
 .acct.pressed { background: color-mix(in srgb, var(--label) 5%, transparent); }
@@ -286,7 +281,7 @@ svg { display: block; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sheet { box-shadow: 0 0 0 .5px rgba(0,0,0,.8), inset 0 0 0 .5px rgba(255,255,255,.12), 0 18px 50px rgba(0,0,0,.5); } }
 .sheet.fixed { width: 540px; height: 600px; }
 .sheet-head { display: flex; align-items: center; gap: 12px; padding: 20px 20px 4px; flex: none; }
-.sheet-head .tile { width: 36px; height: 36px; border-radius: 9px; font-size: 16px; }
+.sheet-head .mark { width: 36px; height: 36px; }
 .sheet-head .t { font-weight: 600; }
 .sheet-head .s { font-size: 11px; line-height: 14px; color: var(--label-2); }
 .sheet-body { flex: 1; overflow-y: auto; padding: 0 20px 20px; }
@@ -352,8 +347,6 @@ svg { display: block; }
 
 /* Alert (NSAlert on a sheet): 260 wide, centred text, side-by-side buttons. */
 .alert { width: 260px; margin-top: 90px; padding: 20px 16px 16px; text-align: center; }
-.alert .tile { width: 52px; height: 52px; border-radius: 12px; margin: 0 auto 12px; font-size: 22px; }
-.alert .tile svg { width: 24px; height: 24px; }
 .alert .t { font-weight: 600; margin-bottom: 6px; }
 .alert .m { font-size: 11px; line-height: 14px; color: var(--label); margin-bottom: 16px; }
 .alert .btns { display: flex; gap: 8px; }
@@ -361,8 +354,7 @@ svg { display: block; }
 
 /* Sign-in wait */
 .signin { width: 380px; padding: 24px 24px 20px; text-align: center; }
-.signin .tile { width: 52px; height: 52px; border-radius: 12px; margin: 0 auto 12px; }
-.signin .tile svg { width: 24px; height: 24px; }
+.signin .mark { width: 48px; height: 48px; margin: 0 auto 14px; }
 .signin .t { font-weight: 600; font-size: 15px; line-height: 20px; margin-bottom: 4px; }
 .signin .m { color: var(--label-2); font-size: 12px; line-height: 16px; margin-bottom: 18px; }
 .signin .wait { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--label-2); font-size: 12px; margin-bottom: 20px; }
@@ -418,7 +410,6 @@ const G = {
   updown: `<svg width="8" height="12" viewBox="0 0 8 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4.3 4 1.3l3 3M1 7.7l3 3 3-3"/></svg>`,
   check: `<svg width="10" height="12" viewBox="0 0 10 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6.6 3.8 9.6 9 2.4"/></svg>`,
   info: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor"><circle cx="8" cy="8" r="6.9" stroke-width="1.2"/><path d="M8 7.1v4.3" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="4.8" r=".95" fill="currentColor" stroke="none"/></svg>`,
-  spark: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.2c.5 3.4 1.4 5.2 6.8 6.8-5.4 1.6-6.3 3.4-6.8 6.8-.5-3.4-1.4-5.2-6.8-6.8C6.6 6.4 7.5 4.6 8 1.2z"/></svg>`,
   eye: `<svg width="18" height="12" viewBox="0 0 18 12" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1 6c2-3.3 4.7-5 8-5s6 1.7 8 5c-2 3.3-4.7 5-8 5S3 9.3 1 6z"/><circle cx="9" cy="6" r="2.4"/></svg>`,
   eyeOff: `<svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1 7c2-3.3 4.7-5 8-5s6 1.7 8 5c-2 3.3-4.7 5-8 5S3 10.3 1 7z"/><circle cx="9" cy="7" r="2.4"/><path d="M2.5 1.2 15.5 12.8" stroke-linecap="round"/></svg>`,
   plus: `<svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M5 .8v8.4M.8 5h8.4"/></svg>`,
@@ -426,7 +417,6 @@ const G = {
   warn: `<svg width="14" height="13" viewBox="0 0 14 13" fill="currentColor"><path d="M6.1 1a1 1 0 0 1 1.8 0l5.6 10a1 1 0 0 1-.9 1.5H1.4a1 1 0 0 1-.9-1.5z"/><path d="M7 4.3v3.6" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/><circle cx="7" cy="10" r=".85" fill="#fff"/></svg>`,
   spinner: `<svg class="spin" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">${[...Array(8)].map((_, i) => `<path d="M7 1.2v2.6" opacity="${(i + 1) / 8}" transform="rotate(${i * 45} 7 7)"/>`).join('')}</svg>`,
   arrowOut: `<svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:0"><path d="M2 7 7.3 1.7M3 1.5h4.5V6"/></svg>`,
-  personFill: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="5.4" r="2.9"/><path d="M2.6 13.6c.7-2.6 2.8-4 5.4-4s4.7 1.4 5.4 4c.1.5-.2.9-.7.9H3.3c-.5 0-.8-.4-.7-.9z"/></svg>`,
 }
 
 /* ---------- State ---------- */
@@ -442,11 +432,11 @@ const state = {
   // ~/.zshrc; hosts, tokens and the email are placeholders.
   accounts: [
     { id: 'sub', kind: 'subscription', name: 'Claude Max', plan: 'Max', email: 'name@example.com',
-      org: 'Personal', method: 'Claude.ai', args: '',
+      org: 'Personal', method: 'Claude.ai', command: '', args: '',
       env: [{ on: true, key: 'CLAUDE_CODE_NO_FLICKER', value: '1' }] },
     { id: 'p1', kind: 'api', name: 'Local Proxy', baseURL: 'http://127.0.0.1:8788', auth: 'token',
       secret: 'sk-proxy-example-4b0e9d2c7c1e', model: 'claude-opus-5-5[1m]', opus: '', sonnet: '', haiku: '',
-      args: '--permission-mode auto',
+      command: '', args: '--permission-mode auto',
       env: [
         { on: true, key: 'NO_PROXY', value: '127.0.0.1,localhost' },
         { on: true, key: 'API_TIMEOUT_MS', value: '3000000' },
@@ -457,7 +447,7 @@ const state = {
       ] },
     { id: 'p2', kind: 'api', name: 'Team Relay', baseURL: 'https://relay.example.com', auth: 'token',
       secret: 'sk-relay-example-91f3a0d85a27', model: 'claude-opus-5-5[1m]', opus: '', sonnet: '', haiku: '',
-      args: '--permission-mode auto',
+      command: '', args: '--permission-mode auto',
       env: [
         { on: true, key: 'API_TIMEOUT_MS', value: '3000000' },
         { on: true, key: 'CLAUDE_CODE_AUTO_COMPACT_WINDOW', value: '400000' },
@@ -466,18 +456,18 @@ const state = {
       ] },
     { id: 'p3', kind: 'api', name: 'GLM', baseURL: 'http://127.0.0.1:8788', auth: 'token',
       secret: 'sk-proxy-example-4b0e9d2c7c1e', model: 'glm-5.2[1m]', opus: 'glm-5.2[1m]', sonnet: 'glm-5.2[1m]', haiku: 'glm-5.2[1m]',
-      args: '',
+      command: '', args: '',
       env: [
         { on: true, key: 'NO_PROXY', value: '127.0.0.1,localhost' },
         { on: true, key: 'API_TIMEOUT_MS', value: '3000000' },
       ] },
   ],
-  defaultAccount: 'sub',
 }
 const subscription = () => state.accounts.find(a => a.kind === 'subscription')
 const providers = () => state.accounts.filter(a => a.kind === 'api')
 const hostOf = url => { try { return new URL(url).host } catch { return url || 'No base URL' } }
-const monogram = name => ((name.match(/[A-Za-z0-9]/) || ['?'])[0]).toUpperCase()
+const MARK = '<img class="mark" src="assets/claude.svg" alt="Claude">'
+const APP_ICON = '<img class="appicon" src="../icon/preview.png" alt="">'
 
 const $ = (s, r = document) => r.querySelector(s)
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
@@ -575,57 +565,36 @@ const row = ({ title, desc = '', trail = '', attrs = '' }) => `
 const popup = (id, value) => `<button class="popup" data-popup="${id}"><span class="val">${esc(value)}</span><span class="ind">${G.updown}</span></button>`
 
 /* ---------- General ---------- */
-function accountLabel(a) { return a.kind === 'subscription' ? `${a.name} — ${a.email}` : a.name }
 function renderGeneral() {
   const g = state.general
-  const def = state.accounts.find(a => a.id === state.defaultAccount)
   $('#pane-general').innerHTML = `
     <div class="section"><h2>Claude Code</h2><div class="group">
-      ${row({ title: 'Launch command', desc: `Leave empty to use <span class="mono">claude</span> from your PATH. Found at <span class="mono">${esc(g.detected)}</span>.`,
-        trail: `<input class="field mono" id="launch" spellcheck="false" placeholder="claude" value="${esc(g.launchCommand)}">` })}
-    </div></div>
-    <div class="section"><h2>New Sessions</h2><div class="group">
-      ${row({ title: 'Account', desc: 'Sessions you start from the sidebar use this account. Change it for one session from its toolbar.',
-        trail: popup('default-account', def ? def.name : 'None') })}
+      ${row({ title: 'Launch command',
+        trail: `<input class="field mono" id="launch" spellcheck="false" placeholder="${esc(g.detected)}" value="${esc(g.launchCommand)}">` })}
     </div></div>`
 }
 document.addEventListener('input', e => { if (e.target.id === 'launch') state.general.launchCommand = e.target.value })
-document.addEventListener('mousedown', e => {
-  const p = e.target.closest('[data-popup]'); if (!p) return
-  e.preventDefault()
-  if (p.dataset.popup === 'default-account') {
-    const subs = state.accounts.filter(a => a.kind === 'subscription'), apis = state.accounts.filter(a => a.kind === 'api')
-    const item = a => ({ label: a.name, sub: a.kind === 'subscription' ? a.email : hostOf(a.baseURL), checked: a.id === state.defaultAccount, action: () => setDefault(a.id) })
-    openMenu(p, [...(subs.length ? [{ head: 'Subscription' }, ...subs.map(item)] : []),
-      ...(apis.length ? ['sep', { head: 'API Providers' }, ...apis.map(item)] : [])])
-  }
-})
-function setDefault(id) { state.defaultAccount = id; renderAll() }
 
 /* ---------- Accounts ---------- */
-const badge = a => a.id === state.defaultAccount ? `<span class="badge" title="New sessions use this account">Default</span>` : ''
 function acctRow(a) {
-  const tile = a.kind === 'subscription'
-    ? `<span class="tile sub">${G.spark}</span>`
-    : `<span class="tile api">${esc(monogram(a.name))}</span>`
   const meta = a.kind === 'subscription'
     ? `Claude ${esc(a.plan)}<span class="dot">·</span>${esc(a.org)}`
     : `${esc(hostOf(a.baseURL))}<span class="dot">·</span>${esc(a.model || 'Default model')}`
   const name = a.kind === 'subscription' ? a.email : a.name
-  return `<div class="acct" data-acct="${a.id}">${tile}
+  const sub = a.kind === 'subscription'
+  return `<div class="acct${sub ? ' has-mark' : ''}" data-acct="${a.id}">${sub ? MARK : ''}
     <div><div class="name">${esc(name)}</div><div class="meta">${meta}</div></div>
-    <div class="trail">${badge(a)}<button class="info" data-info="${a.id}" aria-label="Details">${G.info}</button></div></div>`
+    <div class="trail"><button class="info" data-info="${a.id}" aria-label="Details">${G.info}</button></div></div>`
 }
 function renderAccounts() {
   const sub = subscription(), apis = providers()
   const subRow = sub ? acctRow(sub) : `
-    <div class="acct"><span class="tile off">${G.personFill}</span>
+    <div class="acct has-mark"><img class="mark off" src="assets/claude.svg" alt="">
       <div><div class="name">Not signed in</div><div class="meta">Use your Claude Pro or Max plan.</div></div>
       <div class="trail"><button class="btn" data-action="sign-in">Sign In…</button></div></div>`
   $('#pane-accounts').innerHTML = `
     <div class="section"><h2>Subscription</h2>
       <div class="group">${subRow}</div>
-      <div class="foot">CCTerm uses one Claude subscription at a time. To switch, sign out first.</div>
     </div>
     <div class="section"><h2>API Providers</h2>
       <div class="group">${apis.length ? apis.map(acctRow).join('') : `
@@ -653,7 +622,6 @@ pane.addEventListener('contextmenu', e => {
   const anchor = { getBoundingClientRect: () => new DOMRect(e.clientX, e.clientY - 4, 0, 0), setAttribute() {}, removeAttribute() {} }
   const items = [
     { label: 'Details…', action: () => openAccount(a.id) },
-    { label: 'Use for New Sessions', checked: a.id === state.defaultAccount, action: () => setDefault(a.id) },
   ]
   if (a.kind === 'api') items.push({ label: 'Duplicate', action: () => duplicate(a.id) }, 'sep', { label: 'Delete…', action: () => confirmDelete(a.id) })
   else items.push('sep', { label: 'Sign Out…', action: () => confirmSignOut() })
@@ -711,17 +679,16 @@ function openAccount(id) {
 }
 function newProvider() {
   editAccount({ id: 'p' + Date.now(), kind: 'api', name: '', baseURL: '', auth: 'token', secret: '',
-    model: '', opus: '', sonnet: '', haiku: '', args: '', env: [] }, true)
+    model: '', opus: '', sonnet: '', haiku: '',command: '', args: '', env: [] }, true)
 }
 
 function editAccount(d, isNew) {
   const isSub = d.kind === 'subscription'
   let sel = -1, editing = null, reveal = false, focused = null
-  const makeDefault = { on: state.defaultAccount === d.id }
 
   const head = () => isSub
-    ? `<span class="tile sub">${G.spark}</span><div><div class="t">${esc(d.email)}</div><div class="s">Claude ${esc(d.plan)} subscription</div></div>`
-    : `<span class="tile api">${esc(d.name.trim() ? monogram(d.name) : '?')}</span><div><div class="t">${esc(d.name.trim() || 'New Provider')}</div><div class="s">${isNew ? 'API provider' : esc(hostOf(d.baseURL))}</div></div>`
+    ? `${MARK}<div><div class="t">${esc(d.email)}</div><div class="s">Claude ${esc(d.plan)} subscription</div></div>`
+    : `<div><div class="t">${esc(d.name.trim() || 'New Provider')}</div><div class="s">${isNew ? 'API provider' : esc(hostOf(d.baseURL))}</div></div>`
 
   const s = presentSheet(`
     <div class="sheet-head"></div>
@@ -764,7 +731,7 @@ function editAccount(d, isNew) {
         ${row({ title: 'Opus', trail: `<input class="field mono" data-f="opus" placeholder="Default" value="${esc(d.opus)}" spellcheck="false">` })}
         ${row({ title: 'Sonnet', trail: `<input class="field mono" data-f="sonnet" placeholder="Default" value="${esc(d.sonnet)}" spellcheck="false">` })}
         ${row({ title: 'Haiku', trail: `<input class="field mono" data-f="haiku" placeholder="Default" value="${esc(d.haiku)}" spellcheck="false">` })}
-      </div><div class="foot">Empty fields use Claude Code’s defaults. The model names go to the provider as written.</div></div>`
+      </div></div>`
     body.innerHTML = first + `
       <div class="section"><h2>Environment Variables</h2><div class="group env" tabindex="0">
         <div class="thead"><span></span><span>Name</span><span>Value</span><span></span></div>
@@ -777,8 +744,8 @@ function editAccount(d, isNew) {
       </div></div>
 ` + models + `
       <div class="section"><h2>Launch</h2><div class="group">
+        ${row({ title: 'Command', trail: `<input class="field mono" data-f="command" placeholder="claude" value="${esc(d.command)}" spellcheck="false" style="width:300px">` })}
         ${row({ title: 'Arguments', trail: `<input class="field mono" data-f="args" placeholder="None" value="${esc(d.args)}" spellcheck="false" style="width:300px">` })}
-        ${row({ title: 'Use for new sessions', trail: `<button class="switch" role="switch" data-role="default" aria-checked="${makeDefault.on}"></button>` })}
       </div></div>`
     body.scrollTop = top
     validate()
@@ -899,8 +866,12 @@ function editAccount(d, isNew) {
         filled.push('var')
       }
     }
-    const cmd = rest.match(/^claude\b\s*(.*)$/)
-    if (cmd && cmd[1]) { d.args = cmd[1]; filled.push('arguments') }
+    // What follows the variables is the command: `claude` stays the default.
+    const cmd = rest.match(/^(\S+)\s*(.*)$/)
+    if (cmd) {
+      if (cmd[1] !== 'claude') { d.command = cmd[1]; filled.push('command') }
+      if (cmd[2]) { d.args = cmd[2]; filled.push('arguments') }
+    }
     if (!isSub && !d.name.trim()) {
       if (alias) { d.name = alias[1]; filled.push('name') }
       else if (d.baseURL) d.name = hostOf(d.baseURL).replace(/:\d+$/, '').replace(/^127\.0\.0\.1$|^localhost$/, 'Local Proxy')
@@ -944,7 +915,6 @@ function editAccount(d, isNew) {
     if (r === 'reveal') { reveal = !reveal; render() }
     if (r === 'add') addVar()
     if (r === 'remove') removeVar()
-    if (r === 'default') { makeDefault.on = !makeDefault.on; e.target.setAttribute('aria-checked', makeDefault.on) }
     if (r === 'manage') toast('Opens claude.ai in your browser')
   })
   body.addEventListener('mousedown', e => {
@@ -984,8 +954,6 @@ function editAccount(d, isNew) {
       d.env = d.env.filter(v => v.key)
       const i = state.accounts.findIndex(x => x.id === d.id)
       if (i >= 0) state.accounts[i] = d; else state.accounts.push(d)
-      if (makeDefault.on) state.defaultAccount = d.id
-      else if (state.defaultAccount === d.id) state.defaultAccount = state.accounts.find(x => x.id !== d.id)?.id ?? null
       dismissSheet(s); renderAll()
     }
     if (r === 'delete') confirmDelete(d.id, () => dismissSheet(s))
@@ -997,8 +965,8 @@ function editAccount(d, isNew) {
 }
 
 /* ---------- Alerts ---------- */
-function showAlert({ tile, title, message, confirm, destructive, onConfirm }) {
-  const s = presentSheet(`${tile}<div class="t">${title}</div><div class="m">${message}</div>
+function showAlert({ icon, title, message, confirm, destructive, onConfirm }) {
+  const s = presentSheet(`${icon}<div class="t">${title}</div><div class="m">${message}</div>
     <div class="btns"><button class="btn default" data-role="cancel">Cancel</button>
     <button class="btn${destructive ? ' destructive' : ''}" data-role="ok">${confirm}</button></div>`, { cls: 'alert' })
   s.el.addEventListener('click', e => {
@@ -1010,14 +978,13 @@ function showAlert({ tile, title, message, confirm, destructive, onConfirm }) {
 function confirmDelete(id, then) {
   const a = state.accounts.find(x => x.id === id)
   showAlert({
-    tile: `<span class="tile api">${esc(monogram(a.name))}</span>`,
+    icon: APP_ICON,
     title: `Delete “${esc(a.name)}”?`,
     message: 'Its token is removed from your keychain. Sessions already running keep going until they end.',
     confirm: 'Delete', destructive: true,
     onConfirm: () => {
       then?.()
       state.accounts = state.accounts.filter(x => x.id !== id)
-      if (state.defaultAccount === id) state.defaultAccount = state.accounts[0]?.id ?? null
       renderAll()
     },
   })
@@ -1025,14 +992,13 @@ function confirmDelete(id, then) {
 function confirmSignOut(then) {
   const a = subscription()
   showAlert({
-    tile: `<span class="tile sub">${G.spark}</span>`,
+    icon: APP_ICON,
     title: `Sign out of ${esc(a.email)}?`,
     message: 'New sessions can’t use your subscription until you sign in again. Your API providers aren’t affected.',
     confirm: 'Sign Out', destructive: true,
     onConfirm: () => {
       then?.()
       state.accounts = state.accounts.filter(x => x.kind !== 'subscription')
-      if (state.defaultAccount === a.id) state.defaultAccount = providers()[0]?.id ?? null
       state.signedOut = a
       renderAll()
     },
@@ -1042,15 +1008,15 @@ function confirmSignOut(then) {
 /* ---------- Sign in ---------- */
 function signIn() {
   const s = presentSheet(`
-    <span class="tile sub">${G.spark}</span>
+    ${MARK}
     <div class="t">Sign in to Claude</div>
     <div class="m">Continue in your browser. CCTerm finishes signing in when you approve access.</div>
     <div class="wait">${G.spinner}Waiting for your browser…</div>
     <div class="btns"><button class="link" data-role="again">Open Browser Again</button><button class="btn" data-role="cancel">Cancel</button></div>`, { cls: 'signin' })
   const done = setTimeout(() => {
     if (!sheets.includes(s)) return
-    const a = state.signedOut || { id: 'sub', kind: 'subscription', name: 'Claude Max', plan: 'Max', email: 'name@example.com', org: 'Personal', method: 'Claude.ai', args: '', env: [] }
-    state.accounts.unshift(a); if (!state.defaultAccount) state.defaultAccount = a.id
+    const a = state.signedOut || { id: 'sub', kind: 'subscription', name: 'Claude Max', plan: 'Max', email: 'name@example.com', org: 'Personal', method: 'Claude.ai',command: '', args: '', env: [] }
+    state.accounts.unshift(a)
     dismissSheet(s); renderAll()
   }, 2600)
   s.el.addEventListener('click', e => {

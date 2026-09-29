@@ -61,6 +61,21 @@ final class PlacementTests: XCTestCase {
         XCTAssertGreaterThan(turns, 5, "sampled during the animation")
         XCTAssertEqual(scroll.contentView.bounds.origin.y, 2_000)
         try assertExact(list, heights: heights, insets: insets, "after an animator() scroll")
+
+        // A host that builds every view anew, never through the pool, as a
+        // table's host may: the rows still show, and nothing else does.
+        let freshHost = FreshViewHost(heights: heights)
+        let fresh = ExactListView(dataSource: freshHost, delegate: freshHost)
+        fresh.contentInsets = insets
+        stage.rootView.subviews.forEach { $0.removeFromSuperview() }
+        await stage.mount(fresh)
+        fresh.scrollToRow(300, at: .centeredVertically)
+        await stage.settle()
+        for step in 0..<6 {
+            let deltaY: CGFloat = step < 3 ? 170 : -170
+            EventSynthesizer.scroll(in: stage.window, at: NSPoint(x: 200, y: 160), deltaY: deltaY, phase: [])
+            try assertExact(fresh, heights: heights, insets: insets, "fresh views, at once after a wheel step")
+        }
     }
 
     /// Scrolling within `P` asks for nothing. Further, each arriving row is
@@ -257,6 +272,28 @@ final class PlacementTests: XCTestCase {
     /// P1 against the live clip view: `P` from the clip's own bounds and the
     /// insets, AppKit's `preparedContentRect` bounded to `P` ± the height of
     /// `U`, and G1's frames from the test's heights.
+    /// Answers every `viewForRow` with a new view, outside the pool.
+    private final class FreshViewHost: ExactListViewDataSource, ExactListViewDelegate {
+
+        let heights: [CGFloat]
+
+        init(heights: [CGFloat]) {
+            self.heights = heights
+        }
+
+        func numberOfRows(in listView: ExactListView) -> Int {
+            heights.count
+        }
+
+        func listView(_ listView: ExactListView, heightOfRow row: Int, width: CGFloat) -> CGFloat {
+            heights[row]
+        }
+
+        func listView(_ listView: ExactListView, viewForRow row: Int) -> NSView {
+            NSView()
+        }
+    }
+
     private func assertExact(
         _ list: ExactListView, heights: [CGFloat], insets: NSEdgeInsets, _ moment: String, line: UInt = #line
     ) throws {
@@ -276,9 +313,15 @@ final class PlacementTests: XCTestCase {
         if lower < upper { expected.formUnion(rows(lower, upper)) }
         XCTAssertEqual(mountedRows(list), expected, "\(moment), offset \(clip.minY)", line: line)
         let document = try XCTUnwrap(scroll.documentView)
+        var mounted = 0
         list.enumerateAvailableRowViews { view, row in
             XCTAssertEqual(
                 document.convert(view.bounds, from: view), frames[row], "\(moment): row \(row)'s frame", line: line)
+            XCTAssertFalse(view.isHiddenOrHasHiddenAncestor, "\(moment): row \(row) shows", line: line)
+            mounted += 1
         }
+        // Nothing else shows: spares may stay in the document, hidden (P3).
+        let showing = document.subviews.filter { !$0.isHidden }
+        XCTAssertEqual(showing.count, mounted, "\(moment): only the mounted rows show", line: line)
     }
 }

@@ -10,7 +10,8 @@ import AppKit
 final class RowContainerView: NSView {
 
     /// The row this container shows, in the current numbering. −1 once it is
-    /// animating out after a removal (M10, P6).
+    /// animating out after a removal (M10, P6), and while it is a hidden spare
+    /// in no row (P3).
     var row: Int
 
     /// The host's view, or `nil` while the container is in no row.
@@ -48,7 +49,8 @@ final class RowContainerView: NSView {
         }
         // Now, not at the next layout: a commit's frames are final when it
         // returns (U1), and a pooled view still has its last row's frame.
-        view.frame = NSRect(x: 0, y: 0, width: bounds.width, height: height)
+        let frame = NSRect(x: 0, y: 0, width: bounds.width, height: height)
+        if view.frame != frame { view.frame = frame }
         return replaced
     }
 

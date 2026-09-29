@@ -266,7 +266,8 @@ final class MotionTests: XCTestCase {
                 }, completionHandler: nil)
 
             let document = try documentView(of: list)
-            let containers = document.subviews.compactMap { $0 as? RowContainerView }
+            // Hidden containers are spares in no row (P3): they show nothing.
+            let containers = document.subviews.compactMap { $0 as? RowContainerView }.filter { !$0.isHidden }
             let rowsAtCommit = Set(containers.map(\.row))
             let edgeTop = rowsAtCommit.contains(0)
             let edgeBottom = rowsAtCommit.contains(heights.count - 1)
@@ -411,7 +412,8 @@ final class MotionTests: XCTestCase {
                     row = try container(ofRow: 3, in: list)
                 } else {
                     row = try XCTUnwrap(
-                        document.subviews.compactMap { $0 as? RowContainerView }.first { $0.row == -1 }, phase)
+                        document.subviews.compactMap { $0 as? RowContainerView }.first { !$0.isHidden && $0.row == -1 },
+                        phase)
                 }
                 let hosted = try XCTUnwrap((row as? RowContainerView)?.hostedView)
                 for t in [0, 0.25, 0.5, 0.75, 1] {
@@ -484,7 +486,7 @@ final class MotionTests: XCTestCase {
         let new = ReferenceLayout.frames(heights: heights, spacing: 0, width: 1)
         let newIndex = [0: 0, 1: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 7, 8: 8, 10: 9]
 
-        let stack = document.subviews.compactMap { $0 as? RowContainerView }
+        let stack = document.subviews.compactMap { $0 as? RowContainerView }.filter { !$0.isHidden }
         XCTAssertTrue(stack.last === movedContainer, "the moved row is drawn above the others")
         XCTAssertTrue(stack.first === removedContainer, "the removed row is drawn below the others")
 

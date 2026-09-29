@@ -235,7 +235,9 @@ final class UpdateTests: XCTestCase {
         XCTAssertEqual(measured(host), Array(0..<99))
         var subviews = 0
         list.enumerateAvailableRowViews { _, _ in subviews += 1 }
-        XCTAssertEqual(try internalDocument(of: list).subviews.count, subviews, "nothing left behind")
+        // Spares may stay in the document, hidden and in no row (P3).
+        let showing = try internalDocument(of: list).subviews.filter { !$0.isHidden }
+        XCTAssertEqual(showing.count, subviews, "nothing left behind")
 
         let drained = await stage.drain(until: { !completions.isEmpty }, timeout: 1)
         XCTAssertTrue(drained)

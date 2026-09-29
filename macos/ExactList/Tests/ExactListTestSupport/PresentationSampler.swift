@@ -61,8 +61,9 @@ public final class PresentationSampler {
         CATransaction.flush()
     }
 
-    /// One display-link sample: the presented frames of the tracked views, in
-    /// `ancestor`'s coordinates.
+    /// One display-link sample: the presented frames, in `ancestor`'s
+    /// coordinates, of the tracked views that are showing (in the window, not
+    /// hidden).
     public struct Frame {
         public let elapsed: TimeInterval
         public let frames: [ObjectIdentifier: CGRect]
@@ -119,6 +120,9 @@ private final class DisplayLinkRecorder: NSObject {
         var sample: [ObjectIdentifier: CGRect] = [:]
         let into = ancestor.layer.map { $0.presentation() ?? $0 }
         for view in views {
+            // A view out of the window or hidden shows nothing, wherever its
+            // layer is.
+            guard view.window != nil, !view.isHiddenOrHasHiddenAncestor else { continue }
             guard let layer = view.layer, let into else { continue }
             let presented = layer.presentation() ?? layer
             sample[ObjectIdentifier(view)] = into.convert(presented.bounds, from: presented)

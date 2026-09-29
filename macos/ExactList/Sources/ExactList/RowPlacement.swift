@@ -18,7 +18,8 @@ final class RowPlacement {
     /// after a removal are not here; `MotionAnimator` holds them.
     private var containers: [Int: RowContainerView] = [:]
 
-    /// Containers not in any row, kept for the next row that arrives.
+    /// Containers in no row, hidden in the document with the view they last
+    /// held (P3), for the next rows that arrive.
     private var spare: [RowContainerView] = []
 
     /// Containers retired since the last `place`: out of their rows but still
@@ -60,12 +61,13 @@ final class RowPlacement {
     /// unless `keeping` holds them, which is what `MotionAnimator` uses for rows
     /// still in flight.
     ///
-    /// A container that leaves is handed straight to a row that arrives in the
-    /// same call, still in the document and usually still holding the view
-    /// the pool gives back, so a scroll step moves no view in or out of the
-    /// hierarchy; that is how `NSTableView` recycles its row views (measured:
-    /// it keeps only the rows it shows). The host still hears `didRemove`
-    /// before `viewForRow` (P2, P3). Containers left over leave the document.
+    /// No container or view leaves the document here: a view going out of the
+    /// window and back makes AppKit rebuild the window's layer tree (P3). An
+    /// arriving row takes the container that holds the view the pool gives
+    /// back, else one that left in this call, else a hidden spare, as
+    /// `NSTableView` hands a leaving row view to an arriving row. The host
+    /// still hears `didRemove` before `viewForRow` (P2, P3). Containers left
+    /// over are hidden.
     func place(rows: IndexSet, keeping: IndexSet, heights: RowHeights, width: CGFloat) {
         let wanted = rows.union(keeping).filteredIndexSet { $0 < heights.count }
         var departed = retired
@@ -78,22 +80,14 @@ final class RowPlacement {
         for row in wanted {
             let frame = NSRect(x: 0, y: heights.top(ofRow: row), width: width, height: heights[row])
             if let container = containers[row] {
-                container.frame = frame
+                // Most rows stay where they were; AppKit's frame setters do
+                // work even for the frame a view already has.
+                if container.frame != frame { container.frame = frame }
                 if let view = container.hostedView { _ = container.host(view, height: frame.height) }
                 continue
             }
             let view = owner?.placement(self, viewForRow: row)
-            let container: RowContainerView
-            if let holder = view?.superview as? RowContainerView,
-                let index = departed.firstIndex(where: { $0 === holder })
-            {
-                container = departed.remove(at: index)
-            } else if let recycled = departed.popLast() {
-                container = recycled
-            } else {
-                container = spare.popLast() ?? RowContainerView(row: row)
-                documentView.addSubview(container)
-            }
+            let container = take(holding: view, from: &departed)
             container.row = row
             container.frame = frame
             if let view { _ = container.host(view, height: frame.height) }
@@ -132,8 +126,8 @@ final class RowPlacement {
     }
 
     /// Takes back a container whose animation has ended, reporting
-    /// `didRemove` (P3). It stays in the document until the next `place`,
-    /// which gives it to an arriving row or unmounts it.
+    /// `didRemove` (P3). The next `place` gives it to an arriving row or
+    /// hides it among the spares.
     func retire(_ container: RowContainerView) {
         depart(container, reporting: -1)
         retired.append(container)
@@ -150,10 +144,34 @@ final class RowPlacement {
         retired.removeAll()
     }
 
-    /// Takes a departed container out of the document, empty, into `spare`.
+    /// A container for an arriving row: the one holding `view`, which then
+    /// moves nothing; else any that left in this call; else a spare; else a
+    /// new one.
+    private func take(holding view: NSView?, from departed: inout [RowContainerView]) -> RowContainerView {
+        if let holder = view?.superview as? RowContainerView {
+            if let index = departed.firstIndex(where: { $0 === holder }) {
+                return departed.remove(at: index)
+            }
+            if let index = spare.firstIndex(where: { $0 === holder }) {
+                spare[index].isHidden = false
+                return spare.remove(at: index)
+            }
+        }
+        if let recycled = departed.popLast() { return recycled }
+        if let hidden = spare.popLast() {
+            hidden.isHidden = false
+            return hidden
+        }
+        let container = RowContainerView(row: -1)
+        documentView.addSubview(container)
+        return container
+    }
+
+    /// Puts a departed container among the spares: hidden, in no row, still
+    /// holding its view (P3).
     private func stow(_ container: RowContainerView) {
-        container.removeFromSuperview()
-        _ = container.unhost()
+        container.row = -1
+        container.isHidden = true
         spare.append(container)
     }
 

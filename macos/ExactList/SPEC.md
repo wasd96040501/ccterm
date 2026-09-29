@@ -537,8 +537,10 @@ in a commit has a start and an end value for its screen top and its height.
   lands exactly on the tail.
   *Deviation:* `NSTableView` has no landing position; the shape is
   `NSCollectionView`'s.
-- **S3: scrolls are commits.** A scroll is a commit with no geometry change,
-  so an animated scroll is M3 with a uniform `δ`, capped by M7.
+- **S3: scrolls are commits.** A scroll is a commit with no geometry change
+  whose anchor is its destination: the offset S1 or S2 computes, clamped by
+  G3 (`CommitInput.targetOffset`, which takes the place of anchoring). An
+  animated scroll is therefore M3 with a uniform `δ`, capped by M7.
 - **S4: reader scrolling stays native.** Wheel, trackpad, momentum, elasticity
   and the scroller are `NSScrollView`'s own. A commit during a live scroll
   gesture adjusts the offset as §6 says, and the gesture carries on from there.
@@ -679,7 +681,7 @@ Core imports Foundation and CoreGraphics, never AppKit.
 | `RowIndexMap` | The old↔new index mapping of a batch, built incrementally from `RowEdit`s (U2). |
 | `Viewport` | `o`, `V`, `t`, `b`, and what follows from them: `oMin`/`oMax`, `U`, `P`, and whether the viewport is at the tail. |
 | `ScrollAnchor` | A resolved anchor (tail, row with `d`, or offset): resolution (A1–A3), renumbering (A4, A5), and restoring (A6, A7, W2). |
-| `CommitInput` | Everything a commit is planned from: old and new heights, the map, old and new viewport, anchoring, tail following, whether to rescale the anchor (W2), the rows mounted before the commit, and whether it animates. |
+| `CommitInput` | Everything a commit is planned from: old and new heights, the map, old and new viewport, anchoring, or instead a scroll's destination (S3), tail following, whether to rescale the anchor (W2), the rows mounted before the commit, and whether it animates. |
 | `RowMotion` | One row's start and end screen top and height, and its kind and transition (M2). |
 | `CommitPlan` | A commit's outcome: the new offset, the resolved anchor, the `RowMotion`s, the amplitude `k`, and the tail state afterwards. |
 | `CommitPlanner` | A pure function from `CommitInput` to `CommitPlan` (§6, §7, §8.2). |

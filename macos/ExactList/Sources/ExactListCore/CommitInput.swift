@@ -25,6 +25,10 @@ public struct CommitInput: Equatable, Sendable {
     /// The batch's policy (§6.1).
     public var anchoring: Anchoring
 
+    /// S3: a scroll's destination offset. When set, it is the anchor, and
+    /// `anchoring` is not consulted.
+    public var targetOffset: CGFloat?
+
     /// `automaticallyFollowsTail`.
     public var followsTail: Bool
 
@@ -42,8 +46,8 @@ public struct CommitInput: Equatable, Sendable {
 
     public init(
         oldHeights: RowHeights, newHeights: RowHeights, map: RowIndexMap, oldViewport: Viewport,
-        newViewport: Viewport, anchoring: Anchoring, followsTail: Bool, rescalesAnchor: Bool,
-        mountedRows: IndexSet, animates: Bool
+        newViewport: Viewport, anchoring: Anchoring, targetOffset: CGFloat? = nil, followsTail: Bool,
+        rescalesAnchor: Bool, mountedRows: IndexSet, animates: Bool
     ) {
         self.oldHeights = oldHeights
         self.newHeights = newHeights
@@ -51,6 +55,7 @@ public struct CommitInput: Equatable, Sendable {
         self.oldViewport = oldViewport
         self.newViewport = newViewport
         self.anchoring = anchoring
+        self.targetOffset = targetOffset
         self.followsTail = followsTail
         self.rescalesAnchor = rescalesAnchor
         self.mountedRows = mountedRows

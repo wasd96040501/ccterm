@@ -609,6 +609,13 @@ and its oracle is independent of the implementation.
 | **Benchmarks** (`ExactListBenchmarks`, `-O` only: `make bench-list`) | The same workloads against ExactList and against `NSTableView`, in one process. | Median wall time, and main-thread time per operation. | B1–B4 |
 | **Demo** (`make demo-list`) | Human eyes, and VoiceOver by hand. | The checklist in `Sources/ExactListDemo/CLAUDE.md`. | What pixels and speech can't be asserted for |
 
+**Programmer errors** (L9, L10, L12, U3's closed proxy) stop the process by
+design, so they can't be observed from inside the test process. Each one is
+run for real in a child process: `ExactListProbe`, a test-only executable,
+mounts a list in a window, commits the named violation through the public
+API, and dies. The test asserts that the child ended on a trap, and that the
+message names the requirement.
+
 What is **not** automatically covered, stated plainly:
 
 - **Pixels on screen.** Presentation layers are what the render server
@@ -657,6 +664,7 @@ and fails if any ID is not in some test's name.
 macos/ExactList/
   Package.swift              ExactList (library) · ExactListDemo (executable)
                              ExactListTestSupport (test-only library)
+                             ExactListProbe (test-only executable: programmer errors)
                              ExactListCoreTests · ExactListTests · ExactListBenchmarks
   SPEC.md  README.md  CLAUDE.md
   Sources/

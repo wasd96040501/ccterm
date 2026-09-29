@@ -591,11 +591,16 @@ in a commit has a start and an end value for its screen top and its height.
   elements, one per row, whether mounted or not. `accessibilityRowCount()` is
   `n`. `accessibilityVisibleRows()` lists the rows that intersect `U`.
 - **X2: row elements.** Each row element has role `.row`, and its
-  `accessibilityIndex()` is the row. Its frame is the row's current frame on
-  screen. Its children are the host view's accessibility children when the row
-  is mounted, and none otherwise.
+  `accessibilityIndex()` is the row, and its parent is the table element. Its
+  frame is `rect(ofRow:)` on screen: the committed frame, so during motion it
+  is where the row is going. When the row is mounted, its children are
+  `NSAccessibility.unignoredChildren(from: [view])` of the host view (the view
+  itself if it is an element, else its unignored descendants, as a table row's
+  cells are); otherwise it has none.
 - **X3: unmounted rows.** An unmounted row is an `NSAccessibilityElement`,
-  created on demand and dropped when not needed. Giving it accessibility
+  created the first time the table is asked for it, kept while its row exists
+  (a client may hold it), and dropped when its row is removed and on
+  `reloadData()`. Giving it accessibility
   focus (`setAccessibilityFocused(true)`, which is what VoiceOver does as it
   moves) scrolls as S1 says, and that mounts the row. The protocol has no
   scroll-to-visible method before macOS 26.

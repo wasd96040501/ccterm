@@ -45,6 +45,15 @@ struct DemoRecording {
         DemoRecording(name: "load-large", scenario: .loadLarge, seconds: 1),
         // From the tail of the demo's 60 rows.
         DemoRecording(name: "scroll-to-top", scenario: .scrollToTop, seconds: 1.5, sheet: 0...0.7),
+        // Across 10 000 rows the resize left stale: each frame measures the
+        // rows it brings into view.
+        DemoRecording(
+            name: "scroll-to-top-after-load-and-resize", scenario: .scrollToTop, seconds: 1.5, sheet: 0...0.7,
+            prepare: { content in
+                content.run(.loadLarge)
+                content.run(.toggleSidebar)
+                try await Task.sleep(nanoseconds: 800_000_000)
+            }),
     ]
 
     /// Mounts the demo's content in a recordable stage, prepares it, lets it

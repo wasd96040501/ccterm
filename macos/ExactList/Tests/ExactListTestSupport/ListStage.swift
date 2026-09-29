@@ -36,6 +36,7 @@ public final class ListStage {
     /// Adds `list` to fill the window, with Auto Layout, and runs the run loop
     /// until layout settles.
     public func mount(_ list: ExactListView) async {
+        await settleAppKit()
         fill(rootView, with: list)
         await settle()
     }
@@ -51,6 +52,7 @@ public final class ListStage {
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
         scroll.automaticallyAdjustsContentInsets = false
+        await settleAppKit()
         scroll.documentView = tableView
         if !layOutFirst { tableView.reloadData() }
         fill(rootView, with: scroll)
@@ -65,6 +67,7 @@ public final class ListStage {
     /// Puts `list` in the right pane of an `NSSplitView` whose left pane is
     /// `leftWidth` wide, so tests can move the divider (W1).
     public func mountInSplit(_ list: ExactListView, leftWidth: CGFloat) async {
+        await settleAppKit()
         let split = NSSplitView()
         split.isVertical = true
         split.dividerStyle = .thin
@@ -137,6 +140,20 @@ public final class ListStage {
         window.contentView = NSView()
         window.close()
     }
+
+    /// Lets AppKit finish arriving at the reader's settings before anything is
+    /// mounted. In a fresh process, `NSScroller.preferredScrollerStyle` answers
+    /// `.overlay` until the first run loop turn has passed, then the real style
+    /// (measured). A list mounted before that sees its width change under it,
+    /// which is correct behaviour (§9) but not what a test means to set up.
+    private func settleAppKit() async {
+        guard !Self.appKitSettled else { return }
+        Self.appKitSettled = true
+        try? await Task.sleep(nanoseconds: 200_000_000)
+    }
+
+    /// Once per process: the transient is AppKit's launch, not the stage's.
+    private static var appKitSettled = false
 
     /// Gives the main run loop a few milliseconds: suspending the main actor is
     /// what lets it run, from an async test.

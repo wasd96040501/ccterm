@@ -368,9 +368,14 @@ public final class ExactListView: NSView {
 
     /// L3, L4, L6: loads once there is a window and a width, and not before.
     private func loadIfReady() {
-        guard case .waiting(let pending) = phase, window != nil else { return }
-        if clipView.bounds.width <= 0, bounds.width > 0 { scrollView.tile() }
-        guard clipView.bounds.width > 0, case .waiting = phase else { return }
+        guard case .waiting(let pending) = phase, window != nil, bounds.width > 0 else { return }
+        // The clip view's width is final only once the scroll view has tiled at
+        // this size; loading before that would measure every row at a width
+        // that is never shown (L7).
+        isAdjusting = true
+        scrollView.tile()
+        isAdjusting = false
+        guard clipView.bounds.width > 0 else { return }
         phase = .loaded
         width = clipView.bounds.width
         let rows = numberOfRowsInDataSource()

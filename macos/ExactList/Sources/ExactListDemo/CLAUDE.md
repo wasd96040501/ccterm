@@ -3,6 +3,9 @@
 `make demo-list`. This is where the checks happen that the suite can't make:
 pixels as the render server composites them, and real VoiceOver speech. SPEC
 §13 names this checklist; go through it before a PR that changes behaviour.
+The same scenarios can be captured frame by frame, off screen, with
+`make record-list` (`../../CLAUDE.md` §0); the app and the recordings share
+`ExactListDemoSupport`.
 
 ## Look
 

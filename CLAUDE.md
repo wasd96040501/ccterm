@@ -64,6 +64,7 @@ make demo-kit                        # TranscriptKit demo app (foreground; close
 make test-list [FILTER=<Class>]      # ExactList package tests
 make bench-list                      # ExactList benchmarks against NSTableView (-O)
 make demo-list                       # ExactList demo app
+make record-list [FILTER=<name>]     # ExactList demo scenarios captured off screen → /tmp/exactlist-recordings
 make logs [CONFIG=release] [CATEGORY=X] [LEVEL=debug]   # tail unified log of THIS worktree's build
 make appkit-doc SYMBOL=NSTableView   # Apple's DocC for an AppKit symbol
 make arch [SCOPE=core|app|kit|sdk|<dir>|<unit>]   # architecture map → build/arch/ (what /arch-review reads)

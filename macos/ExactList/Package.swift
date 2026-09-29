@@ -17,9 +17,11 @@ let package = Package(
         .target(name: "ExactListCore"),
         // The AppKit engine and the public API.
         .target(name: "ExactList", dependencies: ["ExactListCore"]),
+        // What the demo shows, so the demo app and the recordings run the same thing.
+        .target(name: "ExactListDemoSupport", dependencies: ["ExactList"]),
         // `swift run ExactListDemo`: the checks only eyes and VoiceOver can make.
         .executableTarget(
-            name: "ExactListDemo", dependencies: ["ExactList"], exclude: ["CLAUDE.md"]),
+            name: "ExactListDemo", dependencies: ["ExactListDemoSupport"], exclude: ["CLAUDE.md"]),
         // Shared by the window tests and the benchmarks; in no product.
         .target(
             name: "ExactListTestSupport", dependencies: ["ExactList"], path: "Tests/ExactListTestSupport"),
@@ -33,5 +35,10 @@ let package = Package(
             exclude: ["CLAUDE.md"]),
         // Meaningful only under `-O`: `make bench-list`.
         .testTarget(name: "ExactListBenchmarks", dependencies: ["ExactList", "ExactListTestSupport"]),
+        // For eyes, not a gate: `make record-list`. An executable, because TCC
+        // attributes `xctest` to Xcode.app, which has no Screen Recording grant.
+        .executableTarget(
+            name: "ExactListRecordings", dependencies: ["ExactListDemoSupport", "ExactListTestSupport"],
+            path: "Tests/ExactListRecordings"),
     ]
 )

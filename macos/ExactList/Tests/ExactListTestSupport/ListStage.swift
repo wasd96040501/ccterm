@@ -1,11 +1,16 @@
 import AppKit
 import ExactList
 
-/// A real window, off screen, to mount a list in: the pattern of the app's
+/// A real window to mount a list in: the pattern of the app's
 /// `cctermTests/Harness/AppKitStage`, which this package can't import.
 ///
-/// The window sits at (−30 000, −30 000) with near-zero alpha, so the window
-/// server still composites it and presentation layers are real. Every entry
+/// By default the window is titled, at near-zero alpha. It is asked for
+/// (−30 000, −30 000), but AppKit keeps a titled window on screen whatever
+/// origin it is given (measured), so the window server composites it like any
+/// other and presentation layers are real. A recordable stage is borderless and
+/// opaque instead: AppKit leaves a borderless window where it is put, so it
+/// stays off screen, and ScreenCaptureKit still captures every frame of it
+/// (`WindowRecorder`). Every entry
 /// point drives AppKit the way the app would: frames through the window,
 /// a divider through `NSSplitView`, time through the run loop.
 @MainActor
@@ -22,13 +27,20 @@ public final class ListStage {
     /// animated sidebar changes a pane's width.
     private var leftWidth: NSLayoutConstraint?
 
-    /// An empty window of `size`, not yet holding anything.
-    public init(size: NSSize) {
+    /// An empty window of `size`, not yet holding anything. `recordable`
+    /// makes it borderless and opaque, off screen, for `WindowRecorder`.
+    public init(size: NSSize, recordable: Bool = false) {
         window = NSWindow(
             contentRect: NSRect(origin: NSPoint(x: -30_000, y: -30_000), size: size),
-            styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+            styleMask: recordable ? [.borderless] : [.titled, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        window.alphaValue = 0.01
+        if recordable {
+            window.isOpaque = true
+            window.hasShadow = false
+            window.backgroundColor = .windowBackgroundColor
+        } else {
+            window.alphaValue = 0.01
+        }
         window.contentView = NSView(frame: NSRect(origin: .zero, size: size))
         window.orderFrontRegardless()
     }

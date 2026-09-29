@@ -666,11 +666,12 @@ and its oracle is independent of the implementation.
 | Layer | What runs | Oracle | Proves |
 |---|---|---|---|
 | **Core, property-based** (`ExactListCoreTests`, no AppKit) | Seeded random sequences, at least 10 000 batches per property: random heights, inserts, removals, moves, height notes, width changes and viewports. | A naive reference in the test file: an array of heights and linear sums, using only the heights the test itself generated. The planner's output is never its own oracle. | G1–G6, A1–A9, U2, M2, M4, M5, M7, W2, W3, W6 |
-| **Window** (`ExactListTests`) | A real `NSWindow` off screen (the pattern of `cctermTests/Harness`, copied into the package, which cannot import the app's tests; the display-link sampler needs macOS 14 and is gated by `#available`) with a real layout pass, driven only through public API, `NSWindow.setFrame`, a real `NSSplitView` divider (including `animator()`) and synthesized `NSEvent`s. | A recording delegate that logs every call with its width, plus the test's own copy of the heights. | L1–L12, V1–V5, U1, U3–U8, W1, W4, W5, P1–P6, S1–S4, K1 |
+| **Window** (`ExactListTests`) | A real `NSWindow`, titled and at alpha 0.01 (the pattern of `cctermTests/Harness`, copied into the package, which cannot import the app's tests; the display-link sampler needs macOS 14 and is gated by `#available`). AppKit keeps a titled window on screen whatever origin it is given (measured), so it is composited like any window, with a real layout pass, driven only through public API, `NSWindow.setFrame`, a real `NSSplitView` divider (including `animator()`) and synthesized `NSEvent`s. | A recording delegate that logs every call with its width, plus the test's own copy of the heights. | L1–L12, V1–V5, U1, U3–U8, W1, W4, W5, P1–P6, S1–S4, K1 |
 | **Motion, frame by frame** | The same window, with a real commit. Two samplers: (a) a display-link sampler that reads `layer.presentation()` on every refresh, as the render server shows it; (b) deterministic scrubbing that freezes an ancestor layer's `CAMediaTiming` (`speed = 0`, `timeOffset = t`) and reads `presentation()` at chosen `t`. | M2's formulas, evaluated from the test's own old and new heights. | M1–M10 |
 | **Accessibility** | In-process `NSAccessibility` protocol calls, the same methods the accessibility server calls (X1–X4). An `AXObserver` on the test's own process, which is how VoiceOver hears a notification (X5). | Row count, indexes and frames from the test's own model. | X1–X5 |
 | **Characterization** (`NSTableViewCharacterizationTests`) | A real `NSTableView` in the same harness. | Assertions of its actual behaviour, which back §2. | §2 |
 | **Benchmarks** (`ExactListBenchmarks`, `-O` only: `make bench-list`) | The same workloads against ExactList and against `NSTableView`, in one process. | Median wall time, and main-thread time per operation. | B1–B4 |
+| **Recordings** (`ExactListRecordings`, `make record-list`) | The demo's own content and scenarios (`ExactListDemoSupport`) in a borderless, opaque window off screen, which AppKit leaves where it is put, so nothing shows on the display. `WindowRecorder` captures what the window server composites for that window, through ScreenCaptureKit (macOS 14). It runs as an executable, so it has the Screen Recording permission of the terminal that launched it: `xctest` lives inside Xcode.app and TCC attributes it to Xcode (measured). Without the permission it stops and says how to grant it. | None: a recording is for eyes. Every captured frame is written as a PNG named by its time from the action, with a sheet of the first half second at 60 Hz, each tile labelled with its time, and a movie. | What motion looks like, while it is being changed. Not a gate. |
 | **Demo** (`make demo-list`) | Human eyes, and VoiceOver by hand. | The checklist in `Sources/ExactListDemo/CLAUDE.md`. | What pixels and speech can't be asserted for |
 
 **Programmer errors** (L9, L10, L12, U3's closed proxy) stop the process by
@@ -683,7 +684,8 @@ message names the requirement.
 What is **not** automatically covered, stated plainly:
 
 - **Pixels on screen.** Presentation layers are what the render server
-  composites, but the final pixels are only checked by eye in the demo.
+  composites, but the final pixels are only checked by eye: live in the demo,
+  frame by frame in a recording.
 - **Real VoiceOver speech.** Only the accessibility protocol is checked
   automatically; speech is a manual demo checklist.
 - **A live trackpad gesture (S4).** A phased scroll event can't be
@@ -744,17 +746,22 @@ and fails if any ID is not in some test's name.
 ```
 macos/ExactList/
   Package.swift              ExactList (library) · ExactListDemo (executable)
+                             ExactListDemoSupport (library, in no product)
                              ExactListTestSupport (test-only library)
                              ExactListProbe (test-only executable: programmer errors)
                              ExactListCoreTests · ExactListTests · ExactListBenchmarks
+                             ExactListRecordings (test-only executable: recordings)
   SPEC.md  README.md  CLAUDE.md
   Sources/
     ExactListCore/           Foundation and CoreGraphics. The compiler keeps AppKit out.
     ExactList/               AppKit. Depends on ExactListCore.
-    ExactListDemo/           Depends on ExactList.
+    ExactListDemoSupport/    The demo's content and scenarios. Depends on ExactList.
+    ExactListDemo/           The demo app. Depends on ExactListDemoSupport.
 ```
 
-Dependencies go one way: `ExactListDemo → ExactList → ExactListCore`. Core
+Dependencies go one way: `ExactListDemo → ExactListDemoSupport → ExactList →
+ExactListCore`, and `ExactListRecordings` depends on `ExactListDemoSupport` and
+`ExactListTestSupport`. Core
 imports no AppKit, and has no timers and no main-actor state. Hosts import
 only `ExactList`, which re-exports the one Core type in its API (`Anchoring`).
 Core imports Foundation and CoreGraphics, never AppKit.
@@ -801,12 +808,37 @@ internal protocol that the façade conforms to: `ListScrollViewOwner`,
 `ListClipViewOwner`, `ListDocumentViewOwner`, `RowPlacementOwner`,
 `MotionAnimatorOwner`, `StaleRowRefresherOwner`, `UnmountedRowElementOwner`.
 
+**ExactListDemoSupport**: what the demo shows, in a library so that the demo
+app and the recordings run the same thing. Every type is `@MainActor`.
+
+| Type | Public? | Owns |
+|---|---|---|
+| `DemoScenario` | yes | One case per item on the demo's checklist. |
+| `DemoFeed` | yes | The model, data source and delegate: rows of wrapped text, measured with the typesetter the row view draws with, and the scenarios that change them. |
+| `DemoRowView` | no | One row: a card of wrapped text with a disclosure. |
+| `DemoContentViewController` | yes | An `NSSplitViewController`: a sidebar beside the list. It runs a scenario, and animates the sidebar itself for `toggleSidebar`. |
+
+`ExactListDemo` keeps the app: the delegate, and a window controller that puts
+a `DemoContentViewController` in a titled window with a bar of scenario
+buttons.
+
 **ExactListTestSupport**: a test-only library, in no product. It holds the
 window stage, the recording data source and delegate, the recording
 `NSTableView` host that characterization and benchmarks run against, the
 event synthesizer, the presentation sampler, the seeded generator and the
 window-level reference layout that
-`ExactListTests` and `ExactListBenchmarks` share. `ExactListCoreTests` keeps
+`ExactListTests` and `ExactListBenchmarks` share. The stage can also be made
+for recording (`ListStage(size:recordable:)`: borderless, opaque, off
+screen), and `WindowRecorder` records a window's composited frames (§13).
+
+**ExactListRecordings**: an executable, in `Tests/` beside `ExactListProbe`,
+that runs one recording per demo scenario plus any a change needs:
+`make record-list [FILTER=<part of a name>]`. `swift test` doesn't run it.
+Recordings assert nothing, so they are not part of the frozen framework: a
+recording can be added or changed without an amendment. What they depend on
+is.
+
+`ExactListCoreTests` keeps
 its own reference, so Core stays testable with no AppKit linked.
 
 Framework means everything internal or public. Private members are

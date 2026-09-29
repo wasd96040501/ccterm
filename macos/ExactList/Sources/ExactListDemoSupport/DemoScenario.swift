@@ -1,6 +1,6 @@
 /// What the demo can do to its list: one entry per item on the checklist in
-/// CLAUDE.md.
-enum DemoScenario: CaseIterable {
+/// the demo's CLAUDE.md. The demo app and the recordings run the same ones.
+public enum DemoScenario: CaseIterable {
 
     /// Append rows while the viewport follows the tail, like a chat.
     case stream

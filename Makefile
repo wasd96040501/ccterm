@@ -1,4 +1,4 @@
-.PHONY: build release install dmg clean fmt fmt-check test-unit test-kit test-sdk test-list bench-list demo-kit demo-list logs icon sidebar-icons appkit-doc arch help
+.PHONY: build release install dmg clean fmt fmt-check test-unit test-kit test-sdk test-list bench-list record-list demo-kit demo-list logs icon sidebar-icons appkit-doc arch help
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
@@ -50,6 +50,17 @@ test-list: ## Run ExactList's package tests (FILTER=SomeTests)
 
 bench-list: ## Run ExactList's benchmarks against NSTableView (-O)
 	@cd macos/ExactList && swift test -c release --filter ExactListBenchmarks
+
+# The demo's scenarios in a window off screen, captured frame by frame for eyes
+# (SPEC §13). An executable, not a test: TCC attributes xctest to Xcode.app, so
+# this runs as the terminal and uses its Screen Recording grant. FILTER is part
+# of a recording's name. The -isysroot is demo-list's.
+record-list: ## Record ExactList's demo scenarios to PNGs, a sheet and a movie (FILTER=stream)
+	@cd macos/ExactList && swift run \
+		-Xswiftc -Xclang-linker -Xswiftc -isysroot \
+		-Xswiftc -Xclang-linker -Xswiftc "$$(xcrun --sdk macosx --show-sdk-path)" \
+		ExactListRecordings $(FILTER)
+	@echo "Recordings: /tmp/exactlist-recordings"
 
 # The package's demo app: the checklist in Sources/ExactListDemo/CLAUDE.md.
 # The -isysroot is demo-kit's, for the same reason (see there).

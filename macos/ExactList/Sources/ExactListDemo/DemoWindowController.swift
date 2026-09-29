@@ -1,21 +1,12 @@
 import AppKit
-import ExactList
+import ExactListDemoSupport
 
-/// The demo window: a sidebar that animates open and closed beside the list (an
-/// animated width change), and a toolbar with one button per scenario in
-/// `DemoScenario`.
+/// The demo window: `DemoContentViewController` under a bar with one button per
+/// scenario in `DemoScenario`.
 @MainActor
 final class DemoWindowController: NSWindowController {
 
     init() {
-        let feed = DemoFeed()
-        let list = ExactListView(dataSource: feed, delegate: feed)
-        list.rowSpacing = 6
-        list.contentInsets = NSEdgeInsets(top: 8, left: 0, bottom: 8, right: 0)
-        list.automaticallyFollowsTail = true
-        self.feed = feed
-        self.list = list
-
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 640),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -24,25 +15,7 @@ final class DemoWindowController: NSWindowController {
         window.minSize = NSSize(width: 480, height: 320)
         super.init(window: window)
 
-        let sidebar = NSViewController()
-        let label = NSTextField(labelWithString: "Sidebar")
-        label.textColor = .secondaryLabelColor
-        label.translatesAutoresizingMaskIntoConstraints = false
-        sidebar.view = NSView()
-        sidebar.view.addSubview(label)
-        NSLayoutConstraint.activate([
-            label.centerXAnchor.constraint(equalTo: sidebar.view.centerXAnchor),
-            label.centerYAnchor.constraint(equalTo: sidebar.view.centerYAnchor),
-        ])
-        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
-        sidebarItem.minimumThickness = 180
-        sidebarItem.maximumThickness = 320
-
-        let content = NSViewController()
-        content.view = list
-        split.addSplitViewItem(sidebarItem)
-        split.addSplitViewItem(NSSplitViewItem(viewController: content))
-        window.contentViewController = split
+        window.contentViewController = content
         window.setContentSize(NSSize(width: 900, height: 640))
 
         let buttons = DemoScenario.allCases.enumerated().map { index, scenario in
@@ -70,21 +43,9 @@ final class DemoWindowController: NSWindowController {
 
     // MARK: - Private
 
-    /// Strong: the list holds its data source and delegate weakly.
-    private let feed: DemoFeed
-
-    private let list: ExactListView
-
-    private let split = NSSplitViewController()
+    private let content = DemoContentViewController()
 
     @objc private func run(_ sender: NSButton) {
-        let scenario = DemoScenario.allCases[sender.tag]
-        if scenario == .toggleSidebar {
-            // NSSplitViewController animates the collapse through animator():
-            // the list's width changes on every frame of it.
-            split.toggleSidebar(nil)
-        } else {
-            feed.run(scenario, on: list)
-        }
+        content.run(DemoScenario.allCases[sender.tag])
     }
 }

@@ -4,15 +4,15 @@ import ExactList
 /// The demo's model, data source and delegate: rows of wrapped text whose
 /// heights are measured with the same typesetter the row view draws with.
 @MainActor
-final class DemoFeed: ExactListViewDataSource, ExactListViewDelegate {
+public final class DemoFeed: ExactListViewDataSource, ExactListViewDelegate {
 
-    init() {
+    public init() {
         rows = (0..<60).map { Row(text: Self.text(for: $0), expanded: $0 % 4 == 0) }
         nextNumber = rows.count
     }
 
     /// Runs one scenario against `list`.
-    func run(_ scenario: DemoScenario, on list: ExactListView) {
+    public func run(_ scenario: DemoScenario, on list: ExactListView) {
         timer?.invalidate()
         timer = nil
         switch scenario {
@@ -62,7 +62,7 @@ final class DemoFeed: ExactListViewDataSource, ExactListViewDelegate {
                 inserting.toggle()
             }
         case .toggleSidebar:
-            // The window controller animates its split view; the list follows.
+            // DemoContentViewController animates its split view; the list follows.
             break
         case .loadLarge:
             rows = (0..<10_000).map { Row(text: Self.text(for: $0), expanded: $0 % 3 == 0) }
@@ -77,15 +77,15 @@ final class DemoFeed: ExactListViewDataSource, ExactListViewDelegate {
         }
     }
 
-    func numberOfRows(in listView: ExactListView) -> Int {
+    public func numberOfRows(in listView: ExactListView) -> Int {
         rows.count
     }
 
-    func listView(_ listView: ExactListView, heightOfRow row: Int, width: CGFloat) -> CGFloat {
+    public func listView(_ listView: ExactListView, heightOfRow row: Int, width: CGFloat) -> CGFloat {
         DemoRowView.height(for: rows[row].text, expanded: rows[row].expanded, width: width)
     }
 
-    func listView(_ listView: ExactListView, viewForRow row: Int) -> NSView {
+    public func listView(_ listView: ExactListView, viewForRow row: Int) -> NSView {
         let view = listView.makeView(withIdentifier: Self.rowIdentifier) { DemoRowView(frame: .zero) }
         view.configure(text: rows[row].text, expanded: rows[row].expanded)
         view.onToggle = { [weak self, weak listView, weak view] in

@@ -13,6 +13,17 @@ Run from the repo root:
 - `make test-list [FILTER=<Class>]`
 - `make bench-list`
 - `make demo-list`
+- `make record-list [FILTER=<part of a name>]`
+
+## 0. Look at motion frame by frame
+
+Before and after changing anything that moves, record it:
+`make record-list FILTER=stream` captures the demo's scenario off screen into
+`/tmp/exactlist-recordings/<name>/`: every frame as a PNG named by its time
+from the action, `sheet.png` (the frames at each 60 Hz tick, labelled), and
+`movie.mov`. Read the sheet first, then the frames around anything odd. A
+recording for a new state goes in `DemoRecording.all`
+(`Tests/ExactListRecordings`).
 
 ## 1. The spec comes first
 

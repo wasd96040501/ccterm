@@ -1,22 +1,20 @@
 import AgentSDK
 import Foundation
 
-/// The CLI's claude.ai login, as ``SubscriptionService`` drives it.
+/// The CLI's claude.ai login, as ``SubscriptionService`` drives it. Each call
+/// says how the CLI is launched; nothing is kept between them.
 nonisolated protocol SubscriptionAuth: Sendable {
     /// The account signed in now; `nil` when none is.
-    func current() async throws -> Subscription?
+    func current(_ configuration: CLIConfiguration) async throws -> Subscription?
     /// Signs in through the browser. Yields the sign-in page's URL once it is
     /// known, and finishes when the login is saved.
-    func signIn() -> AsyncThrowingStream<URL, Error>
-    func signOut() async throws
+    func signIn(_ configuration: CLIConfiguration) -> AsyncThrowingStream<URL, Error>
+    func signOut(_ configuration: CLIConfiguration) async throws
 }
 
-/// ``SubscriptionAuth`` over `claude auth`, started with the launch command
-/// set in General — the CLI whose login sessions will use.
+/// ``SubscriptionAuth`` over `claude auth`.
 nonisolated struct CLISubscriptionAuth: SubscriptionAuth {
-    let launch: LaunchSettings
-
-    func current() async throws -> Subscription? {
+    func current(_ configuration: CLIConfiguration) async throws -> Subscription? {
         let status = try await Auth.status(configuration: configuration)
         guard status.isLoggedIn, status.authMethod == "claude.ai", let email = status.email else { return nil }
         return Subscription(
@@ -24,15 +22,11 @@ nonisolated struct CLISubscriptionAuth: SubscriptionAuth {
             method: status.authMethod)
     }
 
-    func signIn() -> AsyncThrowingStream<URL, Error> {
+    func signIn(_ configuration: CLIConfiguration) -> AsyncThrowingStream<URL, Error> {
         Auth.login(configuration: configuration)
     }
 
-    func signOut() async throws {
+    func signOut(_ configuration: CLIConfiguration) async throws {
         try await Auth.logout(configuration: configuration)
-    }
-
-    private var configuration: AuthConfiguration {
-        AuthConfiguration(customCommand: launch.command(for: nil))
     }
 }

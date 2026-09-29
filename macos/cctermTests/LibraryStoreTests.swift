@@ -18,7 +18,7 @@ final class LibraryStoreTests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         fixture = try SessionDirectoryFixture()
-        store = LibraryStore(directory: fixture.directory)
+        store = LibraryStore(directories: Just(fixture.directory).eraseToAnyPublisher())
         store.$nodes.sink { [weak self] in self?.emissions.append($0) }.store(in: &cancellables)
     }
 
@@ -208,13 +208,115 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertEqual(nodes, expectedTree)
     }
 
-    /// A unique path beside no session directory: a file in one would read as
-    /// a change to it.
+    // MARK: - Changing directory
+
+    private func titles(_ nodes: [LibraryNode]) -> [String] {
+        nodes.flatMap(\.children).map(\.title)
+    }
+
+    /// A second directory with one session, `title`.
+    private func otherFixture(_ title: String) throws -> SessionDirectoryFixture {
+        let other = try SessionDirectoryFixture()
+        addTeardownBlock { other.remove() }
+        try other.write("-o-proj/o1.jsonl", [Rows.user("u", cwd: "/o/proj"), Rows.customTitle(title)], modified: 50)
+        return other
+    }
+
+    private func nodes(
+        of store: LibraryStore, where predicate: @escaping ([LibraryNode]) -> Bool
+    ) async
+        -> [LibraryNode]
+    {
+        let arrived = expectation(description: "nodes")
+        var published: [LibraryNode] = []
+        let subscription = store.$nodes.first(where: predicate).sink {
+            published = $0
+            arrived.fulfill()
+        }
+        await fulfillment(of: [arrived], timeout: 10)
+        subscription.cancel()
+        return published
+    }
+
+    /// The library follows the directory it is given: the second one's
+    /// sessions replace the first's.
+    func testASwitchedDirectoryShowsOnlyItsOwnSessions() async throws {
+        try Self.writeLibrary(fixture)
+        let other = try otherFixture("Second")
+        let directories = CurrentValueSubject<SessionDirectory, Never>(fixture.directory)
+        let store = LibraryStore(directories: directories.eraseToAnyPublisher())
+        defer { store.stop() }
+        store.start()
+        let first = await nodes(of: store) { !$0.isEmpty }
+        XCTAssertEqual(first, expectedTree)
+
+        directories.send(other.directory)
+        let second = await nodes(of: store) { self.titles($0) == ["Second"] }
+        XCTAssertEqual(second.map(\.id), ["/o/proj"])
+
+        // A change in the second directory is followed; one in the first isn't.
+        try fixture.write("-y-other/s5.jsonl", [Rows.user("u", cwd: "/y/other")], modified: 900)
+        try other.write("-o-proj/o2.jsonl", [Rows.user("u", cwd: "/o/proj"), Rows.customTitle("Third")], modified: 60)
+        let third = await nodes(of: store) { self.titles($0).count == 2 }
+        XCTAssertEqual(Set(titles(third)), ["Second", "Third"])
+    }
+
+    /// What the first directory's task read after the switch is dropped.
+    func testAResultFromThePreviousDirectoryArrivingLateIsDropped() async throws {
+        try Self.writeLibrary(fixture)
+        let other = try otherFixture("Second")
+        let directories = CurrentValueSubject<SessionDirectory, Never>(fixture.directory)
+        let store = LibraryStore(directories: directories.eraseToAnyPublisher())
+        defer { store.stop() }
+        var seen: [[LibraryNode]] = []
+        let subscription = store.$nodes.sink { seen.append($0) }
+        defer { subscription.cancel() }
+
+        store.start()
+        directories.send(other.directory)  // before the first directory's read lands
+        _ = await nodes(of: store) { self.titles($0) == ["Second"] }
+        // Long enough for the first directory's read to have finished.
+        try await Task.sleep(for: .milliseconds(500))
+
+        XCTAssertEqual(titles(store.nodes), ["Second"])
+        XCTAssertFalse(seen.contains { !$0.isEmpty && titles($0) != ["Second"] })
+    }
+
+    /// Each directory keeps its own index, named by its path.
+    func testEachDirectoryHasItsOwnIndexFile() async throws {
+        try Self.writeLibrary(fixture)
+        let other = try otherFixture("Second")
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
+        let directories = CurrentValueSubject<SessionDirectory, Never>(fixture.directory)
+        let store = LibraryStore(directories: directories.eraseToAnyPublisher(), indexDirectory: folder)
+        defer { store.stop() }
+        store.start()
+        let firstIndex = LibraryStore.indexURL(for: fixture.directory, in: folder)
+        let secondIndex = LibraryStore.indexURL(for: other.directory, in: folder)
+        XCTAssertNotEqual(firstIndex, secondIndex)
+
+        func exists(_ url: URL) -> XCTNSPredicateExpectation {
+            XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in FileManager.default.fileExists(atPath: url.path) }, object: nil)
+        }
+        await fulfillment(of: [exists(firstIndex)], timeout: 10)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: secondIndex.path))
+        directories.send(other.directory)
+        await fulfillment(of: [exists(secondIndex)], timeout: 10)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: firstIndex.path))
+        XCTAssertEqual(firstIndex.deletingLastPathComponent().path, folder.path)
+        XCTAssertTrue(firstIndex.lastPathComponent.hasPrefix("LibraryIndex-"))
+    }
+
+    /// The fixture's index in a unique folder beside no session directory: a
+    /// file in one would read as a change to it.
     private func indexURL() throws -> URL {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
-        return folder.appendingPathComponent("LibraryIndex.plist")
+        return LibraryStore.indexURL(for: fixture.directory, in: folder)
     }
 
     /// The first tree `predicate` holds for that a store started over the
@@ -223,7 +325,8 @@ final class LibraryStoreTests: XCTestCase {
     private func launch(
         indexedAt url: URL, until predicate: @escaping ([LibraryNode]) -> Bool = { !$0.isEmpty }
     ) async -> [LibraryNode] {
-        let store = LibraryStore(directory: fixture.directory, indexURL: url)
+        let store = LibraryStore(
+            directories: Just(fixture.directory).eraseToAnyPublisher(), indexDirectory: url.deletingLastPathComponent())
         defer { store.stop() }
         let arrived = expectation(description: "nodes")
         var published: [LibraryNode] = []

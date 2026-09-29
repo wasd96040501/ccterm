@@ -13,6 +13,10 @@ public struct SessionDirectory: Sendable, Hashable {
         self.url = url
     }
 
+    /// The folder the CLI keeps its configuration in — the one `projects/`
+    /// sits in: `$CLAUDE_CONFIG_DIR`, else `~/.claude`.
+    public var configDirectory: URL { url.deletingLastPathComponent() }
+
     /// The directory a CLI launched with `environment` writes to:
     /// `$CLAUDE_CONFIG_DIR/projects`, else `~/.claude/projects`. Pass the
     /// environment the CLI is launched with — an app started from Finder has
@@ -22,6 +26,45 @@ public struct SessionDirectory: Sendable, Hashable {
             environment["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0, isDirectory: true) }
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude", isDirectory: true)
         url = config.appendingPathComponent("projects", isDirectory: true)
+    }
+
+    /// The directory a CLI launched with `configuration` writes to. Blocking:
+    /// one interactive login-shell spawn, so call it off the main thread.
+    ///
+    /// The environment is the login shell's (this process's when the
+    /// configuration inherits it or the probe fails), then
+    /// ``CLIConfiguration/env``, then — for a custom command — the leading
+    /// assignments of its line, its first word expanded once when it is an
+    /// alias in that shell. The alias lookup rides on the same spawn. A
+    /// wrapper script that sets `CLAUDE_CONFIG_DIR` internally can't be seen;
+    /// the answer is then the default directory.
+    public init(configuration: CLIConfiguration) {
+        let line = configuration.customCommand.flatMap(LaunchLine.init)
+        let word = line?.command.flatMap { $0.contains("/") ? nil : $0 }
+        let parent = ProcessInfo.processInfo.environment
+        let probe =
+            configuration.inheritsParentEnvironment && word == nil ? nil : ShellEnvironment.probe(aliasFor: word)
+        let base = configuration.inheritsParentEnvironment ? parent : (probe?.environment ?? parent)
+        let environment = Self.environment(
+            base: base, configuration: configuration.env, launch: line, alias: probe?.alias)
+        var directory = environment
+        if let config = environment["CLAUDE_CONFIG_DIR"] {
+            directory["CLAUDE_CONFIG_DIR"] = (config as NSString).expandingTildeInPath
+        }
+        self.init(environment: directory)
+    }
+
+    /// The environment a launch sees: `base`, then `configuration`, then the
+    /// assignments of `launch`, then those of `alias`, the body its command
+    /// word expands to. Later wins.
+    static func environment(
+        base: [String: String], configuration: [String: String], launch: LaunchLine?, alias: String?
+    ) -> [String: String] {
+        var environment = base.merging(configuration) { _, override in override }
+        var assignments = launch?.variables ?? []
+        if let alias, let body = LaunchLine(alias) { assignments += body.variables }
+        for (name, value) in assignments { environment[name] = value }
+        return environment
     }
 
     /// Every session's main transcript, most recently modified first. A
@@ -121,8 +164,14 @@ extension SessionDirectory {
             }
         }
 
+        /// Never waits: it runs from the stream's `onTermination`, which a task's
+        /// cancellation calls while holding that task's status lock — and a
+        /// report in flight on `queue` is resuming the same task, so it needs
+        /// that lock to finish. Waiting for `queue` here deadlocks. The block
+        /// keeps the watcher alive until the stream is invalidated; a report
+        /// that lands first goes to a finished stream and is dropped.
         func stop() {
-            queue.sync {
+            queue.async { [self] in
                 guard let stream else { return }
                 FSEventStreamStop(stream)
                 FSEventStreamInvalidate(stream)

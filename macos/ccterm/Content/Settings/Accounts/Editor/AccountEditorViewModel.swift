@@ -3,21 +3,72 @@ import Foundation
 
 /// An account being edited in its sheet. Holds the draft — the account and
 /// its secrets — and publishes what the sheet shows from it; the draft
-/// leaves only as ``result``, when the sheet saves.
+/// leaves only as ``result``, when the sheet saves. Saving waits for the
+/// account's launch command to run.
 @MainActor
 final class AccountEditorViewModel {
     let mode: AccountEditorMode
     @Published private(set) var presentation: AccountEditorPresentation
+    /// What filling the draft from the `entry` it opened with did, to tell
+    /// once the sheet is up.
+    private(set) var openingNote: String?
 
     private var account: Account
     private var secrets: AccountSecrets
     private var fieldsRevision = 0
+    private let takenNames: [String]
+    private let commandValidation: LaunchCommandValidation
+    private var command = CommandCheck(isValid: false, detail: .none)
+    private var cancellables = Set<AnyCancellable>()
 
-    init(mode: AccountEditorMode, account: Account, secrets: AccountSecrets) {
+    /// What the command's check says, as the sheet needs it.
+    private struct CommandCheck {
+        var isValid: Bool
+        var detail: ValidationDetail
+
+        init(isValid: Bool, detail: ValidationDetail) {
+            self.isValid = isValid
+            self.detail = detail
+        }
+
+        /// `text`: the command the state is for; with none, General's launch
+        /// runs and there is nothing to say.
+        init(_ state: LaunchCommandValidation.State, text: String) {
+            var isValid = false
+            if case .valid = state { isValid = true }
+            let blank = text.trimmingCharacters(in: .whitespaces).isEmpty
+            self.init(isValid: isValid, detail: blank ? .none : state.detail(fallback: nil))
+        }
+    }
+
+    /// `entry`: what to fill the draft from before the sheet appears.
+    /// `takenNames`: the other providers' names, which a name filled from a
+    /// paste stays clear of. `commandValidation`: checks the account's launch
+    /// command as it is typed; it starts from the command `account` has.
+    init(
+        mode: AccountEditorMode, account: Account, secrets: AccountSecrets, entry: AccountPaste.Entry? = nil,
+        takenNames: [String] = [],
+        commandValidation: LaunchCommandValidation
+    ) {
         self.mode = mode
         self.account = account
         self.secrets = secrets
-        presentation = Self.present(mode: mode, account: account, secrets: secrets, fieldsRevision: 0)
+        self.takenNames = takenNames
+        self.commandValidation = commandValidation
+        command = CommandCheck(commandValidation.state, text: account.command)
+        presentation = Self.present(
+            mode: mode, account: account, secrets: secrets, fieldsRevision: 0, command: command)
+        // Answers arrive later, on the main actor; the state each carries is
+        // for the text as it is when it does.
+        commandValidation.$state
+            .dropFirst()
+            .sink { [weak self] state in
+                guard let self else { return }
+                command = CommandCheck(state, text: self.account.command)
+                update { _, _ in }
+            }
+            .store(in: &cancellables)
+        if let entry { openingNote = apply(entry) }
     }
 
     /// The draft as saved: rows without a name dropped.
@@ -43,7 +94,10 @@ final class AccountEditorViewModel {
     func setModel(_ keyPath: WritableKeyPath<Account.Models, String>, to name: String) {
         updateProvider { $0.models[keyPath: keyPath] = name }
     }
-    func setCommand(_ command: String) { update { account, _ in account.command = command } }
+    func setCommand(_ command: String) {
+        update { account, _ in account.command = command }
+        commandDidChange()
+    }
     func setArguments(_ arguments: String) { update { account, _ in account.arguments = arguments } }
 
     func toggleVariable(at index: Int) {
@@ -70,11 +124,29 @@ final class AccountEditorViewModel {
     }
 
     /// Reads pasted text into the draft; returns what to tell the person.
+    /// The sheet takes one provider: text with several is refused.
     func paste(_ text: String) -> String {
-        guard let paste = AccountPaste(text) else { return String(localized: "Nothing to paste — expected KEY=value") }
+        let entries = AccountPaste.entries(text)
+        guard let entry = entries.first else { return String(localized: "Nothing to paste — expected KEY=value") }
+        let note = apply(entry)
+        // A sheet holds one provider: several fill it from the first.
+        return entries.count == 1 ? note : String(localized: "\(note) from the first of \(entries.count)")
+    }
+
+    /// Fills the draft from `entry`; returns what to tell the person. A name it
+    /// sets is made unique among ``takenNames``.
+    func apply(_ entry: AccountPaste.Entry) -> String {
         var result = AccountPaste.Result()
+        let named = account.provider?.name
         fieldsRevision += 1
-        update { account, secrets in result = paste.apply(to: &account, secrets: &secrets) }
+        update { account, secrets in
+            result = entry.apply(to: &account, secrets: &secrets)
+            if var provider = account.provider, provider.name != named {
+                provider.name = Account.uniqueName(provider.name, among: takenNames)
+                account.kind = .provider(provider)
+            }
+        }
+        commandDidChange()
         return Self.summary(of: result)
     }
 
@@ -82,7 +154,17 @@ final class AccountEditorViewModel {
 
     private func update(_ change: (inout Account, inout AccountSecrets) -> Void) {
         change(&account, &secrets)
-        presentation = Self.present(mode: mode, account: account, secrets: secrets, fieldsRevision: fieldsRevision)
+        presentation = Self.present(
+            mode: mode, account: account, secrets: secrets, fieldsRevision: fieldsRevision, command: command)
+    }
+
+    /// The draft's command may have changed: hand it to the validation, and
+    /// hold saving until the check for it says so. What the check said of the
+    /// old one stays shown until the new one's answer.
+    private func commandDidChange() {
+        commandValidation.textDidChange(account.command)
+        command.isValid = commandValidation.isValid
+        update { _, _ in }
     }
 
     private func updateProvider(_ change: (inout Account.Provider) -> Void) {
@@ -99,7 +181,8 @@ final class AccountEditorViewModel {
     }
 
     private static func present(
-        mode: AccountEditorMode, account: Account, secrets: AccountSecrets, fieldsRevision: Int
+        mode: AccountEditorMode, account: Account, secrets: AccountSecrets, fieldsRevision: Int,
+        command: CommandCheck
     ) -> AccountEditorPresentation {
         let provider = account.provider
         var fields = AccountEditorPresentation.Fields(
@@ -124,6 +207,7 @@ final class AccountEditorViewModel {
                 !$0.name.trimmingCharacters(in: .whitespaces).isEmpty && isValidURL($0.baseURL)
                     && !secrets.credential.isEmpty
             } ?? true
+        let canSaveCommand = command.isValid
 
         var details: AccountEditorPresentation.SubscriptionDetails?
         if case .subscription(let subscription) = mode {
@@ -134,10 +218,10 @@ final class AccountEditorViewModel {
 
         let authentication = provider?.authentication ?? .authToken
         return AccountEditorPresentation(
-            canSave: canSave, baseURLError: baseURLError,
+            canSave: canSave && canSaveCommand, baseURLError: baseURLError,
             credentialTitle: authentication == .apiKey ? String(localized: "API key") : String(localized: "Token"),
             maskedCredential: masked(secrets.credential), subscription: details, fields: fields,
-            fieldsRevision: fieldsRevision, environmentRows: rows(secrets.environment))
+            fieldsRevision: fieldsRevision, environmentRows: rows(secrets.environment), commandDetail: command.detail)
     }
 
     /// The Authentication menu: each way, and what it sends.
@@ -152,6 +236,8 @@ final class AccountEditorViewModel {
             let warning: String? =
                 if let field = managedNames[variable.name] {
                     String(localized: "Overrides the \(field) field.")
+                } else if variable.name == "CLAUDE_CONFIG_DIR" {
+                    String(localized: "Overrides the Configuration Folder in General.")
                 } else if !variable.name.isEmpty, names.filter({ $0 == variable.name }).count > 1 {
                     String(localized: "Defined more than once; the last one wins.")
                 } else {

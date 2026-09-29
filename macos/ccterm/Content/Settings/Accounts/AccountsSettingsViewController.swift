@@ -8,33 +8,55 @@ import Combine
 @MainActor
 final class AccountsSettingsViewController: NSViewController {
     private let accounts: AccountStore
+    private let launch: LaunchStore
+    private let launchCheck: LaunchCheckService
     private let subscription: SubscriptionService
     private let subscriptionSection: SubscriptionSectionViewController
     private let providersSection: ProvidersSectionViewController
 
     /// The open account sheet, if any.
     private var editor: AccountEditorViewController?
+    private var editorModel: AccountEditorViewModel?
     /// The account the open sheet edits.
     private var editing: Account?
 
-    init(accounts: AccountStore, subscription: SubscriptionService) {
+    init(
+        accounts: AccountStore, launch: LaunchStore, launchCheck: LaunchCheckService,
+        subscription: SubscriptionService
+    ) {
         self.accounts = accounts
+        self.launch = launch
+        self.launchCheck = launchCheck
         self.subscription = subscription
-        // Each section starts from the state as it is now, so the pane's
-        // first frame is already right; changes follow.
-        subscriptionSection = SubscriptionSectionViewController(
-            state: subscription.state, updates: subscription.$state.dropFirst().eraseToAnyPublisher())
+        subscriptionSection = SubscriptionSectionViewController(states: subscription.$state.eraseToAnyPublisher())
         providersSection = ProvidersSectionViewController(
-            providers: accounts.providers,
-            updates: accounts.$accounts.dropFirst().map { $0.filter { $0.provider != nil } }.eraseToAnyPublisher())
+            providers: accounts.$accounts.map { $0.filter { $0.provider != nil } }.eraseToAnyPublisher())
         super.init(nibName: nil, bundle: nil)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
+    /// The pane's note about an import: at the bottom, centred, 24 above it.
+    private let toast = ToastView()
+
     override func loadView() {
-        view = FormView(sections: [subscriptionSection.view, providersSection.view])
+        let form = FormView(sections: [subscriptionSection.view, providersSection.view])
+        let container = NSView()
+        for subview in [form, toast] {
+            subview.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(subview)
+        }
+        NSLayoutConstraint.activate([
+            form.topAnchor.constraint(equalTo: container.topAnchor),
+            form.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            form.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            form.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            toast.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            toast.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -24),
+            toast.widthAnchor.constraint(lessThanOrEqualTo: container.widthAnchor, constant: -40),
+        ])
+        view = container
     }
 
     override func viewDidLoad() {
@@ -64,13 +86,18 @@ final class AccountsSettingsViewController: NSViewController {
         }
     }
 
-    /// `paste`: text to fill the draft from before the sheet appears.
-    private func present(_ account: Account, secrets: AccountSecrets, mode: AccountEditorMode, paste: String? = nil) {
+    /// `entry`: what to fill the draft from before the sheet appears.
+    private func present(
+        _ account: Account, secrets: AccountSecrets, mode: AccountEditorMode, entry: AccountPaste.Entry? = nil
+    ) {
         guard editor == nil else { return }
-        let editor = AccountEditorViewController(mode: mode, account: account, secrets: secrets)
+        let model = AccountEditorViewModel(
+            mode: mode, account: account, secrets: secrets, entry: entry,
+            takenNames: providerNames(excluding: account.id), commandValidation: commandValidation(for: account))
+        let editor = AccountEditorViewController(viewModel: model)
         editor.delegate = self
-        if let paste { editor.fill(from: paste) }
         self.editor = editor
+        editorModel = model
         editing = account
         presentAsSheet(editor)
     }
@@ -79,15 +106,76 @@ final class AccountsSettingsViewController: NSViewController {
         guard let editor else { return }
         dismiss(editor)
         self.editor = nil
+        editorModel = nil
         editing = nil
     }
 
-    /// ⌘V on the pane: a new provider, filled from what was copied — an
-    /// alias out of `~/.zshrc` becomes a provider in one step.
+    /// Checks `account`'s launch command as it is typed: what it launches, under
+    /// General's settings.
+    private func commandValidation(for account: Account) -> LaunchCommandValidation {
+        LaunchCommandValidation(
+            check: launchCheck,
+            configuration: { [launch] in launch.configuration(accountCommand: $0) },
+            text: account.command)
+    }
+
+    private func providerNames(excluding id: UUID) -> [String] {
+        accounts.providers.filter { $0.id != id }.compactMap { $0.provider?.name }
+    }
+
+    // MARK: - Import
+
+    /// Whether the clipboard holds something to import.
+    private var canImport: Bool {
+        NSPasteboard.general.string(forType: .string).map { !AccountPaste.entries($0).isEmpty } ?? false
+    }
+
+    /// ⌘V on the pane: providers out of what was copied — an alias in
+    /// `~/.zshrc` becomes a provider in one step. One provider opens in the
+    /// sheet to be looked over; several are added to the list.
     @objc func paste(_ sender: Any?) {
-        guard editor == nil, let text = NSPasteboard.general.string(forType: .string), AccountPaste(text) != nil
-        else { return }
-        present(.newProvider(), secrets: AccountSecrets(), mode: .newProvider, paste: text)
+        guard editor == nil, let text = NSPasteboard.general.string(forType: .string) else { return }
+        let entries = AccountPaste.entries(text)
+        switch entries.count {
+        case 0:
+            return
+        case 1:
+            present(.newProvider(), secrets: AccountSecrets(), mode: .newProvider, entry: entries[0])
+        default:
+            importProviders(entries)
+        }
+    }
+
+    private func importProviders(_ entries: [AccountPaste.Entry]) {
+        let (providers, skipped) = AccountPaste.importable(
+            entries, existingNames: accounts.providers.compactMap { $0.provider?.name })
+        appLog(
+            .info, "AccountsSettingsViewController",
+            "import — \(entries.count) entries, \(providers.count) importable, \(skipped) skipped")
+        guard !providers.isEmpty else {
+            showImportResult(added: 0, skipped: skipped)
+            return
+        }
+        Task {
+            do {
+                try await accounts.add(providers)
+                providersSection.flash(providers.map(\.0.id))
+                showImportResult(added: providers.count, skipped: skipped)
+            } catch {
+                view.window.map { report(error, on: $0, while: "importing providers") }
+            }
+        }
+    }
+
+    /// Says on the pane how many providers an import added and how many entries
+    /// it left out: “Imported 3 providers”, “Imported 2 providers · 1 skipped”,
+    /// “No providers imported · 3 skipped”.
+    func showImportResult(added: Int, skipped: Int) {
+        appLog(.info, "AccountsSettingsViewController", "import done — \(added) added, \(skipped) skipped")
+        var text =
+            added > 0 ? String(localized: "Imported \(added) providers") : String(localized: "No providers imported")
+        if skipped > 0 { text += " · " + String(localized: "\(skipped) skipped") }
+        toast.show(text)
     }
 
     // MARK: - Confirmations
@@ -130,7 +218,7 @@ final class AccountsSettingsViewController: NSViewController {
             Task {
                 do {
                     try await self.subscription.signOut()
-                    if case .subscription = self.editor?.mode { self.dismissEditor() }
+                    if case .subscription = self.editorModel?.mode { self.dismissEditor() }
                 } catch {
                     self.report(error, on: window, while: "signing out")
                 }
@@ -189,6 +277,10 @@ extension AccountsSettingsViewController: ProvidersSectionViewControllerDelegate
         paste(nil)
     }
 
+    func providersSectionCanImport(_ section: ProvidersSectionViewController) -> Bool {
+        canImport
+    }
+
     func providersSection(_ section: ProvidersSectionViewController, didOpen account: Account) {
         open(account, mode: .provider)
     }
@@ -225,7 +317,8 @@ extension AccountsSettingsViewController: AccountEditorViewControllerDelegate {
     }
 
     func accountEditorDidRequestRemoval(_ editor: AccountEditorViewController) {
-        switch editor.mode {
+        guard let mode = editorModel?.mode else { return }
+        switch mode {
         case .subscription(let subscription): confirmSignOut(subscription, on: editor.view.window)
         case .provider: editing.map { confirmDelete($0, on: editor.view.window) }
         case .newProvider: break

@@ -20,13 +20,17 @@ struct CLILaunch: Sendable {
     ///   binary is `binaryPath`, else the located `claude`.
     /// - The environment is the login shell's — or this process's, when
     ///   `inheritsParentEnvironment` or when the probe fails — without
-    ///   `CLAUDECODE`, with `env` on top.
+    ///   `CLAUDECODE`, with `env` on top. A custom command's shell sources the
+    ///   rc files after the process environment is set, so `env` is also
+    ///   exported inside its script: rc exports < `env` < the command's own
+    ///   assignments.
     init(
         arguments: [String], workingDirectory: URL, binaryPath: String?, customCommand: String?,
         env: [String: String], inheritsParentEnvironment: Bool
     ) throws {
         if let customCommand, !customCommand.isEmpty {
-            (executable, self.arguments) = CustomCommand.shellInvocation(customCommand, sdkArgs: arguments)
+            (executable, self.arguments) = CustomCommand.shellInvocation(
+                customCommand, sdkArgs: arguments, exports: env)
         } else {
             guard let resolved = binaryPath ?? BinaryLocator.locate() else { throw AgentSDKError.binaryNotFound }
             (executable, self.arguments) = (resolved, arguments)

@@ -86,6 +86,16 @@ nonisolated struct Account: Identifiable, Codable, Equatable, Sendable {
         return nil
     }
 
+    /// `name`, or — when `taken` has it already — `name 2`, `name 3`, … the
+    /// first one that is free. Names are compared ignoring case.
+    static func uniqueName(_ name: String, among taken: [String]) -> String {
+        let used = Set(taken.map { $0.lowercased() })
+        guard used.contains(name.lowercased()) else { return name }
+        var number = 2
+        while used.contains("\(name) \(number)".lowercased()) { number += 1 }
+        return "\(name) \(number)"
+    }
+
     /// The subscription's settings, before anyone has changed them.
     static func subscription(id: UUID = UUID()) -> Account {
         Account(id: id, kind: .subscription, command: "", arguments: "")

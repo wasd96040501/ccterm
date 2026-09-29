@@ -8,6 +8,53 @@ above the window switch the appearance; they are not part of the design.
 `index.html` is hand-written and self-contained; there is no build step.
 The sample data follows the shape of `claude auth status` and of provider
 aliases in a real `~/.zshrc`; hosts, tokens and the email are placeholders.
+The mock stands in for the disk: `claude`, `~/.local/bin/claude`,
+`/usr/local/bin/claude`, `/opt/homebrew/bin/claude` and `~/bin/claude-relay`
+answer `--version` as Claude Code; `/usr/bin/python3`, `/usr/bin/true` and
+`~/.zshrc` fail in the ways a command can; `~/.claude` and
+`~/.claude-work` are configuration folders (signed in and signed out), and
+any other folder path doesn't exist.
+
+## General
+
+One group, **Claude Code**:
+
+- **Launch Command**: the `claude` every session and every
+  `claude auth status` runs. Empty runs the auto-located binary; the
+  placeholder shows its path.
+- **Configuration Folder** (`CLAUDE_CONFIG_DIR`): a path field and nothing
+  else; its placeholder shows the folder in effect (`~/.claude` by
+  default). The CLI keeps its settings, its claude.ai sign-in and its
+  session transcripts (`projects/`) there.
+
+The check result shows where the value is typed, the way System Settings
+and the Add User sheet report on a field, rather than in an alert on
+commit: in the row's description line, by its text and colour alone. No
+glyph: a field keeps the row's usual width and edge.
+
+**When it checks.** Typing changes nothing on screen: the last result stays
+until the check runs, 0.5 s after the last keystroke. Return or leaving the
+field checks at once. Checks run off the main thread and only the result
+for the value still in the field is shown. The launch command runs
+`<command> --version` and must print `<x.y.z> (Claude Code)`; the folder
+must be an existing folder.
+
+**What the row shows.**
+
+| State | Description line |
+|---|---|
+| Checking | *Checking…*, secondary |
+| Valid command | *Claude Code 2.1.284*, secondary (the field, or its placeholder, already shows the path) |
+| Valid folder | *Claude Code's settings, sign-in and sessions*, secondary |
+| Invalid | the reason in systemRed, then *Still using …* in secondary: **Not found.**, **Not executable.**, **Didn't print a version.**, **Timed out.**, or the command's own last error line; **Folder doesn't exist.**, **Not a folder.** |
+
+Only a value that passes is saved; a failing one stays in the field until
+it is fixed or Settings closes, and the last good value keeps running. A
+saved change to either field changes which sessions the main window's
+sidebar lists (`<folder>/projects`) and whose sign-in the subscription
+reads: the sidebar reloads, and the subscription row goes back to
+*Checking…* while `claude auth status` runs again with the new command and
+folder.
 
 ## Accounts
 
@@ -26,10 +73,30 @@ what a provider is for, and **Add Provider…**, which moves in from under the
 group while it's there. **Add Provider…** is a split button
 (`NSComboButton`): the button opens a blank provider, its menu holds
 **Import from Clipboard ⌘V**, enabled while the clipboard holds something
-to read. It does what **⌘V** on the pane does: opens a new provider filled
-from the paste, the same reading the variable list does, so an alias
-copied from `~/.zshrc` becomes a provider in one step. The review bar's
-Providers control switches the sample list off to show it.
+to read. It does what **⌘V** on the pane does. The empty state's hint says
+*Or press ⌘V to paste shell aliases or commands.*
+
+**Import** reads the paste the way the variable list does (see *Paste*
+below), as one provider or several. Each `alias name="…"` line is a
+provider, and so is each bare command line
+(`ANTHROPIC_BASE_URL=… ANTHROPIC_AUTH_TOKEN=… claude --model x`); `export`
+and `KEY=value` lines gather into one until a command line or a blank
+line. Aliases that set no variables (`alias ll="ls -la"`) and comments are
+ignored, so a whole `~/.zshrc` can be pasted.
+
+- **One provider**: its sheet opens, filled, for a look before **Add**.
+- **Several**: added straight to the list, each new row briefly tinted,
+  and a toast at the bottom of the pane counts them: *Imported 3
+  providers*. A provider without a base URL or a token is skipped and
+  counted: *Imported 2 providers · 1 skipped*, or *No providers imported ·
+  3 skipped*.
+
+Either way the name is the alias name, else the host, and a name already
+in the list gets a number (`Local Proxy 2`).
+
+The review bar's **Copy Sample Alias** and **Copy Three Providers** put
+both shapes on the clipboard; its Providers control switches the sample
+list off to show the empty state.
 
 There is no default account. A session picks a model before it starts,
 and each model belongs to an account, so the account follows from it.
@@ -51,29 +118,43 @@ no header (the row that opened it already names the account), a scrolling
 form starting 20 from the top, and a button bar that gains
 a hairline while content runs under it. Destructive action bottom left,
 Cancel and the default button bottom right. Return is the default button,
-Escape and ⌘. cancel. Add stays disabled until the name, a valid http(s)
-URL and a token are in; a bad URL says so under the field as you type.
+Escape and ⌘. cancel. Add (or Save) stays disabled until the name, a valid
+http(s) URL and a token are in and the launch command passes its check; a
+bad URL says so under the field as you type.
 
 - **Secrets** show their first three and last four characters
   (`sk-••••••••7c1e`). Focusing the field switches it to a plain secure
   field; the eye reveals it. No description: the title says what it is.
 - **Environment Variables** come right after the connection, above the
-  fold. The list lives inside its group with **+ −** underneath, the way
-  System Settings lists do. Click selects, a second click (or a
+  fold. The list lives inside its group with **+ | −** underneath, the way
+  System Settings lists do: two 20 × 20 buttons, radius 5, with a 1 × 12
+  divider between them. They have no fill at rest; the pointer over one
+  fills that square only (black 5 % / white 8 %), a press deepens it.
+  **−** is disabled while no row is selected. Click selects, a second click (or a
   double-click, or Return) edits, Tab moves to the value, Return commits,
   Escape reverts, Space toggles a row's checkbox, Delete removes it. A row
   that sets something the form already owns (`ANTHROPIC_BASE_URL`, …) or
-  repeats a name gets a warning glyph.
+  General owns (`CLAUDE_CONFIG_DIR`), or repeats a name, gets a warning
+  glyph.
 - **Models**: Default Model (`ANTHROPIC_MODEL`), then Opus, Sonnet, Haiku
   and Fable (`ANTHROPIC_DEFAULT_*_MODEL`). An empty field reads
   *Automatic*: the CLI picks.
-- **Launch**: Command (empty runs `claude`) and Arguments, per account, so
-  a provider can go through its own wrapper script.
-- **Paste** into the list takes `KEY=value` lines, `export` lines or a
-  whole `alias name="… claude --flags"`: known keys fill the form's
-  fields, the rest become rows, the trailing command and flags fill
-  Command (unless it's plain `claude`) and Arguments, and the alias name
-  becomes the provider name. A toast says what was filled.
+- **Launch**: Command and Arguments, per account (the subscription's
+  sheet has them too), so an account can go through its own wrapper
+  script. Command is checked like General's, with the same timing,
+  description line; empty runs General's command, which its
+  placeholder shows. The default button stays disabled until
+  the command in the field has passed: while it is unchecked, checking or
+  failing (with no *Still using*, since nothing falls back). Return in the
+  field checks at once and then acts as the default button. The subscription's status
+  (`claude auth status`) runs with the subscription's own command when it
+  has one, else General's, else the auto-located `claude`.
+- **Paste** into the list takes `KEY=value` lines, `export` lines, a bare
+  command line or an `alias name="… claude --flags"`: known keys fill the
+  form's fields, the rest become rows, the command fills Command (unless
+  it's plain `claude`), its flags fill Arguments, and the alias name
+  becomes the provider name. A paste holding several providers fills the
+  sheet from the first. A toast says what was filled.
 - Delete and Sign Out confirm through an alert stacked on the sheet. Like
   every NSAlert it shows the app's icon (`../icon/preview.png`); Cancel is
   its default button.
@@ -110,6 +191,9 @@ pixel. The Swift implementation should land on the same numbers:
 | Switch | 36 × 16 track, 21 × 13 pill knob inset 1.5; on `#3b85f0`, off black 9 % |
 | Push button | 24 tall, radius 6, fill black 6 %, no border; 12 padding |
 | Large button | 28 tall, capsule |
+| List bar (**+ \| −**) | 28 tall, hairline above, 4 inset; buttons 20 × 20, radius 5, 10 glyph; divider 1 × 12, 3 each side; hover black 5 % / white 8 %, press black 12 % / white 18 % |
+| Check timing | 0.5 s after the last keystroke; at once on Return or blur |
+| Pane toast | centred on the detail area, 24 above its bottom; the sheet's toast sits 66 above the sheet's bottom |
 
 Text is SF Pro through `-apple-system`; Chrome and Safari set it with the
 same advances as AppKit (“File extensions” at 13 is 176 px at 2× in both),

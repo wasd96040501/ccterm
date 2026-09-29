@@ -60,9 +60,11 @@ final class SettingsSplitViewController: NSSplitViewController {
     private func viewController(for pane: SettingsPane) -> NSViewController {
         switch pane {
         case .general:
-            GeneralSettingsViewController(launch: context.launch)
+            GeneralSettingsViewController(launch: context.launch, launchCheck: context.launchCheck)
         case .accounts:
-            AccountsSettingsViewController(accounts: context.accounts, subscription: context.subscription)
+            AccountsSettingsViewController(
+                accounts: context.accounts, launch: context.launch, launchCheck: context.launchCheck,
+                subscription: context.subscription)
         }
     }
 

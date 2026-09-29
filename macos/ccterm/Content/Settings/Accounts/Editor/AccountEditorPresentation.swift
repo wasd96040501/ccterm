@@ -18,6 +18,8 @@ struct AccountEditorPresentation: Equatable {
     var fields: Fields
     var fieldsRevision: Int
     var environmentRows: [EnvironmentRow]
+    /// Under Command: what the launch command's check found.
+    var commandDetail: ValidationDetail
 
     struct Fields: Equatable {
         var name = ""

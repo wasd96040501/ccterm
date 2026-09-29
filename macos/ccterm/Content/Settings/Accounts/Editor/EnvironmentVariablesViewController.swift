@@ -79,16 +79,17 @@ final class EnvironmentVariablesViewController: NSViewController {
 
     private lazy var bar = BarView()
 
-    private lazy var addButton = Self.barButton(
+    private lazy var addButton = ListBarButton(
         symbol: "plus", label: String(localized: "Add Variable"), target: self, action: #selector(add(_:)))
-    private lazy var removeButton = Self.barButton(
+    private lazy var removeButton = ListBarButton(
         symbol: "minus", label: String(localized: "Remove Variable"), target: self, action: #selector(remove(_:)))
+    private let divider = ListBarDividerView()
 
     private lazy var hintLabel: NSTextField = {
         let base: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor,
         ]
-        let template = String(localized: "Paste %@ lines or a whole shell command")
+        let template = String(localized: "Paste %@ lines or a command")
         let parts = template.components(separatedBy: "%@")
         let text = NSMutableAttributedString(string: parts.first ?? "", attributes: base)
         var code = base
@@ -122,7 +123,7 @@ final class EnvironmentVariablesViewController: NSViewController {
             subview.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(subview)
         }
-        for subview in [addButton, removeButton, hintLabel] {
+        for subview in [addButton, divider, removeButton, hintLabel] {
             subview.translatesAutoresizingMaskIntoConstraints = false
             bar.addSubview(subview)
         }
@@ -145,11 +146,13 @@ final class EnvironmentVariablesViewController: NSViewController {
             bar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             bar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             bar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            addButton.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 6),
-            removeButton.leadingAnchor.constraint(equalTo: addButton.trailingAnchor, constant: 2),
+            addButton.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 4),
+            divider.leadingAnchor.constraint(equalTo: addButton.trailingAnchor, constant: 3),
+            removeButton.leadingAnchor.constraint(equalTo: divider.trailingAnchor, constant: 3),
+            divider.centerYAnchor.constraint(equalTo: addButton.centerYAnchor),
             addButton.centerYAnchor.constraint(equalTo: bar.centerYAnchor, constant: 0.5),
             removeButton.centerYAnchor.constraint(equalTo: addButton.centerYAnchor),
-            hintLabel.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -10),
+            hintLabel.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -4),
             hintLabel.centerYAnchor.constraint(equalTo: addButton.centerYAnchor),
         ])
     }
@@ -239,20 +242,6 @@ final class EnvironmentVariablesViewController: NSViewController {
         edit(row: row, value: point.x >= cell.valueField.frame.minX - 2)
     }
 
-    private static func barButton(symbol: String, label: String, target: AnyObject, action: Selector) -> NSButton {
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
-            .withSymbolConfiguration(.init(pointSize: 11, weight: .medium))
-        let button = NSButton(image: image ?? NSImage(), target: target, action: action)
-        button.bezelStyle = .accessoryBarAction
-        button.showsBorderOnlyWhileMouseInside = true
-        button.imagePosition = .imageOnly
-        button.toolTip = label
-        NSLayoutConstraint.activate([
-            button.widthAnchor.constraint(equalToConstant: 22),
-            button.heightAnchor.constraint(equalToConstant: 20),
-        ])
-        return button
-    }
 }
 
 extension EnvironmentVariablesViewController: NSTableViewDataSource, NSTableViewDelegate {

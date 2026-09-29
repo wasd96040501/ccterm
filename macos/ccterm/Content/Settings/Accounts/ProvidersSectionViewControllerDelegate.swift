@@ -6,6 +6,9 @@ protocol ProvidersSectionViewControllerDelegate: AnyObject {
     func providersSectionDidRequestAdd(_ section: ProvidersSectionViewController)
     /// Import from Clipboard, under Add Provider….
     func providersSectionDidRequestImport(_ section: ProvidersSectionViewController)
+    /// Whether the clipboard holds something to import — asked each time the
+    /// menu opens.
+    func providersSectionCanImport(_ section: ProvidersSectionViewController) -> Bool
     /// ⓘ, a double click or Details….
     func providersSection(_ section: ProvidersSectionViewController, didOpen account: Account)
     func providersSection(_ section: ProvidersSectionViewController, didRequestDuplicate account: Account)

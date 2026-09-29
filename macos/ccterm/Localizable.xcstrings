@@ -12,12 +12,44 @@
         }
       }
     },
+    "%@ from the first of %lld": {
+      "comment": "A paste into the account sheet held several providers; the sheet took the first.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@（取自 %2$lld 个中的第一个）"
+          }
+        }
+      }
+    },
+    "%@.": {
+      "comment": "A check's failure reason as a sentence.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@。"
+          }
+        }
+      }
+    },
     "%lld changed": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "%lld 项更改"
+          }
+        }
+      }
+    },
+    "%lld skipped": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已跳过 %lld 个"
           }
         }
       }
@@ -241,6 +273,26 @@
         }
       }
     },
+    "Claude Code %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code %@"
+          }
+        }
+      }
+    },
+    "Claude Code’s settings, sign-in and sessions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code 的设置、登录状态和会话"
+          }
+        }
+      }
+    },
     "Click + or paste to add.": {
       "localizations": {
         "zh-Hans": {
@@ -291,6 +343,16 @@
         }
       }
     },
+    "Configuration Folder": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置文件夹"
+          }
+        }
+      }
+    },
     "Connection": {
       "localizations": {
         "zh-Hans": {
@@ -317,6 +379,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "对话已压缩"
+          }
+        }
+      }
+    },
+    "Couldn’t start": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法启动"
           }
         }
       }
@@ -401,6 +473,16 @@
         }
       }
     },
+    "Didn’t print a version": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未输出版本号"
+          }
+        }
+      }
+    },
     "Duplicate": {
       "localizations": {
         "zh-Hans": {
@@ -441,6 +523,16 @@
         }
       }
     },
+    "Exited with code %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已退出，退出码 %lld"
+          }
+        }
+      }
+    },
     "Fable": {
       "localizations": {
         "zh-Hans": {
@@ -457,6 +549,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "已填入%@"
+          }
+        }
+      }
+    },
+    "Folder doesn’t exist": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件夹不存在"
           }
         }
       }
@@ -512,6 +614,34 @@
         }
       }
     },
+    "Imported %lld providers": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Imported %lld provider"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Imported %lld providers"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已导入 %lld 个提供方"
+          }
+        }
+      }
+    },
     "Interrupted": {
       "localizations": {
         "zh-Hans": {
@@ -542,7 +672,7 @@
         }
       }
     },
-    "Launch command": {
+    "Launch Command": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -662,12 +792,52 @@
         }
       }
     },
+    "No providers imported": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未导入提供方"
+          }
+        }
+      }
+    },
     "None": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "无"
+          }
+        }
+      }
+    },
+    "Not a folder": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不是文件夹"
+          }
+        }
+      }
+    },
+    "Not executable": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不可执行"
+          }
+        }
+      }
+    },
+    "Not found": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未找到"
           }
         }
       }
@@ -712,12 +882,12 @@
         }
       }
     },
-    "Or paste a shell alias here with ⌘V.": {
+    "Or press ⌘V to paste shell aliases or commands.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "也可以在这里用 ⌘V 粘贴一个 shell 别名。"
+            "value": "也可以按 ⌘V 粘贴 shell 别名或命令。"
           }
         }
       }
@@ -742,12 +912,22 @@
         }
       }
     },
-    "Paste %@ lines or a whole shell command": {
+    "Overrides the Configuration Folder in General.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "粘贴 %@ 行或一整条 shell 命令"
+            "value": "会覆盖“通用”中的配置文件夹。"
+          }
+        }
+      }
+    },
+    "Paste %@ lines or a command": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴 %@ 行或一条命令"
           }
         }
       }
@@ -892,6 +1072,16 @@
         }
       }
     },
+    "Still using %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仍在使用 %@。"
+          }
+        }
+      }
+    },
     "Subagents": {
       "localizations": {
         "zh-Hans": {
@@ -928,6 +1118,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "此记录中没有消息。"
+          }
+        }
+      }
+    },
+    "Timed out": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超时"
           }
         }
       }

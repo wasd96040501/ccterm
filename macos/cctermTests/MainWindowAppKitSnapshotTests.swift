@@ -40,7 +40,7 @@ final class MainWindowAppKitSnapshotTests: XCTestCase {
         lines.append(Rows.customTitle("Named"))
         try fixture.write("-x-repo/s1.jsonl", lines, modified: 300)
 
-        let store = LibraryStore(directory: fixture.directory)
+        let store = LibraryStore(directories: Just(fixture.directory).eraseToAnyPublisher())
         let split = MainSplitViewController(library: store)
         split.loadViewIfNeeded()
         store.start()
@@ -89,7 +89,7 @@ final class MainWindowAppKitSnapshotTests: XCTestCase {
             "gitBranch": "toolbar-pin-fixed-sidebar", "message": ["role": "user", "content": "hi"],
         ])
         try fixture.write("-x-repo/s1.jsonl", [prompt, Rows.customTitle("Named")], modified: 300)
-        let store = LibraryStore(directory: fixture.directory)
+        let store = LibraryStore(directories: Just(fixture.directory).eraseToAnyPublisher())
         store.start()
         defer { store.stop() }
         let stage = AppKitStage.mainWindow(library: store)

@@ -1,12 +1,12 @@
 import Foundation
 
 /// Where the `claude` binary is when no path or custom command says otherwise.
-public enum BinaryLocator {
+enum BinaryLocator {
 
     /// Locates the claude CLI binary by priority:
     /// CLAUDE_BINARY_PATH env var > ~/.local/bin > /usr/local/bin > `which`.
     /// Blocking: the last resort runs `which`.
-    public static func locate() -> String? {
+    static func locate() -> String? {
         if let envPath = ProcessInfo.processInfo.environment["CLAUDE_BINARY_PATH"],
             FileManager.default.isExecutableFile(atPath: envPath)
         {

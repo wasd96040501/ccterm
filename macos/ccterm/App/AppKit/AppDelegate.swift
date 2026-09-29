@@ -1,5 +1,6 @@
 import AgentSDK
 import AppKit
+import Combine
 import SwiftUI
 
 /// AppKit-side application delegate and the app's composition root. Owns
@@ -20,6 +21,20 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var mainWindowController: MainWindowController?
 
+    // The object graph, built once in `applicationDidFinishLaunching`; nil in
+    // a hosted test run, which builds none of it.
+
+    /// Every account: the subscription's settings and the API providers. They
+    /// live under Application Support, their secrets in the login keychain.
+    private var accounts: AccountStore?
+    /// How the CLI is launched — General's settings and what the accounts make
+    /// of them.
+    private var launch: LaunchStore?
+    /// Whether a launch works.
+    private var launchCheck: LaunchCheckService?
+    /// The CLI's claude.ai login, read for the launch of the subscription's
+    /// sessions.
+    private var subscription: SubscriptionService?
     /// Every transcript on disk, for the main window's sidebar. Process-wide:
     /// it mirrors a directory the CLI owns, and one scan serves every window.
     private var library: LibraryStore?
@@ -30,27 +45,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// state.
     private var settingsWindowController: SettingsWindowController?
 
-    /// What Settings reads and changes: the accounts, the CLI's claude.ai
-    /// login and the defaults. Built on first use; the accounts live under
-    /// Application Support, their secrets in the login keychain.
-    private lazy var settingsContext: SettingsContext = {
-        let bundleID = Bundle.main.bundleIdentifier ?? "com.ccterm.app"
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(bundleID, isDirectory: true)
-        let launch = LaunchSettings(defaults: .standard, locate: { BinaryLocator.locate() })
+    /// What Settings reads and changes; `nil` before launch has built it.
+    private var settingsContext: SettingsContext? {
+        guard let accounts, let launch, let launchCheck, let subscription else { return nil }
         return SettingsContext(
-            accounts: AccountStore(
-                fileURL: support.appendingPathComponent("Accounts.json"),
-                secrets: KeychainSecretStore(service: bundleID + ".accounts")),
-            subscription: SubscriptionService(auth: CLISubscriptionAuth(launch: launch)),
-            launch: launch)
-    }()
+            accounts: accounts, launch: launch, launchCheck: launchCheck, subscription: subscription)
+    }
 
     func showSettingsWindow() {
+        guard let context = settingsContext else { return }
         let controller =
             settingsWindowController
             ?? {
-                let c = SettingsWindowController(context: settingsContext)
+                let c = SettingsWindowController(context: context)
                 c.windowFrameAutosaveName = "SettingsWindow"
                 settingsWindowController = c
                 return c
@@ -94,12 +101,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         if Self.isUnderXCTest { return }
 
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.ccterm.app"
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(bundleID, isDirectory: true)
         // The index only saves reading: Caches, which the system may clear.
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(Bundle.main.bundleIdentifier ?? "com.ccterm.app", isDirectory: true)
+            .appendingPathComponent(bundleID, isDirectory: true)
+
+        let accounts = AccountStore(
+            fileURL: support.appendingPathComponent("Accounts.json"),
+            secrets: KeychainSecretStore(service: bundleID + ".accounts"))
+        let launch = LaunchStore(defaults: .standard, accounts: accounts.$accounts.eraseToAnyPublisher())
+        let launchCheck = LaunchCheckService()
+        let subscription = SubscriptionService(
+            auth: CLISubscriptionAuth(),
+            configurations: launch.$subscription.removeDuplicates().eraseToAnyPublisher())
         let library = LibraryStore(
-            directory: SessionDirectory(environment: ProcessInfo.processInfo.environment),
-            indexURL: caches.appendingPathComponent("LibraryIndex.plist"))
+            directories: launch.$sessionDirectory.removeDuplicates().eraseToAnyPublisher(), indexDirectory: caches)
+        self.accounts = accounts
+        self.launch = launch
+        self.launchCheck = launchCheck
+        self.subscription = subscription
         self.library = library
         let controller = MainWindowController(library: library, git: GitService())
         // Where the frame persists is the app's configuration, not the window's:
@@ -110,11 +132,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.showWindow(nil)
         controller.window?.makeKeyAndOrderFront(nil)
 
-        // Settings opens on what is already known: the CLI's login and where
-        // `claude` is, both read now in the background.
-        let settings = settingsContext
-        Task { await settings.subscription.refresh() }
-        Task.detached { [launch = settings.launch] in _ = launch.locateCLI() }
+        // Settings opens on what is already known: the login is read as the
+        // subscription service is built; whether the CLI runs, now.
+        Task { _ = await launchCheck.check(launch.general) }
     }
 
     func applicationShouldHandleReopen(

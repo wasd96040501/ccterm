@@ -8,18 +8,17 @@ import Combine
 final class SubscriptionSectionViewController: NSViewController {
     weak var delegate: SubscriptionSectionViewControllerDelegate?
 
-    private let initialState: SubscriptionService.State
-    private let updates: AnyPublisher<SubscriptionService.State, Never>
+    private let states: AnyPublisher<SubscriptionService.State, Never>
     private var shownState: SubscriptionService.State?
     private var cancellables = Set<AnyCancellable>()
     /// The sign-in sheet while the browser flow runs.
     private var signIn: SignInViewController?
 
-    /// `state`: the login now, shown from the first frame; `updates`: each
-    /// change to it.
-    init(state: SubscriptionService.State, updates: AnyPublisher<SubscriptionService.State, Never>) {
-        initialState = state
-        self.updates = updates
+    /// `states`: the login, now and each time it changes; must deliver on the
+    /// main actor, and its current value on subscribing, so the first frame is
+    /// already right.
+    init(states: AnyPublisher<SubscriptionService.State, Never>) {
+        self.states = states
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -36,9 +35,7 @@ final class SubscriptionSectionViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         group.setRows([row])
-        show(initialState)
-        updates
-            .receive(on: DispatchQueue.main)
+        states
             .sink { [weak self] state in self?.show(state) }
             .store(in: &cancellables)
     }

@@ -6,6 +6,58 @@ window, its sheets and their interactions, in light and dark. The controls
 above the window switch the appearance; they are not part of the design.
 
 `index.html` is hand-written and self-contained; there is no build step.
+The sample data follows the shape of `claude auth status` and of provider
+aliases in a real `~/.zshrc`; hosts, tokens and the email are placeholders.
+
+## Accounts
+
+An account is what a session runs as. There are two kinds, one group each:
+
+- **Subscription**: at most one, because the CLI holds one claude.ai login.
+  Signed out, the group holds a single row with **Sign In…**, which waits on
+  the browser. The footer says why there's only one.
+- **API Providers**: any number. A provider is a base URL, a token or API
+  key, optional model names, environment variables and launch arguments:
+  everything a shell alias used to carry.
+
+One account is the default for new sessions. It wears the page's only
+accent badge, and General's **New Sessions › Account** popup picks the
+same thing from the other side.
+
+Rows are not selectable, as in System Settings. **ⓘ** or a double-click
+opens the account's sheet; right-click offers Details, Use for New
+Sessions, Duplicate and Delete (Sign Out for the subscription).
+
+## The account sheet
+
+Fixed at 540 × 600 for both kinds, so the window never resizes under it:
+a header (tile, name, host), a scrolling form, and a button bar that gains
+a hairline while content runs under it. Destructive action bottom left,
+Cancel and the default button bottom right. Return is the default button,
+Escape and ⌘. cancel. Add stays disabled until the name, a valid http(s)
+URL and a token are in; a bad URL says so under the field as you type.
+
+- **Secrets** show their first three and last four characters
+  (`sk-••••••••7c1e`). Focusing the field switches it to a plain secure
+  field; the eye reveals it.
+- **Environment Variables** come right after the connection, above the
+  fold. The list lives inside its group with **+ −** underneath, the way
+  System Settings lists do. Click selects, a second click (or a
+  double-click, or Return) edits, Tab moves to the value, Return commits,
+  Escape reverts, Space toggles a row's checkbox, Delete removes it. A row
+  that sets something the form already owns (`ANTHROPIC_BASE_URL`, …) or
+  repeats a name gets a warning glyph.
+- **Paste** into the list takes `KEY=value` lines, `export` lines or a
+  whole `alias name="… claude --flags"`: known keys fill the form's
+  fields, the rest become rows, trailing `claude` flags become Arguments
+  and the alias name becomes the provider name. A toast says what was
+  filled.
+- Delete and Sign Out confirm through an alert stacked on the sheet;
+  Cancel is its default button.
+
+Popup and context menus open with the checked item over the control, stay
+open after a quick click and pick on press-drag-release, like AppKit's.
+Arrow keys and Return work in them.
 
 ## Measured, not guessed
 

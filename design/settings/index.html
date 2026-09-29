@@ -78,13 +78,14 @@ svg { display: block; }
 }
 .review b { color: var(--label); font-weight: 600; font-size: 13px; }
 .review .spacer { flex: 1; }
+.review .btn { color: var(--label); }
 .review label { display: flex; align-items: center; gap: 6px; }
 .seg { display: inline-flex; background: var(--fill); border-radius: 7px; padding: 2px; }
 .seg button { padding: 2px 10px; border-radius: 5px; font-size: 12px; color: var(--label); }
 .seg button[aria-pressed="true"] { background: var(--win); box-shadow: 0 0 0 .5px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.12); }
 
 /* ---------- Window ---------- */
-.stage { max-width: 100%; overflow-x: auto; }
+.stage { flex: none; }
 .window {
   position: relative;
   width: 880px; height: 680px;
@@ -224,8 +225,8 @@ svg { display: block; }
 .menu .item .check { position: absolute; left: 7px; top: 5px; }
 .menu .item .sub { color: var(--label-2); margin-left: 8px; }
 .menu .item .key { margin-left: auto; padding-left: 24px; color: var(--label-2); }
-.menu .item:hover:not(:disabled) { background: var(--accent); color: #fff; }
-.menu .item:hover:not(:disabled) .sub, .menu .item:hover:not(:disabled) .key { color: rgba(255,255,255,.75); }
+.menu .item.hl { background: var(--accent); color: #fff; }
+.menu .item.hl .sub, .menu .item.hl .key { color: rgba(255,255,255,.75); }
 .menu .item:disabled { color: var(--label-3); }
 .menu .item.danger { color: #e5484d; }
 .menu .sep { height: 1px; margin: 5px 10px; background: var(--sep); background: color-mix(in srgb, var(--label) 12%, transparent); }
@@ -381,6 +382,7 @@ svg { display: block; }
   <b>CCTerm Settings</b>
   <span>Design review · 1 CSS px = 1 pt</span>
   <span class="spacer"></span>
+  <button class="btn small" id="copy-alias" title="Then open a provider, click its variable list and press ⌘V">Copy Sample Alias</button>
   <label>Appearance
     <span class="seg" id="theme">
       <button data-v="auto" aria-pressed="true">Auto</button><button data-v="light">Light</button><button data-v="dark">Dark</button>
@@ -538,13 +540,37 @@ function openMenu(anchor, items, { align = 'selected', onClose } = {}) {
   const close = () => { catcher.remove(); m.remove(); anchor.removeAttribute('aria-expanded'); openMenu.close = null; onClose?.() }
   openMenu.close = close
   catcher.addEventListener('mousedown', close)
+  // A quick click leaves the menu open; press-drag-release picks, as in AppKit.
+  const openedAt = performance.now()
   m.addEventListener('mouseup', e => {
+    if (performance.now() - openedAt < 300) return
     const b = e.target.closest('.item'); if (!b || b.disabled) return
     close(); items[+b.dataset.i].action?.()
   })
 }
 function closeMenu() { openMenu.close?.() }
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && openMenu.close) { e.stopImmediatePropagation(); closeMenu() } }, true)
+// Highlight follows the pointer and the arrow keys; Return or Space picks.
+document.addEventListener('mouseover', e => {
+  const m = $('.menu'); if (!m) return
+  const it = e.target.closest('.menu .item')
+  m.querySelectorAll('.hl').forEach(x => x !== it && x.classList.remove('hl'))
+  if (it && !it.disabled) it.classList.add('hl')
+})
+document.addEventListener('keydown', e => {
+  if (!openMenu.close) return
+  const m = $('.menu'), items = [...m.querySelectorAll('.item:not(:disabled)')]
+  const cur = items.indexOf(m.querySelector('.hl'))
+  e.stopImmediatePropagation()
+  if (e.key === 'Escape') { e.preventDefault(); closeMenu() }
+  else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault()
+    const n = e.key === 'ArrowDown' ? (cur + 1) % items.length : (cur <= 0 ? items.length - 1 : cur - 1)
+    items.forEach((x, i) => x.classList.toggle('hl', i === n))
+  } else if ((e.key === 'Enter' || e.key === ' ') && cur >= 0) {
+    e.preventDefault()
+    items[cur].dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+  }
+}, true)
 
 /* ---------- Primitives ---------- */
 const row = ({ title, desc = '', trail = '', attrs = '' }) => `
@@ -913,7 +939,8 @@ function editAccount(d, isNew) {
   })
   body.addEventListener('focusout', e => {
     if (e.target.dataset.f === 'secret' && !reveal) { focused = null; e.target.type = 'text'; e.target.value = mask(d.secret) }
-    if (e.target.matches('input.cell') && editing && !body.contains(e.relatedTarget)) commitEdit()
+    // Re-rendering removes the focused cell too; only a real blur ends the edit.
+    if (e.target.matches('input.cell')) setTimeout(() => { if (editing && !body.querySelector('input.cell:focus')) commitEdit() })
   })
   body.addEventListener('click', e => {
     const r = e.target.closest('[data-role]')?.dataset.role
@@ -1042,6 +1069,17 @@ $('#theme').addEventListener('click', e => {
   if (b.dataset.v === 'auto') document.documentElement.removeAttribute('data-theme')
   else document.documentElement.dataset.theme = b.dataset.v
 })
+
+// Review helper: a provider alias in the shape people keep in ~/.zshrc.
+const SAMPLE_ALIAS = `alias relay="CLAUDE_CODE_ATTRIBUTION_HEADER=0 ENABLE_TOOL_SEARCH=false ANTHROPIC_BASE_URL=https://relay.example.com ANTHROPIC_AUTH_TOKEN=sk-relay-example-0000a1b2 API_TIMEOUT_MS=3000000 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 ANTHROPIC_MODEL=claude-opus-5-5[1m] CLAUDE_CODE_EFFORT_LEVEL=xhigh ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-5-5 ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-4-5 claude --permission-mode auto"`
+$('#copy-alias').onclick = async e => {
+  const b = e.currentTarget
+  try { await navigator.clipboard.writeText(SAMPLE_ALIAS) } catch {
+    const t = Object.assign(document.createElement('textarea'), { value: SAMPLE_ALIAS }); document.body.append(t); t.select(); document.execCommand('copy'); t.remove()
+  }
+  b.textContent = 'Copied — paste into a variable list'
+  setTimeout(() => { b.textContent = 'Copy Sample Alias' }, 2400)
+}
 
 function renderAll() { renderNav(); renderGeneral(); renderAccounts() }
 renderAll()

@@ -123,6 +123,10 @@ final class BlockView: NSView, TranscriptFindHighlighting, SurfaceLayerOwner {
         // about the old one.
         paintsUnderBand = nil
         restack()
+        // Here as well as in `layout()`: a row whose height is about to animate
+        // is laid out only on the motion's first frame, so a taller block needs
+        // taller surfaces now.
+        sizeSurfaces()
 
         invalidate()
         // The band is geometry over a range, and the range is the half that does
@@ -519,10 +523,10 @@ final class BlockView: NSView, TranscriptFindHighlighting, SurfaceLayerOwner {
             surfaces = wanted.map { SurfaceLayer(playing: $0, for: self) }
             let scale = window?.backingScaleFactor ?? 2
             for surface in surfaces {
-                surface.frame = bounds
                 surface.contentsScale = scale
                 surface.setNeedsDisplay()
             }
+            sizeSurfaces()
         }
 
         // The band goes after every surface that lies entirely below its phase —
@@ -540,17 +544,28 @@ final class BlockView: NSView, TranscriptFindHighlighting, SurfaceLayerOwner {
         CATransaction.commit()
     }
 
-    /// Sizing is this view's, not autoresizing's: the surfaces are congruent with
-    /// the view by definition, and a mask would express that as an accident of
-    /// what the layer's frame happened to be when it was added.
+    /// Sizing is this view's, not autoresizing's: a mask would express it as an
+    /// accident of what the layer's frame happened to be when it was added.
     override func layout() {
         super.layout()
-        // No implicit animation, and none of these should redraw for a size
-        // change alone — a resize that changes what is on screen came through
-        // `remeasured`, which marked them already.
+        sizeSurfaces()
+    }
+
+    /// The surfaces span the view's width and the **block's** height, from the
+    /// top. In a still row the two heights are the same. While the list animates
+    /// the row's height, this view is laid out at every height on the way, and a
+    /// surface that followed it would stretch a bitmap drawn at another size
+    /// (nothing redraws on resize). Sized to the block, the text stays where it
+    /// was typeset and the row's container, which clips, reveals or covers it.
+    ///
+    /// No implicit animation, and none of these redraw for a size change alone:
+    /// a resize that changes what is on screen came through `remeasured`, which
+    /// marked them already.
+    private func sizeSurfaces() {
+        let frame = CGRect(x: 0, y: 0, width: bounds.width, height: max(bounds.height, block?.size.height ?? 0))
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        surfaces.forEach { $0.frame = bounds }
+        surfaces.forEach { $0.frame = frame }
         CATransaction.commit()
     }
 

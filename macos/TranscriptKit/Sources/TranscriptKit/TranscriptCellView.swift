@@ -17,19 +17,18 @@ import AppKit
 /// itself at an offset.
 ///
 /// Height is not decided here. Both edges pin to this view, whose height came
-/// from `heightOfRow` by way of the table's row height — so the number flows
-/// one way, down, and nothing in this view's constraints can produce a
-/// different one.
+/// from `heightOfRow` by way of the row's — so the number flows one way, down,
+/// and nothing in this view's constraints can produce a different one. The
+/// bottom pin is just below required, so a host view whose content is required
+/// keeps its own height rather than making the system unsatisfiable, and the
+/// row clips it.
 ///
 /// Which also means a disagreement is quiet. When the hosted view's content
-/// needs more height than the row was given, the usual outcome is a squeezed
-/// subview and clipped content rather than a complaint: vertical compression
-/// resistance defaults to high, not required, so the engine has somewhere to
-/// give. Only a hosted view that pins its content at `.required` makes the
-/// system unsatisfiable and gets AppKit to log about it. Agreement between the
-/// delegate's height and the view's content is therefore the host's contract to
-/// keep — see `TranscriptViewDelegate.transcriptView(_:heightOfRow:width:)` —
-/// not something this view can enforce.
+/// needs more height than the row was given, the outcome is a squeezed subview
+/// or clipped content rather than a complaint. Agreement between the delegate's
+/// height and the view's content is therefore the host's contract to keep —
+/// see `TranscriptViewDelegate.transcriptView(_:heightOfRow:width:)` — not
+/// something this view can enforce.
 @MainActor
 final class TranscriptCellView: NSView {
 
@@ -95,10 +94,16 @@ final class TranscriptCellView: NSView {
             addSubview(view)
             let width = view.widthAnchor.constraint(equalToConstant: bounds.width)
             hostedWidth = width
+            // Below required: while the list animates a row's height this cell
+            // passes through every height down to 0, where a host view with
+            // required vertical content would make the system unsatisfiable. It
+            // keeps its own height instead, and the row's container clips it.
+            let bottom = view.bottomAnchor.constraint(equalTo: bottomAnchor)
+            bottom.priority = .init(999)
             NSLayoutConstraint.activate([
                 view.centerXAnchor.constraint(equalTo: centerXAnchor),
                 view.topAnchor.constraint(equalTo: topAnchor),
-                view.bottomAnchor.constraint(equalTo: bottomAnchor),
+                bottom,
                 width,
             ])
         }

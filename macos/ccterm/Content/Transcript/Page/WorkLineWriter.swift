@@ -1,5 +1,6 @@
 import AgentSDK
 import Foundation
+import os
 
 /// Words every work line: a run's sentence, an item's label, a task's news
 /// (design/transcript/01-run.md "The sentence", "A run of one is the call
@@ -539,24 +540,30 @@ nonisolated struct WorkLineWriter {
     /// line may not be in).
     static func format(_ duration: TimeInterval) -> String {
         let seconds = Int(duration.rounded())
-        let formatter =
-            switch seconds {
-            case ..<60: secondsFormatter
-            case ..<600: minutesAndSecondsFormatter
-            case ..<3600: minutesFormatter
-            default: hoursAndMinutesFormatter
-            }
-        return formatter.string(from: TimeInterval(seconds)) ?? "\(seconds)s"
+        return durationFormatters.withLockUnchecked { formatters in
+            let formatter =
+                switch seconds {
+                case ..<60: formatters.seconds
+                case ..<600: formatters.minutesAndSeconds
+                case ..<3600: formatters.minutes
+                default: formatters.hoursAndMinutes
+                }
+            return formatter.string(from: TimeInterval(seconds)) ?? "\(seconds)s"
+        }
     }
 
-    // Made once each: making a formatter is most of what formatting a
-    // duration costs, and a page formats one per line. Foundation's
-    // formatters are safe to share across threads, pages being built off
-    // the main actor.
-    nonisolated(unsafe) private static let secondsFormatter = durationFormatter([.second])
-    nonisolated(unsafe) private static let minutesAndSecondsFormatter = durationFormatter([.minute, .second])
-    nonisolated(unsafe) private static let minutesFormatter = durationFormatter([.minute])
-    nonisolated(unsafe) private static let hoursAndMinutesFormatter = durationFormatter([.hour, .minute])
+    /// One formatter per resolution, made once: making one is most of what
+    /// formatting a duration costs, and a page formats one per line. Pages
+    /// build off the main actor, several at once, so they are used only
+    /// inside the lock.
+    private struct DurationFormatters {
+        let seconds = durationFormatter([.second])
+        let minutesAndSeconds = durationFormatter([.minute, .second])
+        let minutes = durationFormatter([.minute])
+        let hoursAndMinutes = durationFormatter([.hour, .minute])
+    }
+
+    private static let durationFormatters = OSAllocatedUnfairLock(uncheckedState: DurationFormatters())
 
     private static func durationFormatter(_ units: NSCalendar.Unit) -> DateComponentsFormatter {
         let formatter = DateComponentsFormatter()

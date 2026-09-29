@@ -44,6 +44,11 @@ public struct RowMotion: Equatable, Sendable {
     /// Whether anything moves. A commit adds no animation for a row where this
     /// is `false`.
     public var isStill: Bool {
-        fatalError("unimplemented: SPEC M3")
+        switch kind {
+        case .inserted, .removed:
+            return false
+        case .surviving, .moved:
+            return startTop == endTop && startHeight == endHeight
+        }
     }
 }

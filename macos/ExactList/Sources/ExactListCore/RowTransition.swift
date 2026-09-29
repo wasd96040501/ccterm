@@ -33,6 +33,8 @@ public struct RowTransition: OptionSet, Hashable, Sendable {
 
     /// The one slide in effect, if any. The slide bits form a field, not a set.
     public var slide: RowTransition? {
-        fatalError("unimplemented: SPEC M9")
+        let slide = RowTransition(rawValue: rawValue & 0xF0)
+        let slides: [RowTransition] = [.slideUp, .slideDown, .slideLeft, .slideRight]
+        return slides.contains(slide) ? slide : nil
     }
 }

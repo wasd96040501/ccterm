@@ -118,6 +118,8 @@ written they do nothing.
 - **L5: calls before the load point are harmless and defined.**
   - Updates (inserts, removals, moves, reloads, height notes, and
     `reloadData()`) are ignored. The load reads the data source as it is then.
+    A batch's completion handler still runs, with `true`, on a later turn
+    (U8).
   - `numberOfRows` returns 0, `rect(ofRow:)` returns `.zero`, `row(at:)`
     returns −1, `view(atRow:)` returns `nil`, and `rows(in:)` returns an empty
     range.
@@ -638,7 +640,7 @@ macos/ExactList/
                              ExactListCoreTests · ExactListTests · ExactListBenchmarks
   SPEC.md  README.md  CLAUDE.md
   Sources/
-    ExactListCore/           Foundation only. The compiler keeps AppKit out.
+    ExactListCore/           Foundation and CoreGraphics. The compiler keeps AppKit out.
     ExactList/               AppKit. Depends on ExactListCore.
     ExactListDemo/           Depends on ExactList.
 ```
@@ -646,6 +648,7 @@ macos/ExactList/
 Dependencies go one way: `ExactListDemo → ExactList → ExactListCore`. Core
 imports no AppKit, and has no timers and no main-actor state. Hosts import
 only `ExactList`, which re-exports the one Core type in its API (`Anchoring`).
+Core imports Foundation and CoreGraphics, never AppKit.
 
 **ExactListCore**: values and pure functions.
 

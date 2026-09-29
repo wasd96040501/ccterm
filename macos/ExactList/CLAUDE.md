@@ -41,8 +41,9 @@ amendments.
 
 ## 4. Layering
 
-- `ExactListCore` imports Foundation only. It holds no timers and no
-  main-actor state, and every function in it is testable without a window.
+- `ExactListCore` never imports AppKit: Foundation and CoreGraphics only. It
+  holds no timers and no main-actor state, and every function in it is
+  testable without a window.
 - `ExactList` holds the AppKit engine. Collaborators talk back through one
   narrow internal protocol, never by naming `ExactListView`.
 - Planning is Core's; applying the plan is the engine's. A decision about

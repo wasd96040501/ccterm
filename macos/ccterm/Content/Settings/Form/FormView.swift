@@ -1,12 +1,19 @@
 import AppKit
+import Combine
 
 /// A scrolling grouped form: sections stacked 30 apart, 20 from the edges,
 /// under the toolbar. The scroll view insets itself below the titlebar, as
 /// any content under a full-size-content toolbar does.
 @MainActor
 final class FormView: NSScrollView {
+    /// Whether some of the form is scrolled out below — for a bar under it
+    /// to draw its hairline. Called as it changes.
+    var onContentBelowChange: ((Bool) -> Void)?
+    private(set) var hasContentBelow = false
+
     private let stack = NSStackView()
     private let document = FlippedView()
+    private var cancellables = Set<AnyCancellable>()
 
     /// `topInset`: space above the first section.
     init(sections: [NSView] = [], topInset: CGFloat = 20, sectionSpacing: CGFloat = 30) {
@@ -32,6 +39,7 @@ final class FormView: NSScrollView {
             stack.trailingAnchor.constraint(equalTo: document.trailingAnchor),
         ])
         setSections(sections)
+        observeContentBelow()
     }
 
     @available(*, unavailable)
@@ -48,6 +56,32 @@ final class FormView: NSScrollView {
             stack.addArrangedSubview(section)
             section.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40).isActive = true
         }
+    }
+
+    /// Scrolling moves the clip's bounds; a section growing moves the
+    /// document's frame.
+    private func observeContentBelow() {
+        contentView.postsBoundsChangedNotifications = true
+        document.postsFrameChangedNotifications = true
+        Publishers.Merge(
+            NotificationCenter.default.publisher(for: NSView.boundsDidChangeNotification, object: contentView),
+            NotificationCenter.default.publisher(for: NSView.frameDidChangeNotification, object: document)
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] _ in self?.updateContentBelow() }
+        .store(in: &cancellables)
+    }
+
+    private func updateContentBelow() {
+        let below = document.frame.height - contentView.bounds.maxY > 1
+        guard below != hasContentBelow else { return }
+        hasContentBelow = below
+        onContentBelowChange?(below)
+    }
+
+    override func tile() {
+        super.tile()
+        updateContentBelow()
     }
 
     /// A document view that lays out from the top, as a form reads.

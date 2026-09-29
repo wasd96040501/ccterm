@@ -8,12 +8,24 @@ import AppKit
 final class FormRowView: NSView {
     /// The line under the title; `nil` hides it.
     var detail: String? {
+        get { attributedDetail?.string }
+        set { attributedDetail = newValue.map { NSAttributedString(string: $0) } }
+    }
+
+    /// The line under the title with styling of its own — code in the
+    /// monospaced face. Runs without a font take the row's.
+    var attributedDetail: NSAttributedString? {
         didSet { updateDetail() }
     }
 
     /// Shows the description as an error.
     var isDetailError = false {
         didSet { updateDetail() }
+    }
+
+    var title: String {
+        get { titleLabel.stringValue }
+        set { titleLabel.stringValue = newValue }
     }
 
     private let titleLabel: NSTextField
@@ -37,8 +49,6 @@ final class FormRowView: NSView {
     private func configureHierarchy() {
         titleLabel.font = .systemFont(ofSize: 13)
         titleLabel.lineBreakMode = .byTruncatingTail
-        detailLabel.font = .systemFont(ofSize: 11)
-        detailLabel.textColor = .secondaryLabelColor
         for view in [titleLabel, detailLabel] + [accessory].compactMap({ $0 }) {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
@@ -51,6 +61,7 @@ final class FormRowView: NSView {
         var constraints = [
             titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
             titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 10.5),
+            titleLabel.heightAnchor.constraint(equalToConstant: 16),
             heightAnchor.constraint(greaterThanOrEqualToConstant: 37),
             detailLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
             detailLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -62),
@@ -72,10 +83,21 @@ final class FormRowView: NSView {
     }
 
     private func updateDetail() {
-        detailLabel.stringValue = detail ?? ""
-        detailLabel.textColor = isDetailError ? .systemRed : .secondaryLabelColor
-        detailLabel.isHidden = detail == nil
-        NSLayoutConstraint.deactivate(detail == nil ? detailConstraints : noDetailConstraints)
-        NSLayoutConstraint.activate(detail == nil ? noDetailConstraints : detailConstraints)
+        let text = NSMutableAttributedString(attributedString: attributedDetail ?? NSAttributedString())
+        let whole = NSRange(location: 0, length: text.length)
+        text.enumerateAttribute(.font, in: whole) { font, range, _ in
+            if font == nil { text.addAttribute(.font, value: NSFont.systemFont(ofSize: 11), range: range) }
+        }
+        let color: NSColor = isDetailError ? .systemRed : .secondaryLabelColor
+        text.addAttribute(.foregroundColor, value: color, range: whole)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.minimumLineHeight = 14
+        paragraph.maximumLineHeight = 14
+        text.addAttribute(.paragraphStyle, value: paragraph, range: whole)
+        detailLabel.attributedStringValue = text
+        let hasDetail = attributedDetail != nil
+        detailLabel.isHidden = !hasDetail
+        NSLayoutConstraint.deactivate(hasDetail ? noDetailConstraints : detailConstraints)
+        NSLayoutConstraint.activate(hasDetail ? detailConstraints : noDetailConstraints)
     }
 }

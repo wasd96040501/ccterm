@@ -11,6 +11,9 @@ extension NSColor {
     static let formSeparator = NSColor(name: "formSeparator") { appearance in
         appearance.isDark ? NSColor(white: 1, alpha: 0.06) : NSColor(white: 0, alpha: 0.037)
     }
+
+    /// A warning glyph's amber, readable on a group in either appearance.
+    static let formWarning = NSColor(srgbRed: 0xd9 / 255, green: 0x91 / 255, blue: 0, alpha: 1)
 }
 
 extension NSAppearance {

@@ -4,37 +4,49 @@ import AppKit
 /// buttons under the group at its trailing edge (“Add Provider…”).
 @MainActor
 final class FormSectionView: NSView {
+    /// Hides the buttons under the group; the section then ends with it.
+    var areTrailingButtonsHidden = false {
+        didSet { updateButtons() }
+    }
+
+    private let buttons: NSStackView
+    private var buttonConstraints: [NSLayoutConstraint] = []
+    private var noButtonConstraints: [NSLayoutConstraint] = []
+
     init(title: String, content: NSView, trailingButtons: [NSButton] = []) {
+        buttons = NSStackView(views: trailingButtons)
         super.init(frame: .zero)
         let header = NSTextField(labelWithString: title)
         header.font = .systemFont(ofSize: 13, weight: .semibold)
-        let buttons = NSStackView(views: trailingButtons)
         buttons.spacing = 8
         for view in [header, content, buttons] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
-        var constraints = [
+        NSLayoutConstraint.activate([
             header.topAnchor.constraint(equalTo: topAnchor),
             header.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
             header.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -10),
             content.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 10),
             content.leadingAnchor.constraint(equalTo: leadingAnchor),
             content.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ])
+        buttonConstraints = [
+            buttons.topAnchor.constraint(equalTo: content.bottomAnchor, constant: 10),
+            buttons.trailingAnchor.constraint(equalTo: trailingAnchor),
+            buttons.bottomAnchor.constraint(equalTo: bottomAnchor),
         ]
-        if trailingButtons.isEmpty {
-            buttons.isHidden = true
-            constraints.append(content.bottomAnchor.constraint(equalTo: bottomAnchor))
-        } else {
-            constraints += [
-                buttons.topAnchor.constraint(equalTo: content.bottomAnchor, constant: 10),
-                buttons.trailingAnchor.constraint(equalTo: trailingAnchor),
-                buttons.bottomAnchor.constraint(equalTo: bottomAnchor),
-            ]
-        }
-        NSLayoutConstraint.activate(constraints)
+        noButtonConstraints = [content.bottomAnchor.constraint(equalTo: bottomAnchor)]
+        areTrailingButtonsHidden = trailingButtons.isEmpty
+        updateButtons()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+    private func updateButtons() {
+        buttons.isHidden = areTrailingButtonsHidden
+        NSLayoutConstraint.deactivate(areTrailingButtonsHidden ? buttonConstraints : noButtonConstraints)
+        NSLayoutConstraint.activate(areTrailingButtonsHidden ? noButtonConstraints : buttonConstraints)
+    }
 }

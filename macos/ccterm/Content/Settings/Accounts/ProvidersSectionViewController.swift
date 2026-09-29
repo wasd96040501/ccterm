@@ -21,23 +21,33 @@ final class ProvidersSectionViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     private let group = FormGroupView()
+    private let emptyView = ProvidersEmptyView()
+    private lazy var section = FormSectionView(
+        title: String(localized: "API Providers"), content: group, trailingButtons: [addButton])
     private lazy var addButton = NSButton(
         title: String(localized: "Add Provider…"), target: self, action: #selector(add(_:)))
 
     override func loadView() {
-        view = FormSectionView(title: String(localized: "API Providers"), content: group, trailingButtons: [addButton])
+        view = section
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        emptyView.onAdd = { [weak self] in self?.add(nil) }
         providers
             .receive(on: DispatchQueue.main)
             .sink { [weak self] providers in self?.show(providers) }
             .store(in: &cancellables)
     }
 
+    /// A row per provider; with none, the empty state, which carries Add
+    /// Provider… in place of the button under the group.
     private func show(_ providers: [Account]) {
-        // Skeleton: the empty state lands with the pane.
+        section.areTrailingButtonsHidden = providers.isEmpty
+        guard !providers.isEmpty else {
+            group.setRows([emptyView])
+            return
+        }
         group.setRows(
             providers.compactMap { account in
                 guard let provider = account.provider else { return nil }

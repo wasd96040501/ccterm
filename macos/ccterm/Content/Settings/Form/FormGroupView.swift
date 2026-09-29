@@ -11,6 +11,8 @@ final class FormGroupView: NSView {
         wantsLayer = true
         layer?.cornerRadius = 12
         layer?.cornerCurve = .continuous
+        // A row's pressed fill follows the group's corners.
+        layer?.masksToBounds = true
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 0
@@ -41,7 +43,7 @@ final class FormGroupView: NSView {
             view.removeFromSuperview()
         }
         for (index, row) in rows.enumerated() {
-            if index > 0 { add(Separator()) }
+            if index > 0 { add(FormHairlineView()) }
             add(row)
         }
     }
@@ -49,28 +51,10 @@ final class FormGroupView: NSView {
     private func add(_ view: NSView) {
         view.translatesAutoresizingMaskIntoConstraints = false
         stack.addArrangedSubview(view)
-        let inset: CGFloat = view is Separator ? 10 : 0
+        let inset: CGFloat = view is FormHairlineView ? 10 : 0
         NSLayoutConstraint.activate([
             view.leadingAnchor.constraint(equalTo: stack.leadingAnchor, constant: inset),
             view.trailingAnchor.constraint(equalTo: stack.trailingAnchor, constant: -inset),
         ])
-    }
-
-    /// The 1-point hairline between two rows.
-    private final class Separator: NSView {
-        override init(frame: NSRect) {
-            super.init(frame: frame)
-            wantsLayer = true
-            heightAnchor.constraint(equalToConstant: 1).isActive = true
-        }
-
-        @available(*, unavailable)
-        required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
-
-        override var wantsUpdateLayer: Bool { true }
-
-        override func updateLayer() {
-            layer?.backgroundColor = NSColor.formSeparator.cgColor
-        }
     }
 }

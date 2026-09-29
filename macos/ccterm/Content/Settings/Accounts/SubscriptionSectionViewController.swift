@@ -44,9 +44,14 @@ final class SubscriptionSectionViewController: NSViewController {
             row.configure(with: AccountRowContent(subscription: subscription))
             row.onOpen = { [weak self] in self.map { $0.delegate?.subscriptionSection($0, didOpen: subscription) } }
             row.menu = menu(for: subscription)
-        case .unknown, .signedOut, .signingIn:
-            // Skeleton: the signed-out row with Sign In… lands with the pane.
+        case .unknown:
+            row.configure(with: .checking)
             row.onOpen = nil
+            row.menu = nil
+        case .signedOut, .signingIn:
+            row.configure(with: .signedOut)
+            row.onOpen = nil
+            row.onAction = { [weak self] in self.map { $0.delegate?.subscriptionSectionDidRequestSignIn($0) } }
             row.menu = nil
         }
         showSignIn(state)

@@ -138,10 +138,28 @@ final class AccountEditorViewModel {
                     && !secrets.credential.isEmpty
             } ?? true
 
+        var details: AccountEditorPresentation.SubscriptionDetails?
+        if case .subscription(let subscription) = mode {
+            details = AccountEditorPresentation.SubscriptionDetails(
+                email: subscription.email, organization: subscription.organization ?? "—",
+                plan: subscription.planName.map { String(localized: "Claude \($0)") } ?? "—",
+                signInMethod: subscription.method.map { $0.prefix(1).uppercased() + $0.dropFirst() } ?? "—")
+        }
+
+        let authentication = provider?.authentication ?? .authToken
         return AccountEditorPresentation(
-            title: title, subtitle: subtitle, canSave: canSave, baseURLError: baseURLError, fields: fields,
-            fieldsRevision: fieldsRevision, environmentRows: rows(secrets.environment))
+            title: title, subtitle: subtitle, canSave: canSave, baseURLError: baseURLError,
+            credentialTitle: authentication == .apiKey ? String(localized: "API key") : String(localized: "Token"),
+            credentialVariable: authentication.variable, maskedCredential: masked(secrets.credential),
+            subscription: details, fields: fields, fieldsRevision: fieldsRevision,
+            environmentRows: rows(secrets.environment))
     }
+
+    /// The Authentication menu: each way, and what it sends.
+    static let authenticationOptions: [(authentication: Account.Authentication, title: String, detail: String)] = [
+        (.authToken, String(localized: "Auth Token"), "Authorization: Bearer"),
+        (.apiKey, String(localized: "API Key"), "x-api-key"),
+    ]
 
     private static func rows(_ environment: [EnvironmentVariable]) -> [EnvironmentRow] {
         let names = environment.map(\.name)

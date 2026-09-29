@@ -71,7 +71,8 @@ nonisolated struct AccountPaste: Equatable {
                 provider?.baseURL = value
                 fill(.baseURL)
             case ("ANTHROPIC_AUTH_TOKEN", true), ("ANTHROPIC_API_KEY", true):
-                let authentication: Account.Authentication = name == "ANTHROPIC_API_KEY" ? .apiKey : .authToken
+                let authentication: Account.Authentication =
+                    name == Account.Authentication.apiKey.variable ? .apiKey : .authToken
                 provider?.authentication = authentication
                 secrets.credential = value
                 fill(.credential(authentication))

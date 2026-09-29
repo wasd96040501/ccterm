@@ -11,6 +11,14 @@ struct AccountEditorPresentation: Equatable {
     var canSave: Bool
     /// Under Base URL, in red; `nil` hides it.
     var baseURLError: String?
+    /// The credential row's title: “Token” or “API key”.
+    var credentialTitle: String
+    /// The variable the credential is sent as, `ANTHROPIC_AUTH_TOKEN`, …
+    var credentialVariable: String
+    /// The credential as shown at rest, `sk-••••••••7c1e`.
+    var maskedCredential: String
+    /// The subscription's account, for its sheet; `nil` for a provider.
+    var subscription: SubscriptionDetails?
     var fields: Fields
     var fieldsRevision: Int
     var environmentRows: [EnvironmentRow]
@@ -26,5 +34,13 @@ struct AccountEditorPresentation: Equatable {
         var haiku = ""
         var command = ""
         var arguments = ""
+    }
+
+    /// The subscription sheet's Account section, ready to display.
+    struct SubscriptionDetails: Equatable {
+        var email: String
+        var organization: String
+        var plan: String
+        var signInMethod: String
     }
 }

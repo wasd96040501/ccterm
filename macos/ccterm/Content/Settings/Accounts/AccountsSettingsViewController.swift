@@ -55,7 +55,7 @@ final class AccountsSettingsViewController: NSViewController {
                 let secrets = try await accounts.secrets(for: account.id)
                 present(account, secrets: secrets, mode: mode)
             } catch {
-                appLog(.error, "AccountsSettingsViewController", "reading secrets failed — \(error)")
+                view.window.map { report(error, on: $0, while: "reading an account's secrets") }
             }
         }
     }
@@ -90,12 +90,68 @@ final class AccountsSettingsViewController: NSViewController {
     /// Asks before deleting `account`, on `window` (the sheet's, or the
     /// Settings window's); deletes it on confirmation.
     private func confirmDelete(_ account: Account, on window: NSWindow?) {
-        // Skeleton: the alert lands with the pane.
+        guard let window, let provider = account.provider else { return }
+        let alert = Self.confirmation(
+            title: String(localized: "Delete “\(provider.name)”?"),
+            message: String(
+                localized:
+                    "Its token is removed from your keychain. Sessions already running keep going until they end."),
+            confirm: String(localized: "Delete"))
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn, let self else { return }
+            Task {
+                do {
+                    try await self.accounts.remove(account.id)
+                    if self.editing?.id == account.id { self.dismissEditor() }
+                } catch {
+                    self.report(error, on: window, while: "deleting an account")
+                }
+            }
+        }
     }
 
     /// Asks before signing out; signs out on confirmation.
     private func confirmSignOut(_ subscription: Subscription, on window: NSWindow?) {
-        // Skeleton: the alert lands with the pane.
+        guard let window else { return }
+        let alert = Self.confirmation(
+            title: String(localized: "Sign out of \(subscription.email)?"),
+            message: String(
+                localized:
+                    "New sessions can’t use your subscription until you sign in again. Your API providers aren’t affected."
+            ),
+            confirm: String(localized: "Sign Out"))
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn, let self else { return }
+            Task {
+                do {
+                    try await self.subscription.signOut()
+                    if case .subscription = self.editor?.mode { self.dismissEditor() }
+                } catch {
+                    self.report(error, on: window, while: "signing out")
+                }
+            }
+        }
+    }
+
+    /// An alert that confirms a destructive action: the action on the
+    /// right, marked destructive; Cancel beside it, the default — Return
+    /// and Escape both cancel.
+    private static func confirmation(title: String, message: String, confirm: String) -> NSAlert {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        let confirmButton = alert.addButton(withTitle: confirm)
+        confirmButton.hasDestructiveAction = true
+        confirmButton.keyEquivalent = ""
+        let cancelButton = alert.addButton(withTitle: String(localized: "Cancel"))
+        cancelButton.keyEquivalent = "\r"
+        return alert
+    }
+
+    /// Tells the person an action failed, on the window they acted in.
+    private func report(_ error: Error, on window: NSWindow, while action: String) {
+        appLog(.error, "AccountsSettingsViewController", "\(action) failed — \(error.localizedDescription)")
+        NSAlert(error: error).beginSheetModal(for: window)
     }
 }
 
@@ -133,7 +189,7 @@ extension AccountsSettingsViewController: ProvidersSectionViewControllerDelegate
             do {
                 try await accounts.duplicate(account.id)
             } catch {
-                appLog(.error, "AccountsSettingsViewController", "duplicating an account failed — \(error)")
+                view.window.map { report(error, on: $0, while: "duplicating an account") }
             }
         }
     }
@@ -150,7 +206,7 @@ extension AccountsSettingsViewController: AccountEditorViewControllerDelegate {
                 try await accounts.save(account, secrets: secrets)
                 dismissEditor()
             } catch {
-                appLog(.error, "AccountsSettingsViewController", "saving an account failed — \(error)")
+                (editor.view.window ?? view.window).map { report(error, on: $0, while: "saving an account") }
             }
         }
     }

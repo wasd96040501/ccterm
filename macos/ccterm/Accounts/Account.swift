@@ -41,6 +41,14 @@ nonisolated struct Account: Identifiable, Codable, Equatable, Sendable {
         case authToken
         /// `x-api-key`, from `ANTHROPIC_API_KEY`.
         case apiKey
+
+        /// The variable the CLI reads the credential from.
+        var variable: String {
+            switch self {
+            case .authToken: "ANTHROPIC_AUTH_TOKEN"
+            case .apiKey: "ANTHROPIC_API_KEY"
+            }
+        }
     }
 
     /// Model names the provider serves; empty leaves the CLI's default.

@@ -191,10 +191,88 @@ final class PageRowViewContractTests: XCTestCase {
             flashing.flashes = true
             return [selected, flashing]
         }
+        let long = WorkLine(
+            tile: Tile(glyph: .tool(.change), state: .done),
+            text: StyledText("Edited ") + StyledText("TranscriptViewController.swift", style: .noun(opens: "e1"))
+                + StyledText(", ran 3 commands and searched for ") + StyledText("rowSpacing", style: .code)
+                + StyledText(" across the whole package"),
+            detail: "macos/TranscriptKit/Sources/TranscriptKit/Internal/TranscriptView+Layout.swift",
+            exceptions: StyledText(" · ") + StyledText("1 failed", style: .failure),
+            meta: StyledText("+12", style: .added) + StyledText(" ") + StyledText("−3", style: .removed)
+                + StyledText("  34s"))
+        func custom(
+            _ line: WorkLine, _ level: WorkLineRowView.Model.Level, _ action: WorkLineRowView.Model.Action,
+            origin: String? = nil, error: String? = nil
+        ) -> WorkLineRowView.Model {
+            WorkLineRowView.Model(
+                line: line, level: level, action: action, origin: origin, error: error, isSelected: false,
+                flashes: false)
+        }
+        var news = long
+        news.tile = Tile(glyph: .tool(.command), state: .failed)
+        news.detail = nil
+        news.meta = StyledText("4m")
+        let bare = WorkLine(
+            tile: Tile(glyph: .tool(.read), state: .running), text: StyledText("Reading A.swift"), detail: nil,
+            exceptions: StyledText(), meta: StyledText())
         let fixtures = [
             ("a run", line(.line, nil)), ("a failed item", line(.item, run.items[0])),
             ("an item", line(.item, run.items[1])),
+            ("a long run, collapsed", custom(long, .line, .toggle("r1", expanded: false))),
+            ("a long run, expanded", custom(long, .line, .toggle("r1", expanded: true))),
+            (
+                "a long item with an error",
+                custom(long, .item, .open("e1"), error: String(repeating: "error: ", count: 30))
+            ),
+            ("news with an origin", custom(news, .line, .open("n1"), origin: "b1")),
+            ("a bare line", custom(bare, .line, .open("c1"))),
         ].map { RowFixture(name: $0.0, model: $0.1, sameGeometry: painted($0.1)) }
         assertContract(WorkLineRowView.self, fixtures)
+    }
+
+    func testShowMoreRowView() {
+        let fixtures = [1, 85, 12_000].map {
+            RowFixture(name: "\($0) hidden", model: ShowMoreRowView.Model(runID: "r1", hidden: $0))
+        }
+        assertContract(ShowMoreRowView.self, fixtures)
+    }
+
+    func testApprovalCardView() {
+        func waiting(_ name: String, _ input: String, reason: String?) -> Approval {
+            let use = ToolUseBlock(id: "c1", name: name, input: MessageScript.json(input))
+            return Approval(
+                ToolCall(
+                    use: use, result: nil, kind: ToolKind(use, result: nil), state: .waiting(reason: reason),
+                    startedAt: nil, finishedAt: nil))
+        }
+        let many = (1...30).map { "let line\($0) = \($0)" }.joined(separator: "\n")
+        let escaped = many.replacingOccurrences(of: "\n", with: "\\n")
+        let wide = String(repeating: "swift build -c debug --product ccterm && ", count: 6) + "true"
+        let fixtures = [
+            (
+                "a short command",
+                waiting("Bash", #"{"command":"make test-unit","description":"Run the unit tests"}"#, reason: nil)
+            ),
+            (
+                "a command with a reason",
+                waiting(
+                    "Bash", #"{"command":"make test-unit FILTER=TranscriptViewTests"}"#,
+                    reason: "Needs approval: writes outside the project (build/test-dd)")
+            ),
+            ("a command that wraps", waiting("Bash", #"{"command":"\#(wide)"}"#, reason: "Needs approval")),
+            ("a command of thirty lines", waiting("Bash", #"{"command":"\#(escaped)"}"#, reason: nil)),
+            (
+                "an edit",
+                waiting("Edit", #"{"file_path":"/r/A.swift","old_string":"a\nb","new_string":"c\nd\ne"}"#, reason: nil)
+            ),
+            (
+                "a long edit",
+                waiting(
+                    "Write", #"{"file_path":"/r/B.swift","content":"\#(escaped)"}"#,
+                    reason: "Needs approval: a new file")
+            ),
+            ("a tool without a body", waiting("WebFetch", #"{"url":"https://example.com"}"#, reason: nil)),
+        ].map { RowFixture(name: $0.0, model: $0.1) }
+        assertContract(ApprovalCardView.self, fixtures)
     }
 }

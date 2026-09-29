@@ -11,8 +11,27 @@ final class ShowMoreRowView: NSView, PageRowView {
 
     weak var delegate: PageRowViewDelegate?
 
+    /// An item's indent, then an item's words: two tiles and a gap's worth.
+    private static let leading: CGFloat = 48
+
+    private let label = NSTextField(labelWithString: "")
+    private var runID: String?
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 13)
+        label.textColor = .linkColor
+        label.lineBreakMode = .byTruncatingTail
+        label.maximumNumberOfLines = 1
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.leading),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
     }
 
     convenience init() {
@@ -24,5 +43,18 @@ final class ShowMoreRowView: NSView, PageRowView {
 
     static func height(for model: Model, width: CGFloat) -> CGFloat { 24 }
 
-    func configure(with model: Model) {}
+    func configure(with model: Model) {
+        runID = model.runID
+        label.stringValue = String(localized: "Show \(model.hidden) more")
+        setAccessibilityLabel(label.stringValue)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        bounds.contains(convert(point, from: superview)) ? self : nil
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if let runID { delegate?.rowView(self, showAllOf: runID) }
+        super.mouseDown(with: event)
+    }
 }

@@ -12,6 +12,17 @@
         }
       }
     },
+    "%@.": {
+      "comment": "A check's failure reason as a sentence.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@。"
+          }
+        }
+      }
+    },
     "%lld changed": {
       "localizations": {
         "zh-Hans": {

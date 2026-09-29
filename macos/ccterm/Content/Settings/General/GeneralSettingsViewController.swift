@@ -77,7 +77,10 @@ final class GeneralSettingsViewController: NSViewController {
     /// The command's description, and while its field is empty, where `claude` is.
     private func show(_ state: LaunchCommandValidation.State) {
         let applied = launch.preferences.command
-        let fallback = applied.isEmpty ? launchCommandField.placeholderString ?? "claude" : applied
+        // A failing value that is the one in effect leaves nothing else running.
+        let typed = launchCommandField.stringValue.trimmingCharacters(in: .whitespaces)
+        let fallback =
+            typed == applied ? nil : applied.isEmpty ? launchCommandField.placeholderString ?? "claude" : applied
         present(
             state.detail(fallback: fallback), reason: state.detail(fallback: nil), fallback: fallback,
             in: launchCommandRow)
@@ -87,7 +90,8 @@ final class GeneralSettingsViewController: NSViewController {
     }
 
     private func show(_ state: FolderValidation.State) {
-        let fallback = folderInEffect
+        let typed = configDirectoryField.stringValue.trimmingCharacters(in: .whitespaces)
+        let fallback = typed == launch.preferences.configDirectory ? nil : folderInEffect
         present(
             state.detail(fallback: fallback), reason: state.detail(fallback: nil), fallback: fallback,
             in: configDirectoryRow)
@@ -107,13 +111,13 @@ final class GeneralSettingsViewController: NSViewController {
     /// Puts `detail` under `row`: a problem's reason in red, then `fallback`
     /// — what keeps running — in the secondary ink and the monospaced face.
     /// `reason`: the same detail without the fallback.
-    private func present(_ detail: ValidationDetail, reason: ValidationDetail, fallback: String, in row: FormRowView) {
+    private func present(_ detail: ValidationDetail, reason: ValidationDetail, fallback: String?, in row: FormRowView) {
         guard let text = detail.text else {
             row.detail = nil
             return
         }
         let attributed = NSMutableAttributedString(string: text)
-        if detail.isError {
+        if detail.isError, let fallback {
             let path = (text as NSString).range(of: fallback, options: .backwards)
             if path.location != NSNotFound {
                 attributed.addAttribute(

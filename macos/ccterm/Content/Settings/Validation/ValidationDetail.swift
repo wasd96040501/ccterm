@@ -13,7 +13,7 @@ struct ValidationDetail: Equatable {
     /// `reason` as a sentence, and — when something else stays in use — what.
     static func problem(_ reason: String, fallback: String?) -> ValidationDetail {
         var text = reason
-        if let last = text.last, !".!?。！？".contains(last) { text += "." }
+        if let last = text.last, !".!?。！？".contains(last) { text = String(localized: "\(reason).") }
         if let fallback { text += " " + String(localized: "Still using \(fallback).") }
         return ValidationDetail(text: text, isError: true)
     }

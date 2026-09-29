@@ -165,6 +165,7 @@ written they do nothing.
 - **L12: invalid input is a programmer error.** These stop with a precondition
   failure:
   - `heightOfRow` returns a value that is not finite, or is ≤ 0;
+  - `rowSpacing` is set to a value that is not finite, or is < 0;
   - an index is out of range, whether in an update, in `.row(r)`, or in a
     scroll request;
   - the data source or the delegate has been deallocated when the list needs
@@ -222,7 +223,8 @@ public enum Anchoring { case automatic, row(Int), scrollOffset }
     with `y(a) + h(a) > o + t`. The anchor is `(a, d)`, where
     `d = y(a) − (o + t)`, which is `≤ 0` when the row starts above the
     viewport.
-  - Otherwise, the anchor is the offset `o`.
+  - Otherwise (no rows, or no row reaches `o + t`), the anchor is the
+    offset `o`.
 - **A2: `.row(r)`** anchors row `r` (a pre-batch index) at `d = y(r) − (o + t)`,
   whether `r` is visible or not. This is how a host says which row the reader
   acted on. The intended use is a reader expanding or collapsing a row. It
@@ -362,13 +364,29 @@ in a commit has a start and an end value for its screen top and its height.
   - **Inserted:** the end is its new frame. It starts at height 0, at the old
     screen position of the nearest surviving row before it, plus that row's
     height, plus `s`. If there is no surviving row before it, it starts at the
-    old screen top of the nearest surviving row after it.
+    old screen top of the nearest surviving row after it. If no row survives
+    at all, it starts at its own end top.
   - **Removed:** the reverse. It starts at its old frame. It ends at height 0,
     at the new screen position of the nearest surviving row before it, plus
     that row's height, plus `s`, or else at the new screen top of the nearest
-    surviving row after it.
+    surviving row after it, or else at its own start top. Only rows that were
+    mounted before the commit are removed with motion; any other removed row
+    is simply gone.
   - **Moved:** start is its old frame and end is its new frame. It has no
     neighbours (M10).
+
+  "Nearest surviving row" skips inserted, removed and moved rows. "Before"
+  and "after" are in the new order for an inserted row, and in the old order
+  for a removed row.
+
+  In a commit that doesn't animate, every row that has a motion has its start
+  equal to its end, and no transition.
+
+  **Which rows have a motion.** A row has one if its sweep (the hull of its
+  start and end screen intervals, after M7) intersects `P`, measured against
+  the viewport after the commit. `CommitPlan.motions` holds exactly these rows,
+  in the order surviving and inserted rows by new index, then removed rows by
+  old index.
 
   A row's content is laid out once, at its final size, and aligned to the top
   of its container. The container clips to the presented height, so a growing

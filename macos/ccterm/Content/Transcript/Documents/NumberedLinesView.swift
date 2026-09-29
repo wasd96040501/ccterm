@@ -106,7 +106,10 @@ final class NumberedLinesView: NSView {
         let scroll = NSScrollView()
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.hasVerticalScroller = true
-        scroll.autohidesScrollers = true
+        // A legacy scroller keeps its track even while the lines fit: one that
+        // appears once they overflow narrows the text and rewraps every line
+        // on screen — as a live command's output grows past the fold.
+        scroll.autohidesScrollers = false
         scroll.drawsBackground = true
         scroll.backgroundColor = .textBackgroundColor
         scroll.borderType = .noBorder

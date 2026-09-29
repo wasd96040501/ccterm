@@ -40,8 +40,13 @@ final class EnvironmentVariableCellView: NSTableCellView {
 
     /// Label ink; tertiary for a row that's off; white on the selection.
     func updateColors() {
-        let onSelection = backgroundStyle == .emphasized
+        // A row being edited draws no selection, so its ink goes back to label.
+        let isEditing = nameField.currentEditor() != nil || valueField.currentEditor() != nil
+        let onSelection = backgroundStyle == .emphasized && !isEditing
         for field in [nameField, valueField] {
+            // The row hands its style to every control cell, which would draw
+            // label ink white while the selection is hidden for editing.
+            field.cell?.backgroundStyle = onSelection ? .emphasized : .normal
             field.textColor =
                 field.currentEditor() != nil
                 ? .labelColor

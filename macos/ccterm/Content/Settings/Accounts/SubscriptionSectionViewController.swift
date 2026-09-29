@@ -8,14 +8,18 @@ import Combine
 final class SubscriptionSectionViewController: NSViewController {
     weak var delegate: SubscriptionSectionViewControllerDelegate?
 
-    private let state: AnyPublisher<SubscriptionService.State, Never>
+    private let initialState: SubscriptionService.State
+    private let updates: AnyPublisher<SubscriptionService.State, Never>
+    private var shownState: SubscriptionService.State?
     private var cancellables = Set<AnyCancellable>()
     /// The sign-in sheet while the browser flow runs.
     private var signIn: SignInViewController?
 
-    /// `state`: the login, current value first — `SubscriptionService.$state`.
-    init(state: AnyPublisher<SubscriptionService.State, Never>) {
-        self.state = state
+    /// `state`: the login now, shown from the first frame; `updates`: each
+    /// change to it.
+    init(state: SubscriptionService.State, updates: AnyPublisher<SubscriptionService.State, Never>) {
+        initialState = state
+        self.updates = updates
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -32,13 +36,18 @@ final class SubscriptionSectionViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         group.setRows([row])
-        state
+        show(initialState)
+        updates
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in self?.show(state) }
             .store(in: &cancellables)
     }
 
     private func show(_ state: SubscriptionService.State) {
+        // The login is read at launch, so this is rare: the row settles from
+        // “Checking…” with a short fade rather than a jump.
+        if shownState == .unknown, state != .unknown { fadeIn(row) }
+        shownState = state
         switch state {
         case .signedIn(let subscription):
             row.configure(with: AccountRowContent(subscription: subscription))
@@ -58,6 +67,15 @@ final class SubscriptionSectionViewController: NSViewController {
     }
 
     /// The sign-in sheet is up exactly while signing in.
+    private func fadeIn(_ view: NSView) {
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        view.alphaValue = 0
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            view.animator().alphaValue = 1
+        }
+    }
+
     private func showSignIn(_ state: SubscriptionService.State) {
         if case .signingIn(let url) = state {
             let sheet = signIn ?? SignInViewController()

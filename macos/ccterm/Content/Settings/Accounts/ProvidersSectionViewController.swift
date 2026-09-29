@@ -8,12 +8,15 @@ import Combine
 final class ProvidersSectionViewController: NSViewController {
     weak var delegate: ProvidersSectionViewControllerDelegate?
 
-    private let providers: AnyPublisher<[Account], Never>
+    private let initialProviders: [Account]
+    private let updates: AnyPublisher<[Account], Never>
     private var cancellables = Set<AnyCancellable>()
 
-    /// `providers`: the provider accounts, current value first.
-    init(providers: AnyPublisher<[Account], Never>) {
-        self.providers = providers
+    /// `providers`: the provider accounts now, shown from the first frame;
+    /// `updates`: the list each time it changes.
+    init(providers: [Account], updates: AnyPublisher<[Account], Never>) {
+        initialProviders = providers
+        self.updates = updates
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -34,7 +37,8 @@ final class ProvidersSectionViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         emptyView.onAdd = { [weak self] in self?.add(nil) }
-        providers
+        show(initialProviders)
+        updates
             .receive(on: DispatchQueue.main)
             .sink { [weak self] providers in self?.show(providers) }
             .store(in: &cancellables)

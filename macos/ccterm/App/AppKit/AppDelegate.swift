@@ -109,6 +109,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         library.start()
         controller.showWindow(nil)
         controller.window?.makeKeyAndOrderFront(nil)
+
+        // Settings opens on what is already known: the CLI's login and where
+        // `claude` is, both read now in the background.
+        let settings = settingsContext
+        Task { await settings.subscription.refresh() }
+        Task.detached { [launch = settings.launch] in _ = launch.locateCLI() }
     }
 
     func applicationShouldHandleReopen(

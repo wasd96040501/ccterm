@@ -22,6 +22,8 @@ final class AccountEditorViewController: NSViewController {
     private var shownFieldsRevision = -1
     /// Filled from a paste before it appeared: leave the focus alone.
     private var wasFilled = false
+    /// What a paste made before the sheet appeared filled, to say once it has.
+    private var pendingToast: String?
 
     /// The sheet's size, fixed so the window never resizes under it.
     static let size = NSSize(width: 540, height: 600)
@@ -43,44 +45,9 @@ final class AccountEditorViewController: NSViewController {
         return false
     }
 
-    // MARK: - Header
-
-    private lazy var headerMark: NSImageView = {
-        let view = NSImageView(image: NSImage(named: "ClaudeMark") ?? NSImage())
-        view.imageScaling = .scaleProportionallyUpOrDown
-        view.isHidden = !isSubscription
-        return view
-    }()
-
-    private lazy var headerTitle: NSTextField = {
-        let label = NSTextField(labelWithString: "")
-        label.font = .systemFont(ofSize: 13, weight: .semibold)
-        label.lineBreakMode = .byTruncatingTail
-        return label
-    }()
-
-    private lazy var headerSubtitle: NSTextField = {
-        let label = NSTextField(labelWithString: "")
-        label.font = .systemFont(ofSize: 11)
-        label.textColor = .secondaryLabelColor
-        label.lineBreakMode = .byTruncatingTail
-        return label
-    }()
-
-    private lazy var header: NSStackView = {
-        let text = NSStackView(views: [headerTitle, headerSubtitle])
-        text.orientation = .vertical
-        text.alignment = .leading
-        text.spacing = 0
-        let stack = NSStackView(views: [headerMark, text])
-        stack.spacing = 12
-        stack.alignment = .centerY
-        return stack
-    }()
-
     // MARK: - Form
 
-    private lazy var form = FormView(topInset: 16, sectionSpacing: 22)
+    private lazy var form = FormView(topInset: 20, sectionSpacing: 22)
 
     private lazy var nameField = FormTextField(placeholder: String(localized: "Required"))
     private lazy var baseURLField = FormTextField(placeholder: "https://api.anthropic.com")
@@ -100,12 +67,16 @@ final class AccountEditorViewController: NSViewController {
     private lazy var credentialField = FormSecretField(placeholder: String(localized: "Required"))
     private lazy var credentialRow = FormRowView(title: "", accessory: credentialField)
 
-    private lazy var modelFields: [(field: FormTextField, keyPath: WritableKeyPath<Account.Models, String>)] = [
-        (FormTextField(placeholder: String(localized: "Default"), monospaced: true), \.main),
-        (FormTextField(placeholder: String(localized: "Default"), monospaced: true), \.opus),
-        (FormTextField(placeholder: String(localized: "Default"), monospaced: true), \.sonnet),
-        (FormTextField(placeholder: String(localized: "Default"), monospaced: true), \.haiku),
-    ]
+    /// The model a session starts with, then what each family's alias
+    /// resolves to; empty leaves the CLI's own choice.
+    private lazy var modelFields:
+        [(title: String, field: FormTextField, keyPath: WritableKeyPath<Account.Models, String>)] = [
+            (String(localized: "Default Model"), Self.modelField(), \.main),
+            ("Opus", Self.modelField(), \.opus),
+            ("Sonnet", Self.modelField(), \.sonnet),
+            ("Haiku", Self.modelField(), \.haiku),
+            ("Fable", Self.modelField(), \.fable),
+        ]
 
     private lazy var commandField = FormTextField(placeholder: "claude", width: 300, monospaced: true)
     private lazy var argumentsField = FormTextField(
@@ -114,7 +85,6 @@ final class AccountEditorViewController: NSViewController {
     private lazy var emailLabel = Self.valueLabel()
     private lazy var organizationLabel = Self.valueLabel()
     private lazy var planLabel = Self.valueLabel()
-    private lazy var methodLabel = Self.valueLabel()
 
     private lazy var manageButton: NSButton = {
         let button = NSButton(title: "", target: self, action: #selector(manage(_:)))
@@ -183,23 +153,29 @@ final class AccountEditorViewController: NSViewController {
         }
         credentialField.onChange = { [weak self] credential in self?.viewModel.setCredential(credential) }
         form.onContentBelowChange = { [weak self] below in self?.barHairline.isHidden = !below }
+        // The first frame shows the draft as it is; later changes follow.
+        show(viewModel.presentation)
         viewModel.$presentation
+            .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] presentation in self?.show(presentation) }
             .store(in: &cancellables)
     }
 
-    override func viewDidAppear() {
-        super.viewDidAppear()
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        // A new provider starts in Name. An existing account, or one filled
+        // from a paste, opens to read before editing: focus goes to the
+        // variable list, which shows none while nothing is selected. Set
+        // before the sheet turns key, which would otherwise pick a field.
         view.window?.autorecalculatesKeyViewLoop = true
-        // A new provider starts in Name; an existing account opens with
-        // nothing focused, to read before editing.
-        view.window?.makeFirstResponder(mode == .newProvider && !wasFilled ? nameField : nil)
+        view.window?.initialFirstResponder =
+            mode == .newProvider && !wasFilled ? nameField : environment.initialFirstResponder
     }
 
     private func configureHierarchy() {
         form.setSections(sections())
-        for subview in [header, form, barHairline, buttonBar, toast] {
+        for subview in [form, barHairline, buttonBar, toast] {
             subview.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(subview)
         }
@@ -207,14 +183,7 @@ final class AccountEditorViewController: NSViewController {
 
     private func configureConstraints() {
         NSLayoutConstraint.activate([
-            headerMark.widthAnchor.constraint(equalToConstant: 36),
-            headerMark.heightAnchor.constraint(equalToConstant: 36),
-            headerTitle.heightAnchor.constraint(equalToConstant: 16),
-            headerSubtitle.heightAnchor.constraint(equalToConstant: 14),
-            header.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
-            header.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            header.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20),
-            form.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 4),
+            form.topAnchor.constraint(equalTo: view.topAnchor),
             form.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             form.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             barHairline.topAnchor.constraint(equalTo: form.bottomAnchor),
@@ -243,7 +212,6 @@ final class AccountEditorViewController: NSViewController {
                         FormRowView(title: String(localized: "Email"), accessory: emailLabel),
                         FormRowView(title: String(localized: "Organization"), accessory: organizationLabel),
                         FormRowView(title: String(localized: "Plan"), accessory: plan),
-                        FormRowView(title: String(localized: "Signed in with"), accessory: methodLabel),
                     ])))
         } else {
             sections.append(
@@ -260,15 +228,11 @@ final class AccountEditorViewController: NSViewController {
             FormSectionView(
                 title: String(localized: "Environment Variables"), content: FormGroupView(rows: [environment.view])))
         if !isSubscription {
-            let titles = [
-                String(localized: "Model"), String(localized: "Opus"), String(localized: "Sonnet"),
-                String(localized: "Haiku"),
-            ]
             sections.append(
                 FormSectionView(
                     title: String(localized: "Models"),
-                    content: FormGroupView(
-                        rows: zip(titles, modelFields).map { FormRowView(title: $0, accessory: $1.field) })))
+                    content: FormGroupView(rows: modelFields.map { FormRowView(title: $0.title, accessory: $0.field) }))
+            )
         }
         sections.append(
             FormSectionView(
@@ -285,13 +249,10 @@ final class AccountEditorViewController: NSViewController {
     /// Derived state every time; field values only after a change that
     /// didn't come from typing in them.
     private func show(_ presentation: AccountEditorPresentation) {
-        headerTitle.stringValue = presentation.title
-        headerSubtitle.stringValue = presentation.subtitle
         saveButton.isEnabled = presentation.canSave
         baseURLRow.detail = presentation.baseURLError
         baseURLRow.isDetailError = true
         credentialRow.title = presentation.credentialTitle
-        credentialRow.attributedDetail = Self.credentialDetail(variable: presentation.credentialVariable)
         credentialField.configure(value: presentation.fields.credential, masked: presentation.maskedCredential)
         let authentication = authenticationPopUp.indexOfItem(
             withRepresentedObject: presentation.fields.authentication.rawValue)
@@ -300,7 +261,6 @@ final class AccountEditorViewController: NSViewController {
             emailLabel.stringValue = details.email
             organizationLabel.stringValue = details.organization
             planLabel.stringValue = details.plan
-            methodLabel.stringValue = details.signInMethod
         }
         environment.configure(with: presentation.environmentRows)
 
@@ -309,23 +269,16 @@ final class AccountEditorViewController: NSViewController {
         let fields = presentation.fields
         nameField.stringValue = fields.name
         baseURLField.stringValue = fields.baseURL
-        for (field, value) in zip(modelFields.map(\.field), [fields.model, fields.opus, fields.sonnet, fields.haiku]) {
+        let models = [fields.model, fields.opus, fields.sonnet, fields.haiku, fields.fable]
+        for (field, value) in zip(modelFields.map(\.field), models) {
             field.stringValue = value
         }
         commandField.stringValue = fields.command
         argumentsField.stringValue = fields.arguments
     }
 
-    /// “Sent as `ANTHROPIC_AUTH_TOKEN`. Stored in your keychain.”
-    private static func credentialDetail(variable: String) -> NSAttributedString {
-        let template = String(localized: "Sent as %@. Stored in your keychain.")
-        let parts = template.components(separatedBy: "%@")
-        let text = NSMutableAttributedString(string: parts.first ?? "")
-        text.append(
-            NSAttributedString(
-                string: variable, attributes: [.font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)]))
-        text.append(NSAttributedString(string: parts.dropFirst().joined()))
-        return text
+    private static func modelField() -> FormTextField {
+        FormTextField(placeholder: String(localized: "Automatic"), monospaced: true)
     }
 
     private static func valueLabel() -> NSTextField {
@@ -345,9 +298,17 @@ final class AccountEditorViewController: NSViewController {
 
     /// Reads `text` — `KEY=value` lines, `export` lines or a whole alias —
     /// into the draft, and says what it filled.
+    /// Before the sheet is up, the note waits for it to appear.
     func fill(from text: String) {
         wasFilled = true
-        toast.show(viewModel.paste(text))
+        let summary = viewModel.paste(text)
+        if isViewLoaded, view.window != nil { toast.show(summary) } else { pendingToast = summary }
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        if let pendingToast { toast.show(pendingToast) }
+        pendingToast = nil
     }
 
     /// ⌘V anywhere in the sheet but a text field.
@@ -389,6 +350,14 @@ final class AccountEditorViewController: NSViewController {
 }
 
 extension AccountEditorViewController: NSTextFieldDelegate {
+    /// Escape in a field cancels the sheet; a field editor binds it to
+    /// `complete:`, which would otherwise offer completions.
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        guard commandSelector == #selector(NSResponder.complete(_:)) else { return false }
+        cancel(control)
+        return true
+    }
+
     /// Events up: each keystroke into the draft.
     func controlTextDidChange(_ notification: Notification) {
         guard let field = notification.object as? NSTextField else { return }

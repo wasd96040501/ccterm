@@ -1,7 +1,7 @@
 import AppKit
 
 /// An account in the Accounts list, 52 tall like a titled row with a
-/// description: Claude's mark (28) for the subscription, the title over a
+/// description: a 28-point mark (Claude's, or server.rack for a provider), the title over a
 /// secondary line, and ⓘ — or a button, or a spinner — at the trailing
 /// edge. Not selectable, as System Settings' rows aren't; ⓘ or a double
 /// click reports `onOpen`, the button `onAction`. Its context menu is
@@ -63,6 +63,14 @@ final class AccountRowView: NSView {
         titleLabel.stringValue = content.title
         subtitleLabel.stringValue = content.subtitle
         mark.isHidden = content.mark == .none
+        if content.mark == .provider {
+            mark.image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 20, weight: .regular))
+            mark.contentTintColor = .secondaryLabelColor
+        } else {
+            mark.image = NSImage(named: "ClaudeMark")
+            mark.contentTintColor = nil
+        }
         mark.alphaValue = content.mark == .claudeDimmed ? 0.45 : 1
         mark.contentFilters = content.mark == .claudeDimmed ? [Self.grayscale] : []
         NSLayoutConstraint.deactivate(content.mark == .none ? markConstraints : noMarkConstraints)

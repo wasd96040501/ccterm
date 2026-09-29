@@ -15,16 +15,7 @@ final class GeneralSettingsViewController: NSViewController {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    private lazy var launchCommandField: NSTextField = {
-        let field = NSTextField(string: "")
-        field.isBordered = false
-        field.drawsBackground = false
-        field.focusRingType = .none
-        field.alignment = .right
-        field.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        field.placeholderString = "claude"
-        return field
-    }()
+    private lazy var launchCommandField = FormTextField(placeholder: "claude", monospaced: true)
 
     override func loadView() {
         view = FormView(sections: [
@@ -41,11 +32,21 @@ final class GeneralSettingsViewController: NSViewController {
         launchCommandField.stringValue = launch.command
         launchCommandField.target = self
         launchCommandField.action = #selector(commitLaunchCommand(_:))
-        locateTask = Task { [weak self, launch] in
-            let path = await Task.detached { launch.locateCLI() }.value
-            guard let path else { return }
-            self?.launchCommandField.placeholderString = (path as NSString).abbreviatingWithTildeInPath
+        // The path is looked up at launch; only if that hasn't finished does
+        // the placeholder change under the person.
+        if let located = launch.locatedCLI {
+            showLocated(located)
+        } else {
+            locateTask = Task { [weak self, launch] in
+                let path = await Task.detached { launch.locateCLI() }.value
+                self?.showLocated(path)
+            }
         }
+    }
+
+    private func showLocated(_ path: String?) {
+        guard let path else { return }
+        launchCommandField.placeholderString = (path as NSString).abbreviatingWithTildeInPath
     }
 
     @objc private func commitLaunchCommand(_ sender: NSTextField) {

@@ -112,4 +112,11 @@ final class AccountStoreTests: XCTestCase {
         let reopened = AccountStore(fileURL: fileURL, secrets: InMemorySecretStore())
         XCTAssertEqual(reopened.providers.first?.command, "second")
     }
+
+    /// A file written before a model slot existed still reads.
+    func testModelsWithoutALaterSlotDecode() throws {
+        let models = try JSONDecoder().decode(
+            Account.Models.self, from: Data(#"{"main": "m", "opus": "", "sonnet": "", "haiku": ""}"#.utf8))
+        XCTAssertEqual(models, Account.Models(main: "m"))
+    }
 }

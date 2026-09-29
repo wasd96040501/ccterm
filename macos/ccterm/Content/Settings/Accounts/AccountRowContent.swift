@@ -8,12 +8,14 @@ struct AccountRowContent: Equatable {
     var mark: Mark
     var accessory: Accessory
 
-    /// Claude's mark in front — the subscription's alone.
+    /// What stands in front of the title, 28 square.
     enum Mark: Equatable {
         case none
         case claude
         /// Greyed, while no one is signed in.
         case claudeDimmed
+        /// Every API provider's: `server.rack`.
+        case provider
     }
 
     /// What sits at the row's trailing edge.
@@ -47,7 +49,7 @@ struct AccountRowContent: Equatable {
             provider.baseURLHost ?? String(localized: "No base URL"),
             provider.models.main.isEmpty ? String(localized: "Default model") : provider.models.main,
         ].joined(separator: " · ")
-        mark = .none
+        mark = .provider
         accessory = .info
     }
 

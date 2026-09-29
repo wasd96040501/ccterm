@@ -154,6 +154,9 @@ final class EnvironmentVariablesViewController: NSViewController {
         ])
     }
 
+    /// The list itself, for a sheet to open focused on without a field.
+    var initialFirstResponder: NSView { tableView }
+
     /// Shows `rows`. The same number of rows updates the rows in place, so
     /// a field being edited keeps its caret; otherwise the list reloads and
     /// selects what + or − left pending.
@@ -297,7 +300,8 @@ extension EnvironmentVariablesViewController: NSTextFieldDelegate {
         guard let field = control as? EnvironmentVariableCellView.Field else { return false }
         let row = tableView.row(for: field)
         switch commandSelector {
-        case #selector(NSResponder.cancelOperation(_:)):
+        // A field editor binds Escape to `complete:`.
+        case #selector(NSResponder.cancelOperation(_:)), #selector(NSResponder.complete(_:)):
             _ = field.abortEditing()
             if row >= 0, row < rows.count {
                 (tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? EnvironmentVariableCellView)?
@@ -362,6 +366,8 @@ extension EnvironmentVariablesViewController {
             case " ": onToggle?()
             case "\u{7f}", String(UnicodeScalar(NSDeleteFunctionKey)!): onDelete?()
             case "\r", "\u{3}": onEdit?()
+            // The table would swallow Escape; the sheet around it cancels.
+            case "\u{1b}": _ = nextResponder?.tryToPerform(#selector(NSResponder.cancelOperation(_:)), with: self)
             default: super.keyDown(with: event)
             }
         }

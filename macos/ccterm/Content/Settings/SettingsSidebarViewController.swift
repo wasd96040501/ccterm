@@ -79,12 +79,10 @@ extension SettingsSidebarViewController: NSTableViewDataSource, NSTableViewDeleg
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let pane = SettingsPane.allCases[row]
         let cell =
-            tableView.makeView(withIdentifier: .settingsPaneCell, owner: nil) as? NSTableCellView
-            ?? Self.makeCell()
-        cell.textField?.stringValue = pane.title
-        cell.imageView?.image = NSImage(systemSymbolName: pane.symbolName, accessibilityDescription: nil)
+            tableView.makeView(withIdentifier: .settingsPaneCell, owner: nil) as? Cell
+            ?? Cell()
+        cell.configure(with: SettingsPane.allCases[row])
         return cell
     }
 
@@ -93,27 +91,54 @@ extension SettingsSidebarViewController: NSTableViewDataSource, NSTableViewDeleg
         delegate?.settingsSidebar(self, didSelect: pane)
     }
 
-    private static func makeCell() -> NSTableCellView {
-        let cell = NSTableCellView()
-        cell.identifier = .settingsPaneCell
-        let image = NSImageView()
-        let title = NSTextField(labelWithString: "")
-        title.lineBreakMode = .byTruncatingTail
-        for view in [image, title] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            cell.addSubview(view)
+    /// A pane's row as Xcode's Settings draws it: a 17-point glyph in the
+    /// accent colour 10.5 into the selection, the title 36.5 in; on the
+    /// selection the glyph turns white and the title semibold.
+    private final class Cell: NSTableCellView {
+        private let glyph = NSImageView()
+        private let title = NSTextField(labelWithString: "")
+
+        init() {
+            super.init(frame: .zero)
+            identifier = .settingsPaneCell
+            title.lineBreakMode = .byTruncatingTail
+            title.font = .systemFont(ofSize: 13)
+            glyph.imageScaling = .scaleProportionallyDown
+            for view in [glyph, title] {
+                view.translatesAutoresizingMaskIntoConstraints = false
+                addSubview(view)
+            }
+            imageView = glyph
+            textField = title
+            // The cell sits 6 into the row's selection.
+            NSLayoutConstraint.activate([
+                glyph.centerXAnchor.constraint(equalTo: leadingAnchor, constant: 13),
+                glyph.centerYAnchor.constraint(equalTo: centerYAnchor),
+                title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 30.5),
+                title.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -8),
+                title.centerYAnchor.constraint(equalTo: centerYAnchor),
+            ])
         }
-        cell.imageView = image
-        cell.textField = title
-        NSLayoutConstraint.activate([
-            image.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 10),
-            image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            image.widthAnchor.constraint(equalToConstant: 18),
-            title.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 9),
-            title.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor, constant: -8),
-            title.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-        ])
-        return cell
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+        func configure(with pane: SettingsPane) {
+            title.stringValue = pane.title
+            glyph.image = NSImage(systemSymbolName: pane.symbolName, accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 15, weight: .regular))
+            updateEmphasis()
+        }
+
+        override var backgroundStyle: NSView.BackgroundStyle {
+            didSet { updateEmphasis() }
+        }
+
+        private func updateEmphasis() {
+            let selected = backgroundStyle == .emphasized
+            glyph.contentTintColor = selected ? .white : .controlAccentColor
+            title.font = .systemFont(ofSize: 13, weight: selected ? .semibold : .regular)
+        }
     }
 }
 

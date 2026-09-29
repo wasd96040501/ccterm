@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// How the CLI is started when an account doesn't say: the launch command set
 /// in General, kept in the defaults, and the rule that picks between it and
@@ -40,9 +41,19 @@ nonisolated final class LaunchSettings: @unchecked Sendable {
         return nil
     }
 
-    /// Where `claude` is when no command is set. Blocking — call it off the
-    /// main actor.
+    /// Where `claude` is when no command is set, looked up once. Blocking the
+    /// first time — call it off the main actor.
     func locateCLI() -> String? {
-        locate()
+        if let located = located.withLock({ $0 }) { return located }
+        let path = locate()
+        located.withLock { $0 = .some(path) }
+        return path
     }
+
+    /// What ``locateCLI()`` found, if it has run; never blocks.
+    var locatedCLI: String?? {
+        located.withLock { $0 }
+    }
+
+    private let located = OSAllocatedUnfairLock<String??>(initialState: nil)
 }

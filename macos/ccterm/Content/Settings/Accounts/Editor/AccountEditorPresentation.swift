@@ -6,15 +6,11 @@ import Foundation
 /// changed them — a paste — which `fieldsRevision` counts; rewriting the
 /// field being typed in would move its caret.
 struct AccountEditorPresentation: Equatable {
-    var title: String
-    var subtitle: String
     var canSave: Bool
     /// Under Base URL, in red; `nil` hides it.
     var baseURLError: String?
     /// The credential row's title: “Token” or “API key”.
     var credentialTitle: String
-    /// The variable the credential is sent as, `ANTHROPIC_AUTH_TOKEN`, …
-    var credentialVariable: String
     /// The credential as shown at rest, `sk-••••••••7c1e`.
     var maskedCredential: String
     /// The subscription's account, for its sheet; `nil` for a provider.
@@ -32,6 +28,7 @@ struct AccountEditorPresentation: Equatable {
         var opus = ""
         var sonnet = ""
         var haiku = ""
+        var fable = ""
         var command = ""
         var arguments = ""
     }
@@ -41,6 +38,5 @@ struct AccountEditorPresentation: Equatable {
         var email: String
         var organization: String
         var plan: String
-        var signInMethod: String
     }
 }

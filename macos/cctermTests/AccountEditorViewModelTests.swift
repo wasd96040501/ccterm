@@ -37,11 +37,19 @@ final class AccountEditorViewModelTests: XCTestCase {
     func testTheCredentialRowFollowsTheAuthentication() {
         let model = newProvider()
         model.setCredential("sk-proxy-example-4b0e9d2c7c1e")
-        XCTAssertEqual(model.presentation.credentialVariable, "ANTHROPIC_AUTH_TOKEN")
+        XCTAssertEqual(model.presentation.credentialTitle, String(localized: "Token"))
         XCTAssertEqual(model.presentation.maskedCredential, "sk-••••••••7c1e")
         model.setAuthentication(.apiKey)
-        XCTAssertEqual(model.presentation.credentialVariable, "ANTHROPIC_API_KEY")
+        XCTAssertEqual(model.presentation.credentialTitle, String(localized: "API key"))
         XCTAssertEqual(model.presentation.fields.authentication, .apiKey)
+    }
+
+    func testAPastedFableModelFillsItsField() {
+        let model = newProvider()
+        _ = model.paste("ANTHROPIC_DEFAULT_FABLE_MODEL=claude-fable-5-1\nANTHROPIC_MODEL=claude-opus-5-5")
+        XCTAssertEqual(model.presentation.fields.fable, "claude-fable-5-1")
+        XCTAssertEqual(model.presentation.fields.model, "claude-opus-5-5")
+        XCTAssertTrue(model.presentation.environmentRows.isEmpty)
     }
 
     func testShortSecretsAreMaskedWhole() {

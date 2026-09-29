@@ -53,7 +53,7 @@ nonisolated struct AccountPaste: Equatable {
     enum Field: Equatable {
         case name, baseURL
         case credential(Account.Authentication)
-        case model, opus, sonnet, haiku, command, arguments
+        case model, opus, sonnet, haiku, fable, command, arguments
     }
 
     /// Fills `account` and `secrets` from the paste: variables the account has
@@ -88,6 +88,9 @@ nonisolated struct AccountPaste: Equatable {
             case ("ANTHROPIC_DEFAULT_HAIKU_MODEL", true):
                 provider?.models.haiku = value
                 fill(.haiku)
+            case ("ANTHROPIC_DEFAULT_FABLE_MODEL", true):
+                provider?.models.fable = value
+                fill(.fable)
             default:
                 if let index = secrets.environment.firstIndex(where: { $0.name == name }) {
                     secrets.environment[index].value = value

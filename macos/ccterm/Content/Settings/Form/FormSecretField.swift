@@ -136,6 +136,13 @@ final class FormSecretField: NSView {
 }
 
 extension FormSecretField: NSTextFieldDelegate {
+    /// Escape goes to whatever encloses the field — a sheet cancels; a
+    /// field editor binds it to `complete:`.
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        guard commandSelector == #selector(NSResponder.complete(_:)) else { return false }
+        return nextResponder?.tryToPerform(#selector(NSResponder.cancelOperation(_:)), with: control) ?? false
+    }
+
     func controlTextDidChange(_ notification: Notification) {
         guard let field = notification.object as? NSTextField else { return }
         value = field.stringValue

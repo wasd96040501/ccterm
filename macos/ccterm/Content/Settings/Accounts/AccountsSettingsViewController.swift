@@ -20,9 +20,13 @@ final class AccountsSettingsViewController: NSViewController {
     init(accounts: AccountStore, subscription: SubscriptionService) {
         self.accounts = accounts
         self.subscription = subscription
-        subscriptionSection = SubscriptionSectionViewController(state: subscription.$state.eraseToAnyPublisher())
+        // Each section starts from the state as it is now, so the pane's
+        // first frame is already right; changes follow.
+        subscriptionSection = SubscriptionSectionViewController(
+            state: subscription.state, updates: subscription.$state.dropFirst().eraseToAnyPublisher())
         providersSection = ProvidersSectionViewController(
-            providers: accounts.$accounts.map { $0.filter { $0.provider != nil } }.eraseToAnyPublisher())
+            providers: accounts.providers,
+            updates: accounts.$accounts.dropFirst().map { $0.filter { $0.provider != nil } }.eraseToAnyPublisher())
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -60,10 +64,12 @@ final class AccountsSettingsViewController: NSViewController {
         }
     }
 
-    private func present(_ account: Account, secrets: AccountSecrets, mode: AccountEditorMode) {
+    /// `paste`: text to fill the draft from before the sheet appears.
+    private func present(_ account: Account, secrets: AccountSecrets, mode: AccountEditorMode, paste: String? = nil) {
         guard editor == nil else { return }
         let editor = AccountEditorViewController(mode: mode, account: account, secrets: secrets)
         editor.delegate = self
+        if let paste { editor.fill(from: paste) }
         self.editor = editor
         editing = account
         presentAsSheet(editor)
@@ -81,8 +87,7 @@ final class AccountsSettingsViewController: NSViewController {
     @objc func paste(_ sender: Any?) {
         guard editor == nil, let text = NSPasteboard.general.string(forType: .string), AccountPaste(text) != nil
         else { return }
-        present(.newProvider(), secrets: AccountSecrets(), mode: .newProvider)
-        editor?.fill(from: text)
+        present(.newProvider(), secrets: AccountSecrets(), mode: .newProvider, paste: text)
     }
 
     // MARK: - Confirmations

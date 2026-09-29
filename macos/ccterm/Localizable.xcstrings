@@ -80,16 +80,6 @@
         }
       }
     },
-    "API provider": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "API 提供方"
-          }
-        }
-      }
-    },
     "About ccterm": {
       "localizations": {
         "zh-Hans": {
@@ -180,6 +170,16 @@
         }
       }
     },
+    "Automatic": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动"
+          }
+        }
+      }
+    },
     "Back": {
       "comment": "Toolbar button: back through the active editor's history.",
       "localizations": {
@@ -227,16 +227,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Claude %@"
-          }
-        }
-      }
-    },
-    "Claude %@ subscription": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Claude %@ 订阅"
           }
         }
       }
@@ -331,12 +321,12 @@
         }
       }
     },
-    "Default": {
+    "Default Model": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "默认"
+            "value": "默认模型"
           }
         }
       }
@@ -447,6 +437,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "环境变量"
+          }
+        }
+      }
+    },
+    "Fable": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fable"
           }
         }
       }
@@ -592,16 +592,6 @@
         }
       }
     },
-    "Model": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "模型"
-          }
-        }
-      }
-    },
     "Models": {
       "localizations": {
         "zh-Hans": {
@@ -618,16 +608,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "名称"
-          }
-        }
-      }
-    },
-    "New Provider": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "新提供方"
           }
         }
       }
@@ -822,16 +802,6 @@
         }
       }
     },
-    "Sent as %@. Stored in your keychain.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "以 %@ 发送，存储在你的钥匙串中。"
-          }
-        }
-      }
-    },
     "Settings…": {
       "localizations": {
         "zh-Hans": {
@@ -898,16 +868,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "要退出 %@ 的登录吗？"
-          }
-        }
-      }
-    },
-    "Signed in with": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "登录方式"
           }
         }
       }
@@ -1054,12 +1014,12 @@
         }
       }
     },
-    "model": {
+    "default model": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "模型"
+            "value": "默认模型"
           }
         }
       }

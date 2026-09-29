@@ -112,20 +112,7 @@ final class AccountEditorViewModel {
             fields.opus = provider.models.opus
             fields.sonnet = provider.models.sonnet
             fields.haiku = provider.models.haiku
-        }
-
-        let title: String
-        let subtitle: String
-        switch mode {
-        case .subscription(let subscription):
-            title = subscription.email
-            subtitle = String(localized: "Claude \(subscription.planName ?? "") subscription")
-        case .newProvider, .provider:
-            let name = provider?.name.trimmingCharacters(in: .whitespaces) ?? ""
-            title = name.isEmpty ? String(localized: "New Provider") : name
-            subtitle =
-                mode == .newProvider
-                ? String(localized: "API provider") : provider?.baseURLHost ?? String(localized: "No base URL")
+            fields.fable = provider.models.fable
         }
 
         var baseURLError: String?
@@ -142,17 +129,15 @@ final class AccountEditorViewModel {
         if case .subscription(let subscription) = mode {
             details = AccountEditorPresentation.SubscriptionDetails(
                 email: subscription.email, organization: subscription.organization ?? "—",
-                plan: subscription.planName.map { String(localized: "Claude \($0)") } ?? "—",
-                signInMethod: subscription.method.map { $0.prefix(1).uppercased() + $0.dropFirst() } ?? "—")
+                plan: subscription.planName.map { String(localized: "Claude \($0)") } ?? "—")
         }
 
         let authentication = provider?.authentication ?? .authToken
         return AccountEditorPresentation(
-            title: title, subtitle: subtitle, canSave: canSave, baseURLError: baseURLError,
+            canSave: canSave, baseURLError: baseURLError,
             credentialTitle: authentication == .apiKey ? String(localized: "API key") : String(localized: "Token"),
-            credentialVariable: authentication.variable, maskedCredential: masked(secrets.credential),
-            subscription: details, fields: fields, fieldsRevision: fieldsRevision,
-            environmentRows: rows(secrets.environment))
+            maskedCredential: masked(secrets.credential), subscription: details, fields: fields,
+            fieldsRevision: fieldsRevision, environmentRows: rows(secrets.environment))
     }
 
     /// The Authentication menu: each way, and what it sends.
@@ -192,10 +177,11 @@ final class AccountEditorViewModel {
         "ANTHROPIC_BASE_URL": String(localized: "Base URL"),
         "ANTHROPIC_AUTH_TOKEN": String(localized: "Auth Token"),
         "ANTHROPIC_API_KEY": String(localized: "API Key"),
-        "ANTHROPIC_MODEL": String(localized: "Model"),
+        "ANTHROPIC_MODEL": String(localized: "Default Model"),
         "ANTHROPIC_DEFAULT_OPUS_MODEL": String(localized: "Opus"),
         "ANTHROPIC_DEFAULT_SONNET_MODEL": String(localized: "Sonnet"),
         "ANTHROPIC_DEFAULT_HAIKU_MODEL": String(localized: "Haiku"),
+        "ANTHROPIC_DEFAULT_FABLE_MODEL": String(localized: "Fable"),
     ]
 
     static func isValidURL(_ string: String) -> Bool {
@@ -219,10 +205,11 @@ final class AccountEditorViewModel {
         case .baseURL: String(localized: "Base URL")
         case .credential(.authToken): String(localized: "token")
         case .credential(.apiKey): String(localized: "API key")
-        case .model: String(localized: "model")
+        case .model: String(localized: "default model")
         case .opus: String(localized: "Opus")
         case .sonnet: String(localized: "Sonnet")
         case .haiku: String(localized: "Haiku")
+        case .fable: String(localized: "Fable")
         case .command: String(localized: "command")
         case .arguments: String(localized: "arguments")
         }

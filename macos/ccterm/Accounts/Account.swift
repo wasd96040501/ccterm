@@ -51,12 +51,34 @@ nonisolated struct Account: Identifiable, Codable, Equatable, Sendable {
         }
     }
 
-    /// Model names the provider serves; empty leaves the CLI's default.
+    /// Model names the provider serves; empty leaves the CLI's own choice.
     struct Models: Codable, Equatable, Sendable {
+        /// The model a session starts with, `ANTHROPIC_MODEL`.
         var main = ""
+        /// What each family's alias resolves to, `ANTHROPIC_DEFAULT_<FAMILY>_MODEL`.
         var opus = ""
         var sonnet = ""
         var haiku = ""
+        var fable = ""
+
+        init(main: String = "", opus: String = "", sonnet: String = "", haiku: String = "", fable: String = "") {
+            self.main = main
+            self.opus = opus
+            self.sonnet = sonnet
+            self.haiku = haiku
+            self.fable = fable
+        }
+
+        /// A slot missing from the file — one added since it was written —
+        /// reads as empty.
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            main = try container.decodeIfPresent(String.self, forKey: .main) ?? ""
+            opus = try container.decodeIfPresent(String.self, forKey: .opus) ?? ""
+            sonnet = try container.decodeIfPresent(String.self, forKey: .sonnet) ?? ""
+            haiku = try container.decodeIfPresent(String.self, forKey: .haiku) ?? ""
+            fable = try container.decodeIfPresent(String.self, forKey: .fable) ?? ""
+        }
     }
 
     var provider: Provider? {

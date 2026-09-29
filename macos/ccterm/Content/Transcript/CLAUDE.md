@@ -15,7 +15,7 @@ Dependencies point down only: `Documents/` and `Rows/` read `Page/`; `Page/` rea
 
 ## Rules
 
-- **Words are decided in `Page/`.** Every sentence, label and stat is built there, localized, as `StyledText` (words plus the distinctions a view draws: noun, code, added, removed, failure). A view picks fonts and colours for those styles; it never composes wording or formats a number. Tests assert on the words without AppKit.
+- **Words are decided in `Page/`** — and a document's in `DocumentHeader` and `DocumentMarkdown`, the pure worded types in `Documents/`. Every sentence, label and stat is built there, localized, as `StyledText` (words plus the distinctions a view draws: noun, code, added, removed, failure). A view picks fonts and colours for those styles; it never composes wording or formats a number. Tests assert on the words without AppKit.
 - **`Page/` types are `nonisolated`** (the app defaults to `MainActor`); pages are built off the main actor.
 - **TranscriptKit draws what it can.** Replies, prompts, a voice's words (a blockquote), a plan, and every markdown document are TranscriptKit `.markdown` / `.userMessage` rows or a `TranscriptView` — no second renderer. Only work lines, captions, capsules, dividers, questions and approval controls are `.view` rows.
 - **One row per line.** A run's line, each item, *Show N more* and the approval card are separate rows (`PageRow.Part`); expanding is inserting rows. TranscriptKit forbids animating row geometry, so nothing slides.

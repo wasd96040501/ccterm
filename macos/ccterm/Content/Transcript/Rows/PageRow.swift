@@ -124,12 +124,9 @@ nonisolated extension PageRow {
         case .question(let question):
             return [row(.main, .question(question))]
         case .plan(let plan):
-            let caption =
-                plan.isWaiting
-                ? String(localized: "Plan · Waiting for your approval") : String(localized: "Plan")
             let tile = Tile(glyph: .plan, state: plan.isWaiting ? .waiting : .done)
             var rows = [
-                row(.caption, .caption(Caption(glyph: .tile(tile), text: caption))),
+                row(.caption, .caption(Caption(glyph: .tile(tile), text: plan.caption))),
                 row(.body, .markdown(plan.text)),
             ]
             if plan.isWaiting { rows.append(row(.decision, .planDecision(plan))) }

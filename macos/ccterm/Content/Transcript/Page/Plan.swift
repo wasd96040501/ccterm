@@ -15,4 +15,9 @@ nonisolated struct Plan: Sendable, Equatable, Identifiable {
     var isWaiting: Bool {
         if case .waiting = call.state { true } else { false }
     }
+
+    /// The words of the caption over the plan.
+    var caption: String {
+        isWaiting ? String(localized: "Plan · Waiting for your approval") : String(localized: "Plan")
+    }
 }

@@ -457,7 +457,13 @@ public final class ExactListView: NSView {
 
         let countChanged = map.newCount != map.oldCount
         withoutImplicitAnimation {
-            let retiring = placement.apply(map)
+            var retiring = placement.apply(map)
+            if duration == 0 {
+                // Nothing animates out: the removed rows leave before the
+                // arriving rows are placed, which then take their containers.
+                for container in retiring.values { placement.retire(container) }
+                retiring = [:]
+            }
             animator.apply(map)
             renumberAccessibilityElements(through: map)
             heights = plan.heights
@@ -781,8 +787,10 @@ extension ExactListView: MotionAnimatorOwner {
     func motionAnimator(_ animator: MotionAnimator, didFinishCommitRetiring retired: [RowContainerView]) {
         withoutImplicitAnimation {
             for container in retired { placement.retire(container) }
-            guard isLoaded, !isAdjusting else { return }
-            placement.place(rows: preparedRows(), keeping: animator.rowsInFlight, heights: heights, width: width)
+            // Retired containers wait in the document for a placement, so
+            // there is always one; mid-adjustment it keeps the mounted rows.
+            let rows = isLoaded && !isAdjusting ? preparedRows() : placement.mountedRows
+            placement.place(rows: rows, keeping: animator.rowsInFlight, heights: heights, width: width)
         }
     }
 }

@@ -21,6 +21,10 @@ final class RowPlacement {
     /// Containers not in any row, kept for the next row that arrives.
     private var spare: [RowContainerView] = []
 
+    /// Containers retired since the last `place`: out of their rows but still
+    /// in the document, for the rows that arrive next to take first.
+    private var retired: [RowContainerView] = []
+
     init(documentView: ListDocumentView) {
         self.documentView = documentView
     }
@@ -64,7 +68,8 @@ final class RowPlacement {
     /// before `viewForRow` (P2, P3). Containers left over leave the document.
     func place(rows: IndexSet, keeping: IndexSet, heights: RowHeights, width: CGFloat) {
         let wanted = rows.union(keeping).filteredIndexSet { $0 < heights.count }
-        var departed: [RowContainerView] = []
+        var departed = retired
+        retired.removeAll()
         for (row, container) in containers where !wanted.contains(row) {
             depart(container, reporting: row)
             containers[row] = nil
@@ -94,11 +99,7 @@ final class RowPlacement {
             if let view { _ = container.host(view, height: frame.height) }
             containers[row] = container
         }
-        for container in departed {
-            container.removeFromSuperview()
-            _ = container.unhost()
-            spare.append(container)
-        }
+        for container in departed { stow(container) }
     }
 
     /// U6: asks these mounted rows for their views again.
@@ -130,22 +131,27 @@ final class RowPlacement {
         return -1
     }
 
-    /// Unmounts a container whose animation has ended, reporting `didRemove`
-    /// (P3).
+    /// Takes back a container whose animation has ended, reporting
+    /// `didRemove` (P3). It stays in the document until the next `place`,
+    /// which gives it to an arriving row or unmounts it.
     func retire(_ container: RowContainerView) {
-        unmount(container, reporting: -1)
+        depart(container, reporting: -1)
+        retired.append(container)
     }
 
     /// U7: unmounts everything, reporting `didRemove` for each.
     func removeAll() {
         for (row, container) in containers {
-            unmount(container, reporting: row)
+            depart(container, reporting: row)
+            stow(container)
         }
         containers.removeAll()
+        for container in retired { stow(container) }
+        retired.removeAll()
     }
 
-    private func unmount(_ container: RowContainerView, reporting row: Int) {
-        depart(container, reporting: row)
+    /// Takes a departed container out of the document, empty, into `spare`.
+    private func stow(_ container: RowContainerView) {
         container.removeFromSuperview()
         _ = container.unhost()
         spare.append(container)

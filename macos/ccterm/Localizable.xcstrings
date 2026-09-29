@@ -205,6 +205,16 @@
         }
       }
     },
+    "Approve": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "批准"
+          }
+        }
+      }
+    },
     "Back": {
       "comment": "Toolbar button: back through the active editor's history.",
       "localizations": {
@@ -580,6 +590,16 @@
         }
       }
     },
+    "Keep Planning": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续规划"
+          }
+        }
+      }
+    },
     "Launch Command": {
       "localizations": {
         "zh-Hans": {
@@ -947,6 +967,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "子代理"
+          }
+        }
+      }
+    },
+    "Summary": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "摘要"
           }
         }
       }

@@ -691,9 +691,13 @@ Benchmarks:
 - **B3: width changes.** Per frame of a divider drag, the cost is at most
   `NSTableView`'s visible re-measure plus `noteHeightOfRows` of the visible
   rows.
-- **B4: loading.** Loading 10 000 rows is reported against `NSTableView`'s
-  `reloadData()` followed by a scroll to the end, which is what forces it to
-  measure every row. The gate is 1.2× that.
+- **B4: loading.** From creating the view to its first displayed frame,
+  loading 10 000 rows is reported against `NSTableView`'s `reloadData()` and
+  first displayed frame. The gate is 1.2× that. `NSTableView` measures only a
+  few hundred rows even when scrolled to its end (§2; measured: 301 of
+  10 000), so no workload makes it measure them all, and none is pretended.
+  The heights come from an array, so what is gated is the engine: a host's own
+  cost per row is paid `n` times here and a few hundred times there, on top.
 
 **Traceability.** `SpecCoverageTests` parses every requirement ID in this file
 and fails if any ID is not in some test's name.

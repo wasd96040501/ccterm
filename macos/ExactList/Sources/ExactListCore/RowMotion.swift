@@ -41,8 +41,8 @@ public struct RowMotion: Equatable, Sendable {
         self.transition = transition
     }
 
-    /// Whether anything moves. A commit adds no animation for a row where this
-    /// is `false`.
+    /// Whether nothing moves. A commit adds no animation for a row where this
+    /// is `true`; an inserted or removed row always has its effect.
     public var isStill: Bool {
         switch kind {
         case .inserted, .removed:

@@ -89,9 +89,7 @@ public final class ExactListView: NSView {
             insets = newValue
             // AppKit re-constrains the clip view here. That is an echo: the
             // anchor must resolve against the viewport before the change (V2).
-            isAdjusting = true
-            scrollView.contentInsets = newValue
-            isAdjusting = false
+            adjusting { scrollView.contentInsets = newValue }
             syncViewport()
         }
     }
@@ -384,9 +382,7 @@ public final class ExactListView: NSView {
         // The clip view's width is final only once the scroll view has tiled at
         // this size; loading before that would measure every row at a width
         // that is never shown (L7).
-        isAdjusting = true
-        scrollView.tile()
-        isAdjusting = false
+        adjusting { scrollView.tile() }
         guard clipView.bounds.width > 0 else { return }
         phase = .loaded
         width = clipView.bounds.width
@@ -433,7 +429,7 @@ public final class ExactListView: NSView {
             newHeights.setHeight(height, ofRow: row)
         }
         if let newSpacing { newHeights.spacing = newSpacing }
-        let duration = asksForMotion(map, from: oldHeights, to: newHeights) ? duration : 0
+        let animates = duration > 0 && asksForMotion(map, from: oldHeights, to: newHeights)
         var newStale = stale
         newStale.apply(map)
         newStale.markFresh(fresh)
@@ -449,7 +445,7 @@ public final class ExactListView: NSView {
                 CommitInput(
                     oldHeights: oldHeights, newHeights: newHeights, map: map, oldViewport: committed,
                     newViewport: target, anchoring: anchoring, targetOffset: targetOffset, followsTail: followsTail,
-                    rescalesAnchor: rescales, mountedRows: mountedBefore, animates: duration > 0))
+                    rescalesAnchor: rescales, mountedRows: mountedBefore, animates: animates))
             var after = target
             after.offset = plan.offset
             let needed = rowsToMount(plan, viewport: after, heights: newHeights).union(inFlight).filteredIndexSet {
@@ -465,7 +461,7 @@ public final class ExactListView: NSView {
         var containers: [Int: RowContainerView] = [:]
         withoutImplicitAnimation {
             retiring = placement.apply(map)
-            if duration == 0 {
+            if !animates {
                 // Nothing animates out: the removed rows leave before the
                 // arriving rows are placed, which then take their containers.
                 for container in retiring.values { placement.retire(container) }
@@ -496,7 +492,7 @@ public final class ExactListView: NSView {
         // CATransaction is not waited for by the caller's group (measured),
         // and M3 makes the caller's completion wait for the motion.
         animator.animate(
-            plan, containers: containers, retiring: retiring, duration: duration, timing: timing,
+            plan, containers: containers, retiring: retiring, duration: animates ? duration : 0, timing: timing,
             completion: completion ?? { _ in })
         reportTail()
         if countChanged { NSAccessibility.post(element: documentView, notification: .rowCountChanged) }
@@ -531,12 +527,24 @@ public final class ExactListView: NSView {
     /// Sizes the document to `W × H` and moves the clip view to `offset`,
     /// without hearing about either as news.
     private func install(offset: CGFloat) {
-        isAdjusting = true
-        defer { isAdjusting = false }
-        documentView.frame = NSRect(x: 0, y: 0, width: width, height: heights.contentHeight)
+        adjusting {
+            documentView.frame = NSRect(x: 0, y: 0, width: width, height: heights.contentHeight)
+            moveClip(to: offset)
+        }
+        committed = liveViewport()
+    }
+
+    private func moveClip(to offset: CGFloat) {
         clipView.setBoundsOrigin(NSPoint(x: 0, y: offset))
         scrollView.reflectScrolledClipView(clipView)
-        committed = liveViewport()
+    }
+
+    /// Runs `body` with AppKit's reports treated as echoes of it.
+    private func adjusting(_ body: () -> Void) {
+        let was = isAdjusting
+        isAdjusting = true
+        defer { isAdjusting = was }
+        body()
     }
 
     /// Model changes land at once; only `MotionAnimator`'s clocks move
@@ -649,6 +657,12 @@ public final class ExactListView: NSView {
     /// stale rows first, and re-evaluate tail following.
     private func didScroll() {
         committed = liveViewport()
+        remount()
+    }
+
+    /// P1, W4, A8: mounts the rows in `P` at the committed geometry, or, when
+    /// a stale row would be shown, commits to measure it first.
+    private func remount() {
         if preparedRows().union(animator.rowsInFlight).contains(where: { stale.contains($0) }) {
             commit(map: identityMap())
         } else {
@@ -804,13 +818,7 @@ extension ExactListView: ListDocumentViewOwner {
     func documentView(_ documentView: ListDocumentView, prepareContentIn rect: NSRect) {
         appKitPrepared = rect
         guard isLoaded, !isAdjusting else { return }
-        if preparedRows().union(animator.rowsInFlight).contains(where: { stale.contains($0) }) {
-            commit(map: identityMap())
-        } else {
-            withoutImplicitAnimation {
-                placement.place(rows: preparedRows(), keeping: animator.rowsInFlight, heights: heights, width: width)
-            }
-        }
+        remount()
     }
 
     func numberOfAccessibilityRows(in documentView: ListDocumentView) -> Int {
@@ -850,11 +858,7 @@ extension ExactListView: MotionAnimatorOwner {
     /// reader's, except that it is the list's own.
     func motionAnimator(_ animator: MotionAnimator, scrollTo offset: CGFloat) {
         guard isLoaded else { return }
-        let clamped = committed.clamped(offset, contentHeight: heights.contentHeight)
-        isAdjusting = true
-        clipView.setBoundsOrigin(NSPoint(x: 0, y: clamped))
-        scrollView.reflectScrolledClipView(clipView)
-        isAdjusting = false
+        adjusting { moveClip(to: committed.clamped(offset, contentHeight: heights.contentHeight)) }
         didScroll()
     }
 

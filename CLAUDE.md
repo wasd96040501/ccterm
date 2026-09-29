@@ -11,6 +11,7 @@ This file holds repo-wide commands and workflow. Engineering conventions and are
 | Area | Doc |
 |---|---|
 | **AppKit conventions + runloop tick model** (layering, DI, containment, views, lists, concurrency) — applies to all Swift | [macos/CLAUDE.md](macos/CLAUDE.md) |
+| The app's transcript tab — page model, run rows, documents beside | [macos/ccterm/Content/Transcript/CLAUDE.md](macos/ccterm/Content/Transcript/CLAUDE.md) |
 | `TranscriptKit` package — the transcript view (API rules, internals, media, workspace, tests) | [macos/TranscriptKit/CLAUDE.md](macos/TranscriptKit/CLAUDE.md) |
 | App unit tests (parallel safety, snapshots, measurement probes) | [cctermTests/CLAUDE.md](macos/cctermTests/CLAUDE.md) |
 | AppKit verification harness (real-tree mount, geometry / animation / interaction probes) | [cctermTests/Harness/CLAUDE.md](macos/cctermTests/Harness/CLAUDE.md) |

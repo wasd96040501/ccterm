@@ -282,6 +282,13 @@ public protocol TranscriptViewDelegate: AnyObject {
     /// resize, a reload, and `scrollToRow` all report; a mutation that the tail
     /// follows does not, because it never left.
     func transcriptView(_ transcriptView: TranscriptView, didChangeTailFollowing isFollowingTail: Bool)
+
+    /// A key the reader pressed in the transcript, as the standard key
+    /// bindings name it (`moveUp(_:)`, `moveDown(_:)`, …); `true` if the host
+    /// handled it. Asked before the transcript scrolls by it, so a host whose
+    /// rows can be stepped through takes ↑ / ↓ for that and leaves the rest to
+    /// scrolling. `NSTextView`'s `textView(_:doCommandBy:)`, the same hook.
+    func transcriptView(_ transcriptView: TranscriptView, doCommandBy selector: Selector) -> Bool
 }
 
 extension TranscriptViewDelegate {
@@ -335,6 +342,10 @@ extension TranscriptViewDelegate {
     public func transcriptView(
         _ transcriptView: TranscriptView, didChangeTailFollowing isFollowingTail: Bool
     ) {}
+
+    public func transcriptView(_ transcriptView: TranscriptView, doCommandBy selector: Selector) -> Bool {
+        false
+    }
 
     /// The transcript's own menu, unchanged — so not implementing this leaves
     /// Copy working rather than leaving the row with no menu at all.

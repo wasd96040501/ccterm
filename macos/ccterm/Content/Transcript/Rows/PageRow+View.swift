@@ -1,0 +1,111 @@
+import AppKit
+import TranscriptKit
+
+/// Where a page row meets TranscriptKit: which content it is, how tall a
+/// `.view` row is, and which view draws it — the one switch from row kinds
+/// to row views.
+extension PageRow {
+    var transcriptRow: TranscriptRow {
+        TranscriptRow(id: id, content: content)
+    }
+
+    private var content: TranscriptRowContent {
+        switch kind {
+        case .prompt(let text): .userMessage(text)
+        case .markdown(let markdown): .markdown(markdown)
+        default: .view
+        }
+    }
+
+    /// A `.view` row's height at `width`, from the model alone.
+    @MainActor
+    func height(width: CGFloat) -> CGFloat {
+        switch kind {
+        case .prompt, .markdown:
+            preconditionFailure("TranscriptKit measures its own rows")
+        case .runLine, .runItem, .newsLine, .newsItem:
+            WorkLineRowView.height(for: workLine(isSelected: false, flashes: false), width: width)
+        case .showMore(let runID, let hidden):
+            ShowMoreRowView.height(for: .init(runID: runID, hidden: hidden), width: width)
+        case .approval(let call):
+            ApprovalCardView.height(for: call, width: width)
+        case .command(let command):
+            CapsuleRowView.height(for: command, width: width)
+        case .divider(let divider):
+            DividerRowView.height(for: divider, width: width)
+        case .interruption:
+            InterruptionRowView.height(for: (), width: width)
+        case .caption(let caption):
+            CaptionRowView.height(for: caption, width: width)
+        case .question(let question):
+            QuestionRowView.height(for: question, width: width)
+        case .planDecision(let plan):
+            PlanDecisionRowView.height(for: plan, width: width)
+        }
+    }
+
+    /// A `.view` row's view, recycled through `transcript` and configured.
+    /// Call from `transcriptView(_:viewForRow:)` only.
+    @MainActor
+    func makeView(
+        in transcript: TranscriptView, isSelected: Bool, flashes: Bool, delegate: PageRowViewDelegate
+    ) -> NSView {
+        func view<V: PageRowView>(_: V.Type, _ model: V.Model) -> V {
+            let view = transcript.makeView(withIdentifier: V.reuseIdentifier) { V() }
+            view.delegate = delegate
+            view.configure(with: model)
+            return view
+        }
+        switch kind {
+        case .prompt, .markdown:
+            preconditionFailure("TranscriptKit draws its own rows")
+        case .runLine, .runItem, .newsLine, .newsItem:
+            return view(WorkLineRowView.self, workLine(isSelected: isSelected, flashes: flashes))
+        case .showMore(let runID, let hidden):
+            return view(ShowMoreRowView.self, .init(runID: runID, hidden: hidden))
+        case .approval(let call):
+            return view(ApprovalCardView.self, call)
+        case .command(let command):
+            return view(CapsuleRowView.self, command)
+        case .divider(let divider):
+            return view(DividerRowView.self, divider)
+        case .interruption:
+            return view(InterruptionRowView.self, ())
+        case .caption(let caption):
+            return view(CaptionRowView.self, caption)
+        case .question(let question):
+            return view(QuestionRowView.self, question)
+        case .planDecision(let plan):
+            return view(PlanDecisionRowView.self, plan)
+        }
+    }
+
+    /// A line of work as `WorkLineRowView` draws it: a single run or single
+    /// piece of news opens its one item, a longer one toggles.
+    private func workLine(isSelected: Bool, flashes: Bool) -> WorkLineRowView.Model {
+        switch kind {
+        case .runLine(let run, let disclosure):
+            WorkLineRowView.Model(
+                line: run.line, level: .line,
+                action: run.isSingle ? .open(run.items[0].id) : .toggle(run.id, expanded: disclosure != .collapsed),
+                origin: nil, error: nil, isSelected: isSelected, flashes: flashes)
+        case .runItem(let item):
+            WorkLineRowView.Model(
+                line: item.line, level: .item, action: .open(item.id), origin: nil, error: item.error,
+                isSelected: isSelected,
+                flashes: flashes)
+        case .newsLine(let news, let disclosure):
+            WorkLineRowView.Model(
+                line: news.line, level: .line,
+                action: news.isSingle ? .open(news.news[0].id) : .toggle(news.id, expanded: disclosure != .collapsed),
+                origin: news.isSingle ? news.news[0].origin : nil, error: nil, isSelected: isSelected, flashes: flashes)
+        case .newsItem(let news):
+            WorkLineRowView.Model(
+                line: news.line, level: .item, action: .open(news.id), origin: news.origin, error: nil,
+                isSelected: isSelected,
+                flashes: flashes)
+        default:
+            preconditionFailure("\(kind) is not a line of work")
+        }
+    }
+}

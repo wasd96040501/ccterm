@@ -38,4 +38,14 @@ nonisolated struct ToolCall: Sendable, Equatable, Identifiable {
     var filePath: String? {
         use.input["file_path"]?.stringValue ?? use.input["notebook_path"]?.stringValue
     }
+
+    /// The subagent an Agent call ran, once its result names it: the id of
+    /// its conversation, `subagents/agent-<id>.jsonl` beside the session's.
+    var agentID: String? {
+        switch result?.toolOutcome(Tools.Agent.self) {
+        case .success(.completed(let done)) where !done.agentID.isEmpty: done.agentID
+        case .success(.launched(let agentID, _)) where !agentID.isEmpty: agentID
+        default: nil
+        }
+    }
 }

@@ -5,9 +5,15 @@ import TranscriptKit
 /// One editor tab: a transcript file, read-only, in a `TranscriptView`.
 ///
 /// Loads once, when it first appears and has its size: the transcript comes
-/// from the injected `load`, the last screen is shown at once, and the history
-/// prepared off the main actor and prepended behind it a chunk at a time —
-/// scroll anchoring keeps the reader's place while it arrives.
+/// from the injected `load` and becomes a `TranscriptPage` off the main
+/// actor; the last screen of its rows is shown at once, and the history
+/// prepended behind it a chunk at a time — scroll anchoring keeps the
+/// reader's place while it arrives.
+///
+/// Owns what the reader does to the page: which runs are open
+/// (`RunDisclosure`), which item's document is showing (the selection,
+/// stepped with ↑ / ↓), and bringing an item back into view. What opening
+/// a document does is the delegate's.
 @MainActor
 final class TranscriptViewController: NSViewController {
     /// The file this tab shows — what the tab is, for finding it again.
@@ -16,9 +22,19 @@ final class TranscriptViewController: NSViewController {
     /// Reads a transcript; `LibraryStore.transcript(at:)`.
     typealias Load = @Sendable (URL) async throws -> Transcript
 
+    weak var delegate: TranscriptViewControllerDelegate?
+
     private let load: Load
     private let transcript = TranscriptView()
-    private var rows: [TranscriptRow] = []
+    private var page = TranscriptPage(entries: [])
+    /// The rows the transcript shows, in order — the data source's answer.
+    private var rows: [PageRow] = []
+    /// Runs and news rows the reader opened, by entry id; absent is collapsed.
+    private var disclosure: [String: RunDisclosure] = [:]
+    /// The id whose document is showing beside (`PageRow.opens`).
+    private var selection: String?
+    /// The id brought back into view just now, flashing once.
+    private var flashing: String?
     private var loadTask: Task<Void, Never>?
     private var hasLoaded = false
 
@@ -61,8 +77,8 @@ final class TranscriptViewController: NSViewController {
         view.layoutSubtreeIfNeeded()
         let (url, load) = (fileURL, load)
         loadTask = Task { [weak self] in
-            let rows = await Task.detached(priority: .userInitiated) { await Self.rows(url, load) }.value
-            await self?.show(rows)
+            let page = await Task.detached(priority: .userInitiated) { await Self.page(url, load) }.value
+            await self?.show(page)
             self?.loadTask = nil
         }
     }
@@ -76,23 +92,24 @@ final class TranscriptViewController: NSViewController {
 
     // MARK: - Loading
 
-    private nonisolated static func rows(_ url: URL, _ load: Load) async -> [TranscriptRow] {
+    private nonisolated static func page(_ url: URL, _ load: Load) async -> TranscriptPage {
         let note: String
         do {
-            let rows = TranscriptRow.rows(for: try await load(url))
-            if !rows.isEmpty { return rows }
+            let page = TranscriptPage(try await load(url))
+            if !page.entries.isEmpty { return page }
             note = String(localized: "This transcript has no messages.")
         } catch {
             note = String(localized: "This transcript couldn’t be read.")
         }
-        return [TranscriptRow(id: "note", content: .markdown("*\(note)*"))]
+        return TranscriptPage(entries: [.reply(id: "note", markdown: "*\(note)*")])
     }
 
     /// The last screen synchronously, then the history in prepared chunks,
     /// one per hop so the main queue keeps serving everything else.
-    private func show(_ all: [TranscriptRow]) async {
+    private func show(_ page: TranscriptPage) async {
         guard !Task.isCancelled else { return }
-        var pending = all
+        self.page = page
+        var pending = PageRow.rows(for: page)
         rows = Array(pending.suffix(Self.firstScreenRows))
         pending.removeLast(rows.count)
         transcript.reloadData()
@@ -101,7 +118,7 @@ final class TranscriptViewController: NSViewController {
         while !pending.isEmpty {
             let chunk = Array(pending.suffix(Self.chunkRows))
             pending.removeLast(chunk.count)
-            let prepared = await transcript.prepareRows(chunk)
+            let prepared = await transcript.prepareRows(chunk.map(\.transcriptRow))
             guard !Task.isCancelled else { return }
             // No suspension between changing the rows and announcing it.
             rows.insert(contentsOf: chunk, at: 0)
@@ -115,6 +132,113 @@ final class TranscriptViewController: NSViewController {
 
     /// The unit of work a cancellation throws away.
     private static let chunkRows = 300
+
+    // MARK: - Disclosure
+
+    private func disclosure(of entryID: String) -> RunDisclosure {
+        disclosure[entryID] ?? .collapsed
+    }
+
+    /// Shows entry `entryID`'s rows as `newValue` discloses them: its first
+    /// row stays and is reloaded (its chevron turns), the rest are swapped.
+    private func setDisclosure(_ newValue: RunDisclosure, of entryID: String) {
+        guard let entryIndex = page.entryIndex(containing: entryID), page.entries[entryIndex].id == entryID
+        else { return }
+        disclosure[entryID] = newValue == .collapsed ? nil : newValue
+        // Rows not shown yet arrive collapsed with their chunk.
+        guard let first = rows.firstIndex(where: { $0.id.entry == entryID }) else { return }
+        let end = rows[first...].firstIndex { $0.id.entry != entryID } ?? rows.endIndex
+        let replacement = PageRow.rows(for: page.entries[entryIndex], disclosure: newValue)
+        rows.replaceSubrange(first..<end, with: replacement)
+        transcript.beginUpdates()
+        if end - first > 1 { transcript.removeRows(at: IndexSet(first + 1..<end)) }
+        if replacement.count > 1 { transcript.insertRows(at: IndexSet(first + 1..<first + replacement.count)) }
+        transcript.reloadRows(at: IndexSet(integer: first))
+        transcript.endUpdates()
+    }
+
+    /// Every run and news row that has a list to open.
+    private var disclosableEntries: [String] {
+        page.entries.compactMap { entry in
+            switch entry {
+            case .run(let run) where !run.isSingle: run.id
+            case .news(let news) where !news.isSingle: news.id
+            default: nil
+            }
+        }
+    }
+
+    // MARK: - Selection
+
+    /// Marks `id` as the item whose document is showing, and redraws the
+    /// rows that gain or lose the highlight.
+    private func select(_ id: String?, flashing: Bool = false) {
+        let changed = [selection, self.flashing, id].compactMap { $0 }
+        selection = id
+        self.flashing = flashing ? id : nil
+        let indexes = IndexSet(changed.compactMap { id in rows.firstIndex { $0.opens == id } })
+        if !indexes.isEmpty { transcript.reloadRows(at: indexes) }
+    }
+
+    /// Opens `id` beside the transcript, as the reader asked.
+    private func open(_ id: String, pinned: Bool) {
+        select(id)
+        guard let content = page.document(for: id) else { return }
+        let document = Document(
+            reference: DocumentReference(transcriptURL: fileURL, id: id), content: content,
+            workingDirectory: page.workingDirectory)
+        delegate?.transcriptViewController(self, open: document, pinned: pinned)
+    }
+
+    /// ↑ / ↓ from the selected item to the next row that opens something,
+    /// whose document follows.
+    private func step(by offset: Int) -> Bool {
+        guard let selection, let current = rows.firstIndex(where: { $0.opens == selection }) else { return false }
+        var index = current + offset
+        while rows.indices.contains(index) {
+            if let id = rows[index].opens {
+                open(id, pinned: false)
+                transcript.scrollToRow(at: index, scrollPosition: .nearestEdge)
+                return true
+            }
+            index += offset
+        }
+        return true
+    }
+
+    /// Brings `id` — an item, or the call an entry is about — into view and
+    /// flashes it, opening the run it is in. `select` marks it as the item
+    /// whose document is showing (*Show in Transcript*); otherwise the run is
+    /// closed again after the flash, as it was (↖ on news).
+    func reveal(_ id: String, select selecting: Bool) {
+        guard let entryIndex = page.entryIndex(containing: id) else { return }
+        let entryID = page.entries[entryIndex].id
+        // A run's id is its first item's too: in a run with a list, an id is
+        // always an item.
+        let opened = disclosure(of: entryID) == .collapsed && disclosableEntries.contains(entryID)
+        if opened { setDisclosure(.expanded, of: entryID) }
+        if disclosure(of: entryID) == .expanded, !rows.contains(where: { $0.opens == id }) {
+            setDisclosure(.showingAll, of: entryID)
+        }
+        guard let row = rows.firstIndex(where: { $0.opens == id }) ?? rows.firstIndex(where: { $0.id.entry == entryID })
+        else { return }
+        transcript.scrollToRow(at: row, scrollPosition: .center)
+        if selecting {
+            select(id, flashing: true)
+        } else {
+            flashing = id
+            transcript.reloadRows(at: IndexSet(integer: row))
+        }
+        Task { [weak self] in
+            try? await Task.sleep(for: Self.flashDuration)
+            guard let self, self.flashing == id else { return }
+            self.flashing = nil
+            if opened, !selecting { self.setDisclosure(.collapsed, of: entryID) }
+        }
+    }
+
+    /// How long a revealed row flashes before a run opened for it closes.
+    private static let flashDuration = Duration.milliseconds(1200)
 }
 
 extension TranscriptViewController: TranscriptViewDataSource {
@@ -123,12 +247,58 @@ extension TranscriptViewController: TranscriptViewDataSource {
     }
 
     func transcriptView(_ transcriptView: TranscriptView, rowAt row: Int) -> TranscriptRow {
-        rows[row]
+        rows[row].transcriptRow
     }
 }
 
 extension TranscriptViewController: TranscriptViewDelegate {
+    func transcriptView(_ transcriptView: TranscriptView, heightOfRow row: Int, width: CGFloat) -> CGFloat {
+        rows[row].height(width: width)
+    }
+
+    func transcriptView(_ transcriptView: TranscriptView, viewForRow row: Int) -> NSView {
+        let pageRow = rows[row]
+        let opens = pageRow.opens
+        return pageRow.makeView(
+            in: transcriptView, isSelected: opens != nil && opens == selection,
+            flashes: opens != nil && opens == flashing, delegate: self)
+    }
+
     func transcriptView(_ transcriptView: TranscriptView, didActivate url: URL, inRow row: Int) {
         NSWorkspace.shared.open(url)
+    }
+
+    func transcriptView(_ transcriptView: TranscriptView, doCommandBy selector: Selector) -> Bool {
+        switch selector {
+        case #selector(NSResponder.moveUp(_:)): step(by: -1)
+        case #selector(NSResponder.moveDown(_:)): step(by: 1)
+        default: false
+        }
+    }
+}
+
+extension TranscriptViewController: PageRowViewDelegate {
+    func rowView(_ rowView: NSView, open id: String, pinned: Bool) {
+        open(id, pinned: pinned)
+    }
+
+    func rowView(_ rowView: NSView, toggle runID: String, all: Bool) {
+        let newValue: RunDisclosure = disclosure(of: runID) == .collapsed ? .expanded : .collapsed
+        for entryID in all ? disclosableEntries : [runID] {
+            setDisclosure(newValue, of: entryID)
+        }
+    }
+
+    func rowView(_ rowView: NSView, showAllOf runID: String) {
+        setDisclosure(.showingAll, of: runID)
+    }
+
+    func rowView(_ rowView: NSView, revealOrigin callID: String) {
+        reveal(callID, select: false)
+    }
+
+    /// Answering a call is not wired to a live session yet.
+    func rowView(_ rowView: NSView, decide decision: Decision, for callID: String) {
+        appLog(.info, "TranscriptViewController", "decision \(decision) for \(callID) — no live session")
     }
 }

@@ -17,8 +17,9 @@ protocol TranscriptTableViewOwner: AnyObject {
 
     func tableViewDidResignFirstResponder(_ tableView: TranscriptTableView)
 
-    /// A standard key binding's command; `false` hands the key on up the chain.
-    func tableView(_ tableView: TranscriptTableView, performScrollCommand selector: Selector) -> Bool
+    /// A standard key binding's command — the host's first, then scrolling;
+    /// `false` hands the key on up the chain.
+    func tableView(_ tableView: TranscriptTableView, doCommandBy selector: Selector) -> Bool
 
     func tableViewCopySelection(_ tableView: TranscriptTableView)
 

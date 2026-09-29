@@ -101,6 +101,25 @@ final class KeyboardTests: XCTestCase {
         XCTAssertEqual(controller.keys, [])
     }
 
+    /// The host is asked first: a command it takes doesn't scroll, and one it
+    /// leaves still does.
+    func testTheHostIsAskedBeforeAKeyScrolls() throws {
+        let (mounted, host, controller) = mount()
+        defer { mounted.teardown() }
+        host.handledCommands = [#selector(NSResponder.moveDown(_:))]
+        mounted.scroll(toY: 1000)
+        mounted.settle()
+        XCTAssertEqual(offset(mounted), 1000, "mount never placed rows")
+
+        _ = press(mounted, "\u{F701}", keyCode: 125, modifiers: [.numericPad, .function])
+        XCTAssertEqual(offset(mounted), 1000, "the host took ↓")
+
+        _ = press(mounted, "\u{F700}", keyCode: 126, modifiers: [.numericPad, .function])
+        XCTAssertEqual(offset(mounted), 962, "↑ was left to scrolling")
+        XCTAssertEqual(host.commands, [#selector(NSResponder.moveDown(_:)), #selector(NSResponder.moveUp(_:))])
+        XCTAssertEqual(controller.keys, [])
+    }
+
     /// A page is what the chrome leaves visible, less the scroll view's overlap —
     /// so no line scrolls from above the bar to under it without being shown.
     func testPageDownScrollsWhatTheChromeLeavesVisible() throws {

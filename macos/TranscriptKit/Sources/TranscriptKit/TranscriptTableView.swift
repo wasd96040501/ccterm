@@ -71,7 +71,7 @@ final class TranscriptTableView: NSTableView {
     }
 
     override func doCommand(by selector: Selector) {
-        if owner?.tableView(self, performScrollCommand: selector) == true { return }
+        if owner?.tableView(self, doCommandBy: selector) == true { return }
         passInterpretedKeyUp()
     }
 

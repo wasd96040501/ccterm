@@ -1697,8 +1697,9 @@ extension TranscriptView: TranscriptTableViewOwner {
         selectionTracker.selectionDidResign()
     }
 
-    func tableView(_ tableView: TranscriptTableView, performScrollCommand selector: Selector) -> Bool {
-        performScrollCommand(selector)
+    func tableView(_ tableView: TranscriptTableView, doCommandBy selector: Selector) -> Bool {
+        if delegate?.transcriptView(self, doCommandBy: selector) == true { return true }
+        return performScrollCommand(selector)
     }
 
     func tableViewCopySelection(_ tableView: TranscriptTableView) {

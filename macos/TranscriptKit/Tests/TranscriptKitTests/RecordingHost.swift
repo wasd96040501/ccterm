@@ -104,6 +104,17 @@ final class RecordingHost: NSObject, TranscriptViewDataSource, TranscriptViewDel
     ) {
         tailFollowing.append(isFollowingTail)
     }
+
+    /// The key commands this host handles itself.
+    var handledCommands: Set<Selector> = []
+
+    /// Every command the transcript offered, in order.
+    private(set) var commands: [Selector] = []
+
+    func transcriptView(_ transcriptView: TranscriptView, doCommandBy selector: Selector) -> Bool {
+        commands.append(selector)
+        return handledCommands.contains(selector)
+    }
 }
 
 extension NSUserInterfaceItemIdentifier {

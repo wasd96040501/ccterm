@@ -1,0 +1,38 @@
+# Transcript tab
+
+A session transcript, read-only, and the documents it opens beside itself. The design is `design/transcript/` (README + 01–07, and `preview.js` / `preview.css` for exact values); build to it one to one.
+
+## Layers
+
+```
+Page/        model — messages → TranscriptPage (entries, runs, work lines, documents). No AppKit.
+Rows/        a page's entries → PageRow (pure), and the views that draw `.view` rows.
+Documents/   what opens beside: DocumentViewController (shell) + bodies.
+TranscriptViewController   the tab: page, disclosure, selection, ↑/↓, reveal.
+```
+
+Dependencies point down only: `Documents/` and `Rows/` read `Page/`; `Page/` reads only `AgentSDK`. `MainSplitViewController` is the coordinator — it creates tabs and routes what a transcript or a document asks for.
+
+## Rules
+
+- **Words are decided in `Page/`.** Every sentence, label and stat is built there, localized, as `StyledText` (words plus the distinctions a view draws: noun, code, added, removed, failure). A view picks fonts and colours for those styles; it never composes wording or formats a number. Tests assert on the words without AppKit.
+- **`Page/` types are `nonisolated`** (the app defaults to `MainActor`); pages are built off the main actor.
+- **TranscriptKit draws what it can.** Replies, prompts, a voice's words (a blockquote), a plan, and every markdown document are TranscriptKit `.markdown` / `.userMessage` rows or a `TranscriptView` — no second renderer. Only work lines, captions, capsules, dividers, questions and approval controls are `.view` rows.
+- **One row per line.** A run's line, each item, *Show N more* and the approval card are separate rows (`PageRow.Part`); expanding is inserting rows. TranscriptKit forbids animating row geometry, so nothing slides.
+- **Row views keep `PageRowView`:** `static height(for:width:)` from the model alone, idempotent `configure(with:)`, events up through `PageRowViewDelegate` by id. `PageRow+View` is the one switch from row kinds to views.
+- **A row acts on press, then lets the transcript take focus.** Handle the click in `mouseDown` (clickCount 2 is a double-click → `pinned`), then call `super.mouseDown(with:)`, which reaches the table and makes it first responder — that is what keeps ↑ / ↓ with the transcript after a document opens beside it. Controls inside a row (a link, the chevron, a button) are the exception: they handle their own tracking.
+- **Live states stay in the model; the builder yields settled ones**, plus `running` for the calls of the last assistant turn. Approval cards, a plan's decision and a question's controls are drawn from `.waiting` states no transcript on disk has; their answers reach `rowView(_:decide:for:)` / `approvalBarView(_:decide:for:)`, which log and stop until a live session exists.
+- **A document is a shell and a body.** `DocumentViewController` loads the `Document` when it first appears, words the jump bar (`DocumentHeader`), shows an approval bar while the call waits, and embeds the body `DocumentBodyFactory` picks. A body is an `NSViewController`: command, source (change / new file / read), markdown, or — for a subagent whose conversation is on disk — a `TranscriptViewController` on `subagents/agent-<id>.jsonl`.
+- **A document's tab identifier is its `DocumentReference`** (transcript URL + id), so history rebuilds it (`editorArea(_:tabViewItemWithIdentifier:)`) and a second open finds it.
+
+## Reuse before adding
+
+| Need | Use |
+|---|---|
+| A kind's tile, any state | `ToolTileView` |
+| A line of work (run, item, news) | `WorkLineRowView` |
+| A voice's or plan's words | `.markdown` row (`PageRow.quoted` for a voice) |
+| A document of words | `MarkdownDocumentViewController` + `DocumentMarkdown` |
+| Numbered monospaced lines | `NumberedLinesView` |
+| A subagent's conversation | `TranscriptViewController` |
+| The sidebar's party glyphs and coral | `.sidebarAgent`, `.sidebarSession`, `.sidebarWorkflow`, `.sidebarCoral` |

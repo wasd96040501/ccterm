@@ -10,6 +10,9 @@ import Foundation
 nonisolated struct TranscriptPage: Sendable, Equatable {
     let entries: [TranscriptEntry]
 
+    /// The session's directory, which a document names its files against.
+    let workingDirectory: String?
+
     /// Where each openable id lives: an entry, and for a run's item, which.
     private let locations: [String: Location]
 
@@ -18,8 +21,9 @@ nonisolated struct TranscriptPage: Sendable, Equatable {
         let item: Int?
     }
 
-    init(entries: [TranscriptEntry]) {
+    init(entries: [TranscriptEntry], workingDirectory: String? = nil) {
         self.entries = entries
+        self.workingDirectory = workingDirectory
         var locations: [String: Location] = [:]
         for (index, entry) in entries.enumerated() {
             locations[entry.id] = Location(entry: index, item: nil)
@@ -41,7 +45,7 @@ nonisolated struct TranscriptPage: Sendable, Equatable {
 
     init(_ transcript: Transcript) {
         var builder = TranscriptPageBuilder(messages: transcript.messages, workingDirectory: transcript.metadata.cwd)
-        self.init(entries: builder.build())
+        self.init(entries: builder.build(), workingDirectory: transcript.metadata.cwd)
     }
 
     /// The entry that holds `id` — an entry's own id, a run's item, a piece

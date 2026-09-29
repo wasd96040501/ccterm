@@ -15,7 +15,7 @@ import AppKit
 /// draws its tile with this view.
 @MainActor
 final class ToolTileView: NSView {
-    static let side: CGFloat = 16
+    private static let side: CGFloat = 16
 
     var tile = Tile(glyph: .tool(.other), state: .done) {
         didSet {

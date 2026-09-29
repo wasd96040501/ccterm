@@ -14,7 +14,7 @@ final class DocumentViewController: NSViewController {
     /// exists; off the main actor.
     typealias Load = @Sendable (DocumentReference) async throws -> Document?
 
-    let reference: DocumentReference
+    private let reference: DocumentReference
 
     weak var delegate: DocumentViewControllerDelegate?
 

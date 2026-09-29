@@ -30,7 +30,7 @@ nonisolated struct WorkLineWriter {
     }
 
     /// The tile shows how the run ended — or, live, the call going on now.
-    func runTile(_ items: [RunItem]) -> Tile {
+    private func runTile(_ items: [RunItem]) -> Tile {
         let calls = items.flatMap(\.calls)
         if let live = calls.last(where: { $0.state.isLive && $0.state != .background }) {
             return Tile(glyph: .tool(live.kind), state: Self.tileState(live.state))
@@ -60,7 +60,7 @@ nonisolated struct WorkLineWriter {
     }
 
     /// Clauses in kind order, at most three, then *and N more*.
-    func sentence(_ items: [RunItem]) -> StyledText {
+    private func sentence(_ items: [RunItem]) -> StyledText {
         var clauses = clauses(items)
         guard !clauses.isEmpty else {
             let count = items.flatMap(\.calls).count
@@ -334,7 +334,7 @@ nonisolated struct WorkLineWriter {
     }
 
     /// What a live call says it is doing (01-run.md "Live labels").
-    func liveLabel(_ call: ToolCall) -> StyledText {
+    private func liveLabel(_ call: ToolCall) -> StyledText {
         let input = call.use.input
         let file = StyledText(Self.fileName(call.filePath ?? ""), style: .noun(opens: nil))
         switch call.kind {
@@ -493,7 +493,7 @@ nonisolated struct WorkLineWriter {
 
     // MARK: - Pieces
 
-    static func tileState(_ state: ToolCallState) -> Tile.State {
+    private static func tileState(_ state: ToolCallState) -> Tile.State {
         switch state {
         case .preparing: .preparing
         case .waiting: .waiting
@@ -511,7 +511,7 @@ nonisolated struct WorkLineWriter {
     }
 
     /// Lines added and removed by one change or creation.
-    static func diffStat(_ call: ToolCall) -> (added: Int, removed: Int)? {
+    private static func diffStat(_ call: ToolCall) -> (added: Int, removed: Int)? {
         let hunks: [DiffHunk]?
         switch call.use.name {
         case Tools.Edit.name:
@@ -556,18 +556,18 @@ nonisolated struct WorkLineWriter {
         return formatter.string(from: TimeInterval(seconds)) ?? "\(seconds)s"
     }
 
-    static func fileName(_ path: String) -> String {
+    private static func fileName(_ path: String) -> String {
         (path as NSString).lastPathComponent
     }
 
     /// A file's folder, abbreviated.
-    func folder(_ path: String) -> String {
+    private func folder(_ path: String) -> String {
         abbreviated((path as NSString).deletingLastPathComponent)
     }
 
     /// A path relative to the working directory when it is under it, its
     /// middle elided past three components.
-    func abbreviated(_ path: String) -> String {
+    private func abbreviated(_ path: String) -> String {
         var path = path
         if let root = workingDirectory, !root.isEmpty {
             let prefix = root.hasSuffix("/") ? root : root + "/"
@@ -585,7 +585,7 @@ nonisolated struct WorkLineWriter {
     }
 
     /// A leading `cd <dir> &&` is how the agent says where, not what.
-    static func strippingDirectoryChange(_ command: String) -> String {
+    private static func strippingDirectoryChange(_ command: String) -> String {
         guard command.hasPrefix("cd "), let range = command.range(of: " && ") else { return command }
         let directory = command[command.index(command.startIndex, offsetBy: 3)..<range.lowerBound]
         guard !directory.contains(where: \.isWhitespace) || directory.hasPrefix("\"") else { return command }

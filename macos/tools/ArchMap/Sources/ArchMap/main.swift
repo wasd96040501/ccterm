@@ -116,6 +116,26 @@ for token in scopeArg.split(whereSeparator: { $0 == "," || $0 == " " }).map(Stri
 let scopedPaths = Set(scoped.map(\.path))
 
 let index = Index(files: sources)
+
+/// Member names the test targets reach (`x.name`). Tests aren't mapped, but a
+/// member they exercise is surface, not a type's own detail.
+final class MemberNames: SyntaxVisitor {
+    var names: Set<String> = []
+    override func visit(_ node: MemberAccessExprSyntax) -> SyntaxVisitorContinueKind {
+        names.insert(node.declName.baseName.text)
+        return .visitChildren
+    }
+}
+let testNames = MemberNames(viewMode: .sourceAccurate)
+var testDirs = ["cctermTests"]
+for package in (try? fm.contentsOfDirectory(atPath: root.path))?.sorted() ?? []
+where fm.fileExists(atPath: root.appendingPathComponent(package + "/Tests").path) {
+    testDirs.append(package + "/Tests")
+}
+for dir in testDirs {
+    for path in swiftFiles(in: dir) { testNames.walk(Parser.parse(source: read(path))) }
+}
+index.testedMembers = testNames.names
 let units = Array(Set(scoped.map(\.unit))).sorted()
 
 // MARK: Write

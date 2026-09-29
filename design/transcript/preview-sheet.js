@@ -602,7 +602,7 @@ function buildSheet() {
   const longReport = { id: nid("d"), docKind: "markdown", title: "Explore · report", docGlyph: "agent", status: "Subagent a3f91c2", md: "Found three call sites of `rowSpacing`:\n\n- `TranscriptView.swift:324` — the declaration\n- `TranscriptView.swift:332` — `intercellSpacing`\n- `TranscriptViewTests.swift:88` — the test\n\nAnd one hard-coded 14 in `EditorAreaTests.swift:118`." };
   ITEMS.set(longReport.id, longReport);
   specimens(document.getElementById("voices"), [
-    spec("<b>A subagent's report</b>The sidebar's star, in the sidebar's grey.", [{ type: "voice", glyph: star, who: "Explore · Find hard-coded row gaps", text: "Found three call sites of `rowSpacing` and one hard-coded 14 in `EditorAreaTests.swift:118`…", more: longReport.id }]),
+    spec("<b>A subagent's report</b>The sidebar's star, in the sidebar's grey. The words are TranscriptKit's markdown, quoted — whole, like any reply.", [{ type: "voice", glyph: star, who: "Explore · Find hard-coded row gaps", text: "Found three call sites of `rowSpacing`: the declaration, `intercellSpacing`, and the test.\n\nAnd one hard-coded 14 in `EditorAreaTests.swift:118`." }]),
     spec("<b>Another session</b>The conversation glyph, coral.", [{ type: "voice", glyph: conv, who: "Session “Squash merge admin”", text: "PR #314 is merged. You can rebase onto main." }]),
     spec("<b>The coordinator · a plugin</b>", [{ type: "voice", glyph: flow, who: "Coordinator", text: "Hold the transcript work until the review lands." }, { type: "voice", glyph: puzzle, who: "Plugin “ralph-loop”", text: "Continue with the next item on the list." }]),
   ]);
@@ -616,7 +616,7 @@ function buildSheet() {
   specimens(document.getElementById("talk"), [
     spec("<b>A question, answered</b>Question and answer kept together.", [{ type: "question", ...q }]),
     spec("<b>A question, waiting</b>", [{ type: "question", ...q, live: true }]),
-    spec("<b>A plan</b>", [{ type: "plan", steps: planSteps, doc: planDoc.id }]),
+    spec("<b>A plan</b>TranscriptKit's markdown, whole — it is addressed to you.", [{ type: "plan", steps: planSteps, doc: planDoc.id }]),
     spec("<b>A plan, waiting</b>", [{ type: "plan", steps: planSteps, doc: planDoc.id, live: true }]),
     spec("<b>Task list</b>Stays in the run; opens the list as it stood.", [R1(tasksItem)]),
   ]);

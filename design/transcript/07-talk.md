@@ -27,18 +27,22 @@ answer together, like a form that was filled in.
 
 ## ExitPlanMode — breaks out of the run
 
-A plan is a document the user approves. In the transcript:
+A plan is a document the user approves, addressed to the user — so it gets the
+page, like a reply. Two rows:
 
 ```
- ▤  Plan                                                           Open ›
-    1. Split EditorGroupViewController's tab bar …
-    2. …                                                    (first 6 lines)
+ ▤  Plan
+ 1. Split EditorGroupViewController's tab bar …
+ 2. …                                                    (the whole plan)
 ```
 
-- A card with the code card's shape, the plan's first six lines rendered as
-  markdown, faded out at the bottom; **Open** shows the whole plan beside.
-- **Live**, waiting: the approval bar of a permission request, worded
-  *Approve this plan?* — **Keep Planning** / **Approve**.
+- A **caption row** (the plan tile, *Plan*), then the plan as a `.markdown`
+  row: TranscriptKit renders it whole — headings, lists, code — exactly as it
+  renders a reply. No card of its own, no cut: there is nothing a card would
+  add that the markdown renderer doesn't already do.
+- **Live**, waiting: the tile has the coral outline, the caption reads
+  *Plan · Waiting for your approval*, and **Keep Planning** / **Approve** (⌘↩)
+  sit under the plan.
 
 ## Task list — stays in the run
 

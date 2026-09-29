@@ -176,16 +176,19 @@ The only time a run grows. Under the row, an approval card:
 
 ```
 ◌  Waiting for your approval
-   ┌──────────────────────────────────────────────────────────────────┐
-   │ ▢  Run the unit tests                                            │
-   │    $ make test-unit FILTER=TranscriptViewTests                   │
-   │    Needs approval: writes outside the project (build/test-dd)    │
-   │                          [Always Allow ▾]   [Deny]   [Allow ⌘↩]  │
-   └──────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│ ▢  Run the unit tests                                               │
+│    $ make test-unit FILTER=TranscriptViewTests                      │
+│    Needs approval: writes outside the project (build/test-dd)       │
+│                             [Always Allow ▾]   [Deny]   [Allow ⌘↩]  │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 - The card is the user bubble's shape (14-pt radius), outlined with the
   separator colour, not filled — it belongs to the work, not to the user yet.
+- It sits level with the row, not indented under it like the items: it is
+  not one more item of the list but the question that stops the run, so it
+  takes the column's full width.
 - It shows **what the call will do**, whole: the full command (up to 12 lines,
   then *Show all*), the edit's diff inline (the one place a diff is inline —
   the decision is here), the path it touches, the reason the CLI gave.

@@ -397,11 +397,14 @@ function renderRow(row) {
     }
     case "divider": return `<div class="divider"><span>${row.live ? `<span class="dtile">${tile("other", "running")}</span>` : ""}${row.text}${row.link ? `<span class="link" data-open="${row.link}">${row.linkText || "Summary"}</span>` : ""}</span></div>`;
     case "interrupt": return `<div class="interrupt">${ICON.stopcircle}Interrupted</div>`;
-    case "voice": return `<div class="voice"><div class="who">${row.glyph}${esc(row.who)}</div><div class="vb">${paragraphs(row.text)}${row.more ? `<p><span class="more" data-open="${row.more}">More</span></p>` : ""}</div></div>`;
+    // A caption row, then the words as TranscriptKit's markdown — a blockquote,
+    // its form for someone else's words.
+    case "voice": return `<div class="caption">${row.glyph}<span>${esc(row.who)}</span></div><div class="caption-body"><blockquote>${paragraphs(row.text)}</blockquote></div>`;
     case "question": return renderQuestion(row);
-    case "plan": return `<div class="plan"><div class="ph">${tile("plan", row.live ? "waiting" : "done")}<span>Plan</span><span class="open" data-open="${row.doc}">Open ›</span></div><ol>${row.steps.map((s) => `<li>${inline(s)}</li>`).join("")}</ol>${
-      row.live ? `<div class="buttons" style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px"><button class="btn">Keep Planning</button><button class="btn primary">Approve<kbd>⌘↩</kbd></button></div>` : ""
-    }</div>`;
+    // A caption row, then the plan itself as TranscriptKit's markdown, whole.
+    case "plan": return `<div class="caption">${tile("plan", row.live ? "waiting" : "done")}<span>${row.live ? "Plan · Waiting for your approval" : "Plan"}</span></div><div class="caption-body"><ol>${row.steps.map((s) => `<li>${inline(s)}</li>`).join("")}</ol></div>${
+      row.live ? `<div class="caption-actions"><button class="btn">Keep Planning</button><button class="btn primary">Approve<kbd>⌘↩</kbd></button></div>` : ""
+    }`;
     case "html": return row.html;
   }
   return "";

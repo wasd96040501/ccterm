@@ -34,27 +34,24 @@ final class MotionAnimator {
         present(Set(flights.flatMap { $0.parts.keys }))
     }
 
-    /// Starts the plan's motion: `containers` keyed by new row, `retiring` by
-    /// old row, which is how the plan's `.removed` motions name them. Every
-    /// moving row is at its start (`p = 0`) when this returns. Nothing moves
-    /// when `duration` is 0; the completion still runs on a later turn (U8).
-    /// The retiring containers are handed back once the motion ends.
+    /// Starts the plan's motion: `containers` keyed by new row, and
+    /// `retiring`, the removed rows that move out, by old row, which is how the
+    /// plan's `.removed` motions name them. Every moving row is at its start
+    /// (`p = 0`) when this returns, and the retiring containers are handed
+    /// back once the motion ends. When nothing moves, the completion still
+    /// runs on a later turn (U8).
     func animate(
         _ plan: CommitPlan, containers: [Int: RowContainerView], retiring: [Int: RowContainerView],
         duration: TimeInterval, timing: CAMediaTimingFunction, completion: @escaping (Bool) -> Void
     ) {
         let moving = plan.motions.filter { !$0.isStill }
         guard duration > 0, !moving.isEmpty else {
-            withoutActions { owner?.motionAnimator(self, didFinishCommitRetiring: Array(retiring.values)) }
             DispatchQueue.main.async { completion(true) }
             return
         }
 
-        let removedMotions = Set(moving.filter { $0.kind == .removed }.map(\.row))
-        let flight = Flight(
-            clock: MotionClock(), retiring: retiring.filter { removedMotions.contains($0.key) }.map(\.value),
-            completion: completion)
-        withoutActions {
+        let flight = Flight(clock: MotionClock(), retiring: Array(retiring.values), completion: completion)
+        NSAnimationContext.withoutAnimation {
             for motion in moving {
                 add(motion, of: plan, containers: containers, retiring: retiring, to: flight)
             }
@@ -67,10 +64,6 @@ final class MotionAnimator {
         } completion: { [weak self] in
             self?.land(flight)
         }
-        // A removed row with no motion has nothing to show: it leaves now,
-        // once the rows in this motion are in flight and so stay mounted.
-        let still = retiring.filter { !removedMotions.contains($0.key) }.map(\.value)
-        if !still.isEmpty { withoutActions { owner?.motionAnimator(self, didFinishCommitRetiring: still) } }
     }
 
     /// The rows whose containers are still in flight, in the current numbering:
@@ -85,11 +78,6 @@ final class MotionAnimator {
         }
         return rows
     }
-
-    /// Renumbers the rows in flight through a batch. Containers carry their own
-    /// row, which `RowPlacement.apply(_:)` renumbers, so there is nothing of
-    /// the animator's own to change.
-    func apply(_ map: RowIndexMap) {}
 
     // MARK: - Animated scrolls (S3)
 
@@ -125,13 +113,14 @@ final class MotionAnimator {
 
     // MARK: - Cancelling (U7)
 
-    /// U7: every motion and scroll stops, and the containers that were
-    /// animating out are handed back. Outstanding completions get `false`, on
-    /// a later turn like every completion (U8).
-    func cancelAll() {
+    /// U7: every motion and scroll stops, and returns the containers that were
+    /// animating out. Outstanding completions get `false`, on a later turn
+    /// like every completion (U8).
+    func cancelAll() -> [RowContainerView] {
         cancelScroll()
         let cancelled = flights
         flights.removeAll()
+        var retiring: [RowContainerView] = []
         for flight in cancelled {
             flight.isCancelled = true
             stop(flight.clock)
@@ -139,9 +128,10 @@ final class MotionAnimator {
                 part.container.alphaValue = 1
                 part.container.contentOffset = .zero
             }
-            owner?.motionAnimator(self, didFinishCommitRetiring: flight.retiring)
+            retiring += flight.retiring
             DispatchQueue.main.async { flight.completion(false) }
         }
+        return retiring
     }
 
     // MARK: - Private
@@ -231,19 +221,6 @@ final class MotionAnimator {
         flight.parts[ObjectIdentifier(container)] = part
     }
 
-    /// Runs `body` with no implicit animation: the caller may be in a group
-    /// that allows it.
-    private func withoutActions(_ body: () -> Void) {
-        let context = NSAnimationContext.current
-        let allowed = context.allowsImplicitAnimation
-        context.allowsImplicitAnimation = false
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        body()
-        CATransaction.commit()
-        context.allowsImplicitAnimation = allowed
-    }
-
     /// Starts `clock` at 0, which `tick` hears before this returns, then
     /// animates it to 1 in a group of its own, nested in the caller's (M3).
     private func run(
@@ -254,8 +231,8 @@ final class MotionAnimator {
         // Frames written on a tick are the motion itself: nothing of AppKit's
         // or CoreAnimation's own may animate them again. The first tick runs
         // inside the caller's group.
-        clock.onTick = { [weak self] progress in self?.withoutActions { tick(progress) } }
-        withoutActions { clock.progress = 0 }
+        clock.onTick = { progress in NSAnimationContext.withoutAnimation { tick(progress) } }
+        NSAnimationContext.withoutAnimation { clock.progress = 0 }
         // Not inside an explicit CATransaction, or the caller's group would
         // not wait for this one (measured).
         NSAnimationContext.runAnimationGroup { context in
@@ -335,7 +312,7 @@ final class MotionAnimator {
         flights.remove(at: index)
         flight.clock.onTick = nil
         flight.clock.removeFromSuperview()
-        withoutActions {
+        NSAnimationContext.withoutAnimation {
             present(Set(flight.parts.keys))
             for part in flight.parts.values
             where !flights.contains(where: { $0.parts[ObjectIdentifier(part.container)] != nil }) {

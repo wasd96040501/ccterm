@@ -39,8 +39,8 @@ final class RowPlacement {
 
     /// Renumbers every container through a batch. Removed rows' containers
     /// become −1 and are returned keyed by their old row, which is how the
-    /// plan's `.removed` motions name them, for `MotionAnimator` to retire
-    /// (M10).
+    /// plan's `.removed` motions name them, to be retired now or once they
+    /// have moved out (M10).
     func apply(_ map: RowIndexMap) -> [Int: RowContainerView] {
         var renumbered: [Int: RowContainerView] = [:]
         var removed: [Int: RowContainerView] = [:]

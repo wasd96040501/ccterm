@@ -207,8 +207,8 @@ public final class ExactListView: NSView {
         // Unmounting under a host's implicit-animation group would have AppKit
         // fade the views out, and pooled views would carry that fade into the
         // rows they're reused for.
-        withoutImplicitAnimation {
-            animator.cancelAll()
+        NSAnimationContext.withoutAnimation {
+            for container in animator.cancelAll() { placement.retire(container) }
             placement.removeAll()
         }
         accessibilityElements.removeAll()
@@ -223,7 +223,7 @@ public final class ExactListView: NSView {
             wasFollowing
             ? committed.maxOffset(contentHeight: contentHeight)
             : committed.clamped(committed.offset, contentHeight: contentHeight)
-        withoutImplicitAnimation {
+        NSAnimationContext.withoutAnimation {
             install(offset: offset)
             placement.place(rows: preparedRows(), keeping: [], heights: heights, width: width)
         }
@@ -395,7 +395,7 @@ public final class ExactListView: NSView {
             if let pending { destination(of: pending) } else if followsTail {
                 committed.maxOffset(contentHeight: heights.contentHeight)
             } else { committed.minOffset }
-        withoutImplicitAnimation {
+        NSAnimationContext.withoutAnimation {
             install(offset: offset)
             placement.place(rows: preparedRows(), keeping: [], heights: heights, width: width)
         }
@@ -457,17 +457,15 @@ public final class ExactListView: NSView {
         } while true
 
         let countChanged = map.newCount != map.oldCount
+        // The removed rows that move out (M2); every other one leaves before
+        // the arriving rows are placed, which then take their containers.
+        let leaving = animates ? Set(plan.motions.lazy.filter { $0.kind == .removed }.map(\.row)) : []
         var retiring: [Int: RowContainerView] = [:]
         var containers: [Int: RowContainerView] = [:]
-        withoutImplicitAnimation {
-            retiring = placement.apply(map)
-            if !animates {
-                // Nothing animates out: the removed rows leave before the
-                // arriving rows are placed, which then take their containers.
-                for container in retiring.values { placement.retire(container) }
-                retiring = [:]
+        NSAnimationContext.withoutAnimation {
+            for (row, container) in placement.apply(map) {
+                if leaving.contains(row) { retiring[row] = container } else { placement.retire(container) }
             }
-            animator.apply(map)
             renumberAccessibilityElements(through: map)
             heights = plan.heights
             stale = newStale
@@ -545,20 +543,6 @@ public final class ExactListView: NSView {
         isAdjusting = true
         defer { isAdjusting = was }
         body()
-    }
-
-    /// Model changes land at once; only `MotionAnimator`'s clocks move
-    /// anything. A host may call in from inside an animation group with
-    /// implicit animation on, which would otherwise animate every frame write.
-    private func withoutImplicitAnimation(_ body: () -> Void) {
-        let context = NSAnimationContext.current
-        let allowed = context.allowsImplicitAnimation
-        context.allowsImplicitAnimation = false
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        body()
-        CATransaction.commit()
-        context.allowsImplicitAnimation = allowed
     }
 
     private func identityMap() -> RowIndexMap {
@@ -666,7 +650,7 @@ public final class ExactListView: NSView {
         if preparedRows().union(animator.rowsInFlight).contains(where: { stale.contains($0) }) {
             commit(map: identityMap())
         } else {
-            withoutImplicitAnimation {
+            NSAnimationContext.withoutAnimation {
                 placement.place(rows: preparedRows(), keeping: animator.rowsInFlight, heights: heights, width: width)
             }
             reportTail()
@@ -862,14 +846,11 @@ extension ExactListView: MotionAnimatorOwner {
         didScroll()
     }
 
+    /// The retired containers wait in the document for the placement that
+    /// follows, which gives them to arriving rows or hides them.
     func motionAnimator(_ animator: MotionAnimator, didFinishCommitRetiring retired: [RowContainerView]) {
-        withoutImplicitAnimation {
-            for container in retired { placement.retire(container) }
-            // Retired containers wait in the document for a placement, so
-            // there is always one; mid-adjustment it keeps the mounted rows.
-            let rows = isLoaded && !isAdjusting ? preparedRows() : placement.mountedRows
-            placement.place(rows: rows, keeping: animator.rowsInFlight, heights: heights, width: width)
-        }
+        for container in retired { placement.retire(container) }
+        remount()
     }
 }
 

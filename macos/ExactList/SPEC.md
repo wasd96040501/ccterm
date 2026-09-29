@@ -883,6 +883,7 @@ Core imports Foundation and CoreGraphics, never AppKit.
 | `RowPlacement` | no | The mounted set, and mounting and unmounting against `P` (P1–P3, P6). |
 | `MotionAnimator` | no | Runs each commit's motion and each animated scroll on its own `MotionClock`: on every frame it sets the in-flight rows' frames, opacity and content offset, or the offset. It retires rows once their motion ends, and runs completion handlers (§8, S3, U8). |
 | `MotionClock` | no | A hidden view with one animatable property, `progress`, which `animator()` drives from 0 to 1 and which reports every value AppKit sets (M3). |
+| `NSAnimationContext.withoutAnimation(_:)` | no | An extension, in its own file: runs a block with implicit animation off and CoreAnimation actions disabled, so the list's model changes land at once inside any group a host has open, and only a `MotionClock` moves anything (M3). |
 | `StaleRowRefresher` | no | Refreshing stale rows on idle turns within the time budget (W5). |
 | `UnmountedRowElement` | no | The `NSAccessibilityElement` for a row that isn't mounted (X3). |
 

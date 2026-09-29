@@ -6,12 +6,13 @@ A session transcript, read-only, and the documents it opens beside itself. The d
 
 ```
 Page/        model — messages → TranscriptPage (entries, runs, work lines, documents). No AppKit.
+Drawing/     what rows and documents both draw: the tile, StyledText's fonts and colours.
 Rows/        a page's entries → PageRow (pure), and the views that draw `.view` rows.
 Documents/   what opens beside: DocumentViewController (shell) + bodies.
 TranscriptViewController   the tab: page, disclosure, selection, ↑/↓, reveal.
 ```
 
-Dependencies point down only, and siblings don't know each other: `Rows/` and `Documents/` read only `Page/`; the tab reads `Page/` and `Rows/`; `Page/` reads only `AgentSDK`. `MainSplitViewController` is the coordinator — the one place that knows both the tab and the documents: it creates tabs, routes what one asks of the other, and makes a subagent's conversation for a document (`DocumentBodyFactory.makeConversation`). `make arch` must show no edge beyond these.
+Dependencies point down only, and siblings don't know each other: `Drawing/` reads only `Page/`; `Rows/` and `Documents/` read only `Page/` and `Drawing/`; the tab reads `Page/` and `Rows/`; `Page/` reads only `AgentSDK`. `MainSplitViewController` is the coordinator — the one place that knows both the tab and the documents: it creates tabs, routes what one asks of the other, and makes a subagent's conversation for a document (`DocumentBodyFactory.makeConversation`). `make arch` must show no edge beyond these.
 
 ## Rules
 
@@ -36,6 +37,7 @@ Dependencies point down only, and siblings don't know each other: `Rows/` and `D
 | Need | Use |
 |---|---|
 | A kind's tile, any state | `ToolTileView` |
+| `StyledText` on screen | `attributedString(font:color:)`; `NSColor.addedText` / `.failureText` |
 | A line of work (run, item, news) | `WorkLineRowView` |
 | A voice's or plan's words | `.markdown` row (`PageRow.quoted` for a voice) |
 | A document of words | `MarkdownDocumentViewController` + `DocumentMarkdown` |

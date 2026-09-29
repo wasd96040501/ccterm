@@ -13,7 +13,8 @@ import XCTest
 ///
 /// For every fixture at every width, after `configure` and a layout at the
 /// declared height:
-/// - nothing is laid out outside the row, and no text is cut vertically;
+/// - nothing is laid out outside the row, and no text field's text is cut
+///   vertically (drawn words — a work line's — are the snapshots' to show);
 /// - no view's layout is ambiguous;
 /// - configuring the same model again, after another fixture, or a variant
 ///   that is only paint (`sameGeometry`), moves nothing.

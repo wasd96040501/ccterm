@@ -10,6 +10,15 @@ import AppKit
 ///
 /// Hover, selection and the flash are paint: a wash behind the line, and the
 /// accessory's alpha. The accessory's slot is always laid out.
+///
+/// Laid out by hand and its words drawn, not four text fields under
+/// constraints: a screen of work lines is dozens of rows, and each one
+/// mounted as the transcript scrolls paid for its fields' constraints, key
+/// view loop and layers — most of what a scroll step cost. The geometry is
+/// the fields' own (words where the field's alignment rect was, centred on
+/// the tile), so the line reads as it did; `PageRowViewContractTests`' clause
+/// on cut text doesn't reach drawn words, so the snapshots at 320 and 520 are
+/// what show them.
 @MainActor
 final class WorkLineRowView: NSView, PageRowView {
     struct Model: Equatable {
@@ -54,18 +63,21 @@ final class WorkLineRowView: NSView, PageRowView {
     private static let washOutset: CGFloat = 4
     private static let flashDuration: CFTimeInterval = 1.2
 
+    private static let accessorySide: CGFloat = 12
+    /// A failed item's error line: under the item's words, 22 below the top.
+    private static let errorTop: CGFloat = 22
+    private static let errorLeading: CGFloat = 48
+
     private let tile = ToolTileView()
-    private let summary = NSTextField(labelWithString: "")
-    private let exceptions = NSTextField(labelWithString: "")
-    private let meta = NSTextField(labelWithString: "")
-    private let error = NSTextField(labelWithString: "")
+    private let words = Words()
     private let accessory = NSImageView()
     private let wash = CALayer()
 
-    private var tileLeading: NSLayoutConstraint!
-    private var tileCenter: NSLayoutConstraint!
-    private var exceptionsGap: NSLayoutConstraint!
-    private var errorLeading: NSLayoutConstraint!
+    /// This line's words, set once per configure and placed by `layout()`.
+    private var summaryText = NSAttributedString()
+    private var exceptionsText = NSAttributedString()
+    private var metaText = NSAttributedString()
+    private var errorText = NSAttributedString()
 
     private var model: Model?
     private var isHovered = false {
@@ -83,50 +95,8 @@ final class WorkLineRowView: NSView, PageRowView {
         wash.cornerRadius = 6
         wash.actions = ["position": NSNull(), "bounds": NSNull(), "backgroundColor": NSNull()]
 
-        for label in [summary, exceptions, meta, error] {
-            label.translatesAutoresizingMaskIntoConstraints = false
-            label.lineBreakMode = .byTruncatingTail
-            label.maximumNumberOfLines = 1
-            label.cell?.truncatesLastVisibleLine = true
-            addSubview(label)
-        }
-        summary.font = Self.textFont
-        exceptions.font = Self.textFont
-        meta.font = Self.metaFont
-        error.font = Self.errorFont
-        for label in [exceptions, meta] {
-            label.setContentCompressionResistancePriority(.required, for: .horizontal)
-            label.setContentHuggingPriority(.required, for: .horizontal)
-        }
-        summary.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        summary.setContentHuggingPriority(.defaultLow, for: .horizontal)
-
-        tile.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(tile)
-        accessory.translatesAutoresizingMaskIntoConstraints = false
         accessory.imageScaling = .scaleNone
-        addSubview(accessory)
-
-        tileLeading = tile.leadingAnchor.constraint(equalTo: leadingAnchor)
-        tileCenter = tile.centerYAnchor.constraint(equalTo: topAnchor, constant: 14)
-        exceptionsGap = exceptions.leadingAnchor.constraint(equalTo: summary.trailingAnchor)
-        errorLeading = error.leadingAnchor.constraint(equalTo: leadingAnchor)
-        NSLayoutConstraint.activate([
-            tileLeading, tileCenter, exceptionsGap, errorLeading,
-            summary.leadingAnchor.constraint(equalTo: tile.trailingAnchor, constant: Self.gap),
-            summary.centerYAnchor.constraint(equalTo: tile.centerYAnchor),
-            exceptions.centerYAnchor.constraint(equalTo: tile.centerYAnchor),
-            meta.leadingAnchor.constraint(greaterThanOrEqualTo: exceptions.trailingAnchor, constant: Self.gap),
-            meta.centerYAnchor.constraint(equalTo: tile.centerYAnchor),
-            meta.trailingAnchor.constraint(equalTo: accessory.leadingAnchor, constant: -Self.gap),
-            accessory.trailingAnchor.constraint(equalTo: trailingAnchor),
-            accessory.centerYAnchor.constraint(equalTo: tile.centerYAnchor),
-            accessory.widthAnchor.constraint(equalToConstant: 12),
-            accessory.heightAnchor.constraint(equalToConstant: 12),
-            error.topAnchor.constraint(equalTo: topAnchor, constant: 22),
-            error.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
-            error.heightAnchor.constraint(equalToConstant: 20),
-        ])
+        for view in [words, tile, accessory] { addSubview(view) }
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
     }
@@ -137,6 +107,8 @@ final class WorkLineRowView: NSView, PageRowView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+    override var isFlipped: Bool { true }
 
     // MARK: - Height
 
@@ -159,26 +131,16 @@ final class WorkLineRowView: NSView, PageRowView {
     func configure(with model: Model) {
         let previous = self.model
         self.model = model
-        let lineHeight = Self.lineHeight(model.level)
 
         tile.tile = model.line.tile
-        tileLeading.constant = model.level == .item ? Self.indent : 0
-        tileCenter.constant = lineHeight / 2
-        errorLeading.constant = Self.indent + Self.indent
-
-        summary.attributedStringValue = Self.summaryString(model.line)
-        let exceptionsText = Self.truncated(
+        summaryText = Self.summaryString(model.line)
+        exceptionsText = Self.truncated(
             model.line.exceptions.attributedString(font: Self.textFont, color: .secondaryLabelColor))
-        exceptions.attributedStringValue = exceptionsText
-        exceptions.isHidden = model.line.exceptions.isEmpty
-        exceptionsGap.constant = model.line.exceptions.isEmpty ? 0 : 4
-        let metaText = Self.truncated(model.line.meta.attributedString(font: Self.metaFont, color: .tertiaryLabelColor))
-        meta.attributedStringValue = metaText
-        meta.isHidden = model.line.meta.isEmpty
-
-        error.stringValue = model.error ?? ""
-        error.textColor = NSColor.failureText.withAlphaComponent(0.9)
-        error.isHidden = model.error == nil
+        metaText = Self.truncated(model.line.meta.attributedString(font: Self.metaFont, color: .tertiaryLabelColor))
+        errorText = Self.truncated(
+            NSAttributedString(
+                string: model.error ?? "",
+                attributes: [.font: Self.errorFont, .foregroundColor: NSColor.failureText.withAlphaComponent(0.9)]))
 
         paintAccessory()
         var label = model.line.text.string + model.line.exceptions.string
@@ -237,19 +199,93 @@ final class WorkLineRowView: NSView, PageRowView {
         accessory.alphaValue = visible ? 1 : 0
     }
 
+    // MARK: - Layout
+
+    /// A field's height for `font`, which the words are centred in.
+    private static func fieldHeight(_ font: NSFont) -> CGFloat {
+        ceil(NSLayoutManager().defaultLineHeight(for: font))
+    }
+
+    private static let textHeight = fieldHeight(textFont)
+    private static let metaHeight = fieldHeight(metaFont)
+    private static let errorHeight: CGFloat = 20
+
+    /// How wide `text` is drawn.
+    private static func fieldWidth(_ text: NSAttributedString) -> CGFloat {
+        text.length == 0 ? 0 : ceil(text.size().width)
+    }
+
+    /// The tile and accessory centred on the line, meta against the
+    /// accessory, the words after the tile with the exceptions straight after
+    /// them — and the words give way first when the line is short.
+    override func layout() {
+        super.layout()
+        updateWashFrame()
+        guard let model else { return }
+        let center = Self.lineHeight(model.level) / 2
+        let side = tile.intrinsicContentSize.width
+        tile.frame = NSRect(x: model.level == .item ? Self.indent : 0, y: center - side / 2, width: side, height: side)
+        accessory.frame = NSRect(
+            x: bounds.width - Self.accessorySide, y: center - Self.accessorySide / 2, width: Self.accessorySide,
+            height: Self.accessorySide)
+
+        let metaWidth = Self.fieldWidth(metaText)
+        let metaX = accessory.frame.minX - Self.gap - metaWidth
+        let textX = tile.frame.maxX + Self.gap
+        let exceptionsWidth = Self.fieldWidth(exceptionsText)
+        let exceptionsGap: CGFloat = exceptionsWidth == 0 ? 0 : 4
+        let summaryWidth = max(
+            0, min(Self.fieldWidth(summaryText), metaX - Self.gap - exceptionsWidth - exceptionsGap - textX))
+
+        func field(_ x: CGFloat, _ width: CGFloat, _ height: CGFloat, top: CGFloat? = nil) -> NSRect {
+            NSRect(x: x, y: top ?? center - height / 2, width: width, height: height)
+        }
+        words.summary = field(textX, summaryWidth, Self.textHeight)
+        words.exceptions = field(textX + summaryWidth + exceptionsGap, exceptionsWidth, Self.textHeight)
+        words.meta = field(metaX, metaWidth, Self.metaHeight)
+        words.error = field(
+            Self.errorLeading, min(Self.fieldWidth(errorText), bounds.width - Self.errorLeading), Self.errorHeight,
+            top: Self.errorTop)
+        words.texts = (summaryText, exceptionsText, metaText, errorText)
+        words.frame = bounds
+        words.needsDisplay = true
+    }
+
+    /// The line's words, drawn where `layout()` put them. A view of its own
+    /// rather than the row's drawing: the wash is a layer over the row's own
+    /// contents, and the words go on top of it.
+    private final class Words: NSView {
+        var texts = (NSAttributedString(), NSAttributedString(), NSAttributedString(), NSAttributedString())
+        var summary = NSRect.zero
+        var exceptions = NSRect.zero
+        var meta = NSRect.zero
+        var error = NSRect.zero
+
+        override var isFlipped: Bool { true }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func draw(_ dirtyRect: NSRect) {
+            for (text, rect) in [
+                (texts.0, summary), (texts.1, exceptions), (texts.2, meta), (texts.3, error),
+            ] where text.length > 0 && rect.width > 0 {
+                text.draw(with: rect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+            }
+        }
+
+        override func viewDidChangeEffectiveAppearance() {
+            super.viewDidChangeEffectiveAppearance()
+            needsDisplay = true
+        }
+    }
+
     // MARK: - Wash
 
     override var wantsUpdateLayer: Bool { true }
 
-    override func layout() {
-        super.layout()
-        updateWashFrame()
-    }
-
     private func updateWashFrame() {
         let height = Self.lineHeight(model?.level ?? .line)
-        wash.frame = NSRect(
-            x: -Self.washOutset, y: bounds.height - height, width: bounds.width + 2 * Self.washOutset, height: height)
+        wash.frame = NSRect(x: -Self.washOutset, y: 0, width: bounds.width + 2 * Self.washOutset, height: height)
     }
 
     override func updateLayer() {
@@ -348,16 +384,15 @@ final class WorkLineRowView: NSView, PageRowView {
 
     /// The id a named file under `point` opens, when it is a link.
     private func openedNoun(at point: NSPoint) -> String? {
-        guard summary.frame.contains(point), let cell = summary.cell else { return nil }
-        let local = summary.convert(point, from: self)
-        let title = cell.titleRect(forBounds: summary.bounds)
-        let storage = NSTextStorage(attributedString: summary.attributedStringValue)
-        let container = NSTextContainer(size: NSSize(width: title.width, height: .greatestFiniteMagnitude))
+        let rect = words.summary
+        guard rect.contains(point) else { return nil }
+        let storage = NSTextStorage(attributedString: summaryText)
+        let container = NSTextContainer(size: NSSize(width: rect.width, height: .greatestFiniteMagnitude))
         container.lineFragmentPadding = 0
         let layoutManager = NSLayoutManager()
         layoutManager.addTextContainer(container)
         storage.addLayoutManager(layoutManager)
-        let inText = NSPoint(x: local.x - title.minX, y: title.maxY - local.y)
+        let inText = NSPoint(x: point.x - rect.minX, y: point.y - rect.minY)
         var fraction: CGFloat = 0
         let index = layoutManager.characterIndex(
             for: inText, in: container, fractionOfDistanceBetweenInsertionPoints: &fraction)

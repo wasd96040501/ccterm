@@ -13,6 +13,10 @@ public struct SessionDirectory: Sendable, Hashable {
         self.url = url
     }
 
+    /// The folder the CLI keeps its configuration in — the one `projects/`
+    /// sits in: `$CLAUDE_CONFIG_DIR`, else `~/.claude`.
+    public var configDirectory: URL { url.deletingLastPathComponent() }
+
     /// The directory a CLI launched with `environment` writes to:
     /// `$CLAUDE_CONFIG_DIR/projects`, else `~/.claude/projects`. Pass the
     /// environment the CLI is launched with — an app started from Finder has

@@ -26,7 +26,17 @@ final class CommitPlannerTests: XCTestCase {
             }
             tally.record(commit, reference, plan)
         }
-        tally.assertCoverage(checked: 8000, motions: ["inserted": 3000, "removed": 1000, "moved": 500])
+        // Every fallback of M2's two rules, gaps holding both kinds of row, and
+        // batches where every remaining row was moved.
+        tally.assertCoverage(
+            checked: 9000,
+            motions: [
+                "inserted": 3000, "removed": 3000, "moved": 1000, "gap with removed and inserted rows": 1000,
+                "every remaining row moved": 500, "inserted rule 1": 1000, "inserted rule 2": 1000,
+                "inserted rule 3": 300, "inserted rule 4": 100, "removed rule 1": 500, "removed rule 2": 500,
+                "removed rule 3": 100, "removed rule 4": 500, "every old row removed, rows inserted": 200,
+                "A5 anchor with no survivor": 300,
+            ])
     }
 
     func testM4_theAnchorIsStill() throws {
@@ -44,8 +54,9 @@ final class CommitPlannerTests: XCTestCase {
                 tally.skip(reason)
                 continue
             }
-            guard let row = reference.anchorRow else { continue }  // tail, offset, or nothing survived
             let plan = CommitPlanner.plan(commit.input)
+            tally.record(commit, reference, plan)
+            guard let row = reference.anchorRow else { continue }  // tail, offset, or nothing survived
             guard let motion = plan.motions.first(where: { $0.kind != .removed && $0.row == row }) else {
                 if reference.motions.contains(where: {
                     $0.kind != .removed && $0.row == row && $0.presence == .required
@@ -90,7 +101,6 @@ final class CommitPlannerTests: XCTestCase {
         var tally = Tally()
         var pairs = 0
         var exactPairs = 0
-        var skippedSegments = 0
         for index in 0..<10_000 {
             let seed = 0x4D50_0000 &+ UInt64(index)
             var rng = SeededGenerator(seed: seed)
@@ -104,6 +114,7 @@ final class CommitPlannerTests: XCTestCase {
                 continue
             }
             let plan = CommitPlanner.plan(commit.input)
+            tally.record(commit, reference, plan)
             var planned: [Key: RowMotion] = [:]
             for motion in plan.motions where motion.kind != .moved {
                 // A removed row in a commit that doesn't animate has no defined motion.
@@ -111,8 +122,7 @@ final class CommitPlannerTests: XCTestCase {
                 planned[Key(motion)] = motion
             }
             let order = PresentedOrder(commit, planned: Set(planned.keys))
-            skippedSegments += order.mixedSegments
-            for (upper, lower) in zip(order.items, order.items.dropFirst()) where !upper.mixed && !lower.mixed {
+            for (upper, lower) in zip(order.items, order.items.dropFirst()) {
                 let a = planned[upper.key]!
                 let b = planned[lower.key]!
                 let adjacent =
@@ -138,7 +148,6 @@ final class CommitPlannerTests: XCTestCase {
         }
         XCTAssertGreaterThan(pairs, 15_000)
         XCTAssertGreaterThan(exactPairs, 10_000)
-        XCTAssertLessThan(skippedSegments, 3000, "too many segments skipped as ambiguous")
         tally.assertFewSkips()
     }
 
@@ -158,6 +167,7 @@ final class CommitPlannerTests: XCTestCase {
                 continue
             }
             let plan = CommitPlanner.plan(commit.input)
+            tally.record(commit, reference, plan)
             let k = reference.amplitude
             func context() -> String { "M7 seed \(seed), \(commit)" }
             if abs(plan.amplitude - k) > 1e-9 {
@@ -307,7 +317,19 @@ private struct Commit: CustomStringConvertible {
         let roll = batchesOnly ? 0 : Int.random(in: 0..<20, using: &rng)
         switch roll {
         case 0..<16:
-            for _ in 0..<Int.random(in: 1...4, using: &rng) { commit.applyRandomEdit(&rng, big: bigJumps) }
+            // Recipes for M2's harder gaps, then random edits.
+            var edits = 1...4
+            switch Int.random(in: 0..<8, using: &rng) {
+            case 0:
+                commit.applyReplacement(&rng, big: bigJumps)
+                edits = 0...2
+            case 1 where count > 1:
+                commit.moveEveryRemainingRow(&rng)
+                edits = 0...2
+            default:
+                break
+            }
+            for _ in 0..<Int.random(in: edits, using: &rng) { commit.applyRandomEdit(&rng, big: bigJumps) }
             commit.newHeights = commit.slots.map { slot in
                 guard let row = slot.old else { return randomHeight(&rng, tall: bigJumps) }
                 return slot.noted && Bool.random(using: &rng) ? randomHeight(&rng, tall: bigJumps) : heights[row]
@@ -409,6 +431,31 @@ private struct Commit: CustomStringConvertible {
         }
     }
 
+    /// Removes a run and inserts rows at the same place, often at the top, so
+    /// one gap holds both kinds of row, sometimes with no survivor before it.
+    mutating func applyReplacement(_ rng: inout SeededGenerator, big: Bool) {
+        let count = slots.count
+        let most = big ? 12 : 3
+        let at = Bool.random(using: &rng) ? 0 : Int.random(in: 0...count, using: &rng)
+        if at < count {
+            let removed = Int.random(in: 1...min(most, count - at), using: &rng)
+            apply(.remove(IndexSet(integersIn: at..<(at + removed)), randomTransition(&rng)))
+        }
+        let inserted = Int.random(in: 1...most, using: &rng)
+        apply(.insert(IndexSet(integersIn: at..<(at + inserted)), randomTransition(&rng)))
+    }
+
+    /// Moves a few rows, then removes every row that wasn't moved: rows
+    /// remain, but none survives (A5, M2's fallbacks).
+    mutating func moveEveryRemainingRow(_ rng: inout SeededGenerator) {
+        let count = slots.count
+        for _ in 0..<Int.random(in: 1...3, using: &rng) {
+            apply(.move(from: Int.random(in: 0..<count, using: &rng), to: Int.random(in: 0..<count, using: &rng)))
+        }
+        let unmoved = IndexSet(slots.indices.filter { !slots[$0].moved })
+        if !unmoved.isEmpty { apply(.remove(unmoved, randomTransition(&rng))) }
+    }
+
     mutating func applyRandomEdit(_ rng: inout SeededGenerator, big: Bool) {
         let count = slots.count
         let most = big ? 12 : 3
@@ -492,6 +539,13 @@ private struct Reference {
     var anchorStartTop: CGFloat = 0
     /// k (M7).
     var amplitude: CGFloat = 1
+    /// A5's case where the anchor row was removed and no surviving row remains.
+    var anchorWithoutSurvivor = false
+    /// Which of M2's numbered fallbacks the inserted and removed rows took.
+    var insertedRules = Set<Int>()
+    var removedRules = Set<Int>()
+    /// Some gap holds both removed and inserted rows.
+    var hasMixedGap = false
     /// A8 after the commit; `nil` when W2's rescale lands within tolerance of the edge.
     var isFollowingTail: Bool?
     /// C: the height of U after the commit.
@@ -557,14 +611,9 @@ private struct Reference {
         case .row(let row, var distance):
             var carrier: Int? = row
             if newIndexes[row] == nil {
-                func successor(movedRowsSurvive: Bool) -> Int? {
-                    let counts = { (old: Int) in newIndexes[old] != nil && (movedRowsSurvive || survives(old)) }
-                    return (row + 1..<oldCount).first(where: counts) ?? (0..<row).last(where: counts)
-                }
-                carrier = successor(movedRowsSurvive: true)
-                if carrier != successor(movedRowsSurvive: false) {
-                    ambiguity = "A5: whether a moved row can take the anchor"
-                }
+                // A5: the first surviving (neither removed nor moved) row after
+                // it, else the last before it, at its own pre-batch position.
+                carrier = (row + 1..<oldCount).first(where: survives) ?? (0..<row).last(where: survives)
                 if let carrier { distance = oldTops[carrier] - (o + t) }
             }
             if let carrier {
@@ -575,8 +624,10 @@ private struct Reference {
                 anchorStartTop = oldTops[carrier] - o
                 target = newTops[newRow] - new.insetTop - distance
             } else {
-                anchor = nil
-                target = newMin
+                // No surviving row remains: the offset, then A7.
+                anchor = .offset(o)
+                target = o
+                anchorWithoutSurvivor = true
             }
         }
         unclampedOffset = target
@@ -592,33 +643,41 @@ private struct Reference {
             isFollowingTail = offset >= newMax - 1
         }
 
-        // M2: the nearest surviving row on each side, skipping inserted,
-        // removed and moved rows. For inserted rows in the new order, as old
-        // indexes; for removed rows in the old order, as new indexes.
-        var before = [Int?](repeating: nil, count: newCount)
-        var after = [Int?](repeating: nil, count: newCount)
-        var last: Int? = nil
-        for row in 0..<newCount {
-            before[row] = last
-            if let old = slots[row].old, !slots[row].moved { last = old }
+        // M2's gaps. Surviving rows (neither inserted, removed nor moved)
+        // keep their order and cut both layouts into the same gaps: gap g lies
+        // between the g-th and (g+1)-th surviving rows. A removed row's gap
+        // counts the survivors before it in the old order; an inserted row's,
+        // in the new order. Moved rows belong to no gap.
+        var survivorsOld: [Int] = []
+        var survivorsNew: [Int] = []
+        for old in 0..<oldCount where survives(old) {
+            survivorsOld.append(old)
+            survivorsNew.append(newIndexes[old]!)
         }
-        last = nil
-        for row in (0..<newCount).reversed() {
-            after[row] = last
-            if let old = slots[row].old, !slots[row].moved { last = old }
-        }
-        var beforeOld = [Int?](repeating: nil, count: oldCount)
-        var afterOld = [Int?](repeating: nil, count: oldCount)
-        last = nil
+        let gapCount = survivorsOld.count + 1
+        var lastRemoved = [Int?](repeating: nil, count: gapCount)
+        var firstInserted = [Int?](repeating: nil, count: gapCount)
+        var removedGap = [Int](repeating: 0, count: oldCount)
+        var insertedGap = [Int](repeating: 0, count: newCount)
+        var gap = 0
         for old in 0..<oldCount {
-            beforeOld[old] = last
-            if survives(old) { last = newIndexes[old] }
+            if survives(old) {
+                gap += 1
+            } else if newIndexes[old] == nil {
+                removedGap[old] = gap
+                lastRemoved[gap] = old
+            }
         }
-        last = nil
-        for old in (0..<oldCount).reversed() {
-            afterOld[old] = last
-            if survives(old) { last = newIndexes[old] }
+        gap = 0
+        for row in 0..<newCount {
+            if let old = slots[row].old {
+                if !slots[row].moved { gap += 1 }
+            } else {
+                insertedGap[row] = gap
+                if firstInserted[gap] == nil { firstInserted[gap] = row }
+            }
         }
+        hasMixedGap = (0..<gapCount).contains { lastRemoved[$0] != nil && firstInserted[$0] != nil }
 
         var naive: [Motion] = []
         for row in 0..<newCount {
@@ -634,15 +693,24 @@ private struct Reference {
                 startTop = oldTops[old] - o
                 startHeight = oldHeights[old]
             } else {
+                // Inserted: height 0 where the gap's old contents end.
                 kind = .inserted
                 transition = slot.transition
                 startHeight = 0
-                if let previous = before[row] {
-                    startTop = oldTops[previous] - o + oldHeights[previous] + commit.oldSpacing
-                } else if let next = after[row] {
-                    startTop = oldTops[next] - o
+                let gap = insertedGap[row]
+                if let removed = lastRemoved[gap] {
+                    startTop = oldTops[removed] - o + oldHeights[removed] + commit.oldSpacing
+                    insertedRules.insert(1)
+                } else if gap > 0 {
+                    let before = survivorsOld[gap - 1]
+                    startTop = oldTops[before] - o + oldHeights[before] + commit.oldSpacing
+                    insertedRules.insert(2)
+                } else if gap < survivorsOld.count {
+                    startTop = oldTops[survivorsOld[gap]] - o
+                    insertedRules.insert(3)
                 } else {
                     startTop = endTop
+                    insertedRules.insert(4)
                 }
             }
             naive.append(
@@ -650,26 +718,30 @@ private struct Reference {
                     kind: kind, row: row, naiveStartTop: startTop, naiveStartHeight: startHeight, startTop: startTop,
                     startHeight: startHeight, endTop: endTop, endHeight: endHeight, transition: transition))
         }
-        var unmountedRemoved: [Motion] = []
-        for old in 0..<oldCount where newIndexes[old] == nil {
+        for old in 0..<oldCount where newIndexes[old] == nil && commit.mounted.contains(old) {
+            // Removed: height 0 where the gap's new contents begin.
             let startTop = oldTops[old] - o
+            let gap = removedGap[old]
             let endTop: CGFloat
-            if let previous = beforeOld[old] {
-                endTop = newTops[previous] - offset + newHeights[previous] + commit.newSpacing
-            } else if let next = afterOld[old] {
-                endTop = newTops[next] - offset
+            if let inserted = firstInserted[gap] {
+                endTop = newTops[inserted] - offset
+                removedRules.insert(1)
+            } else if gap > 0 {
+                let before = survivorsNew[gap - 1]
+                endTop = newTops[before] - offset + newHeights[before] + commit.newSpacing
+                removedRules.insert(2)
+            } else if gap < survivorsNew.count {
+                endTop = newTops[survivorsNew[gap]] - offset
+                removedRules.insert(3)
             } else {
                 endTop = startTop
+                removedRules.insert(4)
             }
-            let motion = Motion(
-                kind: .removed, row: old, naiveStartTop: startTop, naiveStartHeight: oldHeights[old],
-                startTop: startTop, startHeight: oldHeights[old], endTop: endTop, endHeight: 0,
-                transition: commit.removals[old] ?? [])
-            if commit.mounted.contains(old) {
-                naive.append(motion)
-            } else {
-                unmountedRemoved.append(motion)
-            }
+            naive.append(
+                Motion(
+                    kind: .removed, row: old, naiveStartTop: startTop, naiveStartHeight: oldHeights[old],
+                    startTop: startTop, startHeight: oldHeights[old], endTop: endTop, endHeight: 0,
+                    transition: commit.removals[old] ?? []))
         }
 
         // M7 against P after the commit, in screen coordinates.
@@ -697,11 +769,11 @@ private struct Reference {
                     .map { abs($0.naiveStartTop - $0.endTop) }.max() ?? 0
                 return largest > capacity ? capacity / largest : 1
             }
+            // M7's rows: those M2 gives values to (mounted removed rows only)
+            // whose unscaled sweep meets P. "Meets" at a bare edge is left open.
             let definite = cap(naive, counting: [.required])
             if definite != cap(naive, counting: [.required, .optional]) {
                 ambiguity = ambiguity ?? "M7: a row whose sweep only touches P sets k"
-            } else if definite != cap(naive + unmountedRemoved, counting: [.required, .optional]) {
-                ambiguity = ambiguity ?? "M7: a removed row that wasn't mounted sets k"
             }
             amplitude = definite
         }
@@ -801,24 +873,17 @@ private struct Reference {
     }
 }
 
-/// M5's presented order: the non-moved survivors, which keep their order,
-/// and between each two of them the inserted rows (new order) or the removed
-/// rows (old order) that have a motion.
+/// M5's presented order: the surviving rows in order, with each gap's
+/// removed rows (old order) and then its inserted rows (new order) between
+/// them, keeping only rows that have a motion. Moved rows are not in it.
 private struct PresentedOrder {
 
     struct Item {
         var key: Key
         var survivor: (old: Int, new: Int)?
-        /// In a run that holds both inserted and removed rows. The spec's
-        /// start and end values put those in opposite orders (a removed row
-        /// ends at height 0 where the inserted one ends full, and the inserted
-        /// one starts at height 0 where the removed one starts full), so no
-        /// single order has both gap ends ≥ 0. Such runs are skipped.
-        var mixed = false
     }
 
     var items: [Item] = []
-    var mixedSegments = 0
 
     init(_ commit: Commit, planned: Set<Key>) {
         var newIndexes = [Int?](repeating: nil, count: commit.oldHeights.count)
@@ -845,22 +910,14 @@ private struct PresentedOrder {
                 removed[removed.count - 1].append(old)
             }
         }
-        for segment in 0...survivors.count {
-            let insertedKeys = inserted[segment].map { Key(.inserted, $0) }.filter(planned.contains)
-            let removedKeys = removed[segment].map { Key(.removed, $0) }.filter(planned.contains)
-            let mixed = !insertedKeys.isEmpty && !removedKeys.isEmpty
-            if mixed { mixedSegments += 1 }
-            for key in insertedKeys + removedKeys { items.append(Item(key: key, mixed: mixed)) }
-            if segment < survivors.count {
-                let survivor = survivors[segment]
+        for gap in 0...survivors.count {
+            let keys = removed[gap].map { Key(.removed, $0) } + inserted[gap].map { Key(.inserted, $0) }
+            for key in keys where planned.contains(key) { items.append(Item(key: key)) }
+            if gap < survivors.count {
+                let survivor = survivors[gap]
                 let key = Key(.surviving, survivor.new)
                 if planned.contains(key) { items.append(Item(key: key, survivor: survivor)) }
             }
-        }
-        // A survivor next to a mixed run is next to an unknown neighbour.
-        for index in items.indices where items[index].survivor != nil {
-            if index > 0, items[index - 1].mixed { items[index].mixed = true }
-            if index + 1 < items.count, items[index + 1].mixed { items[index].mixed = true }
         }
     }
 }
@@ -880,6 +937,19 @@ private struct Tally {
         for motion in plan.motions { motions["\(motion.kind)", default: 0] += 1 }
         if reference.amplitude < 1 { motions["capped commits", default: 0] += 1 }
         if reference.offset != reference.unclampedOffset { motions["clamped commits", default: 0] += 1 }
+        if reference.hasMixedGap { motions["gap with removed and inserted rows", default: 0] += 1 }
+        if reference.anchorWithoutSurvivor { motions["A5 anchor with no survivor", default: 0] += 1 }
+        let oldRowRemains = commit.slots.contains { $0.old != nil }
+        if !commit.oldHeights.isEmpty, !oldRowRemains, !commit.slots.isEmpty {
+            motions["every old row removed, rows inserted", default: 0] += 1
+        }
+        if !commit.slots.isEmpty, commit.slots.allSatisfy({ $0.old == nil || $0.moved }),
+            commit.slots.contains(where: { $0.old != nil })
+        {
+            motions["every remaining row moved", default: 0] += 1
+        }
+        for rule in reference.insertedRules { motions["inserted rule \(rule)", default: 0] += 1 }
+        for rule in reference.removedRules { motions["removed rule \(rule)", default: 0] += 1 }
     }
 
     func assertCoverage(checked minimum: Int, motions minimums: [String: Int]) {

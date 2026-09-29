@@ -69,7 +69,7 @@ public enum CommitPlanner {
         let moved = map.movedRows
         let insertions = map.insertions
 
-        // "Nearest surviving row" skips inserted, removed and moved rows.
+        // A surviving row is neither inserted, removed nor moved.
         let survivesNew = (0..<map.newCount).map { map.oldIndex(forNew: $0) != nil && !moved.contains($0) }
         let survivesOld = (0..<map.oldCount).map { row in
             map.newIndex(forOld: row).map { !moved.contains($0) } ?? false
@@ -78,6 +78,21 @@ public enum CommitPlanner {
         let after = nearest(survivesNew, ascending: false)
         let beforeOld = nearest(survivesOld, ascending: true)
         let afterOld = nearest(survivesOld, ascending: false)
+
+        // The survivors cut both layouts into the same gaps: gap g lies just
+        // before the g-th survivor in both orders. Each rule looks at its gap's
+        // other kind of row first, so a gap's removed rows close above the space
+        // its inserted rows open (M2, M5).
+        let gapOfNew = gapIndexes(survivesNew)
+        let gapOfOld = gapIndexes(survivesOld)
+        var lastRemoved: [Int: Int] = [:]
+        for row in 0..<map.oldCount where map.newIndex(forOld: row) == nil {
+            lastRemoved[gapOfOld[row]] = row
+        }
+        var firstInserted: [Int: Int] = [:]
+        for row in (0..<map.newCount).reversed() where map.oldIndex(forNew: row) == nil {
+            firstInserted[gapOfNew[row]] = row
+        }
 
         func oldTop(_ row: Int) -> CGFloat { old.top(ofRow: row) - oldOffset }
         func newTop(_ row: Int) -> CGFloat { new.top(ofRow: row) - offset }
@@ -95,7 +110,9 @@ public enum CommitPlanner {
                 continue
             }
             var startTop = endTop
-            if let neighbour = before[row], let was = map.oldIndex(forNew: neighbour) {
+            if let removed = lastRemoved[gapOfNew[row]] {
+                startTop = oldTop(removed) + old[removed] + spacing
+            } else if let neighbour = before[row], let was = map.oldIndex(forNew: neighbour) {
                 startTop = oldTop(was) + old[was] + spacing
             } else if let neighbour = after[row], let was = map.oldIndex(forNew: neighbour) {
                 startTop = oldTop(was)
@@ -109,7 +126,9 @@ public enum CommitPlanner {
         where input.mountedRows.contains(row) {
             let startTop = oldTop(row)
             var endTop = startTop
-            if let neighbour = beforeOld[row], let now = map.newIndex(forOld: neighbour) {
+            if let inserted = firstInserted[gapOfOld[row]] {
+                endTop = newTop(inserted)
+            } else if let neighbour = beforeOld[row], let now = map.newIndex(forOld: neighbour) {
                 endTop = newTop(now) + new[now] + spacing
             } else if let neighbour = afterOld[row], let now = map.newIndex(forOld: neighbour) {
                 endTop = newTop(now)
@@ -120,6 +139,18 @@ public enum CommitPlanner {
                     endHeight: 0, transition: transition))
         }
         return motions
+    }
+
+    /// For each index, how many flagged indexes come strictly before it: the
+    /// gap it falls in, when the flags mark the surviving rows.
+    private static func gapIndexes(_ flags: [Bool]) -> [Int] {
+        var result = [Int](repeating: 0, count: flags.count)
+        var count = 0
+        for i in flags.indices {
+            result[i] = count
+            if flags[i] { count += 1 }
+        }
+        return result
     }
 
     /// For each index, the nearest other index strictly before it (or after

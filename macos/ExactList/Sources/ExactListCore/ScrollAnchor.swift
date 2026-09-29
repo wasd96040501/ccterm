@@ -43,8 +43,9 @@ public enum ScrollAnchor: Equatable, Sendable {
     }
 
     /// A4, A5: carries a row anchor through the batch. If the anchor row was
-    /// removed, the anchor passes to a survivor, which keeps its own pre-batch
-    /// screen position; that is why the old heights and viewport are needed.
+    /// removed, the anchor passes to a survivor (neither removed nor moved),
+    /// which keeps its own pre-batch screen position; that is why the old
+    /// heights and viewport are needed. With no survivor, the offset holds.
     public func mapped(
         through map: RowIndexMap, oldHeights: RowHeights, oldViewport: Viewport
     ) -> ScrollAnchor {
@@ -52,11 +53,13 @@ public enum ScrollAnchor: Equatable, Sendable {
         if let moved = map.newIndex(forOld: row) {
             return .row(moved, distance: distance)
         }
-        let survivor =
-            (row + 1..<map.oldCount).first { map.newIndex(forOld: $0) != nil }
-            ?? (0..<row).reversed().first { map.newIndex(forOld: $0) != nil }
+        let moved = map.movedRows
+        func survives(_ old: Int) -> Bool {
+            map.newIndex(forOld: old).map { !moved.contains($0) } ?? false
+        }
+        let survivor = (row + 1..<map.oldCount).first(where: survives) ?? (0..<row).reversed().first(where: survives)
         guard let survivor, let index = map.newIndex(forOld: survivor) else {
-            return .offset(oldViewport.minOffset)
+            return .offset(oldViewport.offset)
         }
         return .row(index, distance: oldHeights.top(ofRow: survivor) - oldViewport.unobscuredTop)
     }

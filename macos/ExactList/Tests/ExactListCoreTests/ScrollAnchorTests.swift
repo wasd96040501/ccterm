@@ -133,10 +133,11 @@ final class ScrollAnchorTests: XCTestCase {
     }
 
     func testA5_aRemovedAnchorRow() throws {
-        var skippedMovedSuccessor = 0
         var passedAfter = 0
+        var allMoved = 0
+        var replaced = 0
+        var emptied = 0
         var passedBefore = 0
-        var allRemoved = 0
         for index in 0..<10_000 {
             let seed = 0xA500_0000 &+ UInt64(index)
             var rng = SeededGenerator(seed: seed)
@@ -152,9 +153,21 @@ final class ScrollAnchorTests: XCTestCase {
             // Random edits, then the anchor row's removal, then maybe more.
             var batch = AnchorBatch(oldCount: state.heights.count)
             for _ in 0..<Int.random(in: 0...3, using: &rng) { batch.applyRandomEdit(&rng, big: false) }
-            if Int.random(in: 0..<8, using: &rng) == 0 {
+            switch Int.random(in: 0..<8, using: &rng) {
+            case 0:
                 batch.apply(.remove(IndexSet(integersIn: 0..<batch.slots.count), randomTransition(&rng)))
-            } else if let current = batch.slots.firstIndex(where: { $0.old == anchorRow }) {
+            case 1 where batch.slots.count > 1:
+                // Rows remain, but every one of them was moved.
+                let count = batch.slots.count
+                for _ in 0..<Int.random(in: 1...3, using: &rng) {
+                    batch.apply(
+                        .move(from: Int.random(in: 0..<count, using: &rng), to: Int.random(in: 0..<count, using: &rng)))
+                }
+                let removed = IndexSet(
+                    batch.slots.indices.filter { !batch.slots[$0].moved || batch.slots[$0].old == anchorRow })
+                batch.apply(.remove(removed, randomTransition(&rng)))
+            default:
+                guard let current = batch.slots.firstIndex(where: { $0.old == anchorRow }) else { break }
                 var rows = IndexSet(integer: current)
                 if Bool.random(using: &rng) {
                     rows.formUnion(randomIndexes(min(4, batch.slots.count), below: batch.slots.count, &rng))
@@ -172,25 +185,29 @@ final class ScrollAnchorTests: XCTestCase {
             let actual = anchor.mapped(through: batch.map, oldHeights: state.rowHeights, oldViewport: state.viewport)
             let target: CGFloat
             switch carried {
-            case .ambiguous:
-                skippedMovedSuccessor += 1
-                continue
-            case .anchor(let expected):
-                guard case .row(let newRow, let distance) = expected else { return XCTFail("\(context()): reference") }
+            case .offset(let offset):
+                // No surviving row remains: the offset, then A7.
+                if let failure = anchorMismatch(actual, .offset(offset), tolerance: tolerance) {
+                    return XCTFail("\(context()): no surviving row remains: \(failure)")
+                }
+                if batch.slots.isEmpty {
+                    emptied += 1
+                } else if batch.slots.contains(where: { $0.old != nil }) {
+                    allMoved += 1
+                } else {
+                    replaced += 1
+                }
+                target = offset
+            case .row(let newRow, let distance):
+                let expected = ScrollAnchor.row(newRow, distance: distance)
                 if let failure = anchorMismatch(actual, expected, tolerance: tolerance) {
                     return XCTFail("\(context()): \(failure)")
                 }
                 let successor = batch.slots[newRow].old!
                 if successor > anchorRow { passedAfter += 1 } else { passedBefore += 1 }
                 target = newState.tops[newRow] - state.viewport.insetTop - distance
-            case .allRemoved:
-                // SPEC gives the offset, not the anchor's shape.
-                let restored = actual.restoredOffset(heights: newState.rowHeights, viewport: state.viewport)
-                if abs(restored - newState.minOffset) > tolerance {
-                    return XCTFail("\(context()): no row survives, mapped \(actual) restores to \(restored), not oMin")
-                }
-                allRemoved += 1
-                target = newState.minOffset
+            case .tail:
+                return XCTFail("\(context()): reference")
             }
 
             // The same through a commit.
@@ -205,8 +222,9 @@ final class ScrollAnchorTests: XCTestCase {
         }
         XCTAssertGreaterThan(passedAfter, 3000)
         XCTAssertGreaterThan(passedBefore, 300)
-        XCTAssertGreaterThan(allRemoved, 500)
-        XCTAssertLessThan(skippedMovedSuccessor, 1000, "too many cases skipped as ambiguous")
+        XCTAssertGreaterThan(allMoved, 300, "every remaining row moved")
+        XCTAssertGreaterThan(replaced, 300, "every old row removed, rows inserted")
+        XCTAssertGreaterThan(emptied, 300, "the list emptied")
     }
 
     func testA6_restoringEachKindOfAnchor() throws {
@@ -247,11 +265,9 @@ final class ScrollAnchorTests: XCTestCase {
             let followsTail = Bool.random(using: &rng)
             let newHeights = batch.newHeights(from: state.heights, &rng)
             let newState = AnchorState(heights: newHeights, spacing: state.spacing, viewport: state.viewport)
-            guard
-                let unclamped = referenceTarget(
-                    state.resolve(anchoring, followsTail: followsTail), batch: batch, state: state, new: newState),
-                unclamped >= newState.minOffset, unclamped <= newState.maxOffset
-            else { continue }
+            let unclamped = referenceTarget(
+                state.resolve(anchoring, followsTail: followsTail), batch: batch, state: state, new: newState)
+            guard unclamped >= newState.minOffset, unclamped <= newState.maxOffset else { continue }
             let input = state.commitInput(
                 batch: batch, newHeights: newHeights, anchoring: anchoring, followsTail: followsTail,
                 animates: Bool.random(using: &rng))
@@ -306,10 +322,8 @@ final class ScrollAnchorTests: XCTestCase {
             let followsTail = Bool.random(using: &rng)
             let newHeights = batch.newHeights(from: state.heights, &rng)
             let newState = AnchorState(heights: newHeights, spacing: state.spacing, viewport: state.viewport)
-            guard
-                let unclamped = referenceTarget(
-                    state.resolve(anchoring, followsTail: followsTail), batch: batch, state: state, new: newState)
-            else { continue }
+            let unclamped = referenceTarget(
+                state.resolve(anchoring, followsTail: followsTail), batch: batch, state: state, new: newState)
             let input = state.commitInput(
                 batch: batch, newHeights: newHeights, anchoring: anchoring, followsTail: followsTail,
                 animates: Bool.random(using: &rng))
@@ -658,49 +672,33 @@ private struct AnchorBatch {
     }
 }
 
-private enum Carried {
-    case anchor(ScrollAnchor)
-    case allRemoved
-    /// A5 says "the first surviving row after it", and M2 alone says that
-    /// moved rows don't count as surviving. Where the two readings pick
-    /// different rows, the case is skipped.
-    case ambiguous
-}
-
-/// A4 and A5, written from the spec.
-private func referenceCarry(_ anchor: ScrollAnchor, batch: AnchorBatch, state: AnchorState) -> Carried {
-    guard case .row(let row, let distance) = anchor else { return .anchor(anchor) }
+/// A4 and A5, written from the spec. "Surviving" is neither removed nor
+/// moved; when no surviving row remains, the anchor becomes the offset.
+private func referenceCarry(_ anchor: ScrollAnchor, batch: AnchorBatch, state: AnchorState) -> ScrollAnchor {
+    guard case .row(let row, let distance) = anchor else { return anchor }
     let newIndexes = batch.newIndexes
-    if let newRow = newIndexes[row] { return .anchor(.row(newRow, distance: distance)) }
-    func firstSurvivor(movedRowsSurvive: Bool) -> Int? {
-        let survives = { (old: Int) -> Bool in
-            guard let new = newIndexes[old] else { return false }
-            return movedRowsSurvive || !batch.slots[new].moved
-        }
-        return (row + 1..<batch.oldCount).first(where: survives) ?? (0..<row).last(where: survives)
+    if let newRow = newIndexes[row] { return .row(newRow, distance: distance) }
+    let survives = { (old: Int) -> Bool in
+        guard let new = newIndexes[old] else { return false }
+        return !batch.slots[new].moved
     }
-    let loose = firstSurvivor(movedRowsSurvive: true)
-    guard loose == firstSurvivor(movedRowsSurvive: false) else { return .ambiguous }
-    guard let successor = loose else { return .allRemoved }
+    guard let successor = (row + 1..<batch.oldCount).first(where: survives) ?? (0..<row).last(where: survives)
+    else { return .offset(state.viewport.offset) }
     let top = state.viewport.offset + state.viewport.insetTop
-    return .anchor(.row(newIndexes[successor]!, distance: state.tops[successor] - top))
+    return .row(newIndexes[successor]!, distance: state.tops[successor] - top)
 }
 
 /// A6 before A7's clamp, for an anchor resolved against `state` and carried
-/// through `batch`; `nil` when A5 is ambiguous.
+/// through `batch`.
 private func referenceTarget(
     _ anchor: ScrollAnchor, batch: AnchorBatch, state: AnchorState, new: AnchorState
-) -> CGFloat? {
+) -> CGFloat {
     switch referenceCarry(anchor, batch: batch, state: state) {
-    case .ambiguous:
-        return nil
-    case .allRemoved:
-        return new.minOffset
-    case .anchor(.tail):
+    case .tail:
         return new.maxOffset
-    case .anchor(.offset(let offset)):
+    case .offset(let offset):
         return offset
-    case .anchor(.row(let row, let distance)):
+    case .row(let row, let distance):
         return new.tops[row] - new.viewport.insetTop - distance
     }
 }

@@ -12,7 +12,9 @@ nonisolated extension DocumentHeader {
         case .change(let changed):
             calls = changed
             let lines = SourceLines.change(changed)
-            stat = lines.firstChange == nil ? StyledText() : Self.changeStat(added: lines.added, removed: lines.removed)
+            stat =
+                lines.firstChange == nil
+                ? StyledText() : StyledText.diffStat(added: lines.added, removed: lines.removed)
         case .newFile(let call):
             calls = [call]
             let count = SourceLines.newFile(call).lines.count
@@ -28,11 +30,6 @@ nonisolated extension DocumentHeader {
         return DocumentHeader(
             tile: WorkLineWriter(workingDirectory: workingDirectory).line(for: calls, standalone: true).tile,
             crumbs: crumbs(of: path, workingDirectory: workingDirectory), stat: stat, title: name)
-    }
-
-    /// `+12 −3`, green and red.
-    static func changeStat(added: Int, removed: Int) -> StyledText {
-        StyledText("+\(added)", style: .added) + StyledText(" ") + StyledText("−\(removed)", style: .removed)
     }
 
     /// `Lines 40–120 of 880`.

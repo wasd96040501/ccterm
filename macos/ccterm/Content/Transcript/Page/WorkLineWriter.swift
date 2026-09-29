@@ -238,7 +238,9 @@ nonisolated struct WorkLineWriter {
         let changed = calls.filter { ($0.kind == .change || $0.kind == .create) && $0.state == .done }
         if !changed.isEmpty {
             let stats = changed.compactMap(Self.diffStat)
-            parts.append(Self.stat(added: stats.map(\.added).reduce(0, +), removed: stats.map(\.removed).reduce(0, +)))
+            parts.append(
+                StyledText.diffStat(
+                    added: stats.map(\.added).reduce(0, +), removed: stats.map(\.removed).reduce(0, +)))
         }
         if !live, let duration, duration >= CorpusThresholds.shownDuration {
             parts.append(StyledText(Self.format(duration)))
@@ -383,9 +385,10 @@ nonisolated struct WorkLineWriter {
         case .change:
             let stats = calls.compactMap(Self.diffStat)
             guard !stats.isEmpty else { return StyledText() }
-            return Self.stat(added: stats.map(\.added).reduce(0, +), removed: stats.map(\.removed).reduce(0, +))
+            return StyledText.diffStat(
+                added: stats.map(\.added).reduce(0, +), removed: stats.map(\.removed).reduce(0, +))
         case .create:
-            let lines = Self.lineCount(call.use.input["content"]?.stringValue ?? "")
+            let lines = (call.use.input["content"]?.stringValue ?? "").lines.count
             return StyledText(String(localized: "New · \(lines) lines"))
         case .read:
             switch call.result?.toolOutcome(Tools.Read.self) {
@@ -505,11 +508,6 @@ nonisolated struct WorkLineWriter {
         }
     }
 
-    /// `+12 −3`, green and red.
-    private static func stat(added: Int, removed: Int) -> StyledText {
-        StyledText("+\(added)", style: .added) + StyledText(" ") + StyledText("−\(removed)", style: .removed)
-    }
-
     /// Lines added and removed by one change or creation.
     private static func diffStat(_ call: ToolCall) -> (added: Int, removed: Int)? {
         let hunks: [DiffHunk]?
@@ -518,7 +516,7 @@ nonisolated struct WorkLineWriter {
             if case .success(let output)? = call.result?.toolOutcome(Tools.Edit.self) {
                 hunks = output.structuredPatch
             } else if let input = call.use.input(as: Tools.Edit.self) {
-                return (Self.lineCount(input.newString), Self.lineCount(input.oldString))
+                return (input.newString.lines.count, input.oldString.lines.count)
             } else {
                 hunks = nil
             }
@@ -526,7 +524,7 @@ nonisolated struct WorkLineWriter {
             if case .success(let output)? = call.result?.toolOutcome(Tools.Write.self), !output.isNewFile {
                 hunks = output.structuredPatch
             } else {
-                return (Self.lineCount(call.use.input["content"]?.stringValue ?? ""), 0)
+                return ((call.use.input["content"]?.stringValue ?? "").lines.count, 0)
             }
         default:
             hunks = nil
@@ -590,10 +588,6 @@ nonisolated struct WorkLineWriter {
         let directory = command[command.index(command.startIndex, offsetBy: 3)..<range.lowerBound]
         guard !directory.contains(where: \.isWhitespace) || directory.hasPrefix("\"") else { return command }
         return String(command[range.upperBound...])
-    }
-
-    private static func lineCount(_ text: String) -> Int {
-        text.isEmpty ? 0 : text.split(separator: "\n", omittingEmptySubsequences: false).count
     }
 
     /// An MCP tool's server and tool (`mcp__computer-use__screenshot`);

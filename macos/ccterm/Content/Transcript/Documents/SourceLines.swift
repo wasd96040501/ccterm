@@ -91,8 +91,8 @@ nonisolated struct SourceLines: Sendable, Equatable {
                 notes.append(Note(style: .info, text: String(localized: "Replace all")))
             }
             for (old, new) in Self.proposedEdits(of: call) {
-                for text in Self.split(old) { lines.append(Line(kind: .removed, number: nil, text: text)) }
-                for text in Self.split(new) { lines.append(Line(kind: .added, number: nil, text: text)) }
+                for text in old.lines { lines.append(Line(kind: .removed, number: nil, text: text)) }
+                for text in new.lines { lines.append(Line(kind: .added, number: nil, text: text)) }
             }
         }
     }
@@ -165,7 +165,7 @@ nonisolated struct SourceLines: Sendable, Equatable {
             cursor = number
         }
         if let original {
-            let originalCount = Self.lineCount(original)
+            let originalCount = original.lines.count
             let total = originalCount - hunks.map(\.oldLines).reduce(0, +) + hunks.map(\.newLines).reduce(0, +)
             if total >= cursor { lines.append(Self.fold(from: cursor, count: total - cursor + 1, counted: true)) }
         }
@@ -235,7 +235,7 @@ nonisolated struct SourceLines: Sendable, Equatable {
         } else {
             content = call.use.input(as: Tools.Write.self)?.content ?? ""
         }
-        result.lines = split(content).enumerated().map { Line(kind: .context, number: $0.offset + 1, text: $0.element) }
+        result.lines = content.lines.enumerated().map { Line(kind: .context, number: $0.offset + 1, text: $0.element) }
         return result
     }
 
@@ -247,7 +247,7 @@ nonisolated struct SourceLines: Sendable, Equatable {
         result.appendNotes(for: call)
         switch call.result?.toolOutcome(Tools.Read.self) {
         case .success(.text(let file))?:
-            let text = split(file.content)
+            let text = file.content.lines
             result.lines = text.enumerated().map {
                 Line(kind: .context, number: file.startLine + $0.offset, text: $0.element)
             }
@@ -281,16 +281,6 @@ nonisolated struct SourceLines: Sendable, Equatable {
     }
 
     // MARK: - Text
-
-    /// A text's lines; the newline that ends the last does not start another.
-    static func split(_ text: String) -> [String] {
-        guard !text.isEmpty else { return [] }
-        var lines = text.components(separatedBy: "\n")
-        if lines.last == "" { lines.removeLast() }
-        return lines
-    }
-
-    private static func lineCount(_ text: String) -> Int { split(text).count }
 
     /// The CLI's message without its markup, cut to its first line.
     private static func firstLine(ofError message: String) -> String {

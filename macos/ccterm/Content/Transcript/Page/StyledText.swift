@@ -39,6 +39,11 @@ nonisolated struct StyledText: Sendable, Equatable {
         runs = text.isEmpty ? [] : [Run(text: text, style: style)]
     }
 
+    /// `+12 −3`, green and red — a change's stat wherever it shows.
+    static func diffStat(added: Int, removed: Int) -> StyledText {
+        StyledText("+\(added)", style: .added) + StyledText(" ") + StyledText("−\(removed)", style: .removed)
+    }
+
     /// Localized words with styled arguments in them. Interpolate `slot(n)`
     /// where argument `n` goes; a translation may move the slots, and each is
     /// replaced by its argument wherever it lands:

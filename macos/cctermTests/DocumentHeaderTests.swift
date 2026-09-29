@@ -190,6 +190,27 @@ final class DocumentHeaderTests: XCTestCase {
         XCTAssertEqual(SourceLines.newFile(call).lines.map(\.number), [1, 2, 3])
     }
 
+    /// The row's meta and the document's stat are one count: a file's closing
+    /// newline ends its last line, it doesn't start another.
+    func testTheRowAndTheDocumentCountTheSameLines() {
+        let writer = WorkLineWriter(workingDirectory: root)
+        let created = ToolCallFixture.write(root + "/B.swift", content: "a\nb\nc\n")
+        XCTAssertEqual(writer.line(for: [created], standalone: true).meta, header(.newFile(created)).stat)
+        let proposed = ToolCallFixture.call(
+            "Edit", #"{"file_path":"/r/A.swift","old_string":"a\nb\n","new_string":"c\n"}"#, state: .done,
+            hasResult: false)
+        XCTAssertEqual(header(.change([proposed])).stat.string, "+1 −2")
+        XCTAssertEqual(writer.line(for: [proposed], standalone: true).meta, header(.change([proposed])).stat)
+        let edited = ToolCallFixture.edit(
+            root + "/A.swift", old: "let a = 1", new: "let a = 2\nlet b = 3",
+            hunks: [
+                ToolCallFixture.hunk(
+                    oldStart: 4, oldLines: 3, newStart: 4, newLines: 4,
+                    lines: [" x", "-let a = 1", "+let a = 2", "+let b = 3", " y", " z"])
+            ])
+        XCTAssertEqual(writer.line(for: [edited], standalone: true).meta, header(.change([edited])).stat)
+    }
+
     func testAReadSaysWhichLinesOfHowMany() {
         let call = ToolCallFixture.read(root + "/C.swift", content: "a\nb\nc\n", startLine: 40, total: 880)
         let header = header(.read(call))

@@ -20,7 +20,7 @@ MainActor.assumeIsolated {
     list.frame = NSRect(x: 0, y: 0, width: 400, height: 300)
     window.contentView = list
     window.orderFrontRegardless()
-    list.layoutSubtreeIfNeeded()
+    if scenario.loadsFirst { list.layoutSubtreeIfNeeded() }
 
     switch scenario {
     case .updateInsideCallback:
@@ -30,19 +30,42 @@ MainActor.assumeIsolated {
     case .listCallInsideBatch:
         host!.count += 1
         list.performBatchUpdates { _ in list.insertRows(at: [0]) }
+    case .scrollInsideCallback:
+        host!.insideHeight = { $0.scrollRowToVisible(0) }
+        list.noteHeightOfRows(withIndexesChanged: [0])
+    case .queryInsideBatch:
+        list.performBatchUpdates { _ in _ = list.rect(ofRow: 0) }
     case .countMismatch:
         list.insertRows(at: [0])
     case .invalidHeight:
         host!.height = .nan
         host!.count += 1
         list.insertRows(at: [0])
+    case .zeroHeight:
+        host!.height = 0
+        list.noteHeightOfRows(withIndexesChanged: [0])
     case .negativeSpacing:
         list.rowSpacing = -1
+    case .infiniteSpacing:
+        list.rowSpacing = .infinity
     case .indexOutOfRange:
         list.removeRows(at: [50])
+    case .anchorOutOfRange:
+        list.performBatchUpdates(anchoring: .row(50)) { $0.noteHeightOfRows(withIndexesChanged: [0]) }
+    case .scrollOutOfRange:
+        list.scrollToRow(50, at: .top)
+    case .pendingScrollOutOfRange:
+        list.scrollRowToVisible(50)
+        list.layoutSubtreeIfNeeded()
     case .deallocatedDataSource:
         host = nil
         list.reloadData()
+    case .deallocatedBeforeLoad:
+        host = nil
+        list.layoutSubtreeIfNeeded()
+    case .deallocatedBeforePlacement:
+        host = nil
+        list.scrollToRow(19, at: .top)
     case .proxyAfterClose:
         var escaped: ExactListView.Updates?
         list.performBatchUpdates { escaped = $0 }

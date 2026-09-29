@@ -204,8 +204,8 @@ final class AccessibilityTests: XCTestCase {
         host.heights[3] = 60
         list.noteHeightOfRows(withIndexesChanged: [3])
         list.reloadData(forRowIndexes: [4])
-        list.moveRow(at: 5, to: 9)
         host.heights.insert(host.heights.remove(at: 5), at: 9)
+        list.moveRow(at: 5, to: 9)
         let afterSameCount = await heard("same count")
         XCTAssertEqual(afterSameCount, [], "n unchanged: nothing posted")
 

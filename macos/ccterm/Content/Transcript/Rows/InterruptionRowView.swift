@@ -8,8 +8,29 @@ final class InterruptionRowView: NSView, PageRowView {
 
     weak var delegate: PageRowViewDelegate?
 
+    private let icon = NSImageView()
+    private let label = NSTextField(labelWithString: String(localized: "Interrupted"))
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        icon.image = NSImage(systemSymbolName: "stop.circle", accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .regular))
+        icon.contentTintColor = .tertiaryLabelColor
+        label.font = .systemFont(ofSize: 11)
+        label.textColor = .tertiaryLabelColor
+        label.lineBreakMode = .byTruncatingTail
+
+        let stack = NSStackView(views: [icon, label])
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 6
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
     }
 
     convenience init() {

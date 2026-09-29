@@ -195,6 +195,16 @@
         }
       }
     },
+    "Approve": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "批准"
+          }
+        }
+      }
+    },
     "Back": {
       "comment": "Toolbar button: back through the active editor's history.",
       "localizations": {
@@ -560,6 +570,16 @@
         }
       }
     },
+    "Keep Planning": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续规划"
+          }
+        }
+      }
+    },
     "Launch Command": {
       "localizations": {
         "zh-Hans": {
@@ -881,6 +901,16 @@
         }
       }
     },
+    "Show all": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示全部"
+          }
+        }
+      }
+    },
     "Specify the command to launch Claude. Leave empty to auto-detect `claude` in your system.": {
       "localizations": {
         "zh-Hans": {
@@ -907,6 +937,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "子代理"
+          }
+        }
+      }
+    },
+    "Summary": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "摘要"
           }
         }
       }

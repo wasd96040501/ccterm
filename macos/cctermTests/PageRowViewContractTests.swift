@@ -197,4 +197,57 @@ final class PageRowViewContractTests: XCTestCase {
         ].map { RowFixture(name: $0.0, model: $0.1, sameGeometry: painted($0.1)) }
         assertContract(WorkLineRowView.self, fixtures)
     }
+
+    func testCapsuleRowView() {
+        func slash(_ name: String, _ arguments: String = "", output: String = "", error: String = "") -> LocalCommand {
+            LocalCommand(
+                id: name, command: .slash(name: name, arguments: arguments), output: output, errorOutput: error)
+        }
+        func shell(_ line: String, output: String = "", error: String = "") -> LocalCommand {
+            LocalCommand(id: line, command: .shell(line), output: output, errorOutput: error)
+        }
+        let fixtures = [
+            slash("/model", "opus"), slash("/model", "opus", output: "Set model to opus"),
+            slash("/skill-creator:skill-creator", "write a skill for the whole team and then some more words"),
+            slash("/login", error: "Not logged in"),
+            slash("/usage", output: "Plan: Max\nWeek: 41%\nToday: 7%\nReset: Tue"),
+            shell("git status", output: "On branch main\nnothing to commit\nclean\n"),
+            shell("pwd", output: "/Users/me/repo\n"), shell("false", error: "exit 1"),
+        ].map { RowFixture(name: $0.id + ($0.output.isEmpty ? "" : " out"), model: $0) }
+        assertContract(CapsuleRowView.self, fixtures)
+    }
+
+    func testDividerRowView() {
+        let date = Date(timeIntervalSince1970: 1_750_000_000)
+        let fixtures = [
+            SessionDivider(
+                id: "a", kind: .compacted(automatically: false, preTokens: 168_000, postTokens: 14_000), summary: "s"),
+            SessionDivider(
+                id: "b", kind: .compacted(automatically: true, preTokens: nil, postTokens: nil), summary: nil),
+            SessionDivider(id: "c", kind: .compacting, summary: nil),
+            SessionDivider(id: "d", kind: .resumed(date), summary: nil),
+            SessionDivider(id: "e", kind: .pause(date), summary: nil),
+        ].map { RowFixture(name: $0.id, model: $0) }
+        assertContract(DividerRowView.self, fixtures)
+    }
+
+    func testInterruptionRowView() {
+        assertContract(InterruptionRowView.self, [RowFixture(name: "interrupted", model: ())])
+    }
+
+    func testCaptionRowView() {
+        let fixtures = [
+            Caption(glyph: .subagent, text: "Explore agent"),
+            Caption(glyph: .session, text: "ccterm · refactor tabs"),
+            Caption(glyph: .coordinator, text: "Coordinator"),
+            Caption(glyph: .plugin, text: "A plugin with a name long enough to run out of room in a narrow column"),
+            Caption(glyph: .tile(Tile(glyph: .plan, state: .done)), text: "Plan"),
+            Caption(glyph: .tile(Tile(glyph: .plan, state: .waiting)), text: "Plan · Waiting for your approval"),
+        ].enumerated().map { RowFixture(name: "caption \($0.offset)", model: $0.element) }
+        assertContract(CaptionRowView.self, fixtures)
+    }
+
+    func testPlanDecisionRowView() {
+        assertContract(PlanDecisionRowView.self, [RowFixture(name: "waiting", model: "plan-1")])
+    }
 }

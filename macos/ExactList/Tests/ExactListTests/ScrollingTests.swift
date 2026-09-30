@@ -152,6 +152,15 @@ final class ScrollingTests: XCTestCase {
         XCTAssertEqual(offset(of: list), 600, "without animation: at once")
         XCTAssertEqual(clocks(), 0, "nothing moves")
 
+        // Reduce Motion: the branch this machine is in (§13). Animated, it is
+        // at the destination at once too.
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            animated(0.3) { list.scrollToRow(24, at: .top) }
+            XCTAssertEqual(offset(of: list), 720, "Reduce Motion is on: at once")
+            XCTAssertEqual(clocks(), 0, "Reduce Motion is on: nothing moves")
+            return
+        }
+
         // A short one: 600 to 720, never back, over several frames.
         animated(0.3) { list.scrollToRow(24, at: .top) }
         XCTAssertEqual(offset(of: list), 600, "it starts where it was")

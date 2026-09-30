@@ -213,7 +213,11 @@ final class ExactListBenchmarks: XCTestCase {
     // MARK: - Helpers
 
     private static func mixedHeights(_ count: Int) -> [CGFloat] {
-        (0..<count).map { 22 + CGFloat(($0 * 37) % 61) + CGFloat($0 % 3) * 0.5 }
+        (0..<count).map { row -> CGFloat in
+            let spread = CGFloat((row * 37) % 61)
+            let half = CGFloat(row % 3) * 0.5
+            return 22 + spread + half
+        }
     }
 
     private func mountList(_ heights: [CGFloat]) async -> (ExactListView, ListStage) {

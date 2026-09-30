@@ -103,7 +103,8 @@ final class TranscriptScrollStabilityTests: XCTestCase {
     ///
     /// Sampled after every run-loop turn in window coordinates, which is where
     /// the reader sees it; needs the display awake, since the motion advances
-    /// on display refreshes.
+    /// on display refreshes. Under Reduce Motion the rows below land at once,
+    /// and only that and the line holding are asserted.
     func testARunOpenedByItsLineOpensWithMotionAndTheLineHoldsStill() async throws {
         let line = await centre(on: "r120c0")
         let index = rows().firstIndex { $0.id == line }!
@@ -131,8 +132,13 @@ final class TranscriptScrollStabilityTests: XCTestCase {
             lineYs.allSatisfy { abs($0 - lineStart) < 0.5 }, "the clicked line moved: \(Set(lineYs).sorted())")
         let positions = Set(nextYs.map { ($0 * 2).rounded() / 2 })
         XCTAssertNotEqual(nextYs.last ?? nextStart, nextStart, accuracy: 0.5, "the row below never moved")
-        XCTAssertGreaterThan(
-            positions.count, 3, "the row below jumped rather than slid: \(positions.sorted())")
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            XCTAssertEqual(positions.count, 1, "Reduce Motion is on, and the row below slid: \(positions.sorted())")
+        } else {
+            XCTAssertGreaterThan(
+                positions.count, 3,
+                "the row below jumped rather than slid: \(positions.sorted()); a screen: \(NSScreen.main != nil)")
+        }
     }
 
     /// An opened run's items sit flush under its line and each other, and the

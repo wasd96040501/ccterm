@@ -220,6 +220,9 @@ final class MotionTests: XCTestCase {
     /// alone, then a batch with an insert, a removal and a noted row.
     func testM3_howItIsDone() async throws {
         guard #available(macOS 14, *) else { throw XCTSkip("the display link needs macOS 14") }
+        try XCTSkipIf(
+            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+            "Reduce Motion is on: nothing moves, as testM1 asserts (§13)")
         let stage = ListStage(size: NSSize(width: 400, height: 300))
         defer { stage.teardown() }
         var heights: [CGFloat] = Array(repeating: 30, count: 40)
@@ -303,6 +306,9 @@ final class MotionTests: XCTestCase {
     /// spacing, and a long animated scroll.
     func testM6_noBlankAreas() async throws {
         guard #available(macOS 14, *) else { throw XCTSkip("the display link needs macOS 14") }
+        try XCTSkipIf(
+            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+            "Reduce Motion is on: nothing moves, as testM1 asserts (§13)")
         for scenario in BlankScenario.allCases {
             let stage = ListStage(size: NSSize(width: 400, height: 300))
             defer { stage.teardown() }
@@ -390,6 +396,9 @@ final class MotionTests: XCTestCase {
     /// land on the end layout and complete.
     func testM8_interruptionsCompose() async throws {
         guard #available(macOS 14, *) else { throw XCTSkip("the display link needs macOS 14") }
+        try XCTSkipIf(
+            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+            "Reduce Motion is on: nothing moves, as testM1 asserts (§13)")
         let stage = ListStage(size: NSSize(width: 400, height: 300))
         defer { stage.teardown() }
         var heights: [CGFloat] = Array(repeating: 30, count: 60)
@@ -499,6 +508,9 @@ final class MotionTests: XCTestCase {
     /// for a height change further down.
     func testM9_effects() async throws {
         guard #available(macOS 14, *) else { throw XCTSkip("the display link needs macOS 14") }
+        try XCTSkipIf(
+            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+            "Reduce Motion is on: nothing moves, as testM1 asserts (§13)")
         let options: [(NSTableView.AnimationOptions, String)] = [
             ([], "none"), (.effectGap, "gap"), (.effectFade, "fade"), (.slideUp, "slideUp"),
             (.slideDown, "slideDown"), (.slideLeft, "slideLeft"), (.slideRight, "slideRight"),
@@ -590,6 +602,9 @@ final class MotionTests: XCTestCase {
     /// its host hears `didRemove` with row −1.
     func testM10_stackingOrder() async throws {
         guard #available(macOS 14, *) else { throw XCTSkip("the display link needs macOS 14") }
+        try XCTSkipIf(
+            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+            "Reduce Motion is on: nothing moves, as testM1 asserts (§13)")
         let stage = ListStage(size: NSSize(width: 400, height: 300))
         defer { stage.teardown() }
         var heights: [CGFloat] = (0..<30).map { 30 + CGFloat($0 % 3) * 10 }

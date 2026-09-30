@@ -146,7 +146,8 @@ final class KeyboardTests: XCTestCase {
 
         _ = press(mounted, "\u{F72B}", keyCode: 119, modifiers: [.function])
         // A hundred rows of 40, and the 14pt gap between each two.
-        XCTAssertEqual(offset(mounted), 100 * 40 + 99 * 14 + 120 - 720)
+        let end: CGFloat = 100 * 40 + 99 * 14 + 120 - 720
+        XCTAssertEqual(offset(mounted), end)
 
         _ = press(mounted, "\u{F729}", keyCode: 115, modifiers: [.function])
         XCTAssertEqual(offset(mounted), 0)

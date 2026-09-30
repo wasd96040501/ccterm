@@ -587,8 +587,8 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
         defer { isInBatch = outer }
         holdingRowsStillForFind {
             list.performBatchUpdates(anchoring: anchoring.listAnchoring) {
-                // Each mutation records its edits through a nested
-                // `performBatchUpdates`, which joins this one.
+                // The host's calls to this view's update methods record straight
+                // into the list's open batch.
                 updates()
             }
         }

@@ -173,7 +173,7 @@ public final class ExactListView: NSView {
         openBatch = RowIndexMap(oldCount: heights.count)
         openCompletions = completionHandler.map { [$0] } ?? []
         updates()
-        let map = openBatch ?? RowIndexMap(oldCount: heights.count)
+        let map = openBatch!
         openBatch = nil
         let completions = openCompletions
         openCompletions = []
@@ -796,7 +796,9 @@ public final class ExactListView: NSView {
         return body(delegate)
     }
 
-    /// L9: no update from inside a callback, and none in a batch.
+    /// L9: `reloadData()`, the scroll methods and `rowSpacing` may not run inside a
+    /// data source or delegate call, nor inside a batch. The update methods are not
+    /// guarded here: in a batch they record (see `record`).
     private func requireOutsideCallbacks(_ what: String) {
         precondition(callbackDepth == 0, "ExactList: \(what) called from inside a data source or delegate call (L9)")
         precondition(openBatch == nil, "ExactList: \(what) called inside a batch (L9)")

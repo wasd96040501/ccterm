@@ -99,6 +99,44 @@ final class TranscriptScrollStabilityTests: XCTestCase {
         XCTAssertEqual(screenY(of: top), before, accuracy: 0.5, "the top row moved when every run opened")
     }
 
+    /// A run opened by its own line — the reader's click — opens with motion,
+    /// and the line stays exactly where it was on every frame: the rows below
+    /// slide away from it, nothing under the pointer jumps.
+    ///
+    /// Sampled after every run-loop turn in window coordinates, which is where
+    /// the reader sees it; needs the display awake, since the motion advances
+    /// on display refreshes.
+    func testARunOpenedByItsLineOpensWithMotionAndTheLineHoldsStill() async throws {
+        let line = await centre(on: "r120c0")
+        let index = rows().firstIndex { $0.id == line }!
+        let lineView = try XCTUnwrap(
+            stage.findAll(WorkLineRowView.self, in: transcript).first { transcript.row(for: $0) == index })
+        let nextView = try XCTUnwrap(
+            stage.findAll(NSView.self, in: transcript).first { transcript.row(for: $0) == index + 1 })
+        func windowY(_ view: NSView) -> CGFloat { view.convert(view.bounds, to: nil).minY }
+        let lineStart = windowY(lineView)
+        let nextStart = windowY(nextView)
+
+        controller.rowView(lineView, toggle: "r120c0", all: false)
+        expanded.insert("r120c0")
+        var lineYs: [CGFloat] = []
+        var nextYs: [CGFloat] = []
+        let deadline = Date().addingTimeInterval(1)
+        while Date() < deadline {
+            RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.005))
+            lineYs.append(windowY(lineView))
+            nextYs.append(windowY(nextView))
+        }
+
+        XCTAssertEqual(transcript.numberOfRows, rows().count)
+        XCTAssertTrue(
+            lineYs.allSatisfy { abs($0 - lineStart) < 0.5 }, "the clicked line moved: \(Set(lineYs).sorted())")
+        let positions = Set(nextYs.map { ($0 * 2).rounded() / 2 })
+        XCTAssertNotEqual(nextYs.last ?? nextStart, nextStart, accuracy: 0.5, "the row below never moved")
+        XCTAssertGreaterThan(
+            positions.count, 3, "the row below jumped rather than slid: \(positions.sorted())")
+    }
+
     /// ↓ steps to the next item and scrolls no more than it takes to show it.
     func testDownStepsToTheNextItemAndScrollsAtMostOneRow() async throws {
         controller.rowView(NSView(), toggle: "r120c0", all: false)
@@ -138,14 +176,14 @@ final class TranscriptScrollStabilityTests: XCTestCase {
     /// The first row any of which is in view under the transcript's top inset —
     /// the one TranscriptKit holds in place.
     private func firstVisibleRow() -> Int {
-        let top = clip.bounds.minY + (clip.enclosingScrollView?.contentInsets.top ?? 0)
-        return (0..<transcript.numberOfRows).first { transcript.rect(ofRow: $0).maxY > top }!
+        (0..<transcript.numberOfRows).first { transcript.rect(ofRow: $0).maxY > transcript.contentInsets.top }!
     }
 
-    /// Where row `id` is on screen: its top, from the top of the clip.
+    /// Where row `id` is on screen: its top, from the transcript's top.
+    /// `rect(ofRow:)` answers with the scroll applied.
     private func screenY(of id: PageRow.ID) -> CGFloat {
         let index = rows().firstIndex { $0.id == id }!
-        return transcript.rect(ofRow: index).minY - clip.bounds.minY
+        return transcript.rect(ofRow: index).minY
     }
 
     private func assertStays(

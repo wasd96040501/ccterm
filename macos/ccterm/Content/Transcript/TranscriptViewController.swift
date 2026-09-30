@@ -144,6 +144,10 @@ final class TranscriptViewController: NSViewController {
 
     /// Shows entry `entryID`'s rows as `newValue` discloses them: its first
     /// row stays and is reloaded (its chevron turns), the rest are swapped.
+    ///
+    /// The first row holds still on screen and the rows below it open or close
+    /// a gap, as an outline view discloses; inside a caller's batch the
+    /// caller's anchor wins.
     private func setDisclosure(_ newValue: RunDisclosure, of entryID: String) {
         guard let entryIndex = page.entryIndex(containing: entryID), page.entries[entryIndex].id == entryID
         else { return }
@@ -153,11 +157,16 @@ final class TranscriptViewController: NSViewController {
         let end = rows[first...].firstIndex { $0.id.entry != entryID } ?? rows.endIndex
         let replacement = PageRow.rows(for: page.entries[entryIndex], disclosure: newValue)
         rows.replaceSubrange(first..<end, with: replacement)
-        transcript.beginUpdates()
-        if end - first > 1 { transcript.removeRows(at: IndexSet(first + 1..<end)) }
-        if replacement.count > 1 { transcript.insertRows(at: IndexSet(first + 1..<first + replacement.count)) }
-        transcript.reloadRows(at: IndexSet(integer: first))
-        transcript.endUpdates()
+        transcript.performBatchUpdates(anchoring: .row(first)) {
+            if end - first > 1 {
+                transcript.removeRows(at: IndexSet(first + 1..<end), withAnimation: .effectGap)
+            }
+            if replacement.count > 1 {
+                transcript.insertRows(
+                    at: IndexSet(first + 1..<first + replacement.count), withAnimation: .effectGap)
+            }
+            transcript.reloadRows(at: IndexSet(integer: first))
+        }
     }
 
     /// Every run and news row that has a list to open.
@@ -284,12 +293,14 @@ extension TranscriptViewController: PageRowViewDelegate {
 
     func rowView(_ rowView: NSView, toggle runID: String, all: Bool) {
         let newValue: RunDisclosure = disclosure(of: runID) == .collapsed ? .expanded : .collapsed
-        // One group, so the place is held once around the whole change.
-        transcript.beginUpdates()
-        for entryID in all ? disclosableEntries : [runID] {
-            setDisclosure(newValue, of: entryID)
+        // One batch, holding the row that was clicked, so the whole change is
+        // one motion around it.
+        let clicked = transcript.row(for: rowView)
+        transcript.performBatchUpdates(anchoring: clicked >= 0 ? .row(clicked) : .automatic) {
+            for entryID in all ? disclosableEntries : [runID] {
+                setDisclosure(newValue, of: entryID)
+            }
         }
-        transcript.endUpdates()
     }
 
     func rowView(_ rowView: NSView, showAllOf runID: String) {

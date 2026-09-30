@@ -20,6 +20,8 @@ nonisolated enum DocumentContent: Sendable, Equatable {
     case web(ToolCall)
     /// A subagent: its answer, and the way to its own transcript.
     case agent(ToolCall)
+    /// A subagent's report, sent into the conversation: its words, whole.
+    case agentMessage(AgentMessage)
     /// The task list as it stood after a tasks call.
     case taskList([TaskListItem])
     /// What a background agent, workflow or monitor reported. A command's

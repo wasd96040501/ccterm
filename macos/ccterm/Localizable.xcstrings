@@ -2,6 +2,16 @@
   "sourceLanguage": "en",
   "strings": {
     "": {},
+    "%@ reported": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 交回了报告"
+          }
+        }
+      }
+    },
     "%@ → %@ tokens": {
       "comment": "Token counts before and after a compaction, e.g. 168k → 14k tokens.",
       "localizations": {

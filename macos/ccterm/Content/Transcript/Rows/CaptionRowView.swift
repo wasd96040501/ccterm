@@ -2,7 +2,7 @@ import AppKit
 
 /// The 20-pt line naming who speaks in the `.markdown` row under it — a
 /// subagent, a session, the coordinator, a plugin, or a plan
-/// (06-voices.md, 07-talk.md).
+/// (06-agent-messages.md, 07-talk.md).
 ///
 /// A party is drawn with the sidebar's glyph for it, in the sidebar's colour;
 /// a plan with its tool tile. The words are 13-pt secondary.

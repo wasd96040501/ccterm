@@ -156,7 +156,12 @@ nonisolated struct TranscriptPageBuilder {
         case .taskNotification(let report):
             readNews(report, id: id, at: user.timestamp)
         case .message(let sender, let text):
-            appendEntry(.voice(Voice(id: id, sender: sender, name: name(of: sender), text: text)), at: user.timestamp)
+            let name = name(of: sender)
+            appendEntry(
+                .agentMessage(
+                    AgentMessage(
+                        id: id, sender: sender, name: name, text: text, line: writer.line(forReportFrom: name))),
+                at: user.timestamp)
         case .interruption(let duringToolUse):
             // During a call it is that call's state, read from its result.
             if !duringToolUse { appendEntry(.interruption(id: id), at: user.timestamp) }

@@ -16,7 +16,7 @@ nonisolated struct Document: Sendable, Equatable {
                 .agent(let call), .other(let call):
                 call
             case .change(let calls): calls.last
-            case .shellCommand, .taskList, .news, .commandOutput, .compactionSummary: nil
+            case .shellCommand, .agentMessage, .taskList, .news, .commandOutput, .compactionSummary: nil
             }
         guard let call, case .waiting = call.state else { return nil }
         return Approval(call)

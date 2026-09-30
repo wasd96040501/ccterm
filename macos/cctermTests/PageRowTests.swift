@@ -4,9 +4,9 @@ import XCTest
 @testable import ccterm
 
 /// How a page's entries become the transcript's rows: a run is its line and,
-/// opened, one row per item up to twelve then *Show N more*; voices and plans
+/// opened, one row per item up to twelve then *Show N more*; messages and plans
 /// are a caption over TranscriptKit markdown (design/transcript/01-run.md
-/// "Expanded", 06-voices.md, 07-talk.md).
+/// "Expanded", 06-agent-messages.md, 07-talk.md).
 final class PageRowTests: XCTestCase {
 
     private func run(of count: Int) -> TranscriptEntry {
@@ -44,15 +44,37 @@ final class PageRowTests: XCTestCase {
         XCTAssertNil(PageRow.rows(for: run(of: 2), disclosure: .collapsed)[0].opens, "a longer run's line toggles")
     }
 
-    func testAVoiceIsACaptionOverItsWordsQuoted() {
-        let voice = Voice(id: "v", sender: .coordinator, name: "Coordinator", text: "Found it.\n\nTwo more.")
-        let rows = PageRow.rows(for: .voice(voice), disclosure: .collapsed)
+    func testAnotherAgentsMessageIsACaptionOverItsWordsQuoted() {
+        var s = MessageScript()
+        s.user(
+            "<cross-session-message from=\"uds:/tmp/a.sock\" from-name=\"Merge\">Found it.\n\nTwo more.</cross-session-message>"
+        )
+        let entry = s.page.entries[0]
+        let rows = PageRow.rows(for: entry, disclosure: .collapsed)
         XCTAssertEqual(
             rows.map(\.kind),
             [
-                .caption(Caption(glyph: .coordinator, text: "Coordinator")),
+                .caption(Caption(glyph: .session, text: "Merge")),
                 .markdown("> Found it.\n>\n> Two more."),
             ])
+        XCTAssertNil(s.page.document(for: entry.id), "a message that is talking opens nothing")
+    }
+
+    /// A subagent's report is its work, like a diff: one line on the page, and
+    /// its words, whole, in the document it opens beside.
+    func testASubagentsReportIsOneLineThatOpensItsWordsBeside() {
+        var s = MessageScript()
+        s.user("<agent-message from=\"a42\">## Findings\n\n- one</agent-message>")
+        let entry = s.page.entries[0]
+        let rows = PageRow.rows(for: entry, disclosure: .expanded)
+        XCTAssertEqual(parts(rows), [.main])
+        XCTAssertEqual(rows[0].opens, entry.id)
+        guard case .agentReport(let message) = rows[0].kind else {
+            return XCTFail("not a report line: \(rows[0].kind)")
+        }
+        XCTAssertEqual(message.line.tile.glyph, .tool(.agent))
+        XCTAssertEqual(s.page.document(for: entry.id), .agentMessage(message))
+        XCTAssertEqual(message.text, "## Findings\n\n- one")
     }
 
     func testRowIdentitiesAreUniqueAcrossAPage() {

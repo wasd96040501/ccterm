@@ -94,7 +94,7 @@ appear as text or 10–16 % washes, never as filled buttons.
 | 3 | File documents — change, new file, read | 14 % of calls | [03-file.md](03-file.md) |
 | 4 | Background news — task notifications | 27 % of prompts | [04-background.md](04-background.md) |
 | 5 | Local commands, interruptions, compaction | 15 % of prompts | [05-local.md](05-local.md) |
-| 6 | Other voices — subagents, sessions, coordinator, plugins | — | [06-voices.md](06-voices.md) |
+| 6 | Messages from other agents — a subagent's report (a line; the report beside), sessions, coordinator, plugins | — | [06-agent-messages.md](06-agent-messages.md) |
 | 7 | Tools that talk to you — questions, plans, task lists | < 3 % | [07-talk.md](07-talk.md) |
 
 ## Opening a document beside the transcript

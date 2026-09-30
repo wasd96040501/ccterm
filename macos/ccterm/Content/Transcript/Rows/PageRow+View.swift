@@ -23,7 +23,7 @@ extension PageRow {
         switch kind {
         case .prompt, .markdown:
             preconditionFailure("TranscriptKit measures its own rows")
-        case .runLine, .runItem, .newsLine, .newsItem:
+        case .runLine, .runItem, .newsLine, .newsItem, .agentReport:
             WorkLineRowView.height(for: workLine(isSelected: false, flashes: false), width: width)
         case .showMore(let runID, let hidden):
             ShowMoreRowView.height(for: .init(runID: runID, hidden: hidden), width: width)
@@ -59,7 +59,7 @@ extension PageRow {
         switch kind {
         case .prompt, .markdown:
             preconditionFailure("TranscriptKit draws its own rows")
-        case .runLine, .runItem, .newsLine, .newsItem:
+        case .runLine, .runItem, .newsLine, .newsItem, .agentReport:
             return view(WorkLineRowView.self, workLine(isSelected: isSelected, flashes: flashes))
         case .showMore(let runID, let hidden):
             return view(ShowMoreRowView.self, .init(runID: runID, hidden: hidden))
@@ -104,6 +104,10 @@ extension PageRow {
                 line: news.line, level: .item, action: .open(news.id), origin: news.origin, error: nil,
                 isSelected: isSelected,
                 flashes: flashes)
+        case .agentReport(let message):
+            WorkLineRowView.Model(
+                line: message.line, level: .line, action: .open(message.id), origin: nil, error: nil,
+                isSelected: isSelected, flashes: flashes)
         default:
             preconditionFailure("\(kind) is not a line of work")
         }

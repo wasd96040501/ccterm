@@ -6,9 +6,10 @@ import Foundation
 /// An entry is one or more rows. Every line of a run is its own row — the
 /// run's line, each item shown, *Show N more*, the approval card — so an item
 /// is scrolled to, recycled and measured like any row, and expanding a run is
-/// inserting rows (TranscriptKit keeps the reading position; it forbids
-/// animating row geometry, so nothing slides). A plan and a voice are a
-/// caption row and a `.markdown` row: TranscriptKit draws the words.
+/// inserting rows, which slide in around the run's line. A plan, and a
+/// message from any agent but a subagent, are a caption row and a
+/// `.markdown` row: TranscriptKit draws the words. A subagent's report is one
+/// line that opens beside.
 nonisolated struct PageRow: Sendable, Equatable, Identifiable {
     /// A row's identity: the entry it belongs to, and which of its rows.
     /// Stable across disclosure, so TranscriptKit's cache holds.
@@ -21,9 +22,9 @@ nonisolated struct PageRow: Sendable, Equatable, Identifiable {
         /// The entry's own row: a run's or news's line, a prompt, a reply, a
         /// capsule, a divider, a question.
         case main
-        /// A voice's or plan's caption, above its words.
+        /// A message's or plan's caption, above its words.
         case caption
-        /// A voice's or plan's words, under its caption.
+        /// A message's or plan's words, under its caption.
         case body
         /// One item of an expanded run or news row, by its id.
         case item(String)
@@ -38,7 +39,7 @@ nonisolated struct PageRow: Sendable, Equatable, Identifiable {
     enum Kind: Sendable, Equatable {
         /// What the user typed — TranscriptKit's bubble.
         case prompt(String)
-        /// Markdown TranscriptKit renders: a reply, a voice's or plan's words.
+        /// Markdown TranscriptKit renders: a reply, a message's or plan's words.
         case markdown(String)
         case runLine(ToolRun, RunDisclosure)
         case runItem(RunItem)
@@ -47,6 +48,8 @@ nonisolated struct PageRow: Sendable, Equatable, Identifiable {
         case approval(Approval)
         case newsLine(NewsRun, RunDisclosure)
         case newsItem(TaskNews)
+        /// A subagent's report: its line, which opens the words beside.
+        case agentReport(AgentMessage)
         case command(LocalCommand)
         case divider(SessionDivider)
         case interruption
@@ -68,6 +71,7 @@ nonisolated struct PageRow: Sendable, Equatable, Identifiable {
         case .runLine(let run, _): run.isSingle ? run.items[0].id : nil
         case .newsItem(let news): news.id
         case .newsLine(let news, _): news.isSingle ? news.news[0].id : nil
+        case .agentReport(let message): message.id
         default: nil
         }
     }
@@ -116,8 +120,9 @@ nonisolated extension PageRow {
             return [row(.main, .divider(divider))]
         case .interruption:
             return [row(.main, .interruption)]
-        case .voice(let voice):
-            return [row(.caption, .caption(voice.caption)), row(.body, .markdown(Self.quoted(voice.text)))]
+        case .agentMessage(let message):
+            if message.opensBeside { return [row(.main, .agentReport(message))] }
+            return [row(.caption, .caption(message.caption)), row(.body, .markdown(Self.quoted(message.text)))]
         case .question(let question):
             return [row(.main, .question(question))]
         case .plan(let plan):

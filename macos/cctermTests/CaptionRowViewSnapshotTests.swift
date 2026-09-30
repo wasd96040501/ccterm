@@ -2,7 +2,7 @@ import XCTest
 
 @testable import ccterm
 
-/// Every caption glyph, light above dark (design/transcript/06-voices.md,
+/// Every caption glyph, light above dark (design/transcript/06-agent-messages.md,
 /// 07-talk.md). Review only — `make test-unit
 /// FILTER=CaptionRowViewSnapshotTests`, then open
 /// `/tmp/ccterm-screenshots/CaptionRowView.png`.

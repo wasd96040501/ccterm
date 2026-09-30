@@ -442,6 +442,19 @@ nonisolated struct WorkLineWriter {
         }
     }
 
+    // MARK: - A subagent's report
+
+    /// A subagent's report, which opens beside: who reported
+    /// (06-agent-messages.md).
+    func line(forReportFrom name: String) -> WorkLine {
+        WorkLine(
+            tile: Tile(glyph: .tool(.agent), state: .done),
+            text: StyledText(
+                localized: String(localized: "\(StyledText.slot(0)) reported"),
+                StyledText(name, style: .noun(opens: nil))),
+            detail: nil, exceptions: StyledText(), meta: StyledText())
+    }
+
     // MARK: - News
 
     /// One background task's news: the CLI's own summary, and what its usage

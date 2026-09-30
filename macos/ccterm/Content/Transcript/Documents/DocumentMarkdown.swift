@@ -32,6 +32,8 @@ nonisolated enum DocumentMarkdown {
         case .agent(let call):
             let (status, body) = agent(call)
             return (title, status, [body])
+        case .agentMessage(let message):
+            return (title, [], [message.text])
         case .taskList(let items):
             return (title, [], [checklist(items)])
         case .news(let news):

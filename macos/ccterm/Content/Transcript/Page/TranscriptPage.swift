@@ -91,6 +91,8 @@ nonisolated struct TranscriptPage: Sendable, Equatable {
             }
         case .divider(let divider):
             return divider.summary.map { .compactionSummary($0) }
+        case .agentMessage(let message) where message.opensBeside:
+            return .agentMessage(message)
         default:
             return nil
         }

@@ -32,7 +32,7 @@ struct DocumentBodyFactory {
                 }
             }
             return MarkdownDocumentViewController(markdown: DocumentMarkdown.markdown(for: document.content))
-        case .search, .web, .taskList, .news, .commandOutput, .compactionSummary, .other:
+        case .agentMessage, .search, .web, .taskList, .news, .commandOutput, .compactionSummary, .other:
             return MarkdownDocumentViewController(markdown: DocumentMarkdown.markdown(for: document.content))
         }
     }

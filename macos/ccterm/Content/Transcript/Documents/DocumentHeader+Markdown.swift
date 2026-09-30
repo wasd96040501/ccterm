@@ -26,6 +26,9 @@ nonisolated extension DocumentHeader {
             let description = call.use.input["description"]?.stringValue ?? ""
             let title = description.isEmpty ? String(localized: "Agent") : description
             return DocumentHeader(tile: tile(.tool(.agent), call), crumbs: [title], title: title)
+        case .agentMessage(let message):
+            return DocumentHeader(
+                tile: message.line.tile, crumbs: [message.name], title: message.name)
         case .taskList:
             let title = String(localized: "Task list")
             return DocumentHeader(tile: Tile(glyph: .tool(.tasks), state: .done), crumbs: [title], title: title)

@@ -331,6 +331,37 @@ final class LifecycleTests: XCTestCase {
         XCTAssertEqual(scroll.contentInsets.bottom, insets.bottom)
     }
 
+    /// A set style is the scroll view's, and moves the rows' width with it;
+    /// `nil` follows the system again. The style set is the one the system is
+    /// *not* using, so applying it is something the list does.
+    ///
+    /// That it holds when the system setting changes is not covered: AppKit
+    /// rewrites the style from a private scroller callback that only a real
+    /// change of the setting (or plugging in a mouse) fires, and posting
+    /// `preferredScrollerStyleDidChangeNotification` reaches nothing (tried).
+    func testL11_aSetScrollerStyleIsTheScrollViewsAndMovesTheWidth() async throws {
+        let stage = ListStage(size: NSSize(width: 400, height: 300))
+        defer { stage.teardown() }
+        let host = RecordingHost(count: 100) { _, _ in 30 }
+        let list = ExactListView(dataSource: host, delegate: host)
+        await stage.mount(list)
+        let scroll = try internalScrollView(of: list)
+        let system = NSScroller.preferredScrollerStyle
+        let other: NSScroller.Style = system == .overlay ? .legacy : .overlay
+
+        host.resetCalls()
+        list.scrollerStyle = other
+        list.layoutSubtreeIfNeeded()
+        XCTAssertEqual(scroll.scrollerStyle, other)
+        let width = scroll.contentView.bounds.width
+        XCTAssertTrue(
+            host.calls.contains(.heightOfRow(0, width: width)),
+            "the rows were not measured at the width the style leaves: \(host.calls.prefix(3))")
+
+        list.scrollerStyle = nil
+        XCTAssertEqual(scroll.scrollerStyle, system)
+    }
+
     func testL12_invalidInputIsAProgrammerError() async throws {
         let scenarios = [
             "L12-height", "L12-height-zero", "L12-spacing", "L12-spacing-inf", "L12-index", "L12-anchor",

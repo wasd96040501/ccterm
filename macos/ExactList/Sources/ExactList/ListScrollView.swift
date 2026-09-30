@@ -28,6 +28,19 @@ final class ListScrollView: NSScrollView {
         fatalError("init(coder:) is unavailable")
     }
 
+    /// The style the host pinned, or `nil` to follow the system setting (L11).
+    var pinnedScrollerStyle: NSScroller.Style? {
+        didSet { super.scrollerStyle = pinnedScrollerStyle ?? NSScroller.preferredScrollerStyle }
+    }
+
+    /// Overridden both ways, the AppKit recipe for pinning it: AppKit writes the
+    /// system's style here whenever the setting changes, and reads it back to
+    /// decide whether the scroller takes room from the clip view.
+    override var scrollerStyle: NSScroller.Style {
+        get { pinnedScrollerStyle ?? super.scrollerStyle }
+        set { super.scrollerStyle = pinnedScrollerStyle ?? newValue }
+    }
+
     override func tile() {
         super.tile()
         owner?.scrollViewDidTile(self)

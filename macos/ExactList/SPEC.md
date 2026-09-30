@@ -161,11 +161,14 @@ written they do nothing.
   - `borderType = .noBorder`.
   - `clipsToBounds = true`, so a floating subview (P8) taller than the
     viewport draws nothing outside the list.
-  - The scroller style follows the system setting.
+  - The scroller style follows the system setting, unless the host sets
+    `scrollerStyle`. A set style holds when the system setting changes, and
+    `nil` follows it again. A change that moves the clip view's width is a
+    width change (W1).
   - The vertical elasticity is `NSScrollView`'s default.
 
-  The host's knobs are `contentInsets`, `rowSpacing` and
-  `automaticallyFollowsTail` (§6.4), and nothing else.
+  The host's knobs are `contentInsets`, `rowSpacing`,
+  `automaticallyFollowsTail` (§6.4) and `scrollerStyle`, and nothing else.
 - **L12: invalid input is a programmer error.** These stop with a precondition
   failure:
   - `heightOfRow` returns a value that is not finite, or is ≤ 0;

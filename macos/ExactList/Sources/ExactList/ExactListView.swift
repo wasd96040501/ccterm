@@ -104,6 +104,17 @@ public final class ExactListView: NSView {
         }
     }
 
+    /// `NSScrollView.scrollerStyle`. `nil`, the default, follows the system
+    /// setting (L11). A legacy scroller takes its width from the rows, so a
+    /// change is a width change (W1). *Deviation:* optional, and a set style
+    /// holds when the system setting changes. `NSScrollView` rewrites the
+    /// property then, and an AppKit host pins it by overriding it in a
+    /// subclass, which the list's internal scroll view doesn't allow.
+    public var scrollerStyle: NSScroller.Style? {
+        get { scrollView.pinnedScrollerStyle }
+        set { scrollView.pinnedScrollerStyle = newValue }
+    }
+
     /// Whether the viewport stays at the end as rows arrive and grow while it
     /// sits there (A1, A8). Default `false`, the `NSTableView` behaviour.
     public var automaticallyFollowsTail: Bool {

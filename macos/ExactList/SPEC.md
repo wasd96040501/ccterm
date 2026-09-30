@@ -548,8 +548,9 @@ in a commit has a start and an end value for its screen top and its height.
   between its start and end values. Both of those values are ≥ 0, so rows
   never overlap.
   - If both rows survive and were adjacent before the commit too, the gap
-    goes from the old `g` of the lower row to its new one: constant at every
-    `t` unless the batch noted that row with another spacing.
+    ends at the lower row's new `g` and starts at its old one, brought toward
+    the end by M7's `k` like every start: `g' + k·(g − g')`. It is constant
+    at every `t` unless the batch noted that row with another spacing.
 - **M6: no blank areas.** At every `t`, every point of `U` lies in a
   presented row, or in a gap between two rows consecutive in the presented
   order (M5) that is no wider than the larger of its start and end values. This holds between the presented top of the first

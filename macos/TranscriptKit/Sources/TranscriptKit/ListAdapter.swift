@@ -17,34 +17,34 @@ final class ListAdapter: ExactListViewDataSource, ExactListViewDelegate {
     }
 
     func numberOfRows(in listView: ExactListView) -> Int {
-        delegate?.numberOfRowsInDataSource ?? 0
+        delegate?.numberOfRows(in: self) ?? 0
     }
 
     func listView(_ listView: ExactListView, heightOfRow row: Int, width: CGFloat) -> CGFloat {
-        delegate?.height(ofRow: row, rowWidth: width) ?? 1
+        delegate?.listAdapter(self, heightOfRow: row, rowWidth: width) ?? 1
     }
 
     func listView(_ listView: ExactListView, customSpacingAboveRow row: Int) -> CGFloat? {
-        delegate?.customSpacing(aboveRow: row)
+        delegate?.listAdapter(self, customSpacingAboveRow: row)
     }
 
     func listView(_ listView: ExactListView, viewForRow row: Int) -> NSView {
-        delegate?.view(forRow: row) ?? NSView()
+        delegate?.listAdapter(self, viewForRow: row) ?? NSView()
     }
 
     func listView(_ listView: ExactListView, didRemove view: NSView, forRow row: Int) {
-        delegate?.didRemove(view, forRow: row)
+        delegate?.listAdapter(self, didRemove: view, forRow: row)
     }
 
     func listView(_ listView: ExactListView, didChangeTailFollowing isFollowingTail: Bool) {
-        delegate?.didChangeTailFollowing(isFollowingTail)
+        delegate?.listAdapter(self, didChangeTailFollowing: isFollowingTail)
     }
 
     func listView(_ listView: ExactListView, doCommandBy selector: Selector) -> Bool {
-        delegate?.doCommand(by: selector) ?? false
+        delegate?.listAdapter(self, doCommandBy: selector) ?? false
     }
 
     func listViewDidScroll(_ listView: ExactListView) {
-        delegate?.didScroll()
+        delegate?.listAdapterDidScroll(self)
     }
 }

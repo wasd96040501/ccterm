@@ -8,5 +8,5 @@ protocol StaleRowRefresherDelegate: AnyObject {
     /// Measure stale rows in `refreshOrder` until `budget` is spent, with at
     /// least one row, then commit anchored and without animation. Returns
     /// whether stale rows remain.
-    func refreshStaleRows(within budget: TimeInterval) -> Bool
+    func staleRowRefresher(_ refresher: StaleRowRefresher, refreshRowsWithin budget: TimeInterval) -> Bool
 }

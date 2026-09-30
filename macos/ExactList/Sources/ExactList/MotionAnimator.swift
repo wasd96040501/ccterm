@@ -90,7 +90,7 @@ final class MotionAnimator {
         run(scroll.clock, duration: duration, timing: timing) { [weak self, weak scroll] progress in
             guard let self, let scroll, self.scroll === scroll else { return }
             self.delegate?.motionAnimator(
-                self, scrollTo: scroll.destination + (scroll.start - scroll.destination) * (1 - progress))
+                self, didRequestScrollTo: scroll.destination + (scroll.start - scroll.destination) * (1 - progress))
         } completion: { [weak self, weak scroll] in
             guard let self, let scroll, self.scroll === scroll else { return }
             self.end(scroll)

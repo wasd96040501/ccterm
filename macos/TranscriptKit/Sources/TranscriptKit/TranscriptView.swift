@@ -248,8 +248,9 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
 
     // MARK: - Row access
 
-    /// The number of rows the view currently knows about — the data source's
-    /// answer as of the last `reloadData()` / mutation call.
+    /// The number of rows the list currently knows about — the data source's
+    /// answer as of the last `reloadData()` / mutation call. The list's count,
+    /// not `numberOfRows(in:)`, which asks the data source for its count now.
     public var numberOfRows: Int {
         list.numberOfRows
     }
@@ -847,7 +848,7 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
     ///
     /// A `.view` row's geometry is its host's, so there the row is brought to
     /// its nearest edge instead.
-    func scrollFindMatchToVisible(_ range: Range<Int>, inRow row: Int) {
+    func findSession(_ session: FindSession, didRequestScrollRangeToVisible range: Range<Int>, inRow row: Int) {
         guard row >= 0, row < list.numberOfRows else { return }
         guard let described = dataSource?.transcriptView(self, rowAt: row),
             let block = measuredBlock(for: described),
@@ -954,7 +955,8 @@ extension TranscriptView: BlockViewDelegate {
 
 extension TranscriptView: ListAdapterDelegate {
 
-    var numberOfRowsInDataSource: Int {
+    /// The data source's count now; the public `numberOfRows` is the list's.
+    func numberOfRows(in adapter: ListAdapter) -> Int {
         dataSource?.numberOfRows(in: self) ?? 0
     }
 
@@ -962,7 +964,7 @@ extension TranscriptView: ListAdapterDelegate {
     /// transcript measures itself, from the same tree it will later draw — the
     /// height alone, which the cache keeps for every row, not the tree, which it
     /// keeps only for the rows being drawn.
-    func height(ofRow row: Int, rowWidth: CGFloat) -> CGFloat {
+    func listAdapter(_ adapter: ListAdapter, heightOfRow row: Int, rowWidth: CGFloat) -> CGFloat {
         if rowWidth != self.rowWidth {
             self.rowWidth = rowWidth
             contentWidthDidChange()
@@ -981,13 +983,13 @@ extension TranscriptView: ListAdapterDelegate {
 
     /// The host's answer: the transcript has no spacing of its own but
     /// `rowSpacing`, the default.
-    func customSpacing(aboveRow row: Int) -> CGFloat? {
+    func listAdapter(_ adapter: ListAdapter, customSpacingAboveRow row: Int) -> CGFloat? {
         delegate?.transcriptView(self, customSpacingAboveRow: row)
     }
 
     /// The cell for row `row`: the transcript's own cell view, with either a
     /// host-supplied view or the transcript's own self-drawn one inside it.
-    func view(forRow row: Int) -> NSView {
+    func listAdapter(_ adapter: ListAdapter, viewForRow row: Int) -> NSView {
         guard let described = dataSource?.transcriptView(self, rowAt: row) else {
             return list.makeView(withIdentifier: Self.emptyRow) { NSView() }
         }
@@ -1025,23 +1027,23 @@ extension TranscriptView: ListAdapterDelegate {
     /// What the host has work to stop on is the view it supplied, not the cell
     /// that goes back into the pool — so that is what it hears about. A
     /// self-drawn row's view is the transcript's own and is not reported.
-    func didRemove(_ view: NSView, forRow row: Int) {
+    func listAdapter(_ adapter: ListAdapter, didRemove view: NSView, forRow row: Int) {
         findSession.setNeedsFindLayout()
         guard let hosted = (view as? TranscriptCellView)?.hostedView, !(hosted is BlockView) else { return }
         delegate?.transcriptView(self, didRemove: hosted, forRow: row)
     }
 
-    func didChangeTailFollowing(_ isFollowingTail: Bool) {
+    func listAdapter(_ adapter: ListAdapter, didChangeTailFollowing isFollowingTail: Bool) {
         delegate?.transcriptView(self, didChangeTailFollowing: isFollowingTail)
     }
 
     /// The host is offered every command first; the list answers the scrolling
     /// ones, and passes every other key up the responder chain as the event.
-    func doCommand(by selector: Selector) -> Bool {
+    func listAdapter(_ adapter: ListAdapter, doCommandBy selector: Selector) -> Bool {
         delegate?.transcriptView(self, doCommandBy: selector) ?? false
     }
 
-    func didScroll() {
+    func listAdapterDidScroll(_ adapter: ListAdapter) {
         findSession.placeFindOverlay()
     }
 }
@@ -1052,7 +1054,7 @@ extension TranscriptView: FindSessionDelegate {}
 
 extension TranscriptView {
 
-    func findDidUpdate(matches: Int, isComplete: Bool) {
+    func findSession(_ session: FindSession, didUpdateMatches matches: Int, isComplete: Bool) {
         delegate?.transcriptView(self, didUpdateFindMatches: matches, isComplete: isComplete)
     }
 }

@@ -10,7 +10,7 @@ import ExactList
 /// transcript mounts it and tells this when rows move under it. The transcript
 /// forwards its public find API here and tells it what each mutation did
 /// (`shiftFind`, `keepFind`, `refileFind`, `refreshFind`); this reports back
-/// through `FindSessionDelegate`, whose `findDidUpdate(matches:isComplete:)` is the
+/// through `FindSessionDelegate`, whose `findSession(_:didUpdateMatches:isComplete:)` is the
 /// host's delegate call — the one channel a find crosses by.
 @MainActor
 final class FindSession {
@@ -173,7 +173,7 @@ final class FindSession {
         guard find != nil else { return }
         find = nil
         rebindFind()
-        delegate?.findDidUpdate(matches: 0, isComplete: true)
+        delegate?.findSession(self, didUpdateMatches: 0, isComplete: true)
     }
 
     /// Moves to the next match, wrapping at the end, and scrolls it into view.
@@ -428,7 +428,7 @@ final class FindSession {
     /// forget to.
     func reportFind() {
         guard let find else { return }
-        delegate?.findDidUpdate(matches: find.count, isComplete: find.isComplete)
+        delegate?.findSession(self, didUpdateMatches: find.count, isComplete: find.isComplete)
     }
 
     /// Moves the selection `delta` hits along, wrapping at both ends — or, with
@@ -502,7 +502,7 @@ final class FindSession {
     private func select(row: Int, id: TranscriptRow.ID, range: Range<Int>, ordinal: Int?) {
         find?.selection = (id, range)
         find?.ordinal = ordinal
-        delegate?.scrollFindMatchToVisible(range, inRow: row)
+        delegate?.findSession(self, didRequestScrollRangeToVisible: range, inRow: row)
         rebindFind()
     }
 

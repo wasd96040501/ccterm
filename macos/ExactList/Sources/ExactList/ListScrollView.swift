@@ -43,6 +43,6 @@ final class ListScrollView: NSScrollView {
 
     override func tile() {
         super.tile()
-        delegate?.scrollViewDidTile(self)
+        delegate?.listScrollViewDidTile(self)
     }
 }

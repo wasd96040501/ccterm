@@ -13,5 +13,5 @@ protocol FindBarViewDelegate: AnyObject {
     func findBarView(_ findBarView: FindBarView, didChangeSearchString searchString: String)
 
     /// Return, Shift-Return, the arrows, Done and Escape.
-    func findBarView(_ findBarView: FindBarView, perform action: NSTextFinder.Action)
+    func findBarView(_ findBarView: FindBarView, didRequest action: NSTextFinder.Action)
 }

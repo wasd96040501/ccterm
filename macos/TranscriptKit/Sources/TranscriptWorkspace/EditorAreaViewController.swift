@@ -376,7 +376,7 @@ public final class EditorAreaViewController: NSSplitViewController {
 
 extension EditorAreaViewController: EditorGroupViewControllerDelegate {
 
-    func editorGroupWasChosen(_ group: EditorGroupViewController) {
+    func editorGroupDidRequestActivation(_ group: EditorGroupViewController) {
         activate(group)
     }
 
@@ -422,11 +422,11 @@ extension EditorAreaViewController: EditorGroupViewControllerDelegate {
         moveTab(at: index, of: source, to: group, at: position)
     }
 
-    func editorGroup(_ group: EditorGroupViewController, moveTabToOtherGroupAt index: Int) {
+    func editorGroup(_ group: EditorGroupViewController, didRequestMovingTabToOtherGroupAt index: Int) {
         moveTabToOtherGroup(at: index, of: group)
     }
 
-    func editorGroup(_ group: EditorGroupViewController, openNewGroupWith item: NSTabViewItem) {
+    func editorGroup(_ group: EditorGroupViewController, didRequestNewGroupWith item: NSTabViewItem) {
         addGroup(with: item)
     }
 }

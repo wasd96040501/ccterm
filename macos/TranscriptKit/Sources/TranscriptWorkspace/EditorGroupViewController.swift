@@ -404,7 +404,7 @@ public final class EditorGroupViewController: NSViewController {
 
     @objc private func moveToOtherEditorFromMenu(_ sender: NSMenuItem) {
         guard let index = index(of: sender) else { return }
-        delegate?.editorGroup(self, moveTabToOtherGroupAt: index)
+        delegate?.editorGroup(self, didRequestMovingTabToOtherGroupAt: index)
     }
 
     // MARK: - Dropping a tab on the content
@@ -424,7 +424,7 @@ public final class EditorGroupViewController: NSViewController {
             else { return nil }
             let half = NSRect(
                 x: content.midX, y: content.minY, width: content.width / 2, height: content.height)
-            return (half, { delegate.editorGroup(self, moveTabToOtherGroupAt: dragged) })
+            return (half, { delegate.editorGroup(self, didRequestMovingTabToOtherGroupAt: dragged) })
         }
         return (
             content,
@@ -448,7 +448,7 @@ public final class EditorGroupViewController: NSViewController {
                 half,
                 {
                     guard let item = self.tabViewItem(for: drop) else { return false }
-                    delegate.editorGroup(self, openNewGroupWith: item)
+                    delegate.editorGroup(self, didRequestNewGroupWith: item)
                     return true
                 }
             )
@@ -470,7 +470,7 @@ public final class EditorGroupViewController: NSViewController {
     /// makes one of it.
     private func open(_ drop: NSDraggingInfo, at index: Int) -> Bool {
         guard let item = tabViewItem(for: drop) else { return false }
-        delegate?.editorGroupWasChosen(self)
+        delegate?.editorGroupDidRequestActivation(self)
         insertTabViewItem(item, at: index)
         return true
     }
@@ -488,37 +488,37 @@ public final class EditorGroupViewController: NSViewController {
 
 extension EditorGroupViewController: EditorTabBarDelegate {
 
-    func tabBar(_ tabBar: EditorTabBar, didSelectTabAt index: Int) {
-        delegate?.editorGroupWasChosen(self)
+    func editorTabBar(_ tabBar: EditorTabBar, didRequestSelectingTabAt index: Int) {
+        delegate?.editorGroupDidRequestActivation(self)
         selectedTabViewItemIndex = index
     }
 
-    func tabBar(_ tabBar: EditorTabBar, didCloseTabAt index: Int) {
+    func editorTabBar(_ tabBar: EditorTabBar, didRequestClosingTabAt index: Int) {
         guard tabViewItems.indices.contains(index) else { return }
         removeTabViewItem(tabViewItems[index])
     }
 
-    func tabBar(_ tabBar: EditorTabBar, openDrop draggingInfo: NSDraggingInfo, at index: Int) -> Bool {
+    func editorTabBar(_ tabBar: EditorTabBar, acceptDrop draggingInfo: NSDraggingInfo, at index: Int) -> Bool {
         open(draggingInfo, at: index)
     }
 
     /// Pins the temporary tab; a pinned tab stays pinned.
-    func tabBar(_ tabBar: EditorTabBar, didDoubleClickTabAt index: Int) {
+    func editorTabBar(_ tabBar: EditorTabBar, didDoubleClickTabAt index: Int) {
         guard tabViewItems.indices.contains(index), tabViewItems[index] === previewTabViewItem else { return }
         previewTabViewItem = nil
     }
 
-    func tabBar(_ tabBar: EditorTabBar, didClickPinOfTabAt index: Int) {
+    func editorTabBar(_ tabBar: EditorTabBar, didClickPinOfTabAt index: Int) {
         togglePinned(at: index)
     }
 
-    func tabBar(_ tabBar: EditorTabBar, menuForTabAt index: Int) -> NSMenu? {
+    func editorTabBar(_ tabBar: EditorTabBar, menuForTabAt index: Int) -> NSMenu? {
         menu(forTabAt: index)
     }
 
     /// The tab's content as it is on screen, which only the selected tab's is —
     /// and a tab being dragged was selected by the press that picked it up.
-    func tabBar(_ tabBar: EditorTabBar, draggingImageForTabAt index: Int) -> NSImage? {
+    func editorTabBar(_ tabBar: EditorTabBar, draggingImageForTabAt index: Int) -> NSImage? {
         guard tabViewItems.indices.contains(index), let viewController = tabViewItems[index].viewController,
             viewController.isViewLoaded, viewController.view.window != nil
         else { return nil }
@@ -530,7 +530,7 @@ extension EditorGroupViewController: EditorTabBarDelegate {
         return image
     }
 
-    func tabBar(
+    func editorTabBar(
         _ tabBar: EditorTabBar, moveTabAt index: Int, of source: EditorTabBar, to destination: Int
     ) -> Int? {
         guard let sourceGroup = source.delegate as? EditorGroupViewController else { return nil }

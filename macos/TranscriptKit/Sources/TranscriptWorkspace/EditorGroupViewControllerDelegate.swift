@@ -8,7 +8,7 @@ protocol EditorGroupViewControllerDelegate: AnyObject {
 
     /// The reader acted in `group` — clicked one of its tabs, or dropped
     /// something into it — so it is the editor they are working in.
-    func editorGroupWasChosen(_ group: EditorGroupViewController)
+    func editorGroupDidRequestActivation(_ group: EditorGroupViewController)
 
     /// Every change to `group`'s tabs ends here, since which editor is active,
     /// or how many there are, may have moved with it.
@@ -40,8 +40,8 @@ protocol EditorGroupViewControllerDelegate: AnyObject {
 
     /// Moves the tab at `index` of `group` to the other editor, opening one on
     /// the right if there is only this one.
-    func editorGroup(_ group: EditorGroupViewController, moveTabToOtherGroupAt index: Int)
+    func editorGroup(_ group: EditorGroupViewController, didRequestMovingTabToOtherGroupAt index: Int)
 
     /// Opens a second editor on the right of `group` showing `item`.
-    func editorGroup(_ group: EditorGroupViewController, openNewGroupWith item: NSTabViewItem)
+    func editorGroup(_ group: EditorGroupViewController, didRequestNewGroupWith item: NSTabViewItem)
 }

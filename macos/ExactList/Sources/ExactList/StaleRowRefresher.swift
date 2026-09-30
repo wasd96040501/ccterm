@@ -30,7 +30,7 @@ final class StaleRowRefresher {
         RunLoop.main.perform(inModes: [.default]) { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, self.generation == scheduled, let delegate = self.delegate else { return }
-                if delegate.refreshStaleRows(within: Self.budget), self.generation == scheduled {
+                if delegate.staleRowRefresher(self, refreshRowsWithin: Self.budget), self.generation == scheduled {
                     self.schedule()
                 }
             }

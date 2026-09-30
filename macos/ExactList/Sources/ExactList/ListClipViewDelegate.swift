@@ -7,5 +7,5 @@ protocol ListClipViewDelegate: AnyObject {
 
     /// The bounds origin changed. The list mounts against the new `P` before
     /// returning, and re-evaluates tail following.
-    func clipViewDidScroll(_ clipView: ListClipView)
+    func listClipViewDidScroll(_ clipView: ListClipView)
 }

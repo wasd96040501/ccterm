@@ -203,7 +203,7 @@ private final class Recorder: FindBarViewDelegate {
         queries.append(searchString)
     }
 
-    func findBarView(_ findBarView: FindBarView, perform action: NSTextFinder.Action) {
+    func findBarView(_ findBarView: FindBarView, didRequest action: NSTextFinder.Action) {
         actions.values.append(action)
     }
 }

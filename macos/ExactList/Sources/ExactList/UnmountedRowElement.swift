@@ -30,12 +30,12 @@ final class UnmountedRowElement: NSAccessibilityElement {
     /// The accessibility server calls on the main thread; this class isn't
     /// main-actor-isolated only because `NSAccessibilityElement` isn't.
     override func accessibilityFrame() -> NSRect {
-        MainActor.assumeIsolated { delegate?.screenFrame(ofAccessibilityRow: row) ?? .zero }
+        MainActor.assumeIsolated { delegate?.unmountedRowElement(self, screenFrameOfRow: row) ?? .zero }
     }
 
     override func setAccessibilityFocused(_ accessibilityFocused: Bool) {
         super.setAccessibilityFocused(accessibilityFocused)
         guard accessibilityFocused else { return }
-        MainActor.assumeIsolated { delegate?.scrollAccessibilityRowToVisible(row) }
+        MainActor.assumeIsolated { delegate?.unmountedRowElement(self, didRequestScrollRowToVisible: row) }
     }
 }

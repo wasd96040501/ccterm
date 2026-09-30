@@ -139,7 +139,7 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
     /// Answers the list's data source and delegate on the transcript's behalf,
     /// so that the list's protocols stay off the package's public surface.
     /// Owned here; the list refers to it weakly.
-    private lazy var listAdapter = ListAdapter(owner: self)
+    private lazy var listAdapter = ListAdapter(delegate: self)
 
     /// The gap between two entries, unless the host gives a row its own
     /// (`transcriptView(_:customSpacingAboveRow:)`).
@@ -621,8 +621,12 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
         findSession.shiftFind(byRowsInserted: indexes)
     }
 
-    /// Announces rows newly inserted at `indexes`, warming the transcript's
-    /// measurement cache with `prepared` on the way through.
+    /// Announces rows newly inserted at `indexes`, merging `prepared` into the
+    /// transcript's measurement cache on the way through.
+    ///
+    /// `prepared` is rows measured ahead (`prepareRows(_:)`), not ExactList's
+    /// "prepared area", which is the extra band of rows it keeps mounted beyond
+    /// the viewport.
     ///
     /// Identical to `insertRows(at:)` in every observable way. What differs is
     /// only what the call has to compute: `insertRows(at:)` parses and typesets
@@ -633,8 +637,8 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
     /// the identity of the row it was made for, so anything at all may happen
     /// to the transcript between preparing a batch and announcing it.
     ///
-    /// One call rather than a `warm(_:)` you could make yourself, because
-    /// warming has to land before the list measures, and a separate call written
+    /// One call rather than a cache-filling call you could make yourself, because
+    /// the merge has to land before the list measures, and a separate call written
     /// *after* the insert would be a silent no-op. Fusing the two makes the
     /// wrong order unrepresentable (§4).
     ///
@@ -645,7 +649,7 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
     /// let prepared = await transcript.prepareRows(rows)
     /// // ↓ no suspension point between these two lines ↓
     /// messages.insert(contentsOf: batch, at: 0)
-    /// transcript.insertRows(at: IndexSet(0..<batch.count), warming: prepared)
+    /// transcript.insertRows(at: IndexSet(0..<batch.count), prepared: prepared)
     /// ```
     ///
     /// The rule is `NSTableView`'s, and applies to `insertRows(at:)` as much:
@@ -653,7 +657,7 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
     /// model, and a layout landing while the two disagree reads row *n* out of a
     /// model where *n* means something else.
     public func insertRows(
-        at indexes: IndexSet, warming prepared: PreparedRows,
+        at indexes: IndexSet, prepared: PreparedRows,
         withAnimation options: NSTableView.AnimationOptions = []
     ) {
         // An entry carries the width it was measured at, so the cache would
@@ -723,7 +727,7 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
 
     // MARK: - Off-main measurement
 
-    /// Measures `rows` off the main actor, ready for `insertRows(at:warming:)`.
+    /// Measures `rows` off the main actor, ready for `insertRows(at:prepared:)`.
     ///
     /// **What this is for.** The list measures every row it is told about, and
     /// measuring a document is parsing and typesetting it — a ten-thousand-row
@@ -751,7 +755,7 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
     ///     if Task.isCancelled { return }
     ///
     ///     messages.insert(contentsOf: batch, at: 0)
-    ///     transcript.insertRows(at: IndexSet(0..<batch.count), warming: prepared)
+    ///     transcript.insertRows(at: IndexSet(0..<batch.count), prepared: prepared)
     /// }
     /// ```
     ///
@@ -948,7 +952,7 @@ extension TranscriptView: BlockViewDelegate {
     }
 }
 
-extension TranscriptView: ListAdapterOwner {
+extension TranscriptView: ListAdapterDelegate {
 
     var numberOfRowsInDataSource: Int {
         dataSource?.numberOfRows(in: self) ?? 0

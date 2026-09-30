@@ -21,7 +21,7 @@ import AppKit
 /// children independently and so cannot size a column to the widest cell in it;
 /// column widths are an agreement between siblings, settled here before anything
 /// is laid out, and never visible outside this file.
-struct Table: Block, @unchecked Sendable {
+struct TableBlock: Block, @unchecked Sendable {
 
     /// A column's horizontal alignment. GFM's "unspecified" is not a case of its
     /// own — it lays out exactly as leading does, and a distinction that changes
@@ -393,10 +393,10 @@ struct Table: Block, @unchecked Sendable {
 
         // MARK: - Selection
 
-        func index(at point: CGPoint) -> Int {
+        func characterIndexForInsertion(at point: CGPoint) -> Int {
             guard let cell = cell(at: point) else { return 0 }
             return cell.base
-                + cell.text.index(
+                + cell.text.characterIndexForInsertion(
                     at: CGPoint(x: point.x - cell.textOrigin.x, y: point.y - cell.textOrigin.y))
         }
 

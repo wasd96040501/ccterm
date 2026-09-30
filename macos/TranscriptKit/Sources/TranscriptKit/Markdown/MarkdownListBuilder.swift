@@ -1,7 +1,7 @@
 import AppKit
 
 /// A bulleted, numbered or task list, built: its markers rendered, the widest one
-/// taken as the column, and a `BlockStack` of `ListRow`s handed back.
+/// taken as the column, and a `BlockStack` of `ListItemBlock`s handed back.
 ///
 /// **Not a `Block`.** Everything a list does is settled before any width is
 /// known — render the markers, take the widest, and that is the column every item
@@ -9,7 +9,7 @@ import AppKit
 /// same way `MarkdownBlockBuilder` hands back blocks: there is no measure-time
 /// behaviour left for it to own, and a type whose `measure` only forwards is a
 /// layer that costs a hop and explains nothing. What *is* left at measure time —
-/// the marker in its column, the content beside it — is `ListRow`'s.
+/// the marker in its column, the content beside it — is `ListItemBlock`'s.
 ///
 /// That the negotiation is width-independent is the whole reason. A stack cannot
 /// make `10.` and `9.` line up — the marker column is an agreement *between*
@@ -27,10 +27,10 @@ enum MarkdownListBuilder {
     }
 
     struct Item {
-        let marker: ListRow.Marker
+        let marker: ListItemBlock.Marker
         let content: Block
 
-        init(marker: ListRow.Marker, content: Block) {
+        init(marker: ListItemBlock.Marker, content: Block) {
             self.marker = marker
             self.content = content
         }
@@ -51,7 +51,7 @@ enum MarkdownListBuilder {
     /// a glyph that stayed 13pt while the text around it grew would read as a
     /// mistake. So the port takes GitHub's *proportion* and drops its pixel
     /// count, and the two agree exactly at the size GitHub actually renders.
-    static func marker(_ kind: Kind, font: NSFont, color: NSColor) -> ListRow.Marker {
+    static func marker(_ kind: Kind, font: NSFont, color: NSColor) -> ListItemBlock.Marker {
         switch kind {
         case .task(let checked):
             return .checkbox(
@@ -87,7 +87,7 @@ enum MarkdownListBuilder {
         let column = items.map(\.marker.width).max() ?? 0
         return BlockStack(
             items.map {
-                ListRow(marker: $0.marker, markerColumn: column, gap: gap, content: $0.content)
+                ListItemBlock(marker: $0.marker, markerColumn: column, gap: gap, content: $0.content)
             },
             spacing: spacing)
     }

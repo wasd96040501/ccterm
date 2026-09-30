@@ -6,45 +6,45 @@ import ExactList
 /// Not a conformance on `TranscriptView` itself: that type is public, so the
 /// conformance would be too, putting the list's callbacks on the package's
 /// surface next to the transcript's own near-identically named ones. Holds its
-/// owner weakly — the transcript owns this, the list only refers to it.
+/// delegate weakly — the transcript owns this, the list only refers to it.
 @MainActor
 final class ListAdapter: ExactListViewDataSource, ExactListViewDelegate {
 
-    private weak var owner: ListAdapterOwner?
+    private weak var delegate: ListAdapterDelegate?
 
-    init(owner: ListAdapterOwner) {
-        self.owner = owner
+    init(delegate: ListAdapterDelegate) {
+        self.delegate = delegate
     }
 
     func numberOfRows(in listView: ExactListView) -> Int {
-        owner?.numberOfRowsInDataSource ?? 0
+        delegate?.numberOfRowsInDataSource ?? 0
     }
 
     func listView(_ listView: ExactListView, heightOfRow row: Int, width: CGFloat) -> CGFloat {
-        owner?.height(ofRow: row, rowWidth: width) ?? 1
+        delegate?.height(ofRow: row, rowWidth: width) ?? 1
     }
 
     func listView(_ listView: ExactListView, customSpacingAboveRow row: Int) -> CGFloat? {
-        owner?.customSpacing(aboveRow: row)
+        delegate?.customSpacing(aboveRow: row)
     }
 
     func listView(_ listView: ExactListView, viewForRow row: Int) -> NSView {
-        owner?.view(forRow: row) ?? NSView()
+        delegate?.view(forRow: row) ?? NSView()
     }
 
     func listView(_ listView: ExactListView, didRemove view: NSView, forRow row: Int) {
-        owner?.didRemove(view, forRow: row)
+        delegate?.didRemove(view, forRow: row)
     }
 
     func listView(_ listView: ExactListView, didChangeTailFollowing isFollowingTail: Bool) {
-        owner?.didChangeTailFollowing(isFollowingTail)
+        delegate?.didChangeTailFollowing(isFollowingTail)
     }
 
     func listView(_ listView: ExactListView, doCommandBy selector: Selector) -> Bool {
-        owner?.doCommand(by: selector) ?? false
+        delegate?.doCommand(by: selector) ?? false
     }
 
     func listViewDidScroll(_ listView: ExactListView) {
-        owner?.didScroll()
+        delegate?.didScroll()
     }
 }

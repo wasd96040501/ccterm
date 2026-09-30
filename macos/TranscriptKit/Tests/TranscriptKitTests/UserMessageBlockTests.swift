@@ -15,8 +15,8 @@ final class UserMessageTests: XCTestCase {
 
     /// Monospaced so that "how wide should this have come out" is a multiple of
     /// one advance rather than something only the font knows.
-    private func message(_ text: String) -> UserMessage {
-        UserMessage(
+    private func message(_ text: String) -> UserMessageBlock {
+        UserMessageBlock(
             ShapedText(
                 text,
                 attributes: [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)]))
@@ -32,7 +32,7 @@ final class UserMessageTests: XCTestCase {
     /// The whole reason the bubble reads as one side of a conversation: a short
     /// message is a short bubble, not a full-width band with three words in it.
     func testAShortMessageHugsItsText() throws {
-        let measured = try XCTUnwrap(message("Hi.").measure(width) as? UserMessage.Measured)
+        let measured = try XCTUnwrap(message("Hi.").measure(width) as? UserMessageBlock.Measured)
 
         // Against the measured text's own ink, which is what hugging means — and
         // the padding is on both sides of it.
@@ -49,7 +49,7 @@ final class UserMessageTests: XCTestCase {
     }
 
     func testTheBubbleIsFlushWithTheRightEdge() throws {
-        let measured = try XCTUnwrap(message("Hi.").measure(width) as? UserMessage.Measured)
+        let measured = try XCTUnwrap(message("Hi.").measure(width) as? UserMessageBlock.Measured)
         XCTAssertEqual(measured.bubble.maxX, width, accuracy: 0.5)
     }
 
@@ -65,7 +65,7 @@ final class UserMessageTests: XCTestCase {
     func testALongMessageStopsAtThreeQuartersOfTheColumn() throws {
         let measured = try XCTUnwrap(
             message(String(repeating: "word ", count: 60)).measure(width)
-                as? UserMessage.Measured)
+                as? UserMessageBlock.Measured)
 
         XCTAssertEqual(measured.text.typesetWidth, cap - 32, accuracy: 0.5)
         XCTAssertLessThanOrEqual(measured.bubble.width, cap)
@@ -77,7 +77,7 @@ final class UserMessageTests: XCTestCase {
     // MARK: - Text inside it
 
     func testTheTextSitsInsideTheBubblesPadding() throws {
-        let measured = try XCTUnwrap(message("Hi.").measure(width) as? UserMessage.Measured)
+        let measured = try XCTUnwrap(message("Hi.").measure(width) as? UserMessageBlock.Measured)
 
         XCTAssertEqual(measured.textOrigin.x - measured.bubble.minX, 16, accuracy: 0.5)
         XCTAssertEqual(measured.textOrigin.y - measured.bubble.minY, 14, accuracy: 0.5)
@@ -92,7 +92,7 @@ final class UserMessageTests: XCTestCase {
     func testSelectionRectsLandInsideTheBubble() throws {
         let measured = try XCTUnwrap(
             message("A message long enough to wrap onto a second line at this width.")
-                .measure(width) as? UserMessage.Measured)
+                .measure(width) as? UserMessageBlock.Measured)
 
         let rects = measured.rects(from: 0, to: measured.length)
         XCTAssertFalse(rects.isEmpty)
@@ -107,7 +107,7 @@ final class UserMessageTests: XCTestCase {
     /// question declines there, which is what keeps a click to the left of a
     /// bubble from behaving as a click on its first character.
     func testTheGutterIsOnNoCharacter() throws {
-        let measured = try XCTUnwrap(message("Hi.").measure(width) as? UserMessage.Measured)
+        let measured = try XCTUnwrap(message("Hi.").measure(width) as? UserMessageBlock.Measured)
         XCTAssertNil(measured.characterIndex(at: CGPoint(x: 10, y: measured.size.height / 2)))
     }
 
@@ -118,12 +118,12 @@ final class UserMessageTests: XCTestCase {
 
     /// One line per repetition at this width and font, so a line count is
     /// something a test can ask for directly.
-    private func lines(_ count: Int) -> UserMessage {
+    private func lines(_ count: Int) -> UserMessageBlock {
         message((1...count).map { "line \($0)" }.joined(separator: "\n"))
     }
 
-    private func measure(_ message: UserMessage) throws -> UserMessage.Measured {
-        try XCTUnwrap(message.measure(width) as? UserMessage.Measured)
+    private func measure(_ message: UserMessageBlock) throws -> UserMessageBlock.Measured {
+        try XCTUnwrap(message.measure(width) as? UserMessageBlock.Measured)
     }
 
     func testAMessageInsideTheLimitIsShownWhole() throws {
@@ -180,7 +180,7 @@ final class UserMessageTests: XCTestCase {
     // press-is-a-click rule are the ones already written rather than a second
     // copy of them.
 
-    private func onTheMore(_ measured: UserMessage.Measured) throws -> CGPoint {
+    private func onTheMore(_ measured: UserMessageBlock.Measured) throws -> CGPoint {
         let more = try XCTUnwrap(measured.more)
         // Left of centre: the run starts with a glyph, and the label after it is
         // what a pointer would most likely land on.
@@ -238,7 +238,7 @@ final class UserMessageTests: XCTestCase {
     /// emission: the fill is `.background`, so a selection band lands over it and
     /// under the glyphs without either knowing the other exists.
     func testPaintsTheFillBehindTheGlyphs() throws {
-        let measured = try XCTUnwrap(message("Hi.").measure(width) as? UserMessage.Measured)
+        let measured = try XCTUnwrap(message("Hi.").measure(width) as? UserMessageBlock.Measured)
 
         var items: [PaintItem] = []
         measured.paint(

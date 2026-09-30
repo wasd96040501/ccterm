@@ -92,7 +92,7 @@ directly on `NSTableView`:
       batch.map { TranscriptRow(id: $0.id, content: .markdown($0.text)) })
   // no `await` between mutating the model and announcing it
   messages.insert(contentsOf: batch, at: 0)
-  transcript.insertRows(at: IndexSet(0..<batch.count), warming: prepared)
+  transcript.insertRows(at: IndexSet(0..<batch.count), prepared: prepared)
   ```
 
   What is asynchronous is the **measure**, not the insert — `insertRows` stays

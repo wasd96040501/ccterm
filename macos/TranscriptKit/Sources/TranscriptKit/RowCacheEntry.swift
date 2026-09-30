@@ -121,7 +121,7 @@ extension RowCache {
                 if case .block(let donor)? = previous?.body, previous?.content == content {
                     block = donor
                 } else {
-                    block = UserMessage(text)
+                    block = UserMessageBlock(text)
                 }
                 self.init(
                     content: content, body: .block(block), measured: block.measure(width),

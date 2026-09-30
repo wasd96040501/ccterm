@@ -237,7 +237,7 @@ final class SelectionTests: XCTestCase {
     // Hence `wordRange` / `paragraphRange` taking the point rather than an index.
     //
     // The drag test at the bottom is the other half of the pair, and the reason
-    // this could not be settled inside `index(at:)`: the same boundary value that
+    // this could not be settled inside `characterIndexForInsertion(at:)`: the same boundary value that
     // is wrong for a unit lookup is exactly what a drag to that spot needs.
 
     /// Far right of the first visual line of a paragraph that wraps.
@@ -308,7 +308,7 @@ final class SelectionTests: XCTestCase {
     }
 
     /// The constraint that makes the fix a new pair of methods rather than a
-    /// smaller `index(at:)`: a drag ending past the right edge of a line still
+    /// smaller `characterIndexForInsertion(at:)`: a drag ending past the right edge of a line still
     /// has to reach the end of it, newline included.
     func testDraggingPastTheEndOfALineStillReachesTheLineEnd() throws {
         mount(["```\nalpha\nbeta\ngamma\n```"])

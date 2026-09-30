@@ -8,7 +8,7 @@ import AppKit
 ///
 /// Links are carried as an `.link` attribute rather than as a side-table of hit
 /// rectangles. `TypesetText` keeps the attributed string it typeset, so "which URL
-/// is under this point" is `index(at:)` followed by an attribute lookup — the
+/// is under this point" is `characterIndexForInsertion(at:)` followed by an attribute lookup — the
 /// hit-testing already written for selection, reused. The renderer this
 /// replaces kept a parallel `[LinkHit]` per layout and re-projected each one
 /// through every enclosing container by hand.
@@ -137,7 +137,7 @@ extension MarkdownInlineBuilder {
     ///
     /// `.link` rather than a side-table of hit rectangles. `TypesetText` keeps the
     /// attributed string it typeset, so "which URL is under this point" is
-    /// `index(at:)` followed by an attribute lookup — the hit-testing already
+    /// `characterIndexForInsertion(at:)` followed by an attribute lookup — the hit-testing already
     /// written for selection, reused. A destination `URL` cannot parse is left
     /// unmarked rather than mapped to something wrong: it still reads as a link,
     /// it simply does not activate.

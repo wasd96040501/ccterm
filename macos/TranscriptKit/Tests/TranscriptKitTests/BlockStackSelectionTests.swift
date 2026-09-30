@@ -22,8 +22,8 @@ final class BlockStackSelectionTests: XCTestCase {
     ///
     /// A paragraph claims no space of its own, so the vertical arithmetic in a
     /// test is only what that test's `spacing` put there.
-    private func paragraph(_ text: String) -> Paragraph {
-        Paragraph(Self.text(text))
+    private func paragraph(_ text: String) -> ParagraphBlock {
+        ParagraphBlock(Self.text(text))
     }
 
     private func typeset(_ text: String, width: CGFloat = 400) -> TypesetText {
@@ -66,8 +66,8 @@ final class BlockStackSelectionTests: XCTestCase {
 
     func testIndexAtPointClampsAboveAndBelowTheRun() {
         let text = typeset("alpha\nbeta")
-        XCTAssertEqual(text.index(at: CGPoint(x: 0, y: -50)), 0)
-        XCTAssertEqual(text.index(at: CGPoint(x: 10_000, y: 10_000)), text.length)
+        XCTAssertEqual(text.characterIndexForInsertion(at: CGPoint(x: 0, y: -50)), 0)
+        XCTAssertEqual(text.characterIndexForInsertion(at: CGPoint(x: 10_000, y: 10_000)), text.length)
     }
 
     // MARK: - A measured block reports the width it was measured into
@@ -98,7 +98,7 @@ final class BlockStackSelectionTests: XCTestCase {
     func testATopInsetAddsItsExtraRoomInsideTheParagraphsOwnHeight() {
         let title = ShapedText("Title", attributes: [.font: TextStyle.default.headingFont(level: 1)])
         let bare = title.typeset(width: 400).size.height
-        let heading = Paragraph(title, topInset: 18).measure(400)
+        let heading = ParagraphBlock(title, topInset: 18).measure(400)
 
         XCTAssertEqual(heading.size.height, bare + 18, accuracy: 0.5)
         // The glyphs moved down by the extra, and selection moved with them.
@@ -168,9 +168,9 @@ final class BlockStackSelectionTests: XCTestCase {
     /// picks up its neighbours and nothing else — no stray position, no blank
     /// line in the copied text.
     func testOpaqueBlockOccupiesNoIndexSpace() {
-        XCTAssertEqual(ThematicBreak().measure(400).length, 0)
+        XCTAssertEqual(ThematicBreakBlock().measure(400).length, 0)
 
-        let stack = BlockStack([paragraph("alpha"), ThematicBreak(), paragraph("beta")])
+        let stack = BlockStack([paragraph("alpha"), ThematicBreakBlock(), paragraph("beta")])
             .measure(400)
         XCTAssertEqual(stack.length, 9)
         XCTAssertEqual(stack.text(from: 0, to: 9), "alpha\nbeta")
@@ -209,7 +209,7 @@ final class BlockStackSelectionTests: XCTestCase {
     /// level adds its own child's base, and rectangles compose because each level
     /// adds its own offset — the same two lines at every depth.
     func testNestedLayoutComposesIndicesAndOrigins() throws {
-        var quote = Blockquote(BlockStack([paragraph("beta"), paragraph("gamma")]))
+        var quote = QuoteBlock(BlockStack([paragraph("beta"), paragraph("gamma")]))
         quote.indent = 20
 
         let outer = BlockStack([paragraph("alpha"), quote]).measure(400)
@@ -229,12 +229,12 @@ final class BlockStackSelectionTests: XCTestCase {
     /// inner number never escapes — so the content is narrower by exactly the
     /// indent, and nobody outside had to compute that.
     func testDecoratorNarrowsItsContentByItsOwnIndent() throws {
-        var quote = Blockquote(BlockStack([paragraph("beta")]))
+        var quote = QuoteBlock(BlockStack([paragraph("beta")]))
         quote.indent = 20
 
         let block = quote.measure(400)
         XCTAssertEqual(block.size.width, 400)
-        XCTAssertEqual(try XCTUnwrap(block as? Blockquote.Measured).content.size.width, 380)
+        XCTAssertEqual(try XCTUnwrap(block as? QuoteBlock.Measured).content.size.width, 380)
     }
 
     /// Hit-testing walks the same tree back the other way: a point lands in a
@@ -244,11 +244,11 @@ final class BlockStackSelectionTests: XCTestCase {
         let outer = BlockStack([alpha, BlockStack([paragraph("beta")])]).measure(400)
 
         // Far below everything clamps to the last child's end.
-        XCTAssertEqual(outer.index(at: CGPoint(x: 10_000, y: 10_000)), outer.length)
+        XCTAssertEqual(outer.characterIndexForInsertion(at: CGPoint(x: 10_000, y: 10_000)), outer.length)
         // Above everything clamps to the start.
-        XCTAssertEqual(outer.index(at: CGPoint(x: -10, y: -10)), 0)
+        XCTAssertEqual(outer.characterIndexForInsertion(at: CGPoint(x: -10, y: -10)), 0)
         // Inside the second child, at its left edge.
         XCTAssertEqual(
-            outer.index(at: CGPoint(x: 0, y: alpha.measure(400).size.height + 1)), 5)
+            outer.characterIndexForInsertion(at: CGPoint(x: 0, y: alpha.measure(400).size.height + 1)), 5)
     }
 }

@@ -16,8 +16,8 @@ extension MeasuredContainerBlock {
 
     var length: Int { content.length }
 
-    func index(at point: CGPoint) -> Int {
-        content.index(at: local(point))
+    func characterIndexForInsertion(at point: CGPoint) -> Int {
+        content.characterIndexForInsertion(at: local(point))
     }
 
     func rects(from: Int, to: Int) -> [CGRect] {

@@ -44,7 +44,7 @@ import AppKit
 ///
 /// **Space around a block is that block's own business.** Anything wanting room
 /// above or below itself puts that room in the height it measures to and draws
-/// its content lower — the way `ThematicBreak` always has. It is not declared,
+/// its content lower — the way `ThematicBreakBlock` always has. It is not declared,
 /// not published, and not something a container is asked to resolve: a paragraph
 /// does not know whether it sits in a document, a list item or a table cell, so
 /// it cannot be the one to say how far it should be from its neighbours. What a

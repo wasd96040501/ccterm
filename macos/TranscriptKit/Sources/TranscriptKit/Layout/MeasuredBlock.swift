@@ -67,7 +67,7 @@ protocol MeasuredBlock: Sendable {
     /// **Positions, not characters.** The two coincide in a paragraph and are not
     /// required to: a container that stitches its children's text together with a
     /// separator may reserve a position for it, which is what lets an empty child
-    /// still be somewhere a selection can start. `Table` does reserve one and
+    /// still be somewhere a selection can start. `TableBlock` does reserve one and
     /// `BlockStack` does not, each for a reason written where it packs — an empty
     /// cell is a place, a thematic break is not.
     ///
@@ -92,7 +92,7 @@ protocol MeasuredBlock: Sendable {
     /// resolve to a position — the caller knows less about where the content is
     /// than the block does, so pushing the choice up would put it in the hands
     /// of the party least able to make it. Clamp instead.
-    func index(at point: CGPoint) -> Int
+    func characterIndexForInsertion(at point: CGPoint) -> Int
 
     /// The highlight rectangles for a selection running between two indices, in
     /// block-local coordinates. The endpoints arrive unordered — a drag runs in
@@ -114,7 +114,7 @@ protocol MeasuredBlock: Sendable {
     /// of a line resolves to that integer, and the word *at* it belongs to the
     /// line below. Only the click knows which side of the boundary it was on.
     ///
-    /// Nor can `index(at:)` settle it on this method's behalf: the same
+    /// Nor can `characterIndexForInsertion(at:)` settle it on this method's behalf: the same
     /// boundary value is what a **drag** to that spot needs, so that ending one
     /// past the right edge of a line selects through the end of it. `NSTextView`
     /// answers this by carrying an affinity alongside the index; taking the
@@ -125,7 +125,7 @@ protocol MeasuredBlock: Sendable {
     /// The character the pointer is **inside**, in block-local coordinates, or
     /// `nil` when it is inside none.
     ///
-    /// The pointing question, where `index(at:)` is the caret's. It declines
+    /// The pointing question, where `characterIndexForInsertion(at:)` is the caret's. It declines
     /// rather than clamps: the gap a short last line leaves, the padding around a
     /// table's cells, the space past the end of a line are all places a caret has
     /// to go somewhere and a pointer is on nothing. Keeping the two apart is what

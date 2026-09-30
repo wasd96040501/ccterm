@@ -107,7 +107,7 @@ final class UserMessageRowTests: XCTestCase {
 
     private func hoverTheMoreRun() throws -> (view: BlockView, more: CGRect) {
         let view = try XCTUnwrap(mounted.transcript.descendants(ofType: BlockView.self).first)
-        let block = try XCTUnwrap(view.block as? UserMessage.Measured)
+        let block = try XCTUnwrap(view.block as? UserMessageBlock.Measured)
         let more = try XCTUnwrap(block.more).frame
 
         let point = CGPoint(x: more.midX, y: more.midY)

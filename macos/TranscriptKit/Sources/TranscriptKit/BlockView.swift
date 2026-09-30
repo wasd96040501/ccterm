@@ -18,7 +18,7 @@ import AppKit
 /// `isFlipped` is true so that the y-down arithmetic every block is written in
 /// matches the context it draws into, rather than being un-flipped at each of
 /// the several dozen places a rectangle crosses the boundary.
-final class BlockView: NSView, SurfaceLayerOwner {
+final class BlockView: NSView, SurfaceLayerDelegate {
 
     private(set) var block: MeasuredBlock?
 
@@ -797,7 +797,7 @@ final class BlockView: NSView, SurfaceLayerOwner {
 /// What a `SurfaceLayer` plays for: the view whose paint list it draws a slice
 /// of, and whose appearance that list resolves against. `BlockView` is the only
 /// one; the protocol is what keeps the layer from naming it back.
-fileprivate protocol SurfaceLayerOwner: AnyObject {
+fileprivate protocol SurfaceLayerDelegate: AnyObject {
     var effectiveAppearance: NSAppearance { get }
     func paint(_ phases: ClosedRange<PaintItem.Phase>, in ctx: CGContext, dirty dirtyRect: CGRect)
 }
@@ -838,11 +838,12 @@ private final class SurfaceLayer: CALayer {
 
     /// Weak, and the direction that matters: the view owns its layers, so a
     /// strong edge back would be a cycle that outlives every row it recycles.
-    private weak var owner: SurfaceLayerOwner?
+    /// Not called `delegate`: `CALayer` already has a `delegate` of its own.
+    private weak var surfaceDelegate: SurfaceLayerDelegate?
 
-    init(playing phases: ClosedRange<PaintItem.Phase>, for owner: SurfaceLayerOwner) {
+    init(playing phases: ClosedRange<PaintItem.Phase>, for surfaceDelegate: SurfaceLayerDelegate) {
         self.phases = phases
-        self.owner = owner
+        self.surfaceDelegate = surfaceDelegate
         super.init()
     }
 
@@ -853,7 +854,7 @@ private final class SurfaceLayer: CALayer {
     override init(layer: Any) {
         if let layer = layer as? SurfaceLayer {
             phases = layer.phases
-            owner = layer.owner
+            surfaceDelegate = layer.surfaceDelegate
         }
         super.init(layer: layer)
     }
@@ -880,9 +881,9 @@ private final class SurfaceLayer: CALayer {
     /// own drew its rows in the system's. The first window-server capture of a dark
     /// window showed it: black prose and a light code card on a dark background.
     override func draw(in ctx: CGContext) {
-        guard let owner else { return }
-        owner.effectiveAppearance.performAsCurrentDrawingAppearance {
-            owner.paint(phases, in: ctx, dirty: ctx.boundingBoxOfClipPath)
+        guard let surfaceDelegate else { return }
+        surfaceDelegate.effectiveAppearance.performAsCurrentDrawingAppearance {
+            surfaceDelegate.paint(phases, in: ctx, dirty: ctx.boundingBoxOfClipPath)
         }
     }
 }

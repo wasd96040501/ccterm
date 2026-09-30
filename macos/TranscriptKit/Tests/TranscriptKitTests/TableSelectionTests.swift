@@ -24,8 +24,8 @@ final class TableSelectionTests: XCTestCase {
 
     /// A 3×3 grid whose every cell names its own position, so a selection that
     /// picked up the wrong one says which.
-    private func grid() -> Table {
-        Table(
+    private func grid() -> TableBlock {
+        TableBlock(
             header: ["h0", "h1", "h2"].map(cell),
             rows: [
                 ["a0", "a1", "a2"].map(cell),
@@ -58,7 +58,7 @@ final class TableSelectionTests: XCTestCase {
     /// The negotiation a stack cannot do: a column is as wide as its widest cell
     /// needs, not its share of the row.
     func testColumnsSizeToTheirContentRatherThanSplittingEvenly() throws {
-        let table = Table(
+        let table = TableBlock(
             header: ["a very long header indeed", "n"].map(cell),
             rows: [["x", "y"].map(cell)],
             alignments: [])
@@ -71,7 +71,7 @@ final class TableSelectionTests: XCTestCase {
 
     /// Source rows are allowed to be short. The grid that comes out is not.
     func testJaggedRowsAreSquaredOff() throws {
-        let table = Table(
+        let table = TableBlock(
             header: ["h0", "h1", "h2"].map(cell),
             rows: [["a0"].map(cell)],
             alignments: [])
@@ -82,14 +82,14 @@ final class TableSelectionTests: XCTestCase {
 
     /// A drag that never leaves a cell selects glyphs, not the cell.
     func testSelectionInsideOneCellIsCharacterPrecise() throws {
-        let table = Table(
+        let table = TableBlock(
             header: ["head"].map(cell), rows: [["alpha"].map(cell)], alignments: [])
         let block = table.measure(400)
         let cells = try bands(block, count: 2)
 
         // The left edge of a cell resolves to its first position, which is where
         // that cell's index space starts.
-        let base = block.index(at: CGPoint(x: cells[1].minX, y: cells[1].midY))
+        let base = block.characterIndexForInsertion(at: CGPoint(x: cells[1].minX, y: cells[1].midY))
 
         XCTAssertEqual(block.text(from: base + 1, to: base + 4), "lph")
         let rects = block.rects(from: base + 1, to: base + 4)
@@ -106,8 +106,8 @@ final class TableSelectionTests: XCTestCase {
         let block = grid().measure(400)
         let cells = try bands(block, count: 9)
 
-        let from = block.index(at: middle(of: cells[1]))  // header, middle column
-        let to = block.index(at: middle(of: cells[7]))  // last row, middle column
+        let from = block.characterIndexForInsertion(at: middle(of: cells[1]))  // header, middle column
+        let to = block.characterIndexForInsertion(at: middle(of: cells[7]))  // last row, middle column
 
         XCTAssertEqual(block.rects(from: from, to: to).count, 3)
         XCTAssertEqual(block.text(from: from, to: to), "h1\na1\nb1")
@@ -119,8 +119,8 @@ final class TableSelectionTests: XCTestCase {
         let block = grid().measure(400)
         let cells = try bands(block, count: 9)
 
-        let from = block.index(at: middle(of: cells[0]))
-        let to = block.index(at: middle(of: cells[4]))
+        let from = block.characterIndexForInsertion(at: middle(of: cells[0]))
+        let to = block.characterIndexForInsertion(at: middle(of: cells[4]))
         XCTAssertEqual(block.text(from: from, to: to), "h0\th1\na0\ta1")
     }
 
@@ -129,8 +129,8 @@ final class TableSelectionTests: XCTestCase {
         let block = grid().measure(400)
         let cells = try bands(block, count: 9)
 
-        let a = block.index(at: middle(of: cells[0]))
-        let b = block.index(at: middle(of: cells[4]))
+        let a = block.characterIndexForInsertion(at: middle(of: cells[0]))
+        let b = block.characterIndexForInsertion(at: middle(of: cells[4]))
         XCTAssertEqual(block.text(from: b, to: a), block.text(from: a, to: b))
     }
 
@@ -142,15 +142,15 @@ final class TableSelectionTests: XCTestCase {
     /// adjacent empty cells would decode to the same index and a selection could
     /// not tell them apart.
     func testAnEmptyCellIsStillItsOwnPlace() throws {
-        let table = Table(
+        let table = TableBlock(
             header: ["h0", "h1"].map(cell),
             rows: [["", ""].map(cell)],
             alignments: [])
         let block = table.measure(400)
         let cells = try bands(block, count: 4)
 
-        let left = block.index(at: middle(of: cells[2]))
-        let right = block.index(at: middle(of: cells[3]))
+        let left = block.characterIndexForInsertion(at: middle(of: cells[2]))
+        let right = block.characterIndexForInsertion(at: middle(of: cells[3]))
         XCTAssertNotEqual(left, right)
 
         // And a selection spanning both is a two-cell rectangle, not nothing.
@@ -164,8 +164,8 @@ final class TableSelectionTests: XCTestCase {
     func testHitTestClampsToTheNearestCell() {
         let block = grid().measure(400)
 
-        XCTAssertEqual(block.index(at: CGPoint(x: -500, y: -500)), 0)
-        XCTAssertEqual(block.index(at: CGPoint(x: 10_000, y: 10_000)), block.length - 1)
+        XCTAssertEqual(block.characterIndexForInsertion(at: CGPoint(x: -500, y: -500)), 0)
+        XCTAssertEqual(block.characterIndexForInsertion(at: CGPoint(x: 10_000, y: 10_000)), block.length - 1)
     }
 
     // MARK: - As a child
@@ -174,12 +174,12 @@ final class TableSelectionTests: XCTestCase {
     /// stack's base, its rectangles by its origin, and the rectangle stays a
     /// rectangle.
     func testATableInsideAStackKeepsItsRectangle() throws {
-        let paragraph = Paragraph(cell("intro"))
+        let paragraph = ParagraphBlock(cell("intro"))
         let stack = BlockStack([paragraph, grid()], spacing: 12).measure(400)
 
         let offset = paragraph.measure(400).size.height + 12
         let inTable = CGPoint(x: 10, y: offset + 10)
-        let start = stack.index(at: inTable)
+        let start = stack.characterIndexForInsertion(at: inTable)
 
         XCTAssertGreaterThanOrEqual(start, "intro".utf16.count)
         XCTAssertTrue(stack.text(from: 0, to: stack.length).hasPrefix("intro\n"))

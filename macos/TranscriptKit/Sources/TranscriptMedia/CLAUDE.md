@@ -33,6 +33,6 @@ If it ever does: add a `prepare(_ urls:)` the host calls when the *message* arri
 
 `didActivateMoreInRow:` has no consumer yet. Whoever builds the surface:
 
-- **Don't mount a second `TranscriptView` with one uncapped row.** Its `SurfaceLayer`s are sized to the row, so a pasted file becomes a backing store as tall as the file. Use `NSTextView` — it lays out by visible range and brings selection, find and copy; `UserMessage` is plain text, so the two agree without sharing code.
+- **Don't mount a second `TranscriptView` with one uncapped row.** Its `SurfaceLayer`s are sized to the row, so a pasted file becomes a backing store as tall as the file. Use `NSTextView` — it lays out by visible range and brings selection, find and copy; `UserMessageBlock` is plain text, so the two agree without sharing code.
 - **Give it its own font size, not a delta from the transcript's** — a column read at length alone on a dark screen is a different problem from a row read in passing.
 - **Measure in a throwaway `NSLayoutManager` + `NSTextContainer`** at the target width; `widthTracksTextView` overwrites `containerSize`, so asking a configured text view answers one line.

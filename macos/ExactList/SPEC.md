@@ -731,8 +731,9 @@ in a commit has a start and an end value for its screen top and its height.
   row doesn't move.
   *Deviation from `NSTableView`:* for a row above the viewport, a tall row
   and a clamped end they land at the same offset, but for a row below it
-  `NSTableView` scrolls past the least amount (16 pt, measured), so "reveal
-  this row" leaves an unexplained gap. The same name is kept, with the exact
+  `NSTableView` scrolls at least that far and, depending on the system, past
+  it (16 pt on macOS 27, none on CI's macOS 26, measured), so "reveal this
+  row" can leave an unexplained gap. The same name is kept, with the exact
   definition.
 - **S2: scrolling to a position.** `scrollToRow(_:at:)` takes an
   `NSCollectionView.ScrollPosition`. The vertical members `.top`,

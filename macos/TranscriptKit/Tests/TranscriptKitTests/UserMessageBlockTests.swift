@@ -9,7 +9,7 @@ import XCTest
 /// No window, no mount — a measured block is a value and answers the same way
 /// on screen or off. The mounted half of this case, which is about whether the
 /// transcript reaches for one of these at all, is `UserMessageRowTests`.
-final class UserMessageTests: XCTestCase {
+final class UserMessageBlockTests: XCTestCase {
 
     // MARK: - Fixture
 

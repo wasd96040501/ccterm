@@ -46,7 +46,7 @@ final class ListDocumentView: NSView {
     }
 
     override func doCommand(by selector: Selector) {
-        if delegate?.documentView(self, doCommandBy: selector) == true { return }
+        if delegate?.listDocumentView(self, doCommandBy: selector) == true { return }
         passInterpretedKeyUp()
     }
 
@@ -63,7 +63,7 @@ final class ListDocumentView: NSView {
 
     override func prepareContent(in rect: NSRect) {
         super.prepareContent(in: rect)
-        delegate?.documentView(self, prepareContentIn: rect)
+        delegate?.listDocumentView(self, didPrepareContentIn: rect)
     }
 
     // MARK: - Accessibility table (X1)
@@ -79,7 +79,7 @@ final class ListDocumentView: NSView {
     override func accessibilityRows() -> [Any]? {
         guard let delegate else { return [] }
         return (0..<delegate.numberOfAccessibilityRows(in: self)).map {
-            delegate.documentView(self, accessibilityRowAt: $0)
+            delegate.listDocumentView(self, accessibilityRowAt: $0)
         }
     }
 
@@ -89,7 +89,9 @@ final class ListDocumentView: NSView {
 
     override func accessibilityVisibleRows() -> [Any]? {
         guard let delegate else { return [] }
-        return delegate.accessibilityVisibleRows(in: self).map { delegate.documentView(self, accessibilityRowAt: $0) }
+        return delegate.accessibilityVisibleRows(in: self).map {
+            delegate.listDocumentView(self, accessibilityRowAt: $0)
+        }
     }
 
     override func accessibilityChildren() -> [Any]? {

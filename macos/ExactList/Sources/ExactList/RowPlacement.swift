@@ -86,7 +86,7 @@ final class RowPlacement {
                 if !keeping.contains(row), container.frame != frame { container.frame = frame }
                 continue
             }
-            let view = delegate?.placement(self, viewForRow: row)
+            let view = delegate?.rowPlacement(self, viewForRow: row)
             let container = take(holding: view, from: &departed)
             container.row = row
             container.frame = frame
@@ -101,7 +101,7 @@ final class RowPlacement {
         guard let delegate else { return }
         for row in rows {
             guard let container = containers[row], let current = container.hostedView else { continue }
-            _ = container.host(delegate.placement(self, reloadingRow: row, showing: current))
+            _ = container.host(delegate.rowPlacement(self, viewForReloadingRow: row, showing: current))
         }
     }
 
@@ -180,7 +180,7 @@ final class RowPlacement {
         container.alphaValue = 1
         container.contentOffset = .zero
         if let view = container.hostedView {
-            delegate?.placement(self, didRemove: view, forRow: row)
+            delegate?.rowPlacement(self, didRemove: view, forRow: row)
         }
     }
 }

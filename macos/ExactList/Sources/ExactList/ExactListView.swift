@@ -824,7 +824,7 @@ extension ExactListView: ListScrollViewDelegate {
     /// Re-entrant by nature: measuring here changes `H`, which resizes the
     /// document, which can tile again. A private flag makes the inner call a
     /// no-op; the outer one finishes against the final frame.
-    func scrollViewDidTile(_ scrollView: ListScrollView) {
+    func listScrollViewDidTile(_ scrollView: ListScrollView) {
         guard !isAdjusting else { return }
         if isLoaded { syncViewport() } else { loadIfReady() }
     }
@@ -835,7 +835,7 @@ extension ExactListView: ListClipViewDelegate {
     /// P1, W4, A8: mount against the new `P`, measuring stale rows first, and
     /// re-evaluate tail following. A scroll that isn't the list's own ends an
     /// animated scroll where it is (S3).
-    func clipViewDidScroll(_ clipView: ListClipView) {
+    func listClipViewDidScroll(_ clipView: ListClipView) {
         guard isLoaded, !isAdjusting else { return }
         animator.cancelScroll()
         didScroll()
@@ -847,7 +847,7 @@ extension ExactListView: ListDocumentViewDelegate {
     /// K1. The delegate's answer is an event handler, not a callback of a
     /// commit, so it is called outside L9's guard: the host may update and
     /// scroll the list from it, as from `textView(_:doCommandBy:)`.
-    func documentView(_ documentView: ListDocumentView, doCommandBy selector: Selector) -> Bool {
+    func listDocumentView(_ documentView: ListDocumentView, doCommandBy selector: Selector) -> Bool {
         guard let delegate else { preconditionFailure("ExactList: the delegate was deallocated (L12)") }
         if delegate.listView(self, doCommandBy: selector) { return true }
         guard isLoaded else { return false }
@@ -875,7 +875,7 @@ extension ExactListView: ListDocumentViewDelegate {
         return true
     }
 
-    func documentView(_ documentView: ListDocumentView, prepareContentIn rect: NSRect) {
+    func listDocumentView(_ documentView: ListDocumentView, didPrepareContentIn rect: NSRect) {
         appKitPrepared = rect
         guard isLoaded, !isAdjusting else { return }
         remount()
@@ -885,7 +885,7 @@ extension ExactListView: ListDocumentViewDelegate {
         numberOfRows
     }
 
-    func documentView(_ documentView: ListDocumentView, accessibilityRowAt row: Int) -> Any {
+    func listDocumentView(_ documentView: ListDocumentView, accessibilityRowAt row: Int) -> Any {
         if let container = placement.container(forRow: row) { return container }
         if let element = accessibilityElements[row] { return element }
         let element = UnmountedRowElement(row: row, parent: documentView)
@@ -902,11 +902,11 @@ extension ExactListView: ListDocumentViewDelegate {
 
 extension ExactListView: RowPlacementDelegate {
 
-    func placement(_ placement: RowPlacement, viewForRow row: Int) -> NSView {
+    func rowPlacement(_ placement: RowPlacement, viewForRow row: Int) -> NSView {
         callDelegate { $0.listView(self, viewForRow: row) }
     }
 
-    func placement(_ placement: RowPlacement, reloadingRow row: Int, showing view: NSView) -> NSView {
+    func rowPlacement(_ placement: RowPlacement, viewForReloadingRow row: Int, showing view: NSView) -> NSView {
         pool.enqueue(view)
         let replacement = callDelegate { $0.listView(self, viewForRow: row) }
         if replacement === view {
@@ -917,7 +917,7 @@ extension ExactListView: RowPlacementDelegate {
         return replacement
     }
 
-    func placement(_ placement: RowPlacement, didRemove view: NSView, forRow row: Int) {
+    func rowPlacement(_ placement: RowPlacement, didRemove view: NSView, forRow row: Int) {
         callDelegate { $0.listView(self, didRemove: view, forRow: row) }
         pool.enqueue(view)
     }
@@ -927,7 +927,7 @@ extension ExactListView: MotionAnimatorDelegate {
 
     /// S3: one frame of an animated scroll, which is a scroll like the
     /// reader's, except that it is the list's own.
-    func motionAnimator(_ animator: MotionAnimator, scrollTo offset: CGFloat) {
+    func motionAnimator(_ animator: MotionAnimator, didRequestScrollTo offset: CGFloat) {
         guard isLoaded else { return }
         adjusting { moveClip(to: committed.clamped(offset, contentHeight: heights.contentHeight)) }
         didScroll()
@@ -943,7 +943,7 @@ extension ExactListView: MotionAnimatorDelegate {
 
 extension ExactListView: StaleRowRefresherDelegate {
 
-    func refreshStaleRows(within budget: TimeInterval) -> Bool {
+    func staleRowRefresher(_ refresher: StaleRowRefresher, refreshRowsWithin budget: TimeInterval) -> Bool {
         guard isLoaded, !stale.isEmpty, width > 0 else { return false }
         let anchor = heights.firstRow(endingBelow: committed.unobscuredTop) ?? 0
         let started = ProcessInfo.processInfo.systemUptime
@@ -959,12 +959,12 @@ extension ExactListView: StaleRowRefresherDelegate {
 
 extension ExactListView: UnmountedRowElementDelegate {
 
-    func screenFrame(ofAccessibilityRow row: Int) -> NSRect {
+    func unmountedRowElement(_ element: UnmountedRowElement, screenFrameOfRow row: Int) -> NSRect {
         guard let window else { return .zero }
         return window.convertToScreen(convert(rect(ofRow: row), to: nil))
     }
 
-    func scrollAccessibilityRowToVisible(_ row: Int) {
+    func unmountedRowElement(_ element: UnmountedRowElement, didRequestScrollRowToVisible row: Int) {
         scrollRowToVisible(row)
     }
 }

@@ -26,11 +26,11 @@ final class ListClipView: NSClipView {
 
     override func scroll(to newOrigin: NSPoint) {
         super.scroll(to: newOrigin)
-        delegate?.clipViewDidScroll(self)
+        delegate?.listClipViewDidScroll(self)
     }
 
     override func setBoundsOrigin(_ newOrigin: NSPoint) {
         super.setBoundsOrigin(newOrigin)
-        delegate?.clipViewDidScroll(self)
+        delegate?.listClipViewDidScroll(self)
     }
 }

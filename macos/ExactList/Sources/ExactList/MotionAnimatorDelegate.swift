@@ -11,5 +11,5 @@ protocol MotionAnimatorDelegate: AnyObject {
 
     /// One frame of an animated scroll: the clip view goes to `offset`, as a
     /// scroll does (P1, W4).
-    func motionAnimator(_ animator: MotionAnimator, scrollTo offset: CGFloat)
+    func motionAnimator(_ animator: MotionAnimator, didRequestScrollTo offset: CGFloat)
 }

@@ -7,5 +7,5 @@ protocol ListScrollViewDelegate: AnyObject {
 
     /// `tile()` ran. The clip view's frame and insets are final for this pass,
     /// and no row has been displayed at them yet.
-    func scrollViewDidTile(_ scrollView: ListScrollView)
+    func listScrollViewDidTile(_ scrollView: ListScrollView)
 }

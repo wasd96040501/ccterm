@@ -5,8 +5,8 @@ import AppKit
 protocol UnmountedRowElementDelegate: AnyObject {
 
     /// The row's current frame on screen (X2).
-    func screenFrame(ofAccessibilityRow row: Int) -> NSRect
+    func unmountedRowElement(_ element: UnmountedRowElement, screenFrameOfRow row: Int) -> NSRect
 
     /// Scroll the row into view as S1 does, which mounts it (X3).
-    func scrollAccessibilityRowToVisible(_ row: Int)
+    func unmountedRowElement(_ element: UnmountedRowElement, didRequestScrollRowToVisible row: Int)
 }

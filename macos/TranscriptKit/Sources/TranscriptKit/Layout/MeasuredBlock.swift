@@ -39,8 +39,9 @@ import AppKit
 /// endpoints leaves the block that owns them free to decide what lies between,
 /// and keeps the decoding of its own index space private.
 ///
-/// Two default paths cover nearly everything: `MeasuredTextBlock` for "I am a stack of
-/// typeset lines", and `BlockStack.Measured` for "I hold other blocks".
+/// Three default paths cover nearly everything: `MeasuredTextBlock` for "I am a stack of
+/// typeset lines", `BlockStack.Measured` for "I hold a column of other blocks", and
+/// `MeasuredContainerBlock` for "I hold one block, shifted by a fixed offset".
 protocol MeasuredBlock: Sendable {
 
     /// The measured size. `width` is the width this block was measured into;
@@ -146,13 +147,15 @@ protocol MeasuredBlock: Sendable {
     /// nothing to translate — it looked like it obeyed the rules only because it
     /// had discarded the thing the rules are about.
     ///
-    /// No default implementation on purpose, here or on `characterIndex(at:)`. A
-    /// container that forgets to forward either would not fail — its links would
-    /// simply stop responding, which is exactly the kind of quiet loss the closed
-    /// enums elsewhere here exist to prevent. Two protocols supply both for free
-    /// (`MeasuredTextBlock` looks the attribute up, `MeasuredOpaqueBlock` has
-    /// nothing to find), so what is left to write is the containers, where the
-    /// offset and the lift are the whole of the work.
+    /// No default implementation on the protocol itself, here or on
+    /// `characterIndex(at:)`: a container that forgot to forward either would not
+    /// fail — its links would simply stop responding, which is exactly the kind of
+    /// quiet loss the closed enums elsewhere here exist to prevent. Three refining
+    /// protocols supply both (`MeasuredTextBlock` looks the attribute up,
+    /// `MeasuredOpaqueBlock` has nothing to find, `MeasuredContainerBlock` forwards
+    /// to its one child), so a block that conforms to none of them — a stack of
+    /// children — writes both, where the offset and the lift are the whole of the
+    /// work.
     func link(at index: Int) -> InlineLink?
 
     /// Every occurrence of `query` in this block, in its own index space, in

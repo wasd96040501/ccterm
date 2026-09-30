@@ -34,6 +34,13 @@ final class RowViewPool {
         waiting[identifier, default: []].append(view)
     }
 
+    /// Takes `view` out, if it is waiting: a host handed it back without asking
+    /// the pool (U6), so it is in a row again.
+    func withdraw(_ view: NSView) {
+        guard let identifier = view.identifier else { return }
+        waiting[identifier]?.removeAll { $0 === view }
+    }
+
     /// Drops every pooled view (U7).
     func removeAll() {
         waiting.removeAll()

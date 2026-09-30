@@ -23,8 +23,8 @@ public protocol ExactListViewDelegate: AnyObject {
     func listView(_ listView: ExactListView, heightOfRow row: Int, width: CGFloat) -> CGFloat
 
     /// The view for a row that is joining the mounted set (P2), and for a
-    /// mounted row being reloaded (U6). `tableView(_:viewFor:row:)`, without the
-    /// column.
+    /// mounted row being reloaded (U6), whose current view `makeView` hands
+    /// back. `tableView(_:viewFor:row:)`, without the column.
     ///
     /// Recycle through `makeView(withIdentifier:make:)`, and bind every field:
     /// the instance may have been showing another row a moment ago. Don't set

@@ -340,8 +340,12 @@ public enum Anchoring { case automatic, row(Int), scrollOffset }
   the closure. Inserted rows and noted rows are measured at `W`. So is any
   stale row the commit brings into `P`.
 - **U6: reloading a row's contents.** `reloadData(forRowIndexes:)` asks for
-  views again for the mounted rows among those indexes. If a different
-  instance comes back, the old one goes back to the pool, and its host hears
+  views again for the mounted rows among those indexes. The view a row shows
+  goes back to the pool first, so a host that makes a view with its
+  identifier gets that same view back, as `NSTableView` hands it back
+  (characterized): nothing is reported, and the view keeps whatever it holds,
+  a hover or a text layout, for the host to update in place. If a different
+  instance comes back, the old one stays in the pool, and its host hears
   `didRemove`. Heights are not asked again, as in `NSTableView`. To change a
   height, note it.
 - **U7: `reloadData()`.**

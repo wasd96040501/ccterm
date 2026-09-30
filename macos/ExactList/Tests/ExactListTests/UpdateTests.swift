@@ -194,7 +194,10 @@ final class UpdateTests: XCTestCase {
     }
 
     /// Only the mounted rows among the indexes are asked for views; no height
-    /// is asked; a different instance replaces the old one, which is reported.
+    /// is asked. A host recycling through `makeView` gets each row's own view
+    /// back, and nothing is reported. A different instance replaces the old
+    /// one, which is reported. A view handed back without the pool is not also
+    /// left in it.
     func testU6_reloadingARowsContents() async throws {
         let stage = ListStage(size: NSSize(width: 400, height: 300))
         defer { stage.teardown() }
@@ -210,19 +213,39 @@ final class UpdateTests: XCTestCase {
         let views = host.calls.compactMap { if case .viewForRow(let row) = $0 { row } else { nil } }
         XCTAssertEqual(views.sorted(), [2, 3], "row 400 isn't mounted")
         XCTAssertEqual(measured(host), [], "heights are not asked")
-        let new2 = try XCTUnwrap(list.view(atRow: 2))
-        XCTAssertFalse(new2 === old2)
-        XCTAssertEqual(list.convert(new2.bounds, from: new2), frame2)
+        XCTAssertTrue(list.view(atRow: 2) === old2, "row 2 got its own view back")
+        XCTAssertTrue(list.view(atRow: 3) === old3, "row 3 got its own view back")
+        XCTAssertEqual(list.convert(old2.bounds, from: old2), frame2)
         let removed = host.calls.compactMap { if case .didRemove(let view, let row) = $0 { (view, row) } else { nil } }
-        XCTAssertEqual(removed.count, 2)
-        XCTAssertTrue(removed.contains { $0 == ObjectIdentifier(old2) && $1 == 2 })
-        XCTAssertTrue(removed.contains { $0 == ObjectIdentifier(old3) && $1 == 3 })
-        // The replaced views went back to the pool, so the second reload may
-        // reuse the first one's: each is in at most one row, and never its old
-        // row's.
-        XCTAssertNotEqual(list.row(for: old2), 2)
-        XCTAssertNotEqual(list.row(for: old3), 3)
-        XCTAssertFalse(list.view(atRow: 2) === list.view(atRow: 3))
+        XCTAssertEqual(removed.count, 0, "no view left a row")
+
+        // A host that builds a new view: it replaces the old one, which is
+        // reported.
+        let unpooled = UnpooledHost()
+        let replacing = ExactListView(dataSource: unpooled, delegate: unpooled)
+        stage.rootView.subviews.forEach { $0.removeFromSuperview() }
+        await stage.mount(replacing)
+        let before = try XCTUnwrap(replacing.view(atRow: 2))
+        unpooled.makesFreshViews = true
+        replacing.reloadData(forRowIndexes: [2])
+        let after = try XCTUnwrap(replacing.view(atRow: 2))
+        XCTAssertFalse(after === before)
+        XCTAssertEqual(replacing.convert(after.bounds, from: after), replacing.rect(ofRow: 2))
+        XCTAssertEqual(unpooled.removed.count, 1)
+        XCTAssertTrue(unpooled.removed.first?.view === before && unpooled.removed.first?.row == 2)
+        XCTAssertEqual(replacing.row(for: before), -1)
+
+        // A host that hands the same view back without asking the pool: the
+        // view isn't also left in the pool for the next row that arrives.
+        unpooled.makesFreshViews = false
+        let kept = try XCTUnwrap(replacing.view(atRow: 3))
+        unpooled.kept = (row: 3, view: kept)
+        replacing.reloadData(forRowIndexes: [3])
+        unpooled.kept = nil
+        unpooled.count += 1
+        replacing.insertRows(at: [0])  // `[]` asks for no motion (M1)
+        XCTAssertTrue(replacing.view(atRow: 4) === kept, "the kept view is row 3's, now row 4")
+        XCTAssertFalse(replacing.view(atRow: 0) === kept, "the arriving row got another view")
 
         // A pooled view can still sit in a row's former container, hidden
         // (P3). Reloading hands it to a mounted row; containers reused later
@@ -338,6 +361,29 @@ final class UpdateTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    /// A host that can answer `viewForRow` without recycling: a new view every
+    /// time, or a view it kept for one row.
+    private final class UnpooledHost: ExactListViewDataSource, ExactListViewDelegate {
+        var count = 500
+        var makesFreshViews = false
+        var kept: (row: Int, view: NSView)?
+        private(set) var removed: [(view: NSView, row: Int)] = []
+
+        func numberOfRows(in listView: ExactListView) -> Int { count }
+
+        func listView(_ listView: ExactListView, heightOfRow row: Int, width: CGFloat) -> CGFloat { 30 }
+
+        func listView(_ listView: ExactListView, viewForRow row: Int) -> NSView {
+            if let kept, kept.row == row { return kept.view }
+            if makesFreshViews { return NSView() }
+            return listView.makeView(withIdentifier: NSUserInterfaceItemIdentifier("unpooled")) { NSView() }
+        }
+
+        func listView(_ listView: ExactListView, didRemove view: NSView, forRow row: Int) {
+            removed.append((view, row))
+        }
+    }
 
     private func measured(_ host: RecordingHost) -> [Int] {
         host.calls.compactMap {

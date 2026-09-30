@@ -100,11 +100,8 @@ final class RowPlacement {
     func reload(rows: IndexSet) {
         guard let owner else { return }
         for row in rows {
-            guard let container = containers[row] else { continue }
-            let view = owner.placement(self, viewForRow: row)
-            if let replaced = container.host(view) {
-                owner.placement(self, didRemove: replaced, forRow: row)
-            }
+            guard let container = containers[row], let current = container.hostedView else { continue }
+            _ = container.host(owner.placement(self, reloadingRow: row, showing: current))
         }
     }
 

@@ -354,6 +354,24 @@ final class NSTableViewCharacterizationTests: XCTestCase {
             "every height was asked at the final width \(finalWidth): \(Set(widths))")
     }
 
+    /// U6: reloading a mounted row's contents hands the host back the view that
+    /// row was showing, and reports no `didRemove`.
+    func testCharacterizesReloadingARowsContents() async throws {
+        let stage = ListStage(size: NSSize(width: 480, height: 600))
+        defer { stage.teardown() }
+        let host = RecordingTableHost(count: 50) { _, _ in 40 }
+        let table = host.makeTableView()
+        _ = await stage.mountTable(table, layOutFirst: true)
+        let before = try XCTUnwrap(table.view(atColumn: 0, row: 3, makeIfNecessary: false))
+
+        host.resetCalls()
+        table.reloadData(forRowIndexes: [3], columnIndexes: [0])
+        await stage.settle()
+        let after = try XCTUnwrap(table.view(atColumn: 0, row: 3, makeIfNecessary: false))
+        XCTAssertTrue(after === before, "row 3 shows another view after its reload")
+        XCTAssertEqual(host.calls, [.viewForRow(3)], "a reload asks for the view and reports nothing")
+    }
+
     /// Row heights a table's host reads and a batch changes.
     private final class HeightsBox {
         var values: [CGFloat] = Array(repeating: 30, count: 40)

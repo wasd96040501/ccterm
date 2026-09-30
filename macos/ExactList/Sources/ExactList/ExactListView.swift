@@ -830,6 +830,17 @@ extension ExactListView: RowPlacementOwner {
         callDelegate { $0.listView(self, viewForRow: row) }
     }
 
+    func placement(_ placement: RowPlacement, reloadingRow row: Int, showing view: NSView) -> NSView {
+        pool.enqueue(view)
+        let replacement = callDelegate { $0.listView(self, viewForRow: row) }
+        if replacement === view {
+            pool.withdraw(view)
+        } else {
+            callDelegate { $0.listView(self, didRemove: view, forRow: row) }
+        }
+        return replacement
+    }
+
     func placement(_ placement: RowPlacement, didRemove view: NSView, forRow row: Int) {
         callDelegate { $0.listView(self, didRemove: view, forRow: row) }
         pool.enqueue(view)

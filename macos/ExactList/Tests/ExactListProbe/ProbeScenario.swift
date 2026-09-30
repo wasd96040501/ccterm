@@ -1,4 +1,4 @@
-/// One programmer error, committed for real (SPEC L9, L10, L12, U3). The raw
+/// One programmer error, committed for real (SPEC L9, L10, L12). The raw
 /// value is the command-line argument, and the requirement its precondition
 /// message must name.
 enum ProbeScenario: String, CaseIterable {
@@ -6,8 +6,8 @@ enum ProbeScenario: String, CaseIterable {
     /// L9: an update from inside `heightOfRow`.
     case updateInsideCallback = "L9-callback"
 
-    /// L9: a single-call update on the list inside a batch closure.
-    case listCallInsideBatch = "L9-batch"
+    /// L9: `reloadData()` on the list inside a batch closure.
+    case reloadInsideBatch = "L9-reload"
 
     /// L9: a scroll method from inside `heightOfRow`.
     case scrollInsideCallback = "L9-scroll"
@@ -51,9 +51,6 @@ enum ProbeScenario: String, CaseIterable {
 
     /// L12: the delegate deallocated before a scroll mounts new rows.
     case deallocatedBeforePlacement = "L12-dealloc-placement"
-
-    /// U3: the batch proxy used after its closure returned.
-    case proxyAfterClose = "U3-closed"
 
     /// The requirement ID the precondition message must carry.
     var requirement: String {

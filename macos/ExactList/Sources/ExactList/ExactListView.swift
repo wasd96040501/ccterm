@@ -130,7 +130,7 @@ public final class ExactListView: NSView {
 
     /// A8: `automaticallyFollowsTail`, and the viewport at the tail.
     /// *Deviation:* `NSTableView` doesn't follow the tail.
-    public var isFollowingTail: Bool {
+    var isFollowingTail: Bool {
         isLoaded && followsTail && committed.isAtTail(contentHeight: heights.contentHeight)
     }
 
@@ -141,12 +141,15 @@ public final class ExactListView: NSView {
         isLoaded ? heights.count : 0
     }
 
-    /// One batch: the updates in `updates` commit together, before this
-    /// returns (U1), anchored by `anchoring` (§6), animated per M1.
+    /// One batch: the updates `updates` makes on this list commit together,
+    /// before this returns (U1), anchored by `anchoring` (§6), animated per M1.
+    /// Inside the closure, `insertRows`, `removeRows`, `moveRow`,
+    /// `reloadData(forRowIndexes:)` and `noteHeightOfRows` record; geometry
+    /// queries, scroll methods and `reloadData()` stop with a precondition
+    /// failure (L9).
     ///
     /// *Deviation from `beginUpdates()`/`endUpdates()`:* a closure can't be left
-    /// unbalanced, and the `Updates` proxy it receives can't query half-applied
-    /// geometry (U3). Nested calls flatten into the outermost one.
+    /// unbalanced (U3). Nested calls flatten into the outermost one.
     ///
     /// Committing is a fixed point, and the loop belongs to this method, not to
     /// `CommitPlanner`, which stays pure. Which stale rows fall in `P` depends
@@ -154,12 +157,12 @@ public final class ExactListView: NSView {
     /// may be stale. So: plan, measure the stale rows now in `P` (U5, W4), plan
     /// again, until no new row enters.
     public func performBatchUpdates(
-        anchoring: Anchoring = .automatic, _ updates: (Updates) -> Void,
+        anchoring: Anchoring = .automatic, _ updates: () -> Void,
         completionHandler: ((Bool) -> Void)? = nil
     ) {
         precondition(callbackDepth == 0, "ExactList: performBatchUpdates from inside a callback (L9)")
-        if let openBatch {
-            updates(openBatch)
+        if openBatch != nil {
+            updates()
             if let completionHandler { openCompletions.append(completionHandler) }
             return
         }
@@ -167,17 +170,15 @@ public final class ExactListView: NSView {
             if let completionHandler { DispatchQueue.main.async { completionHandler(true) } }
             return
         }
-        let recorder = Updates(oldCount: heights.count)
-        openBatch = recorder
+        openBatch = RowIndexMap(oldCount: heights.count)
         openCompletions = completionHandler.map { [$0] } ?? []
-        updates(recorder)
-        recorder.close()
+        updates()
+        let map = openBatch ?? RowIndexMap(oldCount: heights.count)
         openBatch = nil
         let completions = openCompletions
         openCompletions = []
         let done: (Bool) -> Void = { finished in completions.forEach { $0(finished) } }
 
-        let map = recorder.map
         let rows = numberOfRowsInDataSource()
         precondition(
             rows == map.newCount,
@@ -190,38 +191,47 @@ public final class ExactListView: NSView {
         commit(map: map, anchoring: anchoring, duration: duration, timing: timing, completion: done)
     }
 
-    /// `NSTableView.insertRows(at:withAnimation:)`: a batch of one (U4).
+    /// `NSTableView.insertRows(at:withAnimation:)`: recorded into the open
+    /// batch, or a batch of one (U4).
     public func insertRows(at indexes: IndexSet, withAnimation options: NSTableView.AnimationOptions = []) {
-        requireOutsideCallbacks("insertRows")
-        performBatchUpdates { $0.insertRows(at: indexes, withAnimation: options) }
+        record(.insert(indexes, RowTransition(rawValue: options.rawValue)), "insertRows")
     }
 
-    /// `NSTableView.removeRows(at:withAnimation:)`: a batch of one (U4).
+    /// `NSTableView.removeRows(at:withAnimation:)`: recorded into the open
+    /// batch, or a batch of one (U4).
     public func removeRows(at indexes: IndexSet, withAnimation options: NSTableView.AnimationOptions = []) {
-        requireOutsideCallbacks("removeRows")
-        performBatchUpdates { $0.removeRows(at: indexes, withAnimation: options) }
+        record(.remove(indexes, RowTransition(rawValue: options.rawValue)), "removeRows")
     }
 
-    /// `NSTableView.moveRow(at:to:)`: a batch of one (U4).
+    /// `NSTableView.moveRow(at:to:)`: recorded into the open batch, or a batch
+    /// of one (U4).
     public func moveRow(at oldIndex: Int, to newIndex: Int) {
-        requireOutsideCallbacks("moveRow")
-        performBatchUpdates { $0.moveRow(at: oldIndex, to: newIndex) }
+        record(.move(from: oldIndex, to: newIndex), "moveRow")
     }
 
     /// `NSTableView.reloadData(forRowIndexes:columnIndexes:)`, without the
     /// columns: asks the mounted rows among `indexes` for their views again.
     /// Heights are not asked (U6).
     public func reloadData(forRowIndexes indexes: IndexSet) {
-        requireOutsideCallbacks("reloadData(forRowIndexes:)")
-        performBatchUpdates { $0.reloadData(forRowIndexes: indexes) }
+        record(.reload(indexes), "reloadData(forRowIndexes:)")
     }
 
     /// `NSTableView.noteHeightOfRows(withIndexesChanged:)`: asks these rows for
     /// their height again at commit. Animated unless inside a duration-0 group,
     /// as in a view-based table (M1).
     public func noteHeightOfRows(withIndexesChanged indexes: IndexSet) {
-        requireOutsideCallbacks("noteHeightOfRows")
-        performBatchUpdates { $0.noteHeightOfRows(withIndexesChanged: indexes) }
+        record(.noteHeight(indexes), "noteHeightOfRows")
+    }
+
+    /// U2, U4: an update applies incrementally to the open batch, or is a batch
+    /// of one. Before the load point it is dropped (L5).
+    private func record(_ edit: RowEdit, _ what: String) {
+        precondition(callbackDepth == 0, "ExactList: \(what) called from inside a data source or delegate call (L9)")
+        if openBatch != nil {
+            openBatch?.apply(edit)
+        } else {
+            performBatchUpdates { openBatch?.apply(edit) }
+        }
     }
 
     /// `NSTableView.reloadData()`: everything asked for again, never animated
@@ -388,7 +398,7 @@ public final class ExactListView: NSView {
     private var reportedTail = false
 
     /// The batch whose closure is running, and what it has collected (U3).
-    private var openBatch: Updates?
+    private var openBatch: RowIndexMap?
     private var openCompletions: [(Bool) -> Void] = []
 
     /// Inside a data source or delegate call (L9).
@@ -786,11 +796,10 @@ public final class ExactListView: NSView {
         return body(delegate)
     }
 
-    /// L9: no update from inside a callback, and none but through the proxy
-    /// inside a batch.
+    /// L9: no update from inside a callback, and none in a batch.
     private func requireOutsideCallbacks(_ what: String) {
         precondition(callbackDepth == 0, "ExactList: \(what) called from inside a data source or delegate call (L9)")
-        precondition(openBatch == nil, "ExactList: \(what) called inside a batch; use its Updates (L9)")
+        precondition(openBatch == nil, "ExactList: \(what) called inside a batch (L9)")
     }
 
     private func renumberAccessibilityElements(through map: RowIndexMap) {

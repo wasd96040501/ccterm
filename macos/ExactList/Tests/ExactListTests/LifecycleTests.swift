@@ -151,7 +151,7 @@ final class LifecycleTests: XCTestCase {
         list.reloadData()
         var ranClosure = false
         var completions: [Bool] = []
-        list.performBatchUpdates({ _ in ranClosure = true }, completionHandler: { completions.append($0) })
+        list.performBatchUpdates({ ranClosure = true }, completionHandler: { completions.append($0) })
         XCTAssertEqual(completions, [], "never synchronously (U8)")
 
         XCTAssertEqual(list.numberOfRows, 0)
@@ -278,7 +278,7 @@ final class LifecycleTests: XCTestCase {
     /// Each violation traps in a child process with L9's ID; the one exception,
     /// a nested batch, flattens in this process.
     func testL9_reEntrancyIsAProgrammerError() async throws {
-        for scenario in ["L9-callback", "L9-scroll", "L9-batch", "L9-query"] {
+        for scenario in ["L9-callback", "L9-scroll", "L9-reload", "L9-query"] {
             try assertTraps(scenario, naming: "L9")
         }
 
@@ -290,10 +290,10 @@ final class LifecycleTests: XCTestCase {
         var completions: [Bool] = []
         host.count += 2
         list.performBatchUpdates(
-            { updates in
-                updates.insertRows(at: [0])
+            {
+                list.insertRows(at: [0])
                 list.performBatchUpdates(
-                    { $0.insertRows(at: [0]) }, completionHandler: { completions.append($0) })
+                    { list.insertRows(at: [0]) }, completionHandler: { completions.append($0) })
             }, completionHandler: { completions.append($0) })
         XCTAssertEqual(list.numberOfRows, 22, "the nested batch committed with the outer one")
         let drained = await stage.drain(until: { completions.count == 2 }, timeout: 2)

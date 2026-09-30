@@ -10,7 +10,7 @@ import AppKit
 /// - Rows above the viewport: nothing holds what the reader sees; the table
 ///   keeps its offset, as it does.
 @MainActor
-public final class DemoTableFeed: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+final class DemoTableFeed: NSObject, NSTableViewDataSource, NSTableViewDelegate {
 
     /// The table in its scroll view, configured like the demo's list: one
     /// column, no header, no selection, 6 pt between rows and 8 pt above and
@@ -41,7 +41,7 @@ public final class DemoTableFeed: NSObject, NSTableViewDataSource, NSTableViewDe
     }
 
     /// Scrolls to the end, as the list loads at its tail.
-    public func scrollToEnd() {
+    func scrollToEnd() {
         let clip = scrollView.contentView
         clip.setBoundsOrigin(endOrigin)
         scrollView.reflectScrolledClipView(clip)

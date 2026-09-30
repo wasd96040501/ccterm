@@ -137,9 +137,19 @@ final class CommitPlannerTests: XCTestCase {
                     if gap < -reference.tolerance {
                         return XCTFail("\(context()): they overlap by \(-gap)")
                     }
-                    if adjacent, abs(gap - commit.newSpacing) > reference.tolerance {
-                        return XCTFail(
-                            "\(context()): adjacent survivors are \(gap) apart, not s = \(commit.newSpacing)")
+                    if adjacent {
+                        // Old to new, the start brought toward the end by M7's
+                        // k when the commit animates; a commit that doesn't
+                        // starts where it ends.
+                        let survivor = lower.survivor!
+                        let end = ReferenceGeometry.gap(commit.newCustoms, survivor.new, spacing: commit.newSpacing)
+                        let old = ReferenceGeometry.gap(commit.oldCustoms, survivor.old, spacing: commit.oldSpacing)
+                        let start = commit.animates ? end + reference.amplitude * (old - end) : end
+                        let expected = ReferenceGeometry.presented(start: start, end: end, progress: p)
+                        if abs(gap - expected) > reference.tolerance {
+                            return XCTFail(
+                                "\(context()): adjacent survivors are \(gap) apart, not the lower row's \(expected)")
+                        }
                     }
                 }
                 pairs += 1
@@ -248,9 +258,12 @@ private struct Commit: CustomStringConvertible {
     var kind = Kind.batch
     var oldHeights: [CGFloat]
     var oldSpacing: CGFloat
+    /// Each old row's custom spacing (G7); `nil` is `oldSpacing`.
+    var oldCustoms: [CGFloat?]
     var oldViewport: Viewport
     var newHeights: [CGFloat]
     var newSpacing: CGFloat
+    var newCustoms: [CGFloat?]
     var newViewport: Viewport
     var edits: [RowEdit] = []
     var slots: [Slot]
@@ -266,8 +279,8 @@ private struct Commit: CustomStringConvertible {
         var map = RowIndexMap(oldCount: oldHeights.count)
         for edit in edits { map.apply(edit) }
         return CommitInput(
-            oldHeights: RowHeights(oldHeights, spacing: oldSpacing),
-            newHeights: RowHeights(newHeights, spacing: newSpacing),
+            oldHeights: RowHeights(oldHeights, customSpacings: oldCustoms, spacing: oldSpacing),
+            newHeights: RowHeights(newHeights, customSpacings: newCustoms, spacing: newSpacing),
             map: map, oldViewport: oldViewport, newViewport: newViewport, anchoring: anchoring,
             followsTail: followsTail, rescalesAnchor: rescalesAnchor, mountedRows: mounted, animates: animates)
     }
@@ -283,8 +296,9 @@ private struct Commit: CustomStringConvertible {
         let new = newViewport
         return "\(kind) \(anchoring) followsTail \(followsTail) animates \(animates); "
             + "old: s \(oldSpacing), o \(old.offset), V \(old.height), t \(old.insetTop), b \(old.insetBottom), "
-            + "heights \(oldHeights); edits \(edits); "
-            + "new: s \(newSpacing), V \(new.height), t \(new.insetTop), b \(new.insetBottom), heights \(newHeights); "
+            + "heights \(oldHeights), customs \(oldCustoms); edits \(edits); "
+            + "new: s \(newSpacing), V \(new.height), t \(new.insetTop), b \(new.insetBottom), heights \(newHeights), "
+            + "customs \(newCustoms); "
             + "mounted \(Array(mounted))"
     }
 
@@ -303,10 +317,20 @@ private struct Commit: CustomStringConvertible {
         }
         let heights = (0..<count).map { _ in randomHeight(&rng, tall: bigJumps) }
         let spacing = Bool.random(using: &rng) ? 0 : quarters(1...64, &rng)
+        let mixed = Bool.random(using: &rng)
+        func custom() -> CGFloat? {
+            guard mixed else { return nil }
+            switch Int.random(in: 0..<4, using: &rng) {
+            case 0: return nil
+            case 1: return 0
+            default: return quarters(0...96, &rng)
+            }
+        }
+        let customs = (0..<count).map { _ in custom() }
         let viewport = randomViewport(&rng)
         var commit = Commit(
-            oldHeights: heights, oldSpacing: spacing, oldViewport: viewport, newHeights: heights, newSpacing: spacing,
-            newViewport: viewport, slots: (0..<count).map { Slot(old: $0) })
+            oldHeights: heights, oldSpacing: spacing, oldCustoms: customs, oldViewport: viewport, newHeights: heights,
+            newSpacing: spacing, newCustoms: customs, newViewport: viewport, slots: (0..<count).map { Slot(old: $0) })
         commit.oldViewport.offset = commit.randomOffset(&rng)
         commit.newViewport.offset = commit.oldViewport.offset
         commit.followsTail = Bool.random(using: &rng)
@@ -333,6 +357,11 @@ private struct Commit: CustomStringConvertible {
             commit.newHeights = commit.slots.map { slot in
                 guard let row = slot.old else { return randomHeight(&rng, tall: bigJumps) }
                 return slot.noted && Bool.random(using: &rng) ? randomHeight(&rng, tall: bigJumps) : heights[row]
+            }
+            // Inserted rows answer a spacing; noted rows may answer another (G7).
+            commit.newCustoms = commit.slots.map { slot in
+                guard let row = slot.old else { return custom() }
+                return slot.noted && Bool.random(using: &rng) ? custom() : customs[row]
             }
             switch Int.random(in: 0..<10, using: &rng) {
             case 0..<(bigJumps ? 4 : 6): commit.anchoring = .automatic
@@ -374,8 +403,8 @@ private struct Commit: CustomStringConvertible {
     /// The top, the tail, either side of the tail tolerance, anywhere, a row
     /// edge exactly at the top of U, and rarely past either end.
     func randomOffset(_ rng: inout SeededGenerator) -> CGFloat {
-        let tops = ReferenceGeometry.tops(heights: oldHeights, spacing: oldSpacing)
-        let content = ReferenceGeometry.contentHeight(heights: oldHeights, spacing: oldSpacing)
+        let tops = ReferenceGeometry.tops(heights: oldHeights, spacing: oldSpacing, customs: oldCustoms)
+        let content = ReferenceGeometry.contentHeight(heights: oldHeights, spacing: oldSpacing, customs: oldCustoms)
         let low = -oldViewport.insetTop
         let high = max(low, content - oldViewport.height + oldViewport.insetBottom)
         let anywhere = low + quarters(0...Int((high - low) * 4), &rng)
@@ -394,7 +423,8 @@ private struct Commit: CustomStringConvertible {
             guard !oldHeights.isEmpty else { return low }
             let row = Int.random(in: oldHeights.indices, using: &rng)
             let bottom = tops[row] + oldHeights[row]
-            let edges = [tops[row], bottom, bottom + oldSpacing / 2, bottom + oldSpacing]
+            let below = row + 1 < oldHeights.count ? tops[row + 1] - bottom : oldSpacing
+            let edges = [tops[row], bottom, bottom + below / 2, bottom + below]
             return min(max(edges.randomElement(using: &rng)! - oldViewport.insetTop, low), high)
         default:
             return Bool.random(using: &rng) ? high + quarters(1...800, &rng) : low - quarters(1...800, &rng)
@@ -403,7 +433,7 @@ private struct Commit: CustomStringConvertible {
 
     /// The old rows whose frames meet the old prepared area (P1).
     var preparedRows: IndexSet {
-        let tops = ReferenceGeometry.tops(heights: oldHeights, spacing: oldSpacing)
+        let tops = ReferenceGeometry.tops(heights: oldHeights, spacing: oldSpacing, customs: oldCustoms)
         let viewport = oldViewport
         let overscan = (viewport.height - viewport.insetTop - viewport.insetBottom) / 2
         let lower = viewport.offset + viewport.insetTop - overscan
@@ -557,10 +587,14 @@ private struct Reference {
     init(_ commit: Commit) {
         let oldHeights = commit.oldHeights
         let newHeights = commit.newHeights
-        let oldTops = ReferenceGeometry.tops(heights: oldHeights, spacing: commit.oldSpacing)
-        let newTops = ReferenceGeometry.tops(heights: newHeights, spacing: commit.newSpacing)
-        let oldContent = ReferenceGeometry.contentHeight(heights: oldHeights, spacing: commit.oldSpacing)
-        let newContent = ReferenceGeometry.contentHeight(heights: newHeights, spacing: commit.newSpacing)
+        let oldTops = ReferenceGeometry.tops(
+            heights: oldHeights, spacing: commit.oldSpacing, customs: commit.oldCustoms)
+        let newTops = ReferenceGeometry.tops(
+            heights: newHeights, spacing: commit.newSpacing, customs: commit.newCustoms)
+        let oldContent = ReferenceGeometry.contentHeight(
+            heights: oldHeights, spacing: commit.oldSpacing, customs: commit.oldCustoms)
+        let newContent = ReferenceGeometry.contentHeight(
+            heights: newHeights, spacing: commit.newSpacing, customs: commit.newCustoms)
         let tolerance = 1e-6 * max(1, oldContent, newContent)
         self.tolerance = tolerance
         let o = commit.oldViewport.offset
@@ -656,6 +690,7 @@ private struct Reference {
         }
         let gapCount = survivorsOld.count + 1
         var lastRemoved = [Int?](repeating: nil, count: gapCount)
+        var firstRemoved = [Int?](repeating: nil, count: gapCount)
         var firstInserted = [Int?](repeating: nil, count: gapCount)
         var removedGap = [Int](repeating: 0, count: oldCount)
         var insertedGap = [Int](repeating: 0, count: newCount)
@@ -666,6 +701,7 @@ private struct Reference {
             } else if newIndexes[old] == nil {
                 removedGap[old] = gap
                 lastRemoved[gap] = old
+                if firstRemoved[gap] == nil { firstRemoved[gap] = old }
             }
         }
         gap = 0
@@ -698,12 +734,22 @@ private struct Reference {
                 transition = slot.transition
                 startHeight = 0
                 let gap = insertedGap[row]
+                // The opening: the gap's first inserted row's spacing, no more
+                // than the room down to the survivor after the gap.
+                func opening(below end: CGFloat) -> CGFloat {
+                    let first = firstInserted[gap]!
+                    let spacing = ReferenceGeometry.gap(commit.newCustoms, first, spacing: commit.newSpacing)
+                    guard gap < survivorsOld.count else { return spacing }
+                    return min(spacing, oldTops[survivorsOld[gap]] - o - end)
+                }
                 if let removed = lastRemoved[gap] {
-                    startTop = oldTops[removed] - o + oldHeights[removed] + commit.oldSpacing
+                    let end = oldTops[removed] - o + oldHeights[removed]
+                    startTop = end + opening(below: end)
                     insertedRules.insert(1)
                 } else if gap > 0 {
                     let before = survivorsOld[gap - 1]
-                    startTop = oldTops[before] - o + oldHeights[before] + commit.oldSpacing
+                    let end = oldTops[before] - o + oldHeights[before]
+                    startTop = end + opening(below: end)
                     insertedRules.insert(2)
                 } else if gap < survivorsOld.count {
                     startTop = oldTops[survivorsOld[gap]] - o
@@ -727,8 +773,13 @@ private struct Reference {
                 endTop = newTops[inserted] - offset
                 removedRules.insert(1)
             } else if gap > 0 {
+                // The closing: the gap's first removed row's spacing, no more
+                // than the room down to the survivor after the gap.
                 let before = survivorsNew[gap - 1]
-                endTop = newTops[before] - offset + newHeights[before] + commit.newSpacing
+                let end = newTops[before] - offset + newHeights[before]
+                var closing = ReferenceGeometry.gap(commit.oldCustoms, firstRemoved[gap]!, spacing: commit.oldSpacing)
+                if gap < survivorsNew.count { closing = min(closing, newTops[survivorsNew[gap]] - offset - end) }
+                endTop = end + closing
                 removedRules.insert(2)
             } else if gap < survivorsNew.count {
                 endTop = newTops[survivorsNew[gap]] - offset
@@ -803,7 +854,8 @@ private struct Reference {
 
     /// Everything M2 and §6 decide, compared with the plan.
     func mismatch(_ plan: CommitPlan, _ commit: Commit) -> String? {
-        if plan.heights != RowHeights(commit.newHeights, spacing: commit.newSpacing) {
+        if plan.heights != RowHeights(commit.newHeights, customSpacings: commit.newCustoms, spacing: commit.newSpacing)
+        {
             return "plan.heights isn't the input's new heights"
         }
         if abs(plan.offset - offset) > tolerance {

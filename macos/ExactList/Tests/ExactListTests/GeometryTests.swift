@@ -49,4 +49,72 @@ final class GeometryTests: XCTestCase {
         XCTAssertEqual(list.rect(ofRow: heights.count), .zero)
         XCTAssertEqual(list.row(at: NSPoint(x: -5, y: 10)), -1)
     }
+
+    /// Rows lie their own spacing apart, flush where a row asks for 0; the
+    /// spacing is asked right after the height of every row the host
+    /// announces (loading, a note, an insert), and never by a width change or
+    /// a reload of a row's view.
+    func testG7_eachRowItsOwnSpacingAskedWhenTheRowIsAnnounced() async throws {
+        let stage = ListStage(size: NSSize(width: 400, height: 300))
+        defer { stage.teardown() }
+        var heights: [CGFloat] = (0..<40).map { 20 + CGFloat(($0 * 13) % 30) }
+        var customs: [CGFloat?] = heights.indices.map { [nil, 0, 6, nil][$0 % 4] }
+        let host = RecordingHost(count: heights.count) { row, _ in heights[row] }
+        host.spacing = { customs[$0] }
+        let list = ExactListView(dataSource: host, delegate: host)
+        list.rowSpacing = 14
+        await stage.mount(list)
+
+        func pairs() -> [Int] {
+            zip(host.calls, host.calls.dropFirst()).compactMap { call, next in
+                guard case .heightOfRow(let row, _) = call, next == .customSpacingAboveRow(row) else { return nil }
+                return row
+            }
+        }
+        func spacingsAsked() -> [Int] {
+            host.calls.compactMap { if case .customSpacingAboveRow(let row) = $0 { row } else { nil } }
+        }
+        XCTAssertEqual(pairs(), Array(heights.indices), "every row: its height, then its spacing")
+        XCTAssertEqual(spacingsAsked(), Array(heights.indices))
+
+        func assertFrames(_ message: String) {
+            let width = list.rect(ofRow: 0).width
+            let frames = ReferenceLayout.frames(heights: heights, spacing: 14, width: width, customs: customs)
+            let shift = list.rect(ofRow: 0).minY
+            for row in 0..<12 {
+                XCTAssertEqual(list.rect(ofRow: row), frames[row].offsetBy(dx: 0, dy: shift), "row \(row), \(message)")
+            }
+        }
+        assertFrames("as loaded")
+        XCTAssertEqual(list.rect(ofRow: 1).minY, list.rect(ofRow: 0).maxY, "a row asking for 0 sits flush")
+        XCTAssertEqual(list.row(at: NSPoint(x: 5, y: list.rect(ofRow: 2).minY - 3)), -1, "a gap is no row's")
+
+        // A width change and a reload re-ask no spacing.
+        host.resetCalls()
+        await stage.setContentSize(NSSize(width: 300, height: 300))
+        list.reloadData(forRowIndexes: [0, 1])
+        await stage.settle()
+        XCTAssertFalse(host.calls.isEmpty, "premise: the width change re-measured rows")
+        XCTAssertEqual(spacingsAsked(), [], "a width change or a reload asked for a spacing")
+
+        // A noted row is asked again, and moves only what its gap moves.
+        host.resetCalls()
+        customs[5] = 30
+        let above = list.rect(ofRow: 4)
+        list.noteHeightOfRows(withIndexesChanged: [5])
+        await stage.settle()
+        XCTAssertEqual(pairs(), [5])
+        XCTAssertEqual(list.rect(ofRow: 4), above, "the row above moved")
+        XCTAssertEqual(list.rect(ofRow: 5).minY - list.rect(ofRow: 4).maxY, 30)
+
+        // An inserted row brings its own.
+        host.resetCalls()
+        heights.append(25)
+        customs.append(0)
+        host.count = heights.count
+        list.insertRows(at: [heights.count - 1], withAnimation: [])
+        await stage.settle()
+        XCTAssertEqual(pairs(), [heights.count - 1])
+        assertFrames("after a note and an insert")
+    }
 }

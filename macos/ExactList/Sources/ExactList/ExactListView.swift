@@ -77,8 +77,10 @@ public final class ExactListView: NSView {
 
     // MARK: - Configuration (§6.4)
 
-    /// `s`, the gap between two rows. Named after `NSGridView.rowSpacing`. A
-    /// change is an anchored commit that doesn't animate (V3). Default 0.
+    /// `s`, the default gap between two rows: the spacing above every row whose
+    /// delegate answers no custom one (G7). Named after `NSGridView.rowSpacing`
+    /// and `NSStackView.spacing`. A change is an anchored commit that doesn't
+    /// animate and moves only the rows on the default (V3). Default 0.
     public var rowSpacing: CGFloat {
         get { spacing }
         set {
@@ -239,7 +241,7 @@ public final class ExactListView: NSView {
         let wasFollowing = isFollowingTail
         let oldOffset = committed.offset
         let rows = numberOfRowsInDataSource()
-        heights = RowHeights((0..<rows).map { measure($0) }, spacing: spacing)
+        heights = measureAll(rows)
         stale = StaleRows(count: rows)
         animator.update(heights: heights, width: width)
         let contentHeight = heights.contentHeight
@@ -420,7 +422,7 @@ public final class ExactListView: NSView {
         phase = .loaded
         width = clipView.bounds.width
         let rows = numberOfRowsInDataSource()
-        heights = RowHeights((0..<rows).map { measure($0) }, spacing: spacing)
+        heights = measureAll(rows)
         stale = StaleRows(count: rows)
         committed = liveViewport()
         animator.update(heights: heights, width: width)
@@ -455,10 +457,13 @@ public final class ExactListView: NSView {
         // Inserted and noted rows are asked, in ascending order; rows measured
         // already keep that measurement (G5: no pass over untouched rows).
         var fresh = IndexSet(measured.keys)
-        var newHeights = oldHeights.applying(map) { row in
-            fresh.insert(row)
-            return measured[row] ?? measure(row)
-        }
+        var newHeights = oldHeights.applying(
+            map,
+            height: { row in
+                fresh.insert(row)
+                return measured[row] ?? measure(row)
+            },
+            spacing: { customSpacing(aboveRow: $0) })
         for (row, height) in measured where newHeights[row] != height {
             newHeights.setHeight(height, ofRow: row)
         }
@@ -752,6 +757,26 @@ public final class ExactListView: NSView {
         let height = delegate.listView(self, heightOfRow: row, width: width)
         precondition(height.isFinite && height > 0, "ExactList: row \(row) answered height \(height) (L12)")
         return height
+    }
+
+    /// Asks one row's spacing above it (G7); `nil` is `rowSpacing`.
+    /// `RowHeights` checks it (L12).
+    private func customSpacing(aboveRow row: Int) -> CGFloat? {
+        callDelegate { $0.listView(self, customSpacingAboveRow: row) }
+    }
+
+    /// Every row's height and spacing, row by row: the load point and
+    /// `reloadData()` (L3, U7, G7).
+    private func measureAll(_ rows: Int) -> RowHeights {
+        var values: [CGFloat] = []
+        var customs: [CGFloat?] = []
+        values.reserveCapacity(rows)
+        customs.reserveCapacity(rows)
+        for row in 0..<rows {
+            values.append(measure(row))
+            customs.append(customSpacing(aboveRow: row))
+        }
+        return RowHeights(values, customSpacings: customs, spacing: spacing)
     }
 
     private func callDelegate<T>(_ body: (ExactListViewDelegate) -> T) -> T {

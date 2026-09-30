@@ -7,21 +7,29 @@ import Foundation
 /// types under test.
 enum ReferenceGeometry {
 
-    /// `y(i)` by a left-to-right running sum (G1).
-    static func tops(heights: [CGFloat], spacing: CGFloat) -> [CGFloat] {
+    /// `g(i)`: row `i`'s custom spacing, or `spacing` (G7).
+    static func gap(_ customs: [CGFloat?]?, _ row: Int, spacing: CGFloat) -> CGFloat {
+        customs?[row] ?? spacing
+    }
+
+    /// `y(i)` by a left-to-right running sum (G1): each row starts its own gap
+    /// below the one before.
+    static func tops(heights: [CGFloat], spacing: CGFloat, customs: [CGFloat?]? = nil) -> [CGFloat] {
         var tops: [CGFloat] = []
         tops.reserveCapacity(heights.count)
-        var y: CGFloat = 0
-        for height in heights {
-            tops.append(y)
-            y += height + spacing
+        var bottom: CGFloat = 0
+        for (row, height) in heights.enumerated() {
+            let top = row == 0 ? 0 : bottom + gap(customs, row, spacing: spacing)
+            tops.append(top)
+            bottom = top + height
         }
         return tops
     }
 
-    /// `H` (G2).
-    static func contentHeight(heights: [CGFloat], spacing: CGFloat) -> CGFloat {
-        heights.isEmpty ? 0 : heights.reduce(0, +) + CGFloat(heights.count - 1) * spacing
+    /// `H` (G2): where the last row ends.
+    static func contentHeight(heights: [CGFloat], spacing: CGFloat, customs: [CGFloat?]? = nil) -> CGFloat {
+        guard let last = heights.indices.last else { return 0 }
+        return tops(heights: heights, spacing: spacing, customs: customs)[last] + heights[last]
     }
 
     /// U2 replayed on a plain array of old indexes, one edit at a time, with

@@ -18,6 +18,10 @@ public final class RecordingHost: ExactListViewDataSource, ExactListViewDelegate
     /// The height function the delegate answers from.
     public var height: (_ row: Int, _ width: CGFloat) -> CGFloat
 
+    /// The spacing the delegate answers above a row; `nil` (the default) is
+    /// `rowSpacing`.
+    public var spacing: (_ row: Int) -> CGFloat? = { _ in nil }
+
     /// Every call, in order.
     public private(set) var calls: [HostCall] = []
 
@@ -52,6 +56,11 @@ public final class RecordingHost: ExactListViewDataSource, ExactListViewDelegate
     public func listView(_ listView: ExactListView, heightOfRow row: Int, width: CGFloat) -> CGFloat {
         calls.append(.heightOfRow(row, width: width))
         return height(row, width)
+    }
+
+    public func listView(_ listView: ExactListView, customSpacingAboveRow row: Int) -> CGFloat? {
+        calls.append(.customSpacingAboveRow(row))
+        return spacing(row)
     }
 
     public func listView(_ listView: ExactListView, viewForRow row: Int) -> NSView {

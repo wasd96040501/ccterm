@@ -73,7 +73,6 @@ public enum CommitPlanner {
         let new = input.newHeights
         let map = input.map
         let oldOffset = input.oldViewport.offset
-        let spacing = new.spacing
         let runs = map.runs
 
         func oldTop(_ row: Int) -> CGFloat { old.top(ofRow: row) - oldOffset }
@@ -128,13 +127,24 @@ public enum CommitPlanner {
                 let oldBefore = before.flatMap { map.oldIndex(forNew: $0) } ?? -1
                 let oldAfter = after.flatMap { map.oldIndex(forNew: $0) } ?? map.oldCount
                 let lastRemoved = Self.last(in: removed, above: oldBefore, below: oldAfter)
+                // Where the gap's old contents end, and the opening below it:
+                // the gap's first inserted row's spacing, within the room there was.
+                var contentsEnd: CGFloat?
+                if let lastRemoved {
+                    contentsEnd = oldTop(lastRemoved) + old[lastRemoved]
+                } else if before != nil {
+                    contentsEnd = oldTop(oldBefore) + old[oldBefore]
+                }
+                let opening = contentsEnd.map { end in
+                    let first = kept.firstInserted(in: runs, above: before ?? -1, below: after ?? map.newCount) ?? start
+                    let room = after == nil ? CGFloat.infinity : oldTop(oldAfter) - end
+                    return min(new.spacing(aboveRow: first), room)
+                }
                 for row in start..<(start + count) {
                     let endTop = newTop(row)
                     var startTop = endTop
-                    if let lastRemoved {
-                        startTop = oldTop(lastRemoved) + old[lastRemoved] + spacing
-                    } else if before != nil {
-                        startTop = oldTop(oldBefore) + old[oldBefore] + spacing
+                    if let contentsEnd, let opening {
+                        startTop = contentsEnd + opening
                     } else if after != nil {
                         startTop = oldTop(oldAfter)
                     }
@@ -158,7 +168,14 @@ public enum CommitPlanner {
             if let firstInserted {
                 endTop = newTop(firstInserted)
             } else if let before {
-                endTop = newTop(before) + new[before] + spacing
+                // The closing: the gap's first removed row's spacing, within
+                // the room there is.
+                let end = newTop(before) + new[before]
+                let oldBefore = map.oldIndex(forNew: before) ?? -1
+                let oldAfter = after.flatMap { map.oldIndex(forNew: $0) } ?? map.oldCount
+                let first = Self.first(in: removed, above: oldBefore, below: oldAfter) ?? row
+                let room = after.map { newTop($0) - end } ?? .infinity
+                endTop = end + min(old.spacing(aboveRow: first), room)
             } else if let after {
                 endTop = newTop(after)
             }
@@ -173,6 +190,18 @@ public enum CommitPlanner {
     /// How many rows of `heights` start above document `y`.
     private static func rowsStarting(in heights: RowHeights, below y: CGFloat) -> Int {
         heights.rows(intersecting: -.infinity, y).upperBound
+    }
+
+    /// The smallest of the sorted `rows` strictly between `lower` and `upper`.
+    private static func first(in rows: [Int], above lower: Int, below upper: Int) -> Int? {
+        var low = 0
+        var high = rows.count
+        while low < high {
+            let mid = (low + high) / 2
+            if rows[mid] <= lower { low = mid + 1 } else { high = mid }
+        }
+        guard low < rows.count, rows[low] < upper else { return nil }
+        return rows[low]
     }
 
     /// The largest of the sorted `rows` strictly between `lower` and `upper`.

@@ -104,26 +104,47 @@ final class RowIndexMapTests: XCTestCase {
             let structural = model.rows.map(\.old) != Array(0..<oldCount) || model.rows.contains(where: \.moved)
             if map.isStructural != structural { return "isStructural \(map.isStructural)" }
 
-            // The heights after the batch: kept unless noted; the rest asked in order.
-            let before = RowHeights((0..<oldCount).map { CGFloat($0 + 1) }, spacing: 1)
-            var asked: [Int] = []
-            let after = before.applying(map) { row in
-                asked.append(row)
-                return CGFloat(1000 + row)
-            }
+            // The rows after the batch: kept unless noted; the rest asked in
+            // order, height then spacing (G7). The old rows mix custom
+            // spacings with the default, and so do the answers.
+            func oldSpacing(_ row: Int) -> CGFloat? { row % 3 == 0 ? nil : CGFloat(row % 3) / 4 }
+            func newSpacing(_ row: Int) -> CGFloat? { row % 2 == 0 ? nil : 0 }
+            let before = RowHeights(
+                (0..<oldCount).map { CGFloat($0 + 1) }, customSpacings: (0..<oldCount).map(oldSpacing), spacing: 1)
+            var asked: [String] = []
+            let after = before.applying(
+                map,
+                height: { row in
+                    asked.append("h\(row)")
+                    return CGFloat(1000 + row)
+                },
+                spacing: { row in
+                    asked.append("g\(row)")
+                    return newSpacing(row)
+                })
             let expectedAsked = model.rows.indices.filter { model.rows[$0].old == nil || model.rows[$0].noted }
-            if asked != expectedAsked { return "applying asked \(asked), expected \(expectedAsked)" }
+            if asked != expectedAsked.flatMap({ ["h\($0)", "g\($0)"] }) {
+                return "applying asked \(asked), expected \(expectedAsked), each height then spacing"
+            }
             let expectedHeights = model.rows.enumerated().map { row, entry in
                 entry.old.map { entry.noted ? CGFloat(1000 + row) : CGFloat($0 + 1) } ?? CGFloat(1000 + row)
             }
-            if after.values != expectedHeights || after.spacing != 1 { return "applying gave \(after.values)" }
-            // Its geometry is the new heights' own, however much of the old
-            // index it kept: every top against a running sum.
-            var top: CGFloat = 0
-            for row in 0...expectedHeights.count {
-                if after.top(ofRow: row) != top { return "applying: top of row \(row) is \(after.top(ofRow: row))" }
-                if row < expectedHeights.count { top += expectedHeights[row] + 1 }
+            let expectedSpacings = model.rows.enumerated().map { row, entry in
+                (entry.old.map { entry.noted ? newSpacing(row) : oldSpacing($0) } ?? newSpacing(row)) ?? 1
             }
+            if after.values != expectedHeights || after.spacing != 1 { return "applying gave \(after.values)" }
+            for row in expectedSpacings.indices where after.spacing(aboveRow: row) != expectedSpacings[row] {
+                return "applying: spacing above row \(row) is \(after.spacing(aboveRow: row))"
+            }
+            // Its geometry is the new rows' own, however much of the old index
+            // it kept: every top against a running sum.
+            var bottom: CGFloat = 0
+            for row in expectedHeights.indices {
+                let top = row == 0 ? 0 : bottom + expectedSpacings[row]
+                if after.top(ofRow: row) != top { return "applying: top of row \(row) is \(after.top(ofRow: row))" }
+                bottom = top + expectedHeights[row]
+            }
+            if after.contentHeight != bottom { return "applying: content height \(after.contentHeight)" }
             return nil
         }
 

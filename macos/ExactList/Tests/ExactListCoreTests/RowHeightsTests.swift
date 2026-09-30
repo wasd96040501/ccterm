@@ -16,17 +16,21 @@ final class RowHeightsTests: XCTestCase {
         }
 
         func check(
-            _ rows: RowHeights, _ heights: [CGFloat], _ spacing: CGFloat, _ rng: inout SeededGenerator
+            _ rows: RowHeights, _ heights: [CGFloat], _ customs: [CGFloat?], _ spacing: CGFloat,
+            _ rng: inout SeededGenerator
         )
             -> String?
         {
-            let tops = ReferenceGeometry.tops(heights: heights, spacing: spacing)
-            let total = ReferenceGeometry.contentHeight(heights: heights, spacing: spacing)
+            let tops = ReferenceGeometry.tops(heights: heights, spacing: spacing, customs: customs)
+            let total = ReferenceGeometry.contentHeight(heights: heights, spacing: spacing, customs: customs)
             let bottoms = zip(tops, heights).map { $0 + $1 }
             if rows.count != heights.count { return "count \(rows.count) != \(heights.count)" }
             if rows.values != heights { return "values differ" }
             for row in heights.indices {
                 if rows[row] != heights[row] { return "h(\(row)) = \(rows[row]), expected \(heights[row])" }
+                if rows.spacing(aboveRow: row) != customs[row] ?? spacing {
+                    return "g(\(row)) = \(rows.spacing(aboveRow: row)), expected \(customs[row] ?? spacing)"
+                }
                 if abs(rows.top(ofRow: row) - tops[row]) > 1e-6 * max(1, total) {
                     return "y(\(row)) = \(rows.top(ofRow: row)), expected \(tops[row])"
                 }
@@ -75,22 +79,32 @@ final class RowHeightsTests: XCTestCase {
             var rng = SeededGenerator(seed: seed)
             var heights = (0..<Int.random(in: 0...24, using: &rng)).map { _ in quarters(1...400, &rng) }
             var spacing = Bool.random(using: &rng) ? 0 : quarters(0...40, &rng)
-            var rows = RowHeights(heights, spacing: spacing)
-            if let failure = check(rows, heights, spacing, &rng) {
+            // Half the lists mix custom spacings (G7), zero among them, with the default.
+            let mixed = Bool.random(using: &rng)
+            func custom() -> CGFloat? {
+                guard mixed, Bool.random(using: &rng) else { return nil }
+                return Bool.random(using: &rng) ? 0 : quarters(0...80, &rng)
+            }
+            var customs = heights.map { _ in custom() }
+            var rows = RowHeights(heights, customSpacings: customs, spacing: spacing)
+            if let failure = check(rows, heights, customs, spacing, &rng) {
                 return XCTFail("G1 seed \(seed), as built: \(failure)")
             }
             for _ in 0..<3 where !heights.isEmpty {
                 let row = Int.random(in: heights.indices, using: &rng)
                 heights[row] = quarters(1...400, &rng)
                 rows.setHeight(heights[row], ofRow: row)
+                let other = Int.random(in: heights.indices, using: &rng)
+                customs[other] = custom()
+                rows.setSpacing(customs[other], aboveRow: other)
             }
             spacing = quarters(0...40, &rng)
             rows.spacing = spacing
-            if let failure = check(rows, heights, spacing, &rng) {
-                return XCTFail("G1 seed \(seed), after setHeight and spacing: \(failure)")
+            if let failure = check(rows, heights, customs, spacing, &rng) {
+                return XCTFail("G1 seed \(seed), after setHeight, setSpacing and spacing: \(failure)")
             }
-            if rows != RowHeights(heights, spacing: spacing) {
-                return XCTFail("G1 seed \(seed): values with the same heights and spacing differ")
+            if rows != RowHeights(heights, customSpacings: customs, spacing: spacing) {
+                return XCTFail("G1 seed \(seed): values with the same rows and spacing differ")
             }
         }
     }
@@ -239,7 +253,7 @@ final class RowHeightsTests: XCTestCase {
                 map = RowIndexMap(oldCount: rowCount)
                 for edit in edits { map.apply(edit) }
             }
-            let newHeights = heights.applying(map) { _ in 44 }
+            let newHeights = heights.applying(map, height: { _ in 44 }, spacing: { _ in nil })
             let top = heights.top(ofRow: middle)
             let viewport = Viewport(offset: top, height: 600, insetTop: 0, insetBottom: 0)
             let mounted = IndexSet(integersIn: heights.rows(intersecting: top - 600, top + 1200))
@@ -258,6 +272,33 @@ final class RowHeightsTests: XCTestCase {
         let largeBatch = batchTimings(rowCount: 1_000_000)
         XCTAssertLessThan(largeBatch.edits / smallBatch.edits, 25, "G5: a structural call is not O(e + r)")
         XCTAssertLessThan(largeBatch.plan / smallBatch.plan, 25, "G5: planning is not O((e + k + m) · log n)")
+    }
+
+    func testG7_theSpacingAboveARow() throws {
+        // Row 0's spacing is its own and takes no space while it is first.
+        var rows = RowHeights([10, 20], customSpacings: [5, nil], spacing: 3)
+        XCTAssertEqual(rows.top(ofRow: 1), 13)
+        XCTAssertEqual(rows.contentHeight, 33)
+        rows.setSpacing(40, aboveRow: 0)
+        XCTAssertEqual(rows.contentHeight, 33, "row 0's spacing took space")
+        XCTAssertEqual(rows.spacing(aboveRow: 0), 40)
+        // …and holds once a row arrives above it.
+        var map = RowIndexMap(oldCount: 2)
+        map.apply(.insert([0], []))
+        let grown = rows.applying(map, height: { _ in 7 }, spacing: { _ in nil })
+        XCTAssertEqual(grown.top(ofRow: 1), 47, "the old first row starts its own spacing below the new one")
+        XCTAssertEqual(grown.contentHeight, 33 + 7 + 40)
+
+        // A change of the default moves only the rows on it (V3).
+        var mixed = RowHeights([10, 10, 10, 10], customSpacings: [nil, 0, nil, 6], spacing: 2)
+        XCTAssertEqual((0..<4).map { mixed.top(ofRow: $0) }, [0, 10, 22, 38])
+        mixed.spacing = 14
+        XCTAssertEqual((0..<4).map { mixed.top(ofRow: $0) }, [0, 10, 34, 50])
+
+        // A gap belongs to no row, even between rows that are flush elsewhere.
+        XCTAssertEqual(mixed.row(containingY: 10), 1, "a flush row starts where the one above ends")
+        XCTAssertNil(mixed.row(containingY: 25), "a point in a gap is no row's (G4)")
+        XCTAssertEqual(Array(mixed.rows(intersecting: 15, 34)), [1], "a row only touching the end is outside")
     }
 
     func testG6_tolerance() throws {

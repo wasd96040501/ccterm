@@ -1,40 +1,62 @@
 import CoreGraphics
 
-/// Every row's height, the spacing between rows, and the index that answers
+/// Every row's height, the spacing above each row, and the index that answers
 /// geometry queries (SPEC §5).
 ///
-/// Row `i`'s top is `Σ_{k<i} h(k) + i·s` (G1), found through a Fenwick index
-/// over the heights, so a query and a height change are O(log n) (G5). A
-/// structural change copies the heights run by run at commit, once per batch,
-/// and rebuilds the index only from the first row it touches.
+/// Row `i`'s top is `Σ_{k<i} h(k) + Σ_{1≤k≤i} g(k)` (G1), found through a
+/// Fenwick index over each row's height plus the spacing above it (none for
+/// row 0, which has no row above), so a query, a height change and a spacing
+/// change are O(log n) (G5). A structural change copies the rows run by run at
+/// commit, once per batch, and rebuilds the index only from the first row it
+/// touches.
 ///
-/// The spacing is kept apart from the sums, so changing it (V3) touches no
-/// entry.
+/// A row's spacing is its custom one, or `spacing` when it has none (G7).
 public struct RowHeights: Equatable, Sendable {
 
-    /// `s`, the gap between two adjacent rows.
-    public var spacing: CGFloat
+    /// `s`, the default gap: the spacing above every row without a custom one.
+    /// Changing it re-resolves those rows, in one O(n) pass (V3, G5).
+    public var spacing: CGFloat {
+        didSet {
+            if spacing != oldValue { index = FenwickIndex(weights) }
+        }
+    }
 
     private var heights: [CGFloat]
 
+    /// Each row's custom spacing above it; `nil` is `spacing`. It belongs to
+    /// the row wherever the row goes, so row 0 keeps one too.
+    private var customSpacings: [CGFloat?]
+
     private var index: FenwickIndex
 
-    /// Builds the index in O(n). Every height must be finite and > 0 (L12).
-    public init(_ heights: [CGFloat] = [], spacing: CGFloat = 0) {
+    /// Builds the index in O(n). Every height must be finite and > 0, and every
+    /// custom spacing finite and ≥ 0 (L12). No custom spacings means every row
+    /// is `spacing` apart.
+    public init(_ heights: [CGFloat] = [], customSpacings: [CGFloat?]? = nil, spacing: CGFloat = 0) {
         for height in heights {
             precondition(height.isFinite && height > 0, "ExactList: a row height must be finite and > 0 (L12)")
         }
+        let customSpacings = customSpacings ?? Array(repeating: nil, count: heights.count)
+        precondition(customSpacings.count == heights.count, "ExactList: a spacing for every row")
+        for custom in customSpacings { Self.check(custom) }
         self.spacing = spacing
         self.heights = heights
-        self.index = FenwickIndex(heights)
+        self.customSpacings = customSpacings
+        self.index = FenwickIndex([])
+        self.index = FenwickIndex(weights)
     }
 
-    /// Heights already checked, with the index of `base` kept for the first
-    /// `unchanged` rows, which `heights` shares with it.
-    private init(_ heights: [CGFloat], spacing: CGFloat, reusing base: FenwickIndex, unchanged: Int) {
+    /// Rows already checked, with the index of `base` kept for the first
+    /// `unchanged` rows, which these rows share with it.
+    private init(
+        _ heights: [CGFloat], customSpacings: [CGFloat?], spacing: CGFloat, reusing base: FenwickIndex,
+        unchanged: Int
+    ) {
         self.spacing = spacing
         self.heights = heights
-        self.index = FenwickIndex(heights, reusing: base, unchanged: unchanged)
+        self.customSpacings = customSpacings
+        self.index = base
+        self.index = FenwickIndex(weights, reusing: base, unchanged: unchanged)
     }
 
     /// `n`.
@@ -53,22 +75,32 @@ public struct RowHeights: Equatable, Sendable {
         heights
     }
 
-    /// `H`: `Σ h + (n − 1)·s`, or 0 for no rows (G2).
-    public var contentHeight: CGFloat {
-        heights.isEmpty ? 0 : index.prefix(count) + CGFloat(count - 1) * spacing
+    /// `g(row)`: the row's custom spacing, or `spacing` (G7). It is the row's
+    /// own, so row 0 answers one too, which takes no space while it is first.
+    public func spacing(aboveRow row: Int) -> CGFloat {
+        precondition(heights.indices.contains(row), "ExactList: row \(row) out of range 0..<\(count) (L12)")
+        return customSpacings[row] ?? spacing
     }
 
-    /// `y(row)` (G1). O(log n).
+    /// `H`: `Σ h + Σ_{1≤k<n} g(k)`, or 0 for no rows (G2).
+    public var contentHeight: CGFloat {
+        index.prefix(count)
+    }
+
+    /// `y(row)` (G1). O(log n). `y(n)` is where a row after the last would
+    /// start, `spacing` below it.
     public func top(ofRow row: Int) -> CGFloat {
         precondition(row >= 0 && row <= count, "ExactList: row \(row) out of range 0...\(count) (L12)")
-        return index.prefix(row) + CGFloat(row) * spacing
+        if row == 0 { return 0 }
+        if row == count { return index.prefix(count) + spacing }
+        return index.prefix(row) + gap(aboveRow: row)
     }
 
     /// The row whose `[y, y + h)` contains `y`, or `nil` when `y` falls in a
     /// spacing gap or outside the content (G4). O(log n).
     public func row(containingY y: CGFloat) -> Int? {
         let (row, above) = rowsEnding(atOrAbove: y)
-        guard row < count, above + CGFloat(row) * spacing <= y else { return nil }
+        guard row < count, above + gap(aboveRow: row) <= y else { return nil }
         return row
     }
 
@@ -102,31 +134,50 @@ public struct RowHeights: Equatable, Sendable {
         heights[row] = height
     }
 
-    /// The heights after `map` (G5): a surviving or moved row keeps its height
-    /// unless the batch noted it; inserted and noted rows are asked through
-    /// `height`, in ascending new order. O(k · log n) for a batch that
-    /// inserts, removes and moves nothing, after the block copy that writing
-    /// to a value `self` still shares makes; otherwise one O(n) copy, run by
-    /// run, and an index rebuilt only after the leading rows the batch leaves
-    /// alone.
-    public func applying(_ map: RowIndexMap, height: (Int) -> CGFloat) -> RowHeights {
+    /// Changes one row's custom spacing; `nil` is `spacing`. O(log n) (G5, G7).
+    public mutating func setSpacing(_ custom: CGFloat?, aboveRow row: Int) {
+        precondition(heights.indices.contains(row), "ExactList: row \(row) out of range 0..<\(count) (L12)")
+        Self.check(custom)
+        let before = gap(aboveRow: row)
+        customSpacings[row] = custom
+        index.add(gap(aboveRow: row) - before, atRow: row)
+    }
+
+    /// The rows after `map` (G5, G7): a surviving or moved row keeps its height
+    /// and spacing unless the batch noted it; inserted and noted rows are
+    /// asked through `height`, then `spacing`, row by row in ascending new
+    /// order. O(k · log n) for a batch that inserts, removes and moves nothing,
+    /// after the block copy that writing to a value `self` still shares makes;
+    /// otherwise one O(n) copy, run by run, and an index rebuilt only after the
+    /// leading rows the batch leaves alone.
+    public func applying(
+        _ map: RowIndexMap, height: (Int) -> CGFloat, spacing: (Int) -> CGFloat?
+    ) -> RowHeights {
         precondition(map.oldCount == count, "ExactList: a map over \(map.oldCount) rows applied to \(count)")
         var asked = map.notedRows
         guard map.isStructural else {
             var result = self
-            for row in asked { result.setHeight(height(row), ofRow: row) }
+            for row in asked {
+                result.setHeight(height(row), ofRow: row)
+                result.setSpacing(spacing(row), aboveRow: row)
+            }
             return result
         }
         var values: [CGFloat] = []
+        var customs: [CGFloat?] = []
         values.reserveCapacity(map.newCount)
+        customs.reserveCapacity(map.newCount)
         for run in map.runs {
             switch run {
             case .kept(let old, _, let count):
                 values += heights[old..<(old + count)]
+                customs += customSpacings[old..<(old + count)]
             case .moved(let old, _):
                 values.append(heights[old])
+                customs.append(customSpacings[old])
             case .inserted(let new, let count, _):
                 values += repeatElement(0, count: count)
+                customs += repeatElement(nil, count: count)
                 asked.insert(integersIn: new..<(new + count))
             }
         }
@@ -134,52 +185,73 @@ public struct RowHeights: Equatable, Sendable {
             let value = height(row)
             precondition(value.isFinite && value > 0, "ExactList: a row height must be finite and > 0 (L12)")
             values[row] = value
+            let custom = spacing(row)
+            Self.check(custom)
+            customs[row] = custom
         }
         var unchanged = 0
         if case .kept(0, 0, let count) = map.runs.first { unchanged = count }
         if let first = asked.first { unchanged = min(unchanged, first) }
-        return RowHeights(values, spacing: spacing, reusing: index, unchanged: unchanged)
+        return RowHeights(values, customSpacings: customs, spacing: self.spacing, reusing: index, unchanged: unchanged)
     }
 
-    /// How many leading rows end at or above `y`, with the sum of their heights.
+    /// The space row `row` takes above itself in the sums: its spacing, or
+    /// nothing for row 0, which has no row above.
+    private func gap(aboveRow row: Int) -> CGFloat {
+        row == 0 ? 0 : customSpacings[row] ?? spacing
+    }
+
+    /// What the index sums: each row's height plus the space above it, so the
+    /// sum of the first `k` is the bottom of row `k − 1`.
+    private var weights: [CGFloat] {
+        heights.indices.map { heights[$0] + gap(aboveRow: $0) }
+    }
+
+    private static func check(_ custom: CGFloat?) {
+        guard let custom else { return }
+        precondition(custom.isFinite && custom >= 0, "ExactList: a row spacing must be finite and ≥ 0 (L12)")
+    }
+
+    /// How many leading rows end at or above `y`, with the bottom of the last
+    /// of them (0 for none).
     private func rowsEnding(atOrAbove y: CGFloat) -> (count: Int, sum: CGFloat) {
-        index.lift { k, sum in sum + CGFloat(k - 1) * spacing <= y }
+        index.lift { _, sum in sum <= y }
     }
 
     /// How many leading rows start above `y`.
     private func rowsStarting(below y: CGFloat) -> Int {
-        guard count > 0, y > 0 else { return 0 }
-        // Rows 0...k start above `y` exactly when `y(k) < y`, and `y(k)` is the
-        // sum of the first k heights plus k gaps.
-        let k = index.lift { k, sum in sum + CGFloat(k) * spacing < y }.count
-        return min(k + 1, count)
+        // Every row that ends at or above `y` starts above it (heights are > 0);
+        // of the rest, only the first can, since the next starts below its end.
+        let (ended, above) = rowsEnding(atOrAbove: y)
+        guard ended < count else { return ended }
+        return above + gap(aboveRow: ended) < y ? ended + 1 : ended
     }
 
-    /// A 1-based Fenwick tree of partial sums over the heights. It is derived
-    /// from the heights, so it takes no part in equality: two values with the
-    /// same heights are equal however their sums were accumulated.
+    /// A 1-based Fenwick tree of partial sums over the rows' weights. It is
+    /// derived from the rows, so it takes no part in equality: two values with
+    /// the same rows are equal however their sums were accumulated.
     private struct FenwickIndex: Equatable, Sendable {
 
         private var tree: [CGFloat]
 
-        init(_ heights: [CGFloat]) {
-            self.init(heights, reusing: nil, unchanged: 0)
+        init(_ weights: [CGFloat]) {
+            self.init(weights, reusing: nil, unchanged: 0)
         }
 
-        /// The index over `heights`, whose first `unchanged` rows are those of
+        /// The index over `weights`, whose first `unchanged` rows are those of
         /// `base`: node `i` sums rows `(i − lowbit(i), i]`, so the nodes up to
         /// `unchanged` are `base`'s. Each later node is its row plus its
         /// children, added in the order a full build adds them. O(n − unchanged).
-        init(_ heights: [CGFloat], reusing base: FenwickIndex?, unchanged: Int) {
+        init(_ weights: [CGFloat], reusing base: FenwickIndex?, unchanged: Int) {
             var tree = [CGFloat]()
-            tree.reserveCapacity(heights.count + 1)
+            tree.reserveCapacity(weights.count + 1)
             if let base, unchanged > 0 {
                 tree += base.tree[0...unchanged]
             } else {
                 tree.append(0)
             }
-            for i in tree.count..<(heights.count + 1) {
-                var sum = heights[i - 1]
+            for i in tree.count..<(weights.count + 1) {
+                var sum = weights[i - 1]
                 var step = (i & -i) / 2
                 while step > 0 {
                     sum += tree[i - step]
@@ -194,7 +266,7 @@ public struct RowHeights: Equatable, Sendable {
             true
         }
 
-        /// The sum of the first `k` heights.
+        /// The sum of the first `k` weights.
         func prefix(_ k: Int) -> CGFloat {
             var sum: CGFloat = 0
             var i = k
@@ -213,7 +285,7 @@ public struct RowHeights: Equatable, Sendable {
             }
         }
 
-        /// The largest `k` for which `accepts(k, sum of the first k heights)`,
+        /// The largest `k` for which `accepts(k, sum of the first k weights)`,
         /// found by binary lifting. `accepts` must hold for a prefix of `1...n`.
         func lift(_ accepts: (Int, CGFloat) -> Bool) -> (count: Int, sum: CGFloat) {
             let n = tree.count - 1

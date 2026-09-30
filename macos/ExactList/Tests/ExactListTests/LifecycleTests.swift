@@ -103,9 +103,13 @@ final class LifecycleTests: XCTestCase {
 
         let width = try expectedWidth(of: list)
         let n = heights.count
-        XCTAssertGreaterThan(host.calls.count, n + 1)
+        // Each row's height, then its spacing (G7): `measured` calls in all.
+        let measured = 2 * n
+        XCTAssertGreaterThan(host.calls.count, measured + 1)
         XCTAssertEqual(host.calls[0], .numberOfRows)
-        XCTAssertEqual(Array(host.calls[1...n]), (0..<n).map { .heightOfRow($0, width: width) })
+        XCTAssertEqual(
+            Array(host.calls[1...measured]),
+            (0..<n).flatMap { [.heightOfRow($0, width: width), .customSpacingAboveRow($0)] })
 
         // At the top, with no insets: `P` is [−q, V + q], q = V / 2, and `U`'s
         // height is `V`.
@@ -115,14 +119,14 @@ final class LifecycleTests: XCTestCase {
             Set(frames.indices.filter { frames[$0].maxY > top && frames[$0].minY < bottom })
         }
         let inP = rows(from: -viewport / 2, to: viewport * 1.5)
-        let atLoad = host.calls[(n + 1)..<(n + 1 + inP.count)]
+        let atLoad = host.calls[(measured + 1)..<(measured + 1 + inP.count)]
         XCTAssertEqual(Set(atLoad.compactMap(viewRow)), inP, "the load asks for views for exactly the rows in P")
 
         let prepared = try XCTUnwrap(internalScrollView(of: list).documentView).preparedContentRect
         let overdraw = rows(
             from: max(prepared.minY, -viewport * 1.5), to: min(prepared.maxY, viewport * 2.5))
-        let asked = host.calls[(n + 1)...].compactMap(viewRow)
-        XCTAssertEqual(asked.count, host.calls.count - n - 1, "after the heights, only views are asked for")
+        let asked = host.calls[(measured + 1)...].compactMap(viewRow)
+        XCTAssertEqual(asked.count, host.calls.count - measured - 1, "after the heights, only views are asked for")
         XCTAssertEqual(asked.count, Set(asked).count, "each row once")
         XCTAssertEqual(Set(asked), inP.union(overdraw), "P, and AppKit's prepared rect \(prepared), nothing else")
     }

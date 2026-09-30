@@ -4,14 +4,18 @@ import CoreGraphics
 /// the test itself produced. It shares no code with `RowHeights`.
 public enum ReferenceLayout {
 
-    /// Every row's frame in document coordinates: a left-to-right running sum.
-    public static func frames(heights: [CGFloat], spacing: CGFloat, width: CGFloat) -> [CGRect] {
+    /// Every row's frame in document coordinates: a left-to-right running sum,
+    /// each row its own spacing (`customs`, G7) below the one before.
+    public static func frames(
+        heights: [CGFloat], spacing: CGFloat, width: CGFloat, customs: [CGFloat?]? = nil
+    ) -> [CGRect] {
         var frames: [CGRect] = []
         frames.reserveCapacity(heights.count)
-        var y: CGFloat = 0
-        for height in heights {
-            frames.append(CGRect(x: 0, y: y, width: width, height: height))
-            y += height + spacing
+        var bottom: CGFloat = 0
+        for (row, height) in heights.enumerated() {
+            let top = row == 0 ? 0 : bottom + (customs?[row] ?? spacing)
+            frames.append(CGRect(x: 0, y: top, width: width, height: height))
+            bottom = top + height
         }
         return frames
     }

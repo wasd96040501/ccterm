@@ -210,6 +210,7 @@ final class ContextMenuTests: XCTestCase {
         func blockView(_ view: BlockView, menu: NSMenu, for event: NSEvent) -> NSMenu? {
             answer(menu)
         }
+        func blockViewDidChangeWidth(_ view: BlockView) {}
     }
 
     // MARK: - The transcript's wiring
@@ -267,7 +268,7 @@ final class ContextMenuTests: XCTestCase {
         // The last one on screen, so a wiring that always reported row 0 — or the
         // index captured when the view was built rather than the current one —
         // would show up.
-        let cell = try XCTUnwrap(cells.last)
+        let cell = try XCTUnwrap(cells.max { mounted.transcript.row(for: $0) < mounted.transcript.row(for: $1) })
         let row = mounted.transcript.row(for: cell)
         XCTAssertGreaterThan(row, 0)
 

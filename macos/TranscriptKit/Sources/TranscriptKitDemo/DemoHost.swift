@@ -79,11 +79,11 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
         // The removal is expressed in post-insert indices, so it needs three
         // rows to exist below the five going in.
         guard messages.count >= 8 else { return }
-        transcript?.beginUpdates()
-        prepend(5)
-        messages.removeSubrange(10..<13)
-        transcript?.removeRows(at: IndexSet(10..<13))
-        transcript?.endUpdates()
+        transcript?.performBatchUpdates {
+            prepend(5)
+            messages.removeSubrange(10..<13)
+            transcript?.removeRows(at: IndexSet(10..<13))
+        }
         reportRowCount()
     }
 

@@ -172,6 +172,78 @@ final class MainWindowTests: XCTestCase {
         XCTAssertEqual(stage.window.title, "ccterm")
     }
 
+    /// A document belongs to its transcript's session, so while it is the
+    /// active tab the title keeps that transcript's project — Xcode keeps the
+    /// project when the assistant editor has focus.
+    func testADocumentKeepsItsTranscriptsTitle() async throws {
+        let fixture = try SessionDirectoryFixture()
+        defer { fixture.remove() }
+        try LibraryStoreTests.writeLibrary(fixture)
+        try fixture.write(
+            "-x-repo/s1.jsonl", [Self.user(cwd: "/x/repo", branch: "feature"), Rows.customTitle("Named")],
+            modified: 300)
+        let library = try await Self.startedLibrary(fixture)
+        defer { library.stop() }
+        let stage = AppKitStage.mainWindow(library: library)
+        defer { stage.teardown() }
+        await stage.settle()
+        let split = try XCTUnwrap(stage.mainSplit)
+        let sidebar = try sidebar(of: split)
+        let title = try titleView(in: stage)
+        sidebar.delegate?.sidebarViewController(sidebar, didOpen: try Self.node("Named", in: library))
+        await expect(title, shows: "repo", "feature")
+        let transcript = try XCTUnwrap(split.editorArea.activeViewController as? TranscriptViewController)
+
+        let document = Document(
+            reference: DocumentReference(transcriptURL: transcript.fileURL, id: "c1"),
+            content: .compactionSummary("Summary"), workingDirectory: nil)
+        split.transcriptViewController(transcript, open: document, pinned: false)
+        await stage.settle()
+        XCTAssertTrue(
+            split.editorArea.activeViewController is DocumentViewController, "the document's editor is active")
+        XCTAssertFalse(title.isHidden, "the title left with the transcript's editor")
+        await expect(title, shows: "repo", "feature")
+    }
+
+    /// A document the reader opens from the transcript takes the focus, so ⌘W
+    /// — the close-tab action, sent up the responder chain as the menu sends
+    /// it — closes the document and leaves the transcript.
+    func testAnOpenedDocumentTakesTheFocusAndCloseTabClosesIt() async throws {
+        let fixture = try SessionDirectoryFixture()
+        defer { fixture.remove() }
+        try LibraryStoreTests.writeLibrary(fixture)
+        try fixture.write(
+            "-x-repo/s1.jsonl", [Self.user(cwd: "/x/repo", branch: "main"), Rows.customTitle("Named")], modified: 300)
+        let library = try await Self.startedLibrary(fixture)
+        defer { library.stop() }
+        let stage = AppKitStage.mainWindow(library: library)
+        defer { stage.teardown() }
+        await stage.settle()
+        let split = try XCTUnwrap(stage.mainSplit)
+        let sidebar = try sidebar(of: split)
+        sidebar.delegate?.sidebarViewController(sidebar, didOpen: try Self.node("Named", in: library))
+        await stage.settle()
+        let transcript = try XCTUnwrap(split.editorArea.activeViewController as? TranscriptViewController)
+        let window = try XCTUnwrap(transcript.view.window)
+        let list = try XCTUnwrap(stage.find(NSScrollView.self, in: transcript.view)?.documentView)
+        XCTAssertTrue(window.makeFirstResponder(list), "premise: the reader is in the transcript")
+
+        let document = Document(
+            reference: DocumentReference(transcriptURL: transcript.fileURL, id: "c1"),
+            content: .compactionSummary("Summary"), workingDirectory: nil)
+        split.transcriptViewController(transcript, open: document, pinned: false)
+        await stage.settle()
+        let opened = try XCTUnwrap(split.editorArea.activeViewController as? DocumentViewController)
+        let responder = try XCTUnwrap(window.firstResponder as? NSView, "nothing has the focus")
+        XCTAssertTrue(responder.isDescendant(of: opened.view), "the focus stayed with the transcript")
+
+        XCTAssertTrue(responder.tryToPerform(#selector(EditorAreaViewController.closeTab(_:)), with: nil))
+        await stage.settle()
+        let tabs = split.editorArea.groups.flatMap(\.tabViewItems).map(\.viewController)
+        XCTAssertFalse(tabs.contains { $0 is DocumentViewController }, "the document is still open")
+        XCTAssertTrue(tabs.contains { $0 === transcript }, "⌘W closed the transcript")
+    }
+
     /// The CLI records a detached HEAD as "HEAD": no branch under the name.
     func testARecordedDetachedHeadShowsNoBranch() async throws {
         let fixture = try SessionDirectoryFixture()

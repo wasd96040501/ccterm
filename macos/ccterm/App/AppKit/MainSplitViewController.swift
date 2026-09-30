@@ -90,9 +90,92 @@ final class MainSplitViewController: NSSplitViewController {
         let transcript = TranscriptViewController(fileURL: url, title: node.title) { [library] in
             try await library.transcript(at: $0)
         }
+        transcript.delegate = self
         let item = NSTabViewItem(viewController: transcript)
         item.identifier = url
         return item
+    }
+
+    /// A tab for a document beside a transcript, known to the history by its
+    /// reference. `document` is what the reader just opened; a tab made again
+    /// from history reads it from the transcript.
+    private func tab(for reference: DocumentReference, document: Document? = nil) -> NSTabViewItem {
+        let controller = DocumentViewController(
+            reference: reference, document: document,
+            loadTranscript: { [library] in try await library.transcript(at: $0) },
+            makeConversation: { [library, weak self] url, title in
+                let conversation = TranscriptViewController(fileURL: url, title: title) {
+                    try await library.transcript(at: $0)
+                }
+                conversation.delegate = self
+                return conversation
+            })
+        controller.delegate = self
+        let item = NSTabViewItem(viewController: controller)
+        item.identifier = reference
+        return item
+    }
+
+    /// The editor whose tab holds `viewController`, or one of its ancestors —
+    /// a subagent's conversation sits inside its document's tab.
+    private func group(containing viewController: NSViewController) -> EditorGroupViewController? {
+        var candidate: NSViewController? = viewController
+        while let current = candidate {
+            if let group = editorArea.groups.first(where: { $0.tabViewItems.contains { $0.viewController === current } }
+            ) {
+                return group
+            }
+            candidate = current.parent
+        }
+        return nil
+    }
+
+    /// The open transcript tab for `url`, and the editor it is in.
+    private func transcriptTab(for url: URL) -> TranscriptViewController? {
+        editorArea.groups.lazy.flatMap(\.tabViewItems)
+            .compactMap { $0.viewController as? TranscriptViewController }
+            .first { $0.fileURL == url }
+    }
+
+    /// The open tab for `reference`'s document, in whichever editor it is.
+    private func documentTab(for reference: DocumentReference) -> DocumentViewController? {
+        editorArea.groups.lazy.flatMap(\.tabViewItems)
+            .first { ($0.identifier as? DocumentReference) == reference }?.viewController as? DocumentViewController
+    }
+}
+
+extension MainSplitViewController: TranscriptViewControllerDelegate {
+    /// Opens a document in the *other* editor as its temporary tab — splitting
+    /// the area on the first — so clicking down a list replaces one tab where
+    /// it stands; `pinned` opens it in a tab that stays. A document already
+    /// open is brought forward where it is. Either way the focus goes to it,
+    /// so the window's commands (⌘W) aim at what the reader just opened.
+    func transcriptViewController(_ transcript: TranscriptViewController, open document: Document, pinned: Bool) {
+        let reference = document.reference
+        if !editorArea.selectTabViewItem(withIdentifier: reference, pinning: pinned) {
+            let item = tab(for: reference, document: document)
+            let source = group(containing: transcript)
+            if let other = editorArea.groups.first(where: { $0 !== source }) {
+                if pinned { other.addTabViewItem(item) } else { other.previewTabViewItem = item }
+            } else if let other = editorArea.addGroup(with: item), !pinned {
+                other.previewTabViewItem = item
+            }
+        }
+        documentTab(for: reference)?.takeFocus()
+    }
+}
+
+extension MainSplitViewController: DocumentViewControllerDelegate {
+    /// Brings the transcript's tab forward and the item back into view in it.
+    func documentViewController(_ document: DocumentViewController, showInTranscript reference: DocumentReference) {
+        guard let transcript = transcriptTab(for: reference.transcriptURL) else {
+            appLog(
+                .info, "MainSplitViewController",
+                "Show in Transcript: \(reference.transcriptURL.lastPathComponent) is not open")
+            return
+        }
+        editorArea.selectTabViewItem(withIdentifier: reference.transcriptURL)
+        transcript.reveal(reference.id, select: true)
     }
 }
 
@@ -111,8 +194,14 @@ extension MainSplitViewController: SidebarViewControllerDelegate {
 
 extension MainSplitViewController: EditorAreaViewControllerDelegate {
     /// Tells the window when the reader is in another transcript, or in none.
+    /// A document is in its transcript's session.
     func editorArea(_ editorArea: EditorAreaViewController, didActivate viewController: NSViewController?) {
-        let transcript = (viewController as? TranscriptViewController)?.fileURL
+        let transcript: URL? =
+            switch viewController {
+            case let transcript as TranscriptViewController: transcript.fileURL
+            case let document as DocumentViewController: document.transcriptURL
+            default: nil
+            }
         guard transcript != shownTranscript else { return }
         shownTranscript = transcript
         delegate?.mainSplitViewController(self, didShowTranscriptAt: transcript)
@@ -123,12 +212,17 @@ extension MainSplitViewController: EditorAreaViewControllerDelegate {
     func editorArea(
         _ editorArea: EditorAreaViewController, tabViewItemWithIdentifier identifier: Any
     ) -> NSTabViewItem? {
+        if let reference = identifier as? DocumentReference { return tab(for: reference) }
         guard let url = identifier as? URL, let node = library.path(toTranscriptAt: url).last else { return nil }
         return tab(for: node, at: url)
     }
 
     func editorArea(_ editorArea: EditorAreaViewController, willClose viewController: NSViewController) {
-        (viewController as? TranscriptViewController)?.prepareForRemoval()
+        // A document's body may be a subagent's conversation, made here.
+        for controller in [viewController] + viewController.children {
+            (controller as? TranscriptViewController)?.prepareForRemoval()
+            (controller as? DocumentViewController)?.prepareForRemoval()
+        }
     }
 
     /// A transcript dragged from the sidebar, by its URL — the tab comes from

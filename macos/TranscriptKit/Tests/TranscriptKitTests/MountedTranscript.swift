@@ -43,9 +43,9 @@ final class MountedTranscript {
     ///
     /// One round is enough for everything the transcript does *inside* the pass
     /// that provoked it, which is everything except one thing: a width change
-    /// re-measures the rows off screen on a background task and publishes them on
-    /// a later turn, so a test that changed the width and wants the whole
-    /// transcript settled uses `settleWidthChange()` instead. Reaching for
+    /// leaves the rows off screen to later turns, so a test that changed the
+    /// width and wants the whole transcript settled uses `settleWidthChange()`
+    /// instead. Reaching for
     /// `passes: 2` anywhere else means work moved onto a later tick — a visible
     /// frame at the old geometry, not a test detail.
     ///
@@ -60,19 +60,19 @@ final class MountedTranscript {
     }
 
     /// Settles, then waits for the off-main re-measure a width change starts, then
-    /// settles again.
+    /// gives the list the idle turns it refreshes stale rows on.
     ///
     /// The `Task` is ordinary production state — the transcript holds it to cancel
-    /// a superseded batch — so this waits on the real thing rather than polling or
+    /// a superseded run — so this waits on the real thing rather than polling or
     /// sleeping, and there is no seam here that exists for the test.
     ///
-    /// Two settles because the batch is started by the first pass and its result
-    /// is published into the second. A test that wants to look *during* the window
-    /// calls `settle()` and does not call this.
+    /// One turn per row, plus one, because that is the bound the list promises:
+    /// every idle turn refreshes at least one stale row (ExactList W5). A test
+    /// that wants to look *during* the window calls `settle()` and not this.
     func settleWidthChange() async {
         settle()
         await transcript.remeasuring?.value
-        settle()
+        settle(passes: transcript.numberOfRows + 1)
     }
 
     /// Settles, then waits for the walk `find(_:)` starts, then settles again.
@@ -124,6 +124,12 @@ final class MountedTranscript {
     /// was not tracked would stay in it and be pulled by the next test's press —
     /// which then selects with another test's pointer. So the press asserts that
     /// its gesture was used up, which is where such a failure has to be named.
+    /// Row `row`'s rectangle in the scrolled document, the space an offset is
+    /// measured in: `rect(ofRow:)` with the scroll offset taken back out.
+    func documentRect(ofRow row: Int) -> NSRect {
+        transcript.rect(ofRow: row).offsetBy(dx: 0, dy: scrollView.contentView.bounds.minY)
+    }
+
     func press(
         _ view: NSView, with down: NSEvent, then rest: [NSEvent] = [],
         file: StaticString = #filePath, line: UInt = #line
@@ -158,9 +164,11 @@ final class MountedTranscript {
     /// `copy(_:)`, asked the way AppKit asks it.
     var canCopy: Bool {
         let item = NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        guard let responder = window.firstResponder, responder.responds(to: item.action) else {
-            return false
-        }
+        // The responder that answers is found the way AppKit finds a nil-targeted
+        // action's: up the chain from the first responder.
+        var responder = window.firstResponder
+        while let current = responder, !current.responds(to: item.action) { responder = current.nextResponder }
+        guard let responder else { return false }
         return (responder as? NSUserInterfaceValidations)?.validateUserInterfaceItem(item) ?? true
     }
 

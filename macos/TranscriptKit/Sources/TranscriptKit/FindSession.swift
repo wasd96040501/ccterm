@@ -1,4 +1,5 @@
 import AppKit
+import ExactList
 
 /// A find over the transcript: its state, the walk that fills it in, and its
 /// presentation.
@@ -16,7 +17,7 @@ final class FindSession {
 
     /// A find's presentation — the dimming, the lit matches, the current one's
     /// bubble. Mounted by the transcript, once, as a floating subview of its
-    /// scroll view, and hidden while no find is up. See `FindOverlayView`.
+    /// list (`addFloatingSubview`), and hidden while no find is up. See `FindOverlayView`.
     let overlay: FindOverlayView = {
         let overlay = FindOverlayView()
         overlay.isHidden = true
@@ -25,21 +26,21 @@ final class FindSession {
 
     private weak var owner: FindSessionOwner?
     private let rowCache: RowCache
-    private let tableView: NSTableView
-    private let scrollView: NSScrollView
+    private let list: ExactListView
 
     init(
-        owner: FindSessionOwner, rowCache: RowCache, tableView: NSTableView,
-        scrollView: NSScrollView
+        owner: FindSessionOwner, rowCache: RowCache, list: ExactListView
     ) {
         self.owner = owner
         self.rowCache = rowCache
-        self.tableView = tableView
-        self.scrollView = scrollView
+        self.list = list
         overlay.rows = { [weak self] in self?.findRowsOnScreen() ?? [] }
     }
 
-    private var numberOfRows: Int { tableView.numberOfRows }
+    private var numberOfRows: Int { list.numberOfRows }
+
+    /// Whether a find is up.
+    var isFinding: Bool { find != nil }
 
     private var contentWidth: CGFloat { owner?.contentWidth ?? 0 }
 
@@ -415,13 +416,11 @@ final class FindSession {
 
     /// The topmost row the reader can see — where a fresh find starts looking.
     ///
-    /// The table's own answer rather than a tracked one, and it is allowed to be
+    /// The list's own answer rather than a tracked one, and it is allowed to be
     /// approximate: a row half under the top inset counts as visible, which is the
-    /// forgiving direction. `NSNotFound` is a viewport with no rows in it, which a
-    /// transcript that has not laid out yet reports.
+    /// forgiving direction. A list that has not loaded answers no rows.
     private var firstVisibleRow: Int {
-        let visible = tableView.rows(in: tableView.visibleRect)
-        return visible.location == NSNotFound ? 0 : max(0, visible.location)
+        list.rows(in: list.bounds).first ?? 0
     }
 
     /// Tells the delegate where the find has got to.
@@ -521,9 +520,8 @@ final class FindSession {
         setNeedsFindLayout()
     }
 
-    /// Keeps the overlay over what is on screen: the clip's bounds, which are in
-    /// the document's coordinates and so in the overlay's, with half a screen to
-    /// spare either way.
+    /// Keeps the overlay over what is on screen: the list's bounds, converted
+    /// into the overlay's space, with half a screen to spare either way.
     ///
     /// The overlay moves with the document on its own — AppKit carries a floating
     /// subview through a scroll the way it carries the rows — so this is not what
@@ -536,8 +534,11 @@ final class FindSession {
     /// the overlay is not laid out — and its shade not redrawn — once per wheel
     /// event for nothing.
     func placeFindOverlay() {
-        guard find != nil else { return }
-        let visible = scrollView.contentView.bounds
+        guard find != nil, let superview = overlay.superview else { return }
+        // The overlay's superview is AppKit's floating container, which rides
+        // with the document vertically; converting from the list is what keeps
+        // this true whatever that container's own coordinates are.
+        let visible = superview.convert(list.bounds, from: list)
         guard !overlay.frame.contains(visible) || overlay.frame.width != visible.width
         else { return }
         overlay.frame = visible.insetBy(dx: 0, dy: -visible.height / 2)
@@ -558,9 +559,8 @@ final class FindSession {
     private func findRowsOnScreen() -> [FindOverlayView.Row] {
         guard let find, let owner else { return [] }
         var rows: [FindOverlayView.Row] = []
-        tableView.enumerateAvailableRowViews { rowView, row in
-            guard let cell = rowView.view(atColumn: 0) as? TranscriptCellView,
-                let view = cell.hostedView as? NSView & TranscriptFindHighlighting,
+        list.enumerateAvailableRowViews { cell, row in
+            guard let view = (cell as? TranscriptCellView)?.hostedView as? NSView & TranscriptFindHighlighting,
                 let described = owner.row(at: row)
             else { return }
             guard let filed = find.matches[described.id], filed.content == described.content

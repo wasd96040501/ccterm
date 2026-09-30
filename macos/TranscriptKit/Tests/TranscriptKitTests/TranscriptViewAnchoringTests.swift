@@ -10,7 +10,8 @@ import XCTest
 /// needed a settle would be reporting a frame drawn at the old offset.
 ///
 /// Uniform 40pt rows, 14 apart, in a 720pt viewport, so "held still" is an exact
-/// number: a row costs 54, 100 rows are 5400 tall, and row 50's top edge is at
+/// number: a row and the gap after it cost 54, 100 rows are 5386 tall (no gap
+/// after the last), and row 50's top edge is at
 /// 2700.
 @MainActor
 final class TranscriptViewAnchoringTests: XCTestCase {
@@ -44,7 +45,7 @@ final class TranscriptViewAnchoringTests: XCTestCase {
     private func scrollRow50ToTop(_ mounted: MountedTranscript) {
         mounted.scroll(toY: 2700)
         mounted.settle()
-        XCTAssertEqual(mounted.transcript.rect(ofRow: 50).minY, 2700, "mount never placed rows")
+        XCTAssertEqual(mounted.documentRect(ofRow: 50).minY, 2700, "mount never placed rows")
         XCTAssertEqual(offset(mounted), 2700)
     }
 
@@ -59,7 +60,7 @@ final class TranscriptViewAnchoringTests: XCTestCase {
         mounted.transcript.insertRows(at: IndexSet(0..<5))
 
         // The same content is at the top of the viewport; it is row 55 now.
-        XCTAssertEqual(mounted.transcript.rect(ofRow: 55).minY, 2970)
+        XCTAssertEqual(mounted.documentRect(ofRow: 55).minY, 2970)
         XCTAssertEqual(offset(mounted), 2970, "content shifted under the reader")
     }
 
@@ -71,7 +72,7 @@ final class TranscriptViewAnchoringTests: XCTestCase {
         host.removeRows(at: IndexSet(0..<5))
         mounted.transcript.removeRows(at: IndexSet(0..<5))
 
-        XCTAssertEqual(mounted.transcript.rect(ofRow: 45).minY, 2430)
+        XCTAssertEqual(mounted.documentRect(ofRow: 45).minY, 2430)
         XCTAssertEqual(offset(mounted), 2430, "content shifted under the reader")
     }
 
@@ -83,7 +84,7 @@ final class TranscriptViewAnchoringTests: XCTestCase {
         host.setHeight(140, forRow: 0)
         mounted.transcript.noteHeightOfRows(withIndexesChanged: IndexSet(integer: 0))
 
-        XCTAssertEqual(mounted.transcript.rect(ofRow: 50).minY, 2800)
+        XCTAssertEqual(mounted.documentRect(ofRow: 50).minY, 2800)
         XCTAssertEqual(offset(mounted), 2800, "content shifted under the reader")
     }
 
@@ -129,16 +130,16 @@ final class TranscriptViewAnchoringTests: XCTestCase {
     func testAppendingWhileAtTheTailFollowsIt() throws {
         let (mounted, host) = mount()
         defer { mounted.teardown() }
-        mounted.scroll(toY: 5400 - 720)
+        mounted.scroll(toY: 5386 - 720)
         mounted.settle()
-        XCTAssertEqual(offset(mounted), 4680, "mount never placed rows")
+        XCTAssertEqual(offset(mounted), 4666, "mount never placed rows")
 
         host.insertRows(1, at: 100)
         mounted.transcript.insertRows(at: IndexSet(integer: 100))
 
-        // 5454 tall now, so the end of the scroll moved down by exactly the row
+        // 5440 tall now, so the end of the scroll moved down by exactly the row
         // and the gap that came with it.
-        XCTAssertEqual(offset(mounted), 4734, "the tail was not followed")
+        XCTAssertEqual(offset(mounted), 4720, "the tail was not followed")
     }
 
     func testAppendingWhileInTheMiddleMovesNothing() throws {
@@ -158,18 +159,19 @@ final class TranscriptViewAnchoringTests: XCTestCase {
     func testScrollingToTheEndReEngagesTailFollowing() throws {
         let (mounted, host) = mount()
         defer { mounted.teardown() }
-        XCTAssertEqual(mounted.transcript.rect(ofRow: 50).minY, 2700, "mount never placed rows")
-        XCTAssertEqual(offset(mounted), 0, "a cold mount of 100 rows starts at the top")
+        XCTAssertEqual(mounted.documentRect(ofRow: 50).minY, 2700, "mount never placed rows")
+        mounted.scroll(toY: 0)
+        XCTAssertEqual(offset(mounted), 0, "premise: away from the tail")
 
         host.insertRows(1, at: 100)
         mounted.transcript.insertRows(at: IndexSet(integer: 100))
         XCTAssertEqual(offset(mounted), 0, "not at the end, so nothing should have followed")
 
-        mounted.scroll(toY: 5454 - 720)
+        mounted.scroll(toY: 5440 - 720)
         host.insertRows(1, at: 101)
         mounted.transcript.insertRows(at: IndexSet(integer: 101))
 
-        XCTAssertEqual(offset(mounted), 5508 - 720, "the tail was not followed")
+        XCTAssertEqual(offset(mounted), 5494 - 720, "the tail was not followed")
     }
 
     /// A transcript shorter than its viewport is at both ends of the scroll at
@@ -182,7 +184,7 @@ final class TranscriptViewAnchoringTests: XCTestCase {
         mounted.transcript.delegate = host
         mounted.transcript.reloadData()
         mounted.settle()
-        XCTAssertEqual(mounted.transcript.rect(ofRow: 2).minY, 108, "mount never placed rows")
+        XCTAssertEqual(mounted.documentRect(ofRow: 2).minY, 108, "mount never placed rows")
 
         host.insertRows(1, at: 3)
         mounted.transcript.insertRows(at: IndexSet(integer: 3))
@@ -203,35 +205,66 @@ final class TranscriptViewAnchoringTests: XCTestCase {
         defer { mounted.teardown() }
         scrollRow50ToTop(mounted)
 
-        mounted.transcript.beginUpdates()
-        host.insertRows(5, at: 0)
-        mounted.transcript.insertRows(at: IndexSet(0..<5))
-        host.removeRows(at: IndexSet(10..<13))
-        mounted.transcript.removeRows(at: IndexSet(10..<13))
-        mounted.transcript.endUpdates()
+        mounted.transcript.performBatchUpdates {
+            host.insertRows(5, at: 0)
+            mounted.transcript.insertRows(at: IndexSet(0..<5))
+            host.removeRows(at: IndexSet(10..<13))
+            mounted.transcript.removeRows(at: IndexSet(10..<13))
+        }
 
         XCTAssertEqual(mounted.transcript.numberOfRows, 102)
-        XCTAssertEqual(mounted.transcript.rect(ofRow: 52).minY, 2808)
+        XCTAssertEqual(mounted.documentRect(ofRow: 52).minY, 2808)
         XCTAssertEqual(offset(mounted), 2808, "content shifted under the reader")
+    }
+
+    /// A host opening every list at once: rows inserted after every sixth row,
+    /// each of those rows reloaded, above, at and below the viewport, in one
+    /// group. Near the end, the top row's new place is past the end of the
+    /// content as it was — it still lands there, not where the old content
+    /// stopped.
+    func testABatchGrowingTheContentPastItsOldEndHoldsTheTopRowStill() throws {
+        let (mounted, host) = mount()
+        defer { mounted.teardown() }
+        mounted.scroll(toY: 85 * 54)
+        mounted.settle()
+        XCTAssertEqual(offset(mounted), 85 * 54, "premise: row 85 is at the top")
+
+        var anchor = 85
+        mounted.transcript.performBatchUpdates {
+            var row = 0
+            while row < host.numberOfRows(in: mounted.transcript) {
+                host.insertRows(4, at: row + 1, height: 24)
+                mounted.transcript.insertRows(at: IndexSet(row + 1..<row + 5))
+                mounted.transcript.reloadRows(at: IndexSet(integer: row))
+                if row < anchor { anchor += 4 }
+                row += 6
+            }
+        }
+
+        XCTAssertGreaterThan(
+            mounted.documentRect(ofRow: anchor).minY, 100 * 54 - 720,
+            "premise: the row's new place is past the old end")
+        XCTAssertEqual(offset(mounted), mounted.documentRect(ofRow: anchor).minY, "content shifted under the reader")
     }
 
     // MARK: - The anchor row itself
 
     /// Nothing to hold still: what was at the top of the viewport is gone. The
-    /// next surviving row takes its place there, which drops the part of the old
-    /// row that was scrolled past.
+    /// next surviving row holds its own place on screen (ExactList A5).
     func testRemovingTheAnchorRowSnapsToTheNextSurvivor() throws {
         let (mounted, host) = mount()
         defer { mounted.teardown() }
         mounted.scroll(toY: 2710)
         mounted.settle()
-        XCTAssertEqual(mounted.transcript.rect(ofRow: 50).minY, 2700, "mount never placed rows")
+        XCTAssertEqual(mounted.documentRect(ofRow: 50).minY, 2700, "mount never placed rows")
         XCTAssertEqual(offset(mounted), 2710, "row 50 should be 10pt scrolled past")
 
         host.removeRows(at: IndexSet(50..<53))
         mounted.transcript.removeRows(at: IndexSet(50..<53))
 
-        XCTAssertEqual(offset(mounted), 2700, "the survivor's top edge belongs at the viewport top")
+        // Row 53 was at 2862, 152 below the viewport's top; it is row 50 now,
+        // at 2700.
+        XCTAssertEqual(offset(mounted), 2700 - (2862 - 2710), "the survivor moved on screen")
     }
 
     /// Restoring an offset needs the geometry the mutation produced, which means
@@ -267,10 +300,10 @@ final class TranscriptViewAnchoringTests: XCTestCase {
         mounted.transcript.insertRows(at: IndexSet(0..<5))
         XCTAssertFalse(CATransaction.disableActions(), "a mutation left actions disabled")
 
-        mounted.transcript.beginUpdates()
-        host.insertRows(1, at: 0)
-        mounted.transcript.insertRows(at: IndexSet(integer: 0))
-        mounted.transcript.endUpdates()
+        mounted.transcript.performBatchUpdates {
+            host.insertRows(1, at: 0)
+            mounted.transcript.insertRows(at: IndexSet(integer: 0))
+        }
         XCTAssertFalse(CATransaction.disableActions(), "a batch left actions disabled")
     }
 
@@ -287,7 +320,7 @@ final class TranscriptViewAnchoringTests: XCTestCase {
         host.insertRows(5, at: 0)
         mounted.transcript.insertRows(at: IndexSet(0..<5))
 
-        XCTAssertEqual(mounted.transcript.rect(ofRow: 55).minY, 2970)
+        XCTAssertEqual(mounted.documentRect(ofRow: 55).minY, 2970)
         XCTAssertEqual(offset(mounted), 2970 - 12, "content shifted under the reader")
     }
 
@@ -297,14 +330,14 @@ final class TranscriptViewAnchoringTests: XCTestCase {
     func testGrowingTheBottomInsetAtTheTailKeepsTheTail() throws {
         let (mounted, _) = mount(insets: NSEdgeInsets(top: 0, left: 0, bottom: 60, right: 0))
         defer { mounted.teardown() }
-        mounted.scroll(toY: 5400 + 60 - 720)
+        mounted.scroll(toY: 5386 + 60 - 720)
         mounted.settle()
-        XCTAssertEqual(offset(mounted), 4740, "mount never placed rows")
+        XCTAssertEqual(offset(mounted), 4726, "mount never placed rows")
         let frame = mounted.transcript.frame
 
         mounted.transcript.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 140, right: 0)
 
-        XCTAssertEqual(offset(mounted), 5400 + 140 - 720, "the last row went under the bar")
+        XCTAssertEqual(offset(mounted), 5386 + 140 - 720, "the last row went under the bar")
         XCTAssertEqual(mounted.transcript.frame, frame, "the transcript moved instead of its scroll")
     }
 
@@ -312,13 +345,13 @@ final class TranscriptViewAnchoringTests: XCTestCase {
     func testShrinkingTheBottomInsetAtTheTailKeepsTheTail() throws {
         let (mounted, _) = mount(insets: NSEdgeInsets(top: 0, left: 0, bottom: 140, right: 0))
         defer { mounted.teardown() }
-        mounted.scroll(toY: 5400 + 140 - 720)
+        mounted.scroll(toY: 5386 + 140 - 720)
         mounted.settle()
-        XCTAssertEqual(offset(mounted), 4820, "mount never placed rows")
+        XCTAssertEqual(offset(mounted), 4806, "mount never placed rows")
 
         mounted.transcript.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 60, right: 0)
 
-        XCTAssertEqual(offset(mounted), 5400 + 60 - 720)
+        XCTAssertEqual(offset(mounted), 5386 + 60 - 720)
     }
 
     /// A reader in the history: the bar growing under them moves nothing.

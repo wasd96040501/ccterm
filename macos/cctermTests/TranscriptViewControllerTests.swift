@@ -52,8 +52,9 @@ final class TranscriptViewControllerTests: XCTestCase {
         XCTAssertTrue(stage!.drainUntil(timeout: 10) { transcript.numberOfRows == 400 })
         stage!.drain(seconds: 0.2)
 
+        // With the scroll applied, so a row in view lies inside the bounds.
         let last = transcript.rect(ofRow: 399)
-        let visible = try XCTUnwrap(stage!.find(NSScrollView.self, in: transcript)).documentVisibleRect
+        let visible = transcript.bounds
         XCTAssertTrue(
             visible.insetBy(dx: 0, dy: -1).contains(last), "last row \(last) not in view \(visible)")
     }

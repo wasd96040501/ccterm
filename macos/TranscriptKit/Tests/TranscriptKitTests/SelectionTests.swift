@@ -1,4 +1,5 @@
 import AppKit
+import ExactList
 import XCTest
 
 @testable import TranscriptKit
@@ -35,6 +36,8 @@ final class SelectionTests: XCTestCase {
         mounted.transcript.delegate = host
         mounted.settle()
         mounted.transcript.reloadData()
+        // A transcript loads at its tail; these tests read from the top.
+        mounted.transcript.scrollToRow(at: 0, scrollPosition: .top)
         mounted.settle()
     }
 
@@ -443,8 +446,7 @@ final class SelectionTests: XCTestCase {
             then: [pointer, wheel])
         mounted.settle()
 
-        let under = table.row(
-            at: NSPoint(x: table.bounds.midX, y: table.convert(pointer.locationInWindow, from: nil).y))
+        let under = row(under: pointer)
         XCTAssertGreaterThan(under, 10, "the wheel did not scroll the transcript")
         XCTAssertGreaterThan(
             mounted.scrollView.documentVisibleRect.minY, mounted.transcript.rect(ofRow: 0).maxY,
@@ -476,8 +478,7 @@ final class SelectionTests: XCTestCase {
 
         let top = mounted.scrollView.documentVisibleRect.minY
         XCTAssertGreaterThan(top, 200, "ten ticks at 40 points past the edge scrolled \(top)")
-        let under = table.row(
-            at: NSPoint(x: table.bounds.midX, y: table.convert(pointer.locationInWindow, from: nil).y))
+        let under = row(under: pointer)
         XCTAssertEqual(mounted.copy()?.components(separatedBy: "\n\n").count, under + 1)
     }
 
@@ -587,9 +588,19 @@ final class SelectionTests: XCTestCase {
 
     // MARK: - Beside the text
 
-    /// The table under the rows, reached the way a press is when no row takes it.
-    private var table: NSTableView {
-        mounted.transcript.descendants(ofType: NSTableView.self)[0]
+    /// The document under the rows, reached the way a press is when no row
+    /// takes it.
+    private var table: NSView {
+        mounted.scrollView.documentView!
+    }
+
+    /// The last row starting at or above `event`'s pointer: the one a selection
+    /// dragged there ends in, gap or not.
+    private func row(under event: NSEvent) -> Int {
+        let list = mounted.transcript.descendants(ofType: ExactListView.self)[0]
+        let y = list.convert(event.locationInWindow, from: nil).y
+        let top = list.rect(ofRow: 0).minY
+        return list.rows(in: NSRect(x: 0, y: top, width: 1, height: y - top + 1)).upperBound - 1
     }
 
     /// A press in the margin the centred column leaves is a press in the
@@ -619,7 +630,7 @@ final class SelectionTests: XCTestCase {
     // MARK: - Letting go
 
     /// How a selection disappears when the reader moves on — into an input bar,
-    /// into another transcript: the table holding it stops being first responder.
+    /// into another transcript: the list's document stops being first responder.
     func testLosingFirstResponderClearsTheSelection() throws {
         mount(["alpha one", "beta two"])
         let first = try cell(0).view

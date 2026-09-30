@@ -20,6 +20,8 @@ final class Index {
     /// conservative fallback when deciding a public member is unused.
     private var unresolvedAccesses: [String: Set<String>] = [:]
     private var resolvedUses: [ObjectIdentifier: [String: Set<String>]] = [:]  // type → member → modules
+    /// Member names the test targets reach, which aren't mapped.
+    var testedMembers: Set<String> = []
 
     init(files: [SourceFile]) {
         modules = Set(files.map(\.module))
@@ -217,6 +219,7 @@ final class Index {
                 target.initParams.formUnion(ext.initParams)
                 target.nested += ext.nested
                 target.extensionLines += ext.lines
+                target.extensionFiles.insert(ext.file)
                 guard ext.unit != target.unit else {
                     target.typeRefs.formUnion(ext.typeRefs)
                     target.creates += ext.creates
@@ -312,6 +315,51 @@ final class Index {
     }
 
     // MARK: Queries for rendering
+
+    /// `internal` members of an internal type that no other type touches —
+    /// it alone uses them, so `private` says so. Only what can be proven from
+    /// the map: a type extended from another file is skipped (its uses there
+    /// of the type's own members name no receiver), and so is one adopting a
+    /// protocol the map doesn't know past its superclass (a framework witness
+    /// looks unused); a struct's or enum's stored fields are its data contract
+    /// (the memberwise init) and aren't counted; overrides, `@objc` members,
+    /// witnesses and requirements of adopted mapped protocols are excluded,
+    /// and so is any name reached somewhere in the module through a receiver
+    /// the map couldn't type, or by a test.
+    func internalMembersUsedOnlyInside(_ type: TypeInfo) -> [String] {
+        guard type.access == "internal", ["class", "struct", "enum", "actor"].contains(type.kind),
+            type.extensionFiles.isSubset(of: [type.file])
+        else { return [] }
+        let adopted = type.kind == "class" ? Array(type.inherits.dropFirst()) : type.inherits
+        let mapped = adopted.compactMap { lookup($0, from: type) }
+        let unknown = adopted.filter { lookup($0, from: type) == nil && !Self.valueProtocols.contains($0) }
+        guard unknown.isEmpty else { return [] }
+        let required = Set(
+            mapped.filter { $0.kind == "protocol" }.flatMap { $0.members.map(\.name) + $0.properties.map(\.name) })
+        let uses = resolvedUses[ObjectIdentifier(type)] ?? [:]
+        let unresolved = unresolvedAccesses[type.module] ?? []
+        let names =
+            type.members.filter {
+                $0.access == "internal" && $0.name != "init" && !$0.isOverride && !$0.isObjC && !$0.isWitness
+            }.map(\.name)
+            + type.properties.filter { property in
+                !property.isPrivate
+                    && !property.modifiers.contains { ["public", "open", "package", "override"].contains($0) }
+                    && (type.kind == "class" || type.kind == "actor" || property.isComputed || property.isStatic)
+            }.map(\.name)
+        return Set(names).subtracting(required).filter { name in
+            // An operator is used infix, never as `base.member`.
+            guard let first = name.first, first.isLetter || first == "_" else { return false }
+            return uses[name] == nil && !unresolved.contains(name) && !testedMembers.contains(name)
+        }.sorted()
+    }
+
+    /// Protocols a value adopts for the language, which ask for no members a
+    /// type would otherwise keep private.
+    private static let valueProtocols: Set<String> = [
+        "Sendable", "Equatable", "Hashable", "Identifiable", "Comparable", "CaseIterable", "Codable", "Encodable",
+        "Decodable", "Error", "AnyObject", "CustomStringConvertible",
+    ]
 
     /// `public` / `open` members of a package type that nothing outside its
     /// module touches — candidates for narrowing. Overrides, `@objc` methods and

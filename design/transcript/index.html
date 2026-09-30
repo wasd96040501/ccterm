@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transcript Views</title>
+<link rel="stylesheet" href="preview.css">
+</head>
+<body>
+<div class="sheet">
+  <header>
+    <div>
+      <h1>Transcript views</h1>
+      <p class="lede">Conversation gets the page; work gets a line. How the transcript shows tool calls, the documents they open beside it, and the markup the CLI writes into user messages — every state, both appearances. Rationale per view in the <code>0N-*.md</code> files beside this page; numbers in <code>research/findings.md</code>.</p>
+      <nav class="nav">
+        <a href="#playground-h">Playground</a><a href="#numbers">Numbers</a><a href="#run">1 · Run row</a><a href="#command">2 · Command</a><a href="#file">3 · Files</a><a href="#background">4 · Background</a><a href="#localh">5 · Local</a><a href="#voicesh">6 · Voices</a><a href="#talkh">7 · Talk</a>
+      </nav>
+    </div>
+    <div class="seg" role="group" aria-label="Appearance">
+      <button data-theme-set="auto" aria-pressed="true">Auto</button><button data-theme-set="light" aria-pressed="false">Light</button><button data-theme-set="dark" aria-pressed="false">Dark</button>
+    </div>
+  </header>
+
+  <div class="principles">
+    <div class="principle"><b>One line per stretch of work</b><span>Consecutive calls are one row: what kind, how much, how it went. Work drops from 62 % of rows to 40 %.</span></div>
+    <div class="principle"><b>Lists in place, content beside</b><span>A run expands into one-line items only. Output, diffs, files open in the other editor; the reading position never moves.</span></div>
+    <div class="principle"><b>Report the exception</b><span>Success is silent. Red: a call failed. Coral: waiting for you. Running moves; it isn't coloured.</span></div>
+    <div class="principle"><b>A row keeps its height</b><span>Streaming, running, finished: the same 28-pt line. Only a permission request adds height, because it needs you.</span></div>
+    <div class="principle"><b>Shown because it answers</b><span>Duration past the median run, files named when ≤ 2, lists cut at 12 — each threshold read off the corpus.</span></div>
+  </div>
+
+  <h2 id="playground-h">Playground</h2>
+  <p class="note">A session in this repo. <b>Click</b> an item: it opens in the other editor as the temporary tab (italic), and the next click replaces it. <b>Double-click</b> pins. Click in the transcript, then <b>↑ / ↓</b> walk every item — into closed runs — and the document follows. <b>⌥-click</b> a chevron: every run. <b>Replay a live turn</b> streams one in at the bottom and stops for your approval (⌘↩ / ⎋ work too).</p>
+  <div class="window" id="playground"></div>
+
+  <h2 id="numbers">Numbers</h2>
+  <p class="note">1 500 main-thread transcripts from <code>~/.claude/projects</code>. A <b>run</b> is consecutive tool calls with nothing visible between them.</p>
+  <div class="stats">
+    <div class="stat"><div class="v">62 % → 40 %</div><div class="k">of rows are work, before and after merging runs</div></div>
+    <div class="stat"><div class="v">53 %</div><div class="k">of runs are one call — the common case</div></div>
+    <div class="stat"><div class="v">76 %</div><div class="k">of calls are Bash; 96.6 % carry a description</div></div>
+    <div class="stat"><div class="v">+3 −1</div><div class="k">the median edit; 99 % are one hunk</div></div>
+    <div class="stat"><div class="v">3.3 %</div><div class="k">of calls fail — the exception to report</div></div>
+    <div class="stat"><div class="v">27</div><div class="k">task notifications per 100 prompts</div></div>
+  </div>
+  <div class="chart" id="chart"><div class="title">Runs by number of calls</div><div class="sub">15 349 runs · hover a bar for its count</div></div>
+
+  <h2 id="run">1 · The run row</h2>
+  <p class="note">Tile (16 pt, the kind that best says what the run did), a sentence in 13-pt secondary, meta in 11-pt tertiary, a chevron when there is something to expand. A run of one is the call itself and opens with one click. <b>See 01-run.md.</b></p>
+  <h3>Settled</h3>
+  <div id="run-settled"></div>
+  <h3>Live — the outline of the tile is the only thing that moves</h3>
+  <div id="run-live"></div>
+  <h3>Tiles, shown at 2× — Lamé squircle n = 4, the sidebar's family. States change the tile, never the row.</h3>
+  <div id="tiles"></div>
+
+  <h2 id="command">2 · The command document</h2>
+  <p class="note">A page, not a terminal: what was meant (the description), what ran (the command card, a leading <code>cd … &amp;&amp;</code> set quiet), what came out (numbered, findable). The status line carries only facts that are true. The SDK sends no output while a command runs, so nothing pretends to stream it. <b>See 02-command.md.</b></p>
+  <div id="command-docs"></div>
+
+  <h2 id="file">3 · File documents</h2>
+  <p class="note">Xcode's source editor, read-only. Edits are small, so the diff is unified and in place; the characters that changed get the wash twice. New files get no wash. Reads get the file map. <b>See 03-file.md.</b></p>
+  <div id="file-docs"></div>
+
+  <h2 id="background">4 · Background news</h2>
+  <p class="note">A task notification is work, not conversation: it takes the run row's grammar. Click opens what the task produced; ↖ goes back to the call that started it. <b>See 04-background.md.</b></p>
+  <div id="news"></div>
+
+  <h2 id="localh">5 · Local commands, dividers, interruptions</h2>
+  <p class="note">What you did to the CLI rather than said to the model. <code>/exit</code> and <code>/compact</code> are 77 % of slash commands and both mark a boundary, so they become one. <b>See 05-local.md.</b></p>
+  <div id="local"></div>
+
+  <h2 id="voicesh">6 · Messages from other agents</h2>
+  <p class="note">Messages' group chat: the other party on the leading side, named above a grey bubble, with the sidebar's glyph for who they are. <b>See 06-agent-messages.md.</b></p>
+  <div id="voices"></div>
+
+  <h2 id="talkh">7 · Tools that talk to you</h2>
+  <p class="note">Questions and plans are addressed to the reader, so they break out of the run. Task-list calls stay in it. <b>See 07-talk.md.</b></p>
+  <div id="talk"></div>
+</div>
+
+<div class="drawer" id="drawer" aria-label="Beside">
+  <div class="dh"><span>Beside ·</span><span data-dtitle></span><span class="spacer"></span><button class="btn plain" data-dclose>Close ⎋</button></div>
+  <div data-dbody style="min-height:0"></div>
+</div>
+
+<script src="preview.js"></script>
+<script src="preview-sheet.js"></script>
+</body>
+</html>

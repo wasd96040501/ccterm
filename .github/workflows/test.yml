@@ -112,3 +112,26 @@ jobs:
 
       - name: Run package tests
         run: make test-sdk
+
+  # ExactList: its own package, its own job, same shape as test-kit.
+  test-list:
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain info
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: macos/ExactList/.build
+          key: list-${{ runner.os }}-${{ runner.arch }}-pkg${{ hashFiles('macos/ExactList/Package.swift') }}-src${{ hashFiles('macos/ExactList/Sources/**/*.swift', 'macos/ExactList/Tests/**/*.swift') }}
+          restore-keys: |
+            list-${{ runner.os }}-${{ runner.arch }}-pkg${{ hashFiles('macos/ExactList/Package.swift') }}-
+
+      - name: Run package tests
+        run: make test-list

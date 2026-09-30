@@ -1,6 +1,6 @@
 # macOS engineering conventions
 
-Applies to all Swift under `macos/` — the app (`ccterm/`), `cctermTests/`, `TranscriptKit/`, `AgentSDK/`. Pure AppKit, programmatic. The app targets macOS 14; each package declares its own floor in `Package.swift`. Area-specific rules live in the nearest `CLAUDE.md`; the index is in the root `CLAUDE.md`.
+Applies to all Swift under `macos/` — the app (`ccterm/`), `cctermTests/`, `TranscriptKit/`, `ExactList/`, `AgentSDK/`. Pure AppKit, programmatic. The app targets macOS 14; each package declares its own floor in `Package.swift`. Area-specific rules live in the nearest `CLAUDE.md`; the index is in the root `CLAUDE.md`.
 
 ## macOS runloop tick model
 

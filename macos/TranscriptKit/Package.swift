@@ -43,7 +43,11 @@ let package = Package(
         // `MarkdownParser` switches over its AST by dynamic cast, so a node
         // type appearing or changing shape is a silent behaviour change rather
         // than a compile error.
-        .package(url: "https://github.com/swiftlang/swift-markdown", exact: "0.7.3")
+        .package(url: "https://github.com/swiftlang/swift-markdown", exact: "0.7.3"),
+        // The list the transcript is built on: exact heights, anchoring, and
+        // row motion on AppKit's animation engine. Its own package, with its
+        // own spec, because nothing in it knows about transcripts.
+        .package(path: "../ExactList"),
     ],
     targets: [
         // Opens a real window with a transcript in it: `swift run
@@ -61,7 +65,8 @@ let package = Package(
         .target(
             name: "TranscriptKit",
             dependencies: [
-                .product(name: "Markdown", package: "swift-markdown")
+                .product(name: "Markdown", package: "swift-markdown"),
+                .product(name: "ExactList", package: "ExactList"),
             ],
             exclude: ["CLAUDE.md"],
             resources: [.process("Resources")]

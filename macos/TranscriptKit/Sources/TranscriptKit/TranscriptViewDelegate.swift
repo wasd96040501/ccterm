@@ -15,11 +15,10 @@ public protocol TranscriptViewDelegate: AnyObject {
 
     /// The height of a `.view` row, laid out against `width`.
     ///
-    /// Asked of far more rows than are on screen, though not of all of them:
-    /// `NSTableView` measures a working set — a few hundred rows, growing as the
-    /// reader moves around — and extrapolates its scroll range from that sample.
-    /// Answer from the same model `viewForRow` will read, **without building the
-    /// view**; building one here would defeat recycling outright.
+    /// Asked of every row, on screen or not: the transcript estimates no height,
+    /// so its scroll range is exact. Answer from the same model `viewForRow` will
+    /// read, **without building the view**; building one here would defeat
+    /// recycling outright.
     ///
     /// `width` is the transcript's content width: the span the row's view will
     /// actually be given, after the transcript's own insets and scroller
@@ -77,6 +76,19 @@ public protocol TranscriptViewDelegate: AnyObject {
     func transcriptView(
         _ transcriptView: TranscriptView, heightOfRow row: Int, width: CGFloat
     ) -> CGFloat
+
+    /// The gap between row `row` and the row above it, or `nil` for the
+    /// transcript's gap between entries. Any row may answer, whoever draws it:
+    /// a row that belongs to the one above (a line's disclosed items, say)
+    /// sits closer, or flush at 0. Defaults to `nil` everywhere.
+    ///
+    /// `NSStackView.customSpacing(after:)`, on the other side of the row (the
+    /// list's `listView(_:customSpacingAboveRow:)`, ExactList G7): rows
+    /// inserted under one that stays arrive with their own gap, and nothing
+    /// around them is noted. Asked when the row is loaded, inserted or noted,
+    /// never on a width change. Answer from the model; to change a row's
+    /// spacing, note the row (`noteHeightOfRows(withIndexesChanged:)`).
+    func transcriptView(_ transcriptView: TranscriptView, customSpacingAboveRow row: Int) -> CGFloat?
 
     /// The view for a `.view` row that is about to appear. Mirrors
     /// `NSTableViewDelegate.tableView(_:viewFor:row:)`, minus the column.
@@ -282,9 +294,20 @@ public protocol TranscriptViewDelegate: AnyObject {
     /// resize, a reload, and `scrollToRow` all report; a mutation that the tail
     /// follows does not, because it never left.
     func transcriptView(_ transcriptView: TranscriptView, didChangeTailFollowing isFollowingTail: Bool)
+
+    /// A key the reader pressed in the transcript, as the standard key
+    /// bindings name it (`moveUp(_:)`, `moveDown(_:)`, …); `true` if the host
+    /// handled it. Asked before the transcript scrolls by it, so a host whose
+    /// rows can be stepped through takes ↑ / ↓ for that and leaves the rest to
+    /// scrolling. `NSTextView`'s `textView(_:doCommandBy:)`, the same hook.
+    func transcriptView(_ transcriptView: TranscriptView, doCommandBy selector: Selector) -> Bool
 }
 
 extension TranscriptViewDelegate {
+
+    public func transcriptView(_ transcriptView: TranscriptView, customSpacingAboveRow row: Int) -> CGFloat? {
+        nil
+    }
 
     /// Unreachable unless the data source returns `.view`, in which case it is
     /// a wiring error rather than a recoverable state.
@@ -335,6 +358,10 @@ extension TranscriptViewDelegate {
     public func transcriptView(
         _ transcriptView: TranscriptView, didChangeTailFollowing isFollowingTail: Bool
     ) {}
+
+    public func transcriptView(_ transcriptView: TranscriptView, doCommandBy selector: Selector) -> Bool {
+        false
+    }
 
     /// The transcript's own menu, unchanged — so not implementing this leaves
     /// Copy working rather than leaving the row with no menu at all.

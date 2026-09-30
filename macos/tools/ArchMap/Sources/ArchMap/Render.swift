@@ -116,7 +116,7 @@ struct Renderer {
         (`sink`, `for-await`, `observes` = withObservationTracking, `swiftui-reads` = SwiftUI body reading an \
         @Observable, `notified-by`, `kvo`), what it **wires** on others (`sets-callback`, `sets-delegate`, `passes` = hands a publisher or stream to what it constructs), \
         what it **creates**, `.shared` singletons it reaches for, and **used by** = which other units touch it \
-        and through which of its own members (`init` = constructs it). Used-by counts every target — demo and \
+        and through which of its own members (`init` = constructs it); **internal, used only inside** = members nothing but the type itself touches (candidates for `private`). Used-by counts every target — demo and \
         smoke executables too, even outside the scope; tests are not parsed. Names resolve only within a \
         file's module and its imports. Receivers are resolved to types where the map can \
         (`LibraryStore.$nodes`); otherwise the raw expression is kept. Resolution is syntactic: treat \
@@ -308,6 +308,7 @@ struct Renderer {
             })
         if isUnreferenced(type) { add("unreferenced", ["no other type names it"]) }
         add("public, unused outside module", index.unusedPublicMembers(of: type))
+        add("internal, used only inside", index.internalMembersUsedOnlyInside(type))
         return lines
     }
 

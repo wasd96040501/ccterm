@@ -118,6 +118,9 @@ final class TypeInfo {
     var tasks = 0
     /// Lines added by extensions declared in other files.
     var extensionLines = 0
+    /// Files its extensions are declared in, its own included when it extends
+    /// itself there.
+    var extensionFiles: Set<String> = []
     /// Set on an `extension` of a mapped type declared in another unit: its
     /// surface is merged into that type, but what it depends on stays here, in
     /// the unit that declares it — and `self` in it is that type.

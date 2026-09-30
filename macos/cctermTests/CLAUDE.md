@@ -47,7 +47,7 @@ final class MyServiceTests: XCTestCase {
 }
 ```
 
-Shared fixtures live in `Helpers/` (`ViewSnapshot`) — look there before writing a new one.
+Shared fixtures live in `Helpers/` (`ViewSnapshot`; `RowSnapshot` for any `PageRowView`, light above dark, one column per width) — look there before writing a new one.
 
 ## Measurement probes (merge gates)
 

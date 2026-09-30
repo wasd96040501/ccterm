@@ -436,14 +436,9 @@ final class PreparedRowsTests: XCTestCase {
         transcript.settle()
 
         XCTAssertEqual(
-            transcript.transcript.rect(ofRow: 0).height, SourceHost.hostRowHeight + Self.rowSpacing,
+            transcript.transcript.rect(ofRow: 0).height, SourceHost.hostRowHeight,
             "the .view row's height did not come from the delegate")
     }
-
-    /// `NSTableView` centres the cell in a row rect this much taller; see
-    /// `TranscriptView.rowSpacing`. Written here rather than derived so that the
-    /// assertion above says what it means.
-    private static let rowSpacing: CGFloat = 14
 
     // MARK: - What the identity keeps bounded
 
@@ -646,7 +641,7 @@ final class PreparedRowsTests: XCTestCase {
         XCTAssertEqual(transcript.transcript.numberOfRows, batch.count + 1)
         for row in 0..<transcript.transcript.numberOfRows {
             XCTAssertGreaterThan(
-                transcript.transcript.rect(ofRow: row).height, Self.rowSpacing,
+                transcript.transcript.rect(ofRow: row).height, 1,
                 "row \(row) came out empty")
         }
     }

@@ -99,6 +99,7 @@ public final class EditorAreaViewController: NSSplitViewController {
     public func addGroup(with item: NSTabViewItem) -> EditorGroupViewController? {
         guard let group = addGroup() else { return nil }
         group.addTabViewItem(item)
+        open(group)
         return group
     }
 
@@ -141,18 +142,44 @@ public final class EditorAreaViewController: NSSplitViewController {
 
     private(set) var draggedTypes: [NSPasteboard.PasteboardType] = []
 
+    /// Adds an editor on the right — collapsed once the area has a view to lay
+    /// it out in, to open (`open(_:)`) when it has its tab.
     private func addGroup() -> EditorGroupViewController? {
         guard groups.count < Self.maximumNumberOfGroups else { return nil }
         let group = EditorGroupViewController()
-        addSplitViewItem(Self.splitViewItem(for: group))
-        // Halves, the way Xcode opens one. Laid out first so the divider has a
-        // width to be put in the middle of.
-        if isViewLoaded {
-            view.layoutSubtreeIfNeeded()
-            splitView.setPosition(splitView.bounds.width / 2, ofDividerAt: 0)
-        }
+        let item = Self.splitViewItem(for: group)
+        item.isCollapsed = isViewLoaded
+        addSplitViewItem(item)
         activeGroup = group
         return group
+    }
+
+    /// Opens a collapsed editor to half the area, the way Xcode opens one, with
+    /// the motion a sidebar is toggled with. Uncollapsing through its animator
+    /// returns an item to the width its view has, so the editor is laid out at
+    /// that width first, with its tab in it: the tab appears at its final size
+    /// and is uncovered, not reflowed, and the other editor narrows as in a
+    /// divider drag. (`preferredThicknessFraction` doesn't size an item that
+    /// isn't a sidebar — measured.)
+    private func open(_ group: EditorGroupViewController) {
+        guard let item = splitViewItem(for: group), item.isCollapsed else { return }
+        let area = splitView.bounds
+        group.view.frame = NSRect(
+            x: 0, y: 0, width: ((area.width - splitView.dividerThickness) / 2).rounded(.down), height: area.height)
+        group.view.layoutSubtreeIfNeeded()
+        // A split view item animates even in a group of duration 0, so Reduce
+        // Motion opens it outright — and outright it takes a width of its own
+        // (measured: a third), so the divider is then put where the animation
+        // leaves it.
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            let width = group.view.frame.width
+            item.isCollapsed = false
+            view.layoutSubtreeIfNeeded()
+            splitView.setPosition(
+                splitView.bounds.width - splitView.dividerThickness - width, ofDividerAt: 0)
+        } else {
+            item.animator().isCollapsed = false
+        }
     }
 
     /// Every editor coming passes through here — `addSplitViewItem` and setting
@@ -241,6 +268,7 @@ public final class EditorAreaViewController: NSSplitViewController {
             let destination = groups.first(where: { $0 !== source }) ?? addGroup()
         else { return }
         moveTab(at: index, of: source, to: destination, at: destination.tabViewItems.count)
+        open(destination)
     }
 
     // MARK: - Following the reader

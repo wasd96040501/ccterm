@@ -1,9 +1,9 @@
-.PHONY: build release install dmg clean fmt fmt-check test-unit test-kit test-sdk demo-kit logs icon sidebar-icons appkit-doc arch help
+.PHONY: build release install dmg clean fmt fmt-check test-unit test-kit test-sdk test-list bench-list record-list demo-kit demo-list logs icon sidebar-icons appkit-doc arch help
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
 SWIFT_FORMAT := swift-format
-SWIFT_SRC := macos/ccterm macos/cctermTests macos/AgentSDK/Sources macos/AgentSDK/Tests macos/TranscriptKit/Sources macos/TranscriptKit/Tests macos/tools
+SWIFT_SRC := macos/ccterm macos/cctermTests macos/AgentSDK/Sources macos/AgentSDK/Tests macos/TranscriptKit/Sources macos/TranscriptKit/Tests macos/ExactList/Sources macos/ExactList/Tests macos/tools
 PREFIX ?= /Applications
 
 help: ## Show available commands
@@ -40,6 +40,36 @@ test-sdk: ## Run AgentSDK's package tests (FILTER=SomeTests)
 		if [ -n "$(FILTER)" ]; then swift test --filter "$(FILTER)"; \
 		else swift test; fi
 
+# ExactList is a standalone package: `swift test`, no Xcode project. The
+# benchmarks are skipped here: they compare against NSTableView and mean
+# something only under -O, which is `bench-list`.
+test-list: ## Run ExactList's package tests (FILTER=SomeTests)
+	@cd macos/ExactList && \
+		if [ -n "$(FILTER)" ]; then swift test --filter "$(FILTER)"; \
+		else swift test --skip ExactListBenchmarks; fi
+
+bench-list: ## Run ExactList's benchmarks against NSTableView (-O)
+	@cd macos/ExactList && swift test -c release --filter ExactListBenchmarks
+
+# The demo's scenarios in a window off screen, captured frame by frame for eyes
+# (SPEC §13). An executable, not a test: TCC attributes xctest to Xcode.app, so
+# this runs as the terminal and uses its Screen Recording grant. FILTER is part
+# of a recording's name. The -isysroot is demo-list's.
+record-list: ## Record ExactList's demo scenarios to PNGs, a sheet and a movie (FILTER=stream)
+	@cd macos/ExactList && swift run \
+		-Xswiftc -Xclang-linker -Xswiftc -isysroot \
+		-Xswiftc -Xclang-linker -Xswiftc "$$(xcrun --sdk macosx --show-sdk-path)" \
+		ExactListRecordings $(FILTER)
+	@echo "Recordings: /tmp/exactlist-recordings"
+
+# The package's demo app: the checklist in Sources/ExactListDemo/CLAUDE.md.
+# The -isysroot is demo-kit's, for the same reason (see there).
+demo-list: ## Run ExactList's demo app
+	@cd macos/ExactList && swift run \
+		-Xswiftc -Xclang-linker -Xswiftc -isysroot \
+		-Xswiftc -Xclang-linker -Xswiftc "$$(xcrun --sdk macosx --show-sdk-path)" \
+		ExactListDemo
+
 # The package's demo app — a real window over real markdown documents. Rendering
 # has no other check: a probe can assert a row's height, not whether the
 # document in it looks like a document. Runs in the foreground; Ctrl-C or close
@@ -72,8 +102,10 @@ appkit-doc: ## Look up an AppKit symbol (SYMBOL=NSStackView or SYMBOL=NSStackVie
 # plus one file per source directory with each type's dependencies, data flow
 # (@Published, AsyncStream, @Observable, callbacks, delegates) and which of its
 # members other units use. SCOPE takes names or paths, comma-separated.
-arch: ## Map structure + data flow to build/arch/ (SCOPE=core|app|kit|sdk|<dir under macos/>)
-	@swift run --package-path macos/tools/ArchMap --quiet ArchMap "$(CURDIR)/macos" "$(CURDIR)/build/arch" "$(SCOPE)"
+# DETAIL=members adds, per unit, how each type's members call one another and
+# write its state — what a simplification pass reads.
+arch: ## Map structure + data flow to build/arch/ (SCOPE=core|app|kit|sdk|<dir under macos/>, DETAIL=members)
+	@swift run --package-path macos/tools/ArchMap --quiet ArchMap "$(CURDIR)/macos" "$(CURDIR)/build/arch" "$(SCOPE)" "$(DETAIL)"
 
 dmg: ## Create DMG installer (usage: make dmg APP=/path/to/ccterm.app)
 	@test -n "$(APP)" || (echo "Usage: make dmg APP=/path/to/ccterm.app" && exit 1)

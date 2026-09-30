@@ -40,6 +40,13 @@ final class EditorAreaSnapshotTests: XCTestCase {
         let rightGroup = try XCTUnwrap(area.addGroup(with: NSTabViewItem(viewController: right)))
         rightGroup.addTabViewItem(
             NSTabViewItem(viewController: SnapshotPage(title: "Transcript 5", rows: Self.rows)))
+        // The right editor comes in with motion; the picture is of it opened.
+        let split = area.splitView
+        for _ in 0..<100 where split.inLiveResize || rightGroup.view.frame.width > split.arrangedSubviews[1].frame.width
+        {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertFalse(split.inLiveResize, "premise: the right editor finished opening")
         window.contentView?.layoutSubtreeIfNeeded()
 
         // The pointer, as a reader would have it: over the left editor's last tab —

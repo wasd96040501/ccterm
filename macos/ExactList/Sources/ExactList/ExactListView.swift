@@ -1,5 +1,8 @@
 import AppKit
 import ExactListCore
+// `Anchoring` is part of this module's surface (a host spells `.row(r)` and
+// defaults to `.automatic`); nothing else of Core is.
+@_exported import enum ExactListCore.Anchoring
 
 /// A vertical list of host views with exact geometry, anchored scrolling and
 /// motion on AppKit's animation engine. It uses `NSTableView`'s vocabulary.

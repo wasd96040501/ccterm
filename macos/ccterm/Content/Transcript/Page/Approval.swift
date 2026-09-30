@@ -6,11 +6,12 @@ import Foundation
 /// you") and the approval bar over its document (02-command.md "Live").
 /// Answering either answers the call.
 nonisolated struct Approval: Sendable, Equatable, Identifiable {
-    /// What the call will do, whole: the command, or the lines an edit takes
-    /// out and puts in.
+    /// What the call will do, whole: the command, the lines an edit takes out
+    /// and puts in, or a new file's lines.
     enum Body: Sendable, Equatable {
         case command(String)
         case change(removed: [String], added: [String])
+        case newFile([String])
     }
 
     /// The call's id — what a decision answers.
@@ -50,7 +51,7 @@ nonisolated struct Approval: Sendable, Equatable, Identifiable {
             request = String(localized: "Claude wants to make this edit")
         case .create:
             title = String(localized: "Create \(file)")
-            body = .change(removed: [], added: lines(input["content"]?.stringValue))
+            body = .newFile(lines(input["content"]?.stringValue))
             request = String(localized: "Claude wants to create this file")
         case .agent, .web, .search, .read, .tasks, .schedule, .message, .other:
             title = String(localized: "Use \(call.use.name)")

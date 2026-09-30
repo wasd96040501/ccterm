@@ -48,15 +48,6 @@ final class NumberedLinesView: NSView {
         case output
     }
 
-    /// The change bar at the gutter's leading edge.
-    enum Bar: Equatable {
-        case none
-        /// Xcode's code review: source-control blue, hatched, one per hunk.
-        case hunks
-        /// In green, the file's full height: all of it is new.
-        case wholeFile
-    }
-
     /// A 4-pt track down the right edge standing for a whole file, the part
     /// read filled in; fractions of the file.
     struct FileMap: Equatable {
@@ -67,7 +58,8 @@ final class NumberedLinesView: NSView {
     struct Content: Equatable {
         var lines: [Line]
         var style: Style
-        var bar: Bar = .none
+        /// The change bar at the gutter's leading edge.
+        var bar: ChangeBar?
         var fileMap: FileMap?
         /// The line to bring a third of the way down when the view first has
         /// its size — the first change.
@@ -256,8 +248,8 @@ private struct Metrics {
 extension NumberedLinesView.Line.Kind {
     fileprivate var wash: NSColor? {
         switch self {
-        case .added: .wash(.systemGreen, light: 0.14, dark: 0.15)
-        case .removed: .wash(.systemRed, light: 0.10, dark: 0.14)
+        case .added: .addedLineWash
+        case .removed: .removedLineWash
         case .fold: .tertiarySystemFill
         case .text, .divider: nil
         }
@@ -584,7 +576,7 @@ private final class GutterView: NSView {
     private let textView: LinesTextView
     private var lines: [NumberedLinesView.Line] = []
     private var metrics: Metrics?
-    private var bar = NumberedLinesView.Bar.none
+    private var bar: ChangeBar?
 
     init(textView: LinesTextView) {
         self.textView = textView
@@ -600,7 +592,7 @@ private final class GutterView: NSView {
 
     override var isFlipped: Bool { true }
 
-    func set(_ lines: [NumberedLinesView.Line], metrics: Metrics, bar: NumberedLinesView.Bar) {
+    func set(_ lines: [NumberedLinesView.Line], metrics: Metrics, bar: ChangeBar?) {
         self.lines = lines
         self.metrics = metrics
         self.bar = bar
@@ -637,49 +629,18 @@ private final class GutterView: NSView {
     private func hasBar(_ index: Int) -> Bool {
         guard lines.indices.contains(index) else { return false }
         switch bar {
-        case .none: return false
+        case nil: return false
         case .hunks: return lines[index].kind.isChange
         case .wholeFile: return lines[index].kind != .fold
         }
     }
 
-    /// One line's part of the bar: a run of lines is one bar, rounded where
-    /// it starts and ends.
+    /// One line's part of the bar: a run of lines is one bar.
     private func drawBar(at x: CGFloat, index: Int, in band: NSRect) {
-        guard hasBar(index) else { return }
-        let segment = NSRect(x: x, y: band.minY, width: 3, height: band.height)
-        let radius: CGFloat = 1.5
-        var shape = segment
-        if hasBar(index - 1) {
-            shape.origin.y -= radius
-            shape.size.height += radius
-        }
-        if hasBar(index + 1) { shape.size.height += radius }
-        NSGraphicsContext.saveGraphicsState()
-        NSBezierPath(rect: segment).addClip()
-        NSBezierPath(roundedRect: shape, xRadius: radius, yRadius: radius).addClip()
-        switch bar {
-        case .wholeFile:
-            NSColor.systemGreen.withAlphaComponent(0.7).setFill()
-            segment.fill()
-        case .hunks:
-            // Hatched, as Xcode's code review draws it.
-            NSColor.systemBlue.withAlphaComponent(0.45).setFill()
-            segment.fill()
-            NSColor.systemBlue.setStroke()
-            let stripes = NSBezierPath()
-            stripes.lineWidth = 1.5
-            var y = (segment.minY / 3).rounded(.down) * 3 - 3
-            while y < segment.maxY + 3 {
-                stripes.move(to: NSPoint(x: x, y: y + 3))
-                stripes.line(to: NSPoint(x: x + 3, y: y))
-                y += 3
-            }
-            stripes.stroke()
-        case .none:
-            break
-        }
-        NSGraphicsContext.restoreGraphicsState()
+        guard let bar, hasBar(index) else { return }
+        bar.draw(
+            NSRect(x: x, y: band.minY, width: ChangeBar.width, height: band.height),
+            joinsAbove: hasBar(index - 1), joinsBelow: hasBar(index + 1))
     }
 
     override func viewDidChangeEffectiveAppearance() {

@@ -1,10 +1,11 @@
 import AppKit
 
 /// What an approval card shows the call will do, whole: a command in a
-/// monospaced block after a `$`, or an edit as a compact diff — removed
-/// lines on a red wash, added on a green one (design/transcript/01-run.md
-/// "Waiting for you"). At most twelve lines; the card says when there are
-/// more.
+/// monospaced block after a `$`, or an edit as a compact diff drawn as a
+/// document's is — removed lines on a red wash, added on a green one, the
+/// change bar down the leading edge; a new file's bar is green
+/// (design/transcript/01-run.md "Waiting for you"). At most twelve lines;
+/// the card says when there are more.
 ///
 /// Drawn, not laid out from labels: a body's height is its lines' count, so
 /// `measure` and `draw` share the same line metrics and cannot disagree.
@@ -18,6 +19,8 @@ final class ApprovalBodyView: NSView {
     private static let commandInsets = NSEdgeInsets(top: 8, left: 24, bottom: 8, right: 12)
     private static let diffLine: CGFloat = 18
     private static let diffPadding: CGFloat = 4
+    /// Where the change bar stands, as in a document's gutter.
+    private static let diffBarX: CGFloat = 2
     private static let diffTextInset: CGFloat = 14
     private static let radius: CGFloat = 6
 
@@ -41,6 +44,7 @@ final class ApprovalBodyView: NSView {
         switch body {
         case .command(let text): setAccessibilityLabel(text)
         case .change(let removed, let added): setAccessibilityLabel((removed + added).joined(separator: "\n"))
+        case .newFile(let lines): setAccessibilityLabel(lines.joined(separator: "\n"))
         }
         setAccessibilityElement(true)
         setAccessibilityRole(.staticText)
@@ -61,10 +65,15 @@ final class ApprovalBodyView: NSView {
                 lines > maxLines
             )
         case .change(let removed, let added):
-            let lines = removed.count + added.count
-            guard lines > 0 else { return (0, false) }
-            return (2 * diffPadding + diffLine * CGFloat(min(lines, maxLines)), lines > maxLines)
+            return measureDiff(lines: removed.count + added.count)
+        case .newFile(let lines):
+            return measureDiff(lines: lines.count)
         }
+    }
+
+    private static func measureDiff(lines: Int) -> (height: CGFloat, isCut: Bool) {
+        guard lines > 0 else { return (0, false) }
+        return (2 * diffPadding + diffLine * CGFloat(min(lines, maxLines)), lines > maxLines)
     }
 
     private static func commandLines(_ text: String, width: CGFloat) -> Int {
@@ -83,7 +92,7 @@ final class ApprovalBodyView: NSView {
             string: text, attributes: [.font: commandFont, .foregroundColor: color, .paragraphStyle: style])
     }
 
-    private static func diffString(_ text: String, dimmed: Bool) -> NSAttributedString {
+    private static func diffString(_ text: String) -> NSAttributedString {
         let style = NSMutableParagraphStyle()
         style.lineBreakMode = .byTruncatingTail
         style.minimumLineHeight = diffLine
@@ -91,21 +100,11 @@ final class ApprovalBodyView: NSView {
         return NSAttributedString(
             string: text.isEmpty ? " " : text,
             attributes: [
-                .font: commandFont, .foregroundColor: NSColor.labelColor.withAlphaComponent(dimmed ? 0.55 : 1),
-                .paragraphStyle: style,
+                .font: commandFont, .foregroundColor: NSColor.labelColor, .paragraphStyle: style,
             ])
     }
 
     // MARK: - Draw
-
-    private static let addedWash = NSColor(name: nil) { appearance in
-        NSColor.systemGreen.withAlphaComponent(
-            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? 0.15 : 0.14)
-    }
-
-    private static let removedWash = NSColor(name: nil) { appearance in
-        NSColor.systemRed.withAlphaComponent(appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? 0.14 : 0.10)
-    }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let body else { return }
@@ -114,7 +113,12 @@ final class ApprovalBodyView: NSView {
         block.fill()
         switch body {
         case .command(let text): drawCommand(text)
-        case .change(let removed, let added): drawChange(removed: removed, added: added, clip: block)
+        case .change(let removed, let added):
+            drawDiff(
+                removed.map { ($0, NSColor.removedLineWash) } + added.map { ($0, .addedLineWash) }, bar: .hunks,
+                clip: block)
+        case .newFile(let lines):
+            drawDiff(lines.map { ($0, NSColor.addedLineWash) }, bar: .wholeFile, clip: block)
         }
     }
 
@@ -146,22 +150,26 @@ final class ApprovalBodyView: NSView {
         return style
     }
 
-    private func drawChange(removed: [String], added: [String], clip: NSBezierPath) {
+    /// Every line is a change, so the bar is one run down all of them.
+    private func drawDiff(_ lines: [(text: String, wash: NSColor)], bar: ChangeBar, clip: NSBezierPath) {
         NSGraphicsContext.saveGraphicsState()
         clip.addClip()
-        let rows = (removed.map { ($0, true) } + added.map { ($0, false) }).prefix(Self.maxLines)
-        for (index, row) in rows.enumerated() {
+        let shown = lines.prefix(Self.maxLines)
+        for (index, line) in shown.enumerated() {
             let y = Self.diffPadding + Self.diffLine * CGFloat(index)
-            (row.1 ? Self.removedWash : Self.addedWash).setFill()
+            line.wash.setFill()
             NSRect(x: 0, y: y, width: bounds.width, height: Self.diffLine).fill()
-            NSColor.controlAccentColor.setFill()
-            NSRect(x: 3, y: y, width: 3, height: Self.diffLine).fill()
-            Self.diffString(row.0, dimmed: row.1).draw(
+            Self.diffString(line.text).draw(
                 with: NSRect(
                     x: Self.diffTextInset, y: y, width: max(0, bounds.width - Self.diffTextInset - 12),
                     height: Self.diffLine),
                 options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
         }
+        bar.draw(
+            NSRect(
+                x: Self.diffBarX, y: Self.diffPadding, width: ChangeBar.width,
+                height: Self.diffLine * CGFloat(shown.count)),
+            joinsAbove: false, joinsBelow: false)
         NSGraphicsContext.restoreGraphicsState()
     }
 }

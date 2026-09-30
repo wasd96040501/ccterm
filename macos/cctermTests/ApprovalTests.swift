@@ -54,7 +54,7 @@ final class ApprovalTests: XCTestCase {
     func testANewFileShowsItsContent() {
         let approval = Approval(waiting("Write", #"{"file_path":"/r/B.swift","content":"x\ny"}"#))
         XCTAssertEqual(approval.title, String(localized: "Create \("B.swift")"))
-        XCTAssertEqual(approval.body, .change(removed: [], added: ["x", "y"]))
+        XCTAssertEqual(approval.body, .newFile(["x", "y"]))
         XCTAssertEqual(approval.request, String(localized: "Claude wants to create this file"))
     }
 

@@ -32,11 +32,11 @@ final class SourceDocumentViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        let (source, path, bar): (SourceLines, String?, NumberedLinesView.Bar) =
+        let (source, path, bar): (SourceLines, String?, ChangeBar?) =
             switch mode {
             case .change(let calls): (SourceLines.change(calls), calls.first?.filePath, .hunks)
             case .newFile(let call): (SourceLines.newFile(call), call.filePath, .wholeFile)
-            case .read(let call): (SourceLines.read(call), call.filePath, .none)
+            case .read(let call): (SourceLines.read(call), call.filePath, nil)
             }
         var content = NumberedLinesView.Content(
             lines: source.lines.map { Self.line($0, path: path) }, style: .source, bar: bar)

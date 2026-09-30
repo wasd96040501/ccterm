@@ -1,6 +1,5 @@
 import AgentSDK
 import Foundation
-import os
 
 /// Words every work line: a run's sentence, an item's label, a task's news
 /// (design/transcript/01-run.md "The sentence", "A run of one is the call
@@ -504,17 +503,7 @@ nonisolated struct WorkLineWriter {
 
     // MARK: - Pieces
 
-    private static func tileState(_ state: ToolCallState) -> Tile.State {
-        switch state {
-        case .preparing: .preparing
-        case .waiting: .waiting
-        case .running: .running
-        case .background: .background
-        case .done: .done
-        case .failed: .failed
-        case .denied, .interrupted: .stopped
-        }
-    }
+    private static func tileState(_ state: ToolCallState) -> Tile.State { Tile.State(state) }
 
     /// Lines added and removed by one change or creation.
     private static func diffStat(_ call: ToolCall) -> (added: Int, removed: Int)? {
@@ -542,46 +531,7 @@ nonisolated struct WorkLineWriter {
         return (lines.filter { $0.hasPrefix("+") }.count, lines.filter { $0.hasPrefix("-") }.count)
     }
 
-    /// `34s`, `1m 5s`, `12m`, `1h 3m` — the resolution a reader wants at each
-    /// size, in the app's language (not the system's, which the rest of the
-    /// line may not be in).
-    static func format(_ duration: TimeInterval) -> String {
-        let seconds = Int(duration.rounded())
-        return durationFormatters.withLockUnchecked { formatters in
-            let formatter =
-                switch seconds {
-                case ..<60: formatters.seconds
-                case ..<600: formatters.minutesAndSeconds
-                case ..<3600: formatters.minutes
-                default: formatters.hoursAndMinutes
-                }
-            return formatter.string(from: TimeInterval(seconds)) ?? "\(seconds)s"
-        }
-    }
-
-    /// One formatter per resolution, made once: making one is most of what
-    /// formatting a duration costs, and a page formats one per line. Pages
-    /// build off the main actor, several at once, so they are used only
-    /// inside the lock.
-    private struct DurationFormatters {
-        let seconds = durationFormatter([.second])
-        let minutesAndSeconds = durationFormatter([.minute, .second])
-        let minutes = durationFormatter([.minute])
-        let hoursAndMinutes = durationFormatter([.hour, .minute])
-    }
-
-    private static let durationFormatters = OSAllocatedUnfairLock(uncheckedState: DurationFormatters())
-
-    private static func durationFormatter(_ units: NSCalendar.Unit) -> DateComponentsFormatter {
-        let formatter = DateComponentsFormatter()
-        var calendar = Calendar.current
-        calendar.locale = Locale(identifier: Bundle.main.preferredLocalizations.first ?? "en")
-        formatter.calendar = calendar
-        formatter.unitsStyle = .abbreviated
-        formatter.maximumUnitCount = 2
-        formatter.allowedUnits = units
-        return formatter
-    }
+    static func format(_ duration: TimeInterval) -> String { duration.durationText }
 
     private static func fileName(_ path: String) -> String {
         (path as NSString).lastPathComponent
@@ -606,10 +556,7 @@ nonisolated struct WorkLineWriter {
         return "\(parts[0])/\(parts[1])/…/\(parts[parts.count - 1])"
     }
 
-    static func firstLine(_ text: String) -> String {
-        let trimmed = text.drop { $0.isNewline }
-        return String(trimmed.prefix { !$0.isNewline })
-    }
+    static func firstLine(_ text: String) -> String { text.firstLine }
 
     /// A leading `cd <dir> &&` is how the agent says where, not what.
     private static func strippingDirectoryChange(_ command: String) -> String {
@@ -619,8 +566,6 @@ nonisolated struct WorkLineWriter {
         return String(command[range.upperBound...])
     }
 
-    /// An MCP tool's server and tool (`mcp__computer-use__screenshot`);
-    /// any other tool is its own server.
     static func toolName(_ name: String) -> (server: String, tool: String) {
         let parts = name.components(separatedBy: "__")
         if parts.count >= 3, parts[0] == "mcp" { return (parts[1], parts[2...].joined(separator: "__")) }

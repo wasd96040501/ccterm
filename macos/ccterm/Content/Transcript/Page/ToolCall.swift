@@ -49,3 +49,13 @@ nonisolated struct ToolCall: Sendable, Equatable, Identifiable {
         }
     }
 }
+
+nonisolated extension ToolCall {
+    /// An MCP tool's server and tool (`mcp__computer-use__screenshot`);
+    /// any other tool is its own server.
+    var toolName: (server: String, tool: String) {
+        let parts = use.name.components(separatedBy: "__")
+        if parts.count >= 3, parts[0] == "mcp" { return (parts[1], parts[2...].joined(separator: "__")) }
+        return (use.name, use.name)
+    }
+}

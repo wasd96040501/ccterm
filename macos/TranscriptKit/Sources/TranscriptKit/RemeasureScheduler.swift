@@ -21,12 +21,12 @@ final class RemeasureScheduler {
     /// older run, and so a test can wait for the cache to be warm.
     private(set) var task: Task<Void, Never>?
 
-    private weak var owner: RemeasureSchedulerOwner?
+    private weak var dataSource: RowDataSource?
     private let rowCache: RowCache
     private let list: ExactListView
 
-    init(owner: RemeasureSchedulerOwner, rowCache: RowCache, list: ExactListView) {
-        self.owner = owner
+    init(dataSource: RowDataSource, rowCache: RowCache, list: ExactListView) {
+        self.dataSource = dataSource
         self.rowCache = rowCache
         self.list = list
     }
@@ -75,7 +75,7 @@ final class RemeasureScheduler {
     /// rows the data source no longer has, and are dropped rather than measured.
     private func staleRowsOutwardFromViewport(at width: CGFloat) -> Batch {
         var pending = rowCache.entries(measuredAtWidthOtherThan: width)
-        guard !pending.isEmpty, let owner else { return [] }
+        guard !pending.isEmpty, let dataSource else { return [] }
         let count = list.numberOfRows
         let visible = list.rows(in: list.bounds).clamped(to: 0..<count)
 
@@ -104,7 +104,7 @@ final class RemeasureScheduler {
                 break
             }
             // No row is "no data source", which is nothing to order.
-            guard let id = owner.row(at: row)?.id else { return [] }
+            guard let id = dataSource.row(at: row)?.id else { return [] }
             if let entry = pending.removeValue(forKey: id) { ordered.append((id, entry)) }
         }
         return ordered
@@ -156,7 +156,7 @@ final class RemeasureScheduler {
 
     /// Files one batch, unless the width has moved on since it was measured.
     private func merge(_ batch: Batch, at width: CGFloat) {
-        guard let owner, width == owner.contentWidth else { return }
+        guard let dataSource, width == dataSource.contentWidth else { return }
         rowCache.merge(remeasured: batch, at: width)
     }
 }

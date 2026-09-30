@@ -224,8 +224,8 @@ final class FindTests: XCTestCase {
     private func rects(of range: Range<Int>, inRow row: Int) throws -> [NSRect] {
         let view = try XCTUnwrap(
             mounted.transcript.descendants(ofType: NSView.self)
-                .first { $0 is TranscriptFindHighlighting && mounted.transcript.row(for: $0) == row }
-                as? NSView & TranscriptFindHighlighting,
+                .first { $0 is BlockView && mounted.transcript.row(for: $0) == row }
+                as? BlockView,
             "row \(row) has no view on screen")
         return view.rects(forCharacterRange: range).map { view.convert($0, to: nil) }
     }
@@ -800,63 +800,21 @@ final class FindTests: XCTestCase {
 
     // MARK: - A host's own rows
 
-    /// A `.view` row takes part through the delegate and its view: its matches
-    /// are counted into the total and the ordinals, lit where its view says they
-    /// are, and the current one is raised with the characters its view draws.
-    func testAHostsViewRowIsSearchedCountedAndHighlighted() async throws {
-        mount(
-            FindHost(
-                contents: [.markdown("needle one"), .view, .markdown("needle three")],
-                viewText: [1: "a needle and a needle"]))
-
-        mounted.transcript.find("needle")
-        await mounted.settleFind()
-        XCTAssertEqual(mounted.transcript.numberOfFindMatches, 4)
-
-        let view = try XCTUnwrap(
-            mounted.transcript.descendants(ofType: FindableRowView.self).first)
-        let hosted = try rects(of: 2..<8, inRow: 1) + rects(of: 15..<21, inRow: 1)
-        XCTAssertTrue(
-            hosted.allSatisfy(litRects().contains), "the host's matches were not lit")
-
-        mounted.transcript.findNext()
-        mounted.settle()
-        XCTAssertEqual(mounted.transcript.indexOfSelectedFindMatch, 1)
-        XCTAssertEqual(raisedRects().count, 1)
-        XCTAssertTrue(raisedRects().first?.contains(hosted[0]) ?? false)
-        XCTAssertEqual(view.drawn.last, 2..<8, "the bubble did not draw the host's characters")
-
-        mounted.transcript.findNext()
-        mounted.settle()
-        XCTAssertTrue(raisedRects().first?.contains(hosted[1]) ?? false)
-        XCTAssertEqual(view.drawn.last, 15..<21)
-
-        mounted.transcript.findNext()
-        mounted.settle()
-        XCTAssertEqual(mounted.transcript.indexOfSelectedFindMatch, 3)
-        XCTAssertFalse(raisedRects().contains { $0.intersects(hosted[0].union(hosted[1])) })
-
-        mounted.transcript.endFind()
-        mounted.settle()
-        XCTAssertEqual(litRects(), [])
-    }
-
-    /// A host that answers nothing leaves its rows out, and its views are still
-    /// cleared rather than trusted to be.
-    func testAViewRowWithNoAnswerIsLeftOut() async {
-        let host = FindHost(contents: [.view], viewText: [0: "needle"])
-        host.answersFind = false
-        mount(host)
+    /// A host's `.view` row is neither searched nor highlighted, and the walk
+    /// goes on through it to the rows after.
+    func testAViewRowIsSkippedAndTheWalkContinuesPastIt() async {
+        mount(FindHost(contents: [.markdown("needle one"), .view, .markdown("needle three")]))
 
         mounted.transcript.find("needle")
         await mounted.settleFind()
 
-        XCTAssertEqual(mounted.transcript.numberOfFindMatches, 0)
+        XCTAssertEqual(mounted.transcript.numberOfFindMatches, 2)
+        XCTAssertEqual(host.findReports.last?.isComplete, true)
     }
 }
 
 /// Answers each row from a list of contents, draws `.view` rows with a
-/// `FindableRowView`, and records what the transcript reported about the find.
+/// `HostRowView`, and records what the transcript reported about the find.
 @MainActor
 private final class FindHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate {
 
@@ -867,17 +825,12 @@ private final class FindHost: NSObject, TranscriptViewDataSource, TranscriptView
     /// Called with each report as it arrives, for a test that acts mid-walk.
     var onFindReport: ((Int, Bool) -> Void)?
 
-    /// Whether `.view` rows answer `findMatchesOf`. Off is a host that never
-    /// implemented it, answered by the protocol's default.
-    var answersFind = true
-
     convenience init(sources: [String]) {
         self.init(contents: sources.map { .markdown($0) })
     }
 
-    /// `viewText` is what the `.view` row at each index draws.
-    init(contents: [TranscriptRowContent], viewText: [Int: String] = [:]) {
-        rows = contents.enumerated().map { (UUID(), $1, viewText[$0] ?? "") }
+    init(contents: [TranscriptRowContent]) {
+        rows = contents.map { (UUID(), $0, "") }
         super.init()
     }
 
@@ -908,27 +861,7 @@ private final class FindHost: NSObject, TranscriptViewDataSource, TranscriptView
     }
 
     func transcriptView(_ transcriptView: TranscriptView, viewForRow row: Int) -> NSView {
-        transcriptView.makeView(withIdentifier: FindableRowView.identifier) { FindableRowView() }
-    }
-
-    /// Answered from the model, as the delegate asks — and with the options it
-    /// asks for, through Foundation's own search rather than one written here.
-    func transcriptView(
-        _ transcriptView: TranscriptView, findMatchesOf query: String, inRow row: Int
-    ) -> [Range<Int>] {
-        guard answersFind else { return [] }
-        let text = rows[row].text as NSString
-        var found: [Range<Int>] = []
-        var searched = NSRange(location: 0, length: text.length)
-        while true {
-            let match = text.range(
-                of: query, options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
-                range: searched)
-            guard match.location != NSNotFound else { return found }
-            found.append(match.lowerBound..<match.upperBound)
-            searched = NSRange(
-                location: NSMaxRange(match), length: text.length - NSMaxRange(match))
-        }
+        transcriptView.makeView(withIdentifier: HostRowView.identifier) { HostRowView() }
     }
 
     func transcriptView(
@@ -939,29 +872,10 @@ private final class FindHost: NSObject, TranscriptViewDataSource, TranscriptView
     }
 }
 
-/// A host's row view that adopts the find protocol: it says where its characters
-/// are and keeps what it was asked to draw, which is all a test needs to know it
-/// took part.
+/// A host's row view — the transcript draws no find on it.
 @MainActor
-private final class FindableRowView: NSView, TranscriptFindHighlighting {
-
+private final class HostRowView: NSView {
     static let identifier = NSUserInterfaceItemIdentifier("FindTests.row")
-
-    private(set) var drawn: [Range<Int>] = []
-
-    /// Ten points a character along one line. Any geometry will do, as long as
-    /// the transcript lights what this says.
-    func rects(forCharacterRange range: Range<Int>) -> [NSRect] {
-        [
-            NSRect(
-                x: CGFloat(range.lowerBound) * 10, y: 10,
-                width: CGFloat(range.count) * 10, height: 20)
-        ]
-    }
-
-    func drawCharacters(in range: Range<Int>) {
-        drawn.append(range)
-    }
 }
 
 /// A plain white bar: the host's chrome, in the only colour the dimming shows on.

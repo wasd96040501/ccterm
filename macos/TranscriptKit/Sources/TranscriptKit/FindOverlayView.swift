@@ -27,16 +27,16 @@ import AppKit
 ///
 /// **Drawn over every row the same way, whoever drew the row.** Where a match is
 /// and what its characters look like are the row view's to say, through
-/// `TranscriptFindHighlighting` — `NSTextFinderClient`'s two questions — and
-/// everything else is here. A row therefore never draws a find of its own, and a
-/// host's `.view` row looks exactly like the transcript's.
+/// `BlockView` — where a match is (`rects(forCharacterRange:)`) and its glyphs alone (`drawCharacters(in:)`) — and
+/// everything else is here. A row therefore never draws a find of its own. A host's `.view` row is
+/// not searched, so it is never lit.
 @MainActor
 final class FindOverlayView: NSView {
 
     /// One row on screen, and its part in the find.
     struct Row {
         let id: TranscriptRow.ID
-        let view: NSView & TranscriptFindHighlighting
+        let view: BlockView
         let matches: [Range<Int>]
         let current: Range<Int>?
     }
@@ -208,7 +208,7 @@ private final class ShapeView: NSView {
 @MainActor
 final class FindIndicatorView: NSView {
 
-    private weak var source: (NSView & TranscriptFindHighlighting)?
+    private weak var source: (BlockView)?
     private var range: Range<Int> = 0..<0
 
     /// Slightly larger than the line on every side, as AppKit's is.
@@ -235,7 +235,7 @@ final class FindIndicatorView: NSView {
 
     /// The characters of `range` in `view`, on a bubble over `rect` — a rect in
     /// the superview's coordinates.
-    func show(_ range: Range<Int>, of view: NSView & TranscriptFindHighlighting, over rect: NSRect) {
+    func show(_ range: Range<Int>, of view: BlockView, over rect: NSRect) {
         let frame = rect.insetBy(dx: -Self.padding.width, dy: -Self.padding.height)
         let moved = view !== source || range != self.range || frame != self.frame
         source = view

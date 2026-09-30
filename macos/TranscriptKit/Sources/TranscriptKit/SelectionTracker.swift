@@ -35,22 +35,14 @@ final class SelectionTracker {
     /// The reader's selection, or a caret after a click, or `nil`.
     private(set) var selection: TextSelection?
 
-    private weak var owner: SelectionTrackerOwner?
+    private weak var dataSource: RowDataSource?
     private let rowCache: RowCache
     private let list: ExactListView
 
-    init(owner: SelectionTrackerOwner, rowCache: RowCache, list: ExactListView) {
-        self.owner = owner
+    init(dataSource: RowDataSource, rowCache: RowCache, list: ExactListView) {
+        self.dataSource = dataSource
         self.rowCache = rowCache
         self.list = list
-    }
-
-    private var numberOfRows: Int { list.numberOfRows }
-
-    private var contentWidth: CGFloat { owner?.contentWidth ?? 0 }
-
-    private func measuredBlock(for row: TranscriptRow) -> MeasuredBlock? {
-        rowCache.measured(for: row, width: contentWidth)
     }
 
     /// Row `row`'s part of the selection, for a view being bound to it.
@@ -200,7 +192,7 @@ final class SelectionTracker {
     private func selectionHit(
         at event: NSEvent
     ) -> (row: Int, id: TranscriptRow.ID, block: MeasuredBlock?, point: CGPoint)? {
-        guard numberOfRows > 0, let owner else { return nil }
+        guard let dataSource, dataSource.numberOfRows > 0 else { return nil }
         let point = list.convert(event.locationInWindow, from: nil)
         let hit = list.row(at: NSPoint(x: list.bounds.midX, y: point.y))
         let top = list.rect(ofRow: 0).minY
@@ -212,11 +204,11 @@ final class SelectionTracker {
             : above
                 ? 0
                 : min(
-                    numberOfRows - 1,
+                    dataSource.numberOfRows - 1,
                     max(0, list.rows(in: NSRect(x: 0, y: top, width: 1, height: point.y - top)).upperBound - 1))
 
-        guard let described = owner.row(at: clamped) else { return nil }
-        let contentWidth = owner.contentWidth
+        guard let described = dataSource.row(at: clamped) else { return nil }
+        let contentWidth = dataSource.contentWidth
         // The block is drawn from the row's top edge, centred at the content
         // width — `TranscriptCellView`'s arrangement.
         let cell = list.rect(ofRow: clamped)
@@ -226,7 +218,7 @@ final class SelectionTracker {
             : above ? .zero : CGPoint(x: contentWidth, y: cell.height)
         return (
             clamped, described.id,
-            described.content == .view ? nil : measuredBlock(for: described), local
+            described.content == .view ? nil : dataSource.measuredBlock(for: described), local
         )
     }
 
@@ -284,12 +276,12 @@ final class SelectionTracker {
     /// the content and not the width, so a tree measured at any width answers.
     /// `.view` rows contribute nothing; their content is the host's.
     func copySelection() {
-        guard let selection, !selection.isEmpty, let owner else { return }
+        guard let selection, !selection.isEmpty, let dataSource else { return }
         var parts: [String] = []
-        for row in selection.rows where row < numberOfRows {
-            guard let described = owner.row(at: row),
+        for row in selection.rows where row < dataSource.numberOfRows {
+            guard let described = dataSource.row(at: row),
                 let block = rowCache.cachedMeasured(for: described, width: nil)
-                    ?? RowCache.Entry(measuring: described.content, width: owner.contentWidth, reusing: nil)?
+                    ?? RowCache.Entry(measuring: described.content, width: dataSource.contentWidth, reusing: nil)?
                     .measured,
                 let range = selection.range(inRow: row, length: block.length)
             else { continue }

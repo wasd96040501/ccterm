@@ -364,7 +364,7 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
 
     /// Warms `RowCache` off the main actor after a width change; see
     /// `RemeasureScheduler`.
-    private lazy var remeasureScheduler = RemeasureScheduler(owner: self, rowCache: rowCache, list: list)
+    private lazy var remeasureScheduler = RemeasureScheduler(dataSource: self, rowCache: rowCache, list: list)
 
     /// The re-measure in flight, or `nil` — what a test waits on.
     var remeasuring: Task<Void, Never>? { remeasureScheduler.task }
@@ -774,7 +774,7 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
     // MARK: - Find
 
     /// The find, its walk and its presentation; see `FindSession`.
-    private lazy var findSession = FindSession(owner: self, rowCache: rowCache, list: list)
+    private lazy var findSession = FindSession(dataSource: self, delegate: self, rowCache: rowCache, list: list)
 
     /// The number of matches found so far. Still climbing until the delegate
     /// reports `isComplete`.
@@ -804,9 +804,8 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
     /// `transcriptView(_:didUpdateFindMatches:isComplete:)` — once straight away,
     /// at zero, and then as the count climbs.
     ///
-    /// **`.view` rows are searched by their host**, through the delegate's
-    /// `transcriptView(_:findMatchesOf:inRow:)`, and drawn again by their view
-    /// through `TranscriptFindHighlighting`.
+    /// **`.view` rows are not searched**: the host draws them, and a find
+    /// neither counts nor highlights what is in one.
     ///
     /// **A find follows the transcript.** Rows inserted are searched, rows
     /// `reloadRows(at:)` announces are searched again, rows removed take their
@@ -871,7 +870,7 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
 
     /// The reader's selection and the gestures that make it; see
     /// `SelectionTracker`.
-    private lazy var selectionTracker = SelectionTracker(owner: self, rowCache: rowCache, list: list)
+    private lazy var selectionTracker = SelectionTracker(dataSource: self, rowCache: rowCache, list: list)
 
     /// A press no row consumed reaches here up the responder chain, after the
     /// list has taken focus for it: the selection is tracked to its release.
@@ -1043,19 +1042,11 @@ extension TranscriptView: ListAdapterOwner {
     }
 }
 
-extension TranscriptView: RemeasureSchedulerOwner {}
-
-extension TranscriptView: SelectionTrackerOwner {}
-
 extension TranscriptView: RowDataSource {}
 
 extension TranscriptView: FindSessionDelegate {}
 
-extension TranscriptView: FindSessionOwner {
-
-    func findMatches(of query: String, inRow row: Int) -> [Range<Int>] {
-        delegate?.transcriptView(self, findMatchesOf: query, inRow: row) ?? []
-    }
+extension TranscriptView {
 
     func findDidUpdate(matches: Int, isComplete: Bool) {
         delegate?.transcriptView(self, didUpdateFindMatches: matches, isComplete: isComplete)

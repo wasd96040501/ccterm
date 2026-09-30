@@ -18,7 +18,7 @@ import AppKit
 /// `isFlipped` is true so that the y-down arithmetic every block is written in
 /// matches the context it draws into, rather than being un-flipped at each of
 /// the several dozen places a rectangle crosses the boundary.
-final class BlockView: NSView, TranscriptFindHighlighting, SurfaceLayerOwner {
+final class BlockView: NSView, SurfaceLayerOwner {
 
     private(set) var block: MeasuredBlock?
 

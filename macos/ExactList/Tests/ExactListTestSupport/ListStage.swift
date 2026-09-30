@@ -97,18 +97,19 @@ public final class ListStage {
     }
 
     /// Moves the split's divider, animated through `animator()` or not, and
-    /// returns once it has arrived.
+    /// returns once it has arrived, or two seconds after the animation should
+    /// have ended: a test fails on where the divider is, never waits on it.
     public func moveDivider(to position: CGFloat, animated: Bool) async {
         guard let leftWidth else { preconditionFailure("moveDivider needs mountInSplit first") }
         if animated {
-            await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 0.25
-                    leftWidth.animator().constant = position
-                } completionHandler: {
-                    done.resume()
-                }
+            var arrived = false
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.25
+                leftWidth.animator().constant = position
+            } completionHandler: {
+                arrived = true
             }
+            _ = await drain(until: { arrived }, timeout: 0.25 + 2)
         } else {
             leftWidth.constant = position
         }

@@ -28,6 +28,10 @@ public enum PresentationSampler {
 
     /// Samples `views` on every refresh for `duration`. `ancestor` should be
     /// flipped, as the list is, so the frames read top-down.
+    ///
+    /// Returns by `duration` plus a second of wall-clock time whatever the
+    /// display does: with no refreshes (a display asleep) it returns the frames
+    /// it has, possibly none, and the test fails on them instead of waiting.
     @available(macOS 14, *)
     public static func record(_ views: [NSView], in ancestor: NSView, for duration: TimeInterval) async -> [Frame] {
         await record(in: ancestor, for: duration) { views }
@@ -113,7 +117,11 @@ private final class DisplayLinkRecorder: NSObject {
         let link = screen.displayLink(target: self, selector: #selector(tick))
         link.add(to: .main, forMode: .common)
         self.link = link
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration + Self.grace) { [self] in stop() }
     }
+
+    /// How long past `duration` the recording may wait for its last refresh.
+    private static let grace: TimeInterval = 1
 
     @objc private func tick(_ link: CADisplayLink) {
         refresh = link.targetTimestamp
@@ -133,12 +141,17 @@ private final class DisplayLinkRecorder: NSObject {
             opacities[ObjectIdentifier(view)] = PresentationSampler.presentedOpacity(of: view)
         }
         self.frames.append(PresentationSampler.Frame(elapsed: elapsed, frames: frames, opacities: opacities))
-        if elapsed >= duration {
-            link?.invalidate()
-            link = nil
-            if let observer { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
-            observer = nil
-            finish(self.frames)
-        }
+        if elapsed >= duration { stop() }
+    }
+
+    /// Ends the recording once: at the refresh past `duration`, or at the
+    /// wall-clock deadline if no such refresh came.
+    private func stop() {
+        guard let link else { return }
+        link.invalidate()
+        self.link = nil
+        if let observer { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
+        observer = nil
+        finish(frames)
     }
 }

@@ -74,7 +74,8 @@ AppKit's words are used wherever AppKit has one.
 | **row** | An index `0..<n`. It has no identity beyond its index, the same as in `NSTableView`. |
 | **content width** `W` | The width every row is laid out at. It equals the clip view's width. |
 | **height** `h(i)` | What `listView(_:heightOfRow:width:)` returned for row `i` at some width. It is finite and greater than 0. |
-| **row spacing** `s` | The gap between two adjacent rows (`rowSpacing`, named after `NSGridView.rowSpacing`). |
+| **row spacing** `s` | The default gap between two adjacent rows (`rowSpacing`, named after `NSGridView.rowSpacing` and `NSStackView.spacing`). |
+| **spacing above** `g(i)` | The gap between rows `i − 1` and `i`: what `listView(_:customSpacingAboveRow:)` returned for row `i`, or `s` when it returned `nil` (G7). It is finite and ≥ 0. Row 0 has one too, used once a row is above it. |
 | **document** | The flipped coordinate space the rows are laid out in. `y` grows downward and row 0's top is at `y = 0`. |
 | **offset** `o` | The clip view's `bounds.origin.y`, in document coordinates. |
 | **viewport height** `V` | The clip view's height. |
@@ -169,10 +170,12 @@ written they do nothing.
 
   The host's knobs are `contentInsets`, `rowSpacing`,
   `automaticallyFollowsTail` (§6.4) and `scrollerStyle`, and nothing else.
+  A row's own spacing is the delegate's answer, like its height (G7).
 - **L12: invalid input is a programmer error.** These stop with a precondition
   failure:
   - `heightOfRow` returns a value that is not finite, or is ≤ 0;
   - `rowSpacing` is set to a value that is not finite, or is < 0;
+  - `customSpacingAboveRow` returns a value that is not finite, or is < 0;
   - an index is out of range, whether in an update, in `.row(r)`, or in a
     scroll request;
   - the data source or the delegate has been deallocated when the list needs
@@ -182,10 +185,11 @@ written they do nothing.
 
 ## 5. Geometry
 
-- **G1: prefix sums.** `y(0) = 0`, and `y(i) = Σ_{k<i} h(k) + i·s`. Row `i`'s
-  frame in document coordinates is `(0, y(i), W, h(i))`.
-- **G2: exact content height.** `H = Σ h + (n − 1)·s` when `n ≥ 1`, and `0`
-  when `n = 0`. The document's height is `H`. Nothing is estimated.
+- **G1: prefix sums.** `y(0) = 0`, and `y(i) = Σ_{k<i} h(k) + Σ_{1≤k≤i} g(k)`.
+  Row `i`'s frame in document coordinates is `(0, y(i), W, h(i))`. With every
+  `g(k) = s` this is `Σ_{k<i} h(k) + i·s`.
+- **G2: exact content height.** `H = Σ h + Σ_{1≤k<n} g(k)` when `n ≥ 1`, and
+  `0` when `n = 0`. The document's height is `H`. Nothing is estimated.
 - **G3: the scroll range.** `oMin = −t`, and `oMax = max(oMin, H − V + b)`.
   Every offset the list sets lies in `[oMin, oMax]`.
 - **G4: queries.** All geometry queries are in `ExactListView`'s own
@@ -194,7 +198,11 @@ written they do nothing.
   - `rect(ofRow:)` returns the frame from G1, shifted by the current offset.
     Out of range, it returns `.zero`, as `NSTableView` does.
   - `row(at:)` returns the row whose frame contains the point, or −1. A point
-    in a spacing gap belongs to no row.
+    in a spacing gap belongs to no row. *Deviation from `NSTableView`:* its
+    `rect(ofRow:)` includes the intercell spacing, so a point in the gap is
+    the row's. Here a row's frame is exactly what its height says, as a view
+    in `NSStackView` or a cell in `NSGridView` is, and the gap is between
+    rows, as their spacing is.
   - `rows(in:)` returns the rows whose frames intersect the rect, as a
     `Range<Int>`. `NSTableView` returns an `NSRange`, which Swift callers
     convert straight back.
@@ -206,7 +214,9 @@ written they do nothing.
   names (inserted, removed, moved, noted or reloaded), and `m` the rows M7
   considers (those whose unscaled sweep meets `P`).
   - Mapping an index to `y`, and `y` to an index: O(log n).
-  - A height change: O(log n) per row.
+  - A height or spacing change: O(log n) per row.
+  - A change of `rowSpacing`: O(n), one pass that re-resolves every row that
+    uses it, asking nothing (V3).
   - Each structural call inside a batch (insert, remove, move): O(e + r), for
     the `r` rows it names.
   - Planning a commit: O((e + k + m) · log n).
@@ -222,6 +232,32 @@ written they do nothing.
 - **G6: tolerance.** Floating-point sums may differ from a naive left-to-right
   sum by at most `1e-6 · max(1, H)` pt. Tests compare with that tolerance and
   no looser.
+- **G7: the spacing above a row.** `rowSpacing` is the default gap. A row
+  that needs another one says so through the delegate's
+  `listView(_:customSpacingAboveRow:)`, which returns the gap between it and
+  the row above, or `nil` for `rowSpacing`. The requirement is optional: a
+  delegate that doesn't implement it gets `s` everywhere.
+  - **When it is asked.** The spacing belongs to the row, like its content,
+    and doesn't depend on `W`. It is asked right after the row's height
+    whenever the host has announced the row: at the load point, by
+    `reloadData()`, for inserted rows and for noted rows (U5). It is never
+    asked by a width change (§9) or by `reloadData(forRowIndexes:)` (U6),
+    and a moved or surviving row keeps it. A host changes a row's spacing by
+    noting the row.
+  - Row 0 is asked too. Its answer takes no space while it is first and
+    holds once a row is inserted above it.
+  - A change of `rowSpacing` changes every row that answered `nil`, and no
+    other (V3).
+
+  *Deviation from `NSStackView.customSpacing(after:)`:* the spacing is above
+  a row, not after it, as `NSGridRow.topPadding` is. A list discloses by
+  inserting rows after one that stays (an outline's children, a run's
+  items); a row that carries the gap above it arrives with it and leaves with
+  it, so no neighbour has to be noted when rows come and go. *Deviation:*
+  `nil` means the default, where `NSStackView` answers the sentinel
+  `NSStackView.useDefaultSpacing`; `Optional` is Swift's spelling of that.
+  *Deviation:* the list asks for it by index, as it asks for a height,
+  because it holds no rows to store it on (`NSStackView` stores it per view).
 
 ---
 
@@ -299,7 +335,9 @@ public enum Anchoring { case automatic, row(Int), scrollOffset }
   A floating bar that grows at the bottom while the viewport is following the
   tail therefore lifts the last row with it.
 - **V3: row spacing.** A change of `rowSpacing` is a geometry commit with
-  `.automatic` anchoring. It asks for no heights, and it never animates.
+  `.automatic` anchoring. It moves the gaps above the rows whose spacing is
+  the default, and only those (G7). It asks for no heights and no spacings,
+  and it never animates.
 - **V4: turning tail following on or off.** Setting `automaticallyFollowsTail`
   re-evaluates A8 and moves nothing.
 - **V5: settings before loading.** `contentInsets`, `rowSpacing` and
@@ -342,8 +380,11 @@ public enum Anchoring { case automatic, row(Int), scrollOffset }
   the list itself are each a batch of one with `.automatic` anchoring. Their
   names and semantics match `NSTableView`.
 - **U5: when heights are asked.** Heights are asked at commit, never inside
-  the closure. Inserted rows and noted rows are measured at `W`. So is any
-  stale row the commit brings into `P`.
+  the closure. Inserted rows and noted rows are measured at `W`, and asked
+  their spacing (G7). So is any stale row the commit brings into `P`, for its
+  height only. *Deviation from `NSTableView`:* `noteHeightOfRows` asks for the
+  spacing above each noted row as well; `NSTableView` has no per-row spacing
+  to ask for.
 - **U6: reloading a row's contents.** `reloadData(forRowIndexes:)` asks for
   views again for the mounted rows among those indexes. The view a row shows
   goes back to the pool first, so a host that makes a view with its
@@ -357,7 +398,7 @@ public enum Anchoring { case automatic, row(Int), scrollOffset }
   - It removes every animation, and outstanding completion handlers get
     `false`.
   - It sends every mounted view to `didRemove`.
-  - It asks for the count and every height again.
+  - It asks for the count, and every height and spacing, again.
   - It anchors as A9 says. It never animates.
 - **U8: completion handlers.** A batch's completion handler runs on the main
   actor, after the commit's animations have ended. It always runs
@@ -421,17 +462,34 @@ in a commit has a start and an end value for its screen top and its height.
   - **Surviving:** start is the old screen top and height; end is the new ones.
   - **Inserted:** the end is its new frame. It starts at height 0 where its
     gap's old contents end, taking the first of these that exists:
-    1. the old screen bottom of the gap's last removed row, plus `s`;
-    2. the old screen bottom of the surviving row before the gap, plus `s`;
+    1. the old screen bottom of the gap's last removed row, plus the opening;
+    2. the old screen bottom of the surviving row before the gap, plus the
+       opening;
     3. the old screen top of the surviving row after the gap;
     4. its own end top.
+
+    The **opening** is `min(g(first), room)`: `g` of the gap's first
+    inserted row, but no more than the room there was, the old screen top of
+    the surviving row after the gap minus that bottom (unbounded when there
+    is no such row).
   - **Removed:** the reverse. It starts at its old frame. It ends at height 0
     where its gap's new contents begin, taking the first of these that
     exists:
     1. the new screen top of the gap's first inserted row;
-    2. the new screen bottom of the surviving row before the gap, plus `s`;
+    2. the new screen bottom of the surviving row before the gap, plus the
+       closing;
     3. the new screen top of the surviving row after the gap;
     4. its own start top.
+
+    The **closing** is `min(g(first), room)`: `g` of the gap's first removed
+    row, as it was before the commit, but no more than the room there is, the
+    new screen top of the surviving row after the gap minus that bottom
+    (unbounded when there is no such row).
+
+    A row that appears or disappears does so at its own gap below what stays
+    above it, so a row inserted flush opens flush. The cap keeps a row with a
+    wider gap from starting inside the row below (M5). When every gap is `s`,
+    the opening and the closing are `s`.
 
     Only rows that were mounted before the commit are removed with motion;
     any other removed row is simply gone.
@@ -489,11 +547,12 @@ in a commit has a start and an end value for its screen top and its height.
   `presentedTop(next) − presentedBottom(row)` is the linear interpolation
   between its start and end values. Both of those values are ≥ 0, so rows
   never overlap.
-  - If both rows survive and were adjacent before the commit too, the gap is
-    exactly `s` at every `t`.
+  - If both rows survive and were adjacent before the commit too, the gap
+    goes from the old `g` of the lower row to its new one: constant at every
+    `t` unless the batch noted that row with another spacing.
 - **M6: no blank areas.** At every `t`, every point of `U` lies in a
-  presented row, or in a gap of at most `s` between two rows consecutive in
-  the presented order (M5). This holds between the presented top of the first
+  presented row, or in a gap between two rows consecutive in the presented
+  order (M5) that is no wider than the larger of its start and end values. This holds between the presented top of the first
   row in the presented order and the presented bottom of the last, each bound
   applying while that row is presented; outside them is the space beyond the
   content, as in a still list.
@@ -874,7 +933,7 @@ Core imports Foundation and CoreGraphics, never AppKit.
 | Type | Owns |
 |---|---|
 | `Anchoring` | The public policy enum (§6.1). |
-| `RowHeights` | The heights, the spacing, and a Fenwick index: G1–G5 queries, set height, and the heights after a batch (`applying(_:height:)`). |
+| `RowHeights` | The heights, each row's custom spacing and the default one, and a Fenwick index over height plus spacing above: G1–G5 and G7 queries, set height and spacing, and the heights after a batch (`applying(_:height:spacing:)`). |
 | `RowEdit` | One update in `NSTableView` semantics: insert, remove, move, note or reload. |
 | `RowTransition` | The insert and remove effects. Its bits are `NSTableView.AnimationOptions`' raw values, so the engine converts between the two without a table (M9). |
 | `RowIndexMap` | The old↔new index mapping of a batch, built incrementally from `RowEdit`s (U2), kept as `RowRun`s (G5). |
@@ -894,7 +953,7 @@ Core imports Foundation and CoreGraphics, never AppKit.
 | `ExactListView` | yes | The façade: the public API, the lifecycle (§4), the batch entry points, and the width-change entry point. It holds the collaborators below. |
 | `ExactListView.Updates` | yes | The batch proxy (U3). |
 | `ExactListViewDataSource` | yes | `numberOfRows(in:)`. |
-| `ExactListViewDelegate` | yes | `heightOfRow:width:`, `viewForRow:`, `didRemove:forRow:`, `didChangeTailFollowing:`, `listViewDidScroll`, `doCommandBy:`. |
+| `ExactListViewDelegate` | yes | `heightOfRow:width:`, `customSpacingAboveRow:` (optional, G7), `viewForRow:`, `didRemove:forRow:`, `didChangeTailFollowing:`, `listViewDidScroll`, `doCommandBy:`. |
 | `ListPhase` | no | Before or after the load point, and what was stored before it: settings and the last scroll request (L3–L6, V5). |
 | `ListScrollView` | no | An `NSScrollView` subclass with the fixed configuration (L11). It reports width and viewport changes from `tile()` (W1, V1, V2). |
 | `ListClipView` | no | An `NSClipView` subclass. It reports every change of the bounds origin, so mounting happens in the same turn as the scroll (P1). |

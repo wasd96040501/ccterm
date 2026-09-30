@@ -202,7 +202,7 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
     /// **Nothing here names a recipe** — which case gets built how lives on the
     /// case, in `RowCache.Entry.init(measuring:width:reusing:)`, so that the
     /// background path and this one cannot describe a row differently.
-    private func measuredBlock(for row: TranscriptRow) -> MeasuredBlock? {
+    func measuredBlock(for row: TranscriptRow) -> MeasuredBlock? {
         rowCache.measured(for: row, width: contentWidth)
     }
 
@@ -1046,6 +1046,10 @@ extension TranscriptView: ListAdapterOwner {
 extension TranscriptView: RemeasureSchedulerOwner {}
 
 extension TranscriptView: SelectionTrackerOwner {}
+
+extension TranscriptView: RowDataSource {}
+
+extension TranscriptView: FindSessionDelegate {}
 
 extension TranscriptView: FindSessionOwner {
 

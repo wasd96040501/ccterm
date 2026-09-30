@@ -16,13 +16,20 @@ struct Paragraph: Block, @unchecked Sendable {
 
     let text: ShapedText
 
-    init(_ text: ShapedText) {
+    /// Extra room **above** the text, on top of whatever the container puts
+    /// between two blocks — what makes a heading a section break.
+    let topInset: CGFloat
+
+    init(_ text: ShapedText, topInset: CGFloat = 0) {
         self.text = text
+        self.topInset = topInset
     }
 
     func measure(_ width: CGFloat) -> MeasuredBlock {
         let text = text.typeset(width: width)
-        return Measured(text: text, textOrigin: .zero, size: CGSize(width: width, height: text.size.height))
+        return Measured(
+            text: text, textOrigin: CGPoint(x: 0, y: topInset),
+            size: CGSize(width: width, height: topInset + text.size.height))
     }
 
     /// `size.width` is the width the paragraph was measured into, as distinct

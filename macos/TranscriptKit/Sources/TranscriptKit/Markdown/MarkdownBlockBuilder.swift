@@ -131,6 +131,16 @@ enum MarkdownBlockBuilder {
     /// so a container can hand its children the same one — the only reason it
     /// travels at all is that a list is tighter than a document, and a block
     /// inside a list item belongs to the list's rhythm rather than the page's.
+    /// Extra room above a heading, scaled by level so the same gap does not read
+    /// as generous under an h3 and mean under an h1.
+    private static func headingTopInset(level: Int) -> CGFloat {
+        switch max(1, level) {
+        case 1: return 18
+        case 2: return 10
+        default: return 4
+        }
+    }
+
     private static func block(
         _ node: MarkdownIR.BlockNode, style: TextStyle, spacing: CGFloat
     ) -> Block {

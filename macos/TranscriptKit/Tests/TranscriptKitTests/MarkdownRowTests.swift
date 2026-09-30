@@ -98,6 +98,30 @@ final class MarkdownRowTests: XCTestCase {
 
         XCTAssertGreaterThan(mounted.transcript.rect(ofRow: 0).height, wide)
     }
+
+    /// A reload inside a batch names its row after the batch's earlier edits,
+    /// as `NSTableView`'s incremental rules say, while the views on screen are
+    /// still at their rows from before it. Every row ends up showing its own
+    /// text — none takes the reloaded row's content.
+    func testAReloadAfterAnInsertInOneBatchChangesTheRowItNames() {
+        let host = mount(["zero", "one", "two"])
+        XCTAssertEqual(mounted.transcript.descendants(ofType: BlockView.self).count, 3, "premise: rows on screen")
+
+        mounted.transcript.performBatchUpdates {
+            host.insert("new", at: 0)
+            mounted.transcript.insertRows(at: IndexSet(integer: 0))
+            // "one" is row 2 now.
+            host.replace(at: 2, with: "one, changed")
+            mounted.transcript.reloadRows(at: IndexSet(integer: 2))
+        }
+        mounted.settle()
+
+        let shown = mounted.transcript.descendants(ofType: BlockView.self)
+            .map { (mounted.transcript.row(for: $0), $0.block.map { $0.text(from: 0, to: $0.length) } ?? "") }
+            .sorted { $0.0 < $1.0 }
+        XCTAssertEqual(shown.map(\.0), [0, 1, 2, 3])
+        XCTAssertEqual(shown.map(\.1), ["new", "zero", "one, changed", "two"])
+    }
 }
 
 /// Answers `.markdown` for every row but the one carrying `hostRowMarker`, which
@@ -107,11 +131,11 @@ private final class MarkdownHost: NSObject, TranscriptViewDataSource, Transcript
 
     static let hostRowMarker = "\u{0}host-drawn"
 
-    private let sources: [String]
+    private var sources: [String]
 
     /// Minted rather than derived from the row number, which nothing in this
-    /// package should model even where the fixture never mutates.
-    private let ids: [UUID]
+    /// package should model.
+    private var ids: [UUID]
 
     private(set) var heightWidths: [CGFloat] = []
     private(set) var viewCalls = 0
@@ -120,6 +144,17 @@ private final class MarkdownHost: NSObject, TranscriptViewDataSource, Transcript
         self.sources = sources
         ids = sources.map { _ in UUID() }
         super.init()
+    }
+
+    /// A new row, with an identity of its own.
+    func insert(_ source: String, at index: Int) {
+        sources.insert(source, at: index)
+        ids.insert(UUID(), at: index)
+    }
+
+    /// New content for the row at `index`, which keeps its identity.
+    func replace(at index: Int, with source: String) {
+        sources[index] = source
     }
 
     func numberOfRows(in transcriptView: TranscriptView) -> Int { sources.count }

@@ -86,11 +86,26 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
         }
     }
 
-    /// What a batch holds still on screen: `.automatic` (the tail while
-    /// following it, else the first visible row), `.row(r)` (row `r`, by its
-    /// pre-batch index, at its current screen position), or `.scrollOffset`.
-    /// The list's own type; `NSTableView` has none.
-    public typealias Anchoring = ExactListView.Anchoring
+    /// What a batch holds still on screen. `NSTableView` has no counterpart: it
+    /// holds the scroll offset, and the content moves under the reader.
+    public enum Anchoring: Equatable {
+
+        /// The tail while the transcript is following it; otherwise the first
+        /// visible row, at its current screen position.
+        case automatic
+
+        /// Row `r`, by its index before the batch, at its current screen
+        /// position — how a host keeps the row the reader acted on under the
+        /// pointer.
+        case row(Int)
+
+        fileprivate var listAnchoring: ExactListView.Anchoring {
+            switch self {
+            case .automatic: .automatic
+            case .row(let row): .row(row)
+            }
+        }
+    }
 
     // MARK: - Collaborators
 
@@ -566,14 +581,22 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
     /// pointer: `.row(r)` holds row `r` (its index before the batch) where it is
     /// on screen, even at the tail.
     public func performBatchUpdates(anchoring: Anchoring = .automatic, _ updates: () -> Void) {
+        let outer = isInBatch
+        isInBatch = true
+        defer { isInBatch = outer }
         holdingRowsStillForFind {
-            list.performBatchUpdates(anchoring: anchoring) { _ in
+            list.performBatchUpdates(anchoring: anchoring.listAnchoring) { _ in
                 // Each mutation records its edits through a nested
                 // `performBatchUpdates`, which joins this one.
                 updates()
             }
         }
     }
+
+    /// Whether a `performBatchUpdates` closure is running. Inside one, a mounted
+    /// view is still at its row from before the batch, while the indexes a host
+    /// passes follow the batch's edits so far: only the list can pair them.
+    private var isInBatch = false
 
     /// Records `edits` in the list's current batch, or in one of their own.
     private func updateList(_ edits: (ExactListView.Updates) -> Void) {
@@ -675,8 +698,9 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
     /// until it seals is the host's policy.
     public func reloadRows(at indexes: IndexSet) {
         // Rows the transcript draws itself are handed their new tree in place
-        // rather than rebuilt, which is what preserves selection and hover.
-        let rest = indexes.subtracting(rebindVisibleRows(in: indexes))
+        // rather than rebuilt, which is what preserves selection and hover —
+        // outside a batch, where a mounted view's row is the row it names.
+        let rest = isInBatch ? indexes : indexes.subtracting(rebindVisibleRows(in: indexes))
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0
             list.performBatchUpdates { updates in

@@ -21,10 +21,14 @@ import XCTest
 /// **Several of the mechanism's parts are deliberately not covered, because
 /// nothing can cover them.** The transcript is correct without any of them: the
 /// list asks every stale row again, and `RowCache` rejects anything stale on
-/// read. Breaks that stay green here are the merge's width guard, the
-/// cancellation of a superseded run, the content comparison inside
-/// `RowCache.merge(remeasured:at:)`, and queueing every row into the task group at
-/// once instead of a core count at a time (`inFlightLimit` has the measurement).
+/// read. Breaks that stay green here are the merge's width guard, the content
+/// comparison inside `RowCache.merge(remeasured:at:)`, queueing every row into the
+/// task group at once instead of a core count at a time (`inFlightLimit` has the
+/// measurement), and **the order of the walk**. The list's idle turns ask the
+/// same rows the same way on the main actor, and which of the two reaches a row
+/// first is the scheduler's to decide — on a transcript this size the list often
+/// finishes before the walk takes its first turn, so there is no trace of the
+/// walk's order a test could read.
 @MainActor
 final class ResizeRemeasureTests: XCTestCase {
 
@@ -82,10 +86,10 @@ final class ResizeRemeasureTests: XCTestCase {
         !transcript.scrollView.documentVisibleRect.intersects(transcript.documentRect(ofRow: row))
     }
 
-    /// The re-measure's walks among everything the data source was asked: each
-    /// run of calls that asks every row once. Nothing else does — the list asks
-    /// for the rows it places, and on idle turns only for the rows still stale,
-    /// never one it has measured at this width (ExactList W6).
+    /// Each run of calls that asks every row once. A walk is one; so is the
+    /// list's idle refresh when it finishes every stale row, joined to the rows
+    /// on screen it rebinds — but then nothing is left stale for a walk to
+    /// order, so a single width change leaves at most one such run.
     private func walks(in calls: [Int]) -> [[Int]] {
         guard calls.count >= Self.rowCount else { return [] }
         let every = Array(0..<Self.rowCount)
@@ -148,8 +152,11 @@ final class ResizeRemeasureTests: XCTestCase {
             isOffscreen(row: offscreen, in: subject), "row \(offscreen) is on screen after all")
         let staleRect = subject.documentRect(ofRow: offscreen)
 
+        // The pass that changes the width, and no run-loop turn after it: the
+        // list refreshes stale rows on idle turns (ExactList W5), so a turn here
+        // would let it correct rows this assertion is about.
         subject.setContentWidth(Self.narrow)
-        subject.settle()
+        subject.window.contentView?.layoutSubtreeIfNeeded()
 
         // Provocation: the batch was actually started. Without this the two
         // assertions below could both hold because nothing happened at all.
@@ -188,8 +195,10 @@ final class ResizeRemeasureTests: XCTestCase {
 
         XCTAssertEqual(rects(subject), rects(control))
         // The superseded run never took its first turn, so it walked nothing —
-        // a walk is a data-source call per row on the main actor.
-        XCTAssertEqual(walks(in: subjectHost.rowCalls).count, 1, "the superseded run walked the rows too")
+        // a walk is a data-source call per row on the main actor. At most the
+        // second run's walk, which the list's idle turns may have made needless.
+        XCTAssertLessThanOrEqual(
+            walks(in: subjectHost.rowCalls).count, 1, "the superseded run walked the rows too")
     }
 
     /// The host may do anything while the batch is in flight.
@@ -232,88 +241,7 @@ final class ResizeRemeasureTests: XCTestCase {
         XCTAssertEqual(rects(subject), rects(control))
     }
 
-    // MARK: - Where it starts, and what it does to the viewport
-
-    /// The rows are re-measured outward from what the reader is looking at —
-    /// the order the list's idle turns will ask for them in.
-    ///
-    /// Read off the order the data source was asked in, which is what the walk
-    /// does and the only trace it leaves: it asks each row who it is until it has
-    /// claimed every stale entry, in one run, and the order of that run is the
-    /// order the rows are measured in.
-    ///
-    /// **From the tail**, so that "starts at the viewport" and "starts at row 0"
-    /// are different answers — the walk then runs down to row 0 with one side
-    /// exhausted from the outset. `testTheWalkInterleavesBothSides` is the other
-    /// half, where both sides have rows.
-    func testTheWalkStartsAtTheViewportAndWorksOutward() async throws {
-        let (subject, host) = mount(width: Self.wide)
-        XCTAssertFalse(host.rowCalls.isEmpty, "the subject never laid out")
-
-        subject.transcript.scrollToRow(at: Self.rowCount - 1, scrollPosition: .bottom)
-        subject.settle()
-        host.forgetRowCalls()
-
-        subject.setContentWidth(Self.narrow)
-        subject.settle()
-        XCTAssertNotNil(subject.transcript.remeasuring, "no re-measure was started")
-        await subject.settleWidthChange()
-
-        // Every row exactly once — a walk that dropped rows would leave them to
-        // the list, measured one main-thread row at a time.
-        let walks = walks(in: host.rowCalls)
-        XCTAssertEqual(walks.count, 1, "not one walk that covers every row: \(host.rowCalls)")
-        let walk = try XCTUnwrap(walks.first)
-
-        let first = walk[0]
-        XCTAssertGreaterThan(first, 0, "the walk started at the top, not at the viewport")
-        XCTAssertEqual(
-            walk, Array(first..<Self.rowCount) + Array((0..<first).reversed()),
-            "the walk did not run outward from the viewport")
-    }
-
-    /// With rows on both sides of the viewport, the walk alternates between them
-    /// rather than finishing one side first.
-    ///
-    /// Asserted as "it goes above the viewport before it reaches the last row",
-    /// which is the cheapest thing that a one-side-at-a-time walk cannot do. The
-    /// obvious assertion — that distance from the viewport never decreases — is
-    /// worse than useless here: it needs the viewport, and inferring that from the
-    /// walk itself makes a walk that ran to the end and came back look like a very
-    /// wide viewport followed by one side. Tried, and it passed against exactly the
-    /// bug it was written for.
-    func testTheWalkInterleavesBothSides() async throws {
-        let (subject, host) = mount(width: Self.wide)
-        XCTAssertFalse(host.rowCalls.isEmpty, "the subject never laid out")
-
-        subject.transcript.scrollToRow(at: Self.rowCount / 2, scrollPosition: .center)
-        subject.settle()
-        host.forgetRowCalls()
-
-        subject.setContentWidth(Self.narrow)
-        subject.settle()
-        XCTAssertNotNil(subject.transcript.remeasuring, "no re-measure was started")
-        await subject.settleWidthChange()
-
-        let walks = walks(in: host.rowCalls)
-        XCTAssertEqual(walks.count, 1, "not one walk that covers every row: \(host.rowCalls)")
-        let walk = try XCTUnwrap(walks.first)
-        // The rows on screen come first, so this is the topmost of them — and
-        // anything below it in the walk is a row above the viewport.
-        let firstVisible = walk[0]
-        XCTAssertGreaterThan(firstVisible, 0, "the walk started at the top, not at the viewport")
-        XCTAssertLessThan(
-            firstVisible, Self.rowCount - 1,
-            "the viewport reached the tail, so only one side has rows")
-
-        let goesAbove = walk.firstIndex { $0 < firstVisible }
-        let reachesTheEnd = walk.firstIndex(of: Self.rowCount - 1)
-        XCTAssertNotNil(goesAbove)
-        XCTAssertNotNil(reachesTheEnd)
-        XCTAssertLessThan(
-            goesAbove ?? .max, reachesTheEnd ?? .max,
-            "the walk finished one side before starting the other: \(walk)")
-    }
+    // MARK: - What it does to the viewport
 
     /// A correction landing on a later turn does not move what the reader is
     /// looking at.

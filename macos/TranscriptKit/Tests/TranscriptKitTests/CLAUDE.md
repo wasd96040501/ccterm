@@ -2,7 +2,7 @@
 
 `make test-kit [FILTER=<Class>]` from the repo root (`swift test` in the package). A suite of its own, so the package stays testable without the app.
 
-Almost nothing here is pure logic: `NSTableView` only asks its data source and delegate anything when it lays out. So a test mounts a real `TranscriptView` in a real window (`MountedTranscript` over `TestWindow`) and asserts on geometry and on **what the transcript asked for** — the widths passed to `heightOfRow`, how many times, how many views were built vs recycled (`RecordingHost`). The second kind catches what the screen can't show: a wrong width or a doubled measurement pass.
+Almost nothing here is pure logic: the list under the transcript asks its data source and delegate anything only when it lays out or commits. So a test mounts a real `TranscriptView` in a real window (`MountedTranscript` over `TestWindow`) and asserts on geometry and on **what the transcript asked for** — the widths passed to `heightOfRow`, how many times, how many views were built vs recycled (`RecordingHost`). The second kind catches what the screen can't show: a wrong width or a doubled measurement pass.
 
 ## Rules
 
@@ -10,7 +10,7 @@ Almost nothing here is pure logic: `NSTableView` only asks its data source and d
 - **Every test first asserts the transcript was provoked** (e.g. `heightWidths` is non-empty). A mount that never lays out makes every later assertion pass on an empty tree.
 - **Verify a new test by breaking the code it covers:** short out the production path and check that this test goes red while the others stay green.
 - **A test comparing two configurations asserts that they differ** (e.g. that two widths really wrap the documents differently) before asserting on the difference.
-- **`settle()` runs one pass on purpose.** Width invalidation lands in the pass that changed the width; a change that needs two passes has pushed work to a later tick — a visible frame at the old geometry, i.e. a bug.
+- **`settle()` runs one pass on purpose.** Width invalidation lands in the pass that changed the width for every row the list has prepared; a change that needs two passes there has pushed work to a later tick — a visible frame at the old geometry, i.e. a bug. Rows outside it are refreshed on idle turns (ExactList W5); `settleWidthChange()` waits those out.
 - **When a test depends on something AppKit or the window server does later, wait for that thing**, not for a pass that usually covers it:
   - The window server lists a window a turn or more after `orderFront`, and queued mouse events are rebuilt from global coordinates — `TestWindow.make` returns only once the window is listed. `MountedTranscript.press` queues the rest of a gesture and asserts it was consumed, so a leftover event fails where it was posted.
   - `viewDidAppear` arrives on a later turn than the one that inserted the view — `EditorAreaTests` waits for the selected tab's appearance before clicking.

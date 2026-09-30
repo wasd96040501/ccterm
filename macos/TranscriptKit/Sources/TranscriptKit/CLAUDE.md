@@ -4,12 +4,13 @@ Invariants of the renderer target. Package-level API rules are in [../../CLAUDE.
 
 ## `TranscriptView` and its collaborators
 
-- **`TranscriptView` is the `NSTableView`-shaped façade and the table glue** — the public API, the row answers (heights, views, binding `BlockView`s), the content width and the synchronous half of a width change, the mutations, and scroll anchoring. Everything else is an internal, non-view collaborator that owns its state and cancels its own `Task`:
+- **`TranscriptView` is an `NSTableView`-shaped façade over an `ExactListView`** — the public API, the row answers (heights, views, binding `BlockView`s), the content width, and the mutations, which it hands to the list. The list owns row geometry, scroll anchoring, motion and re-measuring on a width change (`ExactList/SPEC.md`). Everything else is an internal, non-view collaborator that owns its state and cancels its own `Task`:
+  - `ListAdapter` — the list's data source and delegate, forwarded to the transcript (a conformance on the public type would put the list's callbacks on the package's surface).
   - `FindSession` — a find: its state, the walk, `FindOverlayView`.
   - `SelectionTracker` — the text selection and every gesture that changes it (press-to-release loop, context-menu word, Copy).
-  - `RemeasureScheduler` — the off-screen re-measure after a settled width change.
+  - `RemeasureScheduler` — warms `RowCache` off the main actor after a settled width change.
   - `RowCache` — measurements, shared by all of the above.
-- **A collaborator talks back through one narrow protocol** (`FindSessionOwner`, `SelectionTrackerOwner`, `RemeasureSchedulerOwner`, `TableViewAdapterOwner`, `TranscriptTableViewOwner`) that `TranscriptView` conforms to — never by naming `TranscriptView`, so no internal type cycles back to it; only the public `dataSource` / `delegate` pair does (the `NSTableView` idiom). Rows reach a collaborator through `row(at:)`, the host's delegate only through its owner protocol.
+- **A collaborator talks back through one narrow protocol** (`FindSessionOwner`, `SelectionTrackerOwner`, `RemeasureSchedulerOwner`, `ListAdapterOwner`) that `TranscriptView` conforms to — never by naming `TranscriptView`, so no internal type cycles back to it; only the public `dataSource` / `delegate` pair does (the `NSTableView` idiom). Rows reach a collaborator through `row(at:)`, the host's delegate only through its owner protocol.
 - **Mutations enter only through `TranscriptView`**, which tells each collaborator what the mutation did (renumber by an insert or removal, keep by identity after a sweep, re-search reloaded rows) inside the same call.
 
 ## Rows, blocks, painting
@@ -26,8 +27,8 @@ Invariants of the renderer target. Package-level API rules are in [../../CLAUDE.
 ## Selection
 
 - `TextSelection` belongs to the transcript — held by `SelectionTracker`, which owns it and every gesture that changes it — keyed by row identity and renumbered by every mutation (as the scroll anchor is). Each `BlockView` is handed only its part to draw, the way `NSTableView` sets `isSelected`.
-- The first responder is the table (document view), as with `NSTextView`: it takes focus on press, answers `copy:`, drops the selection when focus leaves.
-- **Keys:** the host is offered every command first (`transcriptView(_:doCommandBy:)`); of the rest the table answers only the scrolling commands and passes every other key to the next responder **as the event** — never through `NSTableView`'s `keyDown`, which moves a row selection the transcript doesn't have. That is how a host types into its input while the transcript has focus; there is no API for it.
+- The first responder is the list's document view, as with `NSTextView`: it takes focus on press, answers `copy:`, drops the selection when focus leaves.
+- **Keys:** the host is offered every command first (`transcriptView(_:doCommandBy:)`, through the list's `listView(_:doCommandBy:)`); of the rest the list answers only the scrolling commands and passes every other key to the next responder **as the event**. That is how a host types into its input while the transcript has focus; there is no API for it.
 - A press is tracked to its release in **a tracking loop inside `mouseDown`** (`NSTextView`'s shape). The focus depends on pointer *and* content position, so it is re-read on drag, on a periodic autoscroll tick past an edge, and on scroll-wheel events. Don't dispatch drags to the pressed view: they stop when the hand stops, and the view may already be in the reuse pool.
 - Idle cost is zero: binding a row reads its part from four integers; the loop walks visible rows only when the focus moved.
 - A capped user message allows selecting into its hidden tail ("copy what I sent"); find does not (below).
@@ -37,20 +38,18 @@ Invariants of the renderer target. Package-level API rules are in [../../CLAUDE.
 - Entries are keyed by `TranscriptRow.ID` and trusted only while `(content, width)` matches; a stale entry re-measures rather than rendering wrong. Compare **whole `TranscriptRowContent` values**, not their text — the same string measures differently as `.markdown` vs `.userMessage`.
 - **One recipe, on the cache:** `RowCache.Entry.init(measuring:width:reusing:)` is the only place a content case is built and measured — the cache, `PreparedRows.measuring(_:width:)` off-main, a find's walk and Copy all go through it. `TranscriptRowContent` stays a Foundation-only value the host builds; it names no block or memo.
 - Every row keeps its height for its lifetime; typeset trees are held up to `RowCache.residentBudget`, least recently drawn evicted first. An evicted row is re-typeset when drawn, rebuilt off-main on a width change, and built-then-dropped by a find.
-- `removeRows` / `reloadData` walk the data source to find orphaned entries (`sweepCache()`); acceptable because those operations re-tile everything below anyway.
-- An unexplained cost is ours until measured otherwise — check this package's own bookkeeping before blaming `NSTableView`.
+- `removeRows` / `reloadData` walk the data source to find orphaned entries (`sweepCache()`); acceptable because those operations move every row below anyway.
+- An unexplained cost is ours until measured otherwise — check this package's own bookkeeping before blaming the list.
 
 ## Width changes
 
-- **Mid-drag** (`inLiveResize`, including an `NSSplitView` divider drag) only on-screen rows re-measure.
-- **At the end** (`viewDidEndLiveResize`, or any non-drag width change) the transcript re-measures on-screen rows inside the pass and `RemeasureScheduler` (which owns the `Task`, and cancels one a newer width supersedes) hands the rest — only rows that already had an entry — to the cooperative pool. Rules it depends on:
-  - **Order outward from the viewport** (`staleRowsOutwardFromViewport(at:)`) and **publish as produced**: the only window a reader can meet is "time to correct the next screenful".
-  - **Invalidate each batch's own rows**, then one full `noteHeightOfRows` at the end. `noteHeightOfRows` re-asks inside the call; a full invalidation with most rows uncorrected measures them all on main.
-  - **A sliding window of `activeProcessorCount` tasks**, not the whole set queued at once — thousands of runnable children starve the parent job that has to hop to main.
-  - **Pace batches by the cost of applying one** (collect ~20× the last apply's cost), not by row count or a fixed time slice.
-  - Entries crossing the actor boundary carry their recipe (`RowCache.Body`); without it the first resize after a cold load rebuilds everything.
-  - A row scrolled into before its correction lands is left as is; never call `noteHeightOfRows` from inside the table's own layout (re-entrant, measures at two widths).
-- **A width change outside a drag must not animate rows** — it opens `mutate`'s suppressed animation group (`ResizeRemeasureTests.testAWidthChangeOutsideADragDoesNotAnimateTheRows`).
+- **The list re-measures; the transcript warms the answers.** On any width change — a window, a divider drag, a split opening — the list measures the rows it has prepared inside the pass that changed the width and the rest on idle turns (ExactList W3, W5), asking `heightOfRow`, which the transcript answers from `RowCache`.
+- **`RemeasureScheduler` makes those answers lookups.** Once the width settles — at `viewDidEndLiveResize` for a drag, never sixty times inside it; at once otherwise — it re-measures the stale entries off the main actor and files them in `RowCache`. It tells the list nothing: a row the list reaches first is measured on main, correctly, at one row's cost. Rules it depends on:
+  - **Order outward from the viewport**, the order the list's own idle re-measure walks in, and **file as produced**.
+  - **A sliding window of `activeProcessorCount` tasks**, not the whole set queued at once — thousands of runnable children starve the task collecting their results.
+  - Entries crossing the actor boundary carry their recipe (`RowCache.Entry`); without it the first resize after a cold load rebuilds everything.
+  - A newer width cancels a run, and a batch measured at a width that has moved on is dropped.
+- **A width change never animates rows** — the list commits its re-measures without motion, and a change of the content-width bounds notes every row in a group of duration 0 (`ResizeRemeasureTests.testAWidthChangeOutsideADragDoesNotAnimateTheRows`).
 - **The content column keeps a margin either side at any width** (`TranscriptCellView.margin`, AppKit's 20pt window margin), so a transcript narrowed by a divider or a window never runs text into its edges. It is the transcript's, not the split's — the split holds any view controller and knows nothing of columns. Not configurable: nothing has needed another value. A `.view` row is inset with the text around it.
 
 ## Streaming increments (`MarkdownMemo`)
@@ -75,6 +74,6 @@ Invariants of the renderer target. Package-level API rules are in [../../CLAUDE.
 ### How a find looks
 
 - AppKit's own, measured from `NSTextView`: **light** dims content to 18% black and cuts matches out; **dark** doesn't dim and outlines matches with a 1 px white rule (drawn in light too, so a match on a dark card doesn't read as a hole). The current match is a yellow `findHighlightColor` bubble, slightly larger than its line, shadowed, with its characters redrawn **black** in both appearances. Corner radius 3.
-- **`FindOverlayView` is a floating subview of the scroll view, horizontal axis only** (`addFloatingSubview(_:for:)`): AppKit carries it through vertical scrolls with the rows, so a lit match can't swim. It covers the visible rect plus half a screen each way and the scroll view clips it.
-- **It pulls, nothing is pushed.** At layout it asks for on-screen rows and their matches; every reason to ask again reaches `needsLayout` (table `tile()` / `layout()` via `TranscriptTableView`, row views added/removed/rebound, find changed, clip moved). It sits after the clip in subview order so it lays out after the rows.
+- **`FindOverlayView` is a floating subview of the list, horizontal axis only** (`addFloatingSubview(_:for:)`): AppKit carries it through vertical scrolls with the rows, so a lit match can't swim. It covers the visible rect plus half a screen each way and the scroll view clips it.
+- **It pulls, nothing is pushed.** At layout it asks for on-screen rows and their matches; every reason to ask again reaches `needsLayout` (`setNeedsFindLayout()`: row views mounted, removed or rebound, the find changed, the clip moved). It sits after the clip in subview order so it lays out after the rows.
 - The bubble pops once when the current match changes (not on scroll or re-layout); Reduce Motion turns it off.

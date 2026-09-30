@@ -15,11 +15,10 @@ public protocol TranscriptViewDelegate: AnyObject {
 
     /// The height of a `.view` row, laid out against `width`.
     ///
-    /// Asked of far more rows than are on screen, though not of all of them:
-    /// `NSTableView` measures a working set — a few hundred rows, growing as the
-    /// reader moves around — and extrapolates its scroll range from that sample.
-    /// Answer from the same model `viewForRow` will read, **without building the
-    /// view**; building one here would defeat recycling outright.
+    /// Asked of every row, on screen or not: the transcript estimates no height,
+    /// so its scroll range is exact. Answer from the same model `viewForRow` will
+    /// read, **without building the view**; building one here would defeat
+    /// recycling outright.
     ///
     /// `width` is the transcript's content width: the span the row's view will
     /// actually be given, after the transcript's own insets and scroller

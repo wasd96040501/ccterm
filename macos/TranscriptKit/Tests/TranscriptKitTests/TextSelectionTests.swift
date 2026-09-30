@@ -69,8 +69,8 @@ final class TextSelectionTests: XCTestCase {
 
     // MARK: - Through a mutation
 
-    /// Inserting at an end's row puts the new row above it, so it moves — the
-    /// same running total as `ScrollAnchor`, counted against each end on its own.
+    /// Inserting at an end's row puts the new row above it, so it moves — a
+    /// running total, counted against each end on its own.
     ///
     /// Positions are post-insertion: rows land at 0 and 3, so the old row 2 is
     /// pushed to 3 by the first and then sits *at* the second, which pushes it to

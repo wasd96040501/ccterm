@@ -15,9 +15,8 @@ import Foundation
 /// it and its row's edge, which is how a selection starting inside a table still
 /// comes out as that table's rectangle.
 ///
-/// Internal rather than private for the reason `ScrollAnchor` is: the arithmetic
-/// on row indices is the part most likely to be wrong and the part with nothing to
-/// do with AppKit.
+/// Internal rather than private because the arithmetic on row indices is the part
+/// most likely to be wrong and the part with nothing to do with AppKit.
 struct TextSelection: Equatable {
 
     /// One end: a row and a position in it.
@@ -93,8 +92,8 @@ struct TextSelection: Equatable {
     }
 
     /// The same selection, renumbered for rows inserted at `indexes` (positions in
-    /// the *post*-insertion data, as `insertRows(at:)` takes them). The same
-    /// running total as `ScrollAnchor.shifted(byRowsInserted:)`.
+    /// the *post*-insertion data, as `insertRows(at:)` takes them): each end moves
+    /// down one for every inserted position at or before where it lands.
     func shifted(byRowsInserted indexes: IndexSet) -> TextSelection {
         func shifted(_ row: Int) -> Int {
             var shifted = row

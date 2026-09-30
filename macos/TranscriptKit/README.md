@@ -12,9 +12,9 @@ directly on `NSTableView`:
 - **Data source, not data storage.** `TranscriptViewDataSource` answers
   `numberOfRows(in:)` and `transcriptView(_:rowAt:)`; the host owns
   the backing data and announces every mutation through
-  `insertRows(at:)` / `removeRows(at:)` /
+  `insertRows(at:withAnimation:)` / `removeRows(at:withAnimation:)` /
   `reloadRows(at:)` / `reloadData()`, optionally batched with
-  `beginUpdates()` / `endUpdates()`.
+  `performBatchUpdates(anchoring:_:)`, which also says what holds still.
 - **Rows are identified by the host.** `transcriptView(_:rowAt:)` hands back a
   `TranscriptRow` — an id and a content, in one answer. The id is whatever the
   host already uses to tell its rows apart (a `UUID`, a message number), and it
@@ -39,8 +39,8 @@ directly on `NSTableView`:
 - **Specialized row heights.** Self-sizing cases are measured by the view
   against its content width, and re-measured by it when that width changes.
   `.view` rows are sized by `transcriptView(_:heightOfRow:width:)`, asked for
-  far more rows than are visible — `NSTableView` measures a working set of a few
-  hundred and extrapolates its scroll range from that. When a height goes stale
+  every row, on screen or not: the list under the transcript (`ExactList`)
+  estimates no height, so its scroll range is exact. When a height goes stale
   without the content changing,
   the host invalidates it with `noteHeightOfRows(withIndexesChanged:)`, same
   semantics as `NSTableView`'s. The `width` parameter has no `NSTableView`
@@ -84,10 +84,8 @@ directly on `NSTableView`:
   from.
 
   Past that, hops stop being enough — they divide one freeze into many rather
-  than removing it. (`NSTableView` does not ask for every row's height: it
-  measures a working set of a few hundred and extrapolates the rest. But a
-  ten-thousand-row load still walks several thousand of them.) So a batch can be
-  measured off the main actor first:
+  than removing it: every row's height is asked for, since nothing is
+  estimated. So a batch can be measured off the main actor first:
 
   ```swift
   let prepared = await transcript.prepareRows(
@@ -182,7 +180,9 @@ func editorArea(_ area: EditorAreaViewController, willClose viewController: NSVi
 }
 ```
 
-Dragging the divider is a live resize for everything under it, so a
-`TranscriptView` in a tab re-measures only its visible rows until the drag ends —
-with nothing in either package knowing about the other. `Sources/TranscriptWorkspace/CLAUDE.md` has the
+Dragging the divider is a live resize for everything under it, and so is a
+second editor opening — it comes in from the trailing edge, the way a sidebar
+does — so a `TranscriptView` in a tab re-measures only the rows it shows until
+the width settles, then warms the rest off the main actor, with nothing in either
+package knowing about the other. `Sources/TranscriptWorkspace/CLAUDE.md` has the
 design and the measurements behind it.

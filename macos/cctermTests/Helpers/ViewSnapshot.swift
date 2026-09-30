@@ -87,11 +87,15 @@ enum ViewSnapshot {
     /// resulting `NSImage`. Parallel to `render(_:size:settle:)` but
     /// for AppKit-rooted hosts that don't go through
     /// `NSHostingController`. Same off-screen, alpha-0.01 window.
+    /// `beforeCapture` runs once the tree has settled, right before it is
+    /// drawn: a state the real pointer would undo on settling (hover — it is
+    /// never over the off-screen window) is set there.
     @MainActor
     static func renderViewController(
         _ controller: NSViewController,
         size: CGSize,
-        settle: TimeInterval = 0.4
+        settle: TimeInterval = 0.4,
+        beforeCapture: () -> Void = {}
     ) -> NSImage {
         controller.view.frame = CGRect(origin: .zero, size: size)
 
@@ -117,6 +121,7 @@ enum ViewSnapshot {
                 before: Date(timeIntervalSinceNow: 0.02))
         }
         controller.view.layoutSubtreeIfNeeded()
+        beforeCapture()
 
         let host = controller.view
         guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {

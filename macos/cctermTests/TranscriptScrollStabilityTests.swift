@@ -157,6 +157,39 @@ final class TranscriptScrollStabilityTests: XCTestCase {
             "the next entry isn't the gap between entries below the last item")
     }
 
+    /// A hovered item slides down as a run opens above it, under a pointer
+    /// that stays still: it stops showing the hover. Entered and exited come
+    /// only when the pointer moves, so the row learns it from AppKit updating
+    /// its tracking areas. The stage's window is off screen: the pointer is
+    /// over none of it.
+    func testAnItemThatSlidesFromUnderTheStillPointerLosesItsHover() async throws {
+        _ = await centre(on: "r120c0")
+        controller.rowView(NSView(), toggle: "r121c0", all: false)
+        expanded.insert("r121c0")
+        await stage.settle()
+        let item = rows().firstIndex { $0.id.entry == "r121c0" }! + 1
+        let view = try XCTUnwrap(
+            stage.findAll(WorkLineRowView.self, in: transcript).first { transcript.row(for: $0) == item })
+        // The ↗ that opens beside shows only on hover; the tile has an image of its own.
+        let arrow = try XCTUnwrap(view.subviews.lazy.compactMap { $0 as? NSImageView }.first)
+        XCTAssertEqual(arrow.alphaValue, 0, "premise: the item isn't hovered")
+        let entered = try XCTUnwrap(
+            NSEvent.enterExitEvent(
+                with: .mouseEntered, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                eventNumber: 0, trackingNumber: 0, userData: nil))
+        view.mouseEntered(with: entered)
+        XCTAssertEqual(arrow.alphaValue, 1, "premise: the item shows the hover")
+        let before = view.convert(view.bounds, to: nil).minY
+
+        controller.rowView(NSView(), toggle: "r120c0", all: false)
+        expanded.insert("r120c0")
+        await stage.settle()
+
+        XCTAssertEqual(transcript.row(for: view), item + 4, "premise: the same view holds the item")
+        XCTAssertNotEqual(view.convert(view.bounds, to: nil).minY, before, accuracy: 0.5, "premise: the item moved")
+        XCTAssertEqual(arrow.alphaValue, 0, "the item slid from under the pointer and still shows the hover")
+    }
+
     // MARK: - Helpers
 
     /// The rows the controller should show now.

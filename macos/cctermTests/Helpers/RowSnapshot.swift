@@ -8,7 +8,9 @@ import XCTest
 /// to `/tmp/ccterm-screenshots/<name>.png` for review, attached to `test`.
 enum RowSnapshot {
     /// `rows` are configured models; `prepare` may put a view in a state
-    /// paint alone can't reach (hover). `gap` is the space between rows.
+    /// paint alone can't reach (hover) — it runs once the views have settled
+    /// in the window, right before they are drawn. `gap` is the space between
+    /// rows.
     @MainActor
     static func render<V: PageRowView>(
         _ type: V.Type, _ rows: [V.Model], widths: [CGFloat] = [520], gap: CGFloat = 10, name: String,
@@ -16,6 +18,7 @@ enum RowSnapshot {
     ) {
         let inset: CGFloat = 24
         var columns: [(light: NSView, dark: NSView)] = []
+        var prepared: [(V, Int)] = []
         for width in widths {
             let heights = rows.map { V.height(for: $0, width: width) }
             let height = heights.reduce(0, +) + gap * CGFloat(max(0, rows.count - 1)) + 2 * inset
@@ -32,7 +35,7 @@ enum RowSnapshot {
                     view.frame = NSRect(x: inset, y: y, width: width, height: heights[index])
                     panel.addSubview(view)
                     view.configure(with: model)
-                    prepare(view, index)
+                    prepared.append((view, index))
                     y += heights[index] + gap
                 }
                 return panel
@@ -54,7 +57,9 @@ enum RowSnapshot {
         }
         let controller = NSViewController()
         controller.view = root
-        let image = ViewSnapshot.renderViewController(controller, size: size)
+        let image = ViewSnapshot.renderViewController(controller, size: size) {
+            for (view, index) in prepared { prepare(view, index) }
+        }
         let url = ViewSnapshot.writePNG(image, name: name)
         let attachment = XCTAttachment(contentsOfFile: url)
         attachment.lifetime = .keepAlways

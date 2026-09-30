@@ -216,7 +216,7 @@ final class CapsuleRowView: NSView, PageRowView {
             count.isHidden = model.lineCount == nil
             chevron.isHidden = model.lineCount == nil
             isClickable = model.lineCount != nil
-            if !isClickable { isHovering = false }
+            refreshHover()
             needsDisplay = true
         }
 
@@ -236,6 +236,7 @@ final class CapsuleRowView: NSView, PageRowView {
             addTrackingArea(
                 NSTrackingArea(
                     rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self))
+            refreshHover()
         }
 
         override func mouseEntered(with event: NSEvent) {
@@ -245,6 +246,20 @@ final class CapsuleRowView: NSView, PageRowView {
 
         override func mouseExited(with event: NSEvent) {
             isHovering = false
+            needsDisplay = true
+        }
+
+        /// Entered and exited come only when the pointer moves; a capsule that
+        /// slid under a still pointer, or out from under it, learns so here.
+        private func refreshHover() {
+            let hovering =
+                if let window, window.isKeyWindow {
+                    bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+                } else {
+                    false
+                }
+            guard hovering != isHovering else { return }
+            isHovering = hovering
             needsDisplay = true
         }
     }

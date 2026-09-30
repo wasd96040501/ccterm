@@ -315,6 +315,7 @@ final class WorkLineRowView: NSView, PageRowView {
         addTrackingArea(
             NSTrackingArea(
                 rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self))
+        refreshHover()
     }
 
     override func mouseEntered(with event: NSEvent) { isHovered = true }
@@ -326,9 +327,12 @@ final class WorkLineRowView: NSView, PageRowView {
         if window == nil { isHovered = false }
     }
 
-    /// A recycled view is under a new row while the pointer hasn't moved.
+    /// Entered and exited come only when the pointer moves. A line that slid
+    /// under a still pointer, or out from under it, learns so when AppKit
+    /// updates its tracking areas for its new place; a recycled view, when it
+    /// is configured for its new row.
     private func refreshHover() {
-        guard let window else {
+        guard let window, window.isKeyWindow else {
             isHovered = false
             return
         }

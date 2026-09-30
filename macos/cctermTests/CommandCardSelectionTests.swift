@@ -35,6 +35,24 @@ final class CommandCardSelectionTests: XCTestCase {
         try assertAClickKeepsTheAttributes(of: field)
     }
 
+    /// The page above the output is views, not text: a double-click on the
+    /// status line selects nothing of the page.
+    func testADoubleClickOnTheStatusLineSelectsNothingOfThePage() throws {
+        let call = ToolCallFixture.bash("make", description: "Build", stdout: "one\ntwo", duration: 2)
+        let stage = AppKitStage.mount(CommandDocumentViewController(.call(call)), size: CGSize(width: 640, height: 420))
+        self.stage = stage
+        stage.drain()
+        let status = try XCTUnwrap(
+            stage.findAll(NSTextField.self).first { $0.stringValue == WorkLineWriter.format(2) },
+            "premise: the status line shows the time")
+        let text = try XCTUnwrap(stage.find(NSTextView.self), "premise: the output is text")
+
+        NumberedLinesViewTests.doubleClick(in: status, at: NSPoint(x: status.bounds.midX, y: status.bounds.midY))
+        stage.drain()
+
+        XCTAssertEqual(text.selectedRange().length, 0, "the double-click selected part of the page")
+    }
+
     private func mount(_ call: ToolCall, fieldContaining text: String) throws -> NSTextField {
         let stage = AppKitStage.mount(CommandDocumentViewController(.call(call)), size: CGSize(width: 640, height: 420))
         self.stage = stage

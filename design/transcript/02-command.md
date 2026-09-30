@@ -37,7 +37,7 @@ meant, what ran, what came out.
 │  41  error: 'rowSpacing' is inaccessible due to 'private' protection level│
 │  42  ** TEST FAILED **                                                    │
 │                                                                           │
-│  stderr ───────────────────────────────────────────────────────────────── │
+│      stderr ───────────────────────────────────────────────────────────── │
 │   1  xcodebuild: error: Failed to build workspace                         │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
@@ -69,7 +69,8 @@ meant, what ran, what came out.
   they were printed — there is nothing to split. What it records as `stderr`
   is its own note, *Shell cwd was reset to `dir`*, which answers no question
   the reader has and is not shown. Anything else in `stderr` goes under a
-  hairline headed *stderr*, its numbers red. A failed
+  hairline headed *stderr* — a line of the text, starting where the text
+  does, not in the gutter — its numbers red. A failed
   call is recorded as one string (*Exit code N* and the merged output): its
   status line takes the exit code, the rest is the output.
 - **The gutter is not text.** Line numbers are never selected, copied or

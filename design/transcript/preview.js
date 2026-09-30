@@ -537,8 +537,10 @@ function approvalBar(it, text) {
   return `<div class="approvalbar">${tile(it.kind, "waiting")}<b style="font-weight:600">${text}</b><span class="why">${esc(it.why || "")}</span><button class="btn" data-deny="${it.id}">Deny</button><button class="btn primary" data-allow="${it.id}">Allow</button></div>`;
 }
 
-function outLines(lines, badTest = /error:|fatal:|FAILED|Error \d/) {
-  return `<div class="out mono">${lines.map((l, i) => `<span class="n${badTest.test(l) ? " bad" : ""}">${i + 1}</span><span class="t">${ansi(l)}</span>`).join("")}</div>`;
+function outLines(lines, badTest = /error:|fatal:|FAILED|Error \d/, heading = "") {
+  // A heading is a line of the text: it starts where the text does, never in the gutter.
+  const head = heading ? `<span class="n"></span><span class="out-head">${esc(heading)}</span>` : "";
+  return `<div class="out mono">${head}${lines.map((l, i) => `<span class="n${badTest.test(l) ? " bad" : ""}">${i + 1}</span><span class="t">${ansi(l)}</span>`).join("")}</div>`;
 }
 function ansi(l) {
   // Mapped SGR, as the output view would: bold, green, red.
@@ -570,7 +572,7 @@ function commandDoc(it) {
     // The CLI runs a command with stderr into stdout, so the output is one
     // stream in the order printed. Its own note in stderr (the shell's
     // directory reset) answers no reader's question and isn't shown.
-    if (it.stderr && it.stderr.length) out += `<div class="out-head">stderr</div>${outLines(it.stderr, /./)}`;
+    if (it.stderr && it.stderr.length) out += outLines(it.stderr, /./, "stderr");
     if (it.persisted) out += `<div class="footer-note">${ICON.info}Output was too long to keep here. The full output is in <span class="mono">${esc(it.persisted)}</span><button class="btn">Open</button></div>`;
   }
   const cmdText = it.state === "streaming" ? `${hlShell(it.partial || "")}<span class="caret"></span>` : hlShell(it.cmd);

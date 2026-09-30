@@ -7,8 +7,8 @@ import XCTest
 /// A document's body is laid out once, at the width it shows at: it arrives
 /// into a shell already sized, so nothing in it is measured at zero or at a
 /// passing width and then again — which would draw a frame of the wrong wrap
-/// before the right one. Records every width the body's root and each scroll
-/// view's document view take, for each body kind, whether the document came
+/// before the right one. Records every width the body's root, each scroll
+/// view's document view and each text view take, for each body kind, whether the document came
 /// with the click or the shell loaded it (a tab made from history).
 @MainActor
 final class DocumentMountTests: XCTestCase {
@@ -101,7 +101,8 @@ final class DocumentMountTests: XCTestCase {
         let body = try XCTUnwrap(shell.children.first, "no body for \(path)", file: file, line: line)
         let scrolled = stage?.findAll(NSScrollView.self, in: body.view).compactMap(\.documentView) ?? []
         XCTAssertFalse(scrolled.isEmpty, "premise: \(path)'s body scrolls", file: file, line: line)
-        for view in [body.view] + scrolled {
+        let texts: [NSView] = stage?.findAll(NSTextView.self, in: body.view) ?? []
+        for view in [body.view] + scrolled + texts {
             let others = (widths.seen[ObjectIdentifier(view)] ?? []).filter { abs($0 - view.frame.width) > 0.5 }
             XCTAssertEqual(
                 others, [], "\(path): \(type(of: view)) was laid out at \(others) before \(view.frame.width)",

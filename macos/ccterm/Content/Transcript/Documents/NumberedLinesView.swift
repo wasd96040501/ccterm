@@ -106,6 +106,11 @@ final class NumberedLinesView: NSView {
         let scroll = NSScrollView()
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.hasVerticalScroller = true
+        // A new scroll view is overlay-styled and learns the system's style a
+        // turn after it is in a window (measured), so with legacy scrollers the
+        // lines were wrapped at the full width and then again beside the track.
+        // AppKit still moves it when the setting changes.
+        scroll.scrollerStyle = NSScroller.preferredScrollerStyle
         // A legacy scroller keeps its track even while the lines fit: one that
         // appears once they overflow narrows the text and rewraps every line
         // on screen — as a live command's output grows past the fold.

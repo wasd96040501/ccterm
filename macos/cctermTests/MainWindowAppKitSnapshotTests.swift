@@ -40,7 +40,7 @@ final class MainWindowAppKitSnapshotTests: XCTestCase {
         lines.append(Rows.customTitle("Named"))
         try fixture.write("-x-repo/s1.jsonl", lines, modified: 300)
 
-        let store = LibraryStore(directory: fixture.directory)
+        let store = LibraryStore(directories: Just(fixture.directory).eraseToAnyPublisher())
         let split = MainSplitViewController(library: store)
         split.loadViewIfNeeded()
         store.start()
@@ -74,6 +74,19 @@ final class MainWindowAppKitSnapshotTests: XCTestCase {
         XCTAssertEqual(Self.find(TranscriptView.self, in: split.view)?.numberOfRows, 24)
     }
 
+    /// The split before the library's first read: the sidebar's spinner and
+    /// its line.
+    func testLoadingSidebarSnapshot() throws {
+        let store = LibraryStore(directories: Empty().eraseToAnyPublisher())
+        let split = MainSplitViewController(library: store)
+        let image = ViewSnapshot.renderViewController(split, size: CGSize(width: 1200, height: 800), settle: 0.5)
+        let url = ViewSnapshot.writePNG(image, name: "MainWindowAppKit-LoadingSidebar")
+        let attachment = XCTAttachment(contentsOfFile: url)
+        attachment.name = "MainWindowAppKit-LoadingSidebar.png"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     /// The whole window — titlebar, toolbar, tab bar under them — with two
     /// tabs open, the active one's session on a branch. Synchronous for the same
     /// reason as the split's: the branch arrives on a main-actor task. The
@@ -89,7 +102,7 @@ final class MainWindowAppKitSnapshotTests: XCTestCase {
             "gitBranch": "toolbar-pin-fixed-sidebar", "message": ["role": "user", "content": "hi"],
         ])
         try fixture.write("-x-repo/s1.jsonl", [prompt, Rows.customTitle("Named")], modified: 300)
-        let store = LibraryStore(directory: fixture.directory)
+        let store = LibraryStore(directories: Just(fixture.directory).eraseToAnyPublisher())
         store.start()
         defer { store.stop() }
         let stage = AppKitStage.mainWindow(library: store)

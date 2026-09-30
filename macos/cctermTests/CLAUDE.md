@@ -70,7 +70,8 @@ When a reported visual glitch doesn't reproduce, **widen the sampled dimensions 
 
 Render a real view into an off-screen window, write `/tmp/ccterm-screenshots/<Name>.png`, attach it to the xcresult. **For review only.**
 
-- **Existing ones:** `ls macos/cctermTests/*SnapshotTests.swift` — the class name tells you the view. Run with `make test-unit FILTER=<Class>` and `open` the PNG.
+- **Existing ones:** `ls macos/cctermTests/*SnapshotTests.swift` — the class name tells you the view. Run with `make test-unit FILTER=<Class>` and `open` the PNG. Prefix `TEST_LANGUAGE=en` to render in English on a Mac set to another language (e.g. to lay a PNG over an English design mock).
+- **Seed synchronously.** A `@MainActor … async` test body runs as a main-queue job, so the snapshot's run-loop drain can't deliver `.receive(on: DispatchQueue.main)` sinks — the view renders unbound. Keep snapshot tests synchronous; do async seeding in a `Task` and `wait(for:)` its expectation.
 - **Run policy:** the runner injects `-skip-testing:<Class>` for every `*SnapshotTests.swift` when `FILTER` is empty, so they never run on the default suite or CI but still compile. File name must equal class name; split files for multiple classes.
 - **Helpers:** `ViewSnapshot.render(_ view: some View, size:settle:)` for SwiftUI, `ViewSnapshot.renderViewController(_:size:settle:)` for AppKit VCs, `ViewSnapshot.writePNG(_:name:)`. Always go through them — they park the window off-screen at alpha 0.01, so a snapshot never flashes on the user's display.
 

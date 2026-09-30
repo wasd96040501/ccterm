@@ -100,4 +100,10 @@ final class SessionDirectoryTests: XCTestCase {
             SessionDirectory(environment: ["CLAUDE_CONFIG_DIR": "/cfg"]).url.path, "/cfg/projects")
         XCTAssertTrue(SessionDirectory(environment: [:]).url.path.hasSuffix("/.claude/projects"))
     }
+
+    func testConfigDirectoryIsWhereProjectsSits() {
+        XCTAssertEqual(SessionDirectory(environment: ["CLAUDE_CONFIG_DIR": "/cfg"]).configDirectory.path, "/cfg")
+        XCTAssertTrue(SessionDirectory(environment: [:]).configDirectory.path.hasSuffix("/.claude"))
+        XCTAssertEqual(SessionDirectory(url: URL(fileURLWithPath: "/a/b/projects")).configDirectory.path, "/a/b")
+    }
 }

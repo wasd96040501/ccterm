@@ -248,6 +248,67 @@ final class MainWindowTests: XCTestCase {
         ])
     }
 
+    // MARK: - Showing
+
+    /// The window waits for the library's first read, and opens on its tree.
+    func testTheWindowOpensOnceTheLibraryIsRead() async throws {
+        let fixture = try SessionDirectoryFixture()
+        defer { fixture.remove() }
+        try LibraryStoreTests.writeLibrary(fixture)
+        let library = LibraryStore(directories: Just(fixture.directory).eraseToAnyPublisher())
+        let controller = Self.parked(MainWindowController(library: library, git: GitService()))
+        let window = try XCTUnwrap(controller.window)
+        defer {
+            window.orderOut(nil)
+            library.stop()
+        }
+
+        controller.showWindow(whenLoadedWithin: .seconds(60))
+        XCTAssertFalse(window.isVisible, "shown before the library was read")
+        library.start()
+        await fulfillment(of: [Self.visible(window)], timeout: 10)
+
+        let sidebar = try sidebar(of: try XCTUnwrap(controller.contentViewController as? MainSplitViewController))
+        XCTAssertEqual(Self.find(NSOutlineView.self, in: sidebar.view)?.numberOfRows, 2)
+        XCTAssertEqual(Self.find(NSProgressIndicator.self, in: sidebar.view)?.superview?.isHidden, true)
+    }
+
+    /// A library that takes too long: the window opens anyway, the sidebar
+    /// saying it is loading.
+    func testTheWindowOpensAtTheDeadlineWhileTheLibraryLoads() async throws {
+        let library = LibraryStore(directories: Empty().eraseToAnyPublisher())
+        let controller = Self.parked(MainWindowController(library: library, git: GitService()))
+        let window = try XCTUnwrap(controller.window)
+        defer { window.orderOut(nil) }
+
+        controller.showWindow(whenLoadedWithin: .milliseconds(100))
+        XCTAssertFalse(window.isVisible)
+        await fulfillment(of: [Self.visible(window)], timeout: 10)
+
+        let sidebar = try sidebar(of: try XCTUnwrap(controller.contentViewController as? MainSplitViewController))
+        XCTAssertEqual(Self.find(NSOutlineView.self, in: sidebar.view)?.numberOfRows, 0)
+        XCTAssertEqual(Self.find(NSProgressIndicator.self, in: sidebar.view)?.superview?.isHidden, false)
+    }
+
+    /// `controller`'s window where the harness parks one — off-screen, almost
+    /// transparent — but not yet shown.
+    private static func parked(_ controller: MainWindowController) -> MainWindowController {
+        let window = controller.window!
+        window.isExcludedFromWindowsMenu = true
+        window.alphaValue = 0.01
+        window.setFrameOrigin(CGPoint(x: -30_000, y: -30_000))
+        return controller
+    }
+
+    private static func visible(_ window: NSWindow) -> XCTestExpectation {
+        XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in window.isVisible }, object: nil)
+    }
+
+    private static func find<T: NSView>(_ type: T.Type, in view: NSView) -> T? {
+        if let match = view as? T { return match }
+        return view.subviews.lazy.compactMap { find(type, in: $0) }.first
+    }
+
     private static func session(_ name: String) -> LibraryNode {
         let url = URL(fileURLWithPath: "/nonexistent/\(name).jsonl")
         return LibraryNode(id: url.path, kind: .session, title: name, transcriptURL: url, children: [])
@@ -255,7 +316,7 @@ final class MainWindowTests: XCTestCase {
 
     /// A library over `fixture`, read.
     private static func startedLibrary(_ fixture: SessionDirectoryFixture) async throws -> LibraryStore {
-        let library = LibraryStore(directory: fixture.directory)
+        let library = LibraryStore(directories: Just(fixture.directory).eraseToAnyPublisher())
         library.start()
         let loaded = XCTestExpectation(description: "library read")
         let subscription = library.$nodes.first { !$0.isEmpty }.sink { _ in loaded.fulfill() }

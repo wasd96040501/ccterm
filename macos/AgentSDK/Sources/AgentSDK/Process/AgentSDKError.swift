@@ -18,6 +18,12 @@ public enum AgentSDKError: Error, LocalizedError, Sendable, Equatable {
     case invalidResponse(subtype: String)
     /// A one-shot ``Prompt`` run failed.
     case promptFailed(exitCode: Int32, stderr: String)
+    /// A `claude auth` command failed.
+    case authFailed(exitCode: Int32, stderr: String)
+    /// `claude --version` failed or timed out; `message` is stderr's last line.
+    case versionFailed(exitCode: Int32, message: String)
+    /// `claude --version` ran but printed no version.
+    case noVersion(output: String)
 
     public var errorDescription: String? {
         switch self {
@@ -37,6 +43,14 @@ public enum AgentSDKError: Error, LocalizedError, Sendable, Equatable {
             return "Unexpected response to \(subtype)."
         case .promptFailed(let exitCode, let stderr):
             return "Prompt failed (exit \(exitCode)): \(stderr)"
+        case .authFailed(let exitCode, let stderr):
+            return "claude auth failed (exit \(exitCode)): \(stderr)"
+        case .versionFailed(let exitCode, let message):
+            return message.isEmpty
+                ? "claude --version failed (exit \(exitCode))."
+                : "claude --version failed (exit \(exitCode)): \(message)"
+        case .noVersion(let output):
+            return "No version in the CLI's output: \(output)"
         }
     }
 }

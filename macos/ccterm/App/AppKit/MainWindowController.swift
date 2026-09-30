@@ -1,9 +1,10 @@
 import AgentSDK
 import AppKit
+import Combine
 import TranscriptWorkspace
 
 /// Window controller for the AppKit-rooted main window. The window is
-/// created in `applicationDidFinishLaunching` rather than declared as a
+/// created in `applicationWillFinishLaunching` rather than declared as a
 /// SwiftUI `Window` scene, so everything mounted in it runs in AppKit's
 /// source phase without SwiftUI commit-pass interleaving.
 ///
@@ -20,6 +21,8 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
 
     /// The task following the shown transcript's branch.
     private var branchTask: Task<Void, Never>?
+    /// Waiting to show the window; see `showWindow(whenLoadedWithin:)`.
+    private var pendingShow: AnyCancellable?
 
     init(library: LibraryStore, git: GitService) {
         self.library = library
@@ -56,6 +59,35 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+    /// Shows the window once the sidebar has its tree — the library's first
+    /// read — so it doesn't open on an empty sidebar; but no later than
+    /// `deadline`, past which it opens with the sidebar still loading.
+    func showWindow(whenLoadedWithin deadline: DispatchQueue.SchedulerTimeType.Stride) {
+        let clock = ContinuousClock()
+        let start = clock.now
+        pendingShow = library.$isLoaded.first { $0 }
+            .timeout(deadline, scheduler: DispatchQueue.main)
+            // A turn later, so every sink of the first read — the sidebar's —
+            // has run before the window draws.
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        guard let self else { return }
+                        let state = self.library.isLoaded ? "loaded" : "still loading"
+                        appLog(.info, "MainWindowController", "shown \(state) after \(clock.now - start)")
+                        self.showWindow(nil)
+                    }
+                }, receiveValue: { _ in })
+    }
+
+    /// Shows the window now, whatever `showWindow(whenLoadedWithin:)` was
+    /// waiting for.
+    override func showWindow(_ sender: Any?) {
+        pendingShow = nil
+        super.showWindow(sender)
+    }
 
     private func installToolbar() {
         let toolbar = NSToolbar(identifier: "ccterm.main")

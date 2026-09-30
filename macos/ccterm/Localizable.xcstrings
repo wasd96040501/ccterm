@@ -2,6 +2,27 @@
   "sourceLanguage": "en",
   "strings": {
     "": {},
+    "%@ Copy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 副本"
+          }
+        }
+      }
+    },
+    "%@ from the first of %lld": {
+      "comment": "A paste into the account sheet held several providers; the sheet took the first.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@（取自 %2$lld 个中的第一个）"
+          }
+        }
+      }
+    },
     "%@ reported": {
       "localizations": {
         "zh-Hans": {
@@ -19,6 +40,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$@ → %2$@ token"
+          }
+        }
+      }
+    },
+    "%@.": {
+      "comment": "A check's failure reason as a sentence.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@。"
           }
         }
       }
@@ -144,6 +176,16 @@
         }
       }
     },
+    "%lld skipped": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已跳过 %lld 个"
+          }
+        }
+      }
+    },
     "%lld tools": {
       "localizations": {
         "zh-Hans": {
@@ -160,6 +202,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$lld 个工具 · %2$@"
+          }
+        }
+      }
+    },
+    "%lld variables": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld variable"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld variables"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个变量"
           }
         }
       }
@@ -215,12 +285,92 @@
         }
       }
     },
+    "API Key": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API 密钥"
+          }
+        }
+      }
+    },
+    "API Providers": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API 提供方"
+          }
+        }
+      }
+    },
+    "API key": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API 密钥"
+          }
+        }
+      }
+    },
     "About ccterm": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "关于 ccterm"
+          }
+        }
+      }
+    },
+    "Account": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账户"
+          }
+        }
+      }
+    },
+    "Accounts": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账户"
+          }
+        }
+      }
+    },
+    "Add": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加"
+          }
+        }
+      }
+    },
+    "Add Provider…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加提供方…"
+          }
+        }
+      }
+    },
+    "Add Variable": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加变量"
           }
         }
       }
@@ -255,6 +405,46 @@
         }
       }
     },
+    "Arguments": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "参数"
+          }
+        }
+      }
+    },
+    "Auth Token": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "认证令牌"
+          }
+        }
+      }
+    },
+    "Authentication": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "认证方式"
+          }
+        }
+      }
+    },
+    "Automatic": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动"
+          }
+        }
+      }
+    },
     "Back": {
       "comment": "Toolbar button: back through the active editor's history.",
       "localizations": {
@@ -282,6 +472,76 @@
           "stringUnit": {
             "state": "translated",
             "value": "后台 · %@"
+          }
+        }
+      }
+    },
+    "Base URL": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Base URL"
+          }
+        }
+      }
+    },
+    "Cancel": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消"
+          }
+        }
+      }
+    },
+    "Checking…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在检查…"
+          }
+        }
+      }
+    },
+    "Claude %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude %@"
+          }
+        }
+      }
+    },
+    "Claude Code": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code"
+          }
+        }
+      }
+    },
+    "Claude Code %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code %@"
+          }
+        }
+      }
+    },
+    "Claude Code’s settings, sign-in and sessions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code 的设置、登录状态和会话"
           }
         }
       }
@@ -323,6 +583,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Claude 想使用 %@"
+          }
+        }
+      }
+    },
+    "Click + or paste to add.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点按 + 或粘贴以添加。"
           }
         }
       }
@@ -387,6 +657,36 @@
         }
       }
     },
+    "Configuration Folder": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置文件夹"
+          }
+        }
+      }
+    },
+    "Connection": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接"
+          }
+        }
+      }
+    },
+    "Continue in your browser. CCTerm finishes signing in when you approve access.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在浏览器中继续。你批准访问后，CCTerm 会完成登录。"
+          }
+        }
+      }
+    },
     "Conversation compacted": {
       "localizations": {
         "zh-Hans": {
@@ -413,6 +713,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "复制"
+          }
+        }
+      }
+    },
+    "Couldn’t start": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法启动"
           }
         }
       }
@@ -458,6 +768,66 @@
         }
       }
     },
+    "Default Model": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认模型"
+          }
+        }
+      }
+    },
+    "Default model": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认模型"
+          }
+        }
+      }
+    },
+    "Defined more than once; the last one wins.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "定义了不止一次，以最后一个为准。"
+          }
+        }
+      }
+    },
+    "Delete": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除"
+          }
+        }
+      }
+    },
+    "Delete “%@”?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除“%@”？"
+          }
+        }
+      }
+    },
+    "Delete…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除…"
+          }
+        }
+      }
+    },
     "Denied": {
       "localizations": {
         "zh-Hans": {
@@ -474,6 +844,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "拒绝"
+          }
+        }
+      }
+    },
+    "Details": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "详细信息"
+          }
+        }
+      }
+    },
+    "Details…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "详细信息…"
+          }
+        }
+      }
+    },
+    "Didn’t print a version": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未输出版本号"
+          }
+        }
+      }
+    },
+    "Duplicate": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制"
           }
         }
       }
@@ -525,6 +935,56 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在编辑 %@"
+          }
+        }
+      }
+    },
+    "Email": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "电子邮件"
+          }
+        }
+      }
+    },
+    "Enter a URL that starts with http:// or https://.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入以 http:// 或 https:// 开头的 URL。"
+          }
+        }
+      }
+    },
+    "Environment Variables": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "环境变量"
+          }
+        }
+      }
+    },
+    "Exited with code %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已退出，退出码 %lld"
+          }
+        }
+      }
+    },
+    "Fable": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fable"
           }
         }
       }
@@ -589,6 +1049,26 @@
         }
       }
     },
+    "Filled %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已填入%@"
+          }
+        }
+      }
+    },
+    "Folder doesn’t exist": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件夹不存在"
+          }
+        }
+      }
+    },
     "Forward": {
       "comment": "Toolbar button: forward through the active editor's history.",
       "localizations": {
@@ -610,12 +1090,70 @@
         }
       }
     },
+    "Haiku": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Haiku"
+          }
+        }
+      }
+    },
+    "Hide": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏"
+          }
+        }
+      }
+    },
     "Image": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "图片"
+          }
+        }
+      }
+    },
+    "Import from Clipboard": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从剪贴板导入"
+          }
+        }
+      }
+    },
+    "Imported %lld providers": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Imported %lld provider"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Imported %lld providers"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已导入 %lld 个提供方"
           }
         }
       }
@@ -640,12 +1178,32 @@
         }
       }
     },
+    "Its token is removed from your keychain. Sessions already running keep going until they end.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它的令牌会从你的钥匙串中移除。已在运行的会话会继续，直到结束。"
+          }
+        }
+      }
+    },
     "Keep Planning": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "继续规划"
+          }
+        }
+      }
+    },
+    "Launch": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启动"
           }
         }
       }
@@ -680,12 +1238,32 @@
         }
       }
     },
+    "Loading…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在载入…"
+          }
+        }
+      }
+    },
     "Local": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "本地"
+          }
+        }
+      }
+    },
+    "Local Proxy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地代理"
           }
         }
       }
@@ -700,12 +1278,42 @@
         }
       }
     },
+    "Manage": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理"
+          }
+        }
+      }
+    },
+    "Models": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型"
+          }
+        }
+      }
+    },
     "Monitor event": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "监视器事件"
+          }
+        }
+      }
+    },
+    "Name": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名称"
           }
         }
       }
@@ -720,12 +1328,52 @@
         }
       }
     },
+    "New sessions can’t use your subscription until you sign in again. Your API providers aren’t affected.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在你重新登录之前，新会话无法使用你的订阅。你的 API 提供方不受影响。"
+          }
+        }
+      }
+    },
     "New · %lld lines": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "新文件 · %lld 行"
+          }
+        }
+      }
+    },
+    "No API Providers": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有 API 提供方"
+          }
+        }
+      }
+    },
+    "No Variables": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有变量"
+          }
+        }
+      }
+    },
+    "No base URL": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无 Base URL"
           }
         }
       }
@@ -740,12 +1388,122 @@
         }
       }
     },
+    "No providers imported": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未导入提供方"
+          }
+        }
+      }
+    },
+    "None": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无"
+          }
+        }
+      }
+    },
+    "Not a folder": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不是文件夹"
+          }
+        }
+      }
+    },
+    "Not executable": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不可执行"
+          }
+        }
+      }
+    },
+    "Not found": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未找到"
+          }
+        }
+      }
+    },
+    "Not signed in": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未登录"
+          }
+        }
+      }
+    },
+    "Nothing to paste — expected KEY=value": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可粘贴的内容——需要 KEY=value"
+          }
+        }
+      }
+    },
     "Open": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "打开"
+          }
+        }
+      }
+    },
+    "Open Browser Again": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新打开浏览器"
+          }
+        }
+      }
+    },
+    "Opus": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opus"
+          }
+        }
+      }
+    },
+    "Or press ⌘V to paste shell aliases or commands.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "也可以按 ⌘V 粘贴 shell 别名或命令。"
+          }
+        }
+      }
+    },
+    "Organization": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "组织"
           }
         }
       }
@@ -770,6 +1528,26 @@
         }
       }
     },
+    "Overrides the %@ field.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会覆盖“%@”栏。"
+          }
+        }
+      }
+    },
+    "Overrides the Configuration Folder in General.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会覆盖“通用”中的配置文件夹。"
+          }
+        }
+      }
+    },
     "PDF": {
       "localizations": {
         "zh-Hans": {
@@ -780,8 +1558,34 @@
         }
       }
     },
+    "Paste %@ lines or a command": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴 %@ 行或一条命令"
+          }
+        }
+      }
+    },
     "Plan": {
       "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "套餐"
+          }
+        }
+      }
+    },
+    "Plan (proposed)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plan"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -900,12 +1704,32 @@
         }
       }
     },
+    "Remove Variable": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除变量"
+          }
+        }
+      }
+    },
     "Replace all": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "全部替换"
+          }
+        }
+      }
+    },
+    "Required": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "必填"
           }
         }
       }
@@ -927,6 +1751,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "已恢复 · %@"
+          }
+        }
+      }
+    },
+    "Run Claude Code through the Anthropic API, a gateway or a local proxy.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通过 Anthropic API、网关或本地代理运行 Claude Code。"
           }
         }
       }
@@ -987,6 +1821,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "沙盒已关闭"
+          }
+        }
+      }
+    },
+    "Save": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "存储"
           }
         }
       }
@@ -1121,22 +1965,22 @@
         }
       }
     },
-    "Settings": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "设置"
-          }
-        }
-      }
-    },
     "Settings…": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "设置…"
+          }
+        }
+      }
+    },
+    "Show": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示"
           }
         }
       }
@@ -1181,12 +2025,72 @@
         }
       }
     },
-    "Specify the command to launch Claude. Leave empty to auto-detect `claude` in your system.": {
+    "Sign In…": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "指定启动 Claude 时使用的命令。留空则自动查找系统中的 `claude`。"
+            "value": "登录…"
+          }
+        }
+      }
+    },
+    "Sign Out": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出登录"
+          }
+        }
+      }
+    },
+    "Sign Out…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出登录…"
+          }
+        }
+      }
+    },
+    "Sign in to Claude": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录 Claude"
+          }
+        }
+      }
+    },
+    "Sign out of %@?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要退出 %@ 的登录吗？"
+          }
+        }
+      }
+    },
+    "Sonnet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sonnet"
+          }
+        }
+      }
+    },
+    "Still using %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仍在使用 %@。"
           }
         }
       }
@@ -1217,6 +2121,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "提交"
+          }
+        }
+      }
+    },
+    "Subscription": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "订阅"
           }
         }
       }
@@ -1331,12 +2245,32 @@
         }
       }
     },
+    "Timed out": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超时"
+          }
+        }
+      }
+    },
     "Timed out after %@": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "%@ 后超时"
+          }
+        }
+      }
+    },
+    "Token": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "令牌"
           }
         }
       }
@@ -1392,6 +2326,16 @@
         }
       }
     },
+    "Use your Claude Pro or Max plan.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用你的 Claude Pro 或 Max 套餐。"
+          }
+        }
+      }
+    },
     "Used %@ %lld times": {
       "localizations": {
         "zh-Hans": {
@@ -1412,6 +2356,16 @@
         }
       }
     },
+    "Value": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "值"
+          }
+        }
+      }
+    },
     "Version %@ (%@)": {
       "localizations": {
         "zh-Hans": {
@@ -1428,6 +2382,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "等待你的批准"
+          }
+        }
+      }
+    },
+    "Waiting for your browser…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在等待浏览器…"
+          }
+        }
+      }
+    },
+    "Warning": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "警告"
           }
         }
       }
@@ -1472,8 +2446,38 @@
         }
       }
     },
+    "arguments": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "参数"
+          }
+        }
+      }
+    },
     "ccterm": {},
     "claude": {},
+    "command": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命令"
+          }
+        }
+      }
+    },
+    "default model": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认模型"
+          }
+        }
+      }
+    },
     "exit %lld": {
       "localizations": {
         "zh-Hans": {
@@ -1510,6 +2514,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "第 %1$lld–%2$lld 行"
+          }
+        }
+      }
+    },
+    "name": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名称"
+          }
+        }
+      }
+    },
+    "token": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "令牌"
           }
         }
       }

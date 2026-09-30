@@ -21,25 +21,43 @@ import Foundation
 /// Process lifecycle is unaffected: the SDK shuts the CLI down by closing stdin (EOF)
 /// and interrupts via a JSON control request — both travel over the pipe the wrapping
 /// shell hands straight to the child, so neither depends on signalling the shell.
-public enum CustomCommand {
+enum CustomCommand {
 
     /// Builds `(executable, arguments)` that run `command` through the user's login shell
     /// with `sdkArgs` appended as positional parameters (`$1`, `$2`, …).
     ///
+    /// `exports` are exported inside the script before the command: the shell runs `-li`,
+    /// sourcing the rc files after the process environment is set, so an rc `export`
+    /// would otherwise beat the caller's values. Precedence: rc exports < `exports` <
+    /// the command's own prefix / alias assignments. Names that are not shell
+    /// identifiers are skipped.
+    ///
     /// - Precondition: `command` is non-empty (callers already guard this).
-    public static func shellInvocation(
+    static func shellInvocation(
         _ command: String,
-        sdkArgs: [String]
+        sdkArgs: [String],
+        exports: [String: String]
     ) -> (executablePath: String, arguments: [String]) {
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? defaultShell
-        // `<command> "$@"`: the command runs first (expanding aliases / functions /
-        // env-prefixes / quoting), then the SDK args fill the positional parameters.
-        let script = command + " \"$@\""
+        // `export K='v'; … <command> "$@"`: the command runs after the exports (expanding
+        // aliases / functions / env-prefixes / quoting), then the SDK args fill the
+        // positional parameters.
+        let exported = exports.keys.sorted().filter(isIdentifier).map { "export \($0)=\(quote(exports[$0]!)); " }
+        let script = exported.joined() + command + " \"$@\""
         // -l (login) sources ~/.zprofile; -i (interactive) sources ~/.zshrc — aliases and
         // functions live in the latter. After `-c <script>`, the next argument becomes $0
         // and the remainder fill $1, $2, … which `"$@"` expands to.
         let arguments = ["-li", "-c", script, shellArgZero] + sdkArgs
         return (shell, arguments)
+    }
+
+    /// `value` as one single-quoted shell word.
+    static func quote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    private static func isIdentifier(_ name: String) -> Bool {
+        name.range(of: #"^[A-Za-z_][A-Za-z0-9_]*$"#, options: .regularExpression) != nil
     }
 
     /// Fallback when `$SHELL` is unset — zsh is the macOS default login shell.

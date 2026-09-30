@@ -1,5 +1,6 @@
 import AgentSDK
 import Combine
+import CryptoKit
 import Foundation
 
 /// Every transcript someone ran at the CLI's prompt, from the CLI's session
@@ -21,23 +22,53 @@ final class LibraryStore {
     /// read downstream as a change.
     @Published private(set) var nodes: [LibraryNode] = []
 
-    private let directory: SessionDirectory
-    /// Where the `LibraryIndex` is kept between launches; `nil` keeps none.
-    private let indexURL: URL?
+    /// Whether `nodes` is a read of the directory yet — false only until the
+    /// first read lands, which is what tells an empty library from one not
+    /// read. Set after the `nodes` it vouches for.
+    @Published private(set) var isLoaded = false
+
+    private let directories: AnyPublisher<SessionDirectory, Never>
+    /// Where each directory's `LibraryIndex` is kept between launches; `nil`
+    /// keeps none.
+    private let indexDirectory: URL?
+    private var subscription: AnyCancellable?
     private var task: Task<Void, Never>?
+    /// Counts the directories followed: what a task read for an earlier one
+    /// never lands.
+    private var generation = 0
     /// What each shown session read as, by transcript.
     private var entries: [URL: Entry] = [:]
 
-    init(directory: SessionDirectory, indexURL: URL? = nil) {
-        self.directory = directory
-        self.indexURL = indexURL
+    /// `directories` must deliver on the main actor.
+    init(directories: AnyPublisher<SessionDirectory, Never>, indexDirectory: URL? = nil) {
+        self.directories = directories
+        self.indexDirectory = indexDirectory
     }
 
-    /// Reads every session, then keeps up with the directory.
+    /// Follows `directories`: reads every session of each distinct one, then
+    /// keeps up with it.
     func start() {
-        guard task == nil else { return }
-        let directory = directory
-        let indexURL = indexURL
+        guard subscription == nil else { return }
+        subscription = directories.removeDuplicates().sink { [weak self] directory in
+            MainActor.assumeIsolated { self?.follow(directory) }
+        }
+    }
+
+    /// Stops keeping up; `start()` reads everything again.
+    func stop() {
+        subscription = nil
+        cancelReading()
+        entries = [:]
+    }
+
+    /// Reads `directory` and keeps up with it. The previous directory's tree
+    /// stays published until this one's first read replaces it, so a directory
+    /// with an index shows no empty tree in between.
+    private func follow(_ directory: SessionDirectory) {
+        cancelReading()
+        entries = [:]
+        let generation = generation
+        let indexURL = indexDirectory.map { Self.indexURL(for: directory, in: $0) }
         task = Task { [weak self] in
             // Watching starts before the listing, so nothing written between
             // the two is missed.
@@ -45,32 +76,41 @@ final class LibraryStore {
             // The tree as soon as the directory is listed: the index answers
             // for every transcript unchanged since it was written.
             let launch = await Self.launch(directory, indexedAt: indexURL)
-            self?.update(launch.records)
+            self?.update(launch.records, generation: generation)
             // Then the side transcripts the index answered for, as they are on
             // disk: they come and go without their session's transcript
             // changing.
             let current = await Self.relisted(launch.records, of: launch.indexed)
-            self?.update(current)
+            self?.update(current, generation: generation)
             if let indexURL { await Self.write(current, over: launch.index, to: indexURL) }
             for await sessions in changes {
                 let read = await Self.read(sessions)
                 guard let self else { return }
-                update(read)
+                update(read, generation: generation)
             }
         }
     }
 
-    /// Stops keeping up; `start()` reads everything again.
-    func stop() {
+    private func cancelReading() {
         task?.cancel()
         task = nil
-        entries = [:]
+        generation += 1
     }
 
-    private func update(_ read: [SessionFile: Record?]) {
+    private func update(_ read: [SessionFile: Record?], generation: Int) {
+        guard generation == self.generation else { return }
         for (session, record) in read { entries[session.url] = record.flatMap { Self.entry(for: session, $0) } }
         let tree = Self.tree(of: entries.values)
         if tree != nodes { nodes = tree }
+        if !isLoaded { isLoaded = true }
+    }
+
+    /// The index of `directory`, its own file in `folder`: named by a hash of
+    /// the path that is the same on every launch.
+    static func indexURL(for directory: SessionDirectory, in folder: URL) -> URL {
+        let digest = SHA256.hash(data: Data(directory.url.standardizedFileURL.path.utf8))
+        let name = digest.prefix(8).map { String(format: "%02x", $0) }.joined()
+        return folder.appendingPathComponent("LibraryIndex-\(name).plist")
     }
 
     // MARK: - Queries

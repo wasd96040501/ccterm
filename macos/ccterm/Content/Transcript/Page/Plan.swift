@@ -21,6 +21,10 @@ nonisolated struct Plan: Sendable, Equatable, Identifiable {
     var caption: Caption {
         Caption(
             glyph: .tile(Tile(glyph: .plan, state: isWaiting ? .waiting : .done)),
-            text: isWaiting ? String(localized: "Plan · Waiting for your approval") : String(localized: "Plan"))
+            text: isWaiting
+                ? String(localized: "Plan · Waiting for your approval")
+                // Its own key: "Plan" alone is Settings' subscription plan, which
+                // translates differently.
+                : String(localized: "Plan (proposed)", defaultValue: "Plan"))
     }
 }

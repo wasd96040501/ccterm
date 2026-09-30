@@ -73,7 +73,8 @@ counterpart or states a `*Deviation`.
   holds no timers and no main-actor state, and every function in it is
   testable without a window.
 - `ExactList` holds the AppKit engine. Collaborators talk back through one
-  narrow internal protocol, never by naming `ExactListView`.
+  narrow internal `…Delegate` protocol (held as the collaborator's weak
+  `delegate`), never by naming `ExactListView`.
 - Planning is Core's; applying the plan is the engine's. A decision about
   where something goes (an offset, a frame, a delta) never gets made inside a
   view.

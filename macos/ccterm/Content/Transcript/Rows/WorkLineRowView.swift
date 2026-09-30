@@ -347,19 +347,22 @@ final class WorkLineRowView: NSView, PageRowView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        defer { super.mouseDown(with: event) }
-        guard let model, let delegate else { return }
+        guard let model, let delegate else { return super.mouseDown(with: event) }
         let point = convert(event.locationInWindow, from: nil)
+        var opened: String?
         if let origin = model.origin, accessory.frame.insetBy(dx: -6, dy: -6).contains(point) {
             delegate.rowView(self, revealOrigin: origin)
         } else if let id = openedNoun(at: point) {
-            delegate.rowView(self, open: id, pinned: event.clickCount == 2)
+            opened = id
         } else {
             switch model.action {
             case .toggle(let id, _): delegate.rowView(self, toggle: id, all: event.modifierFlags.contains(.option))
-            case .open(let id): delegate.rowView(self, open: id, pinned: event.clickCount == 2)
+            case .open(let id): opened = id
             }
         }
+        guard let opened else { return super.mouseDown(with: event) }
+        // A press that opens a document stops here: the focus goes to it.
+        delegate.rowView(self, open: opened, pinned: event.clickCount == 2)
     }
 
     /// The id a named file under `point` opens, when it is a link.

@@ -7,14 +7,13 @@ import XCTest
 
 /// The reader's place holds while the page changes under it: opening or
 /// closing a run above, below or at the viewport moves nothing on screen but
-/// the rows that came or went, and ↓ scrolls at most one row. Mounts the
+/// the rows that came or went. Mounts the
 /// real tab on a long transcript, as the app does.
 @MainActor
 final class TranscriptScrollStabilityTests: XCTestCase {
     private var stage: AppKitStage!
     private var controller: TranscriptViewController!
     private var transcript: TranscriptView!
-    private var clip: NSClipView!
     private var page: TranscriptPage!
     /// Runs this test opened, as the controller should now show them.
     private var expanded: Set<String> = []
@@ -42,7 +41,6 @@ final class TranscriptScrollStabilityTests: XCTestCase {
         }
         stage = AppKitStage.mount(controller, size: CGSize(width: 900, height: 700))
         transcript = try XCTUnwrap(stage.find(TranscriptView.self))
-        clip = try XCTUnwrap(stage.find(NSScrollView.self, in: transcript)?.contentView)
         let total = PageRow.rows(for: page).count
         // Awaiting, not spinning the runloop: the load resumes on the main actor.
         for _ in 0..<250 where transcript.numberOfRows != total {
@@ -135,27 +133,6 @@ final class TranscriptScrollStabilityTests: XCTestCase {
         XCTAssertNotEqual(nextYs.last ?? nextStart, nextStart, accuracy: 0.5, "the row below never moved")
         XCTAssertGreaterThan(
             positions.count, 3, "the row below jumped rather than slid: \(positions.sorted())")
-    }
-
-    /// ↓ steps to the next item and scrolls no more than it takes to show it.
-    func testDownStepsToTheNextItemAndScrollsAtMostOneRow() async throws {
-        controller.rowView(NSView(), toggle: "r120c0", all: false)
-        expanded.insert("r120c0")
-        await stage.settle()
-        _ = await centre(on: "r120c0")
-        controller.rowView(NSView(), open: "r120c3", pinned: false)
-        await stage.settle()
-        var previous = clip.bounds.minY
-        for _ in 0..<8 {
-            XCTAssertTrue(
-                controller.transcriptView(transcript, doCommandBy: #selector(NSResponder.moveDown(_:))),
-                "↓ was not the tab's")
-            await stage.settle()
-            let moved = clip.bounds.minY - previous
-            XCTAssertGreaterThanOrEqual(moved, -0.5, "↓ scrolled up")
-            XCTAssertLessThanOrEqual(moved, 44.5, "↓ scrolled more than a row")
-            previous = clip.bounds.minY
-        }
     }
 
     /// An opened run's items sit flush under its line and each other, and the

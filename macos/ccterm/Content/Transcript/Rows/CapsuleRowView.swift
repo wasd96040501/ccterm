@@ -136,8 +136,10 @@ final class CapsuleRowView: NSView, PageRowView {
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        // A press that opens a document stops here: the focus goes to it.
         if opensFromCapsule, let id = openID, capsule.frame.contains(point) {
             delegate?.rowView(self, open: id, pinned: event.clickCount == 2)
+            return
         }
         super.mouseDown(with: event)
     }

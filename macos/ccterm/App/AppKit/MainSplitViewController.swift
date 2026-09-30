@@ -136,23 +136,32 @@ final class MainSplitViewController: NSSplitViewController {
             .compactMap { $0.viewController as? TranscriptViewController }
             .first { $0.fileURL == url }
     }
+
+    /// The open tab for `reference`'s document, in whichever editor it is.
+    private func documentTab(for reference: DocumentReference) -> DocumentViewController? {
+        editorArea.groups.lazy.flatMap(\.tabViewItems)
+            .first { ($0.identifier as? DocumentReference) == reference }?.viewController as? DocumentViewController
+    }
 }
 
 extension MainSplitViewController: TranscriptViewControllerDelegate {
     /// Opens a document in the *other* editor as its temporary tab — splitting
     /// the area on the first — so clicking down a list replaces one tab where
     /// it stands; `pinned` opens it in a tab that stays. A document already
-    /// open is brought forward where it is.
+    /// open is brought forward where it is. Either way the focus goes to it,
+    /// so the window's commands (⌘W) aim at what the reader just opened.
     func transcriptViewController(_ transcript: TranscriptViewController, open document: Document, pinned: Bool) {
         let reference = document.reference
-        guard !editorArea.selectTabViewItem(withIdentifier: reference, pinning: pinned) else { return }
-        let item = tab(for: reference, document: document)
-        let source = group(containing: transcript)
-        if let other = editorArea.groups.first(where: { $0 !== source }) {
-            if pinned { other.addTabViewItem(item) } else { other.previewTabViewItem = item }
-        } else if let other = editorArea.addGroup(with: item), !pinned {
-            other.previewTabViewItem = item
+        if !editorArea.selectTabViewItem(withIdentifier: reference, pinning: pinned) {
+            let item = tab(for: reference, document: document)
+            let source = group(containing: transcript)
+            if let other = editorArea.groups.first(where: { $0 !== source }) {
+                if pinned { other.addTabViewItem(item) } else { other.previewTabViewItem = item }
+            } else if let other = editorArea.addGroup(with: item), !pinned {
+                other.previewTabViewItem = item
+            }
         }
+        documentTab(for: reference)?.takeFocus()
     }
 }
 

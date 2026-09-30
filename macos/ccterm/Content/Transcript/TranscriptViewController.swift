@@ -11,8 +11,8 @@ import TranscriptKit
 /// reader's place while it arrives.
 ///
 /// Owns what the reader does to the page: which runs are open
-/// (`RunDisclosure`), which item's document is showing (the selection,
-/// stepped with ↑ / ↓), and bringing an item back into view. What opening
+/// (`RunDisclosure`), which item's document is showing (the selection), and
+/// bringing an item back into view. What opening
 /// a document does is the delegate's.
 @MainActor
 final class TranscriptViewController: NSViewController {
@@ -199,22 +199,6 @@ final class TranscriptViewController: NSViewController {
         delegate?.transcriptViewController(self, open: document, pinned: pinned)
     }
 
-    /// ↑ / ↓ from the selected item to the next row that opens something,
-    /// whose document follows.
-    private func step(by offset: Int) -> Bool {
-        guard let selection, let current = rows.firstIndex(where: { $0.opens == selection }) else { return false }
-        var index = current + offset
-        while rows.indices.contains(index) {
-            if let id = rows[index].opens {
-                open(id, pinned: false)
-                transcript.scrollToRow(at: index, scrollPosition: .nearestEdge)
-                return true
-            }
-            index += offset
-        }
-        return true
-    }
-
     /// Brings `id` — an item, or the call an entry is about — into view and
     /// flashes it, opening the run it is in. `select` marks it as the item
     /// whose document is showing (*Show in Transcript*); otherwise the run is
@@ -279,14 +263,6 @@ extension TranscriptViewController: TranscriptViewDelegate {
 
     func transcriptView(_ transcriptView: TranscriptView, didActivate url: URL, inRow row: Int) {
         NSWorkspace.shared.open(url)
-    }
-
-    func transcriptView(_ transcriptView: TranscriptView, doCommandBy selector: Selector) -> Bool {
-        switch selector {
-        case #selector(NSResponder.moveUp(_:)): step(by: -1)
-        case #selector(NSResponder.moveDown(_:)): step(by: 1)
-        default: false
-        }
     }
 }
 

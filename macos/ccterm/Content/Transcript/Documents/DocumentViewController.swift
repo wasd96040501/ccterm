@@ -87,9 +87,30 @@ final class DocumentViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     override func loadView() {
-        view = NSView()
+        view = TabView()
         configureHierarchy()
         configureConstraints()
+    }
+
+    /// The tab's own view takes the focus when the reader opens the document,
+    /// as a tab view does: the window's commands (⌘W, ⌘F) then aim at this
+    /// tab. A click inside moves it to what was clicked.
+    private final class TabView: NSView {
+        override var acceptsFirstResponder: Bool { true }
+    }
+
+    /// Whether the tab takes the focus once it is in a window.
+    private var takesFocusWhenShown = false
+
+    /// Gives the reader's focus to this tab, now or as soon as it is in a
+    /// window: they just opened it.
+    func takeFocus() {
+        guard let window = view.window else {
+            takesFocusWhenShown = true
+            return
+        }
+        takesFocusWhenShown = false
+        window.makeFirstResponder(view)
     }
 
     private func configureHierarchy() {
@@ -125,6 +146,7 @@ final class DocumentViewController: NSViewController {
     /// that measures (a transcript) is mounted into a laid-out area.
     override func viewDidAppear() {
         super.viewDidAppear()
+        if takesFocusWhenShown { takeFocus() }
         guard !hasLoaded else { return }
         hasLoaded = true
         view.layoutSubtreeIfNeeded()

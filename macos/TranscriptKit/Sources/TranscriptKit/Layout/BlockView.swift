@@ -548,6 +548,11 @@ final class BlockView: NSView, TranscriptFindHighlighting, SurfaceLayerOwner {
     /// accident of what the layer's frame happened to be when it was added.
     override func layout() {
         super.layout()
+        // Laid out at a width the block was not measured into: the row's width
+        // moved, and the transcript has the tree for the new one.
+        if let block, bounds.width > 0, bounds.width != block.size.width {
+            delegate?.blockViewDidChangeWidth(self)
+        }
         sizeSurfaces()
     }
 

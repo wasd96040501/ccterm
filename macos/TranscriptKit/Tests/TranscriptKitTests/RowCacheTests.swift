@@ -146,9 +146,12 @@ final class RowCacheTests: XCTestCase {
         mounted.settle()
         mounted.transcript.reloadData()
         mounted.settle()
+        // A transcript loads at its tail; these rows are read from the top.
+        mounted.transcript.scrollToRow(at: 0, scrollPosition: .top)
+        mounted.settle()
         let before = try XCTUnwrap(firstLine(ofRow: 0, in: mounted), "premise: row 0 was drawn")
         let drawnHeight = blockView(ofRow: 0, in: mounted)?.block?.size.height
-        let rect = mounted.transcript.rect(ofRow: 0)
+        let rect = mounted.documentRect(ofRow: 0)
         XCTAssertGreaterThan(
             Self.totalCost(host.rows), RowCache.residentBudget,
             "premise: the transcript is more than the budget holds")
@@ -166,7 +169,7 @@ final class RowCacheTests: XCTestCase {
         // Against what it drew before the eviction rather than against the row's
         // rectangle, which also holds the spacing between rows.
         XCTAssertEqual(view.block?.size.height, drawnHeight)
-        XCTAssertEqual(mounted.transcript.rect(ofRow: 0), rect)
+        XCTAssertEqual(mounted.documentRect(ofRow: 0), rect)
     }
 
     /// A selection across more rows than the budget holds typeset still copies
@@ -180,6 +183,9 @@ final class RowCacheTests: XCTestCase {
         mounted.transcript.delegate = host
         mounted.settle()
         mounted.transcript.reloadData()
+        mounted.settle()
+        // A transcript loads at its tail; these rows are read from the top.
+        mounted.transcript.scrollToRow(at: 0, scrollPosition: .top)
         mounted.settle()
         XCTAssertGreaterThan(
             Self.totalCost(host.rows), RowCache.residentBudget,

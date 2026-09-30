@@ -53,4 +53,13 @@ protocol BlockViewDelegate: AnyObject {
     /// way: a right-click outside the selection takes the word under the pointer,
     /// and the selection is the transcript's to change.
     func blockView(_ view: BlockView, menu: NSMenu, for event: NSEvent) -> NSMenu?
+
+    /// The view was laid out at a width its block was not measured into: the
+    /// row got wider or narrower. The transcript answers with `remeasured(to:)`
+    /// and the row's tree at the new width.
+    ///
+    /// Asked by the view rather than pushed by the transcript because the view
+    /// is where every cause lands — the list's width, the content bounds — and
+    /// at the moment it lands, in the layout pass that sizes it.
+    func blockViewDidChangeWidth(_ view: BlockView)
 }

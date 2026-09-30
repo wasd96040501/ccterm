@@ -49,11 +49,11 @@ final class TranscriptViewGeometryTests: XCTestCase {
         XCTAssertGreaterThan(host.viewCalls, 0, "the transcript never asked for a row view")
         XCTAssertEqual(mounted.transcript.numberOfRows, 24)
 
-        // Fixed row height, so row n starts at n * pitch. A row rect carries the
-        // gap as well as the row — the table centres the 40pt cell in it.
-        XCTAssertEqual(mounted.transcript.rect(ofRow: 0).origin.y, 0)
-        XCTAssertEqual(mounted.transcript.rect(ofRow: 3).origin.y, 162)
-        XCTAssertEqual(mounted.transcript.rect(ofRow: 3).height, Self.rowPitch)
+        // Fixed row height, so row n starts at n * pitch. A row rect is the row
+        // alone; the gap lies between two rects.
+        XCTAssertEqual(mounted.documentRect(ofRow: 0).origin.y, 0)
+        XCTAssertEqual(mounted.documentRect(ofRow: 3).origin.y, 162)
+        XCTAssertEqual(mounted.documentRect(ofRow: 3).height, 40)
     }
 
     /// The eyeball anchor: 1100 wide, clamped at 720, content 720 and centred.
@@ -72,7 +72,7 @@ final class TranscriptViewGeometryTests: XCTestCase {
         }
     }
 
-    /// The gap between rows is the table's, and a row's content still gets
+    /// The gap between rows is the list's, and a row's content still gets
     /// exactly the height the delegate answered for it. Worth pinning separately
     /// because the wrong way to spend a gap — folding it into the height, so the
     /// cell stretches to cover it — leaves the pitch and the document height
@@ -83,7 +83,7 @@ final class TranscriptViewGeometryTests: XCTestCase {
         defer { mounted.teardown() }
 
         XCTAssertFalse(host.heightWidths.isEmpty, "the transcript never asked for a row height")
-        XCTAssertEqual(mounted.transcript.rect(ofRow: 3).height, Self.rowPitch)
+        XCTAssertEqual(mounted.documentRect(ofRow: 4).minY - mounted.documentRect(ofRow: 3).minY, Self.rowPitch)
 
         let probes = mounted.transcript.descendants(ofType: RecordingHost.ProbeView.self)
         XCTAssertFalse(probes.isEmpty, "no hosted view reached the view tree")
@@ -93,12 +93,14 @@ final class TranscriptViewGeometryTests: XCTestCase {
     }
 
     /// Only a screenful of views exists no matter how long the transcript is —
-    /// the reason a row-based view beats a stack of everything.
+    /// the reason a row-based view beats a stack of everything. A screenful and
+    /// AppKit's overdraw, which the list prepares as `NSTableView` does: at most
+    /// the viewport's height again either side (ExactList P1).
     func testViewsRecycleRatherThanAccumulate() throws {
         let (mounted, host) = mount(rows: 500)
         defer { mounted.teardown() }
 
-        let onScreen = Int((Self.windowSize.height / Self.rowPitch).rounded(.up)) + 2
+        let onScreen = 3 * (Int((Self.windowSize.height / Self.rowPitch).rounded(.up)) + 2)
         XCTAssertLessThanOrEqual(host.builds, onScreen)
         XCTAssertLessThanOrEqual(
             mounted.transcript.descendants(ofType: RecordingHost.ProbeView.self).count, onScreen)
@@ -151,9 +153,10 @@ final class TranscriptViewGeometryTests: XCTestCase {
             "re-asked at a width other than the transcript's current one, less its margins")
     }
 
-    /// Above the clamp the number handed to the delegate stops moving, so
-    /// resizing there is free.
-    func testWideningAboveTheClampReAsksNothing() throws {
+    /// Above the clamp the number handed to the delegate stops moving: the list
+    /// asks again for its new width, and the host is asked at the same content
+    /// width as before.
+    func testWideningAboveTheClampKeepsTheContentWidth() throws {
         let (mounted, host) = mount(rows: 24)
         defer { mounted.teardown() }
 
@@ -161,12 +164,14 @@ final class TranscriptViewGeometryTests: XCTestCase {
         mounted.setContentWidth(1400)
         mounted.settle()
 
-        XCTAssertEqual(host.heightWidths, [], "heights were re-asked despite the clamp holding")
+        XCTAssertFalse(host.heightWidths.isEmpty, "premise: the list re-asked for its new width")
+        XCTAssertEqual(Set(host.heightWidths), [720], "the clamp did not hold")
     }
 
     /// A cold mount should settle on one content width, not measure everything
-    /// twice — once at whatever the table's own initial width is, then again
-    /// once the scroll view has sized it.
+    /// at whatever the list's initial width is and then again once it has been
+    /// sized. The list loads at its first layout, and `reloadData()` asks every
+    /// row again, so each row is asked twice at the one width.
     func testColdMountMeasuresEachRowAtOneWidthOnly() throws {
         let (mounted, host) = mount(rows: 24)
         defer { mounted.teardown() }
@@ -175,13 +180,11 @@ final class TranscriptViewGeometryTests: XCTestCase {
             Set(host.heightWidths), [720],
             "cold mount measured at more than one width: "
                 + "\(host.heightWidths.reduce(into: [CGFloat: Int]()) { $0[$1, default: 0] += 1 })")
-        XCTAssertEqual(host.heightWidths.count, 24, "each row should be measured once")
+        XCTAssertEqual(host.heightWidths.count, 2 * 24, "each row should be measured once per load")
     }
 
-    /// A row measuring zero makes `NSTableView` throw from inside its own
-    /// layout — and not at the call that reported the zero, but at the next pass
-    /// that tiles, so the symptom is a window resize crashing with nothing in the
-    /// trace naming the row. The transcript clamps instead.
+    /// A row measuring zero stops the list (ExactList L12), so the transcript
+    /// clamps it.
     ///
     /// Reachable three ways today: a host answering `0` for a collapsed row, a
     /// content case the transcript cannot draw yet, and a data source that went
@@ -191,7 +194,7 @@ final class TranscriptViewGeometryTests: XCTestCase {
         defer { mounted.teardown() }
 
         XCTAssertFalse(host.heightWidths.isEmpty, "the transcript never asked for a row height")
-        XCTAssertGreaterThan(mounted.transcript.rect(ofRow: 0).height, 0)
+        XCTAssertGreaterThan(mounted.documentRect(ofRow: 0).height, 0)
 
         mounted.setContentWidth(500)
         mounted.settle()

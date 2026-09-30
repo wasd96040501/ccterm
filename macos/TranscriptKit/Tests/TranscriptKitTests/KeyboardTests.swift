@@ -39,8 +39,8 @@ final class KeyboardTests: XCTestCase {
         mounted.settle()
         let controller = HostController()
         controller.view = mounted.window.contentView!
-        let table = mounted.transcript.descendants(ofType: NSTableView.self)[0]
-        XCTAssertTrue(mounted.window.makeFirstResponder(table), "the transcript refused focus")
+        let document = try! XCTUnwrap(mounted.scrollView.documentView)
+        XCTAssertTrue(mounted.window.makeFirstResponder(document), "the transcript refused focus")
         return (mounted, host, controller)
     }
 
@@ -85,9 +85,7 @@ final class KeyboardTests: XCTestCase {
 
     // MARK: - Reading keys
 
-    /// ↓ scrolls a line — the scroll view's, which the table sets to a row plus
-    /// the gap (24 + 14). `NSTableView`'s own ↓ selected row 0 and jumped to the
-    /// top, so this is also the assertion that the table's handling is gone.
+    /// ↓ scrolls a line — the scroll view's `verticalLineScroll`.
     func testDownArrowScrollsALine() throws {
         let (mounted, _, controller) = mount()
         defer { mounted.teardown() }
@@ -97,7 +95,7 @@ final class KeyboardTests: XCTestCase {
 
         _ = press(mounted, "\u{F701}", keyCode: 125, modifiers: [.numericPad, .function])
 
-        XCTAssertEqual(offset(mounted), 1038)
+        XCTAssertEqual(offset(mounted), 1000 + mounted.scrollView.verticalLineScroll)
         XCTAssertEqual(controller.keys, [])
     }
 
@@ -115,7 +113,7 @@ final class KeyboardTests: XCTestCase {
         XCTAssertEqual(offset(mounted), 1000, "the host took ↓")
 
         _ = press(mounted, "\u{F700}", keyCode: 126, modifiers: [.numericPad, .function])
-        XCTAssertEqual(offset(mounted), 962, "↑ was left to scrolling")
+        XCTAssertEqual(offset(mounted), 1000 - mounted.scrollView.verticalLineScroll, "↑ was left to scrolling")
         XCTAssertEqual(host.commands, [#selector(NSResponder.moveDown(_:)), #selector(NSResponder.moveUp(_:))])
         XCTAssertEqual(controller.keys, [])
     }
@@ -147,7 +145,8 @@ final class KeyboardTests: XCTestCase {
         XCTAssertEqual(offset(mounted), 1000, "mount never placed rows")
 
         _ = press(mounted, "\u{F72B}", keyCode: 119, modifiers: [.function])
-        XCTAssertEqual(offset(mounted), 5400 + 120 - 720)
+        // A hundred rows of 40, and the 14pt gap between each two.
+        XCTAssertEqual(offset(mounted), 100 * 40 + 99 * 14 + 120 - 720)
 
         _ = press(mounted, "\u{F729}", keyCode: 115, modifiers: [.function])
         XCTAssertEqual(offset(mounted), 0)

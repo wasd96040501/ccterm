@@ -163,6 +163,8 @@ final class LinkActivationTests: XCTestCase {
         }
 
         func blockView(_ view: BlockView, menu: NSMenu, for event: NSEvent) -> NSMenu? { menu }
+
+        func blockViewDidChangeWidth(_ view: BlockView) {}
     }
 
     /// One markdown row, answered to a real transcript.

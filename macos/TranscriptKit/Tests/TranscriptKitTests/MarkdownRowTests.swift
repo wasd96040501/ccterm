@@ -79,8 +79,9 @@ final class MarkdownRowTests: XCTestCase {
 
         XCTAssertEqual(mounted.transcript.descendants(ofType: BlockView.self).count, 2)
         XCTAssertEqual(mounted.transcript.descendants(ofType: RecordingHost.ProbeView.self).count, 1)
-        // Asked about the host's row, and only that one.
-        XCTAssertEqual(host.heightWidths.count, 1)
+        // Asked about the host's row, and only that one: once when the list
+        // loaded, once for `reloadData()`.
+        XCTAssertEqual(host.heightWidths.count, 2)
     }
 
     // MARK: - Re-measured on a width change

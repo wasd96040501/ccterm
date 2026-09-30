@@ -57,7 +57,8 @@ final class HostedViewPressTests: XCTestCase {
 
         press(mounted, row, clicks: 1)
         XCTAssertTrue(
-            mounted.window.firstResponder is NSTableView, "\(String(describing: mounted.window.firstResponder))")
+            mounted.window.firstResponder === mounted.scrollView.documentView,
+            "\(String(describing: mounted.window.firstResponder))")
 
         press(mounted, row, clicks: 2)
         XCTAssertEqual(row.clickCounts, [1, 2])

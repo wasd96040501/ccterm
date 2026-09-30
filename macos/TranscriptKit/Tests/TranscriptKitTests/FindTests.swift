@@ -408,7 +408,7 @@ final class FindTests: XCTestCase {
         XCTAssertEqual(mounted.transcript.indexOfSelectedFindMatch, 1)
         XCTAssertTrue(
             mounted.scrollView.contentView.documentVisibleRect
-                .intersects(mounted.transcript.rect(ofRow: 6)),
+                .intersects(mounted.documentRect(ofRow: 6)),
             "the reader was moved away from the hit in front of them")
     }
 
@@ -462,6 +462,8 @@ final class FindTests: XCTestCase {
     func testFindNextScrollsToTheRowItSelected() async {
         // Each row a screenful, so the last one is far below the viewport.
         mount((0..<12).map { "needle \($0)\n\n" + String(repeating: "filler ", count: 200) })
+        mounted.transcript.scrollToRow(at: 0, scrollPosition: .top)
+        mounted.settle()
 
         mounted.transcript.find("needle")
         await mounted.settleFind()
@@ -470,7 +472,7 @@ final class FindTests: XCTestCase {
 
         let visible = mounted.scrollView.contentView.documentVisibleRect
         XCTAssertTrue(
-            visible.intersects(mounted.transcript.rect(ofRow: 8)),
+            visible.intersects(mounted.documentRect(ofRow: 8)),
             "the selected hit's row is not on screen")
     }
 

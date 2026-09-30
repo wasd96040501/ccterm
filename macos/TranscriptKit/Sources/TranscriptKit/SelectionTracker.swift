@@ -1,4 +1,5 @@
 import AppKit
+import ExactList
 
 /// The reader's text selection, and every gesture that makes it.
 ///
@@ -12,16 +13,16 @@ import AppKit
 /// is held here, where rows have identities and outlive their views, rather
 /// than on the views — which is `NSTableView`'s split, the table holding the
 /// selection and handing each row view its `isSelected`. A press on a
-/// `BlockView` goes up the responder chain to the table, like any mouse event
-/// a view does not take, and the view draws what it is handed
-/// (`selectedRange`); nothing about it is on the public surface.
+/// `BlockView` goes up the responder chain — through the list, which takes
+/// focus for it — to the transcript, like any mouse event a view does not
+/// take, and the view draws what it is handed (`selectedRange`); nothing about
+/// it is on the public surface.
 ///
-/// The responder is the table, the scroll view's document view, the way it is
-/// an `NSTextView` and not its scroll view: it takes first responder on a
-/// press, answers Copy, and drops the selection when the focus moves on —
-/// how a selection in one transcript goes away when the reader starts one in
-/// another. Keyboard handling stays exactly what it was, because the row view
-/// that used to hold the focus passed every key up to this same table.
+/// The responder is the list's document view, the way it is an `NSTextView`
+/// and not its scroll view: it takes first responder on a press, Copy comes up
+/// the chain from it, and the selection goes when the focus moves on — how a
+/// selection in one transcript goes away when the reader starts one in
+/// another.
 ///
 /// What it costs where the transcript is hot: nothing, until something is
 /// selected. A row bound (`viewForRow`, `rebindVisibleRows`) reads its part —
@@ -36,20 +37,15 @@ final class SelectionTracker {
 
     private weak var owner: SelectionTrackerOwner?
     private let rowCache: RowCache
-    private let tableView: NSTableView
-    private let scrollView: NSScrollView
+    private let list: ExactListView
 
-    init(
-        owner: SelectionTrackerOwner, rowCache: RowCache, tableView: NSTableView,
-        scrollView: NSScrollView
-    ) {
+    init(owner: SelectionTrackerOwner, rowCache: RowCache, list: ExactListView) {
         self.owner = owner
         self.rowCache = rowCache
-        self.tableView = tableView
-        self.scrollView = scrollView
+        self.list = list
     }
 
-    private var numberOfRows: Int { tableView.numberOfRows }
+    private var numberOfRows: Int { list.numberOfRows }
 
     private var contentWidth: CGFloat { owner?.contentWidth ?? 0 }
 
@@ -69,9 +65,8 @@ final class SelectionTracker {
     }
 
     /// Renumbers the selection for rows inserted at `indexes` (post-insertion
-    /// positions). Before the table hears of the insert: the table may ask for a
-    /// new row's view inside its own call, and that view's part is read against
-    /// these indices.
+    /// positions). Before the list commits the insert: a new row's view reads
+    /// its part against these indices.
     func shift(byRowsInserted indexes: IndexSet) {
         selection = selection?.shifted(byRowsInserted: indexes)
     }
@@ -85,8 +80,8 @@ final class SelectionTracker {
     }
 
     /// A press, and everything until the button comes back up. The one way into a
-    /// selection made with the mouse, reached from a row or from the table
-    /// between rows through the responder chain.
+    /// selection made with the mouse, reached from a row or from between rows
+    /// through the responder chain, once the list has taken focus for it.
     ///
     /// A tracking loop — `NSTextView`'s shape, and `NSTableView`'s — rather than
     /// drags dispatched to whichever view was pressed, because the focus is a
@@ -100,7 +95,7 @@ final class SelectionTracker {
     /// view has to outlive its row for the gesture to finish.
     func trackSelection(from event: NSEvent) {
         beginSelection(with: event)
-        guard let window = tableView.window, selection != nil else { return }
+        guard let window = list.window, selection != nil else { return }
 
         // The press that started this, then each drag: where the pointer is in the
         // window, which is what autoscroll and the focus are both worked out from.
@@ -116,14 +111,25 @@ final class SelectionTracker {
             case .leftMouseDragged: pointer = event
             // Scrolls by how far past the edge the pointer is, so the reader sets
             // the speed by where they hold it; inside the viewport, nothing moved.
-            case .periodic: guard tableView.autoscroll(with: pointer) else { return }
-            case .scrollWheel: scrollView.scrollWheel(with: event)
+            // A mounted row reaches the list's clip view, which does the
+            // scrolling for both — AppKit's own mechanism, from any row.
+            case .periodic: guard mountedRow?.autoscroll(with: pointer) == true else { return }
+            case .scrollWheel: mountedRow?.scrollWheel(with: event)
             default:
                 stop.pointee = true
                 return
             }
             extendSelection(to: pointer)
         }
+    }
+
+    /// Any row view on screen: from inside the clip view, it passes an autoscroll
+    /// or a wheel event up to the scroll view. The cell rather than what it
+    /// hosts, which may answer either itself.
+    private var mountedRow: NSView? {
+        var first: NSView?
+        list.enumerateAvailableRowViews { view, _ in first = first ?? view }
+        return first
     }
 
     /// How soon a pointer held past an edge starts scrolling, and how often it
@@ -144,7 +150,6 @@ final class SelectionTracker {
     /// answer, and the **point** goes over for the two that take one: an index at
     /// a line boundary names two places, and only the point can tell them apart.
     private func beginSelection(with event: NSEvent) {
-        tableView.window?.makeFirstResponder(tableView)
         guard let hit = selectionHit(at: event) else { return select(nil) }
         let range: Range<Int>
         switch (hit.block, event.clickCount) {
@@ -161,7 +166,8 @@ final class SelectionTracker {
     /// What a right-click acts on, settled before its menu is shown.
     ///
     /// Two things, and both are why this is not a pure getter. **The focus** moves
-    /// to the selection's responder, because a menu item with a `nil` target
+    /// to the selection's responder — the list's document view, which `view`, a
+    /// row on screen, reaches as its scroll view's — because a menu item with a `nil` target
     /// dispatches from the window's first responder, not from the view the menu
     /// came from — right-clicking a row nobody has clicked would otherwise
     /// validate Copy against whatever held the focus. And **the word under the
@@ -172,8 +178,8 @@ final class SelectionTracker {
     /// Inside is tested in the index space rather than geometrically, which is
     /// `NSTextView`'s test too — and for a table, whose selection is a rectangle,
     /// the endpoints are what a copy would be taken from.
-    func selectForContextMenu(with event: NSEvent) {
-        tableView.window?.makeFirstResponder(tableView)
+    func selectForContextMenu(with event: NSEvent, in view: NSView) {
+        if let responder = view.enclosingScrollView?.documentView { list.window?.makeFirstResponder(responder) }
         guard let hit = selectionHit(at: event), let block = hit.block else { return }
         if selection?.contains(row: hit.row, index: block.index(at: hit.point)) == true { return }
         select(TextSelection(row: hit.row, id: hit.id, range: block.wordRange(at: hit.point)))
@@ -185,7 +191,9 @@ final class SelectionTracker {
     /// below them the end of the last — `NSTextView`'s answer past its first and
     /// last lines — so a drag that leaves the rows selects to the end, and the
     /// block clamps a point beside its text the same way.
-    /// Worked out from the table's geometry, not from a view, so a row with no
+    /// A point in the gap between two rows is the end of the row above it.
+    ///
+    /// Worked out from the list's geometry, not from a view, so a row with no
     /// view on screen answers as well as one with — and a drag keeps working when
     /// the view it started on has been recycled. `block` is `nil` for a `.view`
     /// row, whose content has no positions: the selection passes through it.
@@ -193,18 +201,27 @@ final class SelectionTracker {
         at event: NSEvent
     ) -> (row: Int, id: TranscriptRow.ID, block: MeasuredBlock?, point: CGPoint)? {
         guard numberOfRows > 0, let owner else { return nil }
-        let point = tableView.convert(event.locationInWindow, from: nil)
-        let row = tableView.row(at: NSPoint(x: tableView.bounds.midX, y: point.y))
-        let above = row < 0 && point.y < 0
-        let clamped = row >= 0 ? row : above ? 0 : numberOfRows - 1
+        let point = list.convert(event.locationInWindow, from: nil)
+        let hit = list.row(at: NSPoint(x: list.bounds.midX, y: point.y))
+        let top = list.rect(ofRow: 0).minY
+        let above = hit < 0 && point.y < top
+        // Below the last row, or in a gap between two: the nearest row above.
+        let clamped =
+            hit >= 0
+            ? hit
+            : above
+                ? 0
+                : min(
+                    numberOfRows - 1,
+                    max(0, list.rows(in: NSRect(x: 0, y: top, width: 1, height: point.y - top)).upperBound - 1))
 
         guard let described = owner.row(at: clamped) else { return nil }
         let contentWidth = owner.contentWidth
-        // The block is drawn from the cell's top edge, centred at the content
+        // The block is drawn from the row's top edge, centred at the content
         // width — `TranscriptCellView`'s arrangement.
-        let cell = tableView.frameOfCell(atColumn: 0, row: clamped)
+        let cell = list.rect(ofRow: clamped)
         let local =
-            row >= 0
+            hit >= 0
             ? CGPoint(x: point.x - (cell.midX - contentWidth / 2), y: point.y - cell.minY)
             : above ? .zero : CGPoint(x: contentWidth, y: cell.height)
         return (
@@ -223,8 +240,8 @@ final class SelectionTracker {
     /// part did not change is not repainted (`BlockView.selectedRange`), so a drag
     /// inside one row repaints that row alone.
     func pushSelection() {
-        tableView.enumerateAvailableRowViews { rowView, row in
-            guard let view = (rowView.view(atColumn: 0) as? TranscriptCellView)?.hostedView as? BlockView,
+        list.enumerateAvailableRowViews { cell, row in
+            guard let view = (cell as? TranscriptCellView)?.hostedView as? BlockView,
                 let block = view.block
             else { return }
             view.selectedRange = selection?.range(inRow: row, length: block.length)
@@ -234,7 +251,7 @@ final class SelectionTracker {
     /// Finds the selection's rows again after a removal or a reload, or drops it
     /// when a row one of its ends was in has gone.
     ///
-    /// Runs inside the mutation, before the table has been told — so it shows
+    /// Runs inside the mutation, before the list has been told — so it shows
     /// nothing unless the selection went. A selection that survived is still
     /// correct in every view on screen: what each shows is its part of the same
     /// text, whatever number its row now has.
@@ -244,7 +261,7 @@ final class SelectionTracker {
         if self.selection == nil { pushSelection() }
     }
 
-    /// The table stopped being first responder.
+    /// The list's document view stopped being first responder.
     func selectionDidResign() {
         guard selection != nil else { return }
         select(nil)
@@ -258,7 +275,7 @@ final class SelectionTracker {
     /// Copies the selection as plain text, a blank line between rows.
     ///
     /// A row the selection covers that nothing has measured — it can run through
-    /// rows the reader dragged past without the table ever asking about — is
+    /// rows the reader dragged past without the list ever showing — is
     /// built for this and dropped, not filed: the same rule as a find's walk, for
     /// the same reason: filing it would push the rows on screen out of `RowCache`'s
     /// resident budget to make room for rows nobody is looking at. That includes a

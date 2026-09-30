@@ -3,40 +3,28 @@ import XCTest
 
 @testable import TranscriptKit
 
-/// A width change re-measures the rows off screen **off the main actor**, and
-/// publishes them in one pass when they are all in.
+/// A width change re-measures the rows off screen **off the main actor**, into
+/// `RowCache`, while the list refreshes them on idle turns (ExactList W5) and
+/// finds each answer already there.
 ///
 /// The rest of the suite never sees this: its transcripts fit in their windows,
-/// so every row is visible, and visible rows are re-measured synchronously by the
-/// pass that changed the width. Everything here therefore starts by putting rows
-/// off screen and checking they really are — a transcript that fits would make
-/// every assertion below pass against a purely synchronous implementation.
+/// so every row is on screen, and the list re-measures those inside the pass
+/// that changed the width (W3). Everything here therefore starts by putting rows
+/// off screen and checking they really are.
 ///
 /// **What is asserted is the window, not the speed.** That the work happens
 /// somewhere else is read as "the correction has not landed yet, and lands
-/// later"; timing would be asserting the machine. What the window *looks* like —
-/// whether a row scrolled into during it reads as wrong — is `make demo-kit`'s,
-/// on ten thousand rows.
+/// later"; timing would be asserting the machine. What it buys — the list's idle
+/// questions answered by a lookup rather than by typesetting on the main thread —
+/// is `make demo-kit`'s, on ten thousand rows.
 ///
 /// **Several of the mechanism's parts are deliberately not covered, because
-/// nothing can cover them.** Deleting the merge, or letting a superseded batch
-/// publish, leaves this file green — the transcript stays correct either way,
-/// since `noteHeightOfRows` makes the table re-ask and `RowCache` rejects
-/// anything stale on read. What those parts buy is that the re-asking is answered
-/// from cache instead of by measuring on the main thread, which is a difference
-/// only a measurement can see (§6 has it). Tried, so that nobody re-derives it:
-/// breaks that stay green here are `publish(_:at:)`'s width guard, its merge, the
-/// cancellation of a superseded batch, and the content comparison inside
-/// `RowCache.merge(remeasured:at:)`.
-///
-/// Two more joined that list when publishing became progressive, and they are the
-/// two that cost the most to get wrong. Widening a batch's invalidation from *its
-/// own rows* to the whole transcript stays green here and costs 2 466 ms in a
-/// single main-thread call on ten thousand rows; queueing every row into the task
-/// group at once instead of a core count at a time stays green here and stops the
-/// batching working at all. Both are in `publish(_:at:)` and `inFlightLimit`, with
-/// the measurements next to them, because a comment is the only place they can
-/// live.
+/// nothing can cover them.** The transcript is correct without any of them: the
+/// list asks every stale row again, and `RowCache` rejects anything stale on
+/// read. Breaks that stay green here are the merge's width guard, the
+/// cancellation of a superseded run, the content comparison inside
+/// `RowCache.merge(remeasured:at:)`, and queueing every row into the task group at
+/// once instead of a core count at a time (`inFlightLimit` has the measurement).
 @MainActor
 final class ResizeRemeasureTests: XCTestCase {
 
@@ -68,8 +56,9 @@ final class ResizeRemeasureTests: XCTestCase {
     private static let wide: CGFloat = 700
     private static let narrow: CGFloat = 430
 
-    /// A transcript whose content is far taller than its window, walked end to end
-    /// so the table has really measured the rows that are about to go stale.
+    /// A transcript whose content is far taller than its window, read from the
+    /// top. The list measured every row when it loaded (ExactList G2), so every
+    /// row off screen is one the width change leaves stale.
     private func mount(width: CGFloat) -> (MountedTranscript, ResizeHost) {
         let host = ResizeHost(sources: (0..<Self.rowCount).map(Self.document))
         let transcript = MountedTranscript(size: NSSize(width: width, height: 300))
@@ -79,22 +68,29 @@ final class ResizeRemeasureTests: XCTestCase {
         transcript.settle()
         transcript.transcript.reloadData()
         transcript.settle()
-        // Walk to the end and back, so rows outside the first screen have real
-        // heights rather than the table's extrapolation — an unmeasured row is
-        // asked about on the spot and is not what this file is about.
-        transcript.transcript.scrollToRow(at: Self.rowCount - 1, scrollPosition: .bottom)
-        transcript.settle()
+        // A transcript loads at its tail.
         transcript.transcript.scrollToRow(at: 0, scrollPosition: .top)
         transcript.settle()
         return (transcript, host)
     }
 
-    private func rects(_ transcript: TranscriptView) -> [NSRect] {
-        (0..<transcript.numberOfRows).map { transcript.rect(ofRow: $0) }
+    private func rects(_ transcript: MountedTranscript) -> [NSRect] {
+        (0..<transcript.transcript.numberOfRows).map { transcript.documentRect(ofRow: $0) }
     }
 
     private func isOffscreen(row: Int, in transcript: MountedTranscript) -> Bool {
-        !transcript.scrollView.documentVisibleRect.intersects(transcript.transcript.rect(ofRow: row))
+        !transcript.scrollView.documentVisibleRect.intersects(transcript.documentRect(ofRow: row))
+    }
+
+    /// The re-measure's walks among everything the data source was asked: each
+    /// run of calls that asks every row once. Nothing else does — the list asks
+    /// for the rows it places, and on idle turns only for the rows still stale,
+    /// never one it has measured at this width (ExactList W6).
+    private func walks(in calls: [Int]) -> [[Int]] {
+        guard calls.count >= Self.rowCount else { return [] }
+        let every = Array(0..<Self.rowCount)
+        return (0...(calls.count - Self.rowCount)).map { Array(calls[$0..<$0 + Self.rowCount]) }
+            .filter { $0.sorted() == every }
     }
 
     /// The premise every other test here rests on.
@@ -113,7 +109,7 @@ final class ResizeRemeasureTests: XCTestCase {
     /// zoom — puts the rows on screen at their new heights at once. Animated, the
     /// row views slide into place over a fifth of a second while the glyphs are
     /// already laid out for the new width, which reads as the text being squashed.
-    func testAWidthChangeOutsideADragDoesNotAnimateTheRows() {
+    func testAWidthChangeOutsideADragDoesNotAnimateTheRows() throws {
         let (subject, host) = mount(width: Self.wide)
         XCTAssertFalse(host.rowCalls.isEmpty, "the transcript never laid out")
         let before = subject.transcript.rect(ofRow: 0).height
@@ -123,15 +119,14 @@ final class ResizeRemeasureTests: XCTestCase {
 
         XCTAssertNotEqual(
             subject.transcript.rect(ofRow: 0).height, before, "premise: the rows changed height")
-        let rowViews =
-            subject.scrollView.documentView?.subviews.compactMap {
-                $0 as? NSTableRowView
-            } ?? []
-        XCTAssertFalse(rowViews.isEmpty, "premise: there are rows on screen")
-        let animated = rowViews.filter { !($0.layer?.animationKeys() ?? []).isEmpty }
-        XCTAssertEqual(
-            animated.count, 0,
-            "rows animating into place: \(animated.map { $0.layer?.animationKeys() ?? [] })")
+        // A row in motion stands between where it was and where its row is, so
+        // every cell standing exactly on some row's rect is a list at rest.
+        let document = try XCTUnwrap(subject.scrollView.documentView)
+        let rows = Set((0..<subject.transcript.numberOfRows).map { subject.documentRect(ofRow: $0) })
+        let cells = subject.transcript.descendants(ofType: TranscriptCellView.self)
+        XCTAssertFalse(cells.isEmpty, "premise: there are rows on screen")
+        let moving = cells.map { $0.convert($0.bounds, to: document) }.filter { !rows.contains($0) }
+        XCTAssertEqual(moving, [], "rows animating into place")
     }
 
     // MARK: - The window
@@ -151,7 +146,7 @@ final class ResizeRemeasureTests: XCTestCase {
         let offscreen = Self.rowCount - 1
         XCTAssertTrue(
             isOffscreen(row: offscreen, in: subject), "row \(offscreen) is on screen after all")
-        let staleRect = subject.transcript.rect(ofRow: offscreen)
+        let staleRect = subject.documentRect(ofRow: offscreen)
 
         subject.setContentWidth(Self.narrow)
         subject.settle()
@@ -165,24 +160,25 @@ final class ResizeRemeasureTests: XCTestCase {
             accuracy: 0.5,
             "the row on screen was not corrected inside the pass that changed the width")
         XCTAssertEqual(
-            subject.transcript.rect(ofRow: offscreen).height, staleRect.height, accuracy: 0.001,
-            "the off-screen rows were re-measured on the main thread after all")
+            subject.documentRect(ofRow: offscreen).height, staleRect.height, accuracy: 0.001,
+            "the off-screen rows were re-measured inside the pass after all")
 
         await subject.settleWidthChange()
 
-        XCTAssertEqual(rects(subject.transcript), rects(control.transcript))
+        XCTAssertEqual(rects(subject), rects(control))
     }
 
     /// A second width change while the first is in flight wins.
     ///
-    /// The first batch describes a layout nobody is asking for by the time it
-    /// lands, and publishing it would be a transcript briefly laid out at a width
-    /// it does not have.
+    /// The first run measures for a width nobody is asking for by the time it
+    /// lands; what the transcript ends up with is the second width's layout.
     func testASecondWidthChangeSupersedesTheFirst() async {
         let (control, controlHost) = mount(width: Self.narrow)
         let (subject, subjectHost) = mount(width: Self.wide)
         XCTAssertFalse(controlHost.rowCalls.isEmpty, "the control never laid out")
         XCTAssertFalse(subjectHost.rowCalls.isEmpty, "the subject never laid out")
+        await subject.settleWidthChange()
+        subjectHost.forgetRowCalls()
 
         subject.setContentWidth(560)
         XCTAssertNotNil(subject.transcript.remeasuring, "no first re-measure was started")
@@ -190,7 +186,10 @@ final class ResizeRemeasureTests: XCTestCase {
 
         await subject.settleWidthChange()
 
-        XCTAssertEqual(rects(subject.transcript), rects(control.transcript))
+        XCTAssertEqual(rects(subject), rects(control))
+        // The superseded run never took its first turn, so it walked nothing —
+        // a walk is a data-source call per row on the main actor.
+        XCTAssertEqual(walks(in: subjectHost.rowCalls).count, 1, "the superseded run walked the rows too")
     }
 
     /// The host may do anything while the batch is in flight.
@@ -230,29 +229,24 @@ final class ResizeRemeasureTests: XCTestCase {
             subject.transcript.rect(ofRow: changed).height,
             control.transcript.rect(ofRow: changed).height, accuracy: 0.5,
             "the row kept the height of the document it held when the batch was measured")
-        XCTAssertEqual(rects(subject.transcript), rects(control.transcript))
+        XCTAssertEqual(rects(subject), rects(control))
     }
 
     // MARK: - Where it starts, and what it does to the viewport
 
-    /// The rows are re-measured outward from what the reader is looking at.
+    /// The rows are re-measured outward from what the reader is looking at —
+    /// the order the list's idle turns will ask for them in.
     ///
     /// Read off the order the data source was asked in, which is what the walk
     /// does and the only trace it leaves: it asks each row who it is until it has
-    /// claimed every stale entry, so its calls are the last `rowCount` of them and
-    /// the order they arrive in is the order the rows will be corrected in.
-    ///
-    /// **Provoked through `maxContentWidth` rather than by resizing the window**,
-    /// and the reason is what a test can see rather than what is realistic: a
-    /// window resize lays the table out again before the pass returns, so the walk
-    /// stops being the last thing in `rowCalls`. Both reach
-    /// `contentWidthDidChange()` by the same line.
+    /// claimed every stale entry, in one run, and the order of that run is the
+    /// order the rows are measured in.
     ///
     /// **From the tail**, so that "starts at the viewport" and "starts at row 0"
     /// are different answers — the walk then runs down to row 0 with one side
     /// exhausted from the outset. `testTheWalkInterleavesBothSides` is the other
     /// half, where both sides have rows.
-    func testTheWalkStartsAtTheViewportAndWorksOutward() {
+    func testTheWalkStartsAtTheViewportAndWorksOutward() async throws {
         let (subject, host) = mount(width: Self.wide)
         XCTAssertFalse(host.rowCalls.isEmpty, "the subject never laid out")
 
@@ -260,15 +254,16 @@ final class ResizeRemeasureTests: XCTestCase {
         subject.settle()
         host.forgetRowCalls()
 
-        subject.transcript.maxContentWidth = Self.narrow
+        subject.setContentWidth(Self.narrow)
+        subject.settle()
         XCTAssertNotNil(subject.transcript.remeasuring, "no re-measure was started")
+        await subject.settleWidthChange()
 
-        // Every row exactly once — a walk that dropped rows would leave them
-        // measured at the old width for good, which nothing downstream would
-        // object to: they would simply be re-measured on demand, one main-thread
-        // row at a time, for as long as the reader kept scrolling.
-        let walk = Array(host.rowCalls.suffix(Self.rowCount))
-        XCTAssertEqual(walk.sorted(), Array(0..<Self.rowCount), "the walk did not cover every row")
+        // Every row exactly once — a walk that dropped rows would leave them to
+        // the list, measured one main-thread row at a time.
+        let walks = walks(in: host.rowCalls)
+        XCTAssertEqual(walks.count, 1, "not one walk that covers every row: \(host.rowCalls)")
+        let walk = try XCTUnwrap(walks.first)
 
         let first = walk[0]
         XCTAssertGreaterThan(first, 0, "the walk started at the top, not at the viewport")
@@ -287,7 +282,7 @@ final class ResizeRemeasureTests: XCTestCase {
     /// walk itself makes a walk that ran to the end and came back look like a very
     /// wide viewport followed by one side. Tried, and it passed against exactly the
     /// bug it was written for.
-    func testTheWalkInterleavesBothSides() {
+    func testTheWalkInterleavesBothSides() async throws {
         let (subject, host) = mount(width: Self.wide)
         XCTAssertFalse(host.rowCalls.isEmpty, "the subject never laid out")
 
@@ -295,11 +290,14 @@ final class ResizeRemeasureTests: XCTestCase {
         subject.settle()
         host.forgetRowCalls()
 
-        subject.transcript.maxContentWidth = Self.narrow
+        subject.setContentWidth(Self.narrow)
+        subject.settle()
         XCTAssertNotNil(subject.transcript.remeasuring, "no re-measure was started")
+        await subject.settleWidthChange()
 
-        let walk = Array(host.rowCalls.suffix(Self.rowCount))
-        XCTAssertEqual(walk.sorted(), Array(0..<Self.rowCount), "the walk did not cover every row")
+        let walks = walks(in: host.rowCalls)
+        XCTAssertEqual(walks.count, 1, "not one walk that covers every row: \(host.rowCalls)")
+        let walk = try XCTUnwrap(walks.first)
         // The rows on screen come first, so this is the topmost of them — and
         // anything below it in the walk is a row above the viewport.
         let firstVisible = walk[0]
@@ -352,7 +350,7 @@ final class ResizeRemeasureTests: XCTestCase {
     private func viewport(of transcript: MountedTranscript) -> (row: Int, offsetIntoRow: CGFloat) {
         let visible = transcript.scrollView.documentVisibleRect
         for row in 0..<transcript.transcript.numberOfRows {
-            let rect = transcript.transcript.rect(ofRow: row)
+            let rect = transcript.documentRect(ofRow: row)
             guard rect.maxY > visible.minY else { continue }
             return (row, visible.minY - rect.minY)
         }
@@ -379,7 +377,7 @@ final class ResizeRemeasureTests: XCTestCase {
         await subject.settleWidthChange()
 
         XCTAssertEqual(subject.transcript.numberOfRows, Self.rowCount - 3)
-        XCTAssertEqual(rects(subject.transcript), rects(control.transcript))
+        XCTAssertEqual(rects(subject), rects(control))
     }
 }
 

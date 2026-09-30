@@ -1,7 +1,7 @@
 import AppKit
 
 /// What `RemeasureScheduler` needs of the transcript: the width it measures for,
-/// which row is where, and a way to publish heights that holds the viewport still.
+/// and which row is where.
 @MainActor
 protocol RemeasureSchedulerOwner: AnyObject {
 
@@ -11,7 +11,4 @@ protocol RemeasureSchedulerOwner: AnyObject {
 
     /// The row at `index` as the data source describes it, or `nil` with none.
     func row(at index: Int) -> TranscriptRow?
-
-    /// Tells the table these rows' heights changed, holding the viewport still.
-    func noteHeightOfRows(withIndexesChanged indexes: IndexSet)
 }

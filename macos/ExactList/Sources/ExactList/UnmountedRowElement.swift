@@ -9,7 +9,7 @@ import AppKit
 final class UnmountedRowElement: NSAccessibilityElement {
 
     /// Weak: the list owns the elements it hands out.
-    weak var owner: UnmountedRowElementOwner?
+    weak var delegate: UnmountedRowElementDelegate?
 
     var row: Int
 
@@ -30,12 +30,12 @@ final class UnmountedRowElement: NSAccessibilityElement {
     /// The accessibility server calls on the main thread; this class isn't
     /// main-actor-isolated only because `NSAccessibilityElement` isn't.
     override func accessibilityFrame() -> NSRect {
-        MainActor.assumeIsolated { owner?.screenFrame(ofAccessibilityRow: row) ?? .zero }
+        MainActor.assumeIsolated { delegate?.screenFrame(ofAccessibilityRow: row) ?? .zero }
     }
 
     override func setAccessibilityFocused(_ accessibilityFocused: Bool) {
         super.setAccessibilityFocused(accessibilityFocused)
         guard accessibilityFocused else { return }
-        MainActor.assumeIsolated { owner?.scrollAccessibilityRowToVisible(row) }
+        MainActor.assumeIsolated { delegate?.scrollAccessibilityRowToVisible(row) }
     }
 }

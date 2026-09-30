@@ -12,7 +12,7 @@ import AppKit
 final class ListClipView: NSClipView {
 
     /// Weak: the list owns this clip view.
-    weak var owner: ListClipViewOwner?
+    weak var delegate: ListClipViewDelegate?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -26,11 +26,11 @@ final class ListClipView: NSClipView {
 
     override func scroll(to newOrigin: NSPoint) {
         super.scroll(to: newOrigin)
-        owner?.clipViewDidScroll(self)
+        delegate?.clipViewDidScroll(self)
     }
 
     override func setBoundsOrigin(_ newOrigin: NSPoint) {
         super.setBoundsOrigin(newOrigin)
-        owner?.clipViewDidScroll(self)
+        delegate?.clipViewDidScroll(self)
     }
 }

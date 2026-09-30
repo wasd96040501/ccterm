@@ -281,7 +281,7 @@ nonisolated struct TranscriptPageBuilder {
             if let date {
                 entries.append(.divider(SessionDivider(id: "resumed.\(entries.count)", kind: .resumed(date))))
             }
-        } else if let date, let lastVisible, date.timeIntervalSince(lastVisible) > CorpusThresholds.pause {
+        } else if let date, let lastVisible, date.timeIntervalSince(lastVisible) > PageThresholds.pause {
             entries.append(.divider(SessionDivider(id: "pause.\(entries.count)", kind: .pause(date))))
         }
         if let date { lastVisible = date }

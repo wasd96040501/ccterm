@@ -10,7 +10,7 @@ import AppKit
 /// paragraph, a heading, a quote and a list item.
 ///
 /// In `Layout/`, below both of its readers: the markdown lowering sets a
-/// document's text with it, and `UserMessage` sets a bubble's — so it belongs to
+/// document's text with it, and `UserMessageBlock` sets a bubble's — so it belongs to
 /// neither, and a block reading it never reaches up into `Markdown/`.
 ///
 /// Nothing is public yet: no host has asked to restyle the transcript, and a
@@ -55,7 +55,7 @@ struct TextStyle {
     /// shrinking the tail levels toward body size makes them read as emphasis
     /// rather than as structure.
     ///
-    /// Here rather than on `Paragraph`: the block is handed its text already set,
+    /// Here rather than on `ParagraphBlock`: the block is handed its text already set,
     /// and the face is decided by whoever sets it — the markdown lowering. What
     /// the level decides at measure time, the room above, stays on the block.
     func headingFont(level: Int) -> NSFont {

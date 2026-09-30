@@ -17,9 +17,9 @@ final class InlineSymbolTests: XCTestCase {
     }
 
     /// The document's first paragraph, measured — the level the symbol lives at.
-    private func paragraph(_ source: String, width: CGFloat = 400) throws -> Paragraph.Measured {
+    private func paragraph(_ source: String, width: CGFloat = 400) throws -> ParagraphBlock.Measured {
         let stack = try XCTUnwrap(try measured(source, width: width) as? BlockStack.Measured)
-        return try XCTUnwrap(stack.children.first?.block as? Paragraph.Measured)
+        return try XCTUnwrap(stack.children.first?.block as? ParagraphBlock.Measured)
     }
 
     /// How far right the block's ink reaches. `size.width` is always the width it

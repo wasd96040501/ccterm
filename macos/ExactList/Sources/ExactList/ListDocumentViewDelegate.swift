@@ -3,7 +3,7 @@ import AppKit
 /// What `ListDocumentView` asks and reports: keys (SPEC K1), AppKit's overdraw
 /// request (P1), and the accessibility table's rows (X1–X3).
 @MainActor
-protocol ListDocumentViewOwner: AnyObject {
+protocol ListDocumentViewDelegate: AnyObject {
 
     /// A key binding's command. `true` if the delegate or the list's own
     /// scrolling handled it; `false` passes the key on as the event (K1).

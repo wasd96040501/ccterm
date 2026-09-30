@@ -9,7 +9,7 @@ import AppKit
 final class ListScrollView: NSScrollView {
 
     /// Weak: the list owns this scroll view.
-    weak var owner: ListScrollViewOwner?
+    weak var delegate: ListScrollViewDelegate?
 
     /// Installs a `ListClipView` and the L11 configuration.
     init(clipView: ListClipView) {
@@ -43,6 +43,6 @@ final class ListScrollView: NSScrollView {
 
     override func tile() {
         super.tile()
-        owner?.scrollViewDidTile(self)
+        delegate?.scrollViewDidTile(self)
     }
 }

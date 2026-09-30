@@ -52,11 +52,11 @@ import AppKit
 ///   `link(at:)` answers for it, so the band, the pointing hand and the
 ///   press-is-a-click rule are `BlockView`'s existing ones rather than a second
 ///   copy. What it lacks is an address, which is `InlineLink.Destination`.
-/// - **It occupies one reserved position** in the index space, the way `Table`
+/// - **It occupies one reserved position** in the index space, the way `TableBlock`
 ///   reserves one per cell — an affordance is a place the pointer can be, and
 ///   `MeasuredBlock.length` documents exactly this. It contributes no characters,
 ///   so copying a whole bubble copies the message and not the word "More".
-struct UserMessage: Block, @unchecked Sendable {
+struct UserMessageBlock: Block, @unchecked Sendable {
 
     let text: ShapedText
 

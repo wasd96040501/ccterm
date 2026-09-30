@@ -40,12 +40,12 @@ public final class ExactListView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         scrollView.documentView = documentView
-        scrollView.owner = self
-        clip.owner = self
-        documentView.owner = self
-        placement.owner = self
-        animator.owner = self
-        refresher.owner = self
+        scrollView.delegate = self
+        clip.delegate = self
+        documentView.delegate = self
+        placement.delegate = self
+        animator.delegate = self
+        refresher.delegate = self
         addSubview(scrollView)
     }
 
@@ -509,8 +509,8 @@ public final class ExactListView: NSView {
         // The removed rows that move out (M2); every other one leaves before
         // the arriving rows are placed, which then take their containers.
         let leaving = animates ? Set(plan.motions.lazy.filter { $0.kind == .removed }.map(\.row)) : []
-        var retiring: [Int: RowContainerView] = [:]
-        var containers: [Int: RowContainerView] = [:]
+        var retiring: [Int: ListRowView] = [:]
+        var containers: [Int: ListRowView] = [:]
         NSAnimationContext.withoutAnimation {
             for (row, container) in placement.apply(map) {
                 if leaving.contains(row) { retiring[row] = container } else { placement.retire(container) }
@@ -817,7 +817,7 @@ public final class ExactListView: NSView {
 
 // MARK: - Collaborators (SPEC §15): each reports through its own protocol.
 
-extension ExactListView: ListScrollViewOwner {
+extension ExactListView: ListScrollViewDelegate {
 
     /// W1, V1, V2: a width change, a viewport change, or neither.
     ///
@@ -830,7 +830,7 @@ extension ExactListView: ListScrollViewOwner {
     }
 }
 
-extension ExactListView: ListClipViewOwner {
+extension ExactListView: ListClipViewDelegate {
 
     /// P1, W4, A8: mount against the new `P`, measuring stale rows first, and
     /// re-evaluate tail following. A scroll that isn't the list's own ends an
@@ -842,7 +842,7 @@ extension ExactListView: ListClipViewOwner {
     }
 }
 
-extension ExactListView: ListDocumentViewOwner {
+extension ExactListView: ListDocumentViewDelegate {
 
     /// K1. The delegate's answer is an event handler, not a callback of a
     /// commit, so it is called outside L9's guard: the host may update and
@@ -889,7 +889,7 @@ extension ExactListView: ListDocumentViewOwner {
         if let container = placement.container(forRow: row) { return container }
         if let element = accessibilityElements[row] { return element }
         let element = UnmountedRowElement(row: row, parent: documentView)
-        element.owner = self
+        element.delegate = self
         accessibilityElements[row] = element
         return element
     }
@@ -900,7 +900,7 @@ extension ExactListView: ListDocumentViewOwner {
     }
 }
 
-extension ExactListView: RowPlacementOwner {
+extension ExactListView: RowPlacementDelegate {
 
     func placement(_ placement: RowPlacement, viewForRow row: Int) -> NSView {
         callDelegate { $0.listView(self, viewForRow: row) }
@@ -923,7 +923,7 @@ extension ExactListView: RowPlacementOwner {
     }
 }
 
-extension ExactListView: MotionAnimatorOwner {
+extension ExactListView: MotionAnimatorDelegate {
 
     /// S3: one frame of an animated scroll, which is a scroll like the
     /// reader's, except that it is the list's own.
@@ -935,13 +935,13 @@ extension ExactListView: MotionAnimatorOwner {
 
     /// The retired containers wait in the document for the placement that
     /// follows, which gives them to arriving rows or hides them.
-    func motionAnimator(_ animator: MotionAnimator, didFinishCommitRetiring retired: [RowContainerView]) {
+    func motionAnimator(_ animator: MotionAnimator, didFinishCommitRetiring retired: [ListRowView]) {
         for container in retired { placement.retire(container) }
         remount()
     }
 }
 
-extension ExactListView: StaleRowRefresherOwner {
+extension ExactListView: StaleRowRefresherDelegate {
 
     func refreshStaleRows(within budget: TimeInterval) -> Bool {
         guard isLoaded, !stale.isEmpty, width > 0 else { return false }
@@ -957,7 +957,7 @@ extension ExactListView: StaleRowRefresherOwner {
     }
 }
 
-extension ExactListView: UnmountedRowElementOwner {
+extension ExactListView: UnmountedRowElementDelegate {
 
     func screenFrame(ofAccessibilityRow row: Int) -> NSRect {
         guard let window else { return .zero }

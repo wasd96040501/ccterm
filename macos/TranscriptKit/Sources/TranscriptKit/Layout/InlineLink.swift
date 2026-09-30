@@ -53,7 +53,7 @@ struct InlineLink: Equatable {
         case url(URL)
 
         /// The part of a truncated message that is not on screen. Reported by
-        /// `UserMessage`, which draws the run that carries it.
+        /// `UserMessageBlock`, which draws the run that carries it.
         case more
     }
 

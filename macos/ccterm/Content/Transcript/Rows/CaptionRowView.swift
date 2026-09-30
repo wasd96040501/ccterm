@@ -15,7 +15,7 @@ final class CaptionRowView: NSView, PageRowView {
     private static let side: CGFloat = 16
 
     private let glyph = NSImageView()
-    private let tile = ToolTileView()
+    private let tile = TileView()
     private let label = NSTextField(labelWithString: "")
 
     override init(frame frameRect: NSRect) {

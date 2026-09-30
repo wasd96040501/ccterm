@@ -16,7 +16,7 @@ final class DividerRowView: NSView, PageRowView {
 
     private let leadingLine = HairlineView()
     private let trailingLine = HairlineView()
-    private let tile = ToolTileView()
+    private let tile = TileView()
     private let label = NSTextField(labelWithString: "")
     private let summary = NSButton()
     private var summaryID: String?
@@ -81,7 +81,7 @@ final class DividerRowView: NSView, PageRowView {
 
     @objc private func summaryClicked() {
         guard let id = summaryID else { return }
-        delegate?.rowView(self, open: id, pinned: false)
+        delegate?.pageRowView(self, didRequestDocument: id, pinned: false)
     }
 
     /// The 0.5-pt line either side of the label, in the separator colour.

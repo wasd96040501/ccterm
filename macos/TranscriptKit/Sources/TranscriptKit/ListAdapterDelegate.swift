@@ -4,7 +4,7 @@ import AppKit
 /// answered on the transcript's terms — nothing here names `ExactListView`'s
 /// protocols, which stay off the package's public surface.
 @MainActor
-protocol ListAdapterOwner: AnyObject {
+protocol ListAdapterDelegate: AnyObject {
 
     /// The data source's row count.
     var numberOfRowsInDataSource: Int { get }

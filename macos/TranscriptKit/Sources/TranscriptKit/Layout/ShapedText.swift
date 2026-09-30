@@ -73,7 +73,7 @@ struct ShapedText: @unchecked Sendable {
     /// line for the pen at its index, and every index in the hidden tail reports
     /// the truncation point — so a symbol in the part that was cut would be drawn
     /// on top of the ellipsis. Nothing passes a limit for such text today
-    /// (`UserMessage` is plain), and this is the constraint to check before
+    /// (`UserMessageBlock` is plain), and this is the constraint to check before
     /// something does.
     ///
     /// ## The exclusion
@@ -212,7 +212,7 @@ struct ShapedText: @unchecked Sendable {
     /// glyph — and the width it wants with no wrapping at all.
     ///
     /// Both are properties of the text, not of any width it might be placed in,
-    /// so they belong to whoever composes a `Table` rather than to its `measure`.
+    /// so they belong to whoever composes a `TableBlock` rather than to its `measure`.
     /// Computed on demand because only column sizing needs them: paying the
     /// narrow pass for every paragraph in a document would cost more than it
     /// saves.

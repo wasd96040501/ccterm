@@ -2,7 +2,7 @@ import AppKit
 
 /// What an `UnmountedRowElement` asks of the list (SPEC X3).
 @MainActor
-protocol UnmountedRowElementOwner: AnyObject {
+protocol UnmountedRowElementDelegate: AnyObject {
 
     /// The row's current frame on screen (X2).
     func screenFrame(ofAccessibilityRow row: Int) -> NSRect

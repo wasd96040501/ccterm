@@ -122,7 +122,7 @@ final class TranscriptViewController: NSViewController {
             guard !Task.isCancelled else { return }
             // No suspension between changing the rows and announcing it.
             rows.insert(contentsOf: chunk, at: 0)
-            transcript.insertRows(at: IndexSet(0..<chunk.count), warming: prepared)
+            transcript.insertRows(at: IndexSet(0..<chunk.count), prepared: prepared)
             await Task.yield()
         }
     }
@@ -268,11 +268,11 @@ extension TranscriptViewController: TranscriptViewDelegate {
 }
 
 extension TranscriptViewController: PageRowViewDelegate {
-    func rowView(_ rowView: NSView, open id: String, pinned: Bool) {
+    func pageRowView(_ rowView: NSView, didRequestDocument id: String, pinned: Bool) {
         open(id, pinned: pinned)
     }
 
-    func rowView(_ rowView: NSView, toggle runID: String, all: Bool) {
+    func pageRowView(_ rowView: NSView, didToggleDisclosureOf runID: String, inAllRuns all: Bool) {
         let newValue: RunDisclosure = disclosure(of: runID) == .collapsed ? .expanded : .collapsed
         // One batch, holding the row that was clicked, so the whole change is
         // one motion around it.
@@ -284,16 +284,16 @@ extension TranscriptViewController: PageRowViewDelegate {
         }
     }
 
-    func rowView(_ rowView: NSView, showAllOf runID: String) {
+    func pageRowView(_ rowView: NSView, didRequestAllItemsOf runID: String) {
         setDisclosure(.showingAll, of: runID)
     }
 
-    func rowView(_ rowView: NSView, revealOrigin callID: String) {
+    func pageRowView(_ rowView: NSView, didRequestOriginOf callID: String) {
         reveal(callID, select: false)
     }
 
     /// Answering a call is not wired to a live session yet.
-    func rowView(_ rowView: NSView, decide decision: Decision, for callID: String) {
+    func pageRowView(_ rowView: NSView, didDecide decision: Decision, forCall callID: String) {
         appLog(.info, "TranscriptViewController", "decision \(decision) for \(callID) — no live session")
     }
 }

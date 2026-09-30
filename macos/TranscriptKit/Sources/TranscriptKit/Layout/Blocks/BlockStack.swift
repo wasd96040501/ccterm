@@ -59,7 +59,7 @@ struct BlockStack: Block, @unchecked Sendable {
             placed.append(Measured.Child(block: block, origin: CGPoint(x: 0, y: y), base: base))
             y += block.size.height
             // Packed **contiguously** — no slot reserved for the newline
-            // `text(from:to:)` puts between two children. `Table` reserves one and
+            // `text(from:to:)` puts between two children. `TableBlock` reserves one and
             // says why; the difference is what the two are made of. An empty cell
             // is a place a reader means to select; a thematic break is not, and
             // giving it a position would let a drag stop *on* the rule and copy a
@@ -114,11 +114,11 @@ struct BlockStack: Block, @unchecked Sendable {
 
         // MARK: - Selection
 
-        func index(at point: CGPoint) -> Int {
+        func characterIndexForInsertion(at point: CGPoint) -> Int {
             guard let index = childIndex(atY: point.y) else { return 0 }
             let child = children[index]
             let local = CGPoint(x: point.x - child.origin.x, y: point.y - child.origin.y)
-            return child.base + child.block.index(at: local)
+            return child.base + child.block.characterIndexForInsertion(at: local)
         }
 
         /// Splits the endpoints across children, and — this is the part that makes
@@ -168,7 +168,7 @@ struct BlockStack: Block, @unchecked Sendable {
             return parts.joined(separator: "\n")
         }
 
-        /// Unlike `index(at:)`, this does **not** clamp to a child: a point in the
+        /// Unlike `characterIndexForInsertion(at:)`, this does **not** clamp to a child: a point in the
         /// gap between two blocks is on neither of them, and a character is a
         /// thing you are either pointing at or not.
         func characterIndex(at point: CGPoint) -> Int? {
@@ -214,7 +214,7 @@ struct BlockStack: Block, @unchecked Sendable {
         /// blocks, and neither does a paragraph — that is what being a separate
         /// block means.
         ///
-        /// Decoded by point, and by the same clamping rule as `index(at:)` rather
+        /// Decoded by point, and by the same clamping rule as `characterIndexForInsertion(at:)` rather
         /// than the declining one `characterIndex(at:)` uses: a triple-click in
         /// the gap between two paragraphs has to take one of them.
         private func childRange(

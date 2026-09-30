@@ -97,7 +97,7 @@ nonisolated extension PageRow {
             var rows = [row(.main, .runLine(run, disclosure))]
             if disclosure != .collapsed {
                 let shown =
-                    disclosure == .showingAll ? run.items : Array(run.items.prefix(CorpusThresholds.listedItems))
+                    disclosure == .showingAll ? run.items : Array(run.items.prefix(PageThresholds.listedItems))
                 rows += shown.map { row(.item($0.id), .runItem($0)) }
                 if shown.count < run.items.count {
                     rows.append(row(.more, .showMore(runID: run.id, hidden: run.items.count - shown.count)))

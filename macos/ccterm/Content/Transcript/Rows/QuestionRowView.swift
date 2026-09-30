@@ -10,7 +10,7 @@ import AppKit
 /// apart. While it waits the options are radio buttons or checkboxes and
 /// **Submit** (⌘↩) sits under them.
 ///
-/// Laid out by hand from `Plan`, the one formula `height(for:width:)` also
+/// Laid out by hand from `Metrics`, the one formula `height(for:width:)` also
 /// answers with: the row is exactly as tall as what it lays out.
 @MainActor
 final class QuestionRowView: NSView, PageRowView {
@@ -18,7 +18,7 @@ final class QuestionRowView: NSView, PageRowView {
 
     weak var delegate: PageRowViewDelegate?
 
-    /// `ToolTileView`'s side, which a row is at least as tall as.
+    /// `TileView`'s side, which a row is at least as tall as.
     private static let tileSide: CGFloat = 16
     private static let tileColumn: CGFloat = 24
     private static let headerHeight: CGFloat = 16
@@ -37,7 +37,7 @@ final class QuestionRowView: NSView, PageRowView {
     private static let detailFont = NSFont.systemFont(ofSize: 12)
 
     /// Where everything goes at one width — measured from the model alone.
-    private struct Plan {
+    private struct Metrics {
         struct Item {
             var top: CGFloat
             var headerTop: CGFloat?
@@ -109,7 +109,7 @@ final class QuestionRowView: NSView, PageRowView {
         var optionViews: [OptionViews]
     }
 
-    private let tileView = ToolTileView()
+    private let tileView = TileView()
     private var itemViews: [ItemViews] = []
     private lazy var submit: NSButton = {
         let button = PillButton(title: String(localized: "Submit"), keys: "⌘↩", isPrimary: true)
@@ -136,7 +136,7 @@ final class QuestionRowView: NSView, PageRowView {
     override var isFlipped: Bool { true }
 
     static func height(for model: Question, width: CGFloat) -> CGFloat {
-        Plan(model, width: width).height
+        Metrics(model, width: width).height
     }
 
     /// The height `text` wraps to at `width` — measured by the cell the label
@@ -230,7 +230,7 @@ final class QuestionRowView: NSView, PageRowView {
     override func layout() {
         super.layout()
         guard let model else { return }
-        let plan = Plan(model, width: bounds.width)
+        let plan = Metrics(model, width: bounds.width)
         let x = Self.tileColumn
         let available = max(0, bounds.width - x)
         tileView.frame = NSRect(x: 0, y: 0, width: QuestionRowView.tileSide, height: QuestionRowView.tileSide)
@@ -299,7 +299,7 @@ final class QuestionRowView: NSView, PageRowView {
             let chosen = zip(item.options, views.optionViews).filter { $1.button?.state == .on }.map(\.0.label)
             answers[item.text] = chosen.joined(separator: ", ")
         }
-        delegate?.rowView(self, decide: .answer(answers), for: model.id)
+        delegate?.pageRowView(self, didDecide: .answer(answers), forCall: model.id)
     }
 
     /// The table takes focus, so ↑ / ↓ stay with the transcript.

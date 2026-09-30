@@ -8,7 +8,7 @@ import AppKit
 /// arithmetic for a quote's indent or a list's marker column inside the type that
 /// owns it, instead of being spread across every call site that builds one.
 ///
-/// It is also the only markdown-aware file below the parser. `Blockquote`, `ListRow`,
+/// It is also the only markdown-aware file below the parser. `QuoteBlock`, `ListItemBlock`,
 /// `BlockStack` and the rest have never heard of `MarkdownIR`, so anything else that
 /// wants to build a row composes them directly without going through here.
 ///
@@ -74,7 +74,7 @@ enum MarkdownBlockBuilder {
     private static func notes(
         _ footnotes: [MarkdownIR.Document.Footnote], style: TextStyle
     ) -> Block {
-        BlockStack([ThematicBreak(), list(footnotes, style: style)], spacing: blockSpacing)
+        BlockStack([ThematicBreakBlock(), list(footnotes, style: style)], spacing: blockSpacing)
     }
 
     /// The numbered list the notes render as.
@@ -99,7 +99,7 @@ enum MarkdownBlockBuilder {
     }
 
     /// The gap between two blocks of a document — and the number the block types
-    /// are calibrated against, which is why `Paragraph` asks for nothing of its
+    /// are calibrated against, which is why `ParagraphBlock` asks for nothing of its
     /// own and only headings, code cards and rules add to it.
     ///
     /// Twelve is the app's established paragraph rhythm. It is one gap owned by
@@ -146,18 +146,18 @@ enum MarkdownBlockBuilder {
     ) -> Block {
         switch node {
         case .paragraph(let inlines):
-            return Paragraph(text(inlines, style: style))
+            return ParagraphBlock(text(inlines, style: style))
 
         case .heading(let level, let inlines):
-            return Paragraph(
+            return ParagraphBlock(
                 text(inlines, style: style, font: style.headingFont(level: level)),
                 topInset: headingTopInset(level: level))
 
         case .blockquote(let children):
-            return Blockquote(stack(children, style: style, spacing: spacing))
+            return QuoteBlock(stack(children, style: style, spacing: spacing))
 
         case .thematicBreak:
-            return ThematicBreak()
+            return ThematicBreakBlock()
 
         case .codeBlock(let code):
             return CodeBlock(
@@ -193,7 +193,7 @@ enum MarkdownBlockBuilder {
 
         case .table(let table):
             let headerFont = style.tableHeaderFont
-            return Table(
+            return TableBlock(
                 header: table.header.map { text($0, style: style, font: headerFont) },
                 rows: table.rows.map { row in row.map { text($0, style: style) } },
                 alignments: table.alignments.map(alignment))
@@ -224,9 +224,9 @@ enum MarkdownBlockBuilder {
     }
 
     /// GFM's "no alignment specified" lays out as leading, which is what every
-    /// renderer does with it and the only reason `Table.Alignment` has three
+    /// renderer does with it and the only reason `TableBlock.Alignment` has three
     /// cases where the IR has four.
-    private static func alignment(_ alignment: MarkdownIR.Table.Alignment) -> Table.Alignment {
+    private static func alignment(_ alignment: MarkdownIR.Table.Alignment) -> TableBlock.Alignment {
         switch alignment {
         case .center: return .center
         case .right: return .trailing

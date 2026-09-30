@@ -51,11 +51,11 @@ final class PlanDecisionRowView: NSView, PageRowView {
 
     @objc private func keepPlanningClicked() {
         guard let callID else { return }
-        delegate?.rowView(self, decide: .keepPlanning, for: callID)
+        delegate?.pageRowView(self, didDecide: .keepPlanning, forCall: callID)
     }
 
     @objc private func approveClicked() {
         guard let callID else { return }
-        delegate?.rowView(self, decide: .approvePlan, for: callID)
+        delegate?.pageRowView(self, didDecide: .approvePlan, forCall: callID)
     }
 }

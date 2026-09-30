@@ -30,7 +30,7 @@ final class LinkActivationTests: XCTestCase {
         XCTAssertEqual(try block.link(at: onTheLink(block))?.url?.absoluteString, "https://example.com")
     }
 
-    /// `index(at:)` clamps — a point past the end of a line resolves to that
+    /// `characterIndexForInsertion(at:)` clamps — a point past the end of a line resolves to that
     /// line's last character — so without the containment check every click to
     /// the right of a link would open it.
     func testNoLinkInTheEmptySpaceBesideOne() throws {
@@ -87,7 +87,7 @@ final class LinkActivationTests: XCTestCase {
     //
     // `characterIndex(at:)` is the half of the split that may decline, and the
     // contract that keeps a click to the right of a link from opening it. Its
-    // counterpart `index(at:)` clamps, so asserting the two against the same point
+    // counterpart `characterIndexForInsertion(at:)` clamps, so asserting the two against the same point
     // is what shows they are answering different questions rather than one being a
     // convenience over the other.
 
@@ -99,7 +99,7 @@ final class LinkActivationTests: XCTestCase {
         XCTAssertNil(block.characterIndex(at: beside))
         // The same point still has to resolve for a caret — a drag that ends out
         // here selects to the end of the line rather than selecting nothing.
-        XCTAssertGreaterThan(block.index(at: beside), 0)
+        XCTAssertGreaterThan(block.characterIndexForInsertion(at: beside), 0)
     }
 
     func testPointingBelowTheTextIsPointingAtNothing() throws {

@@ -17,7 +17,7 @@ import AppKit
 /// quotes, or another list, without this type knowing which. Nesting is not a
 /// mechanism of its own: a sub-list is simply one more block inside its parent
 /// item's content.
-struct ListRow: Block, @unchecked Sendable {
+struct ListItemBlock: Block, @unchecked Sendable {
 
     /// What a marker *is*, once rendered: typeset text or a drawn checkbox.
     enum Marker {

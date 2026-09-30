@@ -3,7 +3,7 @@ import AppKit
 /// What `RowPlacement` needs from the list: views for rows arriving, and where
 /// to report views leaving (SPEC P2, P3).
 @MainActor
-protocol RowPlacementOwner: AnyObject {
+protocol RowPlacementDelegate: AnyObject {
 
     /// The delegate's view for `row` (P2).
     func placement(_ placement: RowPlacement, viewForRow row: Int) -> NSView

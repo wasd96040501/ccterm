@@ -4,7 +4,7 @@ import XCTest
 
 @testable import TranscriptKit
 
-/// Rows measured off the main actor and handed to `insertRows(at:warming:)`.
+/// Rows measured off the main actor and handed to `insertRows(at:prepared:)`.
 ///
 /// The claim is a narrow one and it is worth stating before the assertions: a
 /// prepared insert differs from a plain one **only in where the typesetting
@@ -14,7 +14,7 @@ import XCTest
 /// written down here. A number would be one more thing to keep in step with the
 /// layout; a control transcript cannot drift.
 ///
-/// **How warming is observed.** That a prepared batch was *used* rather than
+/// **How the cache merge is observed.** That a prepared batch was *used* rather than
 /// merely tolerated cannot be read from a height — a re-measure produces the
 /// same one, which is the entire point. So it is read the way
 /// `MarkdownGrowthTests` reads reuse: a `CTLine` is a reference type produced by
@@ -184,7 +184,7 @@ final class PreparedRowsTests: XCTestCase {
 
         let prepared = await subject.transcript.prepareRows(batch.map(\.described))
         subjectHost.rows.insert(contentsOf: batch, at: 0)
-        subject.transcript.insertRows(at: IndexSet(0..<batch.count), warming: prepared)
+        subject.transcript.insertRows(at: IndexSet(0..<batch.count), prepared: prepared)
         subject.settle()
 
         XCTAssertEqual(subject.transcript.numberOfRows, control.transcript.numberOfRows)
@@ -239,7 +239,7 @@ final class PreparedRowsTests: XCTestCase {
         control.settle()
 
         subjectHost.rows.insert(contentsOf: batch, at: 0)
-        subject.transcript.insertRows(at: IndexSet(0..<batch.count), warming: prepared)
+        subject.transcript.insertRows(at: IndexSet(0..<batch.count), prepared: prepared)
         subject.settle()
 
         // The premise: each string really does measure differently in the two
@@ -293,7 +293,7 @@ final class PreparedRowsTests: XCTestCase {
     }
 
     /// And the batch really was what got used. Without this the suite would pass
-    /// on an `insertRows(at:warming:)` that ignored its argument entirely — every
+    /// on an `insertRows(at:prepared:)` that ignored its argument entirely — every
     /// other assertion here is about sameness, and re-measuring produces the same
     /// answer.
     func testAWarmedRowDrawsTheTreeThatWasPrepared() async {
@@ -306,7 +306,7 @@ final class PreparedRowsTests: XCTestCase {
         XCTAssertNotNil(offMain, "nothing was measured off the main actor")
 
         host.rows.insert(contentsOf: batch, at: 0)
-        transcript.transcript.insertRows(at: IndexSet(0..<batch.count), warming: prepared)
+        transcript.transcript.insertRows(at: IndexSet(0..<batch.count), prepared: prepared)
         transcript.settle()
 
         XCTAssertIdentical(
@@ -338,7 +338,7 @@ final class PreparedRowsTests: XCTestCase {
         transcript.settle()
 
         host.rows.insert(contentsOf: batch, at: 0)
-        transcript.transcript.insertRows(at: IndexSet(0..<batch.count), warming: prepared)
+        transcript.transcript.insertRows(at: IndexSet(0..<batch.count), prepared: prepared)
         transcript.settle()
 
         XCTAssertIdentical(
@@ -375,7 +375,7 @@ final class PreparedRowsTests: XCTestCase {
 
         let prepared = await subject.transcript.prepareRows(batch.map(\.described))
         subjectHost.rows.insert(contentsOf: batch, at: 0)
-        subject.transcript.insertRows(at: IndexSet(integer: 0), warming: prepared)
+        subject.transcript.insertRows(at: IndexSet(integer: 0), prepared: prepared)
         subject.settle()
 
         let controlBefore = shaped(ofRow: 0, in: control)
@@ -432,7 +432,7 @@ final class PreparedRowsTests: XCTestCase {
         XCTAssertNotNil(firstLine(of: batch[1].id, in: prepared))
 
         host.rows.insert(contentsOf: batch, at: 0)
-        transcript.transcript.insertRows(at: IndexSet(0..<2), warming: prepared)
+        transcript.transcript.insertRows(at: IndexSet(0..<2), prepared: prepared)
         transcript.settle()
 
         XCTAssertEqual(
@@ -530,7 +530,7 @@ final class PreparedRowsTests: XCTestCase {
         control.settle()
 
         subjectHost.rows.insert(contentsOf: batch, at: 0)
-        subject.transcript.insertRows(at: IndexSet(0..<batch.count), warming: prepared)
+        subject.transcript.insertRows(at: IndexSet(0..<batch.count), prepared: prepared)
         subject.settle()
 
         let heightsAt420 = batch.compactMap {
@@ -571,7 +571,7 @@ final class PreparedRowsTests: XCTestCase {
         control.settle()
 
         subjectHost.rows.insert(arriving, at: 0)
-        subject.transcript.insertRows(at: IndexSet(integer: 0), warming: prepared)
+        subject.transcript.insertRows(at: IndexSet(integer: 0), prepared: prepared)
         subject.settle()
 
         XCTAssertEqual(
@@ -584,7 +584,7 @@ final class PreparedRowsTests: XCTestCase {
     /// Scroll anchoring does not know a prepared insert from a plain one, and
     /// this is what says so: the same prepend, from the same offset, lands on the
     /// same offset. Rule 2 covers it because it is the same code path — which is
-    /// the property that would break if warming ever moved outside `mutate`.
+    /// the property that would break if the merge ever moved outside `mutate`.
     func testAPreparedPrependHoldsTheViewportLikeAPlainOne() async {
         let filler = (0..<12).map { "Row \($0)\n\n\(Self.sources[1])" }
         let (control, controlHost) = mount(filler)
@@ -607,7 +607,7 @@ final class PreparedRowsTests: XCTestCase {
         control.settle()
 
         subjectHost.rows.insert(contentsOf: batch, at: 0)
-        subject.transcript.insertRows(at: IndexSet(0..<batch.count), warming: prepared)
+        subject.transcript.insertRows(at: IndexSet(0..<batch.count), prepared: prepared)
         subject.settle()
 
         XCTAssertEqual(
@@ -635,7 +635,7 @@ final class PreparedRowsTests: XCTestCase {
         XCTAssertLessThanOrEqual(prepared.count, batch.count)
 
         host.rows.insert(contentsOf: batch, at: 0)
-        transcript.transcript.insertRows(at: IndexSet(0..<batch.count), warming: prepared)
+        transcript.transcript.insertRows(at: IndexSet(0..<batch.count), prepared: prepared)
         transcript.settle()
 
         XCTAssertEqual(transcript.transcript.numberOfRows, batch.count + 1)

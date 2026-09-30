@@ -30,8 +30,8 @@ extension MeasuredTextBlock {
 
     var length: Int { text.length }
 
-    func index(at point: CGPoint) -> Int {
-        text.index(at: CGPoint(x: point.x - textOrigin.x, y: point.y - textOrigin.y))
+    func characterIndexForInsertion(at point: CGPoint) -> Int {
+        text.characterIndexForInsertion(at: CGPoint(x: point.x - textOrigin.x, y: point.y - textOrigin.y))
     }
 
     func rects(from: Int, to: Int) -> [CGRect] {
@@ -57,7 +57,7 @@ extension MeasuredTextBlock {
     func ranges(of query: String) -> [Range<Int>] { text.ranges(of: query) }
 
     /// Both of these are geometry on the way in, so both take the offset — the
-    /// mirror of `index(at:)` above, where the index-taking versions they
+    /// mirror of `characterIndexForInsertion(at:)` above, where the index-taking versions they
     /// replace needed none.
     func wordRange(at point: CGPoint) -> Range<Int> {
         text.wordRange(at: CGPoint(x: point.x - textOrigin.x, y: point.y - textOrigin.y))

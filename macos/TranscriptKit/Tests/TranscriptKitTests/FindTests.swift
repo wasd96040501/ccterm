@@ -149,11 +149,11 @@ final class FindTests: XCTestCase {
     /// there could be counted but neither highlighted nor scrolled to. Bounded by
     /// what was typeset, which is what a browser does with clipped content.
     func testACappedBubbleFindsNothingPastItsLastLine() throws {
-        let bubble = UserMessage(Self.longMessage()).measure(400)
+        let bubble = UserMessageBlock(Self.longMessage()).measure(400)
 
         // The premise: this message really was cut, so the two halves below are
         // genuinely on opposite sides of a cap rather than both on screen.
-        XCTAssertNotNil((bubble as? UserMessage.Measured)?.more, "premise: the message was cut")
+        XCTAssertNotNil((bubble as? UserMessageBlock.Measured)?.more, "premise: the message was cut")
 
         XCTAssertEqual(bubble.ranges(of: "line 1 of").count, 1)
         XCTAssertEqual(bubble.ranges(of: "line 40 of").count, 0)
@@ -165,7 +165,7 @@ final class FindTests: XCTestCase {
     }
 
     func testAnUncappedBubbleIsSearchableThroughout() {
-        let bubble = UserMessage("first line\nsecond line").measure(400)
+        let bubble = UserMessageBlock("first line\nsecond line").measure(400)
         XCTAssertEqual(bubble.ranges(of: "second").count, 1)
     }
 

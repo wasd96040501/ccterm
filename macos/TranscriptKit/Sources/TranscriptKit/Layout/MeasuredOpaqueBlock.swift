@@ -10,7 +10,7 @@ protocol MeasuredOpaqueBlock: MeasuredBlock {}
 
 extension MeasuredOpaqueBlock {
     var length: Int { 0 }
-    func index(at point: CGPoint) -> Int { 0 }
+    func characterIndexForInsertion(at point: CGPoint) -> Int { 0 }
     func rects(from: Int, to: Int) -> [CGRect] { [] }
     func text(from: Int, to: Int) -> String { "" }
     func characterIndex(at point: CGPoint) -> Int? { nil }

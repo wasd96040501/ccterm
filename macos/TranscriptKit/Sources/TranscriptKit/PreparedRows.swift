@@ -1,10 +1,10 @@
 import AppKit
 
-/// Rows already measured, on their way to `insertRows(at:warming:)`.
+/// Rows already measured, on their way to `insertRows(at:prepared:)`.
 ///
 /// Produced by `TranscriptView.prepareRows(_:)` — which does the parsing,
 /// shaping and typesetting off the main actor — and consumed by
-/// `TranscriptView.insertRows(at:warming:)`, which merges it into the
+/// `TranscriptView.insertRows(at:prepared:)`, which merges it into the
 /// transcript's row cache so that the insert costs a lookup per row instead of a
 /// typesetting pass per row.
 ///
@@ -18,7 +18,7 @@ import AppKit
 /// Each measurement is filed under the `TranscriptRow.ID` it was made for, so
 /// this batch describes *which rows* it measured rather than *where they will
 /// go*. Nothing about it has to line up with the `IndexSet` it is handed
-/// alongside: the two arguments of `insertRows(at:warming:)` do two unrelated
+/// alongside: the two arguments of `insertRows(at:prepared:)` do two unrelated
 /// jobs, and neither their sizes nor their orders need agree.
 ///
 /// It was positional once — the *k*-th entry belonging to the *k*-th smallest

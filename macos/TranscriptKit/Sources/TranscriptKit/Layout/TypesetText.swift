@@ -119,7 +119,7 @@ struct TypesetText: @unchecked Sendable {
     /// The index nearest `point`, clamped in both axes: above the first line
     /// resolves to its start, below the last to the text's end, past a line's
     /// right edge to that line's end.
-    func index(at point: CGPoint) -> Int {
+    func characterIndexForInsertion(at point: CGPoint) -> Int {
         guard let line = lineIndex(atY: point.y).map({ lines[$0] }) else { return 0 }
         let local = CGPoint(x: point.x - line.origin.x, y: 0)
         let index = CTLineGetStringIndexForPosition(line.ctLine, local)
@@ -254,9 +254,9 @@ struct TypesetText: @unchecked Sendable {
 
     /// The character the point is **inside**, or `nil` when it is inside none.
     ///
-    /// Two things separate this from `index(at:)`, and both are load-bearing.
+    /// Two things separate this from `characterIndexForInsertion(at:)`, and both are load-bearing.
     ///
-    /// The first is which question it answers. `index(at:)` answers the caret's —
+    /// The first is which question it answers. `characterIndexForInsertion(at:)` answers the caret's —
     /// a click in the right half of a glyph puts the caret after it — and that is
     /// right for selection and wrong for "what am I pointing at". The difference
     /// is invisible on a run of several characters and total on a run of one: a
@@ -264,7 +264,7 @@ struct TypesetText: @unchecked Sendable {
     /// anywhere past its middle is the character *after* it, which carries none of
     /// its attributes.
     ///
-    /// The second is that this one may **decline**. `index(at:)` clamps in both
+    /// The second is that this one may **decline**. `characterIndexForInsertion(at:)` clamps in both
     /// axes because every click has to resolve to somewhere a caret can go;
     /// pointing is not like that — above the text, below it, and in the space a
     /// short last line leaves to its right are all places where the honest answer
@@ -302,7 +302,7 @@ struct TypesetText: @unchecked Sendable {
     //
     // The index is not *wrong*, it is **ambiguous**, and the click is the only
     // thing that knows which side of the boundary it was on. Nor can the
-    // ambiguity be settled inside `index(at:)`, because the boundary value is
+    // ambiguity be settled inside `characterIndexForInsertion(at:)`, because the boundary value is
     // what a *drag* needs: a drag ending past the right edge of `beta` has to
     // select `beta\n`, newline included, which is exactly `NSMaxRange`. One
     // integer cannot be both, which is why `NSTextView` carries an affinity
@@ -331,7 +331,7 @@ struct TypesetText: @unchecked Sendable {
     /// The character a unit query should be anchored on — the one the reader is
     /// pointing at, never the caret position beside it.
     ///
-    /// Two corrections to `index(at:)`, in order:
+    /// Two corrections to `characterIndexForInsertion(at:)`, in order:
     ///
     /// 1. **Caret → character.** A click in the right half of a glyph puts the
     ///    caret *after* it, which is right for a selection endpoint and wrong

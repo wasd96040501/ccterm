@@ -181,7 +181,7 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
                 self.messages.insert(contentsOf: chunk, at: 0)
                 let indexes = IndexSet(0..<chunk.count)
                 if let warmed {
-                    transcript.insertRows(at: indexes, warming: warmed)
+                    transcript.insertRows(at: indexes, prepared: warmed)
                 } else {
                     transcript.insertRows(at: indexes)
                 }

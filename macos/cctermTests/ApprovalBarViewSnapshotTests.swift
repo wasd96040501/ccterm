@@ -57,7 +57,7 @@ final class ApprovalBarViewSnapshotTests: XCTestCase {
     func testTheButtonsAnswerTheCallByItsID() {
         final class Recorder: ApprovalBarViewDelegate {
             var decisions: [(Decision, String)] = []
-            func approvalBarView(_ approvalBar: ApprovalBarView, decide decision: Decision, for callID: String) {
+            func approvalBarView(_ approvalBar: ApprovalBarView, didDecide decision: Decision, forCall callID: String) {
                 decisions.append((decision, callID))
             }
         }

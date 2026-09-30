@@ -181,7 +181,7 @@ final class ScrollingTests: XCTestCase {
         animated(0.4) { list.scrollToRow(1500, at: .top) }
         seen = await PresentationSampler.record(in: list, for: 0.55) {
             mostMounted = max(
-                mostMounted, document.subviews.filter { ($0 as? RowContainerView)?.isHidden == false }.count)
+                mostMounted, document.subviews.filter { ($0 as? ListRowView)?.isHidden == false }.count)
             return [document]
         }.compactMap { $0.frames[ObjectIdentifier(document)].map { -$0.minY } }
         XCTAssertEqual(seen.last, 45_000)

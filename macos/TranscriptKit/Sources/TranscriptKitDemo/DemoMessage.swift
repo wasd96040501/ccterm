@@ -491,13 +491,13 @@ extension DemoMessage {
         > Quotes nest, and the inner one holds blocks of its own:
         >
         > > ```swift
-        > > struct Blockquote: Block { let content: Block }
+        > > struct QuoteBlock: Block { let content: Block }
         > > ```
         > >
         > > - including a list
         > > - and a second item, to prove the bar spans both
         >
-        > Back out one level. The bar is the whole of what `Blockquote` adds;
+        > Back out one level. The bar is the whole of what `QuoteBlock` adds;
         > arrangement, hit testing and selection are the stack's.
         """#
 }

@@ -132,7 +132,8 @@ final class SelectionTracker {
     /// Moves the selection's focus to what is under `pointer` now.
     private func extendSelection(to pointer: NSEvent) {
         guard var selection, let hit = selectionHit(at: pointer) else { return }
-        selection.focus = .init(row: hit.row, id: hit.id, index: hit.block?.index(at: hit.point) ?? 0)
+        selection.focus = .init(
+            row: hit.row, id: hit.id, index: hit.block?.characterIndexForInsertion(at: hit.point) ?? 0)
         guard selection != self.selection else { return }
         select(selection)
     }
@@ -148,7 +149,7 @@ final class SelectionTracker {
         case (let block?, 2): range = block.wordRange(at: hit.point)
         case (let block?, 3...): range = block.paragraphRange(at: hit.point)
         case (let block?, _):
-            let index = block.index(at: hit.point)
+            let index = block.characterIndexForInsertion(at: hit.point)
             range = index..<index
         case (nil, _): range = 0..<0
         }
@@ -173,7 +174,7 @@ final class SelectionTracker {
     func selectForContextMenu(with event: NSEvent, in view: NSView) {
         if let responder = view.enclosingScrollView?.documentView { list.window?.makeFirstResponder(responder) }
         guard let hit = selectionHit(at: event), let block = hit.block else { return }
-        if selection?.contains(row: hit.row, index: block.index(at: hit.point)) == true { return }
+        if selection?.contains(row: hit.row, index: block.characterIndexForInsertion(at: hit.point)) == true { return }
         select(TextSelection(row: hit.row, id: hit.id, range: block.wordRange(at: hit.point)))
     }
 

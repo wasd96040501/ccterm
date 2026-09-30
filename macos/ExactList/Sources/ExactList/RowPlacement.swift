@@ -11,21 +11,21 @@ import ExactListCore
 final class RowPlacement {
 
     /// Weak: the list owns this.
-    weak var owner: RowPlacementOwner?
+    weak var delegate: RowPlacementDelegate?
 
     private let documentView: ListDocumentView
 
     /// Mounted containers by row, current numbering. Containers animating out
     /// after a removal are not here; `MotionAnimator` holds them.
-    private var containers: [Int: RowContainerView] = [:]
+    private var containers: [Int: ListRowView] = [:]
 
     /// Containers in no row, hidden in the document with the view they last
     /// held (P3), for the next rows that arrive.
-    private var spare: [RowContainerView] = []
+    private var spare: [ListRowView] = []
 
     /// Containers retired since the last `place`: out of their rows but still
     /// in the document, for the rows that arrive next to take first.
-    private var retired: [RowContainerView] = []
+    private var retired: [ListRowView] = []
 
     init(documentView: ListDocumentView) {
         self.documentView = documentView
@@ -41,9 +41,9 @@ final class RowPlacement {
     /// become −1 and are returned keyed by their old row, which is how the
     /// plan's `.removed` motions name them, to be retired now or once they
     /// have moved out (M10).
-    func apply(_ map: RowIndexMap) -> [Int: RowContainerView] {
-        var renumbered: [Int: RowContainerView] = [:]
-        var removed: [Int: RowContainerView] = [:]
+    func apply(_ map: RowIndexMap) -> [Int: ListRowView] {
+        var renumbered: [Int: ListRowView] = [:]
+        var removed: [Int: ListRowView] = [:]
         for (row, container) in containers {
             if let now = map.newIndex(forOld: row) {
                 container.row = now
@@ -86,7 +86,7 @@ final class RowPlacement {
                 if !keeping.contains(row), container.frame != frame { container.frame = frame }
                 continue
             }
-            let view = owner?.placement(self, viewForRow: row)
+            let view = delegate?.placement(self, viewForRow: row)
             let container = take(holding: view, from: &departed)
             container.row = row
             container.frame = frame
@@ -98,15 +98,15 @@ final class RowPlacement {
 
     /// U6: asks these mounted rows for their views again.
     func reload(rows: IndexSet) {
-        guard let owner else { return }
+        guard let delegate else { return }
         for row in rows {
             guard let container = containers[row], let current = container.hostedView else { continue }
-            _ = container.host(owner.placement(self, reloadingRow: row, showing: current))
+            _ = container.host(delegate.placement(self, reloadingRow: row, showing: current))
         }
     }
 
     /// The container for a mounted row, if there is one.
-    func container(forRow row: Int) -> RowContainerView? {
+    func container(forRow row: Int) -> ListRowView? {
         containers[row]
     }
 
@@ -114,7 +114,7 @@ final class RowPlacement {
     func row(for view: NSView) -> Int {
         var candidate: NSView? = view
         while let current = candidate, current !== documentView {
-            if let container = current as? RowContainerView {
+            if let container = current as? ListRowView {
                 return containers[container.row] === container ? container.row : -1
             }
             candidate = current.superview
@@ -125,7 +125,7 @@ final class RowPlacement {
     /// Takes back a container whose animation has ended, reporting
     /// `didRemove` (P3). The next `place` gives it to an arriving row or
     /// hides it among the spares.
-    func retire(_ container: RowContainerView) {
+    func retire(_ container: ListRowView) {
         depart(container, reporting: -1)
         retired.append(container)
     }
@@ -144,8 +144,8 @@ final class RowPlacement {
     /// A container for an arriving row: the one holding `view`, which then
     /// moves nothing; else any that left in this call; else a spare; else a
     /// new one.
-    private func take(holding view: NSView?, from departed: inout [RowContainerView]) -> RowContainerView {
-        if let holder = view?.superview as? RowContainerView {
+    private func take(holding view: NSView?, from departed: inout [ListRowView]) -> ListRowView {
+        if let holder = view?.superview as? ListRowView {
             if let index = departed.firstIndex(where: { $0 === holder }) {
                 return departed.remove(at: index)
             }
@@ -159,14 +159,14 @@ final class RowPlacement {
             hidden.isHidden = false
             return hidden
         }
-        let container = RowContainerView(row: -1)
+        let container = ListRowView(row: -1)
         documentView.addSubview(container)
         return container
     }
 
     /// Puts a departed container among the spares: hidden, in no row, still
     /// holding its view (P3).
-    private func stow(_ container: RowContainerView) {
+    private func stow(_ container: ListRowView) {
         container.row = -1
         container.isHidden = true
         spare.append(container)
@@ -176,11 +176,11 @@ final class RowPlacement {
     /// back to rest, and the host hears `didRemove` for its view, which goes
     /// back to the pool (P3). The view stays in the container until another
     /// row takes one or the other.
-    private func depart(_ container: RowContainerView, reporting row: Int) {
+    private func depart(_ container: ListRowView, reporting row: Int) {
         container.alphaValue = 1
         container.contentOffset = .zero
         if let view = container.hostedView {
-            owner?.placement(self, didRemove: view, forRow: row)
+            delegate?.placement(self, didRemove: view, forRow: row)
         }
     }
 }

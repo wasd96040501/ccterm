@@ -75,7 +75,7 @@ final class JumpBarViewSnapshotTests: XCTestCase {
     func testTheButtonReportsToTheDelegate() {
         final class Recorder: JumpBarViewDelegate {
             var count = 0
-            func jumpBarViewShowInTranscript(_ jumpBar: JumpBarView) { count += 1 }
+            func jumpBarViewDidRequestShowInTranscript(_ jumpBar: JumpBarView) { count += 1 }
         }
         let bar = JumpBarView()
         let recorder = Recorder()

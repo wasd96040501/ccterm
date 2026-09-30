@@ -964,7 +964,7 @@ Core imports Foundation and CoreGraphics, never AppKit.
 | `ListScrollView` | no | An `NSScrollView` subclass with the fixed configuration (L11). It reports width and viewport changes from `tile()` (W1, V1, V2). |
 | `ListClipView` | no | An `NSClipView` subclass. It reports every change of the bounds origin, so mounting happens in the same turn as the scroll (P1). |
 | `ListDocumentView` | no | The flipped document view: the first responder and keys (K1), `prepareContent(in:)` (P1), and the accessibility table (X1). |
-| `RowContainerView` | no | The `NSTableRowView` counterpart: the row's motion (its frame, opacity, and the content offset of a slide, clipped), the host view's frame, and the accessibility row (X2). |
+| `ListRowView` | no | The `NSTableRowView` counterpart: the row's motion (its frame, opacity, and the content offset of a slide, clipped), the host view's frame, and the accessibility row (X2). |
 | `RowViewPool` | no | Reuse by identifier (P4). |
 | `RowPlacement` | no | The mounted set, and mounting and unmounting against `P` (P1–P3, P6). |
 | `MotionAnimator` | no | Runs each commit's motion and each animated scroll on its own `MotionClock`: on every frame it sets the in-flight rows' frames, opacity and content offset, or the offset. It retires rows once their motion ends, and runs completion handlers (§8, S3, U8). |
@@ -974,9 +974,10 @@ Core imports Foundation and CoreGraphics, never AppKit.
 | `UnmountedRowElement` | no | The `NSAccessibilityElement` for a row that isn't mounted (X3). |
 
 Collaborators never name `ExactListView`. Each talks back through one narrow
-internal protocol that the façade conforms to: `ListScrollViewOwner`,
-`ListClipViewOwner`, `ListDocumentViewOwner`, `RowPlacementOwner`,
-`MotionAnimatorOwner`, `StaleRowRefresherOwner`, `UnmountedRowElementOwner`.
+internal protocol that the façade conforms to, held in the collaborator's weak
+`delegate` property: `ListScrollViewDelegate`, `ListClipViewDelegate`,
+`ListDocumentViewDelegate`, `RowPlacementDelegate`, `MotionAnimatorDelegate`,
+`StaleRowRefresherDelegate`, `UnmountedRowElementDelegate`.
 
 **ExactListDemoSupport**: what the demo shows, in a library so that the demo
 app and the recordings run the same thing. Every type is `@MainActor`.

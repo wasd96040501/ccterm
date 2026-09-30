@@ -6,7 +6,7 @@ import XCTest
 /// `.userMessage` rows end to end: the transcript measures them itself, serves
 /// them through its own cell, and re-measures them when the column moves.
 ///
-/// Mounted rather than pure, unlike `UserMessageTests` — the bubble's geometry is
+/// Mounted rather than pure, unlike `UserMessageBlockTests` — the bubble's geometry is
 /// a value, but *whether the transcript reaches for one* is only observable once
 /// `NSTableView` lays out and starts asking.
 @MainActor
@@ -96,7 +96,7 @@ final class UserMessageRowTests: XCTestCase {
     // MARK: - The More affordance, in a mounted row
     //
     // The value-level half — that it is a link, where its rectangle is, what it
-    // copies as — is `UserMessageTests`. What needs a view is the part `BlockView`
+    // copies as — is `UserMessageBlockTests`. What needs a view is the part `BlockView`
     // owns: that hovering it draws the same band a link gets, and that pressing it
     // does not reach the host as a link would.
 
@@ -107,7 +107,7 @@ final class UserMessageRowTests: XCTestCase {
 
     private func hoverTheMoreRun() throws -> (view: BlockView, more: CGRect) {
         let view = try XCTUnwrap(mounted.transcript.descendants(ofType: BlockView.self).first)
-        let block = try XCTUnwrap(view.block as? UserMessage.Measured)
+        let block = try XCTUnwrap(view.block as? UserMessageBlock.Measured)
         let more = try XCTUnwrap(block.more).frame
 
         let point = CGPoint(x: more.midX, y: more.midY)

@@ -127,10 +127,6 @@ enum MarkdownBlockBuilder {
         BlockStack(nodes.map { block($0, style: style, spacing: spacing) }, spacing: spacing)
     }
 
-    /// `spacing` is the rhythm of the stack this node is going into, passed down
-    /// so a container can hand its children the same one — the only reason it
-    /// travels at all is that a list is tighter than a document, and a block
-    /// inside a list item belongs to the list's rhythm rather than the page's.
     /// Extra room above a heading, scaled by level so the same gap does not read
     /// as generous under an h3 and mean under an h1.
     private static func headingTopInset(level: Int) -> CGFloat {
@@ -141,6 +137,10 @@ enum MarkdownBlockBuilder {
         }
     }
 
+    /// `spacing` is the rhythm of the stack this node is going into, passed down
+    /// so a container can hand its children the same one — the only reason it
+    /// travels at all is that a list is tighter than a document, and a block
+    /// inside a list item belongs to the list's rhythm rather than the page's.
     private static func block(
         _ node: MarkdownIR.BlockNode, style: TextStyle, spacing: CGFloat
     ) -> Block {

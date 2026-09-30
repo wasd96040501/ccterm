@@ -69,7 +69,7 @@ Invariants of the renderer target. Package-level API rules are in [../../CLAUDE.
 - **Landing:** the first hit **at or after the first visible row** is selected (wrapping to the first if all hits are above). A hit already on screen is selected without scrolling; otherwise the **hit** (not its row) is centred.
 - **A tree built to search is used and dropped**, never filed in `RowCache` — one ⌘F would otherwise evict the rows on screen.
 - **A capped user message is searched only as far as shown:** past the ellipsis every index has the same pen position (zero-width hit), so the truncated last line is excluded whole.
-- **`.view` rows are not searched.** The walk still yields an element for one, filed with no matches and without measuring, so it never stops at a `.view` row; a host's own view finds its own text. The find draws only against `BlockView`.
+- **`.view` rows are not searched.** The walk still yields an element for one, filed with no matches and without measuring, so it never stops at a `.view` row; a host's view is neither searched nor highlighted. The find draws only against `BlockView`.
 
 ### How a find looks
 

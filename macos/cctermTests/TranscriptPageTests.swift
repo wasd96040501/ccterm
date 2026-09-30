@@ -118,7 +118,7 @@ final class TranscriptPageTests: XCTestCase {
 
         let launched = runs(page)[0].items[0]
         XCTAssertEqual(launched.state, .done, "the notification settles the call that started it")
-        XCTAssertEqual(launched.line.meta.string, String(localized: "Background · \(WorkLineWriter.format(363))"))
+        XCTAssertEqual(launched.line.meta.string, String(localized: "Background · \(TimeInterval(363).durationText)"))
     }
 
     // MARK: - The session's shape

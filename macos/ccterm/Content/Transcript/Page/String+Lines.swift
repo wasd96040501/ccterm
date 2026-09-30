@@ -10,4 +10,10 @@ nonisolated extension String {
         if lines.last == "" { lines.removeLast() }
         return lines
     }
+
+    /// Its first line that has text: leading newlines skipped, cut at the next.
+    var firstLine: String {
+        let trimmed = drop { $0.isNewline }
+        return String(trimmed.prefix { !$0.isNewline })
+    }
 }

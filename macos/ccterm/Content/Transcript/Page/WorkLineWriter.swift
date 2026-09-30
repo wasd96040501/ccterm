@@ -1,6 +1,5 @@
 import AgentSDK
 import Foundation
-import os
 
 /// Words every work line: a run's sentence, an item's label, a task's news
 /// (design/transcript/01-run.md "The sentence", "A run of one is the call
@@ -34,10 +33,10 @@ nonisolated struct WorkLineWriter {
     private func runTile(_ items: [RunItem]) -> Tile {
         let calls = items.flatMap(\.calls)
         if let live = calls.last(where: { $0.state.isLive && $0.state != .background }) {
-            return Tile(glyph: .tool(live.kind), state: Self.tileState(live.state))
+            return Tile(glyph: .tool(live.kind), state: Tile.State(live.state))
         }
-        if let last = items.last, [.failed, .stopped].contains(Self.tileState(last.state)) {
-            return Tile(glyph: .tool(last.kind), state: Self.tileState(last.state))
+        if let last = items.last, [.failed, .stopped].contains(Tile.State(last.state)) {
+            return Tile(glyph: .tool(last.kind), state: Tile.State(last.state))
         }
         let kind = calls.map(\.kind).min() ?? .other
         return Tile(glyph: .tool(kind), state: calls.contains { $0.state == .background } ? .background : .done)
@@ -176,7 +175,7 @@ nonisolated struct WorkLineWriter {
         case .other:
             var servers: [(String, Int)] = []
             for call in calls {
-                let server = Self.toolName(call.use.name).server
+                let server = call.toolName.server
                 if let index = servers.firstIndex(where: { $0.0 == server }) {
                     servers[index].1 += 1
                 } else {
@@ -244,7 +243,7 @@ nonisolated struct WorkLineWriter {
                     added: stats.map(\.added).reduce(0, +), removed: stats.map(\.removed).reduce(0, +)))
         }
         if !live, let duration, duration >= CorpusThresholds.shownDuration {
-            parts.append(StyledText(Self.format(duration)))
+            parts.append(StyledText(duration.durationText))
         }
         return StyledText.joined(parts, separator: "  ")
     }
@@ -258,7 +257,7 @@ nonisolated struct WorkLineWriter {
         let call = calls[calls.count - 1]
         let first = calls[0]
         var line = WorkLine(
-            tile: Tile(glyph: .tool(first.kind), state: Self.tileState(call.state)), text: StyledText(), detail: nil,
+            tile: Tile(calls: calls), text: StyledText(), detail: nil,
             exceptions: StyledText(), meta: itemMeta(calls))
         switch call.state {
         case .running, .preparing:
@@ -276,9 +275,9 @@ nonisolated struct WorkLineWriter {
         case .command:
             let command = input["command"]?.stringValue ?? ""
             if let description = input["description"]?.stringValue, !description.isEmpty {
-                return (StyledText(description), Self.firstLine(Self.strippingDirectoryChange(command)))
+                return (StyledText(description), Self.strippingDirectoryChange(command).firstLine)
             }
-            return (StyledText(Self.firstLine(command), style: .code), nil)
+            return (StyledText(command.firstLine, style: .code), nil)
         case .change, .create, .read:
             let path = call.filePath ?? ""
             guard standalone else {
@@ -321,7 +320,7 @@ nonisolated struct WorkLineWriter {
             let subject = input["subject"]?.stringValue
             return (StyledText(String(localized: "Updated the task list")), subject)
         case .schedule, .message, .other:
-            let name = Self.toolName(call.use.name)
+            let name = call.toolName
             return (StyledText(name.tool), name.tool == name.server ? nil : name.server)
         }
     }
@@ -335,7 +334,7 @@ nonisolated struct WorkLineWriter {
             if let description = input["description"]?.stringValue, !description.isEmpty {
                 return StyledText(description)
             }
-            return StyledText(Self.firstLine(input["command"]?.stringValue ?? ""), style: .code)
+            return StyledText((input["command"]?.stringValue ?? "").firstLine, style: .code)
         case .change: return StyledText(localized: String(localized: "Editing \(StyledText.slot(0))"), file)
         case .create: return StyledText(localized: String(localized: "Writing \(StyledText.slot(0))"), file)
         case .read: return StyledText(localized: String(localized: "Reading \(StyledText.slot(0))"), file)
@@ -365,7 +364,7 @@ nonisolated struct WorkLineWriter {
         case .failed:
             guard call.kind == .command, let duration = call.duration, duration >= CorpusThresholds.shownDuration
             else { return StyledText() }
-            return StyledText(Self.format(duration))
+            return StyledText(duration.durationText)
         case .denied: return StyledText(String(localized: "Denied"))
         case .interrupted: return StyledText(String(localized: "Interrupted"))
         case .waiting: return StyledText(String(localized: "Needs approval"))
@@ -374,7 +373,7 @@ nonisolated struct WorkLineWriter {
         case .done: break
         }
         if call.ranInBackground, let duration = call.duration {
-            return StyledText(String(localized: "Background · \(Self.format(duration))"))
+            return StyledText(String(localized: "Background · \(duration.durationText)"))
         }
         switch call.kind {
         case .change:
@@ -424,13 +423,13 @@ nonisolated struct WorkLineWriter {
                 return StyledText(
                     String(
                         localized:
-                            "\(done.totalToolUseCount) tools · \(Self.format(TimeInterval(done.totalDurationMS) / 1000))"
+                            "\(done.totalToolUseCount) tools · \((TimeInterval(done.totalDurationMS) / 1000).durationText)"
                     ))
             }
             return StyledText()
         case .command, .tasks, .schedule, .message, .other:
             if let duration = call.duration, duration >= CorpusThresholds.shownDuration {
-                return StyledText(Self.format(duration))
+                return StyledText(duration.durationText)
             }
             return StyledText()
         }
@@ -477,11 +476,11 @@ nonisolated struct WorkLineWriter {
                 meta.append(StyledText(String(localized: "\(failedAgents) failed"), style: .failure))
             }
         } else if let usage = report.usage, let tools = usage.totalToolUseCount {
-            let time = usage.totalDurationMS.map { Self.format(TimeInterval($0) / 1000) }
+            let time = usage.totalDurationMS.map { (TimeInterval($0) / 1000).durationText }
             meta = StyledText(
                 time.map { String(localized: "\(tools) tools · \($0)") } ?? String(localized: "\(tools) tools"))
         } else if let duration {
-            meta = StyledText(Self.format(duration))
+            meta = StyledText(duration.durationText)
         }
         return WorkLine(
             tile: Tile(glyph: glyph, state: failed ? .failed : .done), text: StyledText(report.summary), detail: nil,
@@ -503,18 +502,6 @@ nonisolated struct WorkLineWriter {
     }
 
     // MARK: - Pieces
-
-    private static func tileState(_ state: ToolCallState) -> Tile.State {
-        switch state {
-        case .preparing: .preparing
-        case .waiting: .waiting
-        case .running: .running
-        case .background: .background
-        case .done: .done
-        case .failed: .failed
-        case .denied, .interrupted: .stopped
-        }
-    }
 
     /// Lines added and removed by one change or creation.
     private static func diffStat(_ call: ToolCall) -> (added: Int, removed: Int)? {
@@ -542,47 +529,6 @@ nonisolated struct WorkLineWriter {
         return (lines.filter { $0.hasPrefix("+") }.count, lines.filter { $0.hasPrefix("-") }.count)
     }
 
-    /// `34s`, `1m 5s`, `12m`, `1h 3m` — the resolution a reader wants at each
-    /// size, in the app's language (not the system's, which the rest of the
-    /// line may not be in).
-    static func format(_ duration: TimeInterval) -> String {
-        let seconds = Int(duration.rounded())
-        return durationFormatters.withLockUnchecked { formatters in
-            let formatter =
-                switch seconds {
-                case ..<60: formatters.seconds
-                case ..<600: formatters.minutesAndSeconds
-                case ..<3600: formatters.minutes
-                default: formatters.hoursAndMinutes
-                }
-            return formatter.string(from: TimeInterval(seconds)) ?? "\(seconds)s"
-        }
-    }
-
-    /// One formatter per resolution, made once: making one is most of what
-    /// formatting a duration costs, and a page formats one per line. Pages
-    /// build off the main actor, several at once, so they are used only
-    /// inside the lock.
-    private struct DurationFormatters {
-        let seconds = durationFormatter([.second])
-        let minutesAndSeconds = durationFormatter([.minute, .second])
-        let minutes = durationFormatter([.minute])
-        let hoursAndMinutes = durationFormatter([.hour, .minute])
-    }
-
-    private static let durationFormatters = OSAllocatedUnfairLock(uncheckedState: DurationFormatters())
-
-    private static func durationFormatter(_ units: NSCalendar.Unit) -> DateComponentsFormatter {
-        let formatter = DateComponentsFormatter()
-        var calendar = Calendar.current
-        calendar.locale = Locale(identifier: Bundle.main.preferredLocalizations.first ?? "en")
-        formatter.calendar = calendar
-        formatter.unitsStyle = .abbreviated
-        formatter.maximumUnitCount = 2
-        formatter.allowedUnits = units
-        return formatter
-    }
-
     private static func fileName(_ path: String) -> String {
         (path as NSString).lastPathComponent
     }
@@ -606,25 +552,12 @@ nonisolated struct WorkLineWriter {
         return "\(parts[0])/\(parts[1])/…/\(parts[parts.count - 1])"
     }
 
-    static func firstLine(_ text: String) -> String {
-        let trimmed = text.drop { $0.isNewline }
-        return String(trimmed.prefix { !$0.isNewline })
-    }
-
     /// A leading `cd <dir> &&` is how the agent says where, not what.
     private static func strippingDirectoryChange(_ command: String) -> String {
         guard command.hasPrefix("cd "), let range = command.range(of: " && ") else { return command }
         let directory = command[command.index(command.startIndex, offsetBy: 3)..<range.lowerBound]
         guard !directory.contains(where: \.isWhitespace) || directory.hasPrefix("\"") else { return command }
         return String(command[range.upperBound...])
-    }
-
-    /// An MCP tool's server and tool (`mcp__computer-use__screenshot`);
-    /// any other tool is its own server.
-    static func toolName(_ name: String) -> (server: String, tool: String) {
-        let parts = name.components(separatedBy: "__")
-        if parts.count >= 3, parts[0] == "mcp" { return (parts[1], parts[2...].joined(separator: "__")) }
-        return (name, name)
     }
 
     private static func lowercasingFirst(_ text: StyledText) -> StyledText {

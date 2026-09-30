@@ -51,7 +51,7 @@ nonisolated struct CommandSummary: Sendable, Equatable {
             if Self.timedOut(message), let timeout = input?.timeout {
                 facts.append(
                     StyledText(
-                        String(localized: "Timed out after \(WorkLineWriter.format(TimeInterval(timeout) / 1000))"),
+                        String(localized: "Timed out after \((TimeInterval(timeout) / 1000).durationText)"),
                         style: .failure))
             } else {
                 var failed = StyledText(String(localized: "Failed"), style: .failure)
@@ -90,7 +90,7 @@ nonisolated struct CommandSummary: Sendable, Equatable {
             default: false
             }
         if settled, let duration = call.duration {
-            let time = WorkLineWriter.format(duration)
+            let time = duration.durationText
             facts.append(StyledText(call.ranInBackground ? String(localized: "Background · \(time)") : time))
         }
         status = StyledText.joined(facts, separator: " · ")

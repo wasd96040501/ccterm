@@ -125,7 +125,7 @@ final class WorkLineWriterTests: XCTestCase {
         let items = run(s).items
         XCTAssertEqual(items.map(\.line.tile.state), [.failed, .failed])
         let duration = try XCTUnwrap(items[0].calls[0].duration)
-        XCTAssertEqual(items[0].line.meta.string, WorkLineWriter.format(duration), "the command's time")
+        XCTAssertEqual(items[0].line.meta.string, TimeInterval(duration).durationText, "the command's time")
         XCTAssertEqual(items[1].line.meta.string, "", "no word where a done edit has its stat")
         XCTAssertEqual(items.map(\.line.exceptions.string), ["", ""])
     }
@@ -154,7 +154,7 @@ final class WorkLineWriterTests: XCTestCase {
         s.call("b2", "Bash", #"{"command":"make","description":"Test"}"#)
         s.result("b2")
 
-        XCTAssertEqual(run(s).line.meta.string, WorkLineWriter.format(36))
+        XCTAssertEqual(run(s).line.meta.string, TimeInterval(36).durationText)
     }
 
     func testALiveRunSaysWhatIsHappeningNow() {

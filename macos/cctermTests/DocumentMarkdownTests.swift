@@ -100,7 +100,7 @@ final class DocumentMarkdownTests: XCTestCase {
                 #"{"status":"completed","agentId":"a1","content":[{"type":"text","text":"Found **three**."}],"totalToolUseCount":9,"totalDurationMs":71000,"totalTokens":5}"#
         )
         XCTAssertEqual(
-            markdown(s), "### Find gaps\n\n*Explore · \(tools(9, WorkLineWriter.format(71)))*\n\nFound **three**.")
+            markdown(s), "### Find gaps\n\n*Explore · \(tools(9, TimeInterval(71).durationText))*\n\nFound **three**.")
     }
 
     func testAnAgentStillWorkingSaysSo() {
@@ -130,7 +130,7 @@ final class DocumentMarkdownTests: XCTestCase {
             """
             ### Review the diff
 
-            *\(tools(14, WorkLineWriter.format(130))) · .claude/worktrees/review · review-diff*
+            *\(tools(14, TimeInterval(130).durationText)) · .claude/worktrees/review · review-diff*
 
             **\(failures)**
 

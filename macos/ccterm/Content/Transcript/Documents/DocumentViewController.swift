@@ -8,7 +8,7 @@ import AppKit
 /// appears, unless it was handed one (a tab made again from editor history
 /// has only its reference); words the tab and the jump bar from it
 /// (`DocumentHeader`); puts an approval bar under it while the call waits
-/// for the reader; and embeds the body `DocumentBodyFactory` picks. What a
+/// for the reader; and embeds the body it picks (`makeBody(for:)`). What a
 /// body shows is the body's.
 @MainActor
 final class DocumentViewController: NSViewController {
@@ -22,7 +22,9 @@ final class DocumentViewController: NSViewController {
     private var document: Document?
     private let loadDocument: DocumentLoader
     private let showInTranscript: @MainActor (DocumentReference) -> Void
-    private let bodyFactory: DocumentBodyFactory
+    /// A transcript tab for the conversation at a URL, titled — this module
+    /// doesn't know the transcript view controller.
+    private let makeConversation: @MainActor (URL, String) -> NSViewController
     private var loadTask: Task<Void, Never>?
     private var hasLoaded = false
 
@@ -77,7 +79,7 @@ final class DocumentViewController: NSViewController {
         self.document = document
         loadDocument = load
         self.showInTranscript = showInTranscript
-        bodyFactory = DocumentBodyFactory(makeConversation: makeConversation)
+        self.makeConversation = makeConversation
         super.init(nibName: nil, bundle: nil)
         title = document.map { DocumentHeader($0).title }
     }
@@ -165,7 +167,7 @@ final class DocumentViewController: NSViewController {
 
     /// Stops the document's load in flight. The editor area calls it before
     /// the tab leaves the tree; a body with work of its own is the caller's to
-    /// stop — it made it (`DocumentBodyFactory.makeConversation`).
+    /// stop — it made it (`makeConversation`).
     func prepareForRemoval() {
         loadTask?.cancel()
         loadTask = nil
@@ -187,7 +189,37 @@ final class DocumentViewController: NSViewController {
             approvalBar.configure(with: approval)
             approvalBar.isHidden = false
         }
-        embed(bodyFactory.body(for: document))
+        embed(makeBody(for: document))
+    }
+
+    /// The view controller that shows a document under its jump bar — the one
+    /// place a kind of document meets its body.
+    ///
+    /// A subagent's work opens as its conversation — the transcript it wrote —
+    /// when that file is on disk, and as its report in markdown otherwise.
+    private func makeBody(for document: Document) -> NSViewController {
+        switch document.content {
+        case .command(let call):
+            return CommandDocumentViewController(.call(call))
+        case .shellCommand(let command):
+            return CommandDocumentViewController(.local(command))
+        case .change(let calls):
+            return SourceDocumentViewController(.change(calls))
+        case .newFile(let call):
+            return SourceDocumentViewController(.newFile(call))
+        case .read(let call):
+            return SourceDocumentViewController(.read(call))
+        case .agent(let call):
+            if let agentID = call.agentID {
+                let url = document.reference.conversationURL(ofAgent: agentID)
+                if FileManager.default.fileExists(atPath: url.path) {
+                    return makeConversation(url, DocumentHeader(document).title)
+                }
+            }
+            return MarkdownDocumentViewController(markdown: DocumentMarkdown.markdown(for: document.content))
+        case .agentMessage, .search, .web, .taskList, .news, .commandOutput, .compactionSummary, .other:
+            return MarkdownDocumentViewController(markdown: DocumentMarkdown.markdown(for: document.content))
+        }
     }
 
     private func embed(_ body: NSViewController) {

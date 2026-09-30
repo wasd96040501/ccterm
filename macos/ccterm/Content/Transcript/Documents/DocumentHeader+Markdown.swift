@@ -17,15 +17,18 @@ nonisolated extension DocumentHeader {
         case .search(let call):
             let title = String(localized: "Search: \(searchTerm(call))")
             return DocumentHeader(
-                tile: tile(.tool(.search), call), crumbs: [title], stat: StyledText(fileCount(call) ?? ""),
+                tile: Tile(glyph: .tool(.search), state: Tile.State(call.state)), crumbs: [title],
+                stat: StyledText(fileCount(call) ?? ""),
                 title: title)
         case .web(let call):
             let title = webTitle(call)
-            return DocumentHeader(tile: tile(.tool(.web), call), crumbs: [title], title: title)
+            return DocumentHeader(
+                tile: Tile(glyph: .tool(.web), state: Tile.State(call.state)), crumbs: [title], title: title)
         case .agent(let call):
             let description = call.use.input["description"]?.stringValue ?? ""
             let title = description.isEmpty ? String(localized: "Agent") : description
-            return DocumentHeader(tile: tile(.tool(.agent), call), crumbs: [title], title: title)
+            return DocumentHeader(
+                tile: Tile(glyph: .tool(.agent), state: Tile.State(call.state)), crumbs: [title], title: title)
         case .agentMessage(let message):
             return DocumentHeader(
                 tile: message.line.tile, crumbs: [message.name], title: message.name)
@@ -43,8 +46,9 @@ nonisolated extension DocumentHeader {
             let title = String(localized: "Summary")
             return DocumentHeader(tile: Tile(glyph: .tool(.other), state: .done), crumbs: [title], title: title)
         case .other(let call):
-            let title = WorkLineWriter.toolName(call.use.name).tool
-            return DocumentHeader(tile: tile(.tool(call.kind), call), crumbs: [title], title: title)
+            let title = call.toolName.tool
+            return DocumentHeader(
+                tile: Tile(glyph: .tool(call.kind), state: Tile.State(call.state)), crumbs: [title], title: title)
         case .command(let call):
             return .command(call)
         case .shellCommand(let command):
@@ -52,20 +56,6 @@ nonisolated extension DocumentHeader {
         case .change, .newFile, .read:
             return .source(content, workingDirectory: nil)
         }
-    }
-
-    private static func tile(_ glyph: Tile.Glyph, _ call: ToolCall) -> Tile {
-        let state: Tile.State =
-            switch call.state {
-            case .preparing: .preparing
-            case .waiting: .waiting
-            case .running: .running
-            case .background: .background
-            case .done: .done
-            case .failed: .failed
-            case .denied, .interrupted: .stopped
-            }
-        return Tile(glyph: glyph, state: state)
     }
 
     /// What was searched for: a pattern, or a tool search's query.

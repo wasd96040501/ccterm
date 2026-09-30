@@ -37,26 +37,20 @@ final class ApprovalBarView: NSView {
         return label
     }()
 
-    private lazy var denyButton: NSButton = {
-        let button = PillButton(title: String(localized: "Deny"))
-        button.target = self
-        button.action = #selector(deny)
-        button.setContentCompressionResistancePriority(.required, for: .horizontal)
-        return button
-    }()
-
-    /// ⌘↩ answers it, as the card's does.
-    private lazy var allowButton: NSButton = {
-        let button = PillButton(title: String(localized: "Allow"), isPrimary: true)
-        button.target = self
-        button.action = #selector(allow)
-        button.keyEquivalent = "\r"
-        button.keyEquivalentModifierMask = .command
-        button.setContentCompressionResistancePriority(.required, for: .horizontal)
-        return button
-    }()
-
     private lazy var row: NSStackView = {
+        let denyButton = PillButton(title: String(localized: "Deny"))
+        denyButton.target = self
+        denyButton.action = #selector(deny)
+        denyButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        // ⌘↩ answers it, as the card's does.
+        let allowButton = PillButton(title: String(localized: "Allow"), isPrimary: true)
+        allowButton.target = self
+        allowButton.action = #selector(allow)
+        allowButton.keyEquivalent = "\r"
+        allowButton.keyEquivalentModifierMask = .command
+        allowButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+
         let stack = NSStackView(views: [tileView, requestLabel, reasonLabel, denyButton, allowButton])
         stack.orientation = .horizontal
         stack.alignment = .centerY

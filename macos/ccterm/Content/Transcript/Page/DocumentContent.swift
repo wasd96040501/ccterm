@@ -2,7 +2,7 @@ import Foundation
 
 /// What opens beside the transcript for something on the page — the domain
 /// values, whole. How each is drawn is its document body's
-/// (`Documents/DocumentBodyFactory`), which derives everything it shows from
+/// (`DocumentViewController.makeBody(for:)`), which derives everything it shows from
 /// these; the page decides only *which* document a click means.
 nonisolated enum DocumentContent: Sendable, Equatable {
     /// A Bash call: the command document.

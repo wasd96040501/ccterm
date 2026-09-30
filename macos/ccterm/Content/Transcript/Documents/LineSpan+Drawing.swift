@@ -56,13 +56,4 @@ extension NSColor {
             appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? color(dark) : color(light)
         }
     }
-
-    /// A tint of `color` whose strength differs by appearance
-    /// (preview.css `--add-bg`, `--del-bg`, `--add-hl`, `--del-hl`).
-    static func wash(_ color: NSColor, light: CGFloat, dark: CGFloat) -> NSColor {
-        NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            return color.withAlphaComponent(isDark ? dark : light)
-        }
-    }
 }

@@ -142,7 +142,7 @@ nonisolated enum DocumentMarkdown {
         var status = [call.use.input["subagent_type"]?.stringValue].compactMap { $0 }
         switch call.result?.toolOutcome(Tools.Agent.self) {
         case .success(.completed(let done))?:
-            let time = WorkLineWriter.format(TimeInterval(done.totalDurationMS) / 1000)
+            let time = (TimeInterval(done.totalDurationMS) / 1000).durationText
             status.append(String(localized: "\(done.totalToolUseCount) tools · \(time)"))
             return (status, done.text)
         case .success(.launched)?:
@@ -185,7 +185,7 @@ nonisolated enum DocumentMarkdown {
             } else if let tools = usage.totalToolUseCount {
                 if let ms = usage.totalDurationMS {
                     status.append(
-                        String(localized: "\(tools) tools · \(WorkLineWriter.format(TimeInterval(ms) / 1000))"))
+                        String(localized: "\(tools) tools · \((TimeInterval(ms) / 1000).durationText)"))
                 } else {
                     status.append(String(localized: "\(tools) tools"))
                 }
@@ -220,7 +220,7 @@ nonisolated enum DocumentMarkdown {
     // MARK: - Any other call
 
     private static func otherStatus(_ call: ToolCall) -> [String] {
-        let name = WorkLineWriter.toolName(call.use.name)
+        let name = call.toolName
         return name.server == name.tool ? [] : [name.server]
     }
 

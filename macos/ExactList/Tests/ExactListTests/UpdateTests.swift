@@ -32,7 +32,7 @@ final class UpdateTests: XCTestCase {
         host.count = heights.count
         var done = false
         list.performBatchUpdates(
-            anchoring: .scrollOffset, { $0.insertRows(at: [62, 63], withAnimation: .effectGap) },
+            anchoring: .scrollOffset, { list.insertRows(at: [62, 63], withAnimation: .effectGap) },
             completionHandler: { done = $0 })
 
         XCTAssertEqual(list.numberOfRows, 202)
@@ -67,11 +67,8 @@ final class UpdateTests: XCTestCase {
     }
 
     /// The outermost call's anchoring applies to a nested batch, every
-    /// completion runs once the outermost batch's animations end, and the proxy
-    /// used after its closure traps (in the probe).
-    func testU3_theBatchClosureReceivesAProxy() async throws {
-        try assertTraps("U3-closed", naming: "U3")
-
+    /// completion runs once the outermost batch's animations end.
+    func testU3_nestedBatchesFlattenIntoTheOutermost() async throws {
         let stage = ListStage(size: NSSize(width: 400, height: 300))
         defer { stage.teardown() }
         let host = RecordingHost(count: 200) { _, _ in 30 }
@@ -86,10 +83,10 @@ final class UpdateTests: XCTestCase {
         host.count += 2
         list.performBatchUpdates(
             anchoring: .scrollOffset,
-            { updates in
-                updates.insertRows(at: [0], withAnimation: .effectGap)
+            {
+                list.insertRows(at: [0], withAnimation: .effectGap)
                 list.performBatchUpdates(
-                    anchoring: .row(80), { $0.insertRows(at: [0], withAnimation: .effectGap) },
+                    anchoring: .row(80), { list.insertRows(at: [0], withAnimation: .effectGap) },
                     completionHandler: { completions.append(($0, Date().timeIntervalSince(start))) })
             }, completionHandler: { completions.append(($0, Date().timeIntervalSince(start))) })
 
@@ -164,9 +161,9 @@ final class UpdateTests: XCTestCase {
         host.resetCalls()
         var callsInside = 0
         host.count += 1
-        list.performBatchUpdates { updates in
-            updates.insertRows(at: [3])
-            updates.noteHeightOfRows(withIndexesChanged: [7])
+        list.performBatchUpdates {
+            list.insertRows(at: [3])
+            list.noteHeightOfRows(withIndexesChanged: [7])
             callsInside = host.calls.count
         }
         let width = list.rect(ofRow: 0).width
@@ -183,7 +180,7 @@ final class UpdateTests: XCTestCase {
         XCTAssertNotEqual(newWidth, width)
         host.resetCalls()
         host.count -= 60
-        list.performBatchUpdates(anchoring: .scrollOffset) { $0.removeRows(at: IndexSet(integersIn: 0..<60)) }
+        list.performBatchUpdates(anchoring: .scrollOffset) { list.removeRows(at: IndexSet(integersIn: 0..<60)) }
 
         let asked = Set(measured(host))
         XCTAssertTrue(host.calls.allSatisfy { if case .heightOfRow(_, let w) = $0 { w == newWidth } else { true } })
@@ -301,7 +298,7 @@ final class UpdateTests: XCTestCase {
         var completions: [Bool] = []
         host.count -= 1
         list.performBatchUpdates(
-            { $0.removeRows(at: [2], withAnimation: .effectGap) }, completionHandler: { completions.append($0) })
+            { list.removeRows(at: [2], withAnimation: .effectGap) }, completionHandler: { completions.append($0) })
         XCTAssertTrue(try moving(list))
         // The rows that closed the gap brought a new row into P: it is in the
         // list now, beside row 2's view animating out.
@@ -342,17 +339,18 @@ final class UpdateTests: XCTestCase {
         await stage.mount(list)
 
         var log: [String] = []
-        list.performBatchUpdates({ _ in }, completionHandler: { log.append("empty \($0) \(Thread.isMainThread)") })
+        list.performBatchUpdates({}, completionHandler: { log.append("empty \($0) \(Thread.isMainThread)") })
         host.count += 1
         NSAnimationContext.runAnimationGroup(
             { context in
                 context.duration = 0
                 list.performBatchUpdates(
-                    { $0.insertRows(at: [0]) }, completionHandler: { log.append("still \($0) \(Thread.isMainThread)") })
+                    { list.insertRows(at: [0]) },
+                    completionHandler: { log.append("still \($0) \(Thread.isMainThread)") })
             }, completionHandler: nil)
         host.count += 1
         list.performBatchUpdates(
-            { $0.insertRows(at: [0]) }, completionHandler: { log.append("plain \($0) \(Thread.isMainThread)") })
+            { list.insertRows(at: [0]) }, completionHandler: { log.append("plain \($0) \(Thread.isMainThread)") })
         XCTAssertEqual(log, [], "never before the call returns")
         await stage.settle()
         XCTAssertEqual(log, ["empty true true", "still true true", "plain true true"])
@@ -361,7 +359,7 @@ final class UpdateTests: XCTestCase {
         let start = Date()
         var elapsed: TimeInterval?
         list.performBatchUpdates(
-            anchoring: .scrollOffset, { $0.insertRows(at: [0], withAnimation: .effectGap) },
+            anchoring: .scrollOffset, { list.insertRows(at: [0], withAnimation: .effectGap) },
             completionHandler: { _ in elapsed = Date().timeIntervalSince(start) })
         // Under Reduce Motion it asks for motion and gets none (M1): only later
         // than the call.

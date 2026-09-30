@@ -138,7 +138,7 @@ final class PlacementTests: XCTestCase {
         let start = Date()
         var landed = false
         list.performBatchUpdates(
-            { $0.removeRows(at: [605], withAnimation: .effectGap) }, completionHandler: { _ in landed = true })
+            { list.removeRows(at: [605], withAnimation: .effectGap) }, completionHandler: { _ in landed = true })
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 
         XCTAssertEqual(reported(leaving, in: host), reduceMotion, "not while it animates out")

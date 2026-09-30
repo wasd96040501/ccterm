@@ -131,7 +131,7 @@ public final class DemoFeed: ExactListViewDataSource, ExactListViewDelegate {
     private func toggle(row: Int, in list: ExactListView) {
         rows[row].expanded.toggle()
         configureView(ofRow: row, in: list)
-        list.performBatchUpdates(anchoring: .row(row)) { $0.noteHeightOfRows(withIndexesChanged: [row]) }
+        list.performBatchUpdates(anchoring: .row(row)) { list.noteHeightOfRows(withIndexesChanged: [row]) }
     }
 
     private func configureView(ofRow row: Int, in list: ExactListView) {

@@ -86,7 +86,7 @@ final class AccessibilityTests: XCTestCase {
             { context in
                 context.duration = 0.3
                 host.heights.insert(contentsOf: [60, 60], at: 101)
-                list.performBatchUpdates({ $0.insertRows(at: [101, 102], withAnimation: .effectGap) }) { done = $0 }
+                list.performBatchUpdates({ list.insertRows(at: [101, 102], withAnimation: .effectGap) }) { done = $0 }
             }, completionHandler: nil)
         let moving = try XCTUnwrap(table.accessibilityRows())[105]
         XCTAssertEqual(index(of: moving), 105)
@@ -219,7 +219,7 @@ final class AccessibilityTests: XCTestCase {
         XCTAssertEqual(afterSameCount, [], "n unchanged: nothing posted")
 
         host.heights.removeSubrange(10..<20)
-        list.performBatchUpdates { $0.removeRows(at: IndexSet(integersIn: 10..<20)) }
+        list.performBatchUpdates { list.removeRows(at: IndexSet(integersIn: 10..<20)) }
         let afterRemove = await heard("remove")
         XCTAssertEqual(afterRemove, ["AXTable rows 42"], "a batch that removes")
     }

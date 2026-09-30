@@ -27,14 +27,13 @@ MainActor.assumeIsolated {
         host!.insideHeight = { $0.insertRows(at: [0]) }
         host!.count += 1
         list.insertRows(at: [0])
-    case .listCallInsideBatch:
-        host!.count += 1
-        list.performBatchUpdates { _ in list.insertRows(at: [0]) }
+    case .reloadInsideBatch:
+        list.performBatchUpdates { list.reloadData() }
     case .scrollInsideCallback:
         host!.insideHeight = { $0.scrollRowToVisible(0) }
         list.noteHeightOfRows(withIndexesChanged: [0])
     case .queryInsideBatch:
-        list.performBatchUpdates { _ in _ = list.rect(ofRow: 0) }
+        list.performBatchUpdates { _ = list.rect(ofRow: 0) }
     case .countMismatch:
         list.insertRows(at: [0])
     case .invalidHeight:
@@ -51,7 +50,7 @@ MainActor.assumeIsolated {
     case .indexOutOfRange:
         list.removeRows(at: [50])
     case .anchorOutOfRange:
-        list.performBatchUpdates(anchoring: .row(50)) { $0.noteHeightOfRows(withIndexesChanged: [0]) }
+        list.performBatchUpdates(anchoring: .row(50)) { list.noteHeightOfRows(withIndexesChanged: [0]) }
     case .scrollOutOfRange:
         list.scrollToRow(50, at: .top)
     case .pendingScrollOutOfRange:
@@ -66,10 +65,6 @@ MainActor.assumeIsolated {
     case .deallocatedBeforePlacement:
         host = nil
         list.scrollToRow(19, at: .top)
-    case .proxyAfterClose:
-        var escaped: ExactListView.Updates?
-        list.performBatchUpdates { escaped = $0 }
-        escaped?.noteHeightOfRows(withIndexesChanged: [0])
     }
     FileHandle.standardError.write(Data("scenario \(scenario.rawValue) did not trap\n".utf8))
     exit(0)

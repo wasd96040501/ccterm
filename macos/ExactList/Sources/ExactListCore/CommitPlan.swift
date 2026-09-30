@@ -11,7 +11,7 @@ public struct CommitPlan: Equatable, Sendable {
     public var offset: CGFloat
 
     /// The anchor as restored, after renumbering (A4, A5) and rescaling (W2).
-    public var anchor: ScrollAnchor
+    var anchor: ScrollAnchor
 
     /// Every row that is mounted during or after the commit (P1), with its
     /// start and end. Rows that don't move appear too, with start equal to end.
@@ -19,12 +19,12 @@ public struct CommitPlan: Equatable, Sendable {
 
     /// `k` (M7), already applied to every motion's start. 1 when nothing was
     /// capped.
-    public var amplitude: CGFloat
+    var amplitude: CGFloat
 
     /// A8 after the commit.
     public var isFollowingTail: Bool
 
-    public init(
+    init(
         heights: RowHeights, offset: CGFloat, anchor: ScrollAnchor, motions: [RowMotion],
         amplitude: CGFloat, isFollowingTail: Bool
     ) {

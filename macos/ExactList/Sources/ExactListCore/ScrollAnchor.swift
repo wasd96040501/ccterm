@@ -5,7 +5,7 @@ import CoreGraphics
 /// It lives only from resolving to restoring, inside one commit. The list keeps
 /// no anchor between commits, and tail following is decided by position alone
 /// (A8).
-public enum ScrollAnchor: Equatable, Sendable {
+enum ScrollAnchor: Equatable, Sendable {
 
     /// Restore to `oMax` (A6).
     case tail
@@ -20,7 +20,7 @@ public enum ScrollAnchor: Equatable, Sendable {
     /// A1–A3: resolves a policy against the geometry before the batch.
     /// `followsTail` is `automaticallyFollowsTail`; whether the viewport is at
     /// the tail is worked out here.
-    public static func resolve(
+    static func resolve(
         _ anchoring: Anchoring, heights: RowHeights, viewport: Viewport, followsTail: Bool
     ) -> ScrollAnchor {
         switch anchoring {
@@ -46,7 +46,7 @@ public enum ScrollAnchor: Equatable, Sendable {
     /// removed, the anchor passes to a survivor (neither removed nor moved),
     /// which keeps its own pre-batch screen position; that is why the old
     /// heights and viewport are needed. With no survivor, the offset holds.
-    public func mapped(
+    func mapped(
         through map: RowIndexMap, oldHeights: RowHeights, oldViewport: Viewport
     ) -> ScrollAnchor {
         guard case .row(let row, let distance) = self else { return self }
@@ -66,14 +66,14 @@ public enum ScrollAnchor: Equatable, Sendable {
 
     /// W2: rescales a row anchor's distance by the row's new height over its
     /// old one. Other anchors are returned unchanged.
-    public func rescaled(fromHeight old: CGFloat, toHeight new: CGFloat) -> ScrollAnchor {
+    func rescaled(fromHeight old: CGFloat, toHeight new: CGFloat) -> ScrollAnchor {
         guard case .row(let row, let distance) = self else { return self }
         return .row(row, distance: distance * new / old)
     }
 
     /// A6, A7: the offset that restores this anchor against the new geometry,
     /// clamped to the new scroll range.
-    public func restoredOffset(heights: RowHeights, viewport: Viewport) -> CGFloat {
+    func restoredOffset(heights: RowHeights, viewport: Viewport) -> CGFloat {
         let contentHeight = heights.contentHeight
         switch self {
         case .tail:

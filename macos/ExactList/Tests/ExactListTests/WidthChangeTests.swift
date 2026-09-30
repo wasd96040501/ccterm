@@ -113,7 +113,7 @@ final class WidthChangeTests: XCTestCase {
         XCTAssertEqual(try unfresh(list, host), [], "after NSClipView.scroll(to:)")
 
         host.count -= 300
-        list.performBatchUpdates(anchoring: .scrollOffset) { $0.removeRows(at: IndexSet(integersIn: 1800..<2100)) }
+        list.performBatchUpdates(anchoring: .scrollOffset) { list.removeRows(at: IndexSet(integersIn: 1800..<2100)) }
         XCTAssertEqual(try unfresh(list, host), [], "after a commit that pulls rows up")
 
         stage.window.setContentSize(NSSize(width: 560, height: 320))

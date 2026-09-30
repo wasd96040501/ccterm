@@ -586,9 +586,9 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
         isInBatch = true
         defer { isInBatch = outer }
         holdingRowsStillForFind {
-            list.performBatchUpdates(anchoring: anchoring.listAnchoring) { _ in
-                // Each mutation records its edits through a nested
-                // `performBatchUpdates`, which joins this one.
+            list.performBatchUpdates(anchoring: anchoring.listAnchoring) {
+                // The host's calls to this view's update methods record straight
+                // into the list's open batch.
                 updates()
             }
         }
@@ -598,11 +598,6 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
     /// view is still at its row from before the batch, while the indexes a host
     /// passes follow the batch's edits so far: only the list can pair them.
     private var isInBatch = false
-
-    /// Records `edits` in the list's current batch, or in one of their own.
-    private func updateList(_ edits: (ExactListView.Updates) -> Void) {
-        holdingRowsStillForFind { list.performBatchUpdates(edits) }
-    }
 
     /// No row moves while a find is up: its overlay reads where the rows are
     /// when it lays out, and a row sliding under it would leave its highlights
@@ -622,7 +617,7 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
     /// Scroll anchoring) — the list moves the offset with the motion.
     public func insertRows(at indexes: IndexSet, withAnimation options: NSTableView.AnimationOptions = []) {
         selectionTracker.shift(byRowsInserted: indexes)
-        updateList { $0.insertRows(at: indexes, withAnimation: options) }
+        holdingRowsStillForFind { list.insertRows(at: indexes, withAnimation: options) }
         findSession.shiftFind(byRowsInserted: indexes)
     }
 
@@ -673,7 +668,7 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
     /// Mirrors `NSTableView.removeRows(at:withAnimation:)`.
     public func removeRows(at indexes: IndexSet, withAnimation options: NSTableView.AnimationOptions = []) {
         sweepCache()
-        updateList { $0.removeRows(at: indexes, withAnimation: options) }
+        holdingRowsStillForFind { list.removeRows(at: indexes, withAnimation: options) }
         findSession.shiftFind(byRowsRemoved: indexes)
         // Out here rather than in the sweep: see `keepFind(_:)`.
         findSession.reportFind()
@@ -704,11 +699,11 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
         let rest = isInBatch ? indexes : indexes.subtracting(rebindVisibleRows(in: indexes))
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0
-            list.performBatchUpdates { updates in
+            list.performBatchUpdates {
                 // Everything the pass above did not take: `.view` rows, rows off
                 // screen, and a row that changed which kind it is.
-                if !rest.isEmpty { updates.reloadData(forRowIndexes: rest) }
-                updates.noteHeightOfRows(withIndexesChanged: indexes)
+                if !rest.isEmpty { list.reloadData(forRowIndexes: rest) }
+                list.noteHeightOfRows(withIndexesChanged: indexes)
             }
         }
         findSession.refileFind(inRows: indexes)
@@ -723,7 +718,7 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
     /// Only needed when a height changed but the content did not — a hosted
     /// view opening a disclosure, say.
     public func noteHeightOfRows(withIndexesChanged indexes: IndexSet) {
-        updateList { $0.noteHeightOfRows(withIndexesChanged: indexes) }
+        holdingRowsStillForFind { list.noteHeightOfRows(withIndexesChanged: indexes) }
     }
 
     // MARK: - Off-main measurement

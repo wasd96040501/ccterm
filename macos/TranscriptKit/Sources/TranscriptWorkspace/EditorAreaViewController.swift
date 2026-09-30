@@ -135,7 +135,7 @@ public final class EditorAreaViewController: NSSplitViewController {
     /// a view controller nested inside a tab's content (a child of the tab's
     /// controller) belongs to that tab's editor. `nil` when no editor's tab
     /// holds it.
-    public func group(containing viewController: NSViewController) -> EditorGroupViewController? {
+    func group(containing viewController: NSViewController) -> EditorGroupViewController? {
         var candidate: NSViewController? = viewController
         while let current = candidate {
             if let group = groups.first(where: { $0.tabViewItems.contains { $0.viewController === current } }) {

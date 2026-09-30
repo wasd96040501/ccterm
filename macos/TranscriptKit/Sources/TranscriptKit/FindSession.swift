@@ -10,7 +10,7 @@ import ExactList
 /// transcript mounts it and tells this when rows move under it. The transcript
 /// forwards its public find API here and tells it what each mutation did
 /// (`shiftFind`, `keepFind`, `refileFind`, `refreshFind`); this reports back
-/// through `FindSessionOwner`, whose `findDidUpdate(matches:isComplete:)` is the
+/// through `FindSessionDelegate`, whose `findDidUpdate(matches:isComplete:)` is the
 /// host's delegate call — the one channel a find crosses by.
 @MainActor
 final class FindSession {
@@ -24,25 +24,24 @@ final class FindSession {
         return overlay
     }()
 
-    private weak var owner: FindSessionOwner?
+    private weak var dataSource: RowDataSource?
+    private weak var delegate: FindSessionDelegate?
     private let rowCache: RowCache
     private let list: ExactListView
 
     init(
-        owner: FindSessionOwner, rowCache: RowCache, list: ExactListView
+        dataSource: RowDataSource, delegate: FindSessionDelegate, rowCache: RowCache,
+        list: ExactListView
     ) {
-        self.owner = owner
+        self.dataSource = dataSource
+        self.delegate = delegate
         self.rowCache = rowCache
         self.list = list
         overlay.rows = { [weak self] in self?.findRowsOnScreen() ?? [] }
     }
 
-    private var numberOfRows: Int { list.numberOfRows }
-
     /// Whether a find is up.
     var isFinding: Bool { find != nil }
-
-    private var contentWidth: CGFloat { owner?.contentWidth ?? 0 }
 
     /// A find, running or settled.
     ///
@@ -126,11 +125,11 @@ final class FindSession {
     private static let findSliceRows = 200
 
     /// One slice on its way to the pool: what to search, and either the tree to
-    /// search it in when something has already built one, or — for a `.view` row —
-    /// the host's answer, which was asked for on the main actor.
+    /// search it in when something has already built one. A `.view` row is carried
+    /// with no tree: it is not searched.
     private typealias FindSlice = [(
         row: Int, id: TranscriptRow.ID, content: TranscriptRowContent,
-        measured: MeasuredBlock?, answered: [Range<Int>]?
+        measured: MeasuredBlock?
     )]
 
     /// What comes back: every row of the slice with what it matched — nothing
@@ -160,7 +159,7 @@ final class FindSession {
     func find(_ query: String) {
         guard !query.isEmpty else { return endFind() }
 
-        find = Find(query: query, width: contentWidth)
+        find = Find(query: query, width: dataSource?.contentWidth ?? 0)
         walkFind()
         rebindFind()
         reportFind()
@@ -174,7 +173,7 @@ final class FindSession {
         guard find != nil else { return }
         find = nil
         rebindFind()
-        owner?.findDidUpdate(matches: 0, isComplete: true)
+        delegate?.findDidUpdate(matches: 0, isComplete: true)
     }
 
     /// Moves to the next match, wrapping at the end, and scrolls it into view.
@@ -209,7 +208,7 @@ final class FindSession {
     func refreshFind() {
         guard find != nil else { return }
         find?.next = 0
-        find?.width = contentWidth
+        find?.width = dataSource?.contentWidth ?? 0
         walkFind()
     }
 
@@ -250,20 +249,19 @@ final class FindSession {
     private func takeFindSlice() -> (
         range: Range<Int>, rows: FindSlice, query: String, width: CGFloat
     )? {
-        guard var find, let owner, find.next < numberOfRows else { return nil }
-        let range = find.next..<min(find.next + Self.findSliceRows, numberOfRows)
+        guard var find, let dataSource, find.next < dataSource.numberOfRows else { return nil }
+        let range = find.next..<min(find.next + Self.findSliceRows, dataSource.numberOfRows)
         let rows: FindSlice = range.compactMap { row in
-            guard let described = owner.row(at: row) else { return nil }
+            guard let described = dataSource.row(at: row) else { return nil }
             switch described.content {
             case .markdown:
                 let cached = rowCache.cachedMeasured(for: described, width: nil)
-                return (row, described.id, described.content, cached, nil)
+                return (row, described.id, described.content, cached)
             case .userMessage:
                 let cached = rowCache.cachedMeasured(for: described, width: find.width)
-                return (row, described.id, described.content, cached, nil)
+                return (row, described.id, described.content, cached)
             case .view:
-                let answered = owner.findMatches(of: find.query, inRow: row)
-                return (row, described.id, described.content, nil, answered)
+                return (row, described.id, described.content, nil)
             }
         }
         // No row is "no data source": nothing to walk.
@@ -296,9 +294,8 @@ final class FindSession {
             for row in slice {
                 group.addTask {
                     guard !Task.isCancelled else { return nil }
-                    if let answered = row.answered {
-                        return (row.row, row.id, row.content, answered)
-                    }
+                    // A host's view is neither searched nor measured here.
+                    if row.content == .view { return (row.row, row.id, row.content, []) }
                     // Nothing to reuse: this is either a row the cache already
                     // answered, or one nobody has measured at this width. Same
                     // call the cache would make, so the two cannot describe a row
@@ -431,7 +428,7 @@ final class FindSession {
     /// forget to.
     func reportFind() {
         guard let find else { return }
-        owner?.findDidUpdate(matches: find.count, isComplete: find.isComplete)
+        delegate?.findDidUpdate(matches: find.count, isComplete: find.isComplete)
     }
 
     /// Moves the selection `delta` hits along, wrapping at both ends — or, with
@@ -470,10 +467,10 @@ final class FindSession {
     /// that went away is skipped rather than navigated to — the same shape as
     /// `RemeasureScheduler.staleRowsOutwardFromViewport(at:)` dropping entries a removal orphaned.
     private func locatedHits() -> [(row: Int, id: TranscriptRow.ID, range: Range<Int>)] {
-        guard let find, !find.matches.isEmpty, let owner else { return [] }
+        guard let find, !find.matches.isEmpty, let dataSource else { return [] }
         var hits: [(row: Int, id: TranscriptRow.ID, range: Range<Int>)] = []
-        for row in 0..<numberOfRows {
-            guard let id = owner.row(at: row)?.id else { return [] }
+        for row in 0..<dataSource.numberOfRows {
+            guard let id = dataSource.row(at: row)?.id else { return [] }
             guard let ranges = find.matches[id]?.ranges else { continue }
             hits.append(contentsOf: ranges.map { (row, id, $0) })
         }
@@ -488,10 +485,10 @@ final class FindSession {
     private func ordinal(
         of selection: (row: TranscriptRow.ID, range: Range<Int>), in find: Find
     ) -> Int? {
-        guard let owner else { return nil }
+        guard let dataSource else { return nil }
         var before = 0
-        for row in 0..<numberOfRows {
-            guard let id = owner.row(at: row)?.id else { return nil }
+        for row in 0..<dataSource.numberOfRows {
+            guard let id = dataSource.row(at: row)?.id else { return nil }
             guard let ranges = find.matches[id]?.ranges else { continue }
             if id == selection.row {
                 return ranges.firstIndex(of: selection.range).map { before + $0 }
@@ -505,7 +502,7 @@ final class FindSession {
     private func select(row: Int, id: TranscriptRow.ID, range: Range<Int>, ordinal: Int?) {
         find?.selection = (id, range)
         find?.ordinal = ordinal
-        owner?.scrollFindMatchToVisible(range, inRow: row)
+        delegate?.scrollFindMatchToVisible(range, inRow: row)
         rebindFind()
     }
 
@@ -557,11 +554,11 @@ final class FindSession {
     /// whose text has moved on since is lit nowhere rather than at ranges that name
     /// other characters now.
     private func findRowsOnScreen() -> [FindOverlayView.Row] {
-        guard let find, let owner else { return [] }
+        guard let find, let dataSource else { return [] }
         var rows: [FindOverlayView.Row] = []
         list.enumerateAvailableRowViews { cell, row in
-            guard let view = (cell as? TranscriptCellView)?.hostedView as? NSView & TranscriptFindHighlighting,
-                let described = owner.row(at: row)
+            guard let view = (cell as? TranscriptCellView)?.hostedView as? BlockView,
+                let described = dataSource.row(at: row)
             else { return }
             guard let filed = find.matches[described.id], filed.content == described.content
             else { return }
@@ -579,15 +576,15 @@ final class FindSession {
     /// searches is the one its height is answered from. For the streaming row that
     /// is one search of one row a frame, and only while a find is up.
     func refileFind(inRows rows: IndexSet) {
-        guard var find, let owner else { return }
-        let covered = min(find.pending?.upperBound ?? find.next, numberOfRows)
+        guard var find, let dataSource else { return }
+        let covered = min(find.pending?.upperBound ?? find.next, dataSource.numberOfRows)
         var changed = false
         for row in rows where row < covered {
-            guard let described = owner.row(at: row) else { continue }
+            guard let described = dataSource.row(at: row) else { continue }
             let ranges =
                 described.content == .view
-                ? owner.findMatches(of: find.query, inRow: row)
-                : rowCache.measured(for: described, width: owner.contentWidth)?
+                ? []
+                : rowCache.measured(for: described, width: dataSource.contentWidth)?
                     .ranges(of: find.query) ?? []
             if find.pending?.contains(row) == true {
                 find.refiled.insert(described.id)
@@ -662,7 +659,7 @@ final class FindSession {
     /// than a walk can say which rows those are. Settled rather than per frame of a
     /// drag, for the reason the off-screen re-measure waits for mouse-up.
     func refreshFindAfterWidthChange() {
-        guard let find, find.width != contentWidth else { return }
+        guard let find, find.width != (dataSource?.contentWidth ?? 0) else { return }
         refreshFind()
     }
 }

@@ -127,6 +127,16 @@ enum MarkdownBlockBuilder {
         BlockStack(nodes.map { block($0, style: style, spacing: spacing) }, spacing: spacing)
     }
 
+    /// Extra room above a heading, scaled by level so the same gap does not read
+    /// as generous under an h3 and mean under an h1.
+    private static func headingTopInset(level: Int) -> CGFloat {
+        switch max(1, level) {
+        case 1: return 18
+        case 2: return 10
+        default: return 4
+        }
+    }
+
     /// `spacing` is the rhythm of the stack this node is going into, passed down
     /// so a container can hand its children the same one — the only reason it
     /// travels at all is that a list is tighter than a document, and a block
@@ -139,9 +149,9 @@ enum MarkdownBlockBuilder {
             return Paragraph(text(inlines, style: style))
 
         case .heading(let level, let inlines):
-            return Heading(
-                level: level,
-                text: text(inlines, style: style, font: style.headingFont(level: level)))
+            return Paragraph(
+                text(inlines, style: style, font: style.headingFont(level: level)),
+                topInset: headingTopInset(level: level))
 
         case .blockquote(let children):
             return Blockquote(stack(children, style: style, spacing: spacing))

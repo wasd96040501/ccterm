@@ -64,7 +64,7 @@ struct ListRow: Block, @unchecked Sendable {
             size: CGSize(width: width, height: inner.size.height))
     }
 
-    struct Measured: MeasuredBlock, @unchecked Sendable {
+    struct Measured: MeasuredContainerBlock, @unchecked Sendable {
 
         let marker: Marker
         let markerRightX: CGFloat
@@ -72,6 +72,8 @@ struct ListRow: Block, @unchecked Sendable {
         let indent: CGFloat
         let firstLine: CGRect
         let size: CGSize
+
+        var contentOrigin: CGPoint { CGPoint(x: indent, y: 0) }
 
         /// The marker is `.content`: it is furniture, but it is furniture this
         /// block is *saying*, not a surface behind what it says. Nothing of
@@ -103,47 +105,6 @@ struct ListRow: Block, @unchecked Sendable {
 
             content.paint(
                 at: CGPoint(x: origin.x + indent, y: origin.y), dirty: dirty, into: &list)
-        }
-
-        // MARK: - Selection — the content's only; a marker holds no positions
-
-        var length: Int { content.length }
-
-        func index(at point: CGPoint) -> Int {
-            content.index(at: CGPoint(x: point.x - indent, y: point.y))
-        }
-
-        func rects(from: Int, to: Int) -> [CGRect] {
-            content.rects(from: from, to: to).map { $0.offsetBy(dx: indent, dy: 0) }
-        }
-
-        func text(from: Int, to: Int) -> String { content.text(from: from, to: to) }
-
-        /// The marker column holds nothing pointable — a bullet is furniture —
-        /// so a point in it lands left of the content's origin and finds
-        /// nothing, without this having to say so.
-        func characterIndex(at point: CGPoint) -> Int? {
-            content.characterIndex(at: CGPoint(x: point.x - indent, y: point.y))
-        }
-
-        // A marker holds no positions, so the content's index space is the
-        // whole of this one and nothing lifts. The two that take a point
-        // still take the indent, because that half is geometry — and it is
-        // what puts a double-click in the marker column onto the first word
-        // of the item rather than off the front of it.
-        func link(at index: Int) -> InlineLink? { content.link(at: index) }
-
-        /// A marker is furniture and holds no positions, so an ordered list's
-        /// numbers are not searchable text — the same rule that keeps them out
-        /// of a copy.
-        func ranges(of query: String) -> [Range<Int>] { content.ranges(of: query) }
-
-        func wordRange(at point: CGPoint) -> Range<Int> {
-            content.wordRange(at: CGPoint(x: point.x - indent, y: point.y))
-        }
-
-        func paragraphRange(at point: CGPoint) -> Range<Int> {
-            content.paragraphRange(at: CGPoint(x: point.x - indent, y: point.y))
         }
     }
 }

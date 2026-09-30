@@ -84,7 +84,8 @@ enum MarkdownParser {
     /// a directive node that `block(_:)` then drops.
     static func document(_ source: String) -> MarkdownIR.Document {
         let (body, definitions) = MarkdownFootnotes.split(source)
-        return MarkdownFootnotes.resolve(fragment(body), definitions: definitions)
+        return MarkdownFootnotes.resolve(
+            fragment(body), definitions: definitions, fragment: { fragment($0) })
     }
 
     /// A run of markdown lowered to blocks, with the options `document(_:)` uses

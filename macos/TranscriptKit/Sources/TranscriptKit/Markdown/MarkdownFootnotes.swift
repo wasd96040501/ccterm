@@ -102,8 +102,13 @@ enum MarkdownFootnotes {
     /// The definitions are walked too, so a note may refer to another note. The
     /// loop terminates because a label is numbered at most once, and there are
     /// finitely many.
+    ///
+    /// `fragment` turns one definition's source into blocks. It is handed in so
+    /// this file names no parser, and it is called only for a definition a
+    /// reference earned a number, so definition parsing stays lazy.
     static func resolve(
-        _ blocks: [MarkdownIR.BlockNode], definitions: [String: String]
+        _ blocks: [MarkdownIR.BlockNode], definitions: [String: String],
+        fragment: (String) -> [MarkdownIR.BlockNode]
     ) -> MarkdownIR.Document {
         guard !definitions.isEmpty else {
             return MarkdownIR.Document(blocks: blocks, footnotes: [])
@@ -117,7 +122,7 @@ enum MarkdownFootnotes {
         while next < numbering.order.count {
             let label = numbering.order[next]
             next += 1
-            let parsed = MarkdownParser.fragment(definitions[label] ?? "")
+            let parsed = fragment(definitions[label] ?? "")
             notes.append(
                 MarkdownIR.Document.Footnote(
                     number: next,

@@ -43,13 +43,15 @@ struct Blockquote: Block, @unchecked Sendable {
             size: CGSize(width: width, height: inner.size.height))
     }
 
-    struct Measured: MeasuredBlock, @unchecked Sendable {
+    struct Measured: MeasuredContainerBlock, @unchecked Sendable {
 
         let content: MeasuredBlock
         let indent: CGFloat
         let bar: CGRect
         let barColor: NSColor
         let size: CGSize
+
+        var contentOrigin: CGPoint { CGPoint(x: indent, y: 0) }
 
         /// The bar, and then whatever the content says. `.background` for the bar
         /// because it is chrome — nothing of the content's ever overlaps it, but
@@ -58,39 +60,6 @@ struct Blockquote: Block, @unchecked Sendable {
             list.append(.fill(bar.offsetBy(dx: origin.x, dy: origin.y), barColor))
             content.paint(
                 at: CGPoint(x: origin.x + indent, y: origin.y), dirty: dirty, into: &list)
-        }
-
-        // MARK: - Selection — all of it the content's, shifted by the indent
-
-        var length: Int { content.length }
-
-        func index(at point: CGPoint) -> Int {
-            content.index(at: CGPoint(x: point.x - indent, y: point.y))
-        }
-
-        func rects(from: Int, to: Int) -> [CGRect] {
-            content.rects(from: from, to: to).map { $0.offsetBy(dx: indent, dy: 0) }
-        }
-
-        func text(from: Int, to: Int) -> String { content.text(from: from, to: to) }
-
-        func characterIndex(at point: CGPoint) -> Int? {
-            content.characterIndex(at: CGPoint(x: point.x - indent, y: point.y))
-        }
-
-        // Nothing to *lift* on these three: there is only one child and its base
-        // is zero, so the content's index space is the whole of this one. The two
-        // that take a point still take the indent, because that half is geometry.
-        func link(at index: Int) -> InlineLink? { content.link(at: index) }
-
-        func ranges(of query: String) -> [Range<Int>] { content.ranges(of: query) }
-
-        func wordRange(at point: CGPoint) -> Range<Int> {
-            content.wordRange(at: CGPoint(x: point.x - indent, y: point.y))
-        }
-
-        func paragraphRange(at point: CGPoint) -> Range<Int> {
-            content.paragraphRange(at: CGPoint(x: point.x - indent, y: point.y))
         }
     }
 }

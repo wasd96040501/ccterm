@@ -234,31 +234,6 @@ public protocol TranscriptViewDelegate: AnyObject {
         _ transcriptView: TranscriptView, menu: NSMenu, forRow row: Int
     ) -> NSMenu?
 
-    /// Where `query` occurs in a `.view` row. Mirrors
-    /// `NSTableViewDelegate.tableView(_:typeSelectStringFor:row:)` — the table's
-    /// own "what text is in this row" question, asked of the one party that can
-    /// answer it for a row it did not draw.
-    ///
-    /// Asked of every `.view` row as a find walks past it, on screen or not, and
-    /// again when `reloadRows(at:)` announces one changed — so answer **from the
-    /// model, the way `heightOfRow` does**, never by building the view. The ranges
-    /// are in whatever index space the row's view draws in; the transcript counts
-    /// them into the find's total and its ordinals, and hands them back to that
-    /// view through `TranscriptFindHighlighting` when the row is on screen. In
-    /// reading order and not overlapping, which is what makes "4 of 51" count the
-    /// way the reader reads.
-    ///
-    /// Match the way the transcript's own rows are matched, or one find will read
-    /// as two different searches: case, diacritics and width folded —
-    /// `String.CompareOptions` `[.caseInsensitive, .diacriticInsensitive,
-    /// .widthInsensitive]`.
-    ///
-    /// The default answers no matches, so a `.view` row is left out of a find
-    /// until its host says what is in it.
-    func transcriptView(
-        _ transcriptView: TranscriptView, findMatchesOf query: String, inRow row: Int
-    ) -> [Range<Int>]
-
     /// The find's state, whenever it changes: more matches, a different current
     /// match, or the walk finishing. Ending one reports zero.
     ///
@@ -344,12 +319,6 @@ extension TranscriptViewDelegate {
     public func transcriptView(
         _ transcriptView: TranscriptView, didHover url: URL?, at point: NSPoint, inRow row: Int
     ) {}
-
-    public func transcriptView(
-        _ transcriptView: TranscriptView, findMatchesOf query: String, inRow row: Int
-    ) -> [Range<Int>] {
-        []
-    }
 
     public func transcriptView(
         _ transcriptView: TranscriptView, didUpdateFindMatches matches: Int, isComplete: Bool

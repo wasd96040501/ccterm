@@ -7,8 +7,9 @@ protocol FindSessionDelegate: AnyObject {
 
     /// The find's state now — the host's
     /// `transcriptView(_:didUpdateFindMatches:isComplete:)`.
-    func findDidUpdate(matches: Int, isComplete: Bool)
+    func findSession(_ findSession: FindSession, didUpdateMatches matches: Int, isComplete: Bool)
 
     /// Brings the characters `range` of row `row` on screen.
-    func scrollFindMatchToVisible(_ range: Range<Int>, inRow row: Int)
+    func findSession(
+        _ findSession: FindSession, didRequestScrollRangeToVisible range: Range<Int>, inRow row: Int)
 }

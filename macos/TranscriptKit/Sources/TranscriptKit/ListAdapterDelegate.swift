@@ -6,27 +6,27 @@ import AppKit
 @MainActor
 protocol ListAdapterDelegate: AnyObject {
 
-    /// The data source's row count.
-    var numberOfRowsInDataSource: Int { get }
+    /// The data source's current row count.
+    func numberOfRows(in listAdapter: ListAdapter) -> Int
 
     /// Row `row`'s height when the list is `rowWidth` wide.
-    func height(ofRow row: Int, rowWidth: CGFloat) -> CGFloat
+    func listAdapter(_ listAdapter: ListAdapter, heightOfRow row: Int, rowWidth: CGFloat) -> CGFloat
 
     /// The gap above row `row`, or `nil` for the transcript's own.
-    func customSpacing(aboveRow row: Int) -> CGFloat?
+    func listAdapter(_ listAdapter: ListAdapter, customSpacingAboveRow row: Int) -> CGFloat?
 
     /// The cell for row `row`, arriving or being reloaded.
-    func view(forRow row: Int) -> NSView
+    func listAdapter(_ listAdapter: ListAdapter, viewForRow row: Int) -> NSView
 
     /// `view`, a cell, left row `row` (−1 for a removed row).
-    func didRemove(_ view: NSView, forRow row: Int)
+    func listAdapter(_ listAdapter: ListAdapter, didRemove view: NSView, forRow row: Int)
 
     /// Whether the list is following its tail changed.
-    func didChangeTailFollowing(_ isFollowingTail: Bool)
+    func listAdapter(_ listAdapter: ListAdapter, didChangeTailFollowing isFollowingTail: Bool)
 
     /// A key binding's command while the list has focus; `true` if handled.
-    func doCommand(by selector: Selector) -> Bool
+    func listAdapter(_ listAdapter: ListAdapter, doCommandBy selector: Selector) -> Bool
 
     /// The list's offset changed.
-    func didScroll()
+    func listAdapterDidScroll(_ listAdapter: ListAdapter)
 }

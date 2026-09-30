@@ -753,8 +753,8 @@ final class BlockView: NSView, SurfaceLayerDelegate {
     /// for one phase at a time — would mean walking it once per surface and giving
     /// every block a reason to know which phase it is being asked about. Playing
     /// is where the slice applies, because that is where the order lives.
-    fileprivate func paint(
-        _ phases: ClosedRange<PaintItem.Phase>, in ctx: CGContext, dirty dirtyRect: CGRect
+    fileprivate func surfaceLayer(
+        _ layer: SurfaceLayer, paint phases: ClosedRange<PaintItem.Phase>, in ctx: CGContext, dirty dirtyRect: CGRect
     ) {
         guard let block else { return }
 
@@ -799,7 +799,8 @@ final class BlockView: NSView, SurfaceLayerDelegate {
 /// one; the protocol is what keeps the layer from naming it back.
 fileprivate protocol SurfaceLayerDelegate: AnyObject {
     var effectiveAppearance: NSAppearance { get }
-    func paint(_ phases: ClosedRange<PaintItem.Phase>, in ctx: CGContext, dirty dirtyRect: CGRect)
+    func surfaceLayer(
+        _ layer: SurfaceLayer, paint phases: ClosedRange<PaintItem.Phase>, in ctx: CGContext, dirty dirtyRect: CGRect)
 }
 
 /// One composited surface: the slice of the paint order it plays, and nothing
@@ -883,7 +884,7 @@ private final class SurfaceLayer: CALayer {
     override func draw(in ctx: CGContext) {
         guard let surfaceDelegate else { return }
         surfaceDelegate.effectiveAppearance.performAsCurrentDrawingAppearance {
-            surfaceDelegate.paint(phases, in: ctx, dirty: ctx.boundingBoxOfClipPath)
+            surfaceDelegate.surfaceLayer(self, paint: phases, in: ctx, dirty: ctx.boundingBoxOfClipPath)
         }
     }
 }

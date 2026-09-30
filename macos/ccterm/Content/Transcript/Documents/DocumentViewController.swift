@@ -15,6 +15,10 @@ final class DocumentViewController: NSViewController {
     /// Reads the transcript at a URL, off the main actor.
     typealias LoadTranscript = @Sendable (URL) async throws -> Transcript
 
+    /// Reads one document — the transcript's page already built, off the main
+    /// actor — or `nil` when the transcript no longer has it.
+    typealias DocumentLoader = @Sendable (DocumentReference) async -> Document?
+
     private let reference: DocumentReference
 
     /// The transcript this document belongs to: its session is the reader's
@@ -25,7 +29,9 @@ final class DocumentViewController: NSViewController {
 
     /// What the reader opened, until it is shown.
     private var document: Document?
-    private let loadTranscript: LoadTranscript
+    private let loadTranscript: LoadTranscript?
+    private let loadDocument: DocumentLoader?
+    private let showInTranscript: (@MainActor (DocumentReference) -> Void)?
     private let bodyFactory: DocumentBodyFactory
     private var loadTask: Task<Void, Never>?
     private var hasLoaded = false
@@ -78,6 +84,28 @@ final class DocumentViewController: NSViewController {
         self.reference = reference
         self.document = document
         self.loadTranscript = loadTranscript
+        loadDocument = nil
+        showInTranscript = nil
+        bodyFactory = DocumentBodyFactory(makeConversation: makeConversation)
+        super.init(nibName: nil, bundle: nil)
+        title = document.map { DocumentHeader($0).title }
+    }
+
+    /// `document` is what the reader just opened; without one — a tab made
+    /// from history — the shell reads it with `load`, and the tab has no title
+    /// until then. `makeConversation` makes the transcript tab a subagent's
+    /// conversation opens as; `showInTranscript` is *Show in Transcript*.
+    init(
+        reference: DocumentReference, document: Document? = nil,
+        load: @escaping DocumentLoader,
+        makeConversation: @escaping @MainActor (URL, String) -> NSViewController,
+        showInTranscript: @escaping @MainActor (DocumentReference) -> Void
+    ) {
+        self.reference = reference
+        self.document = document
+        loadTranscript = nil
+        loadDocument = load
+        self.showInTranscript = showInTranscript
         bodyFactory = DocumentBodyFactory(makeConversation: makeConversation)
         super.init(nibName: nil, bundle: nil)
         title = document.map { DocumentHeader($0).title }
@@ -155,11 +183,20 @@ final class DocumentViewController: NSViewController {
             show(document)
             return
         }
-        let (reference, loadTranscript) = (reference, loadTranscript)
+        let (reference, loadTranscript, loadDocument) = (reference, loadTranscript, loadDocument)
         loadTask = Task { [weak self] in
-            let document = await Task.detached(priority: .userInitiated) {
-                (try? await loadTranscript(reference.transcriptURL)).flatMap { TranscriptPage($0).document(reference) }
-            }.value
+            let document: Document?
+            if let loadDocument {
+                document = await loadDocument(reference)
+            } else if let loadTranscript {
+                document = await Task.detached(priority: .userInitiated) {
+                    (try? await loadTranscript(reference.transcriptURL)).flatMap {
+                        TranscriptPage($0).document(reference)
+                    }
+                }.value
+            } else {
+                document = nil
+            }
             guard !Task.isCancelled else { return }
             self?.show(document)
             self?.loadTask = nil
@@ -208,7 +245,11 @@ final class DocumentViewController: NSViewController {
 
 extension DocumentViewController: JumpBarViewDelegate {
     func jumpBarViewShowInTranscript(_ jumpBar: JumpBarView) {
-        delegate?.documentViewController(self, showInTranscript: reference)
+        if let showInTranscript {
+            showInTranscript(reference)
+        } else {
+            delegate?.documentViewController(self, showInTranscript: reference)
+        }
     }
 }
 

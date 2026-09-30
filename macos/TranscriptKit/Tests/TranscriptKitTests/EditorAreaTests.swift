@@ -1213,6 +1213,80 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertEqual(group.tabViewItems.count, 2)
     }
 
+    /// A view controller nested in a tab's content belongs to the tab's editor.
+    func testGroupContainingWalksUpToTheEditorHoldingTheTab() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let area = mounted.area
+        let left = area.activeGroup
+        let right = try XCTUnwrap(area.addGroup(with: Self.tab("c")))
+        let nested = ProbeViewController(title: "nested")
+        let host = try XCTUnwrap(right.tabViewItems.first?.viewController)
+        host.addChild(nested)
+
+        XCTAssertIdentical(area.group(containing: mounted.probes[0]), left)
+        XCTAssertIdentical(area.group(containing: host), right)
+        XCTAssertIdentical(area.group(containing: nested), right, "a child of a tab's controller was not found")
+        XCTAssertNil(area.group(containing: ProbeViewController(title: "loose")))
+    }
+
+    func testTabViewItemWithIdentifierFindsItInEitherEditor() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let area = mounted.area
+        let a = Self.tab("a")
+        area.activeGroup.addTabViewItem(a)
+        let c = Self.tab("c")
+        _ = try XCTUnwrap(area.addGroup(with: c))
+
+        XCTAssertIdentical(area.tabViewItem(withIdentifier: "a"), a)
+        XCTAssertIdentical(area.tabViewItem(withIdentifier: "c"), c)
+        XCTAssertNil(area.tabViewItem(withIdentifier: "z"))
+    }
+
+    func testOpeningWithoutAnOriginUsesTheActiveEditor() {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        let look = Self.tab("look")
+        let kept = Self.tab("kept")
+
+        XCTAssertIdentical(mounted.area.open(look, pinned: false), group)
+        XCTAssertIdentical(group.previewTabViewItem, look)
+        XCTAssertIdentical(mounted.area.open(kept, pinned: true), group)
+        XCTAssertIdentical(group.previewTabViewItem, look, "opening a pinned tab disturbed the temporary one")
+        XCTAssertEqual(group.tabViewItems.count, 3)
+        XCTAssertIdentical(group.tabViewItems.last, kept)
+    }
+
+    /// Beside an origin: the other editor, made when there is none.
+    func testOpeningBesideAnOriginGoesToTheOtherEditor() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let area = mounted.area
+        let left = area.activeGroup
+        XCTAssertEqual(area.groups.count, 1, "premise")
+
+        let first = Self.tab("first")
+        let right = area.open(first, pinned: false, beside: mounted.probes[0])
+        XCTAssertEqual(area.groups.count, 2, "no second editor was made")
+        XCTAssertNotIdentical(right, left)
+        XCTAssertIdentical(right.previewTabViewItem, first, "an unpinned tab in a new editor is its temporary tab")
+
+        let second = Self.tab("second")
+        XCTAssertIdentical(area.open(second, pinned: true, beside: mounted.probes[0]), right)
+        XCTAssertEqual(right.tabViewItems.count, 2)
+        XCTAssertIdentical(right.tabViewItems.last, second)
+
+        let third = Self.tab("third")
+        let nested = try XCTUnwrap(first.viewController)
+        XCTAssertIdentical(
+            area.open(third, pinned: false, beside: nested), left,
+            "beside a tab of the right editor is the left one")
+        XCTAssertIdentical(left.previewTabViewItem, third)
+        XCTAssertEqual(area.groups.count, 2)
+    }
+
     /// A tab known to the history by its title.
     private static func tab(_ title: String) -> NSTabViewItem {
         let item = NSTabViewItem(viewController: ProbeViewController(title: title))

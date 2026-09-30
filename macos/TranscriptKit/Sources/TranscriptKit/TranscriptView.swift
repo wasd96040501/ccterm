@@ -141,7 +141,8 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
     /// Owned here; the list refers to it weakly.
     private lazy var listAdapter = ListAdapter(owner: self)
 
-    /// The gap between two rows.
+    /// The gap between two entries, unless the host gives a row its own
+    /// (`transcriptView(_:customSpacingAboveRow:)`).
     ///
     /// A row's box is exactly its content — a document's first paragraph starts
     /// at the top edge and a hosted bubble ends at the bottom one — so nothing
@@ -978,6 +979,12 @@ extension TranscriptView: ListAdapterOwner {
             answer = 0
         }
         return max(answer, Self.minimumRowHeight)
+    }
+
+    /// The host's answer: the transcript has no spacing of its own but
+    /// `rowSpacing`, the default.
+    func customSpacing(aboveRow row: Int) -> CGFloat? {
+        delegate?.transcriptView(self, customSpacingAboveRow: row)
     }
 
     /// The cell for row `row`: the transcript's own cell view, with either a

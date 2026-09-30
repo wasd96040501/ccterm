@@ -77,6 +77,19 @@ public protocol TranscriptViewDelegate: AnyObject {
         _ transcriptView: TranscriptView, heightOfRow row: Int, width: CGFloat
     ) -> CGFloat
 
+    /// The gap between row `row` and the row above it, or `nil` for the
+    /// transcript's gap between entries. Any row may answer, whoever draws it:
+    /// a row that belongs to the one above (a line's disclosed items, say)
+    /// sits closer, or flush at 0. Defaults to `nil` everywhere.
+    ///
+    /// `NSStackView.customSpacing(after:)`, on the other side of the row (the
+    /// list's `listView(_:customSpacingAboveRow:)`, ExactList G7): rows
+    /// inserted under one that stays arrive with their own gap, and nothing
+    /// around them is noted. Asked when the row is loaded, inserted or noted,
+    /// never on a width change. Answer from the model; to change a row's
+    /// spacing, note the row (`noteHeightOfRows(withIndexesChanged:)`).
+    func transcriptView(_ transcriptView: TranscriptView, customSpacingAboveRow row: Int) -> CGFloat?
+
     /// The view for a `.view` row that is about to appear. Mirrors
     /// `NSTableViewDelegate.tableView(_:viewFor:row:)`, minus the column.
     ///
@@ -291,6 +304,10 @@ public protocol TranscriptViewDelegate: AnyObject {
 }
 
 extension TranscriptViewDelegate {
+
+    public func transcriptView(_ transcriptView: TranscriptView, customSpacingAboveRow row: Int) -> CGFloat? {
+        nil
+    }
 
     /// Unreachable unless the data source returns `.view`, in which case it is
     /// a wiring error rather than a recoverable state.

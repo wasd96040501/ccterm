@@ -12,6 +12,9 @@ protocol ListAdapterOwner: AnyObject {
     /// Row `row`'s height when the list is `rowWidth` wide.
     func height(ofRow row: Int, rowWidth: CGFloat) -> CGFloat
 
+    /// The gap above row `row`, or `nil` for the transcript's own.
+    func customSpacing(aboveRow row: Int) -> CGFloat?
+
     /// The cell for row `row`, arriving or being reloaded.
     func view(forRow row: Int) -> NSView
 

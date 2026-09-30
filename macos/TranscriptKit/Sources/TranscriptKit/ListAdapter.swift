@@ -24,6 +24,10 @@ final class ListAdapter: ExactListViewDataSource, ExactListViewDelegate {
         owner?.height(ofRow: row, rowWidth: width) ?? 1
     }
 
+    func listView(_ listView: ExactListView, customSpacingAboveRow row: Int) -> CGFloat? {
+        owner?.customSpacing(aboveRow: row)
+    }
+
     func listView(_ listView: ExactListView, viewForRow row: Int) -> NSView {
         owner?.view(forRow: row) ?? NSView()
     }

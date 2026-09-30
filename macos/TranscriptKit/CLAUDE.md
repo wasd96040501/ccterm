@@ -24,6 +24,7 @@ A deviation with no reason in its doc comment is a bug: restore parity or write 
 
 - **`makeView(withIdentifier:make:)`** returns a generic `V` from a factory closure instead of `owner: Any?` → `NSView?`. AppKit's shape serves nib loading; in code it forces `as? Foo ?? Foo()` plus a manual `identifier` assignment, and forgetting that assignment silently disables recycling.
 - **`heightOfRow(_:width:)`** takes a `width`: the transcript derives the content width itself, so it has to hand it to the host.
+- **`customSpacingAboveRow`** is `NSStackView.customSpacing(after:)` on the other side of the row, as ExactList's (its G7): rows disclosed under one that stays carry their own gap, so nothing around them is noted.
 - **`scrollToRow(at:scrollPosition:)`** instead of `scrollRowToVisible(_:)`, which can't express a landing position; the shape is `NSCollectionView`'s, with `scrollRowToVisible`'s behaviour as `.nearestEdge`.
 - **No `frameOfCell(atColumn:row:)`** (no columns) and **no `didAdd`** (`viewForRow` already is that moment).
 - **`performBatchUpdates(anchoring:_:)` instead of `beginUpdates()` / `endUpdates()`** — `NSCollectionView`'s name, because a batch here also says what holds still (`Anchoring`): `.row(r)` keeps the row the reader acted on under the pointer, which `NSTableView`, holding the scroll offset, can't express.

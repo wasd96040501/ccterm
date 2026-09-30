@@ -10,8 +10,8 @@ import AppKit
 /// **It also claims no space of its own.** A paragraph is the baseline the
 /// container's `spacing` was chosen for, so its box is exactly its glyphs and
 /// two adjacent paragraphs sit `spacing` apart with neither having said
-/// anything. Only the kinds that want *more* than that — headings above
-/// themselves, bordered blocks, rules — add to their own height.
+/// anything. Only the kinds that want *more* than that — a heading's `topInset`,
+/// bordered blocks, rules — add to their own height.
 struct Paragraph: Block, @unchecked Sendable {
 
     let text: ShapedText

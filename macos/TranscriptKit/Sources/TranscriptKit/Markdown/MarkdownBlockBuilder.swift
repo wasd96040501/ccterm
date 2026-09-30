@@ -149,9 +149,9 @@ enum MarkdownBlockBuilder {
             return Paragraph(text(inlines, style: style))
 
         case .heading(let level, let inlines):
-            return Heading(
-                level: level,
-                text: text(inlines, style: style, font: style.headingFont(level: level)))
+            return Paragraph(
+                text(inlines, style: style, font: style.headingFont(level: level)),
+                topInset: headingTopInset(level: level))
 
         case .blockquote(let children):
             return Blockquote(stack(children, style: style, spacing: spacing))

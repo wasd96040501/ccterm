@@ -93,12 +93,12 @@ final class BlockStackSelectionTests: XCTestCase {
     }
 
     /// A block wanting more than the base puts it inside its own height, and the
-    /// stack is told nothing. A heading is the case this exists for — and it can
+    /// stack is told nothing. A heading's paragraph is the case this exists for — and it can
     /// only ever add, which is why nothing sits *closer* than `spacing`.
-    func testHeadingAddsItsExtraRoomInsideItsOwnHeight() {
+    func testATopInsetAddsItsExtraRoomInsideTheParagraphsOwnHeight() {
         let title = ShapedText("Title", attributes: [.font: TextStyle.default.headingFont(level: 1)])
         let bare = title.typeset(width: 400).size.height
-        let heading = Heading(level: 1, text: title).measure(400)
+        let heading = Paragraph(title, topInset: 18).measure(400)
 
         XCTAssertEqual(heading.size.height, bare + 18, accuracy: 0.5)
         // The glyphs moved down by the extra, and selection moved with them.

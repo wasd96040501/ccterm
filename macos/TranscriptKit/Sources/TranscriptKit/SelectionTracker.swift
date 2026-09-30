@@ -132,7 +132,8 @@ final class SelectionTracker {
     /// Moves the selection's focus to what is under `pointer` now.
     private func extendSelection(to pointer: NSEvent) {
         guard var selection, let hit = selectionHit(at: pointer) else { return }
-        selection.focus = .init(row: hit.row, id: hit.id, index: hit.block?.characterIndexForInsertion(at: hit.point) ?? 0)
+        selection.focus = .init(
+            row: hit.row, id: hit.id, index: hit.block?.characterIndexForInsertion(at: hit.point) ?? 0)
         guard selection != self.selection else { return }
         select(selection)
     }

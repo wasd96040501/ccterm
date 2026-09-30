@@ -110,6 +110,8 @@ Strings live in `Localizable.xcstrings`; source is English, `zh-Hans` is the tra
 - Ad-hoc scripts longer than 5 lines go to a file (`/tmp/tmp_*.py` etc.), run, then delete — no long heredocs on the command line.
 - Scratch downloads go to `/tmp`, never the repo: `gh run download <run> --dir /tmp/<name>`, `curl -o /tmp/<file>`, `xcrun xcresulttool export … --output-path /tmp/<dir>`. If an artifact lands in the worktree, `rm -rf` it before staging.
 - Waiting for a PR: `scripts/wait-for-pr.sh <pr#>` with `run_in_background: true`; it returns on a terminal state. Never foreground-poll `gh pr checks`.
+- **Before waiting on a background task, prove the wait will fire.** Check that the process is making progress and that the condition covers every way it can end — success, failure, a hang — and give the wait a deadline (`timeout`, or a condition on elapsed time). A wait on output that is only written at the end never fires when the process hangs. Never end a turn on such a wait; keep working and check the task yourself.
+- **Tests that sample motion need the display awake.** With the display asleep AppKit delivers no animation frames, so `make test-list` (and any test waiting on an animation) hangs instead of failing. Check `pmset -g log | grep "Display is turned"` before a run you will wait on.
 - Squash-merge with an explicit message: `gh pr merge <#> --squash --subject "…" --body "…"` mirroring the PR description, not GitHub's commit list.
 - **Killing the app:** only Debug builds of `ccterm` (`ps -o command= -p <pid>` shows a path under `macos/build/` / `DerivedData/`). Never kill a Release build (`/Applications/`) — it's the user's daily driver. If you can't prove it's Debug, ask.
 

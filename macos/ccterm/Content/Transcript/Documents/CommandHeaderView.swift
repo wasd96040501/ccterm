@@ -166,6 +166,8 @@ final class CommandHeaderView: NSView {
                 ]))
         label.attributedStringValue = text
         label.isSelectable = true
+        // A click hands the text to the field editor, which keeps these fonts only then.
+        label.allowsEditingTextAttributes = true
         let open = PillButton(title: String(localized: "Open"))
         open.target = self
         open.action = #selector(openPersisted)
@@ -240,6 +242,9 @@ private final class CommandCardView: NSView {
     private lazy var text: NSTextField = {
         let label = NSTextField(wrappingLabelWithString: "")
         label.isSelectable = true
+        // A click hands the text to the field editor, which keeps the
+        // highlighted monospaced runs only then.
+        label.allowsEditingTextAttributes = true
         label.lineBreakMode = .byCharWrapping
         label.translatesAutoresizingMaskIntoConstraints = false
         return label

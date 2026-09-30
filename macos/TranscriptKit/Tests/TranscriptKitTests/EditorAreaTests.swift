@@ -86,7 +86,7 @@ final class EditorAreaTests: XCTestCase {
         _ = try XCTUnwrap(
             mounted.area.addGroup(
                 with: NSTabViewItem(viewController: ProbeViewController(title: "Right"))))
-        settle(mounted.window)
+        finishOpening(mounted)
 
         XCTAssertLessThan(bar.bounds.width, before * 0.75, "premise: the bar got narrower")
         XCTAssertEqual(try tabView(titled: "Tab 1", in: bar).frame.maxX, bar.bounds.maxX, accuracy: 0.5)
@@ -411,10 +411,11 @@ final class EditorAreaTests: XCTestCase {
 
     // MARK: - Two editors
 
-    /// The premise a tab's content loads on: it has no size in `viewWillAppear`
-    /// and its final one in `viewDidAppear` — for a tab opened with a new editor
-    /// and for one moved into a new editor, the two paths that size a tab's view
-    /// from nothing. A transcript's host loads at `viewDidAppear` for exactly
+    /// The premise a tab's content loads on: it has its final size in
+    /// `viewDidAppear` — for a tab opened with a new editor and for one moved
+    /// into a new editor, the two paths that size a tab's view from nothing.
+    /// A new editor lays its tab out before it opens, so that tab has its final
+    /// size already in `viewWillAppear`; a moved tab has none there. A transcript's host loads at `viewDidAppear` for exactly
     /// this; loading at `viewWillAppear` measured every row at a width of zero
     /// (`macos/CLAUDE.md`, "Size before content").
     func testATabAppearsAtItsFinalSizeAndNotBefore() async throws {
@@ -434,7 +435,8 @@ final class EditorAreaTests: XCTestCase {
         settle(mounted.window)
 
         XCTAssertEqual(right.sizesAtAppearance.count, 1, "premise: the new editor's tab appeared")
-        XCTAssertEqual(right.sizeBeforeAppearance, .zero, "the view had a size before appearing")
+        XCTAssertEqual(
+            right.sizeBeforeAppearance, right.view.frame.size, "the view had another size before appearing")
         XCTAssertEqual(right.sizesAtAppearance.first, right.view.frame.size)
         XCTAssertEqual(moved.sizesAtAppearance.count, 2, "premise: the moved tab appeared again")
         XCTAssertEqual(moved.sizesAtAppearance.last, moved.view.frame.size)
@@ -450,7 +452,7 @@ final class EditorAreaTests: XCTestCase {
         let right = ProbeViewController(title: "Right")
         let group = try XCTUnwrap(
             mounted.area.addGroup(with: NSTabViewItem(viewController: right)))
-        settle(mounted.window)
+        finishOpening(mounted)
 
         let groups = mounted.area.groups
         XCTAssertEqual(groups.count, 2)
@@ -465,6 +467,55 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertNil(
             mounted.area.addGroup(with: NSTabViewItem(viewController: ProbeViewController(title: "3"))),
             "a third editor opened")
+    }
+
+    /// It opens with motion, the way a sidebar is toggled: its edge moves in
+    /// over time, its tab laid out at its final width the whole way (uncovered,
+    /// never reflowed), and the other editor narrows as in a divider drag —
+    /// after giving up the divider's point as the editor goes in, the one width
+    /// change it gets outside that drag, as it got one when the split opened at
+    /// once.
+    /// Needs the display awake — AppKit advances the animation on its refreshes.
+    func testASecondEditorOpensWithMotionAndItsTabIsNeverReflowed() throws {
+        try XCTSkipIf(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, "Reduce Motion opens it at once")
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let leftProbe = mounted.probes[0].probe
+        leftProbe.log = []
+        let start = Int(leftProbe.frame.width)
+        var width = "\(start)"
+        let right = ProbeViewController(title: "Right")
+
+        let group = try XCTUnwrap(mounted.area.addGroup(with: NSTabViewItem(viewController: right)))
+        var edges: [CGFloat] = []
+        var widths: Set<CGFloat> = []
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline, !opened(mounted.area) {
+            edges.append(frame(of: mounted.area.groups[0]).maxX)
+            if right.isViewLoaded { widths.insert(right.view.frame.width) }
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
+        }
+
+        XCTAssertTrue(opened(mounted.area), "the editor never finished opening (is the display asleep?)")
+        let final = frame(of: mounted.area.groups[0]).maxX
+        let between = Set(edges.filter { $0 > final + 1 && $0 < edges[0] - 1 })
+        XCTAssertGreaterThanOrEqual(between.count, 3, "the edge jumped instead of moving: \(edges)")
+        XCTAssertEqual(edges, edges.sorted(by: >), "the edge went back and forth")
+        XCTAssertEqual(widths, [frame(of: group).width], "the tab was laid out at another width on the way")
+        // Width changes: AppKit also sets the frame it already has.
+        let changes = leftProbe.log.filter { entry in
+            guard let w = entry.split(separator: " ").first.map(String.init), Int(w) != nil, w != width else {
+                return false
+            }
+            width = w
+            return true
+        }
+        let divider = Int(mounted.area.splitView.dividerThickness)
+        XCTAssertEqual(changes.first, "\(start - divider) still", "the other editor moved before the drag: \(changes)")
+        XCTAssertGreaterThan(changes.count, 1, "premise: the other editor narrowed")
+        XCTAssertTrue(
+            changes.dropFirst().allSatisfy { $0.hasSuffix("live") },
+            "the other editor narrowed outside a live resize: \(changes)")
     }
 
     func testClosingTheLastTabOfTheRightEditorClosesIt() throws {
@@ -700,7 +751,7 @@ final class EditorAreaTests: XCTestCase {
         let right = try XCTUnwrap(
             mounted.area.addGroup(
                 with: NSTabViewItem(viewController: ProbeViewController(title: "Right"))))
-        settle(mounted.window)
+        await finishOpening(mounted)
         let resting = try tabView(titled: "Right", in: right.tabBar)
         let rest = resting.frame
 
@@ -729,7 +780,7 @@ final class EditorAreaTests: XCTestCase {
         let right = try XCTUnwrap(
             mounted.area.addGroup(
                 with: NSTabViewItem(viewController: ProbeViewController(title: "Right"))))
-        settle(mounted.window)
+        finishOpening(mounted)
         let dragged = mounted.probes[0]
 
         left.tabBar.dragWillBegin(tabAt: 0)
@@ -760,7 +811,7 @@ final class EditorAreaTests: XCTestCase {
         let right = try XCTUnwrap(
             mounted.area.addGroup(
                 with: NSTabViewItem(viewController: ProbeViewController(title: "Right"))))
-        settle(mounted.window)
+        finishOpening(mounted)
 
         mounted.area.moveTab(at: 0, of: left, to: right, at: 1)
 
@@ -871,7 +922,7 @@ final class EditorAreaTests: XCTestCase {
         let mounted = mount(tabs: 1)
         defer { mounted.window.close() }
         mounted.area.addGroup(with: NSTabViewItem(viewController: ProbeViewController(title: "R")))
-        settle(mounted.window)
+        finishOpening(mounted)
         let probe = mounted.probes[0].probe
         let split = mounted.area.splitView
         let divider = frame(of: mounted.area.groups[0]).maxX + split.dividerThickness / 2
@@ -903,7 +954,7 @@ final class EditorAreaTests: XCTestCase {
         defer { mounted.window.close() }
         let rightProbe = ProbeViewController(title: "Right")
         mounted.area.addGroup(with: NSTabViewItem(viewController: rightProbe))
-        settle(mounted.window)
+        finishOpening(mounted)
         XCTAssertIdentical(mounted.area.activeViewController, rightProbe, "premise")
 
         mounted.window.makeFirstResponder(mounted.probes[0].field)
@@ -920,7 +971,7 @@ final class EditorAreaTests: XCTestCase {
         defer { mounted.window.close() }
         let rightProbe = ProbeViewController(title: "Right")
         mounted.area.addGroup(with: NSTabViewItem(viewController: rightProbe))
-        settle(mounted.window)
+        finishOpening(mounted)
         let left = mounted.probes[0].probe
 
         NSApp.sendEvent(
@@ -1187,6 +1238,44 @@ final class EditorAreaTests: XCTestCase {
     /// view, which makes `frame` relative to that.
     private func frame(of group: EditorGroupViewController) -> NSRect {
         group.view.convert(group.view.bounds, to: (group.parent as? NSSplitViewController)?.splitView)
+    }
+
+    /// Waits for a second editor to finish opening: it comes in from the
+    /// trailing edge, and until it has the editors overlap.
+    private func finishOpening(_ mounted: Mounted, file: StaticString = #filePath, line: UInt = #line) {
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline, !opened(mounted.area) {
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
+        }
+        XCTAssertTrue(
+            opened(mounted.area),
+            "the editor never finished opening (is the display asleep?): \(mounted.area.groups.map(frame(of:))) in \(mounted.area.splitView.bounds)",
+            file: file, line: line)
+        settle(mounted.window)
+    }
+
+    /// The same wait for an async test. Its body holds the main queue, which
+    /// AppKit advances the animation on, so it has to suspend rather than run
+    /// the run loop — measured: run, the editor never opened.
+    private func finishOpening(_ mounted: Mounted, file: StaticString = #filePath, line: UInt = #line) async {
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline, !opened(mounted.area) {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(
+            opened(mounted.area),
+            "the editor never finished opening (is the display asleep?): \(mounted.area.groups.map(frame(of:))) in \(mounted.area.splitView.bounds)",
+            file: file, line: line)
+        settle(mounted.window)
+    }
+
+    /// Side by side inside the split: neither covered nor pushed past its edge.
+    private func opened(_ area: EditorAreaViewController) -> Bool {
+        let groups = area.groups
+        guard groups.count == 2 else { return false }
+        let (left, right) = (frame(of: groups[0]), frame(of: groups[1]))
+        return abs(left.maxX + area.splitView.dividerThickness - right.minX) < 0.5
+            && right.maxX <= area.splitView.bounds.maxX + 0.5 && !area.splitView.inLiveResize
     }
 
     private func settle(_ window: NSWindow) {

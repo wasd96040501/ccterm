@@ -55,14 +55,15 @@ final class DocumentHeaderTests: XCTestCase {
             ToolCallFixture.failedBash("make test", exit: 65, output: "error: nope\n** TEST FAILED **"))
         XCTAssertEqual(
             summary.status.string,
-            String(localized: "Failed") + " · " + String(localized: "exit \(65)") + " · " + WorkLineWriter.format(48))
+            String(localized: "Failed") + " · " + String(localized: "exit \(65)") + " · "
+                + TimeInterval(48).durationText)
         XCTAssertEqual(summary.status.runs.first, .init(text: String(localized: "Failed"), style: .failure))
         XCTAssertEqual(summary.stdout, "error: nope\n** TEST FAILED **", "the exit line is the status, not output")
     }
 
     func testASuccessWritesOnlyTheTimeAndTheOneWarning() {
         let summary = CommandSummary(ToolCallFixture.bash("ls", stdout: "a\nb", sandboxOff: true, duration: 3))
-        XCTAssertEqual(summary.status.string, WorkLineWriter.format(3))
+        XCTAssertEqual(summary.status.string, TimeInterval(3).durationText)
         XCTAssertEqual(summary.warning, String(localized: "Sandbox off"))
         XCTAssertNil(CommandSummary(ToolCallFixture.bash("ls", stdout: "a")).warning)
         XCTAssertEqual(summary.stdout, "a\nb")

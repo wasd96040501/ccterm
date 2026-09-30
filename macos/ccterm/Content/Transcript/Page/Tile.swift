@@ -35,12 +35,9 @@ nonisolated struct Tile: Sendable, Equatable {
 
     var glyph: Glyph
     var state: State
+}
 
-    init(glyph: Glyph, state: State) {
-        self.glyph = glyph
-        self.state = state
-    }
-
+nonisolated extension Tile {
     /// The tile of one item's calls: the glyph of its first call's kind, the
     /// state of its last.
     init(calls: [ToolCall]) {

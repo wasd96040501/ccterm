@@ -28,7 +28,7 @@ nonisolated extension DocumentHeader {
         let path = calls.first?.filePath ?? ""
         let name = (path as NSString).lastPathComponent
         return DocumentHeader(
-            tile: WorkLineWriter(workingDirectory: workingDirectory).line(for: calls, standalone: true).tile,
+            tile: Tile(calls: calls),
             crumbs: crumbs(of: path, workingDirectory: workingDirectory), stat: stat, title: name)
     }
 

@@ -11,7 +11,7 @@ nonisolated extension DocumentHeader {
     static func command(_ call: ToolCall) -> DocumentHeader {
         let heading = CommandSummary(call).heading
         return DocumentHeader(
-            tile: WorkLineWriter(workingDirectory: nil).line(for: [call], standalone: true).tile, crumbs: [heading],
+            tile: Tile(calls: [call]), crumbs: [heading],
             title: cut(heading))
     }
 
@@ -21,7 +21,7 @@ nonisolated extension DocumentHeader {
     }
 
     private static func cut(_ text: String) -> String {
-        let line = WorkLineWriter.firstLine(text)
+        let line = text.firstLine
         return line.count > tabTitleLength ? String(line.prefix(tabTitleLength - 1)) + "…" : line
     }
 }

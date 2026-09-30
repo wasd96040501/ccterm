@@ -43,7 +43,7 @@ final class CommandCardSelectionTests: XCTestCase {
         self.stage = stage
         stage.drain()
         let status = try XCTUnwrap(
-            stage.findAll(NSTextField.self).first { $0.stringValue == WorkLineWriter.format(2) },
+            stage.findAll(NSTextField.self).first { $0.stringValue == TimeInterval(2).durationText },
             "premise: the status line shows the time")
         let text = try XCTUnwrap(stage.find(NSTextView.self), "premise: the output is text")
 

@@ -84,6 +84,8 @@ enum WindowCapture {
         guard #available(macOS 14.4, *) else {
             throw XCTSkip("capturing an own window without consent needs macOS 14.4")
         }
+        try await CaptureLease.take()
+
         // Every test window is parked on the same point, so the one being
         // captured is brought over the others — `orderFront` does not do that
         // for an application that is not active, and a covered point is a window
@@ -99,12 +101,14 @@ enum WindowCapture {
         // frames later does not. Measured outside XCTest: back to back, three of
         // seven fail with `-3811` or an `InvalidTransition`, with the window
         // already listed `isOnScreen`, so there is no state to wait on instead.
+        // A request that went unanswered is not one of those: it was dropped,
+        // and asking again only waits out the deadline again.
         var attempt = 0
         while true {
             attempt += 1
             do {
                 return try await captureOnce(window)
-            } catch  where attempt < 30 {
+            } catch  where attempt < 30 && !(error is Unanswered) {
                 try await nextFrames(2, of: window)
             }
         }
@@ -112,7 +116,9 @@ enum WindowCapture {
 
     @available(macOS 14.4, *)
     private static func captureOnce(_ window: NSWindow) async throws -> CGImage {
-        let content = try await SCShareableContent.currentProcess
+        let content = try await answered("SCShareableContent.currentProcess") {
+            try await SCShareableContent.currentProcess
+        }
         let listed = try XCTUnwrap(
             content.windows.first { $0.windowID == CGWindowID(window.windowNumber) },
             "the window server does not list the window as this process's")
@@ -122,8 +128,37 @@ enum WindowCapture {
         configuration.height = Int(filter.contentRect.height * CGFloat(filter.pointPixelScale))
         configuration.showsCursor = false
         configuration.ignoreShadowsSingleWindow = true
-        return try await SCScreenshotManager.captureImage(
-            contentFilter: filter, configuration: configuration)
+        return try await answered("SCScreenshotManager.captureImage") {
+            try await SCScreenshotManager.captureImage(
+                contentFilter: filter, configuration: configuration)
+        }
+    }
+
+    /// How long a ScreenCaptureKit request may go unanswered. One takes a tenth
+    /// of a second; a request replayd has dropped is never answered at all — no
+    /// reply and no error — so without a deadline the test waits forever.
+    private static let answerDeadline: TimeInterval = 10
+
+    /// `request`'s answer, or `Unanswered` once `answerDeadline` has passed. The
+    /// request is abandoned rather than cancelled, because a dropped one cannot
+    /// be: nothing is left to finish it.
+    private static func answered<T>(
+        _ request: String, _ call: @escaping @MainActor () async throws -> T
+    ) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            let reply = Reply(continuation)
+            reply.deadline = Task { @MainActor in
+                try await Task.sleep(nanoseconds: UInt64(answerDeadline * 1_000_000_000))
+                reply.finish(.failure(Unanswered(request: request, seconds: answerDeadline)))
+            }
+            Task { @MainActor in
+                do {
+                    reply.finish(.success(try await call()))
+                } catch {
+                    reply.finish(.failure(error))
+                }
+            }
+        }
     }
 
     /// Waits until the display the window is on has shown frames for `seconds` —
@@ -199,5 +234,96 @@ private final class FrameTicker: NSObject {
         guard let resume else { return }
         self.resume = nil
         resume.resume(returning: !timedOut)
+    }
+}
+
+/// A ScreenCaptureKit request that got no answer before its deadline.
+private struct Unanswered: Error, CustomStringConvertible {
+    let request: String
+    let seconds: TimeInterval
+
+    var description: String {
+        "ScreenCaptureKit did not answer \(request) in \(Int(seconds)) s — replayd dropped the request"
+    }
+}
+
+/// Whichever side of `answered(_:_:)` gets there first — the answer or the
+/// deadline — hands its result on; the other finds nobody waiting.
+@MainActor
+private final class Reply<T> {
+
+    private var continuation: CheckedContinuation<T, Error>?
+    var deadline: Task<Void, Error>?
+
+    init(_ continuation: CheckedContinuation<T, Error>) {
+        self.continuation = continuation
+    }
+
+    func finish(_ result: Result<T, Error>) {
+        guard let continuation else { return }
+        self.continuation = nil
+        deadline?.cancel()
+        continuation.resume(with: result)
+    }
+}
+
+/// ScreenCaptureKit serves one test process at a time — for as long as that
+/// process lives, not for as long as it captures.
+///
+/// replayd, the daemon behind ScreenCaptureKit, tells its clients apart by the
+/// path of their executable, and every test process is the same `xctest`. A
+/// second one connecting evicts the first; each reconnects and evicts the
+/// other, and a request in flight on an evicted connection is dropped with no
+/// reply. Measured with one plain executable run twice: two copies capturing at
+/// once both waited forever; a second copy capturing while the first sat idle
+/// after its own capture waited forever too; two *different* executables
+/// captured side by side without a miss. So it is the process, not the
+/// capture, that has to be serialised.
+///
+/// The first capture in a process takes a machine-wide `flock` and never gives
+/// it back — the kernel releases it when the process exits. A test process
+/// elsewhere (another worktree's `make test-kit`) waits for it at its own first
+/// capture, until `deadline`.
+@MainActor
+private enum CaptureLease {
+
+    static let path = "/tmp/xctest-screencapturekit.lock"
+
+    /// Longer than a whole TranscriptKit run takes on a loaded machine.
+    static let deadline: TimeInterval = 300
+
+    private static var held: Int32?
+
+    static func take() async throws {
+        guard held == nil else { return }
+        let file = open(path, O_CREAT | O_RDWR | O_CLOEXEC, 0o666)
+        guard file >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        let until = Date(timeIntervalSinceNow: deadline)
+        while flock(file, LOCK_EX | LOCK_NB) != 0 {
+            let failure = errno
+            guard failure == EWOULDBLOCK else {
+                close(file)
+                throw POSIXError(POSIXErrorCode(rawValue: failure) ?? .EIO)
+            }
+            guard Date() < until else {
+                let holder = (try? String(contentsOfFile: path, encoding: .utf8)) ?? "?"
+                close(file)
+                throw Held(holder: holder, seconds: deadline)
+            }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        held = file
+        let pid = Data("\(getpid())".utf8)
+        ftruncate(file, 0)
+        _ = pid.withUnsafeBytes { pwrite(file, $0.baseAddress, pid.count, 0) }
+    }
+
+    private struct Held: Error, CustomStringConvertible {
+        let holder: String
+        let seconds: TimeInterval
+
+        var description: String {
+            "test process \(holder) held ScreenCaptureKit for longer than \(Int(seconds)) s"
+        }
     }
 }

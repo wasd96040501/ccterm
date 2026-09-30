@@ -29,6 +29,7 @@ Every test mounts through `TestWindow.make`. The window is **really on screen** 
 
 - Captures fail transiently (`-3811`, invalid transition) on a just-ordered window or back-to-back — a capture orders front, waits two display-link frames, and retries up to 30 times two frames apart.
 - Frame waits have a 5 s deadline, then throw `XCTSkip` (a locked or sleeping display presents no frames).
+- **One `xctest` process captures at a time, machine-wide.** replayd tells clients apart by executable path, and every test process is the same `xctest`: two that have both touched ScreenCaptureKit evict each other forever and their requests are dropped unanswered — even when one is idle. So a process's first capture takes `/tmp/xctest-screencapturekit.lock` (`flock`) until it exits; a concurrent `make test-kit` waits there. Every ScreenCaptureKit request also has a 10 s deadline and fails as `Unanswered` rather than hanging.
 
 ## What a test cannot do here (measured)
 

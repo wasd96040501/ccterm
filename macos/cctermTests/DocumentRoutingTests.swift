@@ -1,3 +1,4 @@
+import AgentSDK
 import AppKit
 import TranscriptWorkspace
 import XCTest
@@ -35,7 +36,7 @@ final class DocumentRoutingTests: XCTestCase {
     }
 
     func testAClickOpensTheDocumentInTheOtherEditorsTemporaryTab() throws {
-        split.transcriptViewController(transcript, open: document("c1"), pinned: false)
+        open(document("c1"), pinned: false)
         XCTAssertEqual(area.groups.count, 2, "the first document splits the area")
         XCTAssertEqual(references(in: area.groups[0]), [], "the transcript's editor keeps only the transcript")
         let other = area.groups[1]
@@ -45,34 +46,43 @@ final class DocumentRoutingTests: XCTestCase {
     }
 
     func testTheNextClickReplacesItWhereItStands() {
-        split.transcriptViewController(transcript, open: document("c1"), pinned: false)
-        split.transcriptViewController(transcript, open: document("c2"), pinned: false)
+        open(document("c1"), pinned: false)
+        open(document("c2"), pinned: false)
         XCTAssertEqual(area.groups.count, 2)
         XCTAssertEqual(references(in: area.groups[1]), [reference("c2")])
     }
 
     func testADoubleClickGivesItATabThatStays() {
-        split.transcriptViewController(transcript, open: document("c1"), pinned: true)
-        split.transcriptViewController(transcript, open: document("c2"), pinned: false)
+        open(document("c1"), pinned: true)
+        open(document("c2"), pinned: false)
         let other = area.groups[1]
         XCTAssertEqual(references(in: other), [reference("c1"), reference("c2")])
         XCTAssertIdentical(other.previewTabViewItem, other.tabViewItems.last)
     }
 
     func testAnOpenDocumentIsBroughtForwardNotOpenedAgain() {
-        split.transcriptViewController(transcript, open: document("c1"), pinned: true)
-        split.transcriptViewController(transcript, open: document("c2"), pinned: true)
-        split.transcriptViewController(transcript, open: document("c1"), pinned: false)
+        open(document("c1"), pinned: true)
+        open(document("c2"), pinned: true)
+        open(document("c1"), pinned: false)
         let other = area.groups[1]
         XCTAssertEqual(references(in: other), [reference("c1"), reference("c2")])
         XCTAssertEqual(
-            other.tabViewItems[other.selectedTabViewItemIndex].identifier as? DocumentReference, reference("c1"))
+            other.tabViewItems[other.selectedTabViewItemIndex].identifier as? TranscriptTab,
+            .document(reference("c1")))
     }
 
     func testHistoryMakesAClosedDocumentAgainFromItsReference() throws {
-        let item = try XCTUnwrap(split.editorArea(area, tabViewItemWithIdentifier: reference("c1")))
-        XCTAssertEqual(item.identifier as? DocumentReference, reference("c1"))
+        let item = try XCTUnwrap(
+            split.editorArea(area, tabViewItemWithIdentifier: TranscriptTab.document(reference("c1"))))
+        XCTAssertEqual(item.identifier as? TranscriptTab, .document(reference("c1")))
         XCTAssertTrue(item.viewController is DocumentViewController)
+    }
+
+    /// What a transcript's press on an item asks of the window.
+    private func open(_ document: Document, pinned: Bool) {
+        split.transcriptTab(
+            transcript, didRequestOpen: .document(document.reference), pinned: pinned,
+            makeItem: { TranscriptTab.makeItem(document, load: { _ in Transcript(data: Data()) }, delegate: split) })
     }
 
     private func reference(_ id: String) -> DocumentReference {
@@ -84,6 +94,8 @@ final class DocumentRoutingTests: XCTestCase {
     }
 
     private func references(in group: EditorGroupViewController) -> [DocumentReference] {
-        group.tabViewItems.compactMap { $0.identifier as? DocumentReference }
+        group.tabViewItems.compactMap {
+            if case .document(let reference)? = TranscriptTab(identifier: $0.identifier) { reference } else { nil }
+        }
     }
 }

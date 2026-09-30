@@ -42,7 +42,7 @@ extension TranscriptTab {
     ) -> NSTabViewItem {
         switch tab {
         case .transcript(let url):
-            let item = NSTabViewItem(viewController: makeTranscript(url, title: title, load: load))
+            let item = NSTabViewItem(viewController: makeTranscript(url, title: title, load: load, delegate: delegate))
             item.identifier = tab
             return item
         case .document(let reference):
@@ -82,12 +82,14 @@ extension TranscriptTab {
 
     // MARK: - Building
 
-    /// The transcript tab's controller still reports through
-    /// `TranscriptViewControllerDelegate` until it takes `TranscriptTabDelegate`.
+    /// Every transcript controller the feature builds — a tab's, a subagent's
+    /// conversation — reports to the same delegate.
     @MainActor private static func makeTranscript(
-        _ url: URL, title: String, load: @escaping TranscriptLoader
+        _ url: URL, title: String, load: @escaping TranscriptLoader, delegate: TranscriptTabDelegate?
     ) -> TranscriptViewController {
-        TranscriptViewController(fileURL: url, title: title, load: load)
+        let transcript = TranscriptViewController(fileURL: url, title: title, load: load)
+        transcript.delegate = delegate
+        return transcript
     }
 
     @MainActor private static func makeDocumentItem(
@@ -102,7 +104,9 @@ extension TranscriptTab {
                     (try? await load(reference.transcriptURL)).flatMap { TranscriptPage($0).document(reference) }
                 }.value
             },
-            makeConversation: { url, title in makeTranscript(url, title: title, load: load) },
+            makeConversation: { [weak delegate] url, title in
+                makeTranscript(url, title: title, load: load, delegate: delegate)
+            },
             showInTranscript: { [weak delegate] reference in
                 guard let delegate, let controller else { return }
                 delegate.transcriptTab(

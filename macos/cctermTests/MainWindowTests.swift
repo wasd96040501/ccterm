@@ -197,7 +197,11 @@ final class MainWindowTests: XCTestCase {
         let document = Document(
             reference: DocumentReference(transcriptURL: transcript.fileURL, id: "c1"),
             content: .compactionSummary("Summary"), workingDirectory: nil)
-        split.transcriptViewController(transcript, open: document, pinned: false)
+        split.transcriptTab(
+            transcript, didRequestOpen: .document(document.reference), pinned: false,
+            makeItem: {
+                TranscriptTab.makeItem(document, load: { _ in Transcript(data: Data()) }, delegate: split)
+            })
         await stage.settle()
         XCTAssertTrue(
             split.editorArea.activeViewController is DocumentViewController, "the document's editor is active")
@@ -231,7 +235,11 @@ final class MainWindowTests: XCTestCase {
         let document = Document(
             reference: DocumentReference(transcriptURL: transcript.fileURL, id: "c1"),
             content: .compactionSummary("Summary"), workingDirectory: nil)
-        split.transcriptViewController(transcript, open: document, pinned: false)
+        split.transcriptTab(
+            transcript, didRequestOpen: .document(document.reference), pinned: false,
+            makeItem: {
+                TranscriptTab.makeItem(document, load: { _ in Transcript(data: Data()) }, delegate: split)
+            })
         await stage.settle()
         let opened = try XCTUnwrap(split.editorArea.activeViewController as? DocumentViewController)
         let responder = try XCTUnwrap(window.firstResponder as? NSView, "nothing has the focus")

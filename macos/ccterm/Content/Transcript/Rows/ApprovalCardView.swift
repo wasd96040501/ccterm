@@ -25,7 +25,7 @@ final class ApprovalCardView: NSView, PageRowView {
     private static let radius: CGFloat = 14
 
     private let outline = CALayer()
-    private let tile = ToolTileView()
+    private let tile = TileView()
     private let title = NSTextField(labelWithString: "")
     private let body = ApprovalBodyView()
     private let showAll = NSButton()
@@ -200,11 +200,11 @@ final class ApprovalCardView: NSView, PageRowView {
 
     @objc private func showAllPressed() {
         guard let model else { return }
-        delegate?.rowView(self, open: model.id, pinned: false)
+        delegate?.pageRowView(self, didRequestDocument: model.id, pinned: false)
     }
 
     private func decide(_ decision: Decision) {
         guard let model else { return }
-        delegate?.rowView(self, decide: decision, for: model.id)
+        delegate?.pageRowView(self, didDecide: decision, forCall: model.id)
     }
 }

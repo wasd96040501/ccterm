@@ -10,8 +10,8 @@ final class ApprovalBarView: NSView {
 
     private var callID: String?
 
-    private lazy var tileView: ToolTileView = {
-        let tile = ToolTileView()
+    private lazy var tileView: TileView = {
+        let tile = TileView()
         tile.translatesAutoresizingMaskIntoConstraints = false
         tile.setContentHuggingPriority(.required, for: .horizontal)
         return tile
@@ -108,11 +108,11 @@ final class ApprovalBarView: NSView {
 
     @objc private func deny() {
         guard let callID else { return }
-        delegate?.approvalBarView(self, decide: .deny, for: callID)
+        delegate?.approvalBarView(self, didDecide: .deny, forCall: callID)
     }
 
     @objc private func allow() {
         guard let callID else { return }
-        delegate?.approvalBarView(self, decide: .allow, for: callID)
+        delegate?.approvalBarView(self, didDecide: .allow, forCall: callID)
     }
 }

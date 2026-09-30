@@ -11,11 +11,13 @@ import XCTest
 final class WorkLineRowViewPressTests: XCTestCase {
     private final class Spy: PageRowViewDelegate {
         var events: [String] = []
-        func rowView(_ rowView: NSView, open id: String, pinned: Bool) { events.append("open \(id)") }
-        func rowView(_ rowView: NSView, toggle runID: String, all: Bool) { events.append("toggle \(runID)") }
-        func rowView(_ rowView: NSView, showAllOf runID: String) { events.append("show all \(runID)") }
-        func rowView(_ rowView: NSView, revealOrigin callID: String) { events.append("reveal \(callID)") }
-        func rowView(_ rowView: NSView, decide decision: Decision, for callID: String) {}
+        func pageRowView(_ rowView: NSView, didRequestDocument id: String, pinned: Bool) { events.append("open \(id)") }
+        func pageRowView(_ rowView: NSView, didToggleDisclosureOf runID: String, inAllRuns all: Bool) {
+            events.append("toggle \(runID)")
+        }
+        func pageRowView(_ rowView: NSView, didRequestAllItemsOf runID: String) { events.append("show all \(runID)") }
+        func pageRowView(_ rowView: NSView, didRequestOriginOf callID: String) { events.append("reveal \(callID)") }
+        func pageRowView(_ rowView: NSView, didDecide decision: Decision, forCall callID: String) {}
     }
 
     func testTheNamedFileOpensItsDocumentAndTheRestTogglesTheRun() throws {

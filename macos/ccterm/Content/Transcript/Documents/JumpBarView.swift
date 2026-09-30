@@ -17,8 +17,8 @@ final class JumpBarView: NSView {
 
     private var crumbs: [String] = []
 
-    private lazy var tileView: ToolTileView = {
-        let tile = ToolTileView()
+    private lazy var tileView: TileView = {
+        let tile = TileView()
         tile.translatesAutoresizingMaskIntoConstraints = false
         return tile
     }()
@@ -125,7 +125,7 @@ final class JumpBarView: NSView {
     }
 
     @objc private func showInTranscript() {
-        delegate?.jumpBarViewShowInTranscript(self)
+        delegate?.jumpBarViewDidRequestShowInTranscript(self)
     }
 
     // MARK: - Crumbs

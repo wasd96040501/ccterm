@@ -54,7 +54,7 @@ final class ShowMoreRowView: NSView, PageRowView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        if let runID { delegate?.rowView(self, showAllOf: runID) }
+        if let runID { delegate?.pageRowView(self, didRequestAllItemsOf: runID) }
         super.mouseDown(with: event)
     }
 }

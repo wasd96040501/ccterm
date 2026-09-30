@@ -62,8 +62,8 @@ final class WorkLineRowView: NSView, PageRowView {
 
     private static let accessorySide: CGFloat = 12
 
-    private let tile = ToolTileView()
-    private let words = Words()
+    private let tile = TileView()
+    private let wordsView = WordsView()
     private let accessory = NSImageView()
     private let wash = CALayer()
 
@@ -89,7 +89,7 @@ final class WorkLineRowView: NSView, PageRowView {
         wash.actions = ["position": NSNull(), "bounds": NSNull(), "backgroundColor": NSNull()]
 
         accessory.imageScaling = .scaleNone
-        for view in [words, tile, accessory] { addSubview(view) }
+        for view in [wordsView, tile, accessory] { addSubview(view) }
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
     }
@@ -225,18 +225,18 @@ final class WorkLineRowView: NSView, PageRowView {
         func field(_ x: CGFloat, _ width: CGFloat, _ height: CGFloat) -> NSRect {
             NSRect(x: x, y: center - height / 2, width: width, height: height)
         }
-        words.summary = field(textX, summaryWidth, Self.textHeight)
-        words.exceptions = field(textX + summaryWidth + exceptionsGap, exceptionsWidth, Self.textHeight)
-        words.meta = field(metaX, metaWidth, Self.metaHeight)
-        words.texts = (summaryText, exceptionsText, metaText)
-        words.frame = bounds
-        words.needsDisplay = true
+        wordsView.summary = field(textX, summaryWidth, Self.textHeight)
+        wordsView.exceptions = field(textX + summaryWidth + exceptionsGap, exceptionsWidth, Self.textHeight)
+        wordsView.meta = field(metaX, metaWidth, Self.metaHeight)
+        wordsView.texts = (summaryText, exceptionsText, metaText)
+        wordsView.frame = bounds
+        wordsView.needsDisplay = true
     }
 
     /// The line's words, drawn where `layout()` put them. A view of its own
     /// rather than the row's drawing: the wash is a layer over the row's own
     /// contents, and the words go on top of it.
-    private final class Words: NSView {
+    private final class WordsView: NSView {
         var texts = (NSAttributedString(), NSAttributedString(), NSAttributedString())
         var summary = NSRect.zero
         var exceptions = NSRect.zero
@@ -355,23 +355,24 @@ final class WorkLineRowView: NSView, PageRowView {
         let point = convert(event.locationInWindow, from: nil)
         var opened: String?
         if let origin = model.origin, accessory.frame.insetBy(dx: -6, dy: -6).contains(point) {
-            delegate.rowView(self, revealOrigin: origin)
+            delegate.pageRowView(self, didRequestOriginOf: origin)
         } else if let id = openedNoun(at: point) {
             opened = id
         } else {
             switch model.action {
-            case .toggle(let id, _): delegate.rowView(self, toggle: id, all: event.modifierFlags.contains(.option))
+            case .toggle(let id, _):
+                delegate.pageRowView(self, didToggleDisclosureOf: id, inAllRuns: event.modifierFlags.contains(.option))
             case .open(let id): opened = id
             }
         }
         guard let opened else { return super.mouseDown(with: event) }
         // A press that opens a document stops here: the focus goes to it.
-        delegate.rowView(self, open: opened, pinned: event.clickCount == 2)
+        delegate.pageRowView(self, didRequestDocument: opened, pinned: event.clickCount == 2)
     }
 
     /// The id a named file under `point` opens, when it is a link.
     private func openedNoun(at point: NSPoint) -> String? {
-        let rect = words.summary
+        let rect = wordsView.summary
         guard rect.contains(point) else { return nil }
         let storage = NSTextStorage(attributedString: summaryText)
         let container = NSTextContainer(size: NSSize(width: rect.width, height: .greatestFiniteMagnitude))

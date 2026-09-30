@@ -5,7 +5,7 @@ import Foundation
 /// it per run.
 nonisolated enum RunDisclosure: Sendable, Equatable {
     case collapsed
-    /// The first `CorpusThresholds.listedItems` items, then *Show N more*.
+    /// The first `PageThresholds.listedItems` items, then *Show N more*.
     case expanded
     /// Every item: the reader pressed *Show N more*.
     case showingAll

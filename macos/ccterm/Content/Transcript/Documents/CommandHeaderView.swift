@@ -145,7 +145,7 @@ final class CommandHeaderView: NSView {
         label.font = .systemFont(ofSize: 12)
         label.textColor = .tertiaryLabelColor
         guard summary.isRunning else { return label }
-        let tile = ToolTileView()
+        let tile = TileView()
         tile.tile = Tile(glyph: .tool(.command), state: .running)
         let row = NSStackView(views: [tile, label])
         row.spacing = 8

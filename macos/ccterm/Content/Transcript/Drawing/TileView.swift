@@ -14,7 +14,7 @@ import AppKit
 /// Every row that shows work — a run, an item, news, a caption, a jump bar —
 /// draws its tile with this view.
 @MainActor
-final class ToolTileView: NSView {
+final class TileView: NSView {
     private static let side: CGFloat = 16
 
     var tile = Tile(glyph: .tool(.other), state: .done) {

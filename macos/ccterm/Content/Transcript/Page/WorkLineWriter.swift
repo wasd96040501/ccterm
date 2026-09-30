@@ -66,8 +66,8 @@ nonisolated struct WorkLineWriter {
             let count = items.flatMap(\.calls).count
             return StyledText(count == 1 ? String(localized: "1 call") : String(localized: "\(count) calls"))
         }
-        let more = clauses.count - CorpusThresholds.clauses
-        clauses = Array(clauses.prefix(CorpusThresholds.clauses))
+        let more = clauses.count - PageThresholds.clauses
+        clauses = Array(clauses.prefix(PageThresholds.clauses))
         for index in clauses.indices.dropFirst() { clauses[index] = Self.lowercasingFirst(clauses[index]) }
         var sentence = StyledText.joined(
             clauses, separator: String(localized: ", ", comment: "Between clauses of a work summary"))
@@ -211,7 +211,7 @@ nonisolated struct WorkLineWriter {
         switch order.count {
         case 0: return nil
         case 1: return one(noun(order[0]))
-        case CorpusThresholds.namedFiles: return two(noun(order[0]), noun(order[1]))
+        case PageThresholds.namedFiles: return two(noun(order[0]), noun(order[1]))
         default: return many(order.count)
         }
     }
@@ -242,7 +242,7 @@ nonisolated struct WorkLineWriter {
                 StyledText.diffStat(
                     added: stats.map(\.added).reduce(0, +), removed: stats.map(\.removed).reduce(0, +)))
         }
-        if !live, let duration, duration >= CorpusThresholds.shownDuration {
+        if !live, let duration, duration >= PageThresholds.shownDuration {
             parts.append(StyledText(duration.durationText))
         }
         return StyledText.joined(parts, separator: "  ")
@@ -362,7 +362,7 @@ nonisolated struct WorkLineWriter {
         switch call.state {
         // The red tile says it failed and its document says why; a command keeps its time.
         case .failed:
-            guard call.kind == .command, let duration = call.duration, duration >= CorpusThresholds.shownDuration
+            guard call.kind == .command, let duration = call.duration, duration >= PageThresholds.shownDuration
             else { return StyledText() }
             return StyledText(duration.durationText)
         case .denied: return StyledText(String(localized: "Denied"))
@@ -428,7 +428,7 @@ nonisolated struct WorkLineWriter {
             }
             return StyledText()
         case .command, .tasks, .schedule, .message, .other:
-            if let duration = call.duration, duration >= CorpusThresholds.shownDuration {
+            if let duration = call.duration, duration >= PageThresholds.shownDuration {
                 return StyledText(duration.durationText)
             }
             return StyledText()

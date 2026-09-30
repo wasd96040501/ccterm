@@ -88,7 +88,7 @@ final class DocumentViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     override func loadView() {
-        view = TabView()
+        view = FocusableView()
         configureHierarchy()
         configureConstraints()
     }
@@ -96,7 +96,7 @@ final class DocumentViewController: NSViewController {
     /// The tab's own view takes the focus when the reader opens the document,
     /// as a tab view does: the window's commands (⌘W, ⌘F) then aim at this
     /// tab. A click inside moves it to what was clicked.
-    private final class TabView: NSView {
+    private final class FocusableView: NSView {
         override var acceptsFirstResponder: Bool { true }
     }
 
@@ -236,14 +236,14 @@ final class DocumentViewController: NSViewController {
 }
 
 extension DocumentViewController: JumpBarViewDelegate {
-    func jumpBarViewShowInTranscript(_ jumpBar: JumpBarView) {
+    func jumpBarViewDidRequestShowInTranscript(_ jumpBar: JumpBarView) {
         showInTranscript(reference)
     }
 }
 
 extension DocumentViewController: ApprovalBarViewDelegate {
     /// Answering a call is not wired to a live session yet.
-    func approvalBarView(_ approvalBar: ApprovalBarView, decide decision: Decision, for callID: String) {
+    func approvalBarView(_ approvalBar: ApprovalBarView, didDecide decision: Decision, forCall callID: String) {
         appLog(.info, "DocumentViewController", "decision \(decision) for \(callID) — no live session")
     }
 }

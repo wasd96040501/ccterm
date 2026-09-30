@@ -3,7 +3,7 @@ import Foundation
 /// The numbers the page decides by, each read off 1 500 real transcripts
 /// (design/transcript/research/findings.md) rather than chosen. One place, so
 /// a threshold is changed with its evidence in view.
-nonisolated enum CorpusThresholds {
+nonisolated enum PageThresholds {
     /// Items an expanded run lists before *Show N more*: 98.3 % of runs fit.
     static let listedItems = 12
     /// Files a clause names before it counts them: > 95 % of runs change two

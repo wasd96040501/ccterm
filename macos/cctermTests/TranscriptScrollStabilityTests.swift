@@ -90,7 +90,7 @@ final class TranscriptScrollStabilityTests: XCTestCase {
         _ = await centre(on: "r120c0")
         let top = rows()[firstVisibleRow()].id
         let before = screenY(of: top)
-        controller.rowView(NSView(), toggle: "r120c0", all: true)
+        controller.pageRowView(NSView(), didToggleDisclosureOf: "r120c0", inAllRuns: true)
         expanded = Set((0..<Self.runs).map { "r\($0)c0" })
         await stage.settle()
         XCTAssertEqual(transcript.numberOfRows, rows().count)
@@ -116,7 +116,7 @@ final class TranscriptScrollStabilityTests: XCTestCase {
         let lineStart = windowY(lineView)
         let nextStart = windowY(nextView)
 
-        controller.rowView(lineView, toggle: "r120c0", all: false)
+        controller.pageRowView(lineView, didToggleDisclosureOf: "r120c0", inAllRuns: false)
         expanded.insert("r120c0")
         var lineYs: [CGFloat] = []
         var nextYs: [CGFloat] = []
@@ -145,7 +145,7 @@ final class TranscriptScrollStabilityTests: XCTestCase {
     /// next entry keeps the gap between entries (design README "Spacing").
     func testAnOpenedRunsItemsSitFlushUnderItsLine() async {
         let line = await centre(on: "r120c0")
-        controller.rowView(NSView(), toggle: "r120c0", all: false)
+        controller.pageRowView(NSView(), didToggleDisclosureOf: "r120c0", inAllRuns: false)
         expanded.insert("r120c0")
         await stage.settle()
         let rows = rows()
@@ -170,7 +170,7 @@ final class TranscriptScrollStabilityTests: XCTestCase {
     /// over none of it.
     func testAnItemThatSlidesFromUnderTheStillPointerLosesItsHover() async throws {
         _ = await centre(on: "r120c0")
-        controller.rowView(NSView(), toggle: "r121c0", all: false)
+        controller.pageRowView(NSView(), didToggleDisclosureOf: "r121c0", inAllRuns: false)
         expanded.insert("r121c0")
         await stage.settle()
         let item = rows().firstIndex { $0.id.entry == "r121c0" }! + 1
@@ -187,7 +187,7 @@ final class TranscriptScrollStabilityTests: XCTestCase {
         XCTAssertEqual(arrow.alphaValue, 1, "premise: the item shows the hover")
         let before = view.convert(view.bounds, to: nil).minY
 
-        controller.rowView(NSView(), toggle: "r120c0", all: false)
+        controller.pageRowView(NSView(), didToggleDisclosureOf: "r120c0", inAllRuns: false)
         expanded.insert("r120c0")
         await stage.settle()
 
@@ -228,7 +228,7 @@ final class TranscriptScrollStabilityTests: XCTestCase {
         _ anchor: PageRow.ID, whileToggling run: String, file: StaticString = #filePath, line: UInt = #line
     ) async {
         let before = screenY(of: anchor)
-        controller.rowView(NSView(), toggle: run, all: false)
+        controller.pageRowView(NSView(), didToggleDisclosureOf: run, inAllRuns: false)
         if expanded.contains(run) { expanded.remove(run) } else { expanded.insert(run) }
         await stage.settle()
         XCTAssertEqual(transcript.numberOfRows, rows().count, "rows after toggling \(run)", file: file, line: line)

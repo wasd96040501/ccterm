@@ -5,10 +5,10 @@ import XCTest
 
 /// Every tile glyph in every state, in light and dark
 /// (design/transcript/README.md "Tile"): a row per state, a column per glyph.
-/// Review only — `make test-unit FILTER=ToolTileViewSnapshotTests`, then open
-/// `/tmp/ccterm-screenshots/ToolTileView.png`.
+/// Review only — `make test-unit FILTER=TileViewSnapshotTests`, then open
+/// `/tmp/ccterm-screenshots/TileView.png`.
 @MainActor
-final class ToolTileViewSnapshotTests: XCTestCase {
+final class TileViewSnapshotTests: XCTestCase {
     private static let glyphs: [Tile.Glyph] =
         [ToolKind.change, .create, .command, .agent, .web, .search, .read, .tasks, .schedule, .message, .other]
         .map { .tool($0) } + [.workflow, .monitor, .question, .plan]
@@ -28,7 +28,7 @@ final class ToolTileViewSnapshotTests: XCTestCase {
         }
         for (row, state) in Self.states.enumerated() {
             for (column, glyph) in Self.glyphs.enumerated() {
-                let tile = ToolTileView()
+                let tile = TileView()
                 tile.tile = Tile(glyph: glyph, state: state)
                 tile.setFrameOrigin(NSPoint(x: 12 + CGFloat(column) * Self.pitch, y: 12 + CGFloat(row) * Self.pitch))
                 panel.addSubview(tile)
@@ -48,7 +48,7 @@ final class ToolTileViewSnapshotTests: XCTestCase {
         controller.view = root
 
         let image = ViewSnapshot.renderViewController(controller, size: root.frame.size)
-        let url = ViewSnapshot.writePNG(image, name: "ToolTileView")
+        let url = ViewSnapshot.writePNG(image, name: "TileView")
         let attachment = XCTAttachment(contentsOfFile: url)
         attachment.lifetime = .keepAlways
         add(attachment)

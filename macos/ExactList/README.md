@@ -58,8 +58,8 @@ items.append(newItem)
 list.insertRows(at: [items.count - 1], withAnimation: .effectFade)   // animates by default
 
 items[3].isExpanded.toggle()
-list.performBatchUpdates(anchoring: .row(3)) { updates in              // the row the reader clicked stays put
-    updates.noteHeightOfRows(withIndexesChanged: [3])
+list.performBatchUpdates(anchoring: .row(3)) {                      // the row the reader clicked stays put
+    list.noteHeightOfRows(withIndexesChanged: [3])
 }
 
 NSAnimationContext.runAnimationGroup { context in                     // no animation: AppKit's own recipe

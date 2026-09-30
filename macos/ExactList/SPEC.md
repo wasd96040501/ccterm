@@ -143,9 +143,11 @@ written they do nothing.
   failure; `NSTableView` raises in the same situations.
   - Calling any update, `reloadData()` or scroll method from inside a data
     source or delegate callback, except `listView(_:doCommandBy:)` (K1).
-  - Calling a single-call update (U4), `reloadData()`, a scroll method or a
-    geometry query on the list from inside a batch closure. The closure's
-    `Updates` proxy is the only way in.
+  - Calling `reloadData()`, a scroll method or a geometry query (`rect(ofRow:)`,
+    `row(at:)`, `rows(in:)`) on the list from inside a batch closure. The
+    update methods are the way in: inside a closure they record (U3, U4).
+    `numberOfRows`, `view(atRow:)` and `row(for:)` don't stop there; they
+    answer from the rows as they are before the batch commits.
 
   One exception: a `performBatchUpdates` call nested inside a batch closure is
   allowed, and it flattens into the outermost batch (U3).
@@ -319,8 +321,8 @@ public enum Anchoring { case automatic, row(Int), scrollOffset }
 - **A8: tail following depends only on position.** "Following the tail" means
   `automaticallyFollowsTail` is on and the viewport is at the tail. It is
   re-evaluated after every commit and every scroll. No hidden flag remembers
-  how the viewport got there. `isFollowingTail` reports it, and
-  `listView(_:didChangeTailFollowing:)` fires only when it changes, starting
+  how the viewport got there. `listView(_:didChangeTailFollowing:)` reports it
+  and fires only when it changes, starting
   from the value it had at the load point.
 - **A9: `reloadData()`** anchors the tail if following, otherwise the offset.
   The rows after a reload may have nothing to do with the rows before it.
@@ -363,22 +365,25 @@ public enum Anchoring { case automatic, row(Int), scrollOffset }
   - `removeRows(at:)`: the indexes are in the pre-removal numbering.
   - `moveRow(at:to:)`: the same as a removal followed by an insert, except that
     the same view carries over.
-- **U3: the batch closure receives a proxy.**
-  `performBatchUpdates(anchoring:_:completionHandler:)` passes its closure an
-  `ExactListView.Updates`. The proxy has only the update methods. Geometry
-  cannot be queried in the middle of a batch, and nothing can be left
-  unbalanced. The proxy stops with a precondition failure if it is used after
-  its closure returns. Nested `performBatchUpdates` calls flatten into the
-  outermost one. The outermost call's anchoring is the one that applies, and
-  every completion handler runs when the outermost batch's animations end.
+- **U3: a batch is a closure.**
+  `performBatchUpdates(anchoring:_:completionHandler:)` runs its closure, which
+  makes its updates by calling the list's own update methods (U4); they record
+  into the batch, and the batch commits when the closure returns. A closure
+  makes an unbalanced `beginUpdates()`/`endUpdates()` pair impossible to write.
+  Geometry queries, scroll methods and `reloadData()` stop with a precondition
+  failure inside the closure (L9). Nested `performBatchUpdates` calls flatten
+  into the outermost one: their closures run in place, the outermost call's
+  anchoring is the one that applies, and every completion handler runs when the
+  outermost batch's animations end. Before the load point the closure doesn't
+  run (L5) and the completion handler still runs, asynchronously.
   *Deviation from `NSTableView`:* it uses `beginUpdates()`/`endUpdates()`
-  instead. A closure makes an unbalanced pair impossible to write, and the
-  proxy makes a query against half-applied geometry impossible to write.
+  instead.
 - **U4: single calls.** `insertRows(at:withAnimation:)`,
   `removeRows(at:withAnimation:)`, `moveRow(at:to:)`,
   `reloadData(forRowIndexes:)` and `noteHeightOfRows(withIndexesChanged:)` on
-  the list itself are each a batch of one with `.automatic` anchoring. Their
-  names and semantics match `NSTableView`.
+  the list itself record into the open batch when one is open (U3), and
+  otherwise are each a batch of one with `.automatic` anchoring. Their names
+  and semantics match `NSTableView`.
 - **U5: when heights are asked.** Heights are asked at commit, never inside
   the closure. Inserted rows and noted rows are measured at `W`, and asked
   their spacing (G7). So is any stale row the commit brings into `P`, for its
@@ -838,7 +843,7 @@ and its oracle is independent of the implementation.
 | **Recordings** (`ExactListRecordings`, `make record-list`) | The demo's own content and scenarios (`ExactListDemoSupport`) in a borderless, opaque window off screen, which AppKit leaves where it is put, so nothing shows on the display. `WindowRecorder` captures what the window server composites for that window, through ScreenCaptureKit (macOS 14). It runs as an executable, so it has the Screen Recording permission of the terminal that launched it: `xctest` lives inside Xcode.app and TCC attributes it to Xcode (measured). Without the permission it stops and says how to grant it. | None: a recording is for eyes. Every captured frame is written as a PNG named by its time from the action, with a sheet of the first half second at 60 Hz, each tile labelled with its time, and a movie. | What motion looks like, while it is being changed. Not a gate. |
 | **Demo** (`make demo-list`) | Human eyes, and VoiceOver by hand. | The checklist in `Sources/ExactListDemo/CLAUDE.md`. | What pixels and speech can't be asserted for |
 
-**Programmer errors** (L9, L10, L12, U3's closed proxy) stop the process by
+**Programmer errors** (L9, L10, L12) stop the process by
 design, so they can't be observed from inside the test process. Each one is
 run for real in a child process: `ExactListProbe`, a test-only executable,
 mounts a list in a window, commits the named violation through the public
@@ -941,10 +946,10 @@ Core imports Foundation and CoreGraphics, never AppKit.
 | `RowIndexMap` | The old↔new index mapping of a batch, built incrementally from `RowEdit`s (U2), kept as `RowRun`s (G5). |
 | `RowRun` | Internal to Core: one run of a batch in the new order, kept, moved or inserted, which is what lets planning, the heights and the stale rows skip the rows a batch didn't touch (G5). |
 | `Viewport` | `o`, `V`, `t`, `b`, and what follows from them: `oMin`/`oMax`, `U`, `P`, and whether the viewport is at the tail. |
-| `ScrollAnchor` | A resolved anchor (tail, row with `d`, or offset): resolution (A1–A3), renumbering (A4, A5), and restoring (A6, A7, W2). |
+| `ScrollAnchor` | Internal. A resolved anchor (tail, row with `d`, or offset): resolution (A1–A3), renumbering (A4, A5), and restoring (A6, A7, W2). |
 | `CommitInput` | Everything a commit is planned from: old and new heights, the map, old and new viewport, anchoring, or instead a scroll's destination (S3), tail following, whether to rescale the anchor (W2), the rows mounted before the commit, and whether it animates. |
 | `RowMotion` | One row's start and end screen top and height, and its kind and transition (M2). |
-| `CommitPlan` | A commit's outcome: the new offset, the resolved anchor, the `RowMotion`s, the amplitude `k`, and the tail state afterwards. |
+| `CommitPlan` | A commit's outcome: the new offset, the resolved anchor, the `RowMotion`s, the amplitude `k`, and the tail state afterwards. `anchor` and `amplitude` are internal. |
 | `CommitPlanner` | A pure function from `CommitInput` to `CommitPlan` (§6, §7, §8.2). |
 | `StaleRows` | Which rows are stale, and the order to refresh them in, outward from the anchor (§9). |
 
@@ -953,7 +958,6 @@ Core imports Foundation and CoreGraphics, never AppKit.
 | Type | Public? | Owns |
 |---|---|---|
 | `ExactListView` | yes | The façade: the public API, the lifecycle (§4), the batch entry points, and the width-change entry point. It holds the collaborators below. |
-| `ExactListView.Updates` | yes | The batch proxy (U3). |
 | `ExactListViewDataSource` | yes | `numberOfRows(in:)`. |
 | `ExactListViewDelegate` | yes | `heightOfRow:width:`, `customSpacingAboveRow:` (optional, G7), `viewForRow:`, `didRemove:forRow:`, `didChangeTailFollowing:`, `listViewDidScroll`, `doCommandBy:`. |
 | `ListPhase` | no | Before or after the load point, and what was stored before it: settings and the last scroll request (L3–L6, V5). |
@@ -982,7 +986,7 @@ app and the recordings run the same thing. Every type is `@MainActor`.
 | `DemoScenario` | yes | One case per item on the demo's checklist. |
 | `DemoFeed` | yes | The model, data source and delegate: rows of wrapped text, measured with the typesetter the row view draws with, and the scenarios that change them. |
 | `DemoRowView` | no | One row: a card of wrapped text with a disclosure. It always draws the whole text, cut by the card's padding, so expanding changes only its height and a collapse is an expand played backwards. |
-| `DemoTableFeed` | yes | The same rows and scenarios on a plain `NSTableView`, written as an `NSTableView` host would, for comparing the two side by side. |
+| `DemoTableFeed` | no | The same rows and scenarios on a plain `NSTableView`, written as an `NSTableView` host would, for comparing the two side by side. |
 | `DemoContentViewController` | yes | An `NSSplitViewController`: a sidebar beside the list, or, comparing, beside the list and the `DemoTableFeed` table. It runs a scenario on both, and animates the sidebar itself for `toggleSidebar`. |
 
 `ExactListDemo` keeps the app: the delegate, and a window controller that puts

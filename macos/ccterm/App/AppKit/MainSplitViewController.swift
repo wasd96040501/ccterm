@@ -185,8 +185,14 @@ extension MainSplitViewController: SidebarViewControllerDelegate {
 
 extension MainSplitViewController: EditorAreaViewControllerDelegate {
     /// Tells the window when the reader is in another transcript, or in none.
+    /// A document is in its transcript's session.
     func editorArea(_ editorArea: EditorAreaViewController, didActivate viewController: NSViewController?) {
-        let transcript = (viewController as? TranscriptViewController)?.fileURL
+        let transcript: URL? =
+            switch viewController {
+            case let transcript as TranscriptViewController: transcript.fileURL
+            case let document as DocumentViewController: document.transcriptURL
+            default: nil
+            }
         guard transcript != shownTranscript else { return }
         shownTranscript = transcript
         delegate?.mainSplitViewController(self, didShowTranscriptAt: transcript)

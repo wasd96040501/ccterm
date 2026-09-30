@@ -17,6 +17,10 @@ final class DocumentViewController: NSViewController {
 
     private let reference: DocumentReference
 
+    /// The transcript this document belongs to: its session is the reader's
+    /// while the document is the active tab.
+    var transcriptURL: URL { reference.transcriptURL }
+
     weak var delegate: DocumentViewControllerDelegate?
 
     /// What the reader opened, until it is shown.

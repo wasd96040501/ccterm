@@ -7,27 +7,27 @@ import AppKit
 @MainActor
 protocol EditorTabBarDelegate: AnyObject {
 
-    func tabBar(_ tabBar: EditorTabBar, didSelectTabAt index: Int)
+    func editorTabBar(_ tabBar: EditorTabBar, didRequestSelectingTabAt index: Int)
 
-    func tabBar(_ tabBar: EditorTabBar, didCloseTabAt index: Int)
+    func editorTabBar(_ tabBar: EditorTabBar, didRequestClosingTabAt index: Int)
 
-    func tabBar(_ tabBar: EditorTabBar, didDoubleClickTabAt index: Int)
+    func editorTabBar(_ tabBar: EditorTabBar, didDoubleClickTabAt index: Int)
 
     /// The pin of the tab at `index` was clicked: the tab is to be pinned, or
     /// unpinned if it is.
-    func tabBar(_ tabBar: EditorTabBar, didClickPinOfTabAt index: Int)
+    func editorTabBar(_ tabBar: EditorTabBar, didClickPinOfTabAt index: Int)
 
     /// Something from outside the editors was dropped into the gap at `index`:
     /// whether it opened there.
-    func tabBar(_ tabBar: EditorTabBar, openDrop draggingInfo: NSDraggingInfo, at index: Int) -> Bool
+    func editorTabBar(_ tabBar: EditorTabBar, acceptDrop draggingInfo: NSDraggingInfo, at index: Int) -> Bool
 
     /// The menu a right-click on the tab at `index` opens, or `nil` for none.
-    func tabBar(_ tabBar: EditorTabBar, menuForTabAt index: Int) -> NSMenu?
+    func editorTabBar(_ tabBar: EditorTabBar, menuForTabAt index: Int) -> NSMenu?
 
     /// The tab at `index` of `source` was dragged here and should end up at
     /// `destination` — a final position, whichever bar it came from. Answers
     /// where it actually landed, or `nil` if it was refused.
-    func tabBar(
+    func editorTabBar(
         _ tabBar: EditorTabBar, moveTabAt index: Int, of source: EditorTabBar,
         to destination: Int
     ) -> Int?
@@ -36,7 +36,7 @@ protocol EditorTabBarDelegate: AnyObject {
     /// content as it is now, or `nil` to go on showing the tab. `NSTableView`'s
     /// `dragImageForRows(with:tableColumns:event:offset:)`, asked of the party
     /// that holds the content; the bar frames it.
-    func tabBar(_ tabBar: EditorTabBar, draggingImageForTabAt index: Int) -> NSImage?
+    func editorTabBar(_ tabBar: EditorTabBar, draggingImageForTabAt index: Int) -> NSImage?
 }
 
 /// An editor's row of tabs: a capsule track with the selected tab raised out of
@@ -444,12 +444,12 @@ final class EditorTabBar: NSView, NSDraggingSource {
 
     @objc private func closeHovered() {
         guard let hovered = hoveredIndex else { return }
-        delegate?.tabBar(self, didCloseTabAt: hovered)
+        delegate?.editorTabBar(self, didRequestClosingTabAt: hovered)
     }
 
     @objc private func togglePinOfHovered() {
         guard let hovered = hoveredIndex else { return }
-        delegate?.tabBar(self, didClickPinOfTabAt: hovered)
+        delegate?.editorTabBar(self, didClickPinOfTabAt: hovered)
     }
 
     // MARK: - Pressing and dragging within the bar
@@ -462,13 +462,13 @@ final class EditorTabBar: NSView, NSDraggingSource {
         pressLocation = point
         select(index)
         if event.clickCount == 2 {
-            delegate?.tabBar(self, didDoubleClickTabAt: index)
+            delegate?.editorTabBar(self, didDoubleClickTabAt: index)
         }
     }
 
     private func select(_ index: Int) {
         guard index != selectedIndex else { return }
-        delegate?.tabBar(self, didSelectTabAt: index)
+        delegate?.editorTabBar(self, didRequestSelectingTabAt: index)
     }
 
     // MARK: Accessibility — a tab group of radio buttons, one per tab
@@ -512,7 +512,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
             index < dragged ? rests[index].midX < held.minX : index > dragged && rests[index].midX < held.maxX
         }.count
         if target != dragged {
-            _ = delegate?.tabBar(self, moveTabAt: dragged, of: self, to: target)
+            _ = delegate?.editorTabBar(self, moveTabAt: dragged, of: self, to: target)
         }
         placeTabs(animated: true)
     }
@@ -529,7 +529,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
         guard let index = tabIndex(at: convert(event.locationInWindow, from: nil)) else {
             return nil
         }
-        return delegate?.tabBar(self, menuForTabAt: index)
+        return delegate?.editorTabBar(self, menuForTabAt: index)
     }
 
     // MARK: - Dragging out of the bar
@@ -544,7 +544,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
     /// formation is what a drag looks like away from its source and from any
     /// destination, and left to the system a picture shrank as it left the bar.
     private func beginDraggingSession(tabAt index: Int, with event: NSEvent) {
-        let thumbnail = Self.thumbnail(of: delegate?.tabBar(self, draggingImageForTabAt: index))
+        let thumbnail = Self.thumbnail(of: delegate?.editorTabBar(self, draggingImageForTabAt: index))
         let point = convert(event.locationInWindow, from: nil)
         let size = thumbnail.size
         let item = NSDraggingItem(pasteboardWriter: EditorTabDrag())
@@ -719,7 +719,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
         if carriesOutsideItem(sender) {
             let gap = gapIndex ?? insertionIndex(at: convert(sender.draggingLocation, from: nil))
             gapIndex = nil
-            let opened = delegate?.tabBar(self, openDrop: sender, at: gap) ?? false
+            let opened = delegate?.editorTabBar(self, acceptDrop: sender, at: gap) ?? false
             placeTabs(animated: true)
             return opened
         }
@@ -734,7 +734,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
             draggedID = nil
             isDraggedTabOut = false
         }
-        let moved = delegate?.tabBar(self, moveTabAt: dragged, of: source, to: gap) != nil
+        let moved = delegate?.editorTabBar(self, moveTabAt: dragged, of: source, to: gap) != nil
         placeTabs(animated: true)
         return moved
     }

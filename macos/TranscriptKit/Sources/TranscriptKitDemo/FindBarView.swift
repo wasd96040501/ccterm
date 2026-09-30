@@ -228,10 +228,10 @@ final class FindBarView: NSView {
         switch commandSelector {
         case #selector(NSResponder.insertNewline(_:)):
             let backward = NSApp.currentEvent?.modifierFlags.contains(.shift) == true
-            delegate?.findBarView(self, perform: backward ? .previousMatch : .nextMatch)
+            delegate?.findBarView(self, didRequest: backward ? .previousMatch : .nextMatch)
             return true
         case #selector(NSResponder.cancelOperation(_:)):
-            delegate?.findBarView(self, perform: .hideFindInterface)
+            delegate?.findBarView(self, didRequest: .hideFindInterface)
             return true
         default:
             return false
@@ -246,11 +246,11 @@ final class FindBarView: NSView {
 
     @objc private func navigate() {
         delegate?.findBarView(
-            self, perform: navigation.selectedSegment == 0 ? .previousMatch : .nextMatch)
+            self, didRequest: navigation.selectedSegment == 0 ? .previousMatch : .nextMatch)
     }
 
     @objc private func done() {
-        delegate?.findBarView(self, perform: .hideFindInterface)
+        delegate?.findBarView(self, didRequest: .hideFindInterface)
     }
 }
 

@@ -247,7 +247,7 @@ extension TranscriptEditorViewController: FindBarViewDelegate {
         searchStringDidChange()
     }
 
-    func findBarView(_ findBarView: FindBarView, perform action: NSTextFinder.Action) {
+    func findBarView(_ findBarView: FindBarView, didRequest action: NSTextFinder.Action) {
         perform(action)
     }
 }

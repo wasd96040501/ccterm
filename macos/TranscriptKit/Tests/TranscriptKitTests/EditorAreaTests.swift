@@ -715,7 +715,7 @@ final class EditorAreaTests: XCTestCase {
         let view = mounted.probes[1].view
         XCTAssertEqual(group.selectedTabViewItemIndex, 1, "premise: the second tab is the one on screen")
 
-        let image = try XCTUnwrap(group.tabBar(group.tabBar, draggingImageForTabAt: 1), "no image")
+        let image = try XCTUnwrap(group.editorTabBar(group.tabBar, draggingImageForTabAt: 1), "no image")
         XCTAssertEqual(image.size, view.bounds.size)
         let rep = try XCTUnwrap(image.representations.first as? NSBitmapImageRep)
         let drawn = (0..<rep.pixelsHigh).contains { y in
@@ -723,7 +723,7 @@ final class EditorAreaTests: XCTestCase {
         }
         XCTAssertTrue(drawn, "the image is blank")
 
-        XCTAssertNil(group.tabBar(group.tabBar, draggingImageForTabAt: 0), "a tab not on screen was drawn")
+        XCTAssertNil(group.editorTabBar(group.tabBar, draggingImageForTabAt: 0), "a tab not on screen was drawn")
     }
 
     /// Out of the bar, the tab goes with the drag session: its place stays open

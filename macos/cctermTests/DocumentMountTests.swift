@@ -79,7 +79,8 @@ final class DocumentMountTests: XCTestCase {
         let reference = DocumentReference(transcriptURL: url, id: id)
         let shell = DocumentViewController(
             reference: reference, document: handedIn ? TranscriptPage(transcript).document(reference) : nil,
-            loadTranscript: { _ in transcript }, makeConversation: { _, _ in NSViewController() })
+            load: { TranscriptPage(transcript).document($0) }, makeConversation: { _, _ in NSViewController() },
+            showInTranscript: { _ in })
         let widths = Widths()
         let root = shell.view
         observer = NotificationCenter.default.addObserver(

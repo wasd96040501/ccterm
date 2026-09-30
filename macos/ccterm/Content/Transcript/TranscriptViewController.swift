@@ -19,12 +19,9 @@ final class TranscriptViewController: NSViewController {
     /// The file this tab shows — what the tab is, for finding it again.
     let fileURL: URL
 
-    /// Reads a transcript; `LibraryStore.transcript(at:)`.
-    typealias Load = @Sendable (URL) async throws -> Transcript
+    weak var delegate: TranscriptTabDelegate?
 
-    weak var delegate: TranscriptViewControllerDelegate?
-
-    private let load: Load
+    private let load: TranscriptLoader
     private let transcript = TranscriptView()
     private var page = TranscriptPage(entries: [])
     /// The rows the transcript shows, in order — the data source's answer.
@@ -38,7 +35,7 @@ final class TranscriptViewController: NSViewController {
     private var loadTask: Task<Void, Never>?
     private var hasLoaded = false
 
-    init(fileURL: URL, title: String, load: @escaping Load) {
+    init(fileURL: URL, title: String, load: @escaping TranscriptLoader) {
         self.fileURL = fileURL
         self.load = load
         super.init(nibName: nil, bundle: nil)
@@ -92,7 +89,7 @@ final class TranscriptViewController: NSViewController {
 
     // MARK: - Loading
 
-    private nonisolated static func page(_ url: URL, _ load: Load) async -> TranscriptPage {
+    private nonisolated static func page(_ url: URL, _ load: TranscriptLoader) async -> TranscriptPage {
         let note: String
         do {
             let page = TranscriptPage(try await load(url))
@@ -196,7 +193,11 @@ final class TranscriptViewController: NSViewController {
     private func open(_ id: String, pinned: Bool) {
         select(id)
         guard let document = page.document(DocumentReference(transcriptURL: fileURL, id: id)) else { return }
-        delegate?.transcriptViewController(self, open: document, pinned: pinned)
+        guard let delegate else { return }
+        let load = load
+        delegate.transcriptTab(
+            self, didRequestOpen: .document(document.reference), pinned: pinned,
+            makeItem: { TranscriptTab.makeItem(document, load: load, delegate: delegate) })
     }
 
     /// Brings `id` — an item, or the call an entry is about — into view and

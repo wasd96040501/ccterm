@@ -99,7 +99,7 @@ public final class EditorAreaViewController: NSSplitViewController {
     public func addGroup(with item: NSTabViewItem) -> EditorGroupViewController? {
         guard let group = addGroup() else { return nil }
         group.addTabViewItem(item)
-        open(group)
+        expand(group)
         return group
     }
 
@@ -131,6 +131,64 @@ public final class EditorAreaViewController: NSSplitViewController {
         return false
     }
 
+    /// The editor whose tab holds `viewController`, or one of its ancestors —
+    /// a view controller nested inside a tab's content (a child of the tab's
+    /// controller) belongs to that tab's editor. `nil` when no editor's tab
+    /// holds it.
+    func group(containing viewController: NSViewController) -> EditorGroupViewController? {
+        var candidate: NSViewController? = viewController
+        while let current = candidate {
+            if let group = groups.first(where: { $0.tabViewItems.contains { $0.viewController === current } }) {
+                return group
+            }
+            candidate = current.parent
+        }
+        return nil
+    }
+
+    /// The open tab whose `NSTabViewItem.identifier` equals `identifier`
+    /// (compared as `AnyHashable`, as `selectTabViewItem(withIdentifier:pinning:)`
+    /// compares them), in whichever editor has it; `nil` when none is open.
+    public func tabViewItem(withIdentifier identifier: Any) -> NSTabViewItem? {
+        guard let identifier = identifier as? AnyHashable else { return nil }
+        return groups.lazy.flatMap(\.tabViewItems).first { $0.identifier as? AnyHashable == identifier }
+    }
+
+    /// Opens `item` as a new tab and answers the editor it went into. Does not
+    /// look for a tab already showing the same identifier — a caller that wants
+    /// one brought forward asks `selectTabViewItem(withIdentifier:pinning:)`
+    /// first, so no tab is built for nothing.
+    ///
+    /// The editor is the active one, or — with an `origin` (a view controller
+    /// in a tab, or nested in one) — the first editor that doesn't hold
+    /// `origin`, so what an editor opens appears beside it; a second editor
+    /// opens when there is none. Unpinned, `item` becomes that editor's
+    /// temporary tab (replacing the last); pinned, it is added as a tab that
+    /// stays.
+    @discardableResult
+    public func open(
+        _ item: NSTabViewItem, pinned: Bool, beside origin: NSViewController? = nil
+    )
+        -> EditorGroupViewController
+    {
+        let target: EditorGroupViewController
+        if let origin {
+            let source = group(containing: origin)
+            if let other = groups.first(where: { $0 !== source }) {
+                target = other
+            } else if let created = addGroup(with: item) {
+                if !pinned { created.previewTabViewItem = item }
+                return created
+            } else {
+                target = activeGroup
+            }
+        } else {
+            target = activeGroup
+        }
+        if pinned { target.addTabViewItem(item) } else { target.previewTabViewItem = item }
+        return target
+    }
+
     /// Lets things of `types` be dropped on the editors — beside tabs dragged
     /// between them, which need nothing registered. The delegate names what each
     /// drop shows in `editorArea(_:identifierForDrop:)` and makes its tab in
@@ -143,7 +201,7 @@ public final class EditorAreaViewController: NSSplitViewController {
     private(set) var draggedTypes: [NSPasteboard.PasteboardType] = []
 
     /// Adds an editor on the right — collapsed once the area has a view to lay
-    /// it out in, to open (`open(_:)`) when it has its tab.
+    /// it out in, to open (`expand(_:)`) when it has its tab.
     private func addGroup() -> EditorGroupViewController? {
         guard groups.count < Self.maximumNumberOfGroups else { return nil }
         let group = EditorGroupViewController()
@@ -161,7 +219,7 @@ public final class EditorAreaViewController: NSSplitViewController {
     /// and is uncovered, not reflowed, and the other editor narrows as in a
     /// divider drag. (`preferredThicknessFraction` doesn't size an item that
     /// isn't a sidebar — measured.)
-    private func open(_ group: EditorGroupViewController) {
+    private func expand(_ group: EditorGroupViewController) {
         guard let item = splitViewItem(for: group), item.isCollapsed else { return }
         let area = splitView.bounds
         group.view.frame = NSRect(
@@ -268,7 +326,7 @@ public final class EditorAreaViewController: NSSplitViewController {
             let destination = groups.first(where: { $0 !== source }) ?? addGroup()
         else { return }
         moveTab(at: index, of: source, to: destination, at: destination.tabViewItems.count)
-        open(destination)
+        expand(destination)
     }
 
     // MARK: - Following the reader

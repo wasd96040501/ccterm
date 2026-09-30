@@ -366,11 +366,11 @@ final class MotionTests: XCTestCase {
             // A scroll mounts rows as it goes, so every sample reads them anew.
             let document = try documentView(of: list)
             let rowsAtCommit = Set(
-                document.subviews.compactMap { $0 as? RowContainerView }.filter { !$0.isHidden }.map(\.row))
+                document.subviews.compactMap { $0 as? ListRowView }.filter { !$0.isHidden }.map(\.row))
             let edgeTop = rowsAtCommit.contains(0)
             let edgeBottom = rowsAtCommit.contains(heights.count - 1)
             let frames = await PresentationSampler.record(in: list, for: 0.45) {
-                document.subviews.compactMap { $0 as? RowContainerView }
+                document.subviews.compactMap { $0 as? ListRowView }
             }
             XCTAssertGreaterThan(frames.count, 10, "\(scenario): sampled the animation")
             let top = list.contentInsets.top
@@ -639,7 +639,7 @@ final class MotionTests: XCTestCase {
         let new = ReferenceLayout.frames(heights: heights, spacing: 0, width: 1)
         let newIndex = [0: 0, 1: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 7, 8: 8, 10: 9]
 
-        let stack = document.subviews.compactMap { $0 as? RowContainerView }.filter { !$0.isHidden }
+        let stack = document.subviews.compactMap { $0 as? ListRowView }.filter { !$0.isHidden }
         XCTAssertTrue(stack.last === movedContainer, "the moved row is drawn above the others")
         XCTAssertTrue(stack.first === removedContainer, "the removed row is drawn below the others")
 
@@ -680,7 +680,7 @@ final class MotionTests: XCTestCase {
     /// the list's coordinates, from the test's own document frames and the
     /// offset `o` the commit held.
     private struct Moving {
-        let view: RowContainerView
+        let view: ListRowView
         let start: CGRect
         let end: CGRect
         let label: String
@@ -688,7 +688,7 @@ final class MotionTests: XCTestCase {
         /// with a slide is checked by its own test (M9).
         var contentStill = true
 
-        init(_ view: RowContainerView, _ start: CGRect, _ end: CGRect, at offset: CGFloat, label: String) {
+        init(_ view: ListRowView, _ start: CGRect, _ end: CGRect, at offset: CGFloat, label: String) {
             self.view = view
             self.start = start.offsetBy(dx: 0, dy: -offset)
             self.end = end.offsetBy(dx: 0, dy: -offset)
@@ -715,8 +715,8 @@ final class MotionTests: XCTestCase {
         try XCTUnwrap(list.subviews.compactMap { $0 as? NSScrollView }.first?.documentView)
     }
 
-    private func container(ofRow row: Int, in list: ExactListView) throws -> RowContainerView {
-        try XCTUnwrap(list.view(atRow: row)?.superview as? RowContainerView, "row \(row) is mounted")
+    private func container(ofRow row: Int, in list: ExactListView) throws -> ListRowView {
+        try XCTUnwrap(list.view(atRow: row)?.superview as? ListRowView, "row \(row) is mounted")
     }
 
     /// `o` from where row 0 is.
@@ -733,7 +733,7 @@ final class MotionTests: XCTestCase {
     private func animationKeys(_ list: ExactListView) -> [String] {
         guard let document = try? documentView(of: list) else { return [] }
         var keys: [String] = []
-        for case let container as RowContainerView in document.subviews {
+        for case let container as ListRowView in document.subviews {
             keys += (container.layer?.animationKeys() ?? []).map { "row \(container.row) container \($0)" }
             keys += (container.hostedView?.layer?.animationKeys() ?? []).map { "row \(container.row) host \($0)" }
         }
@@ -749,7 +749,7 @@ final class MotionTests: XCTestCase {
         XCTAssertEqual(animationKeys(list), [], "\(label): no animation", file: file, line: line)
         let frames = ReferenceLayout.frames(heights: heights, spacing: 0, width: 1)
         let o = offset(of: list)
-        for case let container as RowContainerView in try documentView(of: list).subviews
+        for case let container as ListRowView in try documentView(of: list).subviews
         where !container.isHidden {
             XCTAssertGreaterThanOrEqual(container.row, 0, "\(label): nothing animating out", file: file, line: line)
             guard container.row >= 0 else { continue }

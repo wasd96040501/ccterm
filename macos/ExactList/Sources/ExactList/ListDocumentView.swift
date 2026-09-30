@@ -8,7 +8,7 @@ import AppKit
 final class ListDocumentView: NSView {
 
     /// Weak: the list owns this view.
-    weak var owner: ListDocumentViewOwner?
+    weak var delegate: ListDocumentViewDelegate?
 
     /// The key being interpreted, so one the list doesn't answer can go up the
     /// chain as the event itself, and an input method further up composes it.
@@ -46,7 +46,7 @@ final class ListDocumentView: NSView {
     }
 
     override func doCommand(by selector: Selector) {
-        if owner?.documentView(self, doCommandBy: selector) == true { return }
+        if delegate?.documentView(self, doCommandBy: selector) == true { return }
         passInterpretedKeyUp()
     }
 
@@ -63,7 +63,7 @@ final class ListDocumentView: NSView {
 
     override func prepareContent(in rect: NSRect) {
         super.prepareContent(in: rect)
-        owner?.documentView(self, prepareContentIn: rect)
+        delegate?.documentView(self, prepareContentIn: rect)
     }
 
     // MARK: - Accessibility table (X1)
@@ -77,19 +77,19 @@ final class ListDocumentView: NSView {
     }
 
     override func accessibilityRows() -> [Any]? {
-        guard let owner else { return [] }
-        return (0..<owner.numberOfAccessibilityRows(in: self)).map {
-            owner.documentView(self, accessibilityRowAt: $0)
+        guard let delegate else { return [] }
+        return (0..<delegate.numberOfAccessibilityRows(in: self)).map {
+            delegate.documentView(self, accessibilityRowAt: $0)
         }
     }
 
     override func accessibilityRowCount() -> Int {
-        owner?.numberOfAccessibilityRows(in: self) ?? 0
+        delegate?.numberOfAccessibilityRows(in: self) ?? 0
     }
 
     override func accessibilityVisibleRows() -> [Any]? {
-        guard let owner else { return [] }
-        return owner.accessibilityVisibleRows(in: self).map { owner.documentView(self, accessibilityRowAt: $0) }
+        guard let delegate else { return [] }
+        return delegate.accessibilityVisibleRows(in: self).map { delegate.documentView(self, accessibilityRowAt: $0) }
     }
 
     override func accessibilityChildren() -> [Any]? {

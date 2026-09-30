@@ -8,7 +8,7 @@ import AppKit
 /// the container clips. The hosted view fills the container at every height
 /// (P2), and gets nothing but its frame (P5). It is also the row's
 /// accessibility element (X2).
-final class RowContainerView: NSView {
+final class ListRowView: NSView {
 
     /// The row this container shows, in the current numbering. −1 once it is
     /// animating out after a removal (M10, P6), and while it is a hidden spare
@@ -47,7 +47,7 @@ final class RowContainerView: NSView {
             // A pooled view may still sit in the container its last row left,
             // hidden (P3): that container lets go of it, or reusing the
             // container later would take the view out of this row.
-            if let holder = view.superview as? RowContainerView, holder !== self { _ = holder.unhost() }
+            if let holder = view.superview as? ListRowView, holder !== self { _ = holder.unhost() }
             view.translatesAutoresizingMaskIntoConstraints = true
             view.autoresizingMask = []
             addSubview(view)

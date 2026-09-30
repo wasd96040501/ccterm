@@ -12,7 +12,7 @@ final class StaleRowRefresher {
     static let budget: TimeInterval = 0.004
 
     /// Weak: the list owns this.
-    weak var owner: StaleRowRefresherOwner?
+    weak var delegate: StaleRowRefresherDelegate?
 
     /// Bumped by every `schedule()` and `cancel()`, so a batch already queued
     /// by an earlier call sees it has been superseded and does nothing.
@@ -29,8 +29,8 @@ final class StaleRowRefresher {
         // whose tracking modes are exactly the turns that aren't idle.
         RunLoop.main.perform(inModes: [.default]) { [weak self] in
             MainActor.assumeIsolated {
-                guard let self, self.generation == scheduled, let owner = self.owner else { return }
-                if owner.refreshStaleRows(within: Self.budget), self.generation == scheduled {
+                guard let self, self.generation == scheduled, let delegate = self.delegate else { return }
+                if delegate.refreshStaleRows(within: Self.budget), self.generation == scheduled {
                     self.schedule()
                 }
             }

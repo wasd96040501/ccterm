@@ -18,7 +18,7 @@ import ExactListCore
 final class MotionAnimator {
 
     /// Weak: the list owns this.
-    weak var owner: MotionAnimatorOwner?
+    weak var delegate: MotionAnimatorDelegate?
 
     /// `clockHost` holds the clocks, which are hidden and have no size.
     init(clockHost: NSView) {
@@ -41,7 +41,7 @@ final class MotionAnimator {
     /// back once the motion ends. When nothing moves, the completion still
     /// runs on a later turn (U8).
     func animate(
-        _ plan: CommitPlan, containers: [Int: RowContainerView], retiring: [Int: RowContainerView],
+        _ plan: CommitPlan, containers: [Int: ListRowView], retiring: [Int: ListRowView],
         duration: TimeInterval, timing: CAMediaTimingFunction, completion: @escaping (Bool) -> Void
     ) {
         let moving = plan.motions.filter { !$0.isStill }
@@ -89,7 +89,7 @@ final class MotionAnimator {
         self.scroll = scroll
         run(scroll.clock, duration: duration, timing: timing) { [weak self, weak scroll] progress in
             guard let self, let scroll, self.scroll === scroll else { return }
-            self.owner?.motionAnimator(
+            self.delegate?.motionAnimator(
                 self, scrollTo: scroll.destination + (scroll.start - scroll.destination) * (1 - progress))
         } completion: { [weak self, weak scroll] in
             guard let self, let scroll, self.scroll === scroll else { return }
@@ -116,11 +116,11 @@ final class MotionAnimator {
     /// U7: every motion and scroll stops, and returns the containers that were
     /// animating out. Outstanding completions get `false`, on a later turn
     /// like every completion (U8).
-    func cancelAll() -> [RowContainerView] {
+    func cancelAll() -> [ListRowView] {
         cancelScroll()
         let cancelled = flights
         flights.removeAll()
-        var retiring: [RowContainerView] = []
+        var retiring: [ListRowView] = []
         for flight in cancelled {
             flight.isCancelled = true
             stop(flight.clock)
@@ -139,7 +139,7 @@ final class MotionAnimator {
     /// One row's part in one commit's motion: how far its start is from its
     /// end, and its effect (M2, M9).
     private struct Part {
-        let container: RowContainerView
+        let container: ListRowView
         /// `start − end`, of the screen top and of the height.
         var top: CGFloat
         var height: CGFloat
@@ -157,11 +157,11 @@ final class MotionAnimator {
         let clock: MotionClock
         var parts: [ObjectIdentifier: Part] = [:]
         var progress: CGFloat = 0
-        let retiring: [RowContainerView]
+        let retiring: [ListRowView]
         let completion: (Bool) -> Void
         var isCancelled = false
 
-        init(clock: MotionClock, retiring: [RowContainerView], completion: @escaping (Bool) -> Void) {
+        init(clock: MotionClock, retiring: [ListRowView], completion: @escaping (Bool) -> Void) {
             self.clock = clock
             self.retiring = retiring
             self.completion = completion
@@ -190,8 +190,8 @@ final class MotionAnimator {
     /// Adds `motion`'s part to `flight`, and puts a moved row above the
     /// others and a removed one below them (M10).
     private func add(
-        _ motion: RowMotion, of plan: CommitPlan, containers: [Int: RowContainerView],
-        retiring: [Int: RowContainerView], to flight: Flight
+        _ motion: RowMotion, of plan: CommitPlan, containers: [Int: ListRowView],
+        retiring: [Int: ListRowView], to flight: Flight
     ) {
         let container = motion.kind == .removed ? retiring[motion.row] : containers[motion.row]
         guard let container else { return }
@@ -265,7 +265,7 @@ final class MotionAnimator {
     /// M9).
     private func present(_ ids: Set<ObjectIdentifier>) {
         for id in ids {
-            var container: RowContainerView?
+            var container: ListRowView?
             var end: NSRect?
             var top: CGFloat = 0
             var height: CGFloat = 0
@@ -326,7 +326,7 @@ final class MotionAnimator {
                 part.container.alphaValue = 1
                 part.container.contentOffset = .zero
             }
-            owner?.motionAnimator(self, didFinishCommitRetiring: flight.retiring)
+            delegate?.motionAnimator(self, didFinishCommitRetiring: flight.retiring)
         }
         flight.completion(true)
     }

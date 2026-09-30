@@ -159,24 +159,13 @@ extension RowCache {
         /// work — it is what the answer will be checked against when it lands, by
         /// whoever files it.
         func remeasured(at width: CGFloat) -> Entry {
-            switch tree?.body {
-            case .markdown(var memo)?:
-                let measured = memo.remeasure(width: width)
-                return Entry(
-                    content: content, body: .markdown(memo), measured: measured,
-                    measuredWidth: width)
-
-            case .block(let block)?:
-                return Entry(
-                    content: content, body: .block(block), measured: block.measure(width),
-                    measuredWidth: width)
-
-            case nil:
-                guard let rebuilt = Entry(measuring: content, width: width, reusing: nil) else {
-                    return self
-                }
-                return rebuilt.evicted
+            // Same content, so the resident recipe is the donor and nothing is
+            // parsed or shaped again; an evicted entry has no donor and rebuilds.
+            // A `.view` row has no measurement of the transcript's to correct.
+            guard let rebuilt = Entry(measuring: content, width: width, reusing: self) else {
+                return self
             }
+            return tree == nil ? rebuilt.evicted : rebuilt
         }
     }
 

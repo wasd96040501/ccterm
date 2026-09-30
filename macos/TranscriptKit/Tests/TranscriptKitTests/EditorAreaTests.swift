@@ -518,6 +518,22 @@ final class EditorAreaTests: XCTestCase {
             "the other editor narrowed outside a live resize: \(changes)")
     }
 
+    /// A tab that arrives while the editor is still coming in — the next
+    /// document clicked straight after the first — ends up the editor's width.
+    func testATabAddedWhileTheEditorOpensIsLaidOutAtItsWidth() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let group = try XCTUnwrap(
+            mounted.area.addGroup(with: NSTabViewItem(viewController: ProbeViewController(title: "First"))))
+        let second = ProbeViewController(title: "Second")
+
+        group.addTabViewItem(NSTabViewItem(viewController: second))
+        finishOpening(mounted)
+
+        XCTAssertTrue(second.isViewLoaded, "premise: the second tab is showing")
+        XCTAssertEqual(second.view.frame.width, frame(of: group).width, accuracy: 0.5)
+    }
+
     func testClosingTheLastTabOfTheRightEditorClosesIt() throws {
         let mounted = mount(tabs: 1)
         defer { mounted.window.close() }

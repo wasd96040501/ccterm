@@ -20,6 +20,7 @@ final class ListScrollView: NSScrollView {
         drawsBackground = false
         automaticallyAdjustsContentInsets = false
         borderType = .noBorder
+        clipsToBounds = true
     }
 
     @available(*, unavailable)

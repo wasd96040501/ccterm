@@ -41,6 +41,12 @@ public protocol ExactListViewDelegate: AnyObject {
     /// latest" control. Changes only.
     func listView(_ listView: ExactListView, didChangeTailFollowing isFollowingTail: Bool)
 
+    /// The offset changed (S5): the reader scrolled, a scroll request moved it,
+    /// or a commit did. Called once the rows the new offset needs are mounted.
+    /// The counterpart of observing an `NSScrollView`'s clip view bounds,
+    /// which the list keeps private (L2).
+    func listViewDidScroll(_ listView: ExactListView)
+
     /// A key binding's command while the list has focus, offered before the
     /// list scrolls by it (K1). Return `true` if handled. This is the same hook
     /// as `NSTextView`'s `textView(_:doCommandBy:)`.
@@ -52,6 +58,8 @@ extension ExactListViewDelegate {
     public func listView(_ listView: ExactListView, didRemove view: NSView, forRow row: Int) {}
 
     public func listView(_ listView: ExactListView, didChangeTailFollowing isFollowingTail: Bool) {}
+
+    public func listViewDidScroll(_ listView: ExactListView) {}
 
     public func listView(_ listView: ExactListView, doCommandBy selector: Selector) -> Bool {
         false

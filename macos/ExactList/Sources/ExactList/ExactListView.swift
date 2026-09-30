@@ -12,13 +12,18 @@ import ExactListCore
 @MainActor
 public final class ExactListView: NSView {
 
-    /// Re-exported from Core so a host needs only `import ExactList`.
+    /// The anchoring policy (§6), re-exported from Core so a host needs only
+    /// `import ExactList`. *Deviation:* `NSTableView` has none; it leaves the
+    /// offset where it was (A3).
     public typealias Anchoring = ExactListCore.Anchoring
 
     // MARK: - Lifecycle (§4)
 
     /// L1: both are held weakly and can't be replaced afterwards. Nothing is
     /// asked of either before the load point (L3).
+    ///
+    /// *Deviation:* `NSTableView` takes them as settable properties, so a host
+    /// can assign them after mounting or forget `reloadData()` (L1).
     public init(dataSource: ExactListViewDataSource, delegate: ExactListViewDelegate) {
         let clip = ListClipView(frame: .zero)
         clipView = clip
@@ -45,10 +50,12 @@ public final class ExactListView: NSView {
         fatalError("init(coder:) is unavailable")
     }
 
-    /// L1. Weak, the AppKit ownership, and never reassigned.
+    /// `NSTableView.dataSource`: weak, the AppKit ownership. *Deviation:*
+    /// read-only (L1).
     public private(set) weak var dataSource: ExactListViewDataSource?
 
-    /// L1. Weak, the AppKit ownership, and never reassigned.
+    /// `NSTableView.delegate`: weak, the AppKit ownership. *Deviation:*
+    /// read-only (L1).
     public private(set) weak var delegate: ExactListViewDelegate?
 
     public override var isFlipped: Bool { true }
@@ -105,13 +112,14 @@ public final class ExactListView: NSView {
     }
 
     /// A8: `automaticallyFollowsTail`, and the viewport at the tail.
+    /// *Deviation:* `NSTableView` doesn't follow the tail.
     public var isFollowingTail: Bool {
         isLoaded && followsTail && committed.isAtTail(contentHeight: heights.contentHeight)
     }
 
     // MARK: - Rows (§7)
 
-    /// `n`. 0 before the load point (L5).
+    /// `NSTableView.numberOfRows`: `n`. 0 before the load point (L5).
     public var numberOfRows: Int {
         isLoaded ? heights.count : 0
     }
@@ -214,6 +222,7 @@ public final class ExactListView: NSView {
         accessibilityElements.removeAll()
         refresher.cancel()
         let wasFollowing = isFollowingTail
+        let oldOffset = committed.offset
         let rows = numberOfRowsInDataSource()
         heights = RowHeights((0..<rows).map { measure($0) }, spacing: spacing)
         stale = StaleRows(count: rows)
@@ -228,6 +237,7 @@ public final class ExactListView: NSView {
             placement.place(rows: preparedRows(), keeping: [], heights: heights, width: width)
         }
         reportTail()
+        if committed.offset != oldOffset { callDelegate { $0.listViewDidScroll(self) } }
         NSAccessibility.post(element: documentView, notification: .rowCountChanged)
     }
 
@@ -242,6 +252,13 @@ public final class ExactListView: NSView {
     /// that assignment silently disables recycling.
     public func makeView<V: NSView>(withIdentifier identifier: NSUserInterfaceItemIdentifier, make: () -> V) -> V {
         pool.makeView(withIdentifier: identifier, make: make)
+    }
+
+    /// P8: `NSScrollView.addFloatingSubview(_:for:)`, on the scroll view the
+    /// list keeps private (L2). The host sets the view's frame, converting
+    /// from the list's coordinates.
+    public func addFloatingSubview(_ view: NSView, for axis: NSEvent.GestureAxis) {
+        scrollView.addFloatingSubview(view, for: axis)
     }
 
     /// The mounted view for `row`, or `nil` (P7).
@@ -298,7 +315,8 @@ public final class ExactListView: NSView {
 
     // MARK: - Scrolling (§11)
 
-    /// S1: the least scroll that brings `row` fully into view, or its top when
+    /// S1, `NSTableView.scrollRowToVisible(_:)`: the least scroll that brings
+    /// `row` fully into view, or its top when
     /// it is taller than the view. Animated only under `allowsImplicitAnimation`
     /// (M1).
     public func scrollRowToVisible(_ row: Int) {
@@ -417,6 +435,7 @@ public final class ExactListView: NSView {
         completion: ((Bool) -> Void)? = nil
     ) {
         let oldHeights = heights
+        let oldOffset = committed.offset
         let target = newViewport ?? committed
         // Inserted and noted rows are asked, in ascending order; rows measured
         // already keep that measurement (G5: no pass over untouched rows).
@@ -470,11 +489,11 @@ public final class ExactListView: NSView {
             heights = plan.heights
             stale = newStale
             if let newSpacing { spacing = newSpacing }
-            let oldOffset = committed.offset
+            let placedOffset = committed.offset
             install(offset: plan.offset)
             // An animated scroll carries on from where this commit put the
             // offset (S3).
-            animator.shiftScroll(by: committed.offset - oldOffset)
+            animator.shiftScroll(by: committed.offset - placedOffset)
             placement.place(
                 rows: rowsToMount(plan, viewport: committed, heights: heights), keeping: animator.rowsInFlight,
                 heights: heights, width: width)
@@ -493,6 +512,7 @@ public final class ExactListView: NSView {
             plan, containers: containers, retiring: retiring, duration: animates ? duration : 0, timing: timing,
             completion: completion ?? { _ in })
         reportTail()
+        if committed.offset != oldOffset { callDelegate { $0.listViewDidScroll(self) } }
         if countChanged { NSAccessibility.post(element: documentView, notification: .rowCountChanged) }
         if !stale.isEmpty { refresher.schedule() }
     }
@@ -642,6 +662,7 @@ public final class ExactListView: NSView {
     private func didScroll() {
         committed = liveViewport()
         remount()
+        callDelegate { $0.listViewDidScroll(self) }
     }
 
     /// P1, W4, A8: mounts the rows in `P` at the committed geometry, or, when

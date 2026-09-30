@@ -257,6 +257,62 @@ final class ScrollingTests: XCTestCase {
         XCTAssertEqual(offset(of: list), 0, "and the wheel stops at the top, as NSScrollView's")
     }
 
+    /// Every change of the offset is reported once the rows it needs are
+    /// mounted: the wheel, a scroll request, a commit that moves it. A commit
+    /// that leaves it alone reports nothing.
+    func testS5_scrollsAreReported() async throws {
+        let stage = ListStage(size: NSSize(width: 400, height: 300))
+        defer { stage.teardown() }
+        let host = ScrollCountingHost()
+        let list = ExactListView(dataSource: host, delegate: host)
+        await stage.mount(list)
+        XCTAssertEqual(host.reports, 0, "loading is not a scroll")
+
+        EventSynthesizer.scroll(in: stage.window, at: NSPoint(x: 200, y: 150), deltaY: 90, phase: [])
+        await stage.settle()
+        XCTAssertGreaterThanOrEqual(host.reports, 1, "the wheel")
+        XCTAssertTrue(host.everyVisibleRowWasMounted, "reported after mounting")
+
+        host.reports = 0
+        list.scrollToRow(100, at: .top)
+        XCTAssertEqual(host.reports, 1, "a scroll request")
+
+        host.reports = 0
+        host.count += 2
+        list.insertRows(at: [0, 1])
+        XCTAssertEqual(offset(of: list), 102 * 30, "the first visible row held")
+        XCTAssertEqual(host.reports, 1, "a commit that moved the offset")
+
+        host.reports = 0
+        list.noteHeightOfRows(withIndexesChanged: [250])
+        list.reloadData()
+        XCTAssertEqual(host.reports, 0, "nothing moved the offset")
+        XCTAssertTrue(host.everyVisibleRowWasMounted)
+    }
+
+    /// Thirty-point rows, counting `listViewDidScroll` and checking, at each
+    /// report, that every row in view has its view.
+    private final class ScrollCountingHost: ExactListViewDataSource, ExactListViewDelegate {
+        var count = 300
+        var reports = 0
+        private(set) var everyVisibleRowWasMounted = true
+
+        func numberOfRows(in listView: ExactListView) -> Int { count }
+
+        func listView(_ listView: ExactListView, heightOfRow row: Int, width: CGFloat) -> CGFloat { 30 }
+
+        func listView(_ listView: ExactListView, viewForRow row: Int) -> NSView {
+            listView.makeView(withIdentifier: NSUserInterfaceItemIdentifier("row")) { NSView() }
+        }
+
+        func listViewDidScroll(_ listView: ExactListView) {
+            reports += 1
+            for row in listView.rows(in: listView.bounds) where listView.view(atRow: row) == nil {
+                everyVisibleRowWasMounted = false
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     /// `o`: row 0's top is at `−o` in the list's coordinates.

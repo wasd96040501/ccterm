@@ -237,6 +237,29 @@ final class PlacementTests: XCTestCase {
         XCTAssertEqual(list.row(for: leaving), -1)
     }
 
+    /// A floating subview for `.horizontal` rides with the rows through a
+    /// vertical scroll, and the scroll view clips it.
+    func testP8_floatingSubviews() async throws {
+        let stage = ListStage(size: NSSize(width: 400, height: 300))
+        defer { stage.teardown() }
+        let host = RecordingHost(count: 300) { _, _ in 30 }
+        let list = ExactListView(dataSource: host, delegate: host)
+        await stage.mount(list)
+        let floating = NSView(frame: NSRect(x: 0, y: 60, width: 400, height: 900))
+        list.addFloatingSubview(floating, for: .horizontal)
+        let scroll = try XCTUnwrap(
+            sequence(first: floating as NSView, next: \.superview).lazy.compactMap { $0 as? NSScrollView }.first)
+        XCTAssertTrue(scroll.superview === list, "in the list's own scroll view")
+        XCTAssertTrue(scroll.clipsToBounds, "clipped to the viewport (L11)")
+        let before = list.convert(floating.bounds, from: floating)
+
+        EventSynthesizer.scroll(in: stage.window, at: NSPoint(x: 200, y: 150), deltaY: 90, phase: [])
+        await stage.settle()
+        XCTAssertEqual(-list.rect(ofRow: 0).minY, 90)
+        XCTAssertEqual(
+            list.convert(floating.bounds, from: floating), before.offsetBy(dx: 0, dy: -90), "rode with the rows")
+    }
+
     /// An unmounted row has no view, and asking builds none.
     func testP7_onlyMountedViewsAreHandedOut() async throws {
         let stage = ListStage(size: NSSize(width: 400, height: 300))

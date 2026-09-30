@@ -50,6 +50,23 @@ Public API lands when something calls it, and SPEC §12 lists what was left out
 on purpose. TranscriptKit is the first consumer; what it needs comes in as
 amendments.
 
+The architecture stays small: few public members, each doing one thing no
+other member does, and each behaving as its name says. A change to it (a
+public member, a type, a target, a collaborator's protocol) answers three
+questions per item before it is coded, and fails on any one:
+
+1. Can the consumer do it with the public API or with AppKit's own
+   mechanisms (a mounted row view is inside the clip view)? Then it stays in
+   the consumer.
+2. What is its AppKit counterpart (`NSTableView`, `NSScrollView`, `NSView`)?
+   None means it is the consumer's preference, and it stays there.
+3. Which call in the consumer can't be written without it?
+
+An advisor call answers (1) before any code; the amendment's commit message
+gives the three answers per item and the advisor's verdict.
+`PublicSurfaceTests` enforces (2): every public member's doc comment names its
+counterpart or states a `*Deviation`.
+
 ## 4. Layering
 
 - `ExactListCore` never imports AppKit: Foundation and CoreGraphics only. It

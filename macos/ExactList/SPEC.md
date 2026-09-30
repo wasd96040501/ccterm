@@ -159,6 +159,8 @@ written they do nothing.
   - `automaticallyAdjustsContentInsets = false`. Otherwise AppKit rewrites the
     insets on every tile, which would undo `contentInsets`.
   - `borderType = .noBorder`.
+  - `clipsToBounds = true`, so a floating subview (P8) taller than the
+    viewport draws nothing outside the list.
   - The scroller style follows the system setting.
   - The vertical elasticity is `NSScrollView`'s default.
 
@@ -646,6 +648,11 @@ in a commit has a start and an end value for its screen top and its height.
   mounted view, or `nil`. *Deviation:* `NSTableView`'s
   `view(atColumn:row:makeIfNecessary:)` can build a view for a row that is not
   on screen, which would break P1.
+- **P8: floating subviews.** `addFloatingSubview(_:for:)` adds a view to the
+  list's scroll view, as `NSScrollView.addFloatingSubview(_:for:)` does: for
+  `.horizontal` it scrolls vertically with the rows and stays put
+  horizontally. The host sets its frame, converting from the list's
+  coordinates. The scroll view clips it (L11).
 - **P6: `row(for:)`** returns the row of a mounted view or any of its
   descendants, and −1 otherwise, as in `NSTableView`. A view that is animating
   out answers −1.
@@ -688,6 +695,12 @@ in a commit has a start and an end value for its screen top and its height.
 - **S4: reader scrolling stays native.** Wheel, trackpad, momentum, elasticity
   and the scroller are `NSScrollView`'s own. A commit during a live scroll
   gesture adjusts the offset as §6 says, and the gesture carries on from there.
+- **S5: scrolls are reported.** `listViewDidScroll(_:)` is called after every
+  change of the offset once the list is loaded: a scroll by the reader, a
+  scroll request or one frame of an animated one (S3), and a commit or
+  `reloadData()` that moved it (§6). It comes after the rows the new offset
+  needs are mounted (P1). It is the counterpart of observing an
+  `NSScrollView`'s clip view bounds, which a host can't do here (L2).
 - **K1: keys.** The document view accepts first responder. It takes it on a
   click that no row consumed, as `NSTableView` does. It interprets keys with
   the standard key bindings.
@@ -877,7 +890,7 @@ Core imports Foundation and CoreGraphics, never AppKit.
 | `ExactListView` | yes | The façade: the public API, the lifecycle (§4), the batch entry points, and the width-change entry point. It holds the collaborators below. |
 | `ExactListView.Updates` | yes | The batch proxy (U3). |
 | `ExactListViewDataSource` | yes | `numberOfRows(in:)`. |
-| `ExactListViewDelegate` | yes | `heightOfRow:width:`, `viewForRow:`, `didRemove:forRow:`, `didChangeTailFollowing:`, `doCommandBy:`. |
+| `ExactListViewDelegate` | yes | `heightOfRow:width:`, `viewForRow:`, `didRemove:forRow:`, `didChangeTailFollowing:`, `listViewDidScroll`, `doCommandBy:`. |
 | `ListPhase` | no | Before or after the load point, and what was stored before it: settings and the last scroll request (L3–L6, V5). |
 | `ListScrollView` | no | An `NSScrollView` subclass with the fixed configuration (L11). It reports width and viewport changes from `tile()` (W1, V1, V2). |
 | `ListClipView` | no | An `NSClipView` subclass. It reports every change of the bounds origin, so mounting happens in the same turn as the scroll (P1). |

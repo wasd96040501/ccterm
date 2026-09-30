@@ -113,6 +113,23 @@ final class WorkLineWriterTests: XCTestCase {
         XCTAssertEqual(run(s).line.tile, Tile(glyph: .tool(.command), state: .failed))
     }
 
+    /// A failed item is its red tile, and nothing more: why it failed is its
+    /// document's. A command keeps its time, as a done one does.
+    func testAFailedItemIsItsTileAndACommandKeepsItsTime() throws {
+        var s = MessageScript()
+        s.call("b1", "Bash", #"{"command":"make test","description":"Test"}"#)
+        s.wait(20)
+        s.result("b1", "Exit code 2\nmake: *** [all] Error 2", error: true)
+        edit(&s, "e1", "/r/A.swift", error: true)
+
+        let items = run(s).items
+        XCTAssertEqual(items.map(\.line.tile.state), [.failed, .failed])
+        let duration = try XCTUnwrap(items[0].calls[0].duration)
+        XCTAssertEqual(items[0].line.meta.string, WorkLineWriter.format(duration), "the command's time")
+        XCTAssertEqual(items[1].line.meta.string, "", "no word where a done edit has its stat")
+        XCTAssertEqual(items.map(\.line.exceptions.string), ["", ""])
+    }
+
     func testARunOfOneNamesTheCall() {
         var s = MessageScript()
         bash(&s, "b1", "Build the package")

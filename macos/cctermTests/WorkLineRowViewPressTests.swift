@@ -29,7 +29,7 @@ final class WorkLineRowViewPressTests: XCTestCase {
             detail: nil, exceptions: StyledText(), meta: StyledText("34s"))
         view.configure(
             with: WorkLineRowView.Model(
-                line: line, level: .line, action: .toggle("r1", expanded: false), origin: nil, error: nil,
+                line: line, level: .line, action: .toggle("r1", expanded: false), origin: nil,
                 isSelected: false, flashes: false))
         let host = NSViewController()
         host.view = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 28))

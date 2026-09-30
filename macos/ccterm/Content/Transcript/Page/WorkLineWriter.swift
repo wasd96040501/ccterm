@@ -269,16 +269,6 @@ nonisolated struct WorkLineWriter {
         return line
     }
 
-    /// The first line of what went wrong, shown in red under a failed item.
-    func error(of calls: [ToolCall]) -> String? {
-        guard case .failed(let message) = calls[calls.count - 1].state else { return nil }
-        let lines = message.replacingOccurrences(of: "<tool_use_error>", with: "")
-            .replacingOccurrences(of: "</tool_use_error>", with: "")
-            .split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        return lines.first { !$0.hasPrefix("Exit code ") } ?? lines.first
-    }
-
     /// A call named on its own: the label, and the detail after it.
     private func label(_ call: ToolCall, standalone: Bool, opens: String) -> (StyledText, String?) {
         let input = call.use.input
@@ -371,7 +361,11 @@ nonisolated struct WorkLineWriter {
     private func itemMeta(_ calls: [ToolCall]) -> StyledText {
         let call = calls[calls.count - 1]
         switch call.state {
-        case .failed: return StyledText(String(localized: "Failed"), style: .failure)
+        // The red tile says it failed and its document says why; a command keeps its time.
+        case .failed:
+            guard call.kind == .command, let duration = call.duration, duration >= CorpusThresholds.shownDuration
+            else { return StyledText() }
+            return StyledText(Self.format(duration))
         case .denied: return StyledText(String(localized: "Denied"))
         case .interrupted: return StyledText(String(localized: "Interrupted"))
         case .waiting: return StyledText(String(localized: "Needs approval"))

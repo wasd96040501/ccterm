@@ -6,7 +6,7 @@ import AppKit
 /// Tile, words, the exceptions set apart from them, trailing meta, and the
 /// accessory that says what a click does — a chevron that expands, or, on
 /// hover, `arrow.up.right` that opens beside. An item is indented one tile
-/// and a gap, and a failed item adds its first error line under it.
+/// and a gap. A failed item is its red tile: why it failed is its document's.
 ///
 /// Hover, selection and the flash are paint: a wash behind the line, and the
 /// accessory's alpha. The accessory's slot is always laid out.
@@ -41,8 +41,6 @@ final class WorkLineRowView: NSView, PageRowView {
         var action: Action
         /// The call that started a background task: ↖ on hover reveals it.
         var origin: String?
-        /// A failed item's first error line, in red under it.
-        var error: String?
         /// Its document is the one showing beside: the selection highlight.
         var isSelected: Bool
         /// Just brought into view by *Show in Transcript* or ↖: flash once
@@ -55,7 +53,6 @@ final class WorkLineRowView: NSView, PageRowView {
     private static let textFont = NSFont.systemFont(ofSize: 13)
     private static let detailFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
     private static let metaFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-    private static let errorFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
     /// One tile and its gap: an item's indent, and where an item's own words start.
     private static let indent: CGFloat = 24
     private static let gap: CGFloat = 8
@@ -64,9 +61,6 @@ final class WorkLineRowView: NSView, PageRowView {
     private static let flashDuration: CFTimeInterval = 1.2
 
     private static let accessorySide: CGFloat = 12
-    /// A failed item's error line: under the item's words, 22 below the top.
-    private static let errorTop: CGFloat = 22
-    private static let errorLeading: CGFloat = 48
 
     private let tile = ToolTileView()
     private let words = Words()
@@ -77,7 +71,6 @@ final class WorkLineRowView: NSView, PageRowView {
     private var summaryText = NSAttributedString()
     private var exceptionsText = NSAttributedString()
     private var metaText = NSAttributedString()
-    private var errorText = NSAttributedString()
 
     private var model: Model?
     private var isHovered = false {
@@ -120,10 +113,7 @@ final class WorkLineRowView: NSView, PageRowView {
     }
 
     static func height(for model: Model, width: CGFloat) -> CGFloat {
-        switch model.level {
-        case .line: 28
-        case .item: model.error == nil ? 24 : 44
-        }
+        lineHeight(model.level)
     }
 
     // MARK: - Model
@@ -137,10 +127,6 @@ final class WorkLineRowView: NSView, PageRowView {
         exceptionsText = Self.truncated(
             model.line.exceptions.attributedString(font: Self.textFont, color: .secondaryLabelColor))
         metaText = Self.truncated(model.line.meta.attributedString(font: Self.metaFont, color: .tertiaryLabelColor))
-        errorText = Self.truncated(
-            NSAttributedString(
-                string: model.error ?? "",
-                attributes: [.font: Self.errorFont, .foregroundColor: NSColor.failureText.withAlphaComponent(0.9)]))
 
         paintAccessory()
         var label = model.line.text.string + model.line.exceptions.string
@@ -208,7 +194,6 @@ final class WorkLineRowView: NSView, PageRowView {
 
     private static let textHeight = fieldHeight(textFont)
     private static let metaHeight = fieldHeight(metaFont)
-    private static let errorHeight: CGFloat = 20
 
     /// How wide `text` is drawn.
     private static func fieldWidth(_ text: NSAttributedString) -> CGFloat {
@@ -237,16 +222,13 @@ final class WorkLineRowView: NSView, PageRowView {
         let summaryWidth = max(
             0, min(Self.fieldWidth(summaryText), metaX - Self.gap - exceptionsWidth - exceptionsGap - textX))
 
-        func field(_ x: CGFloat, _ width: CGFloat, _ height: CGFloat, top: CGFloat? = nil) -> NSRect {
-            NSRect(x: x, y: top ?? center - height / 2, width: width, height: height)
+        func field(_ x: CGFloat, _ width: CGFloat, _ height: CGFloat) -> NSRect {
+            NSRect(x: x, y: center - height / 2, width: width, height: height)
         }
         words.summary = field(textX, summaryWidth, Self.textHeight)
         words.exceptions = field(textX + summaryWidth + exceptionsGap, exceptionsWidth, Self.textHeight)
         words.meta = field(metaX, metaWidth, Self.metaHeight)
-        words.error = field(
-            Self.errorLeading, min(Self.fieldWidth(errorText), bounds.width - Self.errorLeading), Self.errorHeight,
-            top: Self.errorTop)
-        words.texts = (summaryText, exceptionsText, metaText, errorText)
+        words.texts = (summaryText, exceptionsText, metaText)
         words.frame = bounds
         words.needsDisplay = true
     }
@@ -255,20 +237,18 @@ final class WorkLineRowView: NSView, PageRowView {
     /// rather than the row's drawing: the wash is a layer over the row's own
     /// contents, and the words go on top of it.
     private final class Words: NSView {
-        var texts = (NSAttributedString(), NSAttributedString(), NSAttributedString(), NSAttributedString())
+        var texts = (NSAttributedString(), NSAttributedString(), NSAttributedString())
         var summary = NSRect.zero
         var exceptions = NSRect.zero
         var meta = NSRect.zero
-        var error = NSRect.zero
 
         override var isFlipped: Bool { true }
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
         override func draw(_ dirtyRect: NSRect) {
-            for (text, rect) in [
-                (texts.0, summary), (texts.1, exceptions), (texts.2, meta), (texts.3, error),
-            ] where text.length > 0 && rect.width > 0 {
+            for (text, rect) in [(texts.0, summary), (texts.1, exceptions), (texts.2, meta)]
+            where text.length > 0 && rect.width > 0 {
                 text.draw(with: rect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
             }
         }

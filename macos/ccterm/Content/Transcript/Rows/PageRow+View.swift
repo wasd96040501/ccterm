@@ -88,25 +88,25 @@ extension PageRow {
             WorkLineRowView.Model(
                 line: run.line, level: .line,
                 action: run.isSingle ? .open(run.items[0].id) : .toggle(run.id, expanded: disclosure != .collapsed),
-                origin: nil, error: nil, isSelected: isSelected, flashes: flashes)
+                origin: nil, isSelected: isSelected, flashes: flashes)
         case .runItem(let item):
             WorkLineRowView.Model(
-                line: item.line, level: .item, action: .open(item.id), origin: nil, error: item.error,
+                line: item.line, level: .item, action: .open(item.id), origin: nil,
                 isSelected: isSelected,
                 flashes: flashes)
         case .newsLine(let news, let disclosure):
             WorkLineRowView.Model(
                 line: news.line, level: .line,
                 action: news.isSingle ? .open(news.news[0].id) : .toggle(news.id, expanded: disclosure != .collapsed),
-                origin: news.isSingle ? news.news[0].origin : nil, error: nil, isSelected: isSelected, flashes: flashes)
+                origin: news.isSingle ? news.news[0].origin : nil, isSelected: isSelected, flashes: flashes)
         case .newsItem(let news):
             WorkLineRowView.Model(
-                line: news.line, level: .item, action: .open(news.id), origin: news.origin, error: nil,
+                line: news.line, level: .item, action: .open(news.id), origin: news.origin,
                 isSelected: isSelected,
                 flashes: flashes)
         case .agentReport(let message):
             WorkLineRowView.Model(
-                line: message.line, level: .line, action: .open(message.id), origin: nil, error: nil,
+                line: message.line, level: .line, action: .open(message.id), origin: nil,
                 isSelected: isSelected, flashes: flashes)
         default:
             preconditionFailure("\(kind) is not a line of work")

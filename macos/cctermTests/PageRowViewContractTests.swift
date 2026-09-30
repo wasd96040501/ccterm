@@ -182,7 +182,7 @@ final class PageRowViewContractTests: XCTestCase {
         func line(_ level: WorkLineRowView.Model.Level, _ item: RunItem?) -> WorkLineRowView.Model {
             WorkLineRowView.Model(
                 line: item?.line ?? run.line, level: level,
-                action: item.map { .open($0.id) } ?? .toggle(run.id, expanded: false), origin: nil, error: item?.error,
+                action: item.map { .open($0.id) } ?? .toggle(run.id, expanded: false), origin: nil,
                 isSelected: false, flashes: false)
         }
         func painted(_ model: WorkLineRowView.Model) -> [WorkLineRowView.Model] {
@@ -203,11 +203,10 @@ final class PageRowViewContractTests: XCTestCase {
                 + StyledText("  34s"))
         func custom(
             _ line: WorkLine, _ level: WorkLineRowView.Model.Level, _ action: WorkLineRowView.Model.Action,
-            origin: String? = nil, error: String? = nil
+            origin: String? = nil
         ) -> WorkLineRowView.Model {
             WorkLineRowView.Model(
-                line: line, level: level, action: action, origin: origin, error: error, isSelected: false,
-                flashes: false)
+                line: line, level: level, action: action, origin: origin, isSelected: false, flashes: false)
         }
         var news = long
         news.tile = Tile(glyph: .tool(.command), state: .failed)
@@ -221,10 +220,7 @@ final class PageRowViewContractTests: XCTestCase {
             ("an item", line(.item, run.items[1])),
             ("a long run, collapsed", custom(long, .line, .toggle("r1", expanded: false))),
             ("a long run, expanded", custom(long, .line, .toggle("r1", expanded: true))),
-            (
-                "a long item with an error",
-                custom(long, .item, .open("e1"), error: String(repeating: "error: ", count: 30))
-            ),
+            ("a long item", custom(long, .item, .open("e1"))),
             ("news with an origin", custom(news, .line, .open("n1"), origin: "b1")),
             ("a bare line", custom(bare, .line, .open("c1"))),
         ].map { RowFixture(name: $0.0, model: $0.1, sameGeometry: painted($0.1)) }

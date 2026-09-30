@@ -98,7 +98,6 @@ final class TranscriptPageTests: XCTestCase {
 
         let item = runs(s.page)[0].items[0]
         XCTAssertEqual(item.state, .failed(message: "Exit code 1\nerror: 'rowSpacing' is inaccessible"))
-        XCTAssertEqual(item.error, "error: 'rowSpacing' is inaccessible")
     }
 
     // MARK: - Background news

@@ -320,7 +320,7 @@ nonisolated struct TranscriptPageBuilder {
             }
         }
         return groups.map { group in
-            RunItem(calls: group, line: writer.line(for: group), error: writer.error(of: group))
+            RunItem(calls: group, line: writer.line(for: group))
         }
     }
 

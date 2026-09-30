@@ -8,8 +8,6 @@ nonisolated struct RunItem: Sendable, Equatable, Identifiable {
     let calls: [ToolCall]
     /// The item as a list line.
     var line: WorkLine
-    /// A failure's first line, shown in red under the item.
-    var error: String?
 
     /// The first call's id: what the item opens beside, and where the
     /// transcript reveals it.

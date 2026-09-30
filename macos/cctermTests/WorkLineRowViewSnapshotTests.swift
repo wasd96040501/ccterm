@@ -3,7 +3,7 @@ import XCTest
 
 @testable import ccterm
 
-/// A run's row, its items, news, an error line and every accessory, light
+/// A run's row, its items, news, and every accessory, light
 /// and dark (design/transcript/01-run.md, 04-background.md). Review only —
 /// `make test-unit FILTER=WorkLineRowViewSnapshotTests`, then open
 /// `/tmp/ccterm-screenshots/WorkLineRowView.png`.
@@ -16,11 +16,10 @@ final class WorkLineRowViewSnapshotTests: XCTestCase {
     private func model(
         _ line: WorkLine, _ level: WorkLineRowView.Model.Level = .line,
         _ action: WorkLineRowView.Model.Action = .toggle("r", expanded: false), origin: String? = nil,
-        error: String? = nil, selected: Bool = false, flashes: Bool = false
+        selected: Bool = false, flashes: Bool = false
     ) -> WorkLineRowView.Model {
         WorkLineRowView.Model(
-            line: line, level: level, action: action, origin: origin, error: error, isSelected: selected,
-            flashes: flashes)
+            line: line, level: level, action: action, origin: origin, isSelected: selected, flashes: flashes)
     }
 
     private func line(
@@ -45,7 +44,7 @@ final class WorkLineRowViewSnapshotTests: XCTestCase {
             meta: StyledText("6s"))
         let failed = line(
             .command, .failed, text: StyledText("Run the unit tests"), detail: "make test-unit FILTER=Tran…",
-            exceptions: StyledText(" · ") + StyledText("Failed", style: .failure))
+            meta: StyledText("14s"))
         let news = line(
             .command,
             text: StyledText("Background command ") + StyledText("“Run tests”", style: .code)
@@ -66,9 +65,7 @@ final class WorkLineRowViewSnapshotTests: XCTestCase {
             model(selectedRun, selected: true),
             model(single, .line, .open("b1")),
             model(single, .item, .open("b1")),
-            model(
-                failed, .item, .open("b2"),
-                error: "error: 'rowSpacing' is inaccessible due to 'private' protection level"),
+            model(failed, .item, .open("b2")),
             model(single, .item, .open("b1"), selected: true),
             model(news, .line, .open("n1"), origin: "b1"),
             model(running, .item, .open("r1")),

@@ -949,7 +949,7 @@ Core imports Foundation and CoreGraphics, never AppKit.
 | `ScrollAnchor` | Internal. A resolved anchor (tail, row with `d`, or offset): resolution (A1–A3), renumbering (A4, A5), and restoring (A6, A7, W2). |
 | `CommitInput` | Everything a commit is planned from: old and new heights, the map, old and new viewport, anchoring, or instead a scroll's destination (S3), tail following, whether to rescale the anchor (W2), the rows mounted before the commit, and whether it animates. |
 | `RowMotion` | One row's start and end screen top and height, and its kind and transition (M2). |
-| `CommitPlan` | A commit's outcome: the new offset, the resolved anchor, the `RowMotion`s, the amplitude `k`, and the tail state afterwards. `anchor` and `amplitude` are internal. |
+| `CommitPlan` | A commit's outcome: the new offset, the resolved anchor, the `RowMotion`s, the amplitude `k`, and the tail state afterwards. `anchor`, `amplitude` and `init` are internal. |
 | `CommitPlanner` | A pure function from `CommitInput` to `CommitPlan` (§6, §7, §8.2). |
 | `StaleRows` | Which rows are stale, and the order to refresh them in, outward from the anchor (§9). |
 

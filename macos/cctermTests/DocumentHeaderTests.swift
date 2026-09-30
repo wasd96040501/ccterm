@@ -76,6 +76,23 @@ final class DocumentHeaderTests: XCTestCase {
         XCTAssertEqual(grep.note, "No matches found")
     }
 
+    /// The CLI runs a command with its stderr in stdout; what it records as
+    /// stderr is its own note that it moved the shell back — in the real
+    /// shape, after a newline. The note answers no question and isn't shown;
+    /// anything else there is, without the blank line.
+    func testStderrIsWhatTheCommandPrintedNotTheCLIsNote() {
+        let note = "\nShell cwd was reset to /Users/me/dev/ccterm"
+        let moved = CommandSummary(ToolCallFixture.bash("cd /tmp && ls", stdout: "a\nb", stderr: note))
+        XCTAssertEqual(moved.stdout, "a\nb")
+        XCTAssertEqual(moved.stderr, "", "the CLI's note is not the command's")
+
+        let quiet = CommandSummary(ToolCallFixture.bash("cd /tmp && true", stderr: note))
+        XCTAssertEqual(quiet.emptyNote, String(localized: "No output"), "the note is not output")
+
+        let other = CommandSummary(ToolCallFixture.bash("x", stderr: "\nwarning: y" + note + "\n"))
+        XCTAssertEqual(other.stderr, "warning: y")
+    }
+
     func testALiveCommandSaysWhereItIs() {
         let running = ToolCallFixture.call("Bash", #"{"command":"sleep 9"}"#, state: .running, hasResult: false)
         let summary = CommandSummary(running)

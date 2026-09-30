@@ -20,7 +20,10 @@ nonisolated struct CommandSummary: Sendable, Equatable {
     var emptyNote: String?
     /// The call is going, so `emptyNote` is drawn with the running tile.
     var isRunning = false
+    /// What the command printed: the CLI runs it with stderr into stdout, so
+    /// this is both streams, in the order they were printed.
     var stdout = ""
+    /// Whatever else the CLI recorded as stderr — not its own note.
     var stderr = ""
     /// Where the CLI put the whole output when it was too long to keep.
     var persistedPath: String?
@@ -94,7 +97,7 @@ nonisolated struct CommandSummary: Sendable, Equatable {
 
         if let output {
             stdout = output.isImage ? "" : output.stdout
-            stderr = output.stderr
+            stderr = Self.commandsOwn(stderr: output.stderr)
             note = output.returnCodeInterpretation
             persistedPath = output.persistedOutputPath
             if persistedPath != nil {
@@ -141,6 +144,19 @@ nonisolated struct CommandSummary: Sendable, Equatable {
     static func isErrorLine(_ line: String) -> Bool {
         line.contains("error:") || line.contains("fatal:") || line.contains("FAILED")
             || line.range(of: #"Error \d"#, options: .regularExpression) != nil
+    }
+
+    /// The CLI's note that it moved the shell back after a command left the
+    /// project answers no question the reader has (02-command.md "Output").
+    private static let directoryResetNote = "Shell cwd was reset to "
+
+    /// `stderr` without the CLI's own note, and without the blank lines
+    /// around what is left.
+    private static func commandsOwn(stderr: String) -> String {
+        stderr.components(separatedBy: "\n")
+            .filter { !$0.hasPrefix(directoryResetNote) }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .newlines)
     }
 
     /// The exit code a failed Bash result names on its first line, and the

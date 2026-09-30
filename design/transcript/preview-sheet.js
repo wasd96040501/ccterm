@@ -504,7 +504,7 @@ function buildSheet() {
     spec("<b>Run of one · read</b>60 % of reads are a slice", [R1(clone(a2))]),
     spec("<b>Run of one · search · agent</b>", [R1(clone(a1)), R1(clone(c1))]),
     spec("<b>A run</b>Files named when ≤ 2 — and they are links. Duration only past the median (≥ 10 s).", [RN([clone(b1), clone(b2), clone(b3), clone(b4), clone(b5)], { dur: 48 })]),
-    spec("<b>Expanded</b>A failed item shows its first error line. Consecutive edits of one file are one item.", [RN([clone(b1), clone(b2), clone(b3), clone(b4), clone(b5)], { dur: 48, open: true })]),
+    spec("<b>Expanded</b>Items sit flush under their line, 24 pt each — the second level is tighter than the first. A failed item is its red tile; why it failed is in its document. Consecutive edits of one file are one item.", [RN([clone(b1), clone(b2), clone(b3), clone(b4), clone(b5)], { dur: 48, open: true })]),
     spec("<b>Ended in failure</b>The tile shows how the run ended; the sentence counts failures on the way.", [RN([clone(b4), clone(b3)], { dur: 16 })]),
     spec("<b>Five kinds</b>Three clauses, then “and N more”.", [RN([clone(b1), clone(b2), clone(b5), websearch("NSTableView intercellSpacing", 8), clone(a1), clone(a2), taskCall("Completed: Make rowSpacing public", { list: [["Read how rows are spaced", "done"], ["Make rowSpacing public", "done"], ["Update the test", "doing"], ["Build the demo", "todo"]] })], { dur: 63 })]),
     spec("<b>A long run</b>Twelve items, then the rest on request (98.3 % of runs fit in twelve).", [RN(longRun(), { dur: 1920, open: true })]),
@@ -550,6 +550,7 @@ function buildSheet() {
   // 2 · Command documents
   const docs2 = [
     ["Failed", clone(b3, { sandboxOff: false })],
+    ["Output with warnings — stdout and stderr are one stream, in the order printed", bash("Build the package", "cd macos/TranscriptKit && swift build", { dur: 6, out: ["Building for debugging...", "TranscriptView.swift:88:9: warning: variable 'count' was never mutated", "[4/9] Compiling TranscriptKit TranscriptView.swift", "Build complete! (5.87s)"] })],
     ["Succeeded · a note on the exit code · sandbox off", bash("Find the old constant", "grep -rn 'Self.rowSpacing' macos", { state: "done", dur: 0, out: [], note: "No matches found (exit code 1 means grep found nothing).", sandboxOff: true })],
     ["Running — output arrives with the result", bash("Run the TranscriptView tests", TEST_CMD, { state: "running", elapsed: 12 })],
     ["Waiting for you", bash("Remove the build cache", "rm -rf macos/build/test-dd", { state: "waiting", why: "rm -rf needs approval: it deletes files." })],

@@ -43,6 +43,18 @@ The views follow five rules.
 tile 16 pt (4u). Items indent 24 pt — one tile plus its gap — so an item's
 glyph sits under its run's text.
 
+**Spacing.** Two levels, each with one gap. **First level** — every entry
+of the transcript (a prompt, a reply, a run's line, news, a capsule, a
+divider): 14 pt between them, TranscriptKit's row gap, the same everywhere.
+**Second level** — what a line discloses (a run's items, *Show N more*): 0 pt,
+flush under the line and each other; a 24-pt row is its own air, as an
+outline view's children are. The approval card, level with its run, sits 6 pt
+under it. Nothing else adds space between rows.
+
+**Scrollers.** Overlay, hidden until you scroll, everywhere in the editor
+area — the transcript and every document — whatever *Show scroll bars* says.
+A scroller never takes width, so lines never rewrap when one appears.
+
 **Type.** Transcript body is 14 pt. Work is set one step down, 13 pt, in
 secondary label colour, so the eye separates it from the reply without a box.
 Metadata is 11 pt tertiary with monospaced digits. Code, commands and paths are
@@ -114,6 +126,9 @@ One rule for every view that opens something:
 - A document's tab identifier is the transcript URL plus the tool call id, so
   editor history returns to it after it's closed.
 - A document shown live updates in place when its call finishes.
+- The window's title keeps the transcript's project and branch while one of
+  its documents is the active tab: a document belongs to its session, as
+  Xcode keeps the project when the assistant editor has focus.
 
 ## Files
 

@@ -246,7 +246,8 @@ function liveText(it) {
 function itemMeta(it) {
   const stat = () => (it.add != null ? `<span class="add">+${it.add}</span><span class="del">−${it.del}</span>` : "");
   switch (it.state) {
-    case "failed": return '<span class="failw">Failed</span>';
+    // The red tile says it failed and the document says why; a command keeps its time.
+    case "failed": return it.kind === "command" && it.dur >= 10 ? fmtDur(it.dur) : "";
     case "denied": return "Denied";
     case "interrupted": return "Interrupted";
     case "waiting": return "Needs approval";
@@ -312,7 +313,6 @@ function itemRow(it) {
   let h = `<div class="line" data-open="${it.id}">${tile(it.kind, tileState)}<span class="sum">${
     LIVE.has(it.state) && it.state !== "waiting" ? liveText(it) : callText(it, false)
   }</span><span class="meta">${itemMeta(it)}</span>${ICON.go}</div>`;
-  if (it.state === "failed" && it.error) h += `<div class="err">${esc(it.error)}</div>`;
   return h;
 }
 
@@ -567,6 +567,9 @@ function commandDoc(it) {
   else {
     if (it.note) out += `<div class="info">${ICON.info}${esc(it.note)}</div>`;
     out += it.out && it.out.length ? outLines(it.out) : '<div class="waiting">No output</div>';
+    // The CLI runs a command with stderr into stdout, so the output is one
+    // stream in the order printed. Its own note in stderr (the shell's
+    // directory reset) answers no reader's question and isn't shown.
     if (it.stderr && it.stderr.length) out += `<div class="out-head">stderr</div>${outLines(it.stderr, /./)}`;
     if (it.persisted) out += `<div class="footer-note">${ICON.info}Output was too long to keep here. The full output is in <span class="mono">${esc(it.persisted)}</span><button class="btn">Open</button></div>`;
   }
@@ -579,12 +582,15 @@ function commandDoc(it) {
 /** Diff rows: ["ctx", n, text] ["add", n, text] ["del", null, text] ["fold", label] ["note", text, bad?] */
 function sourceLines(rows, path, opts = {}) {
   const swift = /\.swift$/.test(path || "");
-  return rows.map((r) => {
+  // A hunk is a stretch of removed and added lines: one change bar, rounded at its ends.
+  const changed = (r) => r && (r[0] === "add" || r[0] === "del");
+  return rows.map((r, i) => {
     const [t, a, b] = r;
     if (t === "fold") return opts.compact ? "" : `<div class="fold"><span></span><span>⋯ ${esc(a)}</span></div>`;
     if (t === "note") return `<div class="note${b ? " bad" : ""}">${b ? ICON.octagon : ICON.info}${esc(a)}</div>`;
     const text = swift ? hlSwift(b) : esc(b).replace(/⟦|⟧/g, "");
-    return `<div class="l ${t}"><span class="n">${a ?? ""}</span><span class="bar"></span><span class="t">${text || " "}</span></div>`;
+    const ends = changed(r) ? `${changed(rows[i - 1]) ? "" : " first"}${changed(rows[i + 1]) ? "" : " last"}` : "";
+    return `<div class="l ${t}${ends}"><span class="n">${a ?? ""}</span><span class="bar"></span><span class="t">${text || " "}</span></div>`;
   }).join("");
 }
 

@@ -241,7 +241,6 @@ html, body {
 .line .meta { flex: none; font-size: 11px; color: var(--tertiary); font-variant-numeric: tabular-nums; display: flex; gap: 8px; align-items: center; }
 .line .meta .add { color: var(--green-text); opacity: .85; }
 .line .meta .del { color: var(--red-text); opacity: .85; }
-.line .meta .failw { color: var(--red-text); }
 .line .chev { flex: none; width: 12px; height: 12px; color: var(--tertiary); transition: transform .18s ease; }
 .run.open > .line .chev { transform: rotate(90deg); }
 .line .go { flex: none; width: 12px; height: 12px; color: var(--tertiary); opacity: 0; }
@@ -249,10 +248,6 @@ html, body {
 
 .items { padding-left: 24px; overflow: hidden; }
 .items .line { height: 24px; }
-.items .err {
-  height: 20px; font-size: 12px; color: var(--red-text); opacity: .9; padding-left: 24px; margin-top: -2px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, "SF Mono", Menlo, monospace;
-}
 .items .more { height: 24px; display: flex; align-items: center; padding-left: 24px; font-size: 13px; color: var(--accent); cursor: default; }
 
 /* The approval card: the bubble's shape, outlined. */
@@ -422,15 +417,23 @@ html, body {
 
 /* Source view */
 .src { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; line-height: 18px; padding: 8px 0 24px; position: relative; }
-.src .l { display: grid; grid-template-columns: 44px 7px 1fr; min-height: 18px; }
-.src .l .n { text-align: right; color: var(--tertiary); padding-right: 0; user-select: none; }
-.src .l .bar { margin-left: 2px; width: 3px; }
-.src .l .t { white-space: pre; padding: 0 16px 0 10px; overflow: hidden; }
+.src .l { display: grid; grid-template-columns: 7px 37px 1fr; min-height: 18px; }
+/* Xcode's code review: the change bar at the gutter's leading edge, one per
+   hunk (removed and added lines together), rounded at its ends; the washes run
+   the whole line; removed text keeps its colours. */
+.src .l .bar { grid-column: 1; grid-row: 1; margin-left: 2px; width: 3px; }
+.src .l .n { grid-column: 2; grid-row: 1; text-align: right; color: var(--tertiary); user-select: none; }
+.src .l .t { grid-column: 3; grid-row: 1; white-space: pre; padding: 0 16px 0 17px; overflow: hidden; }
 .src .l.add { background: var(--add-bg); }
 .src .l.del { background: var(--del-bg); }
-.src .l.del .t { opacity: .55; }
-.src .l.add .bar, .src .l.del .bar, .src .l.chg .bar { background: var(--change-bar); }
+.src .l.add .bar, .src .l.del .bar {
+  background: repeating-linear-gradient(135deg, var(--change-bar) 0 1.5px, color-mix(in srgb, var(--change-bar) 45%, transparent) 1.5px 3px);
+}
+.src .l.first .bar { border-top-left-radius: 1.5px; border-top-right-radius: 1.5px; }
+.src .l.last .bar { border-bottom-left-radius: 1.5px; border-bottom-right-radius: 1.5px; }
 .src.new .l .bar { background: var(--green); opacity: .7; }
+.src.new .l:first-child .bar { border-radius: 1.5px 1.5px 0 0; }
+.src.new .l:last-child .bar { border-radius: 0 0 1.5px 1.5px; }
 .src .l.add .hl { background: var(--add-hl); border-radius: 2px; }
 .src .l.del .hl { background: var(--del-hl); border-radius: 2px; }
 .src .fold {

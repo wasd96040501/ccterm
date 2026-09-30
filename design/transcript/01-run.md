@@ -112,8 +112,7 @@ A run's items, one 24-pt row each, indented 24 pt, in the order they ran.
 ```
 ▢  Edited TranscriptView.swift, ran 3 commands · 1 failed        +12 −3  34s  ⌄
    ▢  Build the package        swift build -c debug                          6s
-   ▢  Run the unit tests       make test-unit FILTER=Tran…              failed
-      error: 'rowSpacing' is inaccessible due to 'private' protection level
+   !  Run the unit tests       make test-unit FILTER=Tran…
    ▢  TranscriptView.swift     macos/TranscriptKit/Sources/…           +12 −3
    ▢  Run the unit tests       make test-unit FILTER=Tran…                  21s
 ```
@@ -121,10 +120,15 @@ A run's items, one 24-pt row each, indented 24 pt, in the order they ran.
 - **Item row**: tile (the call's kind and state), label, one detail in
   tertiary mono (a command's first line, a file's folder), trailing meta.
   Labels are those of a run of one.
+- **Items sit flush.** The list is the run's second level, so it is set
+  tighter than the first: items follow the run's line and each other with no
+  gap — a 24-pt row is its own air, as in an outline view — and the entry
+  after the list keeps the transcript's 14-pt gap (README "Spacing").
 - **Consecutive edits to one file are one item** (Edit→Edit is the second most
   common pair): its document is the combined change.
-- **A failed item** adds one 20-pt line below it: the first line of the error,
-  in red, secondary weight, cut at the tail. The whole message is one click.
+- **A failed item is its red tile**, and nothing more: no word, no error line.
+  The tile already says it failed; why is the document's to say, one click
+  away. An item keeps its 24 pt whatever its state.
 - **Twelve items at most** (98.3 % of runs fit), then *Show 85 more* in link
   colour. A longer list is a log, and a log belongs beside, not in the page.
 - **⌥-click the chevron** expands or collapses every run in the transcript —
@@ -212,7 +216,7 @@ The only time a run grows. Under the row, an approval card:
 | in background | dashed outline | *Background* | settled by its notification |
 | done | plain | stat / time ≥ 10 s | |
 | done in background | plain | *Background · 4m* | |
-| failed | red `!` | *Failed* in red | first error line under it |
+| failed | red `!` | a command's time ≥ 10 s | the error is in its document |
 | denied | stop square | *Denied* | |
 | interrupted | stop square | *Interrupted* | |
 | no structured result (inside a subagent) | plain | — | document falls back to the model-facing text |

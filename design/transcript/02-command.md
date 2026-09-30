@@ -61,10 +61,23 @@ meant, what ran, what came out.
   Copy appears on hover. Commands over 12 lines fold with *Show all 43 lines*.
 - **Output**: no card — it is the page's body. SF Mono 12 pt, line numbers in
   a tertiary gutter, ANSI SGR colours honoured (bold, the 16 colours mapped to
-  system colours). stdout first; stderr under a hairline headed *stderr*, only
-  when it has text. The CLI's note on a meaningful exit code
+  system colours). The CLI's note on a meaningful exit code
   (`returnCodeInterpretation`, *No matches found*) sits above the output as an
   `info.circle` line.
+- **stdout and stderr are one stream.** The CLI runs a command with its
+  stderr into stdout, so warnings and errors are in the output, in the order
+  they were printed — there is nothing to split. What it records as `stderr`
+  is its own note, *Shell cwd was reset to `dir`*, which answers no question
+  the reader has and is not shown. Anything else in `stderr` goes under a
+  hairline headed *stderr*, its numbers red. A failed
+  call is recorded as one string (*Exit code N* and the merged output): its
+  status line takes the exit code, the rest is the output.
+- **The gutter is not text.** Line numbers are never selected, copied or
+  found, and a selection never paints over them — Xcode's gutter. A click or a
+  drag in the gutter starts no selection.
+- **The header is not text either.** Title, status line and command card
+  are views above the output, each selectable on its own; a double-click on
+  one selects a word of it, never a block of the page.
 - **No output**: *No output*, tertiary, where the output would be.
 - **Cut off**: when the CLI persisted the output elsewhere, a footer line —
   *Output was too long to keep here. The full output is in* `path` —

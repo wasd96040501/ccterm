@@ -41,12 +41,16 @@ final class UpdateTests: XCTestCase {
             XCTAssertEqual(list.rect(ofRow: row), frames[row].offsetBy(dx: 0, dy: -offset), "row \(row)")
         }
         let inP = frames.indices.filter { frames[$0].maxY > offset - 150 && frames[$0].minY < offset + 450 }
+        // Under Reduce Motion the motion's start is its end (M1).
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+
         var views: [(row: Int, view: NSView)] = []
         for row in inP {
             let view = try XCTUnwrap(list.view(atRow: row), "row \(row) in P is mounted")
             views.append((row, view))
             let start: CGRect =
                 switch row {
+                case _ where reduceMotion: frames[row]
                 case ..<62: old[row]
                 case 62, 63: CGRect(x: 0, y: old[61].maxY, width: width, height: 0)
                 default: old[row - 2]
@@ -95,7 +99,10 @@ final class UpdateTests: XCTestCase {
         XCTAssertTrue(drained)
         for (finished, elapsed) in completions {
             XCTAssertTrue(finished)
-            XCTAssertGreaterThanOrEqual(elapsed, 0.2 - 1.0 / 60, "after the 0.2 s animation, not before")
+            // Under Reduce Motion nothing animates (M1): only later than the call.
+            if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                XCTAssertGreaterThanOrEqual(elapsed, 0.2 - 1.0 / 60, "after the 0.2 s animation, not before")
+            }
         }
     }
 
@@ -280,6 +287,9 @@ final class UpdateTests: XCTestCase {
     /// `didRemove`, the count and every height are asked again, and nothing
     /// moves.
     func testU7_reloadData() async throws {
+        try XCTSkipIf(
+            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+            "Reduce Motion is on: no motion is ever in flight (M1)")
         let stage = ListStage(size: NSSize(width: 400, height: 300))
         defer { stage.teardown() }
         let host = RecordingHost(count: 100) { _, _ in 30 }
@@ -353,10 +363,17 @@ final class UpdateTests: XCTestCase {
         list.performBatchUpdates(
             anchoring: .scrollOffset, { $0.insertRows(at: [0], withAnimation: .effectGap) },
             completionHandler: { _ in elapsed = Date().timeIntervalSince(start) })
-        XCTAssertTrue(try moving(list))
+        // Under Reduce Motion it asks for motion and gets none (M1): only later
+        // than the call.
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+
+        XCTAssertEqual(try moving(list), !reduceMotion)
+        XCTAssertNil(elapsed, "never before the call returns")
         let drained = await stage.drain(until: { elapsed != nil }, timeout: 2)
         XCTAssertTrue(drained)
-        XCTAssertGreaterThanOrEqual(try XCTUnwrap(elapsed), 0.2 - 1.0 / 60, "after the 0.2 s animation ends")
+        if !reduceMotion {
+            XCTAssertGreaterThanOrEqual(try XCTUnwrap(elapsed), 0.2 - 1.0 / 60, "after the 0.2 s animation ends")
+        }
         XCTAssertFalse(try moving(list), "and nothing moves any more")
     }
 

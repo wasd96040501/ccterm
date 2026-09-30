@@ -77,6 +77,9 @@ final class AccessibilityTests: XCTestCase {
 
         // Mid-motion the frame is where the row is drawn: at the commit's
         // return, where it was (U1); once the motion ends, where it went.
+        // Under Reduce Motion it is there at once (M1).
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+
         let before = expectedScreenFrame(list, host, 103)
         var done = false
         NSAnimationContext.runAnimationGroup(
@@ -87,7 +90,9 @@ final class AccessibilityTests: XCTestCase {
             }, completionHandler: nil)
         let moving = try XCTUnwrap(table.accessibilityRows())[105]
         XCTAssertEqual(index(of: moving), 105)
-        XCTAssertEqual(frame(of: moving), before, "where it is drawn: its motion's start")
+        XCTAssertEqual(
+            frame(of: moving), reduceMotion ? expectedScreenFrame(list, host, 105) : before,
+            "where it is drawn: its motion's start")
         _ = await stage.drain(until: { done }, timeout: 2)
         XCTAssertTrue(done)
         XCTAssertEqual(frame(of: moving), expectedScreenFrame(list, host, 105), "where it went")

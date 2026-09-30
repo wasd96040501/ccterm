@@ -112,7 +112,8 @@ final class PlacementTests: XCTestCase {
     }
 
     /// Every view that leaves hears `didRemove` exactly once, with its row;
-    /// a removed row's view only after its animation, with −1.
+    /// a removed row's view only after its animation, with −1 — at once under
+    /// Reduce Motion, where nothing animates (M1).
     func testP3_didRemoveOnDeparture() async throws {
         let stage = ListStage(size: NSSize(width: 400, height: 300))
         defer { stage.teardown() }
@@ -138,11 +139,15 @@ final class PlacementTests: XCTestCase {
         var landed = false
         list.performBatchUpdates(
             { $0.removeRows(at: [605], withAnimation: .effectGap) }, completionHandler: { _ in landed = true })
-        XCTAssertFalse(reported(leaving, in: host), "not while it animates out")
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+
+        XCTAssertEqual(reported(leaving, in: host), reduceMotion, "not while it animates out")
         let drained = await stage.drain(until: { landed }, timeout: 2)
         XCTAssertTrue(drained)
-        // NSTableView's 0.2 s, less the frame AppKit's clock may end on.
-        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(start), 0.2 - 1.0 / 60)
+        if !reduceMotion {
+            // NSTableView's 0.2 s, less the frame AppKit's clock may end on.
+            XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(start), 0.2 - 1.0 / 60)
+        }
         let departures = host.calls.compactMap {
             if case .didRemove(let view, let row) = $0, view == ObjectIdentifier(leaving) { row } else { nil }
         }
@@ -181,9 +186,9 @@ final class PlacementTests: XCTestCase {
     }
 
     /// During an animated commit the motion and the clip are on the
-    /// containers: a container below the noted row is at its motion's start,
-    /// and clips; the host's views fill their containers and get no
-    /// animation, mask, clip or opacity.
+    /// containers: a container below the noted row is at its motion's start
+    /// (its end under Reduce Motion, M1), and clips; the host's views fill
+    /// their containers and get no animation, mask, clip or opacity.
     func testP5_rowContainersAreInternal() async throws {
         let stage = ListStage(size: NSSize(width: 400, height: 300))
         defer { stage.teardown() }
@@ -206,12 +211,15 @@ final class PlacementTests: XCTestCase {
         }
         let below = try XCTUnwrap(list.view(atRow: 5)?.superview)
         XCTAssertEqual(
-            list.convert(below.bounds, from: below).minY, 5 * 30, "the container moves: at its start, 60 pt above")
+            list.convert(below.bounds, from: below).minY,
+            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 5 * 30 + 60 : 5 * 30,
+            "the container moves: at its start, 60 pt above")
         XCTAssertEqual(list.rect(ofRow: 5).minY, 5 * 30 + 60, "the row is final")
     }
 
     /// A mounted view and its descendants answer their row; anything else,
-    /// and a view animating out, answers −1.
+    /// and a view animating out, answers −1. Under Reduce Motion nothing
+    /// animates out (M1): the removed row's view leaves at once, as P3 shows.
     func testP6_rowFor() async throws {
         let stage = ListStage(size: NSSize(width: 400, height: 300))
         defer { stage.teardown() }
@@ -230,6 +238,7 @@ final class PlacementTests: XCTestCase {
         host.count -= 1
         list.removeRows(at: [2])
         XCTAssertEqual(list.row(for: child), 3, "renumbered with its row")
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
         let leaving = try XCTUnwrap(list.view(atRow: 1))
         host.count -= 1
         list.removeRows(at: [1], withAnimation: .effectGap)

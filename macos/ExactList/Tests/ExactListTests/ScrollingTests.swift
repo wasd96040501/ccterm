@@ -13,8 +13,9 @@ final class ScrollingTests: XCTestCase {
     /// The least scroll into `U`, from the test's model, with and without
     /// insets. Beside a real `NSTableView` with the same heights: above, taller
     /// than the viewport, and clamped at the end, both land at the same offset;
-    /// below, `NSTableView` scrolls past the least amount (the deviation S1
-    /// records), and the list lands the row's bottom exactly on `U`'s.
+    /// below, the list lands the row's bottom exactly on `U`'s, and
+    /// `NSTableView` at least as far — on some systems past it (the deviation
+    /// S1 records).
     func testS1_scrollingToARow() async throws {
         var heights: [CGFloat] = (0..<200).map { 20 + CGFloat(($0 * 13) % 35) }
         heights[120] = 700
@@ -41,7 +42,8 @@ final class ScrollingTests: XCTestCase {
             let clamped = row == heights.count - 1
             if below && !tall && !clamped {
                 XCTAssertEqual(list.rect(ofRow: row).maxY, 300, "row \(row): its bottom exactly on U's")
-                XCTAssertGreaterThan(tableOffset, offset(of: list), "row \(row): NSTableView scrolls past the least")
+                XCTAssertGreaterThanOrEqual(
+                    tableOffset, offset(of: list), "row \(row): NSTableView scrolls at least as far")
             } else {
                 XCTAssertEqual(offset(of: list), tableOffset, "row \(row): where NSTableView lands")
             }
@@ -95,7 +97,10 @@ final class ScrollingTests: XCTestCase {
         XCTAssertEqual(list.rect(ofRow: row).maxY, 300 - insets.bottom, ".bottom")
         list.scrollToRow(row, at: .centeredVertically)
         let middle = insets.top + (300 - insets.top - insets.bottom) / 2
-        XCTAssertEqual(list.rect(ofRow: row).midY, middle, ".centeredVertically")
+        // The clip view puts the offset on a device pixel: half a point off at 1×.
+        let pixel = 1 / (list.window?.backingScaleFactor ?? 1)
+        XCTAssertEqual(
+            list.rect(ofRow: row).midY, middle, accuracy: pixel / 2, ".centeredVertically, a pixel of \(pixel) pt")
 
         list.scrollToRow(0, at: .bottom)
         XCTAssertEqual(offset(of: list), minOffset, "clamped to oMin")

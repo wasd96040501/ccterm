@@ -1,9 +1,9 @@
 import AppKit
 import TranscriptKit
 
-/// Where a page row meets TranscriptKit: which content it is, how tall a
-/// `.view` row is, and which view draws it — the one switch from row kinds
-/// to row views.
+/// Where a page row meets TranscriptKit: which content it is, the gap above
+/// it, how tall a `.view` row is, and which view draws it — the one switch
+/// from row kinds to row views.
 extension PageRow {
     var transcriptRow: TranscriptRow {
         TranscriptRow(id: id, content: content)
@@ -16,6 +16,19 @@ extension PageRow {
         default: .view
         }
     }
+
+    /// The gap above this row, when it isn't the transcript's between entries
+    /// (design README "Spacing"): what a line discloses sits flush under it,
+    /// and a run's approval card 6 pt under its run.
+    var spacingAbove: CGFloat? {
+        switch kind {
+        case .runItem, .newsItem, .showMore: 0
+        case .approval: Self.approvalSpacing
+        default: nil
+        }
+    }
+
+    private static let approvalSpacing: CGFloat = 6
 
     /// A `.view` row's height at `width`, from the model alone.
     @MainActor

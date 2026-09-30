@@ -37,6 +37,24 @@ final class PageRowTests: XCTestCase {
         XCTAssertEqual(PageRow.rows(for: entry, disclosure: .showingAll).count, 1 + 14)
     }
 
+    /// Two levels (design README "Spacing"): what a line discloses sits flush,
+    /// an approval card 6 pt under its run, everything else the transcript's
+    /// gap between entries.
+    @MainActor
+    func testWhatALineDisclosesSitsFlushAndTheApprovalCardSixUnder() {
+        let rows = PageRow.rows(for: run(of: 14), disclosure: .expanded)
+        XCTAssertNil(rows[0].spacingAbove, "a run's line is an entry")
+        XCTAssertEqual(rows.dropFirst().map(\.spacingAbove), Array(repeating: 0, count: 13), "items and Show more")
+
+        let use = ToolUseBlock(id: "c1", name: "Bash", input: MessageScript.json(#"{"command":"make"}"#))
+        let approval = Approval(
+            ToolCall(
+                use: use, result: nil, kind: ToolKind(use, result: nil), state: .waiting(reason: nil), startedAt: nil,
+                finishedAt: nil))
+        XCTAssertEqual(PageRow(id: .init(entry: "c1", part: .approval), kind: .approval(approval)).spacingAbove, 6)
+        XCTAssertNil(PageRow(id: .init(entry: "d", part: .main), kind: .interruption).spacingAbove)
+    }
+
     func testARunOfOneNeverExpandsAndOpensItsCall() {
         let rows = PageRow.rows(for: run(of: 1), disclosure: .expanded)
         XCTAssertEqual(parts(rows), [.main])

@@ -158,6 +158,28 @@ final class TranscriptScrollStabilityTests: XCTestCase {
         }
     }
 
+    /// An opened run's items sit flush under its line and each other, and the
+    /// next entry keeps the gap between entries (design README "Spacing").
+    func testAnOpenedRunsItemsSitFlushUnderItsLine() async {
+        let line = await centre(on: "r120c0")
+        controller.rowView(NSView(), toggle: "r120c0", all: false)
+        expanded.insert("r120c0")
+        await stage.settle()
+        let rows = rows()
+        let first = rows.firstIndex { $0.id == line }!
+        let items = (first + 1..<rows.count).prefix { rows[$0].id.entry == "r120c0" }
+        XCTAssertEqual(items.count, 4, "premise: the run opened")
+        for row in items {
+            XCTAssertEqual(
+                transcript.rect(ofRow: row).minY, transcript.rect(ofRow: row - 1).maxY,
+                "item \(row - first) isn't flush under the row above")
+        }
+        let next = items.upperBound
+        XCTAssertEqual(
+            transcript.rect(ofRow: next).minY - transcript.rect(ofRow: next - 1).maxY, 14,
+            "the next entry isn't the gap between entries below the last item")
+    }
+
     // MARK: - Helpers
 
     /// The rows the controller should show now.

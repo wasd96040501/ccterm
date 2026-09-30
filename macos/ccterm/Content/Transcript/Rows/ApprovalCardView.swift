@@ -16,9 +16,6 @@ final class ApprovalCardView: NSView, PageRowView {
 
     private static let titleFont = NSFont.systemFont(ofSize: 13, weight: .medium)
     private static let reasonFont = NSFont.systemFont(ofSize: 12)
-    /// The card sits 6 below its row's top and 2 above its bottom.
-    private static let marginTop: CGFloat = 6
-    private static let marginBottom: CGFloat = 2
     private static let border: CGFloat = 1
     private static let padding = NSEdgeInsets(top: 12, left: 16, bottom: 12, right: 16)
     private static let gap: CGFloat = 8
@@ -104,11 +101,11 @@ final class ApprovalCardView: NSView, PageRowView {
             cell.lineBreakMode = .byWordWrapping
             reasonHeight = ceil(cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: content, height: 100_000)).height)
         }
-        var height = marginTop + border + padding.top + headHeight
+        var height = border + padding.top + headHeight
         if bodyHeight > 0 { height += gap + bodyHeight }
         if isCut { height += gap + linkHeight }
         if reasonHeight > 0 { height += gap + reasonHeight }
-        height += gap + buttonRow + padding.bottom + border + marginBottom
+        height += gap + buttonRow + padding.bottom + border
         return Metrics(bodyHeight: bodyHeight, isCut: isCut, reasonHeight: reasonHeight, height: height)
     }
 
@@ -137,11 +134,10 @@ final class ApprovalCardView: NSView, PageRowView {
         let metrics = Self.metrics(for: model, width: bounds.width)
         let inset = Self.border + Self.padding.left
         let content = Self.contentWidth(bounds.width)
-        let cardTop = Self.marginTop
-        outline.frame = NSRect(
-            x: 0, y: cardTop, width: bounds.width, height: metrics.height - Self.marginTop - Self.marginBottom)
+        // The row is the card; its gap under the run is the transcript's (PageRow.spacingAbove).
+        outline.frame = NSRect(x: 0, y: 0, width: bounds.width, height: metrics.height)
 
-        var y = cardTop + Self.border + Self.padding.top
+        var y = Self.border + Self.padding.top
         tile.frame.origin = NSPoint(x: inset, y: y)
         let titleX = inset + 16 + Self.gap
         let titleSize = title.fittingSize

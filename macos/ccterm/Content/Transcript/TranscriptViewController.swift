@@ -265,6 +265,10 @@ extension TranscriptViewController: TranscriptViewDelegate {
         rows[row].height(width: width)
     }
 
+    func transcriptView(_ transcriptView: TranscriptView, customSpacingAboveRow row: Int) -> CGFloat? {
+        rows[row].spacingAbove
+    }
+
     func transcriptView(_ transcriptView: TranscriptView, viewForRow row: Int) -> NSView {
         let pageRow = rows[row]
         let opens = pageRow.opens

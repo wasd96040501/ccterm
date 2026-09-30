@@ -252,7 +252,7 @@ html, body {
 
 /* The approval card: the bubble's shape, outlined. */
 .approval {
-  margin: 6px 0 2px 0; border: 1px solid var(--separator); border-radius: 14px; padding: 12px 16px 12px;
+  margin: 6px 0 0; border: 1px solid var(--separator); border-radius: 14px; padding: 12px 16px 12px;
   background: var(--window); display: grid; gap: 8px; font-size: 13px;
 }
 .approval .head { display: flex; gap: 8px; align-items: center; color: var(--label); font-weight: 500; }

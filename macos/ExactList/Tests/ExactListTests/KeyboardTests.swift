@@ -68,6 +68,11 @@ final class KeyboardTests: XCTestCase {
         host.handledCommands = [#selector(NSResponder.moveDown(_:))]
         await press(String(UnicodeScalar(NSDownArrowFunctionKey)!), 125)
         XCTAssertEqual(offset(of: list), 0, "the delegate claimed it")
+        host.onCommand = { list, _ in list.scrollToRow(100, at: .top) }
+        await press(String(UnicodeScalar(NSDownArrowFunctionKey)!), 125)
+        XCTAssertEqual(offset(of: list), 100 * 30, "the delegate may scroll from it")
+        host.onCommand = nil
+        await press(String(UnicodeScalar(NSHomeFunctionKey)!), 115)
 
         XCTAssertEqual(recorder.keys, [])
         await press("a", 0)

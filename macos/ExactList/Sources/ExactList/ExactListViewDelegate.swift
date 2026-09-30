@@ -49,7 +49,8 @@ public protocol ExactListViewDelegate: AnyObject {
 
     /// A key binding's command while the list has focus, offered before the
     /// list scrolls by it (K1). Return `true` if handled. This is the same hook
-    /// as `NSTextView`'s `textView(_:doCommandBy:)`.
+    /// as `NSTextView`'s `textView(_:doCommandBy:)`, and like it an event: the
+    /// list may be updated and scrolled from here (L9).
     func listView(_ listView: ExactListView, doCommandBy selector: Selector) -> Bool
 }
 

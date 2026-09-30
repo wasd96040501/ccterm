@@ -141,7 +141,7 @@ written they do nothing.
 - **L9: re-entrancy is a programmer error.** These stop with a precondition
   failure; `NSTableView` raises in the same situations.
   - Calling any update, `reloadData()` or scroll method from inside a data
-    source or delegate callback.
+    source or delegate callback, except `listView(_:doCommandBy:)` (K1).
   - Calling a single-call update (U4), `reloadData()`, a scroll method or a
     geometry query on the list from inside a batch closure. The closure's
     `Updates` proxy is the only way in.
@@ -706,7 +706,8 @@ in a commit has a start and an end value for its screen top and its height.
   the standard key bindings.
   - The delegate is offered every command first, through
     `listView(_:doCommandBy:)` (the counterpart of `NSTextView`'s
-    `textView(_:doCommandBy:)`).
+    `textView(_:doCommandBy:)`). It is an event, not a callback of a commit:
+    L9 doesn't apply, and the delegate may update and scroll the list from it.
   - Otherwise, the list answers only these commands:
     - `scrollLineUp`/`Down` and `moveUp`/`moveDown`, by `verticalLineScroll`;
     - `scrollPageUp`/`Down` and `pageUp`/`pageDown`, by the height of `U` minus

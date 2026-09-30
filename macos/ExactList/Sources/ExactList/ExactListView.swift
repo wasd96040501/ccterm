@@ -793,8 +793,12 @@ extension ExactListView: ListClipViewOwner {
 
 extension ExactListView: ListDocumentViewOwner {
 
+    /// K1. The delegate's answer is an event handler, not a callback of a
+    /// commit, so it is called outside L9's guard: the host may update and
+    /// scroll the list from it, as from `textView(_:doCommandBy:)`.
     func documentView(_ documentView: ListDocumentView, doCommandBy selector: Selector) -> Bool {
-        if callDelegate({ $0.listView(self, doCommandBy: selector) }) { return true }
+        guard let delegate else { preconditionFailure("ExactList: the delegate was deallocated (L12)") }
+        if delegate.listView(self, doCommandBy: selector) { return true }
         guard isLoaded else { return false }
         let line = scrollView.verticalLineScroll
         let page = committed.unobscuredBottom - committed.unobscuredTop - scrollView.verticalPageScroll

@@ -24,6 +24,9 @@ public final class RecordingHost: ExactListViewDataSource, ExactListViewDelegate
     /// Answer for `doCommandBy`: which selectors the host claims.
     public var handledCommands: Set<Selector> = []
 
+    /// Run for each command before answering it, with the list.
+    public var onCommand: ((ExactListView, Selector) -> Void)?
+
     private var bound: [ObjectIdentifier: Int] = [:]
 
     public init(count: Int, height: @escaping (_ row: Int, _ width: CGFloat) -> CGFloat) {
@@ -68,6 +71,7 @@ public final class RecordingHost: ExactListViewDataSource, ExactListViewDelegate
 
     public func listView(_ listView: ExactListView, doCommandBy selector: Selector) -> Bool {
         calls.append(.doCommand(selector))
+        onCommand?(listView, selector)
         return handledCommands.contains(selector)
     }
 

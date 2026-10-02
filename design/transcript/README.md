@@ -111,7 +111,7 @@ appear as text or 10–16 % washes, never as filled buttons.
 | 5 | Local commands, interruptions, compaction | 15 % of prompts | [05-local.md](05-local.md) |
 | 6 | Messages from other agents — a subagent's report (a line; the report beside), sessions, coordinator, plugins | — | [06-agent-messages.md](06-agent-messages.md) |
 | 7 | Tools that talk to you — questions, plans, task lists | < 3 % | [07-talk.md](07-talk.md) |
-| 8 | Live sessions — the New tab, the + on every tab bar, the composer and what each control can change when | — | [08-live.md](08-live.md) |
+| 8 | Live sessions — the New tab, the + on every tab bar, the composer and what each control can change when, the sidebar's conversation icon, one shape language | — | [08-live.md](08-live.md) |
 
 ## Opening a document beside the transcript
 

@@ -17,7 +17,7 @@
   --i-badge: 10px;                   /* clock, bolt, checkmark */
   --side-bg: #e8e8ea;
   --side-sel: rgba(0, 0, 0, 0.1);
-  --menu-bg: color-mix(in srgb, var(--window) 94%, transparent);
+  --menu-bg: color-mix(in srgb, var(--window) 98%, transparent);
   --si-fill: #ffffff;
   --si-edge: rgba(0, 0, 0, 0.34);
   --si-ink: #6e6e73;
@@ -247,6 +247,7 @@
 .lv-menu.static { position: relative; z-index: 0; display: inline-block; vertical-align: top; }
 .lv-menu.panel { padding: 0; width: 300px; overflow: hidden; }
 .lv-menu .mscroll { max-height: 360px; overflow: auto; padding: 0 5px 5px; scrollbar-width: thin; }
+.lv-menu .mfoot { padding: 5px; border-top: 0.5px solid var(--separator); }
 .mi { display: grid; grid-template-columns: 14px 20px 1fr auto; align-items: center; column-gap: 4px; padding: 3px 10px 3px 6px; border-radius: calc(var(--r-ctl) - 2px); min-height: 22px; cursor: default; }
 .mi.nog { grid-template-columns: 14px 1fr auto; }
 .mi .ck { width: var(--i-badge); height: var(--i-badge); }
@@ -267,12 +268,13 @@
 .mh { font-size: 11px; font-weight: 600; color: var(--tertiary); padding: 4px 10px 2px 24px; display: flex; justify-content: space-between; gap: 12px; }
 .mh kbd { font: inherit; font-weight: 400; }
 .mh.acct {
-  position: sticky; top: 0; z-index: 1; justify-content: flex-start; align-items: center; gap: 6px; padding: 8px 10px 4px 11px; margin: 0 -5px;
+  position: sticky; top: 0; z-index: 1; justify-content: flex-start; align-items: center; flex-wrap: wrap; gap: 0 6px; padding: 8px 10px 4px 11px; margin: 0 -5px;
   background: var(--menu-bg); color: var(--secondary); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
 }
 .mh.acct .g { width: var(--i-ctl); height: var(--i-ctl); color: var(--secondary); flex: none; }
 .mh.acct i { font-style: normal; font-weight: 400; color: var(--tertiary); margin-left: 6px; }
-.mh.acct em { margin-left: auto; font-style: normal; font-weight: 400; color: var(--tertiary); white-space: nowrap; }
+.mh.acct > span { white-space: nowrap; }
+.mh.acct em { flex-basis: 100%; margin-left: 20px; font-style: normal; font-weight: 400; color: var(--tertiary); white-space: nowrap; }
 .msep { height: 0.5px; background: var(--separator); margin: 5px 10px; }
 
 /* Command completion: above the card, 28-pt rows. */

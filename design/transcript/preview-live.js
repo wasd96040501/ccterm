@@ -316,10 +316,14 @@ function menuHTML(items, opts = {}) {
     return `<div class="${cls}" data-mi="${i}">${it.checked ? LV.check : "<span></span>"}${anyGlyph ? it.glyph || "<span></span>" : ""}<span class="l">${esc(it.label)}</span>${
       it.submenu ? `<span class="k">${LV.sub}</span>` : it.k ? `<span class="k">${esc(it.k)}</span>` : it.trail ? `<span class="k t">${it.trail}</span>` : "<span></span>"
     }${it.sub ? `<span class="s">${esc(it.sub)}</span>` : ""}</div>`;
-  }).join("");
-  // A long list is a panel with its own scroller, capped in height.
+  });
+  // A long list is a panel with its own scroller, capped in height; what
+  // follows its last separator (Fast Mode) stays below the scroll, always seen.
   const panel = opts.panel || items.some((i) => i.acct);
-  return `<div class="lv-menu${opts.static ? " static" : ""}${panel ? " panel" : ""}" role="menu">${panel ? `<div class="mscroll">${body}</div>` : body}</div>`;
+  if (!panel) return `<div class="lv-menu${opts.static ? " static" : ""}" role="menu">${body.join("")}</div>`;
+  const cut = items.map((i) => !!i.sep).lastIndexOf(true);
+  const head = cut < 0 ? body : body.slice(0, cut), foot = cut < 0 ? [] : body.slice(cut + 1);
+  return `<div class="lv-menu${opts.static ? " static" : ""} panel" role="menu"><div class="mscroll">${head.join("")}</div>${foot.length ? `<div class="mfoot">${foot.join("")}</div>` : ""}</div>`;
 }
 
 const MENU = {

@@ -25,7 +25,8 @@ Five rules follow.
 
 1. **One composer.** The New tab and a session tab use the same field and the
    same controls in the same order. Only the controls that can't change
-   after launch (folder, account, worktree) are the New tab's alone.
+   after launch (folder, worktree) are the New tab's alone. The account is
+   not a control: it follows the model (see *Model*).
 2. **The control says when.** A choice that will apply later shows that on
    the control itself (*after this turn*), not in an alert or a toast.
 3. **Choices only the CLI can refuse are greyed, with the reason.** A menu
@@ -74,12 +75,39 @@ Five rules follow.
   outlives its tab, as it does today. Closing a New tab drops the draft's
   settings. Its text is kept, and the next New tab in the window opens with it.
 
+## The sidebar and the conversation icon
+
+The sheet's window draws the sidebar as `SidebarViewController` does today:
+a source list, 22-pt rows, a 14-pt indent per level, the disclosure
+triangle, a 16-pt icon at +13 and the title at +34, activity marks at the
+trailing end, the selection a rounded inset 10 pt from each side. Projects
+wear the system folder icon. A worktree session adds a small branch glyph
+after its title in tertiary.
+
+**The conversation icon is white**, as a Mac document is: white paper with
+its kind's emblem, the way a Swift file is white with an orange bird. Today's
+is a coral template glyph; on a sidebar of system folders it reads as a
+badge, not a thing.
+
+- **Shape.** A speech bubble — a Lamé squircle (n = 4, the family of every
+  ccterm glyph) 13 × 10 pt with a tail to the lower left — white
+  (`#FFFFFF`; `#F5F5F7` in Dark), edged with a 0.55-pt line at 34 % black
+  (50 % in Dark) so it holds on a white or a selected row. The edge is
+  drawn under the fill, so the tail joins the body without a seam.
+- **Emblem.** The app icon's prompt, small: a chevron in system grey
+  (`#6E6E73`) and a three-step cursor in the icon's ramp (peach, coral,
+  violet). It is the one bit of colour, and it is the app's own.
+- **Full colour, not a template**, so it stays itself on a selected row, as
+  Finder's icons do. The build (`design/sidebar-icons/src/build.ts`) emits
+  it as a colour asset, and the sidebar stops tinting it.
+- Subagent rows keep their Lamé star; the activity marks are unchanged.
+
 ## The New view
 
 ```
-                              ◆                          coral session glyph, 32 pt
+                             ▣                           app icon, 64 pt, a soft glow
                           ccterm ⌄                       folder: 22-pt pop-up
-                     ~/dev/ccterm · main                 11-pt tertiary
+              ~/dev/ccterm · main   ☐ Worktree           11-pt tertiary; git folders only
      ┌──────────────────────────────────────────────┐
      │ Ask Claude to…                                │    the composer, 640 pt
      │                                               │
@@ -90,22 +118,33 @@ Five rules follow.
 
 - **Centred**, vertically a third of the way down rather than at the centre
   (the optical centre, the way Spotlight's field sits).
-- **The decoration is the session glyph**: the sidebar's coral conversation
-  squircle at 32 pt, with a soft coral halo (12 %, 24-pt blur). It is what
-  this tab will wear in the sidebar. It is the only coloured thing on the page.
+- **The decoration is the app icon** (`design/icon`, the shipped pixels) at
+  64 pt — the page is the app's own front door. Behind it, a glow made of the
+  icon's cursor ramp (peach → coral → violet): a vertical gradient under a
+  radial mask, 20-pt blur, 42 % (36 % in Dark), rising and falling (60 → 100 %)
+  in time with the icon's cursor, which blinks in 1.1-s steps as a terminal's does. Both hold still while
+  the field has focus, so typing has nothing moving above it; Reduce Motion
+  holds them always. It is the only coloured thing on the page.
 - **The folder is the title**, because it is the one choice that can't be
   undone: a 22-pt semibold pop-up with the folder's name, its path and git
   branch under it in 11-pt tertiary. Its menu:
   - **Recent** — the sidebar's projects, most recent first, eight at most;
   - **Choose Folder… ⌘O** — an open panel (*Choose the folder Claude will
-    work in.*);
-  - **New Worktree** — a checkbox (`--worktree`): *Claude works on a new
-    branch in .claude/worktrees*. Off by default, and turned off when the
-    folder changes.
+    work in.*).
+- **Worktree** is a checkbox on the path line, after the branch — a choice
+  *about* the folder, beside it, not one of the folders. On, the line reads
+  *~/dev/ccterm · new branch from origin/main* and Send launches with
+  `--worktree`: the CLI makes `.claude/worktrees/<name>` on a new branch from
+  `worktree.baseRef` (*fresh*: origin's default branch, the default; *head*:
+  the local HEAD) and works there. **Only a git folder shows it** — the CLI
+  refuses `--worktree` elsewhere (*Can only use --worktree in a git
+  repository*), and a folder with no branch has no branch line to sit on.
+  Off by default, and off again when the folder changes. A worktree session's
+  tab title and sidebar row carry its branch (*quiet-otter · worktree*).
 - **Default folder**: the folder of the session tab that was active when ⌘T
   was pressed; otherwise the most recent project.
-- **Account** — a chip after Mode, *only when Settings has more than one
-  account*. It chooses the launch environment, so it lives here only.
+- **No account control.** The account is chosen by choosing a model (see
+  *Model*); a provider model's chip names its provider.
 - **Defaults for model, effort and mode** are the last ones chosen in a New
   tab (an app preference); the first time, the CLI's own: `Default
   (recommended)`, the model's default effort, and the CLI's
@@ -139,7 +178,7 @@ prompt, so this leaves nothing in the sidebar.
 ```
 
 - **The card.** 720 pt wide at most, centred in the tab (the transcript's
-  column plus its margins), 16-pt radius, window background, a hairline and a
+  column plus its margins), the card radius (see *One shape language*), window background, a hairline and a
   soft shadow; it floats 16 pt above the tab's bottom edge and the transcript
   scrolls under it. Focus adds a 1-pt accent ring at 45 % with a 4-pt accent
   halo at 12 %.
@@ -147,7 +186,8 @@ prompt, so this leaves nothing in the sidebar.
   action button. Each pull-down is borderless, 24 pt tall, 12-pt secondary
   text with its glyph, and a chevron; hover gives it the hover fill. Their
   menus are NSMenus with item subtitles (`NSMenuItem.subtitle`, macOS 14.4)
-  and section headers.
+  and section headers — except Model's, a panel with a height limit (see
+  *Model*).
   - **Model** — the model's short name. *Fast* adds a bolt before it.
   - **Effort** — a 5-bar level glyph filled to the level, then its name. The
     bars are the page's one bit of ornament in the composer.
@@ -160,7 +200,11 @@ prompt, so this leaves nothing in the sidebar.
 - **The status slot** (11-pt, tertiary, before the button) is empty unless
   something is out of the ordinary: *Starting Claude…*, *Compacting…*, *Will
   resume when you send*, or the coral *Waiting for you ↑* when the request
-  that waits has scrolled out of view (click scrolls to it).
+  that waits has scrolled out of view (click scrolls to it). It is never
+  truncated: when the composer narrows, the chips drop their words first
+  (the provider name, then the effort and mode names — glyphs and tooltips
+  remain), and below 380 pt the status takes a line of its own under the
+  chips.
 - **Context.** A 14-pt ring with a percentage appears in the status slot once
   the context is half full (`get_context_usage` after each turn); click opens
   `/context` beside. Below half, it isn't shown.
@@ -169,23 +213,71 @@ prompt, so this leaves nothing in the sidebar.
 
 ### Model
 
-Items come from the catalog, in its order. The top level holds the default and
-the current families; older models sit in **Other Models ▸**.
+**One menu, sectioned by account.** Settings keeps several accounts — the
+Claude subscription and API providers (a relay, DeepSeek, …) — and its design
+already decides that *there is no default account: the account follows from
+the model*. A provider's models only exist under that provider; *Claude Max ·
+DeepSeek-V3* is not a pair anyone can choose. So the menu lists models, and
+each account is a section of it, in Settings' order:
 
 ```
-  Default (recommended)          ← subtitle: Opus 5.5
-✓ Opus 5.5
-  Fable 5.1
-  Sonnet 5.5
-  Haiku 4.5
-  ─────────
-  Other Models                ▸
-  ─────────
-  ⚡︎ Fast Mode                    ← subtitle: Faster output on Opus · billed as extra usage
+  ┌──────────────────────────────────────────────┐
+  │ ✦ Claude Max  Subscription                    │  sticky section header
+  │   Default (recommended)    Opus 5.5           │
+  │ ✓ Opus 5.5                                    │
+  │   Fable 5.1 · Sonnet 5.5 · Haiku 4.5          │
+  │   4 More Models                               │  expands in place
+  │ ▤ Work Relay  relay.example.com  Restarts the session │
+  │   Default · Opus · Sonnet · Haiku           ↻ │
+  │ ▤ DeepSeek  api.deepseek.com                  │
+  │   Default                                   ↻ │  ↕ scrolls, 360 pt at most
+  │ ───────────────────────────────────────────── │
+  │ ⚡︎ Fast Mode   Faster output on Opus · billed as extra usage │  outside the scroll
+  └──────────────────────────────────────────────┘
 ```
+
+Two pop-ups (account, then model) were the alternative and lose on three
+counts: the first one's only job is to filter the second; changing it would
+have to pick a model on your behalf; and both would mean *restart* while only
+one says so. With one menu, the only expensive choice — a model in another
+account — is marked where it is chosen.
+
+- **A panel, not an NSMenu**, because it has a height limit: 360 pt, then it
+  scrolls, with each account's header sticking to the top as its models pass
+  under it. A borderless child panel with the menu material, NSMenu's metrics
+  (22-pt rows, 5-pt inset, 12-pt radius), keyboard navigation and
+  type-select. Fast Mode sits under the scroll, always visible.
+- **Older models** of an account fold into one *N More Models* row that
+  expands in place (the panel stays open, the scroll stays put). The current
+  model is never folded.
+- **A section header** is the account's mark (the Claude mark for the
+  subscription, a server glyph for a provider), its name, and its detail in
+  tertiary (*Subscription*, the provider's host).
+- **The chip** shows a provider model as *Sonnet  Work Relay* — the provider's
+  name in tertiary after the model, dropped first when the composer narrows.
+  The subscription isn't named: it's the usual case.
+- **Another account restarts the session.** The CLI reads its account from
+  its environment at launch; nothing in the control protocol changes it.
+  While a process runs (Idle, Responding, Waiting), the other sections' header
+  says *Restarts the session* and their items carry ↻. Choosing one opens a
+  sheet on the window:
+
+  > **Restart this session as Work Relay?**
+  > Claude Code reads its account when it starts. ccterm ends this session's
+  > process and resumes the conversation as Work Relay, on Sonnet.
+  > *[Cancel]  [Restart]*
+
+  While Claude works the text adds *Claude stops what it's doing now.*, the
+  button reads **Stop and Restart**, and Cancel becomes the default button —
+  Return must not throw away a turn. Restarting interrupts the turn, ends the
+  process, and resumes with `--resume` plus the new environment and
+  `--model`; the transcript gets a divider *Restarted as Work Relay · Sonnet*.
+  At rest or failed there is no process: the choice is free and the next Send
+  resumes in that account.
 
 - **Fast Mode** is a checkbox for models with `supportsFastMode`. On others it's
-  disabled: *Opus 5.5, Opus 5 and Opus 4.8 only*. When the account can't use
+  disabled: *Opus 5.5, Opus 5 and Opus 4.8 only*; on a provider's model,
+  *Only with the subscription*. When the account can't use
   it, the subtitle is `fast_mode_disabled_reason` in words (*Requires extra
   usage*). ccterm opts in with the flag setting `fastMode: true`, which the CLI
   requires from an SDK host. Turning Fast on turns Auto mode off (the CLI
@@ -272,8 +364,8 @@ applies, and **how** ccterm sends it. The two tabs are the two halves.
 |  | **New tab** | **Starting** | **Idle** | **Responding** | **Waiting for you** | **At rest** | **Failed** |
 |---|---|---|---|---|---|---|---|
 | **Folder** | choose · `cwd` | — fixed | — | — | — | — | — |
-| **Worktree** | toggle · `--worktree` | — | — | — | — | — | — |
-| **Account** | choose (> 1) · env | — | — | — | — | — | — |
+| **Worktree** | toggle, git folders only · `--worktree` | — | — | — | — | — | — |
+| **Account** | follows the model · env | — | confirm → restart, resume | confirm → stop, restart | confirm → stop, restart | env on resume | env on restart |
 | **Model** | choose · `--model` | choose · held, sent when ready | `set_model` · ≈ 1.5 s, `/model` bubble | choose · **after this turn** ◷ | after this turn ◷ | choose · `--model` on resume | choose · `--model` on restart |
 | **Fast** | toggle · `fastMode` flag setting | held | `apply_flag_settings` | after this turn ◷ | after this turn ◷ | flag on resume | flag on restart |
 | **Effort** | choose · `--effort` | held | `apply_flag_settings` · next request | next request | next request | `--effort` on resume | `--effort` on restart |
@@ -341,6 +433,32 @@ sends it. The user sees no difference from an applied change.
 | ⌘O | the New view | Choose Folder… |
 | / | start of the field | command completion |
 
+## One shape language
+
+Every view on this page draws from the same few numbers.
+
+| | value | used by |
+|---|---|---|
+| **Radius · tag** | 5 | the command token, tooltips |
+| **Radius · control** | 7 | chips, tabs, sidebar and menu rows (row = control − 2) |
+| **Radius · popover** | 12 | menus, the model panel, the slash list, the banner |
+| **Radius · card** | 18 | the composer, the alert, cards |
+| **Icon · row** | 16 | anything that heads a row: sidebar, menu items, tiles |
+| **Icon · control** | 14 | inside a 12-pt control: chips, the action button, the ring |
+| **Icon · badge** | 10 | a mark on a word: the clock, the bolt, the check |
+| **Spacing** | 4, 8, 12, 16, 24 | every padding and gap (the README's 4-pt grid) |
+
+- **Corners are continuous** (squircles): AppKit's `cornerCurve =
+  .continuous`. A squircle of the same radius looks smaller, so where it is
+  drawn the radius is scaled ×1.45 to read the same as the circular one. The
+  + and the action button stay circles; tiles and icons stay Lamé curves.
+- **Words aren't cut.** A control's words are dropped whole when its glyph
+  already says the same — the provider name first, then Effort's and Mode's
+  names, kept in their tooltips — and a status sentence moves to its own
+  line rather than end in an ellipsis. Only titles (a session's, a folder's),
+  which can be any length, truncate, at the end, with the full text in the
+  tooltip. Alert buttons size to their words.
+
 ## What this needs from the code (for the PR that builds it)
 
 - AgentSDK: make `setModel` and `setPermissionMode` public. Decode
@@ -348,15 +466,24 @@ sends it. The user sees no difference from an applied change.
   `per_turn_effort_changed`. Expose `cancel_async_message`, `get_context_usage`
   (exists) and `list_models`.
 - `LiveSession` keeps the `initialize` result instead of discarding it. The
-  catalog, cached on disk, is built from it.
+  catalog, cached on disk, is built from it — one per account, since each
+  account's CLI lists its own models.
+- Restart: end the process and resume with another account's environment
+  and `--model`, then a divider row in the transcript.
 - `SessionState` gains: `starting`, `compacting`, current model / effort / mode
   / fast, a pending model, queued prompts.
 - `SessionStore.start` takes model, effort, mode, fast, worktree and account.
-  Resume passes the transcript's last settings.
+  Resume passes the transcript's last settings. Worktree only when the
+  folder is a git work tree (`GitService` knows the branch).
+- `LibraryStore.isScratch` hides any path with a hidden component, so a
+  session in `.claude/worktrees/<name>` would vanish from the sidebar. It
+  should list it under the folder it came from, with its branch.
 - Settings › General: *Allow Bypass Permissions*.
 - TranscriptKit's workspace: an empty area hosts a view supplied by the app
   (the New view) instead of *No Editor*. Each group's tab bar gets a trailing
   accessory (the +).
+- Sidebar: the white conversation icon from `design/sidebar-icons` as a
+  colour image, not a template, so the row's tint no longer applies to it.
 
 ## Sources
 

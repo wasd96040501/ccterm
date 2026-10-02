@@ -45,3 +45,21 @@ The app loads each image and colour set by its generated symbol,
 `NSImage(resource:)` and `NSColor(resource:)`, and tints each glyph with its
 colour. When a row is selected and focused, the
 glyph turns white, like the title.
+
+## Status marks
+
+A live session's row ends in one small mark, 14 pt wide, for the state of its CLI.
+Colour follows the transcript design: coral is a session waiting for you, red a
+failure, and a running thing moves and is not coloured.
+
+| state | mark |
+|---|---|
+| at rest | none |
+| idle | a 6-pt dot, secondary label at 55 % |
+| responding | a 1.5-pt arc, a third of a ring, turning once a second; Reduce Motion holds it still |
+| needs input | a coral dot, `SidebarCoral` |
+| failed | a `systemRed` dot |
+
+A collapsed group shows the mark of its most urgent session (needs input, then
+failed, responding, idle); an open group shows none, each session its own. On a
+selected, focused row every mark is white, the idle dot at 55 %.

@@ -339,12 +339,10 @@ public final class EditorGroupViewController: NSViewController {
             // New tab that starts its session): the history follows, so going back
             // still finds it by what it is now.
             item.observe(\.identifier, options: [.old, .new]) { [weak self] _, change in
-                MainActor.assumeIsolated {
-                    guard let old = (change.oldValue ?? nil) as? AnyHashable,
-                        let new = (change.newValue ?? nil) as? AnyHashable
-                    else { return }
-                    self?.history.replace(old, with: new)
-                }
+                guard let old = (change.oldValue ?? nil) as? AnyHashable,
+                    let new = (change.newValue ?? nil) as? AnyHashable
+                else { return }
+                MainActor.assumeIsolated { self?.history.replace(old, with: new) }
             },
         ]
         return index

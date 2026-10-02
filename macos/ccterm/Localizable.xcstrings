@@ -285,6 +285,16 @@
         }
       }
     },
+    "A new branch from %@, in a new worktree": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "基于 %@ 的新分支，在新工作树中"
+          }
+        }
+      }
+    },
     "API Key": {
       "localizations": {
         "zh-Hans": {
@@ -576,6 +586,16 @@
         }
       }
     },
+    "Branch": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分支"
+          }
+        }
+      }
+    },
     "Cancel": {
       "localizations": {
         "zh-Hans": {
@@ -592,6 +612,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "聊聊这个"
+          }
+        }
+      }
+    },
+    "Checked out here": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已在此处检出"
+          }
+        }
+      }
+    },
+    "Checked out in a new worktree": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在新工作树中检出"
+          }
+        }
+      }
+    },
+    "Checked out in another worktree": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已在另一个工作树中检出"
           }
         }
       }
@@ -748,6 +798,16 @@
       }
     },
     "Command": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命令"
+          }
+        }
+      }
+    },
+    "Commands": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1028,6 +1088,16 @@
         }
       }
     },
+    "Detached HEAD": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分离的 HEAD"
+          }
+        }
+      }
+    },
     "Details": {
       "localizations": {
         "zh-Hans": {
@@ -1245,6 +1315,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "已填入%@"
+          }
+        }
+      }
+    },
+    "Filter": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "筛选"
           }
         }
       }
@@ -1568,6 +1648,16 @@
         }
       }
     },
+    "Mode": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模式"
+          }
+        }
+      }
+    },
     "Models": {
       "localizations": {
         "zh-Hans": {
@@ -1638,6 +1728,16 @@
         }
       }
     },
+    "New Line": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "换行"
+          }
+        }
+      }
+    },
     "New Session": {
       "localizations": {
         "zh-Hans": {
@@ -1684,6 +1784,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有 API 提供方"
+          }
+        }
+      }
+    },
+    "No Matching Branches": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有匹配的分支"
           }
         }
       }
@@ -1744,6 +1854,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "不是文件夹"
+          }
+        }
+      }
+    },
+    "Not a git repository": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不是 Git 仓库"
           }
         }
       }
@@ -2044,6 +2164,26 @@
         }
       }
     },
+    "Pull Request": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拉取请求"
+          }
+        }
+      }
+    },
+    "Pull request #%lld, in a new worktree": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拉取请求 #%lld，在新工作树中"
+          }
+        }
+      }
+    },
     "Queued": {
       "localizations": {
         "zh-Hans": {
@@ -2154,12 +2294,32 @@
         }
       }
     },
+    "Recent": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近"
+          }
+        }
+      }
+    },
     "Recovery": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "恢复方式"
+          }
+        }
+      }
+    },
+    "Remote": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "远程"
           }
         }
       }
@@ -2745,6 +2905,16 @@
         }
       }
     },
+    "Switches to %@ when you send": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送时切换到 %@"
+          }
+        }
+      }
+    },
     "Task list": {
       "localizations": {
         "zh-Hans": {
@@ -2975,6 +3145,16 @@
         }
       }
     },
+    "Uncommitted changes here — use a worktree": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此处有未提交的更改——请使用工作树"
+          }
+        }
+      }
+    },
     "Untitled Session": {
       "localizations": {
         "zh-Hans": {
@@ -3142,6 +3322,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "撤回"
+          }
+        }
+      }
+    },
+    "Work in a new git worktree (--worktree), leaving this folder as it is": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在新的 git 工作树 (--worktree) 中工作，保持此文件夹不变"
+          }
+        }
+      }
+    },
+    "Worktree": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作树"
           }
         }
       }

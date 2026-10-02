@@ -94,6 +94,10 @@ final class SessionTabViewController: NSViewController {
     /// Stop while *Starting* can take them back.
     private var startedDraft: NewSessionDraft?
     private var firstPrompt: String?
+    /// Whether that session's first launch is over (it left *Starting*): from
+    /// then on Stop while *Starting* — a restart, a resume — keeps the
+    /// conversation; only the first launch goes back to the draft.
+    private var firstLaunchIsOver = false
     /// Prompts the CLI returned (*Stopped before it was read*) whose words are
     /// already back in the field.
     private var takenBack: Set<String> = []
@@ -365,6 +369,7 @@ final class SessionTabViewController: NSViewController {
         composer.isFieldDimmed = true
         startedDraft = draft
         firstPrompt = text
+        firstLaunchIsOver = false
         // 2. The page rises, then 3 to 6.
         guard let newSession else {
             completeHandover(to: url)
@@ -483,6 +488,7 @@ final class SessionTabViewController: NSViewController {
                 for try await state in states {
                     guard let self, !Task.isCancelled else { return }
                     self.state = state
+                    if state.phase != .starting { self.firstLaunchIsOver = true }
                     transcript.show(state)
                     self.applyTitle(of: state)
                     self.takeBackReturnedPrompts(of: state, at: url)
@@ -633,14 +639,15 @@ extension SessionTabViewController: ComposerViewControllerDelegate {
         guard let transcriptURL else { return }
         // Until its first state arrives, a session this tab just started is
         // still *Starting*: the store made it so at `start`.
-        let phase = state?.phase ?? (startedDraft != nil ? .starting : nil)
+        let returnsToDraft = startedDraft != nil && !firstLaunchIsOver
+        let phase = state?.phase ?? (returnsToDraft ? .starting : nil)
         guard phase == .starting else {
             context.sessions.interrupt(at: transcriptURL)
             return
         }
         // Stop while *Starting* cancels the launch and takes the prompts back.
         let returned = context.sessions.cancelLaunch(at: transcriptURL)
-        if startedDraft != nil {
+        if returnsToDraft {
             returnToDraft(words: returned.isEmpty ? firstPrompt ?? "" : returned.joined(separator: "\n"))
         } else {
             for words in returned { putBack(words) }

@@ -38,16 +38,19 @@ final class SessionTabLiveTests: XCTestCase {
 
     private var folder: URL { scratch.appendingPathComponent("work", isDirectory: true) }
 
-    /// A launcher that waits `delay` seconds — the CLI still *Starting* — then
-    /// becomes the fake CLI.
-    private func fakeCLI(delay: TimeInterval) throws -> String {
+    /// A launcher that waits — the CLI still *Starting* — `delay` seconds on a
+    /// first launch and `resumeDelay` on a resume, then becomes the fake CLI.
+    private func fakeCLI(delay: TimeInterval, resumeDelay: TimeInterval) throws -> String {
         let fixture = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("AgentSDK/Tests/AgentSDKTests/Fixtures/fake_cli.py")
         let launcher = scratch.appendingPathComponent("claude")
         let script = """
             #!/bin/sh
-            sleep \(delay)
+            case "$*" in
+                *--resume*) sleep \(resumeDelay) ;;
+                *) sleep \(delay) ;;
+            esac
             exec /usr/bin/env python3 '\(fixture.path)' "$@"
             """
         try script.write(to: launcher, atomically: true, encoding: .utf8)
@@ -56,8 +59,11 @@ final class SessionTabLiveTests: XCTestCase {
     }
 
     /// A New tab in `folder` over a store launching the fake CLI.
-    private func mountDraft(launchDelay: TimeInterval = 0) throws -> SessionTabViewController {
-        let launch = CLIConfiguration(binaryPath: try fakeCLI(delay: launchDelay), inheritsParentEnvironment: true)
+    private func mountDraft(
+        launchDelay: TimeInterval = 0, resumeDelay: TimeInterval = 0
+    ) throws -> SessionTabViewController {
+        let launcher = try fakeCLI(delay: launchDelay, resumeDelay: resumeDelay)
+        let launch = CLIConfiguration(binaryPath: launcher, inheritsParentEnvironment: true)
         let store = SessionStore(
             launch: { _ in launch },
             directories: Just(SessionDirectory(url: scratch.appendingPathComponent("projects"))).eraseToAnyPublisher(),
@@ -108,7 +114,7 @@ final class SessionTabLiveTests: XCTestCase {
     // MARK: - Send
 
     func testSendBecomesTheSessionsTabShowingTheHeldPromptThenItsAnswer() throws {
-        let tab = try mountDraft(launchDelay: 1.5)
+        let tab = try mountDraft(launchDelay: 3)
         try send("echo", in: tab)
 
         XCTAssertTrue(stage!.drainUntil(timeout: 5) { tab.transcriptURL != nil }, "the tab never became the session's")
@@ -159,6 +165,30 @@ final class SessionTabLiveTests: XCTestCase {
         XCTAssertTrue(stage!.drainUntil(timeout: 5) { tab.transcriptURL != nil })
         XCTAssertEqual(recorder.started.count, 2)
         XCTAssertNotEqual(recorder.started[0], recorder.started[1], "a new session, not the cancelled one")
+    }
+
+    func testStopWhileARestartStartsKeepsTheConversation() throws {
+        let tab = try mountDraft(resumeDelay: 5)
+        try send("echo", in: tab)
+        XCTAssertTrue(stage!.drainUntil(timeout: 5) { tab.transcriptURL != nil })
+        let url = try XCTUnwrap(tab.transcriptURL)
+        XCTAssertTrue(
+            stage!.drainUntil(timeout: 15) {
+                self.bubbles(in: tab).map(\.isPending) == [false] && self.store?.activities[url] == .idle
+            }, "the first turn never ended")
+
+        // Another account's model restarts the CLI: *Starting* again.
+        store?.update(.model(Fixture.choice("haiku", on: Fixture.relay)), at: url)
+        XCTAssertEqual(store?.activities[url], .responding)
+        stage!.drain(seconds: 0.3)
+
+        tab.composerViewControllerDidRequestStop(try composer(of: tab))
+
+        XCTAssertEqual(tab.transcriptURL, url, "the tab is still the session's")
+        XCTAssertEqual(recorder.returnedToDraft, 0)
+        XCTAssertTrue(tab.children.contains { $0 is TranscriptViewController })
+        XCTAssertFalse(tab.children.contains { $0 is NewSessionViewController })
+        XCTAssertEqual(bubbles(in: tab).map(\.text), ["echo"], "the conversation stays")
     }
 
     // MARK: - Queued

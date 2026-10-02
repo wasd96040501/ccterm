@@ -48,11 +48,14 @@ const MODES = [
 const MODE = (v) => MODES.find((m) => m.v === v);
 const CYCLE = ["default", "acceptEdits", "plan", "auto"]; // ⇧⇥, the CLI's own order
 
+// `branch` is what the folder has checked out (null: not a git repository);
+// `elsewhere`, branches checked out in another worktree; `dirty`, uncommitted
+// changes — both stop a switch in place.
 const FOLDERS = [
-  { name: "ccterm", path: "~/dev/ccterm", branch: "main" },
-  { name: "ghostty", path: "~/dev/ghostty", branch: "main" },
+  { name: "ccterm", path: "~/dev/ccterm", branch: "main", local: ["main", "live-session-design", "fix-gutter-overflow", "exactlist-bench", "settings-accounts"], remote: ["origin/main", "origin/release/1.4", "origin/sidebar-icons"], elsewhere: ["live-session-design"] },
+  { name: "ghostty", path: "~/dev/ghostty", branch: "main", local: ["main", "tab-accessory"], remote: ["origin/main"], dirty: true },
   { name: "claude-notes", path: "~/notes/claude-notes", branch: null }, // not a git repository
-  { name: "dotfiles", path: "~/dotfiles", branch: "master" },
+  { name: "dotfiles", path: "~/dotfiles", branch: "master", local: ["master"], remote: ["origin/master"] },
 ];
 // Accounts, as Settings has them: the subscription, then API providers.
 const ACCOUNTS = [
@@ -177,7 +180,7 @@ const SESSIONS = new Map();
 
 function draft(o = {}) {
   const s = {
-    id: nid("s"), state: "new", folder: FOLDERS[0], worktree: false,
+    id: nid("s"), state: "new", folder: FOLDERS[0], branch: (o.folder || FOLDERS[0]).branch, worktree: false,
     model: LAST.model, effort: LAST.effort, mode: LAST.mode, fast: LAST.fast,
     pendingModel: null, pendingFast: null, title: "New Session", rows: [], ctx: 0, err: "", text: "", token: null, ...o,
   };
@@ -309,10 +312,11 @@ function menuItems(kind, s) {
     });
     return [{ header: "Permission Mode", key: "⇧⇥" }, ...items.slice(0, 5), { sep: true }, items[5]];
   }
+  if (kind === "branch") return branchItems(s);
   if (kind === "folder") {
     return [
       { header: "Recent" },
-      ...FOLDERS.map((f) => ({ label: f.name, glyph: svg16(LV.folder), k: f.path, checked: s.folder === f, act: () => { s.folder = f; if (!f.branch) s.worktree = false; LW.refresh(s); } })),
+      ...FOLDERS.map((f) => ({ label: f.name, glyph: svg16(LV.folder), k: f.path, checked: s.folder === f, act: () => { s.folder = f; s.branch = f.branch; s.worktree = false; LW.refresh(s); } })),
       { sep: true },
       { label: "Choose Folder…", k: "⌘O", act: () => {} },
     ];
@@ -320,6 +324,27 @@ function menuItems(kind, s) {
   return [];
 }
 
+/** The branch popover's list, filtered by what's typed in its field. In place
+ *  the branch is the one Claude works on (another means `git switch` at Send);
+ *  with a worktree it's the one the new branch starts from. */
+function branchItems(s) {
+  const f = s.folder, q = (s.bq || "").trim().toLowerCase();
+  const inPlace = !s.worktree;
+  const why = (b) => !inPlace || b === f.branch ? null
+    : (f.elsewhere || []).includes(b) ? "Checked out in another worktree"
+    : f.dirty ? "Uncommitted changes here — use a worktree" : null;
+  const item = (b) => ({ label: b, checked: s.branch === b, disabled: !!why(b), sub: why(b) || (b === f.branch ? "Checked out here" : null), act: () => { s.branch = b; LW.refresh(s); } });
+  const match = (b) => !q || b.toLowerCase().includes(q.replace(/^#/, ""));
+  const local = f.local.filter(match), remote = f.remote.filter((b) => match(b) && !f.local.includes(b.replace(/^origin\//, "")));
+  const out = [];
+  if (local.length) out.push({ header: "Local" }, ...local.map(item));
+  if (remote.length) out.push({ header: "Remote" }, ...remote.map(item));
+  // The CLI checks out a pull request itself: --worktree #123.
+  const pr = q.match(/^#?(\d+)$/);
+  if (pr) out.push({ header: "Pull Request" }, { label: `#${pr[1]}`, sub: "Checked out in a new worktree", checked: s.branch === `#${pr[1]}`, act: () => { s.branch = `#${pr[1]}`; s.worktree = true; LW.refresh(s); } });
+  if (!out.length) out.push({ label: "No Matching Branches", disabled: true });
+  return out;
+}
 function menuHTML(items, opts = {}) {
   const anyGlyph = items.some((i) => i.glyph);
   const body = items.map((it, i) => {
@@ -338,9 +363,10 @@ function menuHTML(items, opts = {}) {
   // follows its last separator (Fast Mode) stays below the scroll, always seen.
   const panel = opts.panel || items.some((i) => i.acct);
   if (!panel) return `<div class="lv-menu${opts.static ? " static" : ""}" role="menu">${body.join("")}</div>`;
+  const filter = opts.filter != null ? `<div class="mfilter"><svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="5.2" cy="5.2" r="3.6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 8l2.6 2.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg><input placeholder="Filter" value="${esc(opts.filter)}" spellcheck="false"></div>` : "";
   const cut = items.map((i) => !!i.sep).lastIndexOf(true);
   const head = cut < 0 ? body : body.slice(0, cut), foot = cut < 0 ? [] : body.slice(cut + 1);
-  return `<div class="lv-menu${opts.static ? " static" : ""} panel" role="menu"><div class="mscroll">${head.join("")}</div>${foot.length ? `<div class="mfoot">${foot.join("")}</div>` : ""}</div>`;
+  return `<div class="lv-menu${opts.static ? " static" : ""} panel" role="menu">${filter}<div class="mscroll">${head.join("")}</div>${foot.length ? `<div class="mfoot">${foot.join("")}</div>` : ""}</div>`;
 }
 
 const MENU = {
@@ -352,11 +378,31 @@ const MENU = {
     this.s = s;
     this.chip = chip;
     chip.classList.add("open");
+    const filtered = kind === "branch"; // a popover with a filter field, as Xcode's branch picker
+    if (filtered) { s.bq = ""; this.items = menuItems(kind, s); }
     const host = document.createElement("div");
-    host.innerHTML = menuHTML(this.items);
+    host.innerHTML = menuHTML(this.items, filtered ? { filter: "", panel: true } : {});
     this.el = host.firstElementChild;
     document.body.appendChild(this.el);
     this.place(this.el, chip.getBoundingClientRect(), chip.closest(".lv-new") ? "below" : "auto");
+    if (filtered) {
+      const input = this.el.querySelector(".mfilter input");
+      input.focus();
+      input.addEventListener("input", () => {
+        s.bq = input.value;
+        this.items = menuItems(kind, s);
+        const tmp = document.createElement("div");
+        tmp.innerHTML = menuHTML(this.items, { filter: s.bq, panel: true });
+        const sc = this.el.querySelector(".mscroll");
+        sc.innerHTML = tmp.querySelector(".mscroll").innerHTML;
+        sc.scrollTop = 0;
+      });
+      input.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter") return;
+        const first = this.items.find((it) => it.act && !it.disabled);
+        if (first) { this.close(); first.act(); }
+      });
+    }
     this.el.addEventListener("click", (e) => {
       const mi = e.target.closest("[data-mi]");
       if (!mi) return;
@@ -475,17 +521,28 @@ function composerHTML(s, o = {}) {
     <div class="lv-acc">${accHTML(s, o)}</div>
   </div><div class="lv-err">${esc(s.err || "")}</div>`;
 }
+const WT_GLYPH = '<svg class="g" viewBox="0 0 14 14" aria-hidden="true"><path d="M4.2 3.2V2.6c0-.6.4-1 1-1h6.2c.6 0 1 .4 1 1v6.2c0 .6-.4 1-1 1h-.6" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="1.6" y="4.2" width="8.2" height="8.2" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
+/** What Claude works on, under the folder: the branch pop-up and the Worktree
+ *  toggle on one row that never moves, and a line under it, its height
+ *  reserved, that says what Send will do. A folder that isn't a git
+ *  repository has neither, and the row says so. */
+function whereHTML(s) {
+  const f = s.folder;
+  if (!f.branch) return '<div class="lv-where"><span class="nogit">Not a git repository</span></div><div class="lv-note"></div>';
+  const pr = /^#\d+$/.test(s.branch || "");
+  const note = s.worktree
+    ? (pr ? `Pull request ${esc(s.branch)}, in a new worktree` : `A new branch from ${esc(s.branch)}, in a new worktree`)
+    : s.branch !== f.branch ? `Switches to ${esc(s.branch)} when you send` : "";
+  return `<div class="lv-where">` +
+    `<button class="lv-pop" data-lv-menu="branch" data-sid="${s.id}" title="Branch">${LV.branch}<span>${esc(s.branch)}</span>${LV.chev2}</button>` +
+    `<button class="lv-tog${s.worktree ? " on" : ""}" aria-pressed="${s.worktree}" data-lv="worktree" data-sid="${s.id}" title="Work in a new git worktree (--worktree), leaving this folder as it is">${WT_GLYPH}Worktree</button>` +
+    `</div><div class="lv-note">${note}</div>`;
+}
 function heroHTML(s) {
   const f = s.folder;
-  const branch = !f.branch ? "" : s.worktree
-    ? ` · ${LV.branch} <span class="wt">new branch from origin/${esc(f.branch)}</span>`
-    : ` · ${LV.branch} ${esc(f.branch)}`;
-  // A worktree is a way to open a git folder, so it sits beside the folder,
-  // and only a git folder has one.
-  const wt = f.branch ? `<button class="lv-check${s.worktree ? " on" : ""}" role="checkbox" aria-checked="${s.worktree}" data-lv="worktree" data-sid="${s.id}" title="--worktree: a new git worktree in .claude/worktrees, on its own branch"><i>${LV.check}</i>Worktree</button>` : "";
   return `<div class="lv-hero"><div class="lv-appicon">${appIcon(64)}</div>
     <button class="lv-folder" data-lv-menu="folder" data-sid="${s.id}">${esc(f.name)}${LV.chev2}</button>
-    <div class="lv-path"><span>${esc(f.path)}${branch}</span>${wt}</div></div>`;
+    <div class="lv-path">${esc(f.path)}</div>${whereHTML(s)}</div>`;
 }
 const hintHTML = () => '<div class="lv-hint"><span><kbd>↩</kbd>Send</span><span><kbd>⇧↩</kbd>New Line</span><span><kbd>⇧⇥</kbd>Mode</span><span><kbd>/</kbd>Commands</span></div>';
 
@@ -689,7 +746,7 @@ const LW = {
     const t = this.tabsAll().length ? this.activeTab() : this.empty;
     const s = t && t.s;
     this.root.querySelector("[data-ttl]").textContent = s ? s.folder.name : "ccterm";
-    this.root.querySelector("[data-sub]").textContent = s ? (isNew(s) ? "New Session" : s.wtBranch ? `${s.wtBranch} · worktree` : s.folder.branch || "") : "";
+    this.root.querySelector("[data-sub]").textContent = s ? (isNew(s) ? "New Session" : s.wtBranch ? `${s.wtBranch} · worktree` : s.branch || s.folder.branch || "") : "";
   },
   /** The sidebar as the app draws it (SidebarViewController): a source list,
    *  22-pt rows, 14-pt indent, a project is the system folder, its sessions
@@ -738,7 +795,12 @@ const LW = {
       case "stop": return stop(s);
       case "restart": return restart(s);
       case "split": return this.split();
-      case "worktree": s.worktree = !s.worktree; return this.refresh(s);
+      case "worktree": {
+        s.worktree = !s.worktree;
+        // Off again: a pull request, or a branch that can't be switched to in place, goes back to the checkout.
+        if (!s.worktree && s.branch !== s.folder.branch && (/^#/.test(s.branch) || (s.folder.elsewhere || []).includes(s.branch) || s.folder.dirty)) s.branch = s.folder.branch;
+        return this.refresh(s);
+      }
       case "to-request": { const el = this.panes.get(this.activeTab().id).querySelector(".approval"); if (el) el.scrollIntoView({ block: "center", behavior: "smooth" }); return; }
       case "context": return;
     }
@@ -847,7 +909,7 @@ const LW = {
     }
     s.state = "starting";
     s.wasAt = "new";
-    if (s.worktree) s.wtBranch = "quiet-otter"; // --worktree with no name: the CLI names it
+    if (s.worktree) s.wtBranch = /^#\d+$/.test(s.branch) ? `pr-${s.branch.slice(1)}` : "quiet-otter"; // --worktree #123, or no name: the CLI names it
     s.title = text.split("\n")[0];
     LAST.model = s.model; LAST.effort = s.effort; LAST.mode = s.mode; LAST.fast = s.fast;
     s.rows.push({ type: "html", html: heldBubble(text, "start"), held: row });
@@ -1197,9 +1259,9 @@ function buildLiveSpecimens() {
   const nv3 = specS({ folder: FOLDERS[2] });
   const newv = (x, hint) => `<div class="lv-new static" style="padding:28px 8px 22px">${heroHTML(x)}<div style="width:100%">${composerHTML(x, { static: true })}</div>${hint ? hintHTML() : ""}</div>`;
   document.getElementById("lv-newview").innerHTML = [
-    card("<b>The New view</b>The app icon, its cursor's light spilling onto the page — the one bit of colour. The folder is the title: the one choice Send makes final. <i>Worktree</i> sits beside it.", newv(nv, true)),
-    card("<b>Worktree on · a provider's model</b>The branch line says what <code>--worktree</code> will do. A provider's model names its account on the chip.", newv(nv2)),
-    card("<b>A folder that isn't a git repository</b>No branch, so no worktree: the control isn't there, as the branch isn't.", newv(nv3)),
+    card("<b>The New view</b>The app icon, its cursor's light spilling onto the page — the one bit of colour. The folder is the title: the one choice Send makes final. Under it, the branch and <i>Worktree</i>, on a row that never moves.", newv(nv, true)),
+    card("<b>Worktree on · a provider's model</b>The line under the row says what Send will do; its height is kept when it says nothing. A provider's model names its account on the chip.", newv(nv2)),
+    card("<b>A folder that isn't a git repository</b>No branch, so no worktree: the row says so, at the same height, so the composer doesn't move.", newv(nv3)),
   ].join("");
 
   // The conversation icon
@@ -1266,6 +1328,7 @@ function buildMatrix() {
   const rows = [
     ["grp", "Launch-only — or a restart"],
     ["Folder", '<span class="y">choose</span> · <code>cwd</code>', '<span class="no">fixed</span>', '<span class="no">fixed</span>', '<span class="no">fixed</span>', '<span class="no">fixed</span>', '<span class="no">fixed</span>', '<span class="no">fixed</span>'],
+    ["Branch", '<span class="y">choose</span> · <code>git switch</code> at Send, or the worktree\'s base', "—", "—", "—", "—", "—", "—"],
     ["Worktree", '<span class="y">toggle</span>, git folders only · <code>--worktree</code>', "—", "—", "—", "—", "—", "—"],
     ["Account", '<span class="y">follows the model</span> · env', "follows the model · relaunch", '<span class="y">confirm</span> → restart, resume', '<span class="y">confirm</span> → stop, restart', '<span class="y">confirm</span> → stop, restart', "env on resume", "env on restart"],
     ["grp", "Steerable"],

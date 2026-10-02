@@ -108,7 +108,9 @@ badge, not a thing.
 ```
                              ▣                           app icon, 64 pt, a soft glow
                           ccterm ⌄                       folder: 22-pt pop-up
-              ~/dev/ccterm · main   ☐ Worktree           11-pt tertiary; git folders only
+                       ~/dev/ccterm                      11-pt tertiary
+                  ⑂ main ⌄    ⧉ Worktree                 branch pop-up · toggle; git folders only
+        A new branch from main, in a new worktree        what Send will do; height kept
      ┌──────────────────────────────────────────────┐
      │ Ask Claude to…                                │    the composer, 640 pt
      │                                               │
@@ -157,16 +159,44 @@ badge, not a thing.
   - **Recent** — the sidebar's projects, most recent first, eight at most;
   - **Choose Folder… ⌘O** — an open panel (*Choose the folder Claude will
     work in.*).
-- **Worktree** is a checkbox on the path line, after the branch — a choice
-  *about* the folder, beside it, not one of the folders. On, the line reads
-  *~/dev/ccterm · new branch from origin/main* and Send launches with
-  `--worktree`: the CLI makes `.claude/worktrees/<name>` on a new branch from
-  `worktree.baseRef` (*fresh*: origin's default branch, the default; *head*:
-  the local HEAD) and works there. **Only a git folder shows it** — the CLI
-  refuses `--worktree` elsewhere (*Can only use --worktree in a git
-  repository*), and a folder with no branch has no branch line to sit on.
-  Off by default, and off again when the folder changes. A worktree session's
-  tab title and sidebar row carry its branch (*quiet-otter · worktree*).
+- **Branch and Worktree** sit on one row under the path: a borderless
+  pop-up with the branch glyph and name, and a toggle button, **Worktree**
+  (accent-tinted when on, `aria-pressed`). Both are choices *about* the
+  folder, so they sit under it, not in its menu. **The row never moves**: the
+  toggle doesn't change either control's text, and what the choices add up to
+  is said on the line under the row — 11-pt tertiary, its height kept when it
+  has nothing to say, so the composer doesn't jump either:
+  - in place, on the checked-out branch: nothing;
+  - in place, another branch: *Switches to fix-gutter-overflow when you send*;
+  - Worktree on: *A new branch from main, in a new worktree*;
+  - a pull request: *Pull request #327, in a new worktree*.
+- **The branch pop-up opens a popover with a filter**, as Xcode's toolbar
+  branch picker does: a search field (focused, 26 pt) over the list,
+  sections *Local* and *Remote* (a remote branch with a local twin is listed
+  once), 360 pt at most, then it scrolls. Typing filters; ↩ takes the first
+  match. Typing `#327` adds *Pull Request · #327 — Checked out in a new
+  worktree*, and choosing it turns Worktree on.
+- **What the branch means depends on Worktree.**
+  - **In place** it's the branch Claude works on. The checked-out one is
+    marked *Checked out here*. Another one is checked out with `git switch`
+    when you send — ccterm's step, not the CLI's. Greyed, with the reason,
+    when git would refuse or it would carry your work along: *Checked out in
+    another worktree*; *Uncommitted changes here — use a worktree*.
+  - **With a worktree** it's where the new branch starts, and every branch
+    can be chosen. The CLI's `--worktree` starts from `worktree.baseRef`
+    only — *fresh* (origin's default branch) or *head* (the local HEAD) —
+    so ccterm passes `--settings {"worktree":{"baseRef":"head"}}` for the
+    checked-out branch, nothing for origin's default, and for any other
+    branch makes the worktree itself (`git worktree add -b <name>
+    .claude/worktrees/<name> <branch>`) and launches the CLI in it. A pull
+    request is the CLI's own: `--worktree #327`.
+- **Worktree** is off by default, and off again when the folder changes (the
+  branch goes back to the checkout's). Turning it off returns a branch that
+  can't be had in place to the checkout's. **Only a git folder has the row** —
+  the CLI refuses `--worktree` elsewhere (*Can only use --worktree in a git
+  repository*). A folder that isn't one shows *Not a git repository* in its
+  place, at the same height. A worktree session's tab title and sidebar row
+  carry its branch (*quiet-otter · worktree*, *pr-327 · worktree*).
 - **Default folder**: the folder of the session tab that was active when ⌘T
   was pressed; otherwise the most recent project.
 - **No account control.** The account is chosen by choosing a model (see
@@ -395,6 +425,7 @@ applies, and **how** ccterm sends it. The two tabs are the two halves.
 |  | **New tab** | **Starting** | **Idle** | **Responding** | **Waiting for you** | **At rest** | **Failed** |
 |---|---|---|---|---|---|---|---|
 | **Folder** | choose · `cwd` | — fixed | — | — | — | — | — |
+| **Branch** | choose · `git switch` at Send, or the worktree's base | — | — | — | — | — | — |
 | **Worktree** | toggle, git folders only · `--worktree` | — | — | — | — | — | — |
 | **Account** | follows the model · env | choose · the launch starts over in it | confirm → restart, resume | confirm → stop, restart | confirm → stop, restart | env on resume | env on restart |
 | **Model** | choose · `--model` | choose · held, sent when ready | `set_model` · ≈ 1.5 s, `/model` bubble | choose · **after this turn** ◷ | after this turn ◷ | choose · `--model` on resume | choose · `--model` on restart |

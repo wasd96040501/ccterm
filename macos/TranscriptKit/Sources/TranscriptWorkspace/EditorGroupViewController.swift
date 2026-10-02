@@ -326,26 +326,34 @@ public final class EditorGroupViewController: NSViewController {
         // The bar shows an item's label, image and tooltip, so a change to any of
         // them has to reach it — without this, setting a label after adding the
         // tab would be a property that silently does nothing.
-        itemObservations[ObjectIdentifier(item)] = [
-            item.observe(\.label) { [weak self] _, _ in
-                MainActor.assumeIsolated { self?.reloadTabBar() }
-            },
-            item.observe(\.image) { [weak self] _, _ in
-                MainActor.assumeIsolated { self?.reloadTabBar() }
-            },
-            item.observe(\.toolTip) { [weak self] _, _ in
-                MainActor.assumeIsolated { self?.reloadTabBar() }
-            },
-            // A host re-identifies a tab whose content becomes something else (a
-            // New tab that starts its session): the history follows, so going back
-            // still finds it by what it is now.
-            item.observe(\.identifier, options: [.old, .new]) { [weak self] _, change in
-                guard let old = (change.oldValue ?? nil) as? AnyHashable,
-                    let new = (change.newValue ?? nil) as? AnyHashable
-                else { return }
-                MainActor.assumeIsolated { self?.history.replace(old, with: new) }
-            },
-        ]
+        itemObservations[ObjectIdentifier(item)] =
+            ([
+                // A tab is named by its view controller: a title set later (a New tab
+                // that becomes a session) reaches the label.
+                item.viewController?.observe(\.title) { [weak item] controller, _ in
+                    MainActor.assumeIsolated {
+                        if let title = controller.title, item?.label != title { item?.label = title }
+                    }
+                },
+                item.observe(\.label) { [weak self] _, _ in
+                    MainActor.assumeIsolated { self?.reloadTabBar() }
+                },
+                item.observe(\.image) { [weak self] _, _ in
+                    MainActor.assumeIsolated { self?.reloadTabBar() }
+                },
+                item.observe(\.toolTip) { [weak self] _, _ in
+                    MainActor.assumeIsolated { self?.reloadTabBar() }
+                },
+                // A host re-identifies a tab whose content becomes something else (a
+                // New tab that starts its session): the history follows, so going back
+                // still finds it by what it is now.
+                item.observe(\.identifier, options: [.old, .new]) { [weak self] _, change in
+                    guard let old = (change.oldValue ?? nil) as? AnyHashable,
+                        let new = (change.newValue ?? nil) as? AnyHashable
+                    else { return }
+                    MainActor.assumeIsolated { self?.history.replace(old, with: new) }
+                },
+            ] as [NSKeyValueObservation?]).compactMap { $0 }
         return index
     }
 

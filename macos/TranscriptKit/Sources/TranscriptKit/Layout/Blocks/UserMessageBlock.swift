@@ -211,7 +211,7 @@ struct UserMessageBlock: Block, @unchecked Sendable {
                     let rest = NSRange(location: NSMaxRange(sigil), length: NSMaxRange(range) - NSMaxRange(sigil))
                     inner.append(NSAttributedString(string: words.substring(with: rest), attributes: face))
                 }
-            case .link(let url):
+            case .image(let url):
                 inner.append(
                     InlineSymbol(.image, font: tokenFont, color: dim(style.secondaryColor))
                         .attributedString(font: tokenFont))

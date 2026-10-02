@@ -113,7 +113,7 @@ extension DemoMessage {
             .bubble(
                 .init(
                     "Image 1 is what I mean",
-                    tokens: [.init(range: 0..<7, kind: .link(URL(string: "demo-image:1")!))])),
+                    tokens: [.init(range: 0..<7, kind: .image(URL(string: "demo-image:1")!))])),
             .bubble(
                 .init(
                     "Sent when Claude is ready", isPending: true)),

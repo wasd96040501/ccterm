@@ -15,7 +15,7 @@ extension Bubble {
                         range: token.range, kind: .command, toolTip: token.toolTip)
                 case .image(let number):
                     TranscriptRowContent.UserMessage.Token(
-                        range: token.range, kind: .link(Self.imageURL(number)), toolTip: token.toolTip)
+                        range: token.range, kind: .image(Self.imageURL(number)), toolTip: token.toolTip)
                 }
             }, isPending: isPending, isMonospaced: isMonospaced)
     }

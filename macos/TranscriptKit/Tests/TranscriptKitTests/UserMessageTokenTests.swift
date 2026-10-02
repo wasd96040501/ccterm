@@ -98,7 +98,7 @@ final class UserMessageTokenTests: XCTestCase {
     func testAPictureTokenIsALinkWithItsGlyphBeforeItsWords() throws {
         let url = URL(string: "ccterm-image:1")!
         let message = TranscriptRowContent.UserMessage(
-            "Image 1 shows it", tokens: [.init(range: 0..<7, kind: .link(url))])
+            "Image 1 shows it", tokens: [.init(range: 0..<7, kind: .image(url))])
         let measured = try measured(message)
         XCTAssertEqual(measured.text.symbols.count, 1, "the photo glyph")
         // The link covers the glyph and the words, not the pads.
@@ -110,7 +110,7 @@ final class UserMessageTokenTests: XCTestCase {
 
     func testAPointOverATokenFindsItsLink() throws {
         let url = URL(string: "ccterm-image:1")!
-        let measured = try measured(.init("Image 1", tokens: [.init(range: 0..<7, kind: .link(url))]))
+        let measured = try measured(.init("Image 1", tokens: [.init(range: 0..<7, kind: .image(url))]))
         let wash = try XCTUnwrap(measured.washes.first)
         XCTAssertEqual(measured.link(at: CGPoint(x: wash.midX, y: wash.midY))?.url, url)
     }
@@ -174,7 +174,7 @@ final class UserMessageTokenTests: XCTestCase {
         let head = (1...30).map { "line \($0)" }.joined(separator: "\n")
         let text = head + "\nImage 1"
         let start = (head as NSString).length + 1
-        let measured = try measured(.init(text, tokens: [.init(range: start..<(start + 7), kind: .link(url))]))
+        let measured = try measured(.init(text, tokens: [.init(range: start..<(start + 7), kind: .image(url))]))
         XCTAssertTrue(measured.text.isTruncated)
         XCTAssertTrue(measured.text.symbols.isEmpty)
         XCTAssertTrue(measured.washes.isEmpty)

@@ -24,11 +24,9 @@ extension TranscriptRowContent {
                 /// in secondary ink, the rest in label ink.
                 case command
                 /// A picture the message names (*Image 1*): the `photo` glyph in
-                /// front of its words, and a link — hover and click are reported
-                /// through the transcript's delegate like any link's. This is the
-                /// only thing a link token is used for, so the glyph is part of
-                /// the kind rather than a property of its own.
-                case link(URL)
+                /// front of its words. It is a link to `URL` — hover and click are
+                /// reported through the transcript's delegate like any link's.
+                case image(URL)
             }
 
             /// UTF-16 offsets into ``UserMessage/text``. A token that reaches

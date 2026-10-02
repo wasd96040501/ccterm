@@ -1340,16 +1340,6 @@
         }
       }
     },
-    "Couldn’t send the message: %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无法发送消息：%@"
-          }
-        }
-      }
-    },
     "Couldn’t start": {
       "localizations": {
         "zh-Hans": {
@@ -3416,16 +3406,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "发送了 %lld 条消息"
-          }
-        }
-      }
-    },
-    "Sent a message": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "发送了一条消息"
           }
         }
       }

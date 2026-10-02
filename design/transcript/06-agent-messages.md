@@ -85,6 +85,46 @@ line in a run like any call, and what was said opens beside.
     two directions look different on purpose — Claude's sending is work, the
     other party's words are conversation.
 
+## Plugins: a class, not one plugin
+
+Any plugin can submit a prompt (71 in the corpus, all from one plugin). The CLI
+relays it under a header naming the plugin, in one of two forms, and appends a
+note to the model:
+
+| when | header | note the CLI appends |
+|---|---|---|
+| between turns | `The <name> plugin sent a message:` | *…it starts this turn in the user's place…* |
+| during a turn | `The <name> plugin sent a message while you were working:` | *…within the running turn, often alongside the next tool result…* |
+
+One view for every plugin: the caption — `puzzlepiece.extension`, grey, and
+*Plugin “name”* — then the words, quoted. Nothing is drawn per plugin.
+
+- **The caption says when**, in 11-pt tertiary after the name: *Started this
+  turn* or *While Claude worked*. The two differ in what they did: the first
+  took your place and started Claude; the second steered a turn already
+  running.
+- **During a turn** the message arrives with the next tool result, so it
+  splits the run there: the calls before it, the message, the calls after.
+  That is where the model read it.
+- **The note is dropped.** It is the CLI talking to the model, as the
+  coordinator's *Address this before…* is.
+- The same text again and again (*Continue.*) is shown each time: each one
+  started a turn, and the turn is what the reader is looking at.
+
+## Continued on its own
+
+Some turns start with words no one typed: the CLI writes them
+(`origin.kind: "auto-continuation"`). In the corpus: *Your claude.ai usage
+limit has reset. Continue the task…*, and a plan approved in the browser
+handed back to the session. Today they are `.synthetic` and dropped, so a
+reply appears under no prompt.
+
+They are a boundary, not a voice: a **divider**, like *Resumed*, that says
+why — *Continued after the usage limit reset*, *Continued with the plan
+approved in the browser*, else *Continued automatically* — and a *Prompt*
+link that opens the CLI's words beside, marked *Written by Claude Code, not by
+you*.
+
 ## Names
 
 A subagent's name is the agent's description when the transcript knows the
@@ -94,3 +134,13 @@ session is its name, else its address.
 ## Live
 
 A message arrives whole. Nothing streams.
+
+## Code needs
+
+- `UserMessage.Kind.relayedMessage` strips only the between-turns plugin
+  note; it also needs the mid-turn one (*This is how Claude Code surfaces
+  prompts a plugin submits mid-turn — …*), and `.message(from: .plugin)`
+  needs to keep which header it came under, for the caption's *when*.
+- `origin.kind == "auto-continuation"` becomes its own kind (today it folds
+  into `.synthetic`), carrying the text; the page builder emits the divider,
+  matching the known texts for its words.

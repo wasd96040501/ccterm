@@ -600,6 +600,8 @@ function buildSheet() {
   const conv = tile("session", "done", { fill: "transparent", ink: "var(--coral)" });
   const flow = tile("workflow", "done", { fill: "transparent", ink: "var(--indigo)" });
   const puzzle = tile("other", "done", { fill: "transparent", ink: "var(--gray)" });
+  const autoDoc = { id: nid("d"), docKind: "markdown", title: "Prompt", docGlyph: "other", status: "Written by Claude Code, not by you", md: "Your claude.ai usage limit has reset. Continue the task you were working on when the limit was reached; do not repeat work that is already complete." };
+  ITEMS.set(autoDoc.id, autoDoc);
   const report = news("agent", "completed", "**Explore · Find hard-coded row gaps** reported", "", { title: "Explore · Find hard-coded row gaps", glyph: "agent", status: "", md: "Found three call sites of `rowSpacing`:\n\n- `TranscriptView.swift:324` — the declaration\n- `TranscriptView.swift:332` — `intercellSpacing`\n- `TranscriptViewTests.swift:88` — the test\n\nAnd one hard-coded 14 in `EditorAreaTests.swift:118`." });
   // Talking out: the advisor and SendMessage (06-agent-messages.md "Talking out").
   const advice = advisor("Check the narrow split before you change the default: at 320 pt the run rows wrap, and a 14-pt gap reads as a new paragraph there.\n\nKeep `EditorAreaTests` on its own value; it pins the editor, not the transcript.", { model: "Opus 5.5" });
@@ -617,7 +619,19 @@ function buildSheet() {
   specimens(document.getElementById("voices"), [
     spec("<b>A subagent's report</b>Work, like a diff: one line. Click: the report beside.", [{ type: "news", news: [report] }]),
     spec("<b>Another session</b>The conversation glyph, coral.", [{ type: "voice", glyph: conv, who: "Session “Squash merge admin”", text: "PR #314 is merged. You can rebase onto main." }]),
-    spec("<b>The coordinator · a plugin</b>", [{ type: "voice", glyph: flow, who: "Coordinator", text: "Hold the transcript work until the review lands." }, { type: "voice", glyph: puzzle, who: "Plugin “ralph-loop”", text: "Continue with the next item on the list." }]),
+    spec("<b>The coordinator</b>", [{ type: "voice", glyph: flow, who: "Coordinator", text: "Hold the transcript work until the review lands." }]),
+    spec("<b>A plugin, between turns</b>Any plugin, by the name its header gives. It starts the turn in your place, so the caption says so; the CLI's note to the model is dropped.", [{ type: "voice", glyph: puzzle, who: "Plugin “taskcut”", when: "Started this turn", text: "Continue." }, { type: "text", text: "Picking up item 9b: plugin prompts, then pasted images." }]),
+    spec("<b>A plugin, while Claude works</b>It arrives with the next tool result, so it splits the run where the model read it.", [{ type: "run", run: run([edit("design/transcript/preview.js", 12, 3), bash("Run the sheet's checks", "node check.js")]) }, { type: "voice", glyph: puzzle, who: "Plugin “ralph-loop”", when: "While Claude worked", text: "The tests on main are red; fix them before the next item." }, { type: "run", run: run([bash("Run the unit tests", "make test-unit")]) }]),
+    spec("<b>Continued on its own</b>The CLI starts a turn with no one's words: after a usage limit resets, or a plan approved in the browser. A divider says why; its prompt opens beside.", [{ type: "divider", text: "Continued after the usage limit reset", link: autoDoc.id, linkText: "Prompt" }, { type: "divider", text: "Continued with the plan approved in the browser", link: autoDoc.id, linkText: "Prompt" }]),
+  ]);
+
+  // 5 · Prompts with pasted images
+  const shot = (n, look, w, h, mark) => { const it = { id: nid("img"), docKind: "image", title: `Image #${n}`, n, look, w, h, mark }; ITEMS.set(it.id, it); return it; };
+  const s1 = shot(1, "window", 1440, 900, 34), s2 = shot(2, "terminal", 1200, 760), s3 = shot(3, "window", 900, 1100, 52);
+  specimens(document.getElementById("prompts"), [
+    spec("<b>One image</b>The thumbnail, 96 pt tall, over the bubble; <i>[Image #1]</i> in the text becomes a token. Click either: the image beside, at its size.", [{ type: "user", images: [s1], text: "[Image #1] The top of the transcript is cut off near the toolbar — is the composer pushing it up?" }]),
+    spec("<b>Several</b>Numbered, so the tokens can name them; hover a token and its picture lights.", [{ type: "user", images: [s2, s3], text: "[Image #2] is the build log, [Image #3] the window right after. Which one is wrong?" }]),
+    spec("<b>An image alone</b>No bubble when there are no words.", [{ type: "user", images: [shot(1, "window", 1440, 900)] }]),
   ]);
 
   // 7 · Tools that talk

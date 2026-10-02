@@ -216,6 +216,25 @@ html, body {
 
 .user { display: flex; justify-content: flex-end; }
 .bubble { max-width: 75%; background: var(--bubble); border-radius: 14px; padding: 10px 16px; }
+/* Pasted images: thumbnails 96 pt tall above the bubble, 4 pt apart and 4 pt
+   over it — one message, as Messages stacks a photo over its caption. */
+.user.withshots { flex-direction: column; align-items: flex-end; gap: 4px; }
+.shots { display: flex; gap: 4px; justify-content: flex-end; flex-wrap: wrap; max-width: 75%; }
+.shot { position: relative; display: block; border-radius: 10px; overflow: hidden; cursor: default; line-height: 0;
+  box-shadow: inset 0 0 0 0.5px var(--separator); }
+.shot svg { display: block; }
+.shot::after { content: ""; position: absolute; inset: 0; border-radius: 10px; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.12); }
+.shot .n { position: absolute; left: 6px; bottom: 6px; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 8px;
+  background: rgba(0, 0, 0, 0.55); color: #fff; font-size: 11px; line-height: 16px; text-align: center; font-variant-numeric: tabular-nums; }
+.imgtok { display: inline-flex; align-items: center; gap: 3px; font-size: 13px; font-weight: 500; color: var(--label);
+  background: var(--tok); border-radius: 5px; padding: 0 5px; line-height: 18px; cursor: default; white-space: nowrap; vertical-align: 1px; }
+.imgtok svg { color: var(--secondary); }
+.user:has(.imgtok[data-n="1"]:hover) .shot[data-n="1"],
+.user:has(.imgtok[data-n="2"]:hover) .shot[data-n="2"],
+.user:has(.imgtok[data-n="3"]:hover) .shot[data-n="3"],
+.user:has(.imgtok[data-n="4"]:hover) .shot[data-n="4"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+.imgdoc { display: flex; justify-content: center; padding: 24px; }
+.imgdoc svg { border-radius: 6px; box-shadow: 0 0 0 0.5px var(--separator); max-width: 100%; height: auto; }
 
 /* A run, a news line: 28-pt rows, items too. The hover's 6 pt above and
    below the words is part of the 14-pt gap between entries. */
@@ -305,6 +324,7 @@ html, body {
    for someone else's words: 3-pt secondary bar, 14-pt indent. */
 .caption { display: flex; align-items: center; gap: 8px; height: 20px; font-size: 13px; color: var(--secondary); }
 .caption .spacer { flex: 1; }
+.caption .cmeta { font-size: 11px; color: var(--tertiary); }
 .caption .open { color: var(--accent); cursor: default; }
 .caption-body { margin-top: 14px; }
 .caption-body blockquote { margin: 0; padding-left: 14px; border-left: 3px solid var(--secondary); }

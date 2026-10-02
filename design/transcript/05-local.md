@@ -104,6 +104,32 @@ its days back.
   word.
 - The next prompt follows as usual.
 
+## A prompt with pasted images
+
+The CLI sends each pasted image as an `image` block beside the text and
+writes `[Image #N]` in the text where it was pasted (27 prompts in the
+corpus: one image, text first, in most). Today the page builder keeps only
+the text, so the picture is lost and the token is read as words.
+
+- **Thumbnails above the bubble**, right-aligned with it: 96 pt tall, width
+  from the image's aspect, 4 pt apart and 4 pt over the bubble — one
+  message, as Messages sets a photo over its caption. 10-pt continuous
+  corners, a 0.5-pt hairline so a white screenshot keeps its edge on a white
+  page. They wrap within the bubble's 75 % width.
+- **Numbered when there are several**: an 11-pt badge, bottom left, on a
+  dark plate, so the text can name them.
+- **`[Image #N]` becomes a token**: the `photo` glyph and *Image N*, on the
+  command token's wash. Hovering it outlines its thumbnail in the accent.
+- **Click** a thumbnail or a token: the image opens beside at its size, the
+  jump bar giving its pixel size and format — rule 2, as everything with a
+  body.
+- **An image with no words** is the thumbnails alone, no empty bubble.
+- Screenshots keep their own colours in both appearances: they are
+  pictures, not chrome.
+- Code needs: the page builder's `.prompt` keeps the image blocks beside the
+  text, and a live prompt sent with images draws them from the local copy at
+  Send, as its text is (08-live.md, *A prompt, from Send to the transcript*).
+
 ## Live
 
 - A slash command appears at once; its output joins the bubble when it

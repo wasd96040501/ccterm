@@ -35,6 +35,7 @@ const GLYPHS = {
   advisor: '<path d="M6.4 9.6c-.8-.6-1.3-1.5-1.3-2.5a2.9 2.9 0 0 1 5.8 0c0 1-.5 1.9-1.3 2.5v.9H6.4z"/><path d="M6.7 11.8h2.6"/>',
   skill: '<path d="M5.2 4.8h4.2c.8 0 1.4.6 1.4 1.4v5H6.6c-.8 0-1.4-.6-1.4-1.4z"/><path d="M5.2 9.6c0-.8.6-1.4 1.4-1.4h4.2"/>',
   worktree: '<circle cx="6" cy="5.4" r="1"/><circle cx="6" cy="10.6" r="1"/><circle cx="10.2" cy="6.8" r="1"/><path d="M6 6.4v3.2M10.2 7.8c0 1.6-4.2 1-4.2 2"/>',
+  image: '<rect x="4.4" y="5" width="7.2" height="6" rx="1.2"/><path d="M4.6 10.2l2-1.9 1.5 1.3 1.3-1.1 1.9 1.7"/><circle cx="9.5" cy="6.8" r=".55"/>',
   notify: '<path d="M5.4 10V7.6a2.6 2.6 0 0 1 5.2 0V10l.7.8H4.7z"/><path d="M7.2 12h1.6"/>',
   other: '<path d="M5.4 6.2h1.5a1 1 0 1 1 2 0h1.7v1.7a1 1 0 1 1 0 2v1.7H5.4z"/>',
   question: `<path d="M6.5 6.6a1.5 1.5 0 1 1 2.2 1.3c-.5.3-.7.6-.7 1.1v.2"/>${dot(8, 10.9)}`,
@@ -417,9 +418,42 @@ function renderNews(row) {
   }</div>`;
 }
 
+// A pasted screenshot, drawn: a window, or a terminal. Screenshots keep their
+// own colours in either appearance — they are pictures, not chrome.
+function shotSVG(img, h) {
+  const w = Math.round(h * img.w / img.h);
+  const s = h / 100, W = 100 * img.w / img.h;
+  const lines = (x, y, n, c, wid) => Array.from({ length: n }, (_, i) => `<rect x="${x}" y="${y + i * 7}" width="${wid[i % wid.length]}" height="3" rx="1.5" fill="${c}"/>`).join("");
+  const body = img.look === "terminal"
+    ? `<rect width="${W}" height="100" fill="#1e1e1e"/>${lines(6, 10, 11, "#c8c8c8", [40, 62, 28, 55, 70, 34])}<rect x="6" y="38" width="44" height="3" rx="1.5" fill="#ff6961"/>`
+    : `<rect width="${W}" height="100" fill="#f6f6f6"/><rect width="${W * 0.28}" height="100" fill="#e9e9eb"/><rect width="${W}" height="9" fill="#ececec"/>`
+      + `<circle cx="5" cy="4.5" r="1.6" fill="#ff5f57"/><circle cx="10" cy="4.5" r="1.6" fill="#febc2e"/><circle cx="15" cy="4.5" r="1.6" fill="#28c840"/>`
+      + lines(4, 16, 8, "#cfcfd3", [W * 0.18, W * 0.14, W * 0.2])
+      + lines(W * 0.33, 16, 10, "#d4d4d8", [W * 0.5, W * 0.6, W * 0.42])
+      + (img.mark ? `<rect x="${W * 0.31}" y="${img.mark}" width="${W * 0.66}" height="16" rx="2" fill="none" stroke="#ff3b30" stroke-width="1.2"/>` : "");
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${W} 100" preserveAspectRatio="none" aria-hidden="true">${body}</svg>`;
+}
+// A prompt. Pasted images sit above its bubble, each a thumbnail that opens
+// beside; the CLI's [Image #N] in the text becomes a token naming one.
+function renderPrompt(row) {
+  const imgs = row.images || [];
+  const several = imgs.length > 1;
+  const shots = imgs.length ? `<div class="shots">${imgs.map((img) =>
+    `<span class="shot" data-n="${img.n}" data-open="${img.id}">${shotSVG(img, 96)}${several ? `<span class="n">${img.n}</span>` : ""}</span>`).join("")}</div>` : "";
+  const text = row.text ? inline(row.text).replace(/\[Image #(\d+)\]/g, (m, n) => {
+    const img = imgs.find((i) => String(i.n) === n);
+    return img ? `<span class="imgtok" data-n="${n}" data-open="${img.id}">${GLYPH_INLINE.image}Image ${n}</span>` : m;
+  }) : "";
+  return `<div class="user${imgs.length ? " withshots" : ""}">${shots}${text ? `<div class="bubble">${text}</div>` : ""}</div>`;
+}
+const GLYPH_INLINE = { image: `<svg viewBox="4 4 8 8" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">${'<rect x="4.4" y="5" width="7.2" height="6" rx="1.2"/><path d="M4.6 10.2l2-1.9 1.5 1.3 1.3-1.1 1.9 1.7"/>'}</svg>` };
+function imageDoc(it) {
+  return `<div class="doc">${jumpBar([it.title], `<span class="jstat">${it.w} × ${it.h} · ${it.format || "PNG"}</span>`, "image")}<div class="body"><div class="imgdoc">${shotSVG(it, Math.min(420, it.h / 2))}</div></div></div>`;
+}
+
 function renderRow(row) {
   switch (row.type) {
-    case "user": return `<div class="user"><div class="bubble">${inline(row.text)}</div></div>`;
+    case "user": return renderPrompt(row);
     case "text": {
       const html = paragraphs(row.text || " ");
       return `<div class="text">${row.streaming ? html.replace(/<\/p>$/, '<span class="caret"></span></p>') : html}</div>`;
@@ -442,7 +476,7 @@ function renderRow(row) {
     case "interrupt": return `<div class="interrupt">${ICON.stopcircle}Interrupted</div>`;
     // A caption row, then the words as TranscriptKit's markdown — a blockquote,
     // its form for someone else's words.
-    case "voice": return `<div class="caption">${row.glyph}<span>${esc(row.who)}</span></div><div class="caption-body"><blockquote>${paragraphs(row.text)}</blockquote></div>`;
+    case "voice": return `<div class="caption">${row.glyph}<span>${esc(row.who)}</span>${row.when ? `<span class="cmeta">${esc(row.when)}</span>` : ""}</div><div class="caption-body"><blockquote>${paragraphs(row.text)}</blockquote></div>`;
     case "question": return renderQuestion(row);
     // A caption row, then the plan itself as TranscriptKit's markdown, whole.
     case "plan": return `<div class="caption">${tile("plan", row.live ? "waiting" : "done")}<span>${row.live ? "Plan · Waiting for your approval" : "Plan"}</span></div><div class="caption-body"><ol>${row.steps.map((s) => `<li>${inline(s)}</li>`).join("")}</ol></div>${
@@ -706,6 +740,7 @@ function docFor(id) {
   if (!it) return '<div class="empty">Nothing to show</div>';
   if (it.docKind === "markdown") return markdownDoc(it.title, it.docGlyph || "other", it.status || "", it.md);
   if (it.docKind === "transcript") return transcriptDoc(it);
+  if (it.docKind === "image") return imageDoc(it);
   switch (it.kind) {
     case "command": return commandDoc(it);
     case "change": return changeDoc(it);

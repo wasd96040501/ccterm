@@ -1026,6 +1026,339 @@ final class EditorAreaTests: XCTestCase {
         }
     }
 
+    // MARK: - The +
+
+    func testTheNewTabButtonIsOnlyThereWhenAsked() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+
+        XCTAssertTrue(try newTabButton(in: group).isHidden, "premise: no + until asked")
+
+        mounted.area.showsNewTabButton = true
+        settle(mounted.window)
+
+        let button = try newTabButton(in: group)
+        XCTAssertFalse(button.isHidden)
+        XCTAssertEqual(button.frame.size, NSSize(width: 24, height: 24), "the + is a 24-point circle")
+        XCTAssertTrue(
+            button.toolTip?.hasPrefix(Self.title("New Tab")) == true && button.toolTip?.hasSuffix("⌘T") == true)
+        XCTAssertLessThanOrEqual(
+            group.tabBar.frame.maxX, button.frame.minX, "the + takes room from the bar, not from over it")
+        XCTAssertEqual(
+            group.tabBar.convert(NSPoint(x: 0, y: group.tabBar.bounds.midY), to: group.view).y,
+            button.frame.midY, accuracy: 0.5, "the + is centred on the bar")
+
+        mounted.area.showsNewTabButton = false
+        settle(mounted.window)
+        XCTAssertTrue(button.isHidden)
+        XCTAssertGreaterThan(group.tabBar.frame.maxX, button.frame.minX, "the bar did not take the room back")
+    }
+
+    /// An editor with no tabs has no bar, so no +.
+    func testTheNewTabButtonGoesWithTheBar() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        mounted.area.showsNewTabButton = true
+        let group = mounted.area.activeGroup
+        let button = try newTabButton(in: group)
+        XCTAssertFalse(button.isHidden, "premise")
+
+        mounted.area.closeTab(nil)
+
+        XCTAssertTrue(button.isHidden)
+    }
+
+    /// In a split each editor has its own, and it opens the tab in *its* editor,
+    /// which becomes the active one.
+    func testEachEditorsButtonAsksForATabInItsOwnEditor() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        mounted.area.showsNewTabButton = true
+        mounted.area.addGroup(with: NSTabViewItem(viewController: ProbeViewController(title: "Right")))
+        let (left, right) = (mounted.area.groups[0], mounted.area.groups[1])
+        XCTAssertIdentical(mounted.area.activeGroup, right, "premise: the new editor is active")
+
+        try newTabButton(in: left).performClick(nil)
+
+        XCTAssertEqual(mounted.recorder.newTabGroups.count, 1)
+        XCTAssertIdentical(mounted.recorder.newTabGroups.last, left)
+        XCTAssertIdentical(mounted.area.activeGroup, left, "the + did not make its editor the active one")
+
+        try newTabButton(in: right).performClick(nil)
+
+        XCTAssertIdentical(mounted.recorder.newTabGroups.last, right)
+        XCTAssertIdentical(mounted.area.activeGroup, right)
+    }
+
+    /// `newTab(_:)` from anywhere but a bar — ⌘T — is for the active editor.
+    func testNewTabFromAMenuIsForTheActiveEditor() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+
+        mounted.area.newTab(nil)
+
+        XCTAssertIdentical(mounted.recorder.newTabGroups.last, mounted.area.activeGroup)
+    }
+
+    func testNewTabSentFromAViewInAnEditorResolvesThatEditor() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        mounted.area.addGroup(with: NSTabViewItem(viewController: ProbeViewController(title: "Right")))
+        let left = mounted.area.groups[0]
+
+        mounted.area.newTab(mounted.probes[0].field)
+
+        XCTAssertIdentical(mounted.recorder.newTabGroups.last, left, "a view in the left editor named the right one")
+        XCTAssertIdentical(mounted.area.activeGroup, left)
+    }
+
+    func testTheAreaAnswersTheNewTabCommandOverTheResponderChain() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+
+        XCTAssertTrue(mounted.probes[0].field.tryToPerform(#selector(EditorAreaViewController.newTab(_:)), with: nil))
+        XCTAssertEqual(mounted.recorder.newTabGroups.count, 1)
+    }
+
+    // MARK: - No tabs
+
+    func testTheEmptyViewControllerFillsAnEditorWithNoTabs() throws {
+        let window = TestWindow.make(contentSize: Self.size)
+        defer { window.close() }
+        let area = EditorAreaViewController()
+        let empty = ProbeViewController(title: "Empty")
+        area.emptyViewController = empty
+        area.showsNewTabButton = true
+        window.contentViewController = area
+        TestWindow.park(window, contentSize: Self.size)
+        settle(window)
+
+        let group = area.activeGroup
+        XCTAssertIdentical(empty.parent, group, "the empty view controller is not in the editor")
+        XCTAssertTrue(empty.view.isDescendant(of: group.view))
+        XCTAssertEqual(empty.view.frame, group.view.bounds, "it does not fill the editor, bar and all")
+        XCTAssertTrue(group.tabBar.isHidden, "an editor with no tabs shows no bar")
+        XCTAssertTrue(try newTabButton(in: group).isHidden, "no bar, no +")
+    }
+
+    /// Without one the editor says so, as it always did.
+    func testWithoutAnEmptyViewControllerTheEditorStaysEmpty() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+
+        mounted.area.closeTab(nil)
+        settle(mounted.window)
+
+        XCTAssertTrue(mounted.area.activeGroup.tabViewItems.isEmpty)
+        XCTAssertNil(mounted.area.emptyViewController)
+        XCTAssertNotNil(
+            mounted.area.activeGroup.view.subviews.first {
+                ($0 as? NSTextField)?.stringValue == Self.title("No Editor") && !$0.isHidden
+            })
+    }
+
+    func testTheEmptyViewControllerShowsWhenTheLastTabClosesAndGoesWhenOneOpens() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let empty = ProbeViewController(title: "Empty")
+        mounted.area.emptyViewController = empty
+        settle(mounted.window)
+        XCTAssertNil(empty.parent, "premise: it waits while there are tabs")
+
+        mounted.area.closeTab(nil)
+        settle(mounted.window)
+        XCTAssertIdentical(empty.parent, mounted.area.activeGroup)
+
+        mounted.area.activeGroup.addTabViewItem(NSTabViewItem(viewController: ProbeViewController(title: "Later")))
+        settle(mounted.window)
+        XCTAssertNil(empty.parent, "a tab opened and the empty view controller stayed")
+        XCTAssertFalse(empty.view.isDescendant(of: mounted.area.activeGroup.view))
+    }
+
+    /// Opening the empty view controller itself as a tab moves the same object
+    /// into it — a New view the reader typed in becomes the session's tab, its
+    /// text and focus kept — and the area doesn't show it again.
+    func testOpeningTheEmptyViewControllerAsATabMovesItIntoTheTab() throws {
+        let window = TestWindow.make(contentSize: Self.size)
+        defer { window.close() }
+        let area = EditorAreaViewController()
+        let recorder = Recorder()
+        area.delegate = recorder
+        let empty = ProbeViewController(title: "Empty")
+        area.emptyViewController = empty
+        window.contentViewController = area
+        TestWindow.park(window, contentSize: Self.size)
+        settle(window)
+        empty.field.stringValue = "typed"
+        XCTAssertIdentical(empty.parent, area.activeGroup, "premise: it is showing")
+
+        let item = NSTabViewItem(viewController: empty)
+        item.identifier = "first"
+        area.open(item, pinned: true)
+        settle(window)
+
+        XCTAssertEqual(area.activeGroup.tabViewItems.count, 1)
+        XCTAssertIdentical(area.activeGroup.tabViewItems[0].viewController, empty, "the object was replaced")
+        XCTAssertIdentical(area.activeViewController, empty)
+        XCTAssertEqual(empty.field.stringValue, "typed")
+        XCTAssertFalse(area.activeGroup.tabBar.isHidden, "the bar did not appear with the first tab")
+        XCTAssertNil(area.emptyViewController, "the area kept what is a tab now")
+
+        area.closeTab(nil)
+        settle(window)
+        XCTAssertNil(empty.parent, "the closed tab's controller came back as the empty area")
+    }
+
+    /// The host hands over another one when the tabs have run out; the one
+    /// showing goes.
+    func testReplacingTheEmptyViewControllerWhileItShows() throws {
+        let window = TestWindow.make(contentSize: Self.size)
+        defer { window.close() }
+        let area = EditorAreaViewController()
+        let first = ProbeViewController(title: "First")
+        area.emptyViewController = first
+        window.contentViewController = area
+        TestWindow.park(window, contentSize: Self.size)
+        settle(window)
+
+        let second = ProbeViewController(title: "Second")
+        area.emptyViewController = second
+        settle(window)
+
+        XCTAssertNil(first.parent)
+        XCTAssertFalse(first.view.isDescendant(of: area.activeGroup.view))
+        XCTAssertIdentical(second.parent, area.activeGroup)
+        XCTAssertEqual(second.view.frame, area.activeGroup.view.bounds)
+    }
+
+    // MARK: - Indicators
+
+    func testAnIndicatorTakesTheCloseButtonsSlotAndHoverSwapsThem() throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        let mark = IndicatorProbe()
+        mounted.recorder.indicators = [ObjectIdentifier(mounted.probes[1]): mark]
+        mounted.area.reloadIndicators()
+        settle(mounted.window)
+        let bar = mounted.area.activeGroup.tabBar
+        let tab = try tabView(titled: "Tab 1", in: bar)
+
+        XCTAssertIdentical(mark.superview, tab, "the mark is not in its tab")
+        XCTAssertEqual(mark.alphaValue, 1)
+        mounted.window.layoutIfNeeded()
+        let slot = bar.rect(forTabAt: 1)
+        let centre = tab.convert(NSPoint(x: mark.frame.midX, y: mark.frame.midY), to: bar)
+        XCTAssertEqual(centre.x, slot.minX + slot.height / 2, accuracy: 0.5, "not where the close button shows")
+        XCTAssertEqual(centre.y, slot.midY, accuracy: 0.5)
+
+        bar.mouseMoved(with: mouse(.mouseMoved, at: center(of: bar, tab: 1), in: bar))
+        XCTAssertEqual(mark.alphaValue, 0, "the mark stayed under the close button")
+        XCTAssertFalse(bar.closeButton.isHidden)
+
+        bar.mouseExited(with: mouse(.mouseMoved, at: .zero, in: bar))
+        XCTAssertEqual(mark.alphaValue, 1, "the mark did not come back")
+    }
+
+    /// The same view for the same state is left alone, so an animating mark
+    /// keeps its animation; a different answer swaps it, `nil` takes it away.
+    func testReloadingIndicatorsKeepsTheViewsItIsGivenAgain() throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        let mark = IndicatorProbe()
+        mounted.recorder.indicators = [ObjectIdentifier(mounted.probes[0]): mark]
+        mounted.area.reloadIndicators()
+        let attachments = mark.attachments
+        XCTAssertEqual(attachments, 1, "premise: the mark was added once")
+
+        mounted.area.reloadIndicators()
+        mounted.area.reloadIndicators()
+        mounted.area.activeGroup.selectedTabViewItemIndex = 0
+
+        XCTAssertEqual(mark.attachments, attachments, "the mark was taken out and put back")
+        XCTAssertNotNil(mark.superview)
+
+        let other = IndicatorProbe()
+        mounted.recorder.indicators = [ObjectIdentifier(mounted.probes[0]): other]
+        mounted.area.reloadIndicators()
+        XCTAssertNil(mark.superview, "the replaced mark stayed in the tab")
+        XCTAssertNotNil(other.superview)
+
+        mounted.recorder.indicators = [:]
+        mounted.area.reloadIndicators()
+        XCTAssertNil(other.superview, "a tab with nothing to show kept its mark")
+    }
+
+    // MARK: - A tab that is something else
+
+    /// A New tab that starts its session is the same tab with another
+    /// identifier: found by the new one, no longer by the old.
+    func testAnIdentifierSetLaterIsWhatSelectionAndLookupFind() throws {
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        let item = mounted.area.activeGroup.tabViewItems[0]
+        item.identifier = "draft"
+        XCTAssertTrue(mounted.area.selectTabViewItem(withIdentifier: "draft"), "premise")
+
+        item.identifier = "session"
+
+        XCTAssertFalse(mounted.area.selectTabViewItem(withIdentifier: "draft"))
+        XCTAssertNil(mounted.area.tabViewItem(withIdentifier: "draft"))
+        XCTAssertTrue(mounted.area.selectTabViewItem(withIdentifier: "session"))
+        XCTAssertIdentical(mounted.area.tabViewItem(withIdentifier: "session"), item)
+        XCTAssertEqual(mounted.area.activeGroup.selectedTabViewItemIndex, 0)
+    }
+
+    /// The history follows the tab: going back to it finds it by what it is now,
+    /// and what it was is not left behind to be asked for.
+    func testHistoryFollowsATabWhoseIdentifierChanges() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        let draft = Self.tab("draft")
+        group.addTabViewItem(draft)
+        group.addTabViewItem(Self.tab("other"))
+        XCTAssertEqual(group.selectedTabViewItemIndex, 2, "premise")
+
+        draft.identifier = "session"
+        mounted.recorder.asked = []
+        group.goBack()
+
+        XCTAssertEqual(group.selectedTabViewItemIndex, 1, "back did not find the re-identified tab")
+        XCTAssertEqual(group.tabViewItems.map(\.label), ["Tab 0", "draft", "other"])
+        XCTAssertTrue(mounted.recorder.asked.isEmpty, "the delegate was asked for a tab that was open")
+        group.goBack()
+        group.goForward()
+        XCTAssertEqual(group.selectedTabViewItemIndex, 1)
+    }
+
+    /// A history entry for an identifier no tab has and the host can't make
+    /// again is passed over — what a closed New tab leaves.
+    func testHistoryDropsAnIdentifierNoTabHasAnyMore() throws {
+        let mounted = mount(tabs: 1)
+        defer { mounted.window.close() }
+        let group = mounted.area.activeGroup
+        let draft = Self.tab(Recorder.refused)
+        group.addTabViewItem(draft)
+        group.addTabViewItem(Self.tab("other"))
+
+        group.removeTabViewItem(draft)
+        XCTAssertEqual(group.selectedTabViewItemIndex, 1, "premise: the tab after it is selected")
+        group.goBack()
+
+        XCTAssertEqual(group.selectedTabViewItemIndex, 0, "back did not pass over the entry the host can't show")
+        XCTAssertFalse(group.canGoBack, "the refused entry stayed in the history")
+    }
+
+    /// The button, found by what it is.
+    private func newTabButton(in group: EditorGroupViewController) throws -> NSButton {
+        try XCTUnwrap(
+            group.view.subviews.compactMap { $0 as? NSButton }.first {
+                $0.accessibilityLabel() == Self.title("New Tab")
+            },
+            "no + in the editor")
+    }
+
     // MARK: - Harness
 
     private struct Mounted {
@@ -1433,6 +1766,20 @@ private final class Recorder: EditorAreaViewControllerDelegate {
 
     var activated: [NSViewController?] = []
     var closed: [NSViewController] = []
+    /// The editors a new tab was asked for in.
+    var newTabGroups: [EditorGroupViewController] = []
+    /// The mark each tab shows, by its view controller.
+    var indicators: [ObjectIdentifier: NSView] = [:]
+    /// The identifiers the area asked for a tab for.
+    var asked: [Any] = []
+
+    func editorArea(_ editorArea: EditorAreaViewController, didRequestNewTabIn group: EditorGroupViewController) {
+        newTabGroups.append(group)
+    }
+
+    func editorArea(_ editorArea: EditorAreaViewController, indicatorViewFor tabViewItem: NSTabViewItem) -> NSView? {
+        tabViewItem.viewController.flatMap { indicators[ObjectIdentifier($0)] }
+    }
 
     func editorArea(
         _ editorArea: EditorAreaViewController, didActivate viewController: NSViewController?
@@ -1461,10 +1808,34 @@ private final class Recorder: EditorAreaViewControllerDelegate {
     func editorArea(
         _ editorArea: EditorAreaViewController, tabViewItemWithIdentifier identifier: Any
     ) -> NSTabViewItem? {
+        asked.append(identifier)
         guard let title = identifier as? String, title != Self.refused else { return nil }
         let item = NSTabViewItem(viewController: ProbeViewController(title: title))
         item.identifier = title
         return item
+    }
+}
+
+/// A mark in a tab, counting how often it was put into one.
+@MainActor
+private final class IndicatorProbe: NSView {
+
+    private(set) var attachments = 0
+
+    init() {
+        super.init(frame: NSRect(x: 0, y: 0, width: 14, height: 14))
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("code-only")
+    }
+
+    override var intrinsicContentSize: NSSize { NSSize(width: 14, height: 14) }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        if superview != nil { attachments += 1 }
     }
 }
 

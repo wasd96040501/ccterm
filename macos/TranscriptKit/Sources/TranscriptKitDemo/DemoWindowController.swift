@@ -29,6 +29,7 @@ final class DemoWindowController: NSWindowController {
 
         window.delegate = self
         area.delegate = self
+        area.showsNewTabButton = true
 
         area.activeGroup.addTabViewItem(makeTab())
         area.activeGroup.addTabViewItem(makeTab())
@@ -170,6 +171,11 @@ final class DemoWindowController: NSWindowController {
 }
 
 extension DemoWindowController: EditorAreaViewControllerDelegate {
+
+    /// The + of an editor's bar (or ⌘T): a tab in that editor.
+    func editorArea(_ editorArea: EditorAreaViewController, didRequestNewTabIn group: EditorGroupViewController) {
+        group.addTabViewItem(makeTab())
+    }
 
     func editorArea(
         _ editorArea: EditorAreaViewController, didActivate viewController: NSViewController?

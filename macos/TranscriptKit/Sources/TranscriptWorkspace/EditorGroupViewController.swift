@@ -41,6 +41,29 @@ public final class EditorGroupViewController: NSViewController {
 
     private var history = History()
 
+    /// Whether the bar ends in a + (`EditorAreaViewController.showsNewTabButton`).
+    var showsNewTabButton = false {
+        didSet {
+            guard showsNewTabButton != oldValue else { return }
+            showNewTabButton()
+        }
+    }
+
+    /// The + at the bar's trailing end; its group is where it opens a tab.
+    private lazy var newTabButton: NewTabButton = {
+        let button = NewTabButton()
+        button.target = self
+        button.action = #selector(newTabFromButton(_:))
+        return button
+    }()
+
+    /// The bar's trailing edge: at the group's, or before the + when it has one.
+    private var barEnd: NSLayoutConstraint?
+    private var barBeforeButton: NSLayoutConstraint?
+
+    /// What is showing in place of the tabs while there are none.
+    private weak var mountedEmptyViewController: NSViewController?
+
     private lazy var separator: NSBox = {
         let box = NSBox()
         box.boxType = .separator
@@ -93,7 +116,7 @@ public final class EditorGroupViewController: NSViewController {
     }
 
     private func configureHierarchy() {
-        for subview in [tabBar, separator, tabs.view, emptyLabel] {
+        for subview in [tabBar, newTabButton, separator, tabs.view, emptyLabel] {
             subview.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(subview)
         }
@@ -106,10 +129,19 @@ public final class EditorGroupViewController: NSViewController {
     /// reaches under it (a full-size content view), which is the titlebar's to
     /// take clicks in — for moving and zooming the window, not for dragging tabs.
     private func configureConstraints() {
+        let end = tabBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8)
+        // The + sits 6 points from the track, 2 from the group's edge — the
+        // sheet's `.lv-plus` margins — centred on the bar.
+        let beforeButton = tabBar.trailingAnchor.constraint(equalTo: newTabButton.leadingAnchor, constant: -6)
+        barEnd = end
+        barBeforeButton = beforeButton
         NSLayoutConstraint.activate([
             tabBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
-            tabBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
             tabBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
+            newTabButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
+            newTabButton.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
+            newTabButton.widthAnchor.constraint(equalToConstant: NewTabButton.side),
+            newTabButton.heightAnchor.constraint(equalToConstant: NewTabButton.side),
             separator.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             separator.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             separator.topAnchor.constraint(equalTo: tabBar.bottomAnchor, constant: 6),
@@ -120,6 +152,25 @@ public final class EditorGroupViewController: NSViewController {
             emptyLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             emptyLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
         ])
+        showNewTabButton()
+    }
+
+    /// The + in or out of the bar's row: the track gives it its room.
+    private func showNewTabButton() {
+        guard isViewLoaded else { return }
+        // One off before the other on, so the bar never has two ends.
+        if showsNewTabButton {
+            barEnd?.isActive = false
+            barBeforeButton?.isActive = true
+        } else {
+            barBeforeButton?.isActive = false
+            barEnd?.isActive = true
+        }
+        newTabButton.isHidden = !showsNewTabButton || tabViewItems.isEmpty
+    }
+
+    @objc private func newTabFromButton(_ sender: Any?) {
+        delegate?.editorGroupDidRequestNewTab(self)
     }
 
     // MARK: - Tabs
@@ -264,6 +315,11 @@ public final class EditorGroupViewController: NSViewController {
     @discardableResult
     func attach(_ item: NSTabViewItem, at index: Int) -> Int {
         let index = min(max(index, 0), tabViewItems.count)
+        if let viewController = item.viewController, viewController === mountedEmptyViewController {
+            // The host opens what the empty area shows as a tab: it moves into it.
+            unmountEmptyViewController()
+            delegate?.editorGroupDidTakeEmptyViewController(self)
+        }
         tabs.insertTabViewItem(item, at: index)
         tabs.selectedTabViewItemIndex = index
         // The bar shows an item's label, image and tooltip, so a change to any of
@@ -278,6 +334,17 @@ public final class EditorGroupViewController: NSViewController {
             },
             item.observe(\.toolTip) { [weak self] _, _ in
                 MainActor.assumeIsolated { self?.reloadTabBar() }
+            },
+            // A host re-identifies a tab whose content becomes something else (a
+            // New tab that starts its session): the history follows, so going back
+            // still finds it by what it is now.
+            item.observe(\.identifier, options: [.old, .new]) { [weak self] _, change in
+                MainActor.assumeIsolated {
+                    guard let old = (change.oldValue ?? nil) as? AnyHashable,
+                        let new = (change.newValue ?? nil) as? AnyHashable
+                    else { return }
+                    self?.history.replace(old, with: new)
+                }
             },
         ]
         return index
@@ -309,12 +376,49 @@ public final class EditorGroupViewController: NSViewController {
             items: tabViewItems.map { item in
                 EditorTabBar.Item(
                     id: ObjectIdentifier(item), title: item.label, image: item.image,
-                    toolTip: item.toolTip, isPreview: item === previewTabViewItem)
+                    toolTip: item.toolTip, isPreview: item === previewTabViewItem,
+                    indicator: delegate?.editorGroup(self, indicatorViewFor: item))
             },
             selectedIndex: tabViewItems.isEmpty ? nil : selectedTabViewItemIndex)
         tabBar.isHidden = tabViewItems.isEmpty
         separator.isHidden = tabViewItems.isEmpty
-        emptyLabel.isHidden = !tabViewItems.isEmpty
+        newTabButton.isHidden = !showsNewTabButton || tabViewItems.isEmpty
+        showEmptyViewController()
+    }
+
+    // MARK: - No tabs
+
+    /// While there are no tabs the editor is the host's empty view controller —
+    /// the whole editor, no bar — or, without one, says so.
+    private func showEmptyViewController() {
+        let wanted = tabViewItems.isEmpty ? delegate?.emptyViewController : nil
+        if mountedEmptyViewController !== wanted {
+            unmountEmptyViewController()
+            if let wanted { mount(wanted) }
+        }
+        emptyLabel.isHidden = !tabViewItems.isEmpty || mountedEmptyViewController != nil
+    }
+
+    private func mount(_ viewController: NSViewController) {
+        addChild(viewController)
+        let content = viewController.view
+        content.translatesAutoresizingMaskIntoConstraints = false
+        // Under the drop highlight; the bar and the + are hidden while it shows.
+        view.addSubview(content, positioned: .below, relativeTo: dropHighlight)
+        NSLayoutConstraint.activate([
+            content.topAnchor.constraint(equalTo: view.topAnchor),
+            content.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            content.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        mountedEmptyViewController = viewController
+    }
+
+    private func unmountEmptyViewController() {
+        guard let mounted = mountedEmptyViewController else { return }
+        mounted.view.removeFromSuperview()
+        mounted.removeFromParent()
+        mountedEmptyViewController = nil
     }
 
     /// Pins the tab at `index`, or makes it the temporary tab if it is pinned —
@@ -559,6 +663,21 @@ private struct History {
         entries.removeSubrange((index + 1)...)
         entries.append(identifier)
         index += 1
+    }
+
+    /// The tab that was shown as `old` is `new` from now on.
+    mutating func replace(_ old: AnyHashable, with new: AnyHashable) {
+        for position in entries.indices where entries[position] == old { entries[position] = new }
+        // Two entries in a row that are now the same step are one step.
+        var position = 1
+        while position < entries.count {
+            if entries[position] == entries[position - 1] {
+                entries.remove(at: position)
+                if index >= position { index -= 1 }
+            } else {
+                position += 1
+            }
+        }
     }
 
     /// Makes the entry `offset` along the current one.

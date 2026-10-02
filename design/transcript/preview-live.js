@@ -188,6 +188,7 @@ const RUNNING = new Set(["idle", "responding", "waiting", "compacting"]);
 function chooseModel(s, v) {
   const m = MODEL(v);
   // Another account is another launch environment: the CLI must restart, so ask.
+  // While Starting nothing has run yet: the launch just starts over in it.
   if (RUNNING.has(s.state) && m.acct !== MODEL(s.model).acct) return confirmRestart(s, v);
   const before = { model: s.model, pending: s.pendingModel };
   if (isNew(s) || s.state === "rest" || s.state === "failed" || s.state === "starting") {

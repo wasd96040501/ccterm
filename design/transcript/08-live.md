@@ -226,7 +226,7 @@ each account is a section of it, in Settings' order:
   │   Default (recommended)    Opus 5.5           │
   │ ✓ Opus 5.5                                    │
   │   Fable 5.1 · Sonnet 5.5 · Haiku 4.5          │
-  │   4 More Models                               │  expands in place
+  │   7 More Models                               │  expands in place
   │ ▤ Work Relay  relay.example.com  Restarts the session │
   │   Default · Opus · Sonnet · Haiku           ↻ │
   │ ▤ DeepSeek  api.deepseek.com                  │
@@ -273,7 +273,8 @@ account — is marked where it is chosen.
   process, and resumes with `--resume` plus the new environment and
   `--model`; the transcript gets a divider *Restarted as Work Relay · Sonnet*.
   At rest or failed there is no process: the choice is free and the next Send
-  resumes in that account.
+  resumes in that account. While Starting nothing has run yet, so there is no
+  alert either: the launch starts over in the new account.
 
 - **Fast Mode** is a checkbox for models with `supportsFastMode`. On others it's
   disabled: *Opus 5.5, Opus 5 and Opus 4.8 only*; on a provider's model,
@@ -349,7 +350,8 @@ account — is marked where it is chosen.
 ### Slash commands
 
 `/` at the start of the field opens a list above the card: the catalog's
-`commands` (refreshed by `commands_changed`), 28-pt rows, the name in SF Mono
+`commands` (refreshed by `commands_changed`), 28-pt rows (a long description
+wraps to a second line rather than being cut), the name in SF Mono
 12 and its argument hint in tertiary, the description in secondary. Typing
 filters it, ↑ ↓ move, ↩ or ⇥ completes. A completed command becomes the
 token the transcript's bubble draws (05-local.md): mono, on an inset of the
@@ -365,7 +367,7 @@ applies, and **how** ccterm sends it. The two tabs are the two halves.
 |---|---|---|---|---|---|---|---|
 | **Folder** | choose · `cwd` | — fixed | — | — | — | — | — |
 | **Worktree** | toggle, git folders only · `--worktree` | — | — | — | — | — | — |
-| **Account** | follows the model · env | — | confirm → restart, resume | confirm → stop, restart | confirm → stop, restart | env on resume | env on restart |
+| **Account** | follows the model · env | choose · the launch starts over in it | confirm → restart, resume | confirm → stop, restart | confirm → stop, restart | env on resume | env on restart |
 | **Model** | choose · `--model` | choose · held, sent when ready | `set_model` · ≈ 1.5 s, `/model` bubble | choose · **after this turn** ◷ | after this turn ◷ | choose · `--model` on resume | choose · `--model` on restart |
 | **Fast** | toggle · `fastMode` flag setting | held | `apply_flag_settings` | after this turn ◷ | after this turn ◷ | flag on resume | flag on restart |
 | **Effort** | choose · `--effort` | held | `apply_flag_settings` · next request | next request | next request | `--effort` on resume | `--effort` on restart |

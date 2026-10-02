@@ -25,7 +25,9 @@ nonisolated struct ComposerModel: Equatable, Sendable {
     /// The facts the model is built from.
     struct Input: Equatable, Sendable {
         var context: Context
-        var settings: SessionSettings
+        /// `nil` while nothing is known yet — no catalog on a first launch, a
+        /// session with no settings read: the chips say *Loading…*.
+        var settings: SessionSettings?
         var pendingModel: ModelChoice?
         var pendingFastMode: Bool?
         var catalog: ModelCatalog
@@ -178,7 +180,7 @@ nonisolated struct ComposerModel: Equatable, Sendable {
         mode = empty
         modelSections = []
         modelPanelHeader = nil
-        fastMode = FastModeSwitch(isOn: input.settings.fastMode, isEnabled: false, subtitle: nil)
+        fastMode = FastModeSwitch(isOn: input.settings?.fastMode ?? false, isEnabled: false, subtitle: nil)
         effortMenu = Menu(sections: [])
         modeMenu = Menu(sections: [])
         cycledMode = nil

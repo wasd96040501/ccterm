@@ -159,12 +159,7 @@ final class SessionTabViewController: NSViewController {
 
     private func configureComposer() {
         guard let state else { return }
-        // TODO(fill E): the settings at rest come from the transcript; a session
-        // with none yet uses the defaults.
-        let settings =
-            state.settings
-            ?? SessionSettings(
-                model: .default(on: UUID()), effort: nil, permissionMode: .default, fastMode: false)
+        let settings = state.settings ?? context.defaults.settings(catalog: catalog)
         composer.configure(
             with: ComposerModel(
                 ComposerModel.Input(

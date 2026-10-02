@@ -125,8 +125,29 @@ final class SessionStore {
     /// known up front because ccterm mints the session id and names any
     /// worktree (`BranchService.prepare`).
     func start(_ launch: SessionLaunch, prompt: String) -> URL {
-        // TODO(fill B)
-        fatalError("SessionStore.start(_:prompt:) is not built yet")
+        // TODO(fill B): the account, the git step, the settings as flags, the
+        // held prompt in state, `.failed` instead of a log. This body only keeps
+        // a New tab's Send working against the frozen signature meanwhile.
+        let id = UUID().uuidString.lowercased()
+        guard let configuration, let directory else {
+            appLog(.error, "SessionStore", "start: the launch settings are not known yet")
+            return (directory ?? SessionDirectory(url: FileManager.default.temporaryDirectory))
+                .transcriptURL(forSession: id, workingDirectory: launch.folder)
+        }
+        var session = makeConfiguration(in: launch.folder, launch: configuration)
+        session.sessionId = id
+        let url = directory.transcriptURL(forSession: id, workingDirectory: launch.folder)
+        let running = LiveSession(transcriptURL: url, configuration: session, history: Transcript(messages: []))
+        keep(running)
+        Task {
+            do {
+                try await running.start()
+                try running.send(prompt)
+            } catch {
+                appLog(.error, "SessionStore", "start of \(url.lastPathComponent) failed — \(error)")
+            }
+        }
+        return url
     }
 
     /// Sends `prompt` to the session at `url`, as its phase says (design 08
@@ -193,7 +214,7 @@ final class SessionStore {
     /// Sends a prompt to the session at `url`, resuming it first when no CLI
     /// runs it — at rest (its history read, `resume` = its id, in its
     /// recorded cwd), or failed, which a new prompt leaves behind.
-    // TODO(fill B): remove with its tests once `send(_:to:)` is built (TranscriptViewController still calls it).
+    // TODO(fill B): remove with its tests once `send(_:to:)` is built.
     func sendResuming(_ text: String, to url: URL) async throws {
         if let live = live[url], live.state.isLive {
             try live.send(text)

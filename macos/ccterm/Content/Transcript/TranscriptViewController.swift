@@ -51,8 +51,8 @@ final class TranscriptViewController: NSViewController {
     private var selection: String?
     /// The id brought back into view just now, flashing once.
     private var flashing: String?
-    /// The newest state handed over and not shown yet; `failed` once the
-    /// session couldn't be read.
+    /// The newest state handed over and not shown yet, or that the session
+    /// couldn't be read.
     private var pending: Pending?
     private enum Pending {
         case state(SessionState)
@@ -90,7 +90,7 @@ final class TranscriptViewController: NSViewController {
             transcript.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         transcript.maxContentWidth = 720
-        transcript.contentInsets = NSEdgeInsets(top: 12, left: 0, bottom: 24, right: 0)
+        transcript.contentInsets = NSEdgeInsets(top: 12, left: 0, bottom: 24 + bottomInset, right: 0)
         transcript.dataSource = self
         transcript.delegate = self
     }

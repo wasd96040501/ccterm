@@ -253,7 +253,7 @@ final class MainWindowTests: XCTestCase {
         await stage.settle()
         let tabs = split.editorArea.groups.flatMap(\.tabViewItems).map(\.viewController)
         XCTAssertFalse(tabs.contains { $0 is DocumentViewController }, "the document is still open")
-        XCTAssertTrue(tabs.contains { $0 === transcript }, "⌘W closed the transcript")
+        XCTAssertTrue(tabs.contains { $0 === transcript.parent }, "⌘W closed the transcript")
     }
 
     /// The CLI records a detached HEAD as "HEAD": no branch under the name.

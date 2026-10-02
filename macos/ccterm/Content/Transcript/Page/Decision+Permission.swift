@@ -42,14 +42,17 @@ nonisolated extension Decision {
             }
             if !annotations.isEmpty { input["annotations"] = .object(annotations) }
             return .allow(updatedInput: .object(input))
-        case .chatAbout(let answers):
-            return .deny(message: Self.clarification(request, answers: answers))
+        case .chatAbout(let answers, let notes):
+            return .deny(message: Self.clarification(request, answers: answers, notes: notes))
         }
     }
 
     /// The CLI's own feedback for *Chat About This*: what the reader wants to
-    /// do, then each question asked and any answer given so far.
-    private static func clarification(_ request: PermissionRequest, answers: [String: String]) -> String {
+    /// do, then each question asked, any answer given so far and the notes the
+    /// reader wrote for it.
+    private static func clarification(
+        _ request: PermissionRequest, answers: [String: String], notes: [String: String]
+    ) -> String {
         var lines = [
             "The user wants to clarify these questions.",
             "    This means they may have additional information, context or questions for you.",
@@ -62,6 +65,7 @@ nonisolated extension Decision {
             guard let text = question["question"]?.stringValue else { continue }
             lines.append("- \"\(text)\"")
             lines.append(answers[text].map { "  Answer: \($0)" } ?? "  (No answer provided)")
+            if let note = notes[text], !note.isEmpty { lines.append("  User notes: \(note)") }
         }
         return lines.joined(separator: "\n")
     }

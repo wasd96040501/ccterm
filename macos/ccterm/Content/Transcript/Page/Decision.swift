@@ -16,6 +16,7 @@ nonisolated enum Decision: Sendable, Equatable {
     case answer([String: String], notes: [String: String] = [:])
     /// *Chat About This*: a question put aside to talk it over. Answers nothing —
     /// the CLI is told what the reader wants to clarify, with the answers given
-    /// so far — and the focus goes to the composer.
-    case chatAbout(answers: [String: String])
+    /// so far and the notes written beside previewed options — and the focus
+    /// goes to the composer.
+    case chatAbout(answers: [String: String], notes: [String: String] = [:])
 }

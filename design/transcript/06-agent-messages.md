@@ -53,6 +53,38 @@ quoted: a blockquote is TranscriptKit's form for someone else's words.
   Whole: a Messages-style bubble would need a second bubble renderer for
   markdown, which TranscriptKit deliberately doesn't have.
 
+## Talking out: the advisor and SendMessage
+
+The other direction — Claude reaching another party — is work, so it is a
+line in a run like any call, and what was said opens beside.
+
+- **The advisor** (`--advisor <model>`) is a server tool: the reply itself
+  carries a `server_tool_use` named `advisor` and its `advisor_tool_result`,
+  so it never appears as a tool result in a user message. AgentSDK decodes
+  both as `.unknown` today, and the app shows nothing; it needs both blocks
+  decoded and paired by id.
+  - Its own kind, lightbulb glyph. The clause: *Asked the advisor*. Alone:
+    *Asked the advisor* and the advice's first line in tertiary; in a list,
+    *Advice* and the first line. Live: *Asking the advisor*.
+  - Click: the advice beside, as markdown, the advisor's model as the
+    document's status.
+  - `advisor_redacted_result`: *Not shown in the transcript*, nothing to
+    open. `advisor_tool_result_error`: the red tile and the code in words —
+    *Overloaded — try again shortly*, *The conversation is too long for the
+    advisor*, *Asked as often as this session allows* (`max_uses_exceeded`).
+- **SendMessage** — the message kind, `paperplane`.
+  - The clause names the party: *Messaged **team-lead***, *Messaged the
+    team* (`to: "*"`), several parties *Sent 3 messages*. An item: *To
+    team-lead* and the `summary` the model gave, tertiary. Live:
+    *Messaging team-lead*.
+  - Click: the message beside — *To team-lead*, the summary as status, the
+    body as markdown. A structured message (`shutdown_request`,
+    `plan_approval_response`) is named by what it does: *Asked qa to shut
+    down*, *Approved qa's plan*.
+  - The answer, when it comes, is a message *from* that party (above): the
+    two directions look different on purpose — Claude's sending is work, the
+    other party's words are conversation.
+
 ## Names
 
 A subagent's name is the agent's description when the transcript knows the

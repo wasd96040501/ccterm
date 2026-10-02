@@ -322,6 +322,8 @@ html, body {
 /* An option is two lines: the label, then its description under it — wrapped,
    never cut. The mark sits on the label's line. */
 .qa .qone + .qone { margin-top: 12px; }
+/* A call's second part when it's words, not code: the message's summary, the advice's first line. */
+.callsub { margin-left: 6px; color: var(--tertiary); }
 .qa .hdr .ms { margin-left: 8px; font-size: 11px; color: var(--tertiary); }
 .qa .opt { display: grid; grid-template-columns: 16px 1fr; align-items: start; column-gap: 6px; padding: 4px 8px 4px 0; color: var(--tertiary); }
 .qa .opt .ot { display: flex; flex-direction: column; min-width: 0; }

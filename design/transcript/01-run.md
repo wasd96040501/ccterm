@@ -67,7 +67,11 @@ commas, first one capitalised:
 | read | Read **A.swift** · Read 4 files |
 | tasks | Updated the task list |
 | schedule | Scheduled 2 tasks |
-| message | Sent a message |
+| advisor | Asked the advisor · Asked the advisor 2 times |
+| skill | Used the **dataviz** skill · Used 2 skills |
+| worktree | Moved into a worktree · Left the worktree |
+| message | Messaged **team-lead** · Messaged the team (`to: "*"`) · Sent 3 messages |
+| notify | Sent you a notification |
 | other | Used computer-use 3 times (MCP: the server's name) |
 
 - **At most three clauses**, then *and 2 more*. Runs have at most two kinds

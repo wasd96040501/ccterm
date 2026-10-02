@@ -32,6 +32,10 @@ const GLYPHS = {
   tasks: '<path d="M4.8 6l.8.8 1.4-1.5M8.4 6h2.8M4.8 9.8l.8.8 1.4-1.5M8.4 9.8h2.8"/>',
   schedule: '<circle cx="8" cy="8" r="3.2"/><path d="M8 6.2V8l1.2.9"/>',
   message: '<path d="M4.6 7.8l6.6-3-3 6.6-.9-2.7z"/>',
+  advisor: '<path d="M6.4 9.6c-.8-.6-1.3-1.5-1.3-2.5a2.9 2.9 0 0 1 5.8 0c0 1-.5 1.9-1.3 2.5v.9H6.4z"/><path d="M6.7 11.8h2.6"/>',
+  skill: '<path d="M5.2 4.8h4.2c.8 0 1.4.6 1.4 1.4v5H6.6c-.8 0-1.4-.6-1.4-1.4z"/><path d="M5.2 9.6c0-.8.6-1.4 1.4-1.4h4.2"/>',
+  worktree: '<circle cx="6" cy="5.4" r="1"/><circle cx="6" cy="10.6" r="1"/><circle cx="10.2" cy="6.8" r="1"/><path d="M6 6.4v3.2M10.2 7.8c0 1.6-4.2 1-4.2 2"/>',
+  notify: '<path d="M5.4 10V7.6a2.6 2.6 0 0 1 5.2 0V10l.7.8H4.7z"/><path d="M7.2 12h1.6"/>',
   other: '<path d="M5.4 6.2h1.5a1 1 0 1 1 2 0h1.7v1.7a1 1 0 1 1 0 2v1.7H5.4z"/>',
   question: `<path d="M6.5 6.6a1.5 1.5 0 1 1 2.2 1.3c-.5.3-.7.6-.7 1.1v.2"/>${dot(8, 10.9)}`,
   plan: '<rect x="5" y="4.8" width="6" height="6.8" rx="1.2"/><path d="M6.8 7.2h2.4M6.8 9.2h2.4"/>',
@@ -120,6 +124,13 @@ const webfetch = (url, code, f = {}) => item("web", "WebFetch", { url, code, ...
 const websearch = (query, results, f = {}) => item("web", "WebSearch", { query, results, ...f });
 const agentCall = (desc, type, tools, dur, f = {}) => item("agent", "Agent", { desc, type, tools, dur, ...f });
 const taskCall = (label, f = {}) => item("tasks", "TaskUpdate", { label, ...f });
+/** SendMessage: to whom, the summary the model gave, the message (markdown).
+ *  Opens beside as the message. */
+const sendMessage = (to, summary, md, f = {}) => item("message", "SendMessage", { to, summary, docKind: "markdown", title: `To ${to}`, docGlyph: "message", status: esc(summary), md, ...f });
+/** The advisor (server tool): its advice opens beside; `redacted` has none
+ *  to show, `error` is the result's error_code. */
+const advisor = (md, f = {}) => item("advisor", "advisor", { md, docKind: md ? "markdown" : null, title: "Advice", docGlyph: "advisor", status: esc(f.model || "advisor"), ...f });
+const skillCall = (name, f = {}) => item("skill", "Skill", { name, ...f });
 const clone = (it, f = {}) => {
   const { id, ...rest } = it;
   return item(it.kind, it.tool, { ...rest, ...f });
@@ -132,7 +143,7 @@ function run(items, f = {}) {
 
 // MARK: - The run row: the sentence (01-run.md "The sentence")
 
-const ORDER = ["change", "create", "command", "agent", "web", "search", "read", "tasks", "schedule", "message", "other"];
+const ORDER = ["change", "create", "command", "agent", "advisor", "web", "search", "read", "skill", "tasks", "schedule", "worktree", "message", "notify", "other"];
 const fileLink = (it) => `<a class="file" data-open="${it.id}">${esc(base(it.path))}</a>`;
 
 function namedFiles(items, verb, manyVerb) {
@@ -171,8 +182,19 @@ function clauses(all) {
   if (of("tasks").length) out.push("Updated the task list");
   const sc = of("schedule").length;
   if (sc) out.push(plural(sc, "Scheduled a task", "Scheduled # tasks"));
-  const ms = of("message").length;
-  if (ms) out.push(plural(ms, "Sent a message", "Sent # messages"));
+  const ad = of("advisor").length;
+  if (ad) out.push(plural(ad, "Asked the advisor", "Asked the advisor # times"));
+  const sk = of("skill");
+  if (sk.length === 1) out.push(`Used the <b>${esc(sk[0].name)}</b> skill`);
+  else if (sk.length) out.push(`Used ${sk.length} skills`);
+  const wt = of("worktree");
+  if (wt.length) out.push(wt[wt.length - 1].tool === "ExitWorktree" ? "Left the worktree" : "Moved into a worktree");
+  const ms = of("message");
+  const tos = [...new Set(ms.map((m) => m.to))];
+  if (ms.length && tos.length === 1) out.push(tos[0] === "*" ? "Messaged the team" : `Messaged <b>${esc(tos[0])}</b>${ms.length > 1 ? ` ${ms.length} times` : ""}`);
+  else if (ms.length) out.push(`Sent ${ms.length} messages`);
+  const nt = of("notify").length;
+  if (nt) out.push(plural(nt, "Sent you a notification", "Sent you # notifications"));
   const servers = new Map();
   for (const it of of("other")) servers.set(it.server, (servers.get(it.server) || 0) + 1);
   for (const [server, n] of servers) out.push(`Used ${esc(server)} ${plural(n, "once", "# times")}`);
@@ -223,10 +245,27 @@ function callText(it, single) {
       return `${single ? "Fetched " : ""}<span class="file">${esc(new URL(it.url).host)}</span><span class="mono">${esc(new URL(it.url).pathname)}</span>`;
     case "agent":
       return `${esc(it.desc)}<span class="mono">${esc(it.type)}</span>`;
+    case "message":
+      return `${single ? "Messaged " : "To "}<span class="file">${esc(it.to === "*" ? "the team" : it.to)}</span><span class="callsub">${esc(it.summary || "")}</span>`;
+    case "advisor":
+      if (it.error) return `${single ? "Asked the advisor" : "Advisor"}<span class="callsub">${esc(ADVISOR_ERRORS[it.error] || "Unavailable")}</span>`;
+      if (it.redacted) return `${single ? "Asked the advisor" : "Advice"}<span class="callsub">Not shown in the transcript</span>`;
+      return `${single ? "Asked the advisor" : "Advice"}<span class="callsub">${esc(firstLine(it.md))}</span>`;
+    case "skill":
+      return `${single ? "Used the " : ""}<span class="file">${esc(it.name)}</span>${single ? " skill" : ""}`;
     default:
       return esc(it.label || it.tool);
   }
 }
+/** The advisor's error codes, in words (CLI: advisor_tool_result_error). */
+const ADVISOR_ERRORS = {
+  max_uses_exceeded: "Asked as often as this session allows",
+  too_many_requests: "Too many requests — try again shortly",
+  overloaded: "Overloaded — try again shortly",
+  prompt_too_long: "The conversation is too long for the advisor",
+  execution_time_exceeded: "Took too long",
+  unavailable: "Unavailable",
+};
 
 /** What a live call says it is doing (01-run.md "Live labels"). */
 function liveText(it) {
@@ -239,6 +278,9 @@ function liveText(it) {
     case "search": return `Searching for <code>${esc(it.pattern)}</code>`;
     case "web": return it.tool === "WebSearch" ? `Searching the web for “${esc(it.query)}”` : `Fetching <span class="file">${esc(new URL(it.url).host)}</span>`;
     case "agent": return esc(it.desc);
+    case "message": return `Messaging <span class="file">${esc(it.to)}</span>`;
+    case "advisor": return "Asking the advisor";
+    case "skill": return `Loading the <span class="file">${esc(it.name)}</span> skill`;
     default: return esc(it.label || it.tool);
   }
 }

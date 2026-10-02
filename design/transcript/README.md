@@ -81,21 +81,31 @@ tile, never the row:
 The arc is the only decoration that moves, and it is the tile's own outline —
 there is no separate spinner. Reduce Motion turns it into a slow pulse.
 
-**Kinds.** Tool names map to eleven kinds, each with one SF Symbol:
+**Kinds.** Tool names map to fifteen kinds, each with one SF Symbol. The
+built-in tools a session uses (CLI 2.1.286) have a row; MCP tools and the
+rarer built-ins (Artifact, DesignSync, REPL, …) fall to *other*, named by
+their server or tool:
 
 | kind | tools | symbol |
 |---|---|---|
-| command | Bash, `!` commands, TaskOutput | `terminal` |
+| command | Bash, PowerShell, `!` commands, TaskOutput, TaskStop, KillShell | `terminal` |
 | change | Edit, NotebookEdit, Write over a file | `pencil` |
 | create | Write a new file | `doc.badge.plus` |
-| read | Read | `doc.text` |
-| search | Grep, Glob, ToolSearch | `magnifyingglass` |
+| read | Read, ListMcpResources, ReadMcpResource | `doc.text` |
+| search | Grep, Glob, ToolSearch, LSP | `magnifyingglass` |
 | web | WebFetch, WebSearch | `globe` |
-| agent | Agent / Task, Workflow | the sidebar's Lamé star |
-| tasks | TaskCreate, TaskUpdate, TodoWrite | `checklist` |
-| schedule | Cron*, ScheduleWakeup, Monitor | `clock` |
+| agent | Agent / Task, Workflow, ListAgents | the sidebar's Lamé star |
+| advisor | advisor (a server tool: `server_tool_use` + `advisor_tool_result`) | `lightbulb` |
+| skill | Skill | `book.closed` |
+| tasks | TaskCreate, TaskUpdate, TaskList, TaskGet, TodoWrite | `checklist` |
+| schedule | Cron*, ScheduleWakeup, Monitor, RemoteTrigger | `clock` |
+| worktree | EnterWorktree, ExitWorktree | `arrow.triangle.branch` |
 | message | SendMessage | `paperplane` |
+| notify | PushNotification, SendUserMessage, SendUserFile | `bell` |
 | other | MCP tools, anything unknown | `puzzlepiece.extension` |
+
+AskUserQuestion, EnterPlanMode / ExitPlanMode and the task list are not
+run kinds: they break out of the run (07-talk.md).
 
 **Colour.** System colours only, plus the sidebar's coral. Red and green
 appear as text or 10–16 % washes, never as filled buttons.

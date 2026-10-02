@@ -86,6 +86,10 @@ final class SessionTabViewController: NSViewController {
 
     /// Sending: the field dims, the New view rises; nothing more is taken.
     private var isHandingOver = false
+    /// The session a Send in a New tab started, from the Send until the swap
+    /// (step 4) has the tab's own `transcriptURL`: what Stop cancels during the
+    /// rise, and what the rise's completion checks it still belongs to.
+    private var handoverURL: URL?
     /// The draft and the first prompt of the session this tab started, so that
     /// Stop while *Starting* can take them back.
     private var startedDraft: NewSessionDraft?
@@ -216,7 +220,7 @@ final class SessionTabViewController: NSViewController {
     /// so the window's menu reaches it from anywhere in the tab, and the split
     /// view controller hands it on from the sidebar.
     @objc func stopResponding(_ sender: Any?) {
-        guard let state, state.phase.canStop else { return }
+        guard handoverURL != nil || state?.phase.canStop == true else { return }
         composerViewControllerDidRequestStop(composer)
     }
 
@@ -326,7 +330,9 @@ final class SessionTabViewController: NSViewController {
             composer.configure(
                 with: ComposerModel(
                     ComposerModel.Input(
-                        context: .draft,
+                        context: handoverURL == nil
+                            ? .draft
+                            : .session(phase: .starting, isWaitingForYou: false, isWaitingRequestVisible: true),
                         settings: draftSettingsAreKnown ? draft.settings : nil,
                         pendingModel: nil, pendingFastMode: nil, catalog: catalog,
                         allowsBypassPermissions: preferences.allowsBypassPermissions, contextUsage: nil,
@@ -354,8 +360,9 @@ final class SessionTabViewController: NSViewController {
         isHandingOver = true
         // 1. The URL at once; the words stay in the field, dimmed.
         let url = context.sessions.start(launch, prompt: text)
+        handoverURL = url
         composer.text = text
-        composer.view.alphaValue = 0.5
+        composer.isFieldDimmed = true
         startedDraft = draft
         firstPrompt = text
         // 2. The page rises, then 3 to 6.
@@ -363,13 +370,30 @@ final class SessionTabViewController: NSViewController {
             completeHandover(to: url)
             return
         }
+        // The composer already says *Starting Claude…* with Stop to cancel.
+        refresh()
         newSession.rise { [weak self] in
             self?.completeHandover(to: url)
         }
     }
 
+    /// Stop during the rise: the launch is cancelled, the rise's completion
+    /// will do nothing, and the tab stays the draft with the words in the
+    /// field. The coordinator was never told, so there is nothing to undo.
+    private func cancelHandover(at url: URL) {
+        _ = context.sessions.cancelLaunch(at: url)
+        handoverURL = nil
+        isHandingOver = false
+        startedDraft = nil
+        firstPrompt = nil
+        composer.isFieldDimmed = false
+        refresh()
+        composer.focus()
+    }
+
     private func completeHandover(to url: URL) {
-        guard transcriptURL == nil else { return }
+        guard transcriptURL == nil, handoverURL == url else { return }
+        handoverURL = nil
         // 3. Where the composer is, in the window, before anything moves.
         let captured = composer.view.convert(composer.view.bounds, to: nil)
         // 4. The coordinator re-identifies the tab, before anything else changes.
@@ -380,6 +404,7 @@ final class SessionTabViewController: NSViewController {
         // 5. The New view goes, the transcript comes, the composer moves down.
         unmountDraft()
         composer.text = ""
+        composer.isFieldDimmed = false
         showSession(at: url, glidingFrom: captured)
     }
 
@@ -427,7 +452,7 @@ final class SessionTabViewController: NSViewController {
     /// its place.
     private func glide(from captured: NSRect) {
         let target = composer.view.convert(composer.view.bounds, to: nil)
-        composer.view.alphaValue = 1
+        composer.isFieldDimmed = false
         composer.focus()
         guard let bottom = composerBottom, let width = composerWidth, captured != .zero else {
             isHandingOver = false
@@ -539,7 +564,7 @@ final class SessionTabViewController: NSViewController {
         firstPrompt = nil
         title = SessionTabTitle.draft
         isHandingOver = false
-        composer.view.alphaValue = 1
+        composer.isFieldDimmed = false
         mountDraft()
         composer.text = words
         newSession?.setHintsVisible(words.isEmpty)
@@ -606,6 +631,10 @@ extension SessionTabViewController: ComposerViewControllerDelegate {
     }
 
     func composerViewControllerDidRequestStop(_ composerViewController: ComposerViewController) {
+        if transcriptURL == nil, let handoverURL {
+            cancelHandover(at: handoverURL)
+            return
+        }
         guard let transcriptURL else { return }
         guard state?.phase == .starting else {
             context.sessions.interrupt(at: transcriptURL)

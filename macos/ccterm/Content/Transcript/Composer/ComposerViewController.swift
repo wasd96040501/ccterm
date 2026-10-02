@@ -98,6 +98,15 @@ final class ComposerViewController: NSViewController {
         set { card.setText(newValue) }
     }
 
+    /// Whether the field's words and token are drawn dimmed — the container's
+    /// to set while a sent prompt waits for its session (the handover's first
+    /// step). Not the card, the chips or the buttons, and not part of the
+    /// `ComposerModel`: nothing the session knows.
+    var isFieldDimmed: Bool {
+        get { card.isFieldDimmed }
+        set { card.isFieldDimmed = newValue }
+    }
+
     /// Gives the field the focus.
     func focus() {
         card.focus()

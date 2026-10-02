@@ -49,6 +49,17 @@ final class ComposerFieldView: NSView {
         }
     }
 
+    /// Whether the words (and the token) are drawn at half strength — a prompt
+    /// that was sent and is not yet the session's (design 08, the handover:
+    /// *textarea 50 %*). Display only; the words are untouched.
+    var isDimmed = false {
+        didSet {
+            let alpha: CGFloat = isDimmed ? 0.5 : 1
+            scrollView.alphaValue = alpha
+            tokenView.alphaValue = alpha
+        }
+    }
+
     /// The command already completed in front of the words, without its `/`.
     private(set) var token: String?
 

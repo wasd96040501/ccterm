@@ -250,6 +250,12 @@ final class ComposerView: NSView {
 
     var slashQuery: String? { field.slashQuery }
 
+    /// Whether the field's words are dimmed; the card, chips and buttons are not.
+    var isFieldDimmed: Bool {
+        get { field.isDimmed }
+        set { field.isDimmed = newValue }
+    }
+
     func complete(command name: String) {
         field.complete(command: name)
     }

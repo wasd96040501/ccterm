@@ -253,6 +253,19 @@ final class SessionTabViewControllerTests: XCTestCase {
         XCTAssertEqual(TranscriptTab(identifier: item.identifier), .document(document.reference))
         XCTAssertEqual(item.viewController?.title, String(localized: "Session Log"))
     }
+
+    /// A command token with nothing after it is something typed: the tab is
+    /// worth keeping.
+    func testADraftHoldingOnlyACommandTokenIsNotUntouched() throws {
+        let tab = mountDraft()
+        XCTAssertTrue(tab.isUntouchedDraft)
+
+        (try composer(of: tab).view as? ComposerView)?.complete(command: "review")
+
+        XCTAssertEqual(try composer(of: tab).text, "/review")
+        XCTAssertFalse(tab.isUntouchedDraft)
+        XCTAssertEqual(tab.draftText, "/review", "the token is kept for the next New tab")
+    }
 }
 
 /// What a tab asked of its window.

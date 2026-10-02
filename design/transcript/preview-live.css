@@ -384,3 +384,11 @@ table.matrix { border-collapse: collapse; font-size: 12px; min-width: 980px; wid
 .sw { display: flex; align-items: end; gap: 16px; flex-wrap: wrap; }
 .sw > div { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 11px; color: var(--secondary); }
 .sw .box { background: var(--tile); }
+
+/* The continuous-corner specimens: SVG, so every browser shows the shape. */
+#lv-lang .cbox path { fill: var(--hover); stroke: var(--separator); stroke-width: 1; }
+#lv-lang .ccmp .circ { fill: none; stroke: var(--red); stroke-width: 0.6; stroke-dasharray: 2 1.5; }
+#lv-lang .ccmp.z .circ, #lv-lang .ccmp.z .cont { stroke-width: 0.25; }
+#lv-lang .ccmp.z .circ { stroke-dasharray: 0.8 0.6; }
+#lv-lang .ccmp .cont { fill: color-mix(in srgb, var(--accent) 10%, transparent); stroke: var(--accent); stroke-width: 0.6; }
+#lv-lang .cnote { display: block; margin-top: 6px; color: var(--tertiary); }

@@ -510,10 +510,21 @@ Every view on this page draws from the same few numbers.
 | **Icon · badge** | 10 | a mark on a word: the clock, the bolt, the check |
 | **Spacing** | 4, 8, 12, 16, 24 | every padding and gap (the README's 4-pt grid) |
 
-- **Corners are continuous** (squircles): AppKit's `cornerCurve =
-  .continuous`. A squircle of the same radius looks smaller, so where it is
-  drawn the radius is scaled ×1.45 to read the same as the circular one. The
-  + and the action button stay circles; tiles and icons stay Lamé curves.
+- **Corners are continuous** (Apple's squircle): the curve starts about
+  1.5 r along each edge and eases into it, so no corner shows a kink where
+  the straight edge stops. **The implementation uses AppKit's own:** every
+  layer-backed shape sets `layer.cornerRadius` to the radius above and
+  `layer.cornerCurve = .continuous` (macOS 10.15+), with no scaling — the
+  continuous curve is made to read the same size as a circular corner of
+  that radius. Shapes drawn with `NSBezierPath` use the same curve (a
+  rounded-rect path built from the continuous-corner cubics, as
+  `contRect()` in `preview-live.js` draws it). The + and the action button
+  stay circles; tiles and icons stay Lamé curves.
+- **About this sheet:** the specimens under *One shape language* draw the
+  real curve in SVG, in every browser. The sheet's other shapes use CSS
+  `corner-shape: squircle` (a superellipse, radius ×1.45 to match), which
+  Chrome 139+ draws and Safari doesn't yet; there they show circular corners.
+  The app's shapes are what the specimens show, not what the browser draws.
 - **Words aren't cut.** A control's words are dropped whole when its glyph
   already says the same — the provider name first, then Effort's and Mode's
   names, kept in their tooltips — and a status sentence moves to its own

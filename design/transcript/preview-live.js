@@ -1310,11 +1310,34 @@ function buildLiveSpecimens() {
 
 // MARK: - The language: radii, icon sizes
 
+/** A rounded rectangle with Apple's continuous corners — what
+ *  `CALayer.cornerCurve = .continuous` draws: the curve starts 1.528 r from
+ *  the corner and eases into the straight edge (three cubics per corner,
+ *  the published fit of UIKit's path). Drawn as SVG, so every browser shows
+ *  the real shape. */
+function contRect(w, h, r) {
+  r = Math.min(r, Math.min(w, h) / 2 / 1.52866483);
+  const k = [1.52866483, 1.08849299, 0.86840701, 0.63149399, 0.074911, 0.37282401, 0.16905899, 0.02101100].map((c) => c * r);
+  const [a, b, c, d, e, f, g, i] = k;
+  const f2 = (n) => n.toFixed(2);
+  const P = (x, y) => `${f2(x)} ${f2(y)}`;
+  return `M${P(a, 0)}L${P(w - a, 0)}` +
+    `C${P(w - b, 0)} ${P(w - c, i)} ${P(w - d, e)}C${P(w - f, g)} ${P(w - g, f)} ${P(w - e, d)}C${P(w - i, c)} ${P(w, b)} ${P(w, a)}` +
+    `L${P(w, h - a)}C${P(w, h - b)} ${P(w - i, h - c)} ${P(w - e, h - d)}C${P(w - g, h - f)} ${P(w - f, h - g)} ${P(w - d, h - e)}C${P(w - c, h - i)} ${P(w - b, h)} ${P(w - a, h)}` +
+    `L${P(a, h)}C${P(b, h)} ${P(c, h - i)} ${P(d, h - e)}C${P(f, h - g)} ${P(g, h - f)} ${P(e, h - d)}C${P(i, h - c)} ${P(0, h - b)} ${P(0, h - a)}` +
+    `L${P(0, a)}C${P(0, b)} ${P(i, c)} ${P(e, d)}C${P(g, f)} ${P(f, g)} ${P(d, e)}C${P(c, i)} ${P(b, 0)} ${P(a, 0)}Z`;
+}
+const RADII = { "--r-tag": 5, "--r-ctl": 7, "--r-pop": 12, "--r-card": 18 };
 function buildLang() {
-  const box = (r, w, h, label) => `<div><span class="box" style="width:${w}px;height:${h}px;border-radius:var(${r});display:block;corner-shape:squircle"></span><code>${r.replace("--r-", "")}</code>${label}</div>`;
+  const box = (r, w, h, label) => `<div><svg class="cbox" width="${w}" height="${h}" viewBox="-0.5 -0.5 ${w + 1} ${h + 1}"><path d="${contRect(w, h, RADII[r])}"/></svg><code>${r.replace("--r-", "")}</code>${label}</div>`;
+  const css = CSS.supports("corner-shape", "squircle");
+  const cmp = (w, h, r) => `<svg class="ccmp" width="${w}" height="${h}" viewBox="-1 -1 ${w + 2} ${h + 2}"><rect width="${w}" height="${h}" rx="${r}" class="circ"/><path d="${contRect(w, h, r)}" class="cont"/></svg>`;
+  // One corner at 4×: where a circular corner meets the edge with a kink, the continuous one eases in.
+  const zoom = (r) => `<svg class="ccmp z" width="176" height="176" viewBox="-1 -1 ${r * 2.2} ${r * 2.2}"><rect width="${r * 6}" height="${r * 6}" rx="${r}" class="circ"/><path d="${contRect(r * 6, r * 6, r)}" class="cont"/></svg>`;
   const ic = (html, label) => `<div>${html}<span>${label}</span></div>`;
   document.getElementById("lv-lang").innerHTML = [
-    card("<b>Four radii, continuous</b>tag 5 · control 7 · popover 12 · card 18 — a squircle where the platform draws one (AppKit's continuous corners; CSS <code>corner-shape</code> here), its radius scaled so the size reads the same. The + and the action button stay circles; tiles stay Lamé curves.", `<div class="sw">${box("--r-tag", 28, 22, "token")}${box("--r-ctl", 64, 24, "chip · tab · row")}${box("--r-pop", 88, 56, "menu · panel")}${box("--r-card", 120, 72, "composer · alert")}</div>`),
+    card(`<b>Continuous corners — what the app draws</b>Every radius on this page is a continuous corner: the curve starts further along the edge and eases into it, so no corner shows where the straight edge stops (red, a circular corner of the same radius; blue, continuous). In AppKit it's one line: <code>layer.cornerCurve = .continuous</code> with the radii as listed — no scaling. <span class="cnote">${css ? "This browser draws the sheet's corners as squircles (CSS <code>corner-shape</code>), a near match." : "This browser has no CSS <code>corner-shape</code> (Safari, so far), so the controls on this sheet show circular corners; the drawings here are the real shape."}</span>`, `<div class="sw">${ic(zoom(18), "one corner · 4×")}${ic(cmp(120, 72, 18), "card · 18")}${ic(cmp(56, 24, 7), "control · 7")}</div>`),
+    card("<b>Four radii, continuous</b>tag 5 · control 7 · popover 12 · card 18, drawn as AppKit draws them. The + and the action button stay circles; tiles stay Lamé curves.", `<div class="sw">${box("--r-tag", 28, 22, "token")}${box("--r-ctl", 64, 24, "chip · tab · row")}${box("--r-pop", 88, 56, "menu · panel")}${box("--r-card", 120, 72, "composer · alert")}</div>`),
     card("<b>Three icon sizes</b>16 for anything that heads a row (sidebar, menu items, tiles); 14 inside a 12-pt control (chips, the action button, ring); 10 for a badge on a word (clock, bolt, check).", `<div class="sw">${ic(sessionIcon(16), "16 · row")}${ic(`<svg width="16" height="16" viewBox="0 0 16 16">${GLYPHS.change.replace("<path", '<path fill="none" stroke="currentColor" stroke-width="1.3"')}</svg>`, "16 · menu")}${ic(`<span style="color:var(--secondary)">${bars("high").replace('class="g"', 'width="14" height="14"')}</span>`, "14 · chip")}${ic(`<span style="color:var(--secondary)">${svg16(MODE_GLYPH.auto).replace('class="g"', 'width="14" height="14"')}</span>`, "14 · chip")}${ic(`<span style="color:var(--tertiary)">${LV.clock.replace('class="pend"', 'width="10" height="10"')}</span>`, "10 · badge")}</div>`),
     card("<b>A 4-pt grid; words never cut</b>Padding and gaps are 4, 8, 12, 16 or 24. When the composer narrows, labels the glyph already says go first — the provider name, then Effort's and Mode's words (kept in their tooltips) — so the status line keeps its sentence. Only titles, which can be any length, truncate.", `<div style="display:grid;gap:12px">${staticComposer({ state: "rest", model: "relay:default", effort: "high", mode: "acceptEdits" })}<div style="width:min(330px,100%)">${staticComposer({ state: "rest", model: "relay:default", effort: "high", mode: "acceptEdits" })}</div></div>`),
   ].join("");

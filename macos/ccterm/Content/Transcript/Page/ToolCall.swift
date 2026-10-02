@@ -19,6 +19,9 @@ nonisolated struct ToolCall: Sendable, Equatable, Identifiable {
     let startedAt: Date?
     /// When the result was recorded.
     var finishedAt: Date?
+    /// The advisor's answer, for the advisor's call: a server tool, whose
+    /// result is in the reply that made the call.
+    var advisor: AdvisorOutcome? = nil
 
     var id: String { use.id }
 
@@ -51,6 +54,23 @@ nonisolated struct ToolCall: Sendable, Equatable, Identifiable {
 }
 
 nonisolated extension ToolCall {
+    /// Whether a click opens something beside. Everything does but an advisor
+    /// whose advice can't be read — encrypted, declined, an error — which says
+    /// all there is on its line.
+    var opensBeside: Bool {
+        kind == .advisor ? advisor?.advice != nil : true
+    }
+
+    /// The message of a `SendMessage`.
+    var sentMessage: SentMessage? {
+        kind == .message ? SentMessage(use.input) : nil
+    }
+
+    /// The skill a `Skill` call ran.
+    var skillName: String? {
+        kind == .skill ? use.input["skill"]?.stringValue : nil
+    }
+
     /// An MCP tool's server and tool (`mcp__computer-use__screenshot`);
     /// any other tool is its own server.
     var toolName: (server: String, tool: String) {

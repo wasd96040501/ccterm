@@ -11,6 +11,11 @@ nonisolated enum Decision: Sendable, Equatable {
     case alwaysAllow(rule: String)
     case approvePlan
     case keepPlanning
-    /// A question's answers, the chosen labels by question.
-    case answer([String: String])
+    /// A question's answers, the chosen labels by question — a typed *Other*
+    /// as typed — and the *Notes* written beside a previewed option, by question.
+    case answer([String: String], notes: [String: String] = [:])
+    /// *Chat About This*: a question put aside to talk it over. Answers nothing —
+    /// the CLI is told what the reader wants to clarify, with the answers given
+    /// so far — and the focus goes to the composer.
+    case chatAbout(answers: [String: String])
 }

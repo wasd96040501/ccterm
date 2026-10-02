@@ -87,7 +87,6 @@ extension UserMessage: Decodable {
         self.isReplay = c.lenient(Bool.self, "isReplay") ?? false
         self.origin = c.lenient(JSONValue.self, "origin")?["kind"]?.stringValue
         self.timestamp = c.timestamp("timestamp")
-        // TODO(fill A): fixtures for both.
         self.permissionMode = c.lenient(String.self, "permissionMode").flatMap(PermissionMode.init)
         self.imagePasteIDs = c.lenient([Int].self, "imagePasteIds") ?? []
     }

@@ -65,6 +65,27 @@ struct UserMessageBlock: Block, @unchecked Sendable {
     /// for the reason the split exists — none of it depends on a width.
     private let more: ShapedText
 
+    /// The runs of `text` set apart, in its index space, padding included: each
+    /// gets the wash of `Token`'s doc comment. Empty for plain words.
+    let tokens: [Span]
+
+    /// The accent at 16 % (24 % in Dark) over the bubble's own colour — a deeper
+    /// patch of it, never a new colour.
+    private(set) var tokenColor: NSColor = UserMessageBlock.tokenWash
+
+    /// What the pointer is over, and what it reads.
+    struct ToolTip: Sendable, Equatable {
+        let rect: CGRect
+        let text: String
+    }
+
+    /// One token's footprint: the positions from its leading pad to its trailing
+    /// one, and what the hover says over it.
+    struct Span: Sendable, Equatable {
+        let range: Range<Int>
+        let toolTip: String?
+    }
+
     /// How much of the content column the bubble may occupy. The remainder is
     /// gutter — the empty space on the left that makes the row read as one side
     /// of a conversation rather than as another paragraph.
@@ -102,6 +123,22 @@ struct UserMessageBlock: Block, @unchecked Sendable {
     init(_ text: ShapedText, style: TextStyle = .default) {
         self.text = text
         self.more = Self.moreRun(style: style)
+        self.tokens = []
+    }
+
+    /// A message with its tokens (`TranscriptRowContent.UserMessage`), at half
+    /// strength while it is pending: every alpha this draws with is halved, so the
+    /// bubble, its washes and its words dim together and keep following the
+    /// appearance.
+    init(_ message: TranscriptRowContent.UserMessage, style: TextStyle = .default) {
+        let (shaped, spans) = Self.shape(message, style: style)
+        self.text = shaped
+        self.more = Self.moreRun(style: style)
+        self.tokens = spans
+        if message.isPending {
+            backgroundColor = backgroundColor.halved
+            tokenColor = tokenColor.halved
+        }
     }
 
     /// The body face and colour come from `TextStyle` because that is where
@@ -113,6 +150,97 @@ struct UserMessageBlock: Block, @unchecked Sendable {
                 source,
                 attributes: [.font: style.bodyFont, .foregroundColor: style.textColor]),
             style: style)
+    }
+
+    // MARK: - Tokens
+
+    /// The wash of a token: the accent over the bubble, deeper in Dark.
+    static let tokenWash = NSColor(name: nil) { appearance in
+        let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return NSColor.controlAccentColor.withAlphaComponent(dark ? 0.24 : 0.16)
+    }
+
+    /// The padding either side of a token's words.
+    static let tokenPadding: CGFloat = 4
+    static let tokenRadius: CGFloat = 5
+    static var tokenFont: NSFont { .monospacedSystemFont(ofSize: 13, weight: .medium) }
+    static var shellFont: NSFont { .monospacedSystemFont(ofSize: 12.5, weight: .regular) }
+
+    /// The wash's height: the token's 13-pt face with a point above and below.
+    static let washHeight: CGFloat = 15
+
+    /// `message` as one attributed string: its words in the body face (or SF Mono
+    /// for a shell command), each token's words in the token face between two
+    /// 4-pt pads — a pad is a U+FFFC with a run delegate, as an `InlineSymbol` is,
+    /// so the advance survives line breaking and copy drops it.
+    private static func shape(
+        _ message: TranscriptRowContent.UserMessage, style: TextStyle
+    ) -> (ShapedText, [Span]) {
+        let dim: (NSColor) -> NSColor = { message.isPending ? $0.halved : $0 }
+        let bodyFont = message.isMonospaced ? shellFont : style.bodyFont
+        let body: [NSAttributedString.Key: Any] = [.font: bodyFont, .foregroundColor: dim(style.textColor)]
+        let words = message.text as NSString
+
+        let out = NSMutableAttributedString()
+        var spans: [Span] = []
+        var cursor = 0
+        for token in message.tokens.sorted(by: { $0.range.lowerBound < $1.range.lowerBound }) {
+            let range = NSRange(location: token.range.lowerBound, length: token.range.count)
+            guard range.length > 0, range.location >= cursor, NSMaxRange(range) <= words.length else {
+                continue
+            }
+            out.append(
+                NSAttributedString(
+                    string: words.substring(with: NSRange(location: cursor, length: range.location - cursor)),
+                    attributes: body))
+            let start = out.length
+            out.append(pad())
+
+            let inner = NSMutableAttributedString()
+            let face: [NSAttributedString.Key: Any] = [
+                .font: tokenFont, .foregroundColor: dim(style.textColor),
+            ]
+            switch token.kind {
+            case .command:
+                let sigil = words.rangeOfComposedCharacterSequence(at: range.location)
+                inner.append(
+                    NSAttributedString(
+                        string: words.substring(with: sigil),
+                        attributes: [.font: tokenFont, .foregroundColor: dim(style.secondaryColor)]))
+                if NSMaxRange(sigil) < NSMaxRange(range) {
+                    let rest = NSRange(location: NSMaxRange(sigil), length: NSMaxRange(range) - NSMaxRange(sigil))
+                    inner.append(NSAttributedString(string: words.substring(with: rest), attributes: face))
+                }
+            case .image(let url):
+                inner.append(
+                    InlineSymbol(.image, font: tokenFont, color: dim(style.secondaryColor))
+                        .attributedString(font: tokenFont))
+                inner.append(NSAttributedString(string: words.substring(with: range), attributes: face))
+                inner.addAttribute(.link, value: url, range: NSRange(location: 0, length: inner.length))
+            }
+            out.append(inner)
+            out.append(pad())
+            spans.append(Span(range: start..<out.length, toolTip: token.toolTip))
+            cursor = NSMaxRange(range)
+        }
+        out.append(NSAttributedString(string: words.substring(from: cursor), attributes: body))
+        return (ShapedText(out), spans)
+    }
+
+    /// A 4-pt advance with no ink: one position in the index space, dropped from
+    /// a copy with the symbols.
+    private static func pad() -> NSAttributedString {
+        var callbacks = CTRunDelegateCallbacks(
+            version: kCTRunDelegateCurrentVersion,
+            dealloc: { _ in },
+            getAscent: { _ in 0 },
+            getDescent: { _ in 0 },
+            getWidth: { _ in UserMessageBlock.tokenPadding })
+        var attributes: [NSAttributedString.Key: Any] = [.font: tokenFont]
+        if let delegate = CTRunDelegateCreate(&callbacks, nil) {
+            attributes[kCTRunDelegateAttributeName as NSAttributedString.Key] = delegate
+        }
+        return NSAttributedString(string: String(InlineSymbol.placeholder), attributes: attributes)
     }
 
     /// `↗ More`, built the way `MarkdownInlineBuilder` builds a link: the glyph
@@ -163,6 +291,18 @@ struct UserMessageBlock: Block, @unchecked Sendable {
             height: contentHeight + verticalPadding * 2)
         let textOrigin = CGPoint(x: bubble.minX + horizontalPadding, y: verticalPadding)
 
+        // Each token's wash, in the row's space; one per line a token crosses.
+        var washes: [CGRect] = []
+        var toolTips: [ToolTip] = []
+        for span in tokens {
+            let rects = text.tokenRects(
+                in: span.range, ascent: Self.tokenFont.ascender, descent: -Self.tokenFont.descender,
+                height: Self.washHeight
+            ).map { $0.offsetBy(dx: textOrigin.x, dy: textOrigin.y) }
+            washes += rects
+            if let tip = span.toolTip { toolTips += rects.map { ToolTip(rect: $0, text: tip) } }
+        }
+
         return Measured(
             text: text,
             textOrigin: textOrigin,
@@ -173,6 +313,7 @@ struct UserMessageBlock: Block, @unchecked Sendable {
             bubble: bubble,
             cornerRadius: cornerRadius,
             backgroundColor: backgroundColor,
+            washes: washes, tokenColor: tokenColor, toolTips: toolTips,
             // Placed relative to the text it follows, then lifted into the row's
             // space once — the same two steps every other origin here takes.
             more: more.map {
@@ -212,6 +353,14 @@ struct UserMessageBlock: Block, @unchecked Sendable {
         let cornerRadius: CGFloat
         let backgroundColor: NSColor
 
+        /// The tokens' insets, in the row's space (`TypesetText.tokenRects`),
+        /// drawn over the bubble and under the glyphs.
+        let washes: [CGRect]
+        let tokenColor: NSColor
+
+        /// What the pointer reads over a token that has something to say.
+        let toolTips: [ToolTip]
+
         /// `nil` when the whole message is on screen, which is the common case.
         let more: More?
 
@@ -227,6 +376,12 @@ struct UserMessageBlock: Block, @unchecked Sendable {
                 .fill(
                     roundedRect: bubble.offsetBy(dx: origin.x, dy: origin.y),
                     radius: cornerRadius, backgroundColor))
+            for wash in washes {
+                list.append(
+                    .fill(
+                        roundedRect: wash.offsetBy(dx: origin.x, dy: origin.y),
+                        radius: UserMessageBlock.tokenRadius, tokenColor, phase: .decoration))
+            }
             list.append(
                 .text(text, at: CGPoint(x: origin.x + textOrigin.x, y: origin.y + textOrigin.y)))
             guard let more else { return }

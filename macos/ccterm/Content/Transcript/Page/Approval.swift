@@ -53,7 +53,7 @@ nonisolated struct Approval: Sendable, Equatable, Identifiable {
             title = String(localized: "Create \(file)")
             body = .newFile(lines(input["content"]?.stringValue))
             request = String(localized: "Claude wants to create this file")
-        case .agent, .web, .search, .read, .tasks, .schedule, .message, .other:
+        case .agent, .web, .search, .read, .tasks, .schedule, .advisor, .skill, .worktree, .message, .notify, .other:
             title = String(localized: "Use \(call.use.name)")
             body = nil
             request = String(localized: "Claude wants to use \(call.use.name)")

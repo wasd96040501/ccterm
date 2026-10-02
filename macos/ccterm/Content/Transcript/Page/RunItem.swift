@@ -15,6 +15,9 @@ nonisolated struct RunItem: Sendable, Equatable, Identifiable {
 
     var kind: ToolKind { calls[0].kind }
 
+    /// Whether a click opens its document beside (`ToolCall.opensBeside`).
+    var opensBeside: Bool { calls[0].opensBeside }
+
     /// How the item ended: its last call's state.
     var state: ToolCallState { calls[calls.count - 1].state }
 }

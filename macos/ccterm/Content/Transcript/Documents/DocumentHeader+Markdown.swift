@@ -45,6 +45,21 @@ nonisolated extension DocumentHeader {
         case .compactionSummary:
             let title = String(localized: "Summary")
             return DocumentHeader(tile: Tile(glyph: .tool(.other), state: .done), crumbs: [title], title: title)
+        case .advice(let call):
+            let title = String(localized: "Advisor")
+            return DocumentHeader(
+                tile: Tile(glyph: .tool(.advisor), state: Tile.State(call.state)), crumbs: [title], title: title)
+        case .sentMessage(let call):
+            let title = String(localized: "To \(call.sentMessage?.party ?? "")")
+            return DocumentHeader(
+                tile: Tile(glyph: .tool(.message), state: Tile.State(call.state)), crumbs: [title], title: title)
+        case .continuationPrompt:
+            let title = String(localized: "Prompt")
+            return DocumentHeader(tile: Tile(glyph: .tool(.other), state: .done), crumbs: [title], title: title)
+        case .image(let image):
+            return DocumentHeader(
+                tile: Tile(glyph: .image, state: .done), crumbs: [image.title],
+                stat: StyledText("\(image.dimensions) · \(image.format)"), title: image.title)
         case .other(let call):
             let title = call.toolName.tool
             return DocumentHeader(

@@ -12,4 +12,7 @@ nonisolated struct Caption: Sendable, Equatable {
 
     let glyph: Glyph
     let text: String
+    /// After the name, in 11-pt tertiary: when a plugin spoke (*Started this
+    /// turn*, *While Claude worked*).
+    var detail: String?
 }

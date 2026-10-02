@@ -60,6 +60,13 @@ public struct InitializationResult: Sendable, Equatable {
     public var fastModeState: String?
     /// Why Fast Mode can't be used, when it can't (`fast_mode_disabled_reason`).
     public var fastModeDisabledReason: String?
+    /// Models the account can see but not select (`unavailable_models`, with
+    /// ``Model/isDisabled`` set). Disjoint from ``models``; the CLI sends them
+    /// only to hosts it allowlists, so for most it is empty.
+    public var unavailableModels: [Model] = []
+    /// Whether a turn is running when the host attaches (`session_state`:
+    /// `idle`, `running`, `requires_action`); `nil` on an older CLI.
+    public var sessionState: String?
 }
 
 // MARK: - Decodable
@@ -73,7 +80,12 @@ extension InitializationResult: Decodable {
         self.account = c.lenient(Account.self, "account")
         self.outputStyle = c.lenient(String.self, "output_style") ?? ""
         self.availableOutputStyles = c.lenient([String].self, "available_output_styles") ?? []
-        // TODO(fill A): check these keys against the bundle (`unavailable_models: T(lr())`) and add fixtures.
+        self.unavailableModels = (c.lenientArray(Model.self, "unavailable_models") ?? []).map {
+            var model = $0
+            model.isDisabled = true
+            return model
+        }
+        self.sessionState = c.lenient(String.self, "session_state")
         self.currentModel = c.lenient(String.self, "current_model")
         self.currentPermissionMode = c.lenient(String.self, "current_permission_mode").flatMap(PermissionMode.init)
         self.fastModeState = c.lenient(String.self, "fast_mode_state")

@@ -33,6 +33,8 @@ const COLOURS = {
   // oklch(0.70 0.155 50): the folder's tab lightness, clean.
   coral: { name: "coral", light: "#e97d39", dark: "#e97d39", asset: "SidebarCoral" },
   gray: { name: "systemGray", light: "#8e8e93", dark: "#98989d" },
+  // The title's secondary ink, a step down: what the design's `--tertiary` is.
+  tertiary: { name: "tertiaryLabelColor", light: "#b4b4b6", dark: "#6c6c70" },
   indigo: { name: "systemIndigo", light: "#6155f5", dark: "#6d7cff" },
 } satisfies Record<string, Colour>
 
@@ -68,6 +70,10 @@ type Glyph = {
   geometry: string
   fill: string
   stroke?: string
+  /** A glyph drawn as it is in the design: strokes in `ink`, on its own
+   *  `size` box rather than the 16-pt grid. */
+  markup?: (ink: string) => string
+  size?: [number, number]
   colour: Colour
 }
 
@@ -90,6 +96,23 @@ const GLYPHS: Glyph[] = [
     fill: lame(4, 4, 2.75, 2.75, 4) + lame(12, 12, 2.75, 2.75, 4),
     stroke: "M4 6.75V9.5A2.5 2.5 0 0 0 6.5 12H9.25",
     colour: COLOURS.indigo,
+  },
+  {
+    // design/transcript/preview-live.js `LV.branch`, verbatim: the sidebar row's
+    // mark after a worktree session's title. 1:1 with the design, so not a Lamé
+    // shape — three small rings and the line that joins them.
+    asset: "SidebarWorktree",
+    name: "Worktree",
+    role: "a session in a worktree",
+    geometry:
+      "The design's branch glyph as drawn there, 9 × 10: three 1.2-pt-radius rings, two stacked and one up and to the right, a 1-pt line from the lower ring past the upper to the third ring. Shown after the title, in the tertiary ink.",
+    fill: "",
+    markup: (ink) =>
+      `<g fill="none" stroke="${ink}" stroke-width="1">` +
+      `<circle cx="2.2" cy="2" r="1.2"/><circle cx="2.2" cy="8" r="1.2"/><circle cx="6.8" cy="3.4" r="1.2"/>` +
+      `<path d="M2.2 3.2v3.6M6.8 4.6c0 1.6-4.6 1-4.6 2.2"/></g>`,
+    size: [9, 10],
+    colour: COLOURS.tertiary,
   },
 ]
 
@@ -140,6 +163,10 @@ const INFO = { author: "xcode", version: 1 }
 const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`
 
 function svg(glyph: Glyph, colour = "#000000"): string {
+  if (glyph.markup) {
+    const [w, h] = glyph.size ?? [16, 16]
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${glyph.markup(colour)}</svg>`
+  }
   const stroke = glyph.stroke
     ? `<path d="${glyph.stroke}" fill="none" stroke="${colour}" stroke-width="1.5" stroke-linecap="round"/>`
     : ""
@@ -212,16 +239,25 @@ console.log(`wrote ${ASSETS}`)
 
 const grid = Array.from({ length: 17 }, (_, i) => `M0 ${i}H16M${i} 0V16`).join("")
 
-function construction(glyph: Glyph, c: string): string {
+/** What a glyph draws, centred on the 16-pt grid. */
+function drawn(glyph: Glyph, c: string): string {
+  if (glyph.markup) {
+    const [w, h] = glyph.size ?? [16, 16]
+    return `<g transform="translate(${(16 - w) / 2} ${(16 - h) / 2})">${glyph.markup(c)}</g>`
+  }
   const stroke = glyph.stroke
     ? `<path d="${glyph.stroke}" fill="none" stroke="${c}" stroke-width="1.5" stroke-linecap="round"/>`
     : ""
+  return `<path d="${glyph.fill}" fill="${c}"/>${stroke}`
+}
+
+function construction(glyph: Glyph, c: string): string {
   return (
     `<svg width="192" height="192" viewBox="0 0 16 16">` +
     `<path d="${grid}" stroke="var(--grid)" stroke-width="0.04"/>` +
     `<g fill="none" stroke="var(--key)" stroke-width="0.05" stroke-dasharray="0.25 0.2">` +
     `<circle cx="8" cy="8" r="7.5"/><path d="M8 0V16M0 8H16"/></g>` +
-    `<path d="${glyph.fill}" fill="${c}"/>${stroke}</svg>`
+    `${drawn(glyph, c)}</svg>`
   )
 }
 
@@ -244,7 +280,15 @@ function documentConstruction(): string {
   )
 }
 
-type Row = { level: number; open?: boolean; kind: "folder" | Glyph["asset"] | "SidebarSession"; title: string; selected?: boolean }
+type Row = {
+  level: number
+  open?: boolean
+  kind: "folder" | Glyph["asset"] | "SidebarSession"
+  title: string
+  selected?: boolean
+  /** A worktree session: the branch mark after its title. */
+  worktree?: boolean
+}
 const ROWS: Row[] = [
   { level: 0, open: true, kind: "folder", title: "ccterm" },
   { level: 1, open: true, kind: "SidebarSession", title: "Sidebar and session preview", selected: true },
@@ -253,6 +297,7 @@ const ROWS: Row[] = [
   { level: 2, open: true, kind: "SidebarWorkflow", title: "review-changes" },
   { level: 3, kind: "SidebarAgent", title: "review: bugs" },
   { level: 1, open: false, kind: "SidebarSession", title: "Squash merge admin" },
+  { level: 1, open: false, kind: "SidebarSession", title: "Fix the gutter overflow", worktree: true },
 ]
 
 // Xcode's navigator geometry: 22-pt rows, 14-pt indent, the icon 13 pt past
@@ -272,16 +317,21 @@ function sidebar(dark: boolean): string {
     const icon = isDocument
       ? documentIcon(dark)
       : glyph
-      ? `<path d="${glyph.fill}" fill="${ink}"/>` +
-        (glyph.stroke ? `<path d="${glyph.stroke}" fill="none" stroke="${ink}" stroke-width="1.5" stroke-linecap="round"/>` : "")
+      ? drawn(glyph, ink)
       : `<path d="M1 4.2Q1 3 2.2 3H6L7.4 4.4H13.8Q15 4.4 15 5.6V6H1Z" fill="#5aa8ec"/><path d="M1 5.6H15V12.8Q15 14 13.8 14H2.2Q1 14 1 12.8Z" fill="#7cc0f6"/>`
     const highlight = row.selected ? `<rect x="10" y="${y}" width="${W - 20}" height="22" rx="5" fill="#2f6fdf"/>` : ""
     const text = row.selected ? "#ffffff" : dark ? "#e8e8ea" : "#1d1d1f"
+    const mark = row.worktree ? GLYPHS.find((g) => g.asset === "SidebarWorktree") : undefined
+    // The title's width is the sheet's estimate; the app lays it out for real.
+    const wt = mark?.markup
+      ? `<g transform="translate(${x + 34 + row.title.length * 6.5 + 5} ${y + 6})">${mark.markup(row.selected ? "#fff" : dark ? mark.colour.dark : mark.colour.light)}</g>`
+      : ""
     return (
       highlight +
       chevron +
       `<g transform="translate(${x + 13} ${y + 3})">${icon}</g>` +
-      `<text x="${x + 34}" y="${y + 15.5}" font-size="13" fill="${text}">${row.title}</text>`
+      `<text x="${x + 34}" y="${y + 15.5}" font-size="13" fill="${text}">${row.title}</text>` +
+      wt
     )
   }).join("")
   return (

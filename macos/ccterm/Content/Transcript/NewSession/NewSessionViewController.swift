@@ -41,7 +41,10 @@ final class NewSessionViewController: NSViewController {
 
     private lazy var branchChip: NewSessionChip = {
         let chip = NewSessionChip(title: "", look: .row)
-        chip.glyph = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)
+        // The design's branch glyph, 10 × 11 on the pop-up.
+        let glyph = NSImage(resource: .sidebarWorktree)
+        glyph.size = NSSize(width: 10, height: 11)
+        chip.glyph = glyph
         chip.toolTip = String(localized: "Branch")
         chip.target = self
         chip.action = #selector(showBranchPicker(_:))

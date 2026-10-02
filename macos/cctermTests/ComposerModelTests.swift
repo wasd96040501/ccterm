@@ -355,7 +355,7 @@ final class ComposerModelTests: XCTestCase {
         catalog.accounts[0].fastModeUnavailableReason = "Requires extra usage"
         let fast = model(settings: settings("opus"), catalog: catalog).fastMode
         XCTAssertFalse(fast.isEnabled)
-        XCTAssertEqual(fast.subtitle, L("Requires extra usage"))
+        XCTAssertEqual(fast.subtitle, "Requires extra usage")
     }
 
     func testFastChosenWhileClaudeWorksIsOnAndSaysWhenItLands() {

@@ -197,7 +197,9 @@ nonisolated struct ComposerModel: Equatable, Sendable {
         effort = facts.effortChip()
         mode = facts.modeChip()
         modelSections = facts.modelSections()
-        modelPanelHeader = facts.isWorking ? String(localized: "Applies after this turn") : nil
+        modelPanelHeader =
+            facts.timing(of: .fastMode(facts.shownFast)) == .afterTurn
+            ? String(localized: "Applies after this turn") : nil
         fastMode = facts.fastModeSwitch()
         effortMenu = facts.effortMenu()
         modeMenu = facts.modeMenu()
@@ -324,20 +326,13 @@ extension ComposerModel {
             return nil
         }
 
-        /// A process runs: an account change restarts it.
-        var isRunning: Bool {
-            switch phase {
-            case .idle, .responding, .compacting: true
-            default: false
-            }
-        }
+        /// A turn runs (the phase's own rule).
+        var isWorking: Bool { phase?.isWorking == true }
 
-        /// A turn runs: model and Fast apply after it.
-        var isWorking: Bool {
-            switch phase {
-            case .responding, .compacting: true
-            default: false
-            }
+        /// When `change` lands from the shown settings (the phase's rule).
+        func timing(of change: SessionSettings.Change) -> SessionState.ChangeTiming? {
+            guard let phase, let settings else { return nil }
+            return phase.timing(of: change, from: settings)
         }
 
         /// Stop is what the action button does (and it cancels a launch).
@@ -365,7 +360,7 @@ extension ComposerModel {
         /// The level that will run; `nil` for a model that takes none.
         var shownEffort: Effort? {
             guard let settings, takesEffort else { return nil }
-            return settings.effectiveEffort(catalog: input.catalog) ?? .high
+            return settings.effectiveEffort(catalog: input.catalog)
         }
 
         // MARK: Chips
@@ -413,12 +408,13 @@ extension ComposerModel {
         func effortMenu() -> Menu {
             guard settings != nil else { return Menu(sections: []) }
             let supported = model.map { Set($0.supportedEffortLevels) }
+            let defaultEffort = shownModel.flatMap { SessionSettings.defaultEffort(for: $0, catalog: input.catalog) }
             let items = ComposerModel.effortLevels.map { level, name -> Item in
                 let isOffered = supported?.contains(level.rawValue) ?? true
                 let subtitle: String?
                 if !isOffered {
                     subtitle = String(localized: "Not on \(modelName)")
-                } else if level == .high {
+                } else if level == defaultEffort {
                     subtitle = String(localized: "Default")
                 } else if level == .max {
                     subtitle = String(localized: "This session only")
@@ -467,7 +463,8 @@ extension ComposerModel {
             guard let settings else { return [] }
             let current = shownModel
             return input.catalog.accounts.map { account in
-                let restarts = isRunning && account.id != settings.model.account
+                let restarts =
+                    timing(of: .model(ModelChoice(account: account.id, value: "default"))) == .restart
                 func item(_ model: InitializationResult.Model) -> Item {
                     let short = ComposerModel.shortName(of: model, isSubscription: account.isSubscription)
                     let subtitle: String?
@@ -525,7 +522,7 @@ extension ComposerModel {
                 } else {
                     subtitle = String(localized: "Only with the subscription")
                 }
-            } else if isWorking, input.pendingFastMode != nil {
+            } else if input.pendingFastMode != nil, timing(of: .fastMode(shownFast)) == .afterTurn {
                 subtitle = String(localized: "After this turn")
             } else {
                 subtitle = String(localized: "Faster output on Opus · billed as extra usage")

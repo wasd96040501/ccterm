@@ -189,6 +189,56 @@ final class SessionTabLiveTests: XCTestCase {
         XCTAssertTrue(tab.children.contains { $0 is TranscriptViewController })
         XCTAssertFalse(tab.children.contains { $0 is NewSessionViewController })
         XCTAssertEqual(bubbles(in: tab).map(\.text), ["echo"], "the conversation stays")
+
+        // The session is at rest on the new choice, and the next prompt resumes it.
+        XCTAssertTrue(stage!.drainUntil(timeout: 2) { self.store?.activities[url] == nil }, "not at rest")
+        try send("echo", in: tab)
+        XCTAssertEqual(store?.activities[url], .responding, "resuming")
+    }
+
+    // MARK: - Another account
+
+    /// A conversation answered and idle, ready to switch accounts.
+    private func idleSession() throws -> (SessionTabViewController, URL) {
+        let tab = try mountDraft()
+        try send("echo", in: tab)
+        XCTAssertTrue(stage!.drainUntil(timeout: 5) { tab.transcriptURL != nil })
+        let url = try XCTUnwrap(tab.transcriptURL)
+        XCTAssertTrue(
+            stage!.drainUntil(timeout: 15) {
+                self.bubbles(in: tab).map(\.isPending) == [false] && self.store?.activities[url] == .idle
+            }, "the first turn never ended")
+        return (tab, url)
+    }
+
+    func testAnotherAccountsModelAsksFirstThenRestarts() throws {
+        let (tab, url) = try idleSession()
+        tab.composerViewController(try composer(of: tab), didChoose: .model(Fixture.choice("haiku", on: Fixture.relay)))
+
+        let window = try XCTUnwrap(tab.view.window)
+        XCTAssertTrue(stage!.drainUntil(timeout: 2) { window.attachedSheet != nil }, "no confirmation sheet")
+        XCTAssertEqual(store?.activities[url], .idle, "nothing restarts before the reader says so")
+
+        window.endSheet(try XCTUnwrap(window.attachedSheet), returnCode: .alertFirstButtonReturn)
+
+        XCTAssertTrue(stage!.drainUntil(timeout: 2) { self.store?.activities[url] == .responding }, "no restart")
+        XCTAssertTrue(
+            stage!.drainUntil(timeout: 15) { self.store?.activities[url] == .idle }, "the restart never settled")
+        XCTAssertEqual(tab.transcriptURL, url)
+        XCTAssertEqual(bubbles(in: tab).map(\.text), ["echo"])
+    }
+
+    func testCancellingTheRestartSheetChangesNothing() throws {
+        let (tab, url) = try idleSession()
+        tab.composerViewController(try composer(of: tab), didChoose: .model(Fixture.choice("haiku", on: Fixture.relay)))
+        let window = try XCTUnwrap(tab.view.window)
+        XCTAssertTrue(stage!.drainUntil(timeout: 2) { window.attachedSheet != nil }, "no confirmation sheet")
+
+        window.endSheet(try XCTUnwrap(window.attachedSheet), returnCode: .alertSecondButtonReturn)
+        stage!.drain(seconds: 0.5)
+
+        XCTAssertEqual(store?.activities[url], .idle)
+        XCTAssertNil(window.attachedSheet)
     }
 
     func testStopDuringTheRiseCancelsTheLaunchAndStaysTheNewTab() throws {

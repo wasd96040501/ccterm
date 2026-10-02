@@ -41,7 +41,7 @@ final class TranscriptViewControllerTests: XCTestCase {
 
     private func mountTab(_ url: URL) throws -> TranscriptView {
         let stage = AppKitStage.mount(
-            TranscriptViewController(fileURL: url, title: "t") { try Transcript(contentsOf: $0) })
+            TranscriptViewController(fileURL: url, title: "t", sessions: .reading(), acceptsInput: false))
         self.stage = stage
         stage.rootViewController.viewDidAppear()
         return try XCTUnwrap(stage.find(TranscriptView.self))
@@ -57,6 +57,27 @@ final class TranscriptViewControllerTests: XCTestCase {
         let visible = transcript.bounds
         XCTAssertTrue(
             visible.insetBy(dx: 0, dy: -1).contains(last), "last row \(last) not in view \(visible)")
+    }
+
+    /// A session's own tab: the composer sits under the transcript and takes
+    /// none of its rows.
+    func testASessionsOwnTabHasAComposerUnderTheTranscript() throws {
+        let url = try writeConversation("-p/own.jsonl", turns: 5)
+        let stage = AppKitStage.mount(
+            TranscriptViewController(fileURL: url, title: "t", sessions: .reading(), acceptsInput: true))
+        self.stage = stage
+        stage.rootViewController.viewDidAppear()
+        let transcript = try XCTUnwrap(stage.find(TranscriptView.self))
+        let composer = try XCTUnwrap(stage.find(ComposerView.self))
+        XCTAssertTrue(stage.drainUntil(timeout: 5) { transcript.numberOfRows == 10 })
+        let host = stage.rootViewController.view
+        host.layoutSubtreeIfNeeded()
+        let composerFrame = host.convert(composer.bounds, from: composer)
+        let transcriptFrame = host.convert(transcript.bounds, from: transcript)
+        XCTAssertGreaterThan(composerFrame.height, 30)
+        // The host is not flipped: under means lower.
+        XCTAssertGreaterThanOrEqual(transcriptFrame.minY, composerFrame.maxY - 0.5)
+        XCTAssertEqual(transcriptFrame.width, host.bounds.width)
     }
 
     func testAnUnreadableFileShowsANote() throws {

@@ -38,6 +38,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Every transcript on disk, for the main window's sidebar. Process-wide:
     /// it mirrors a directory the CLI owns, and one scan serves every window.
     private var library: LibraryStore?
+    /// The sessions ccterm runs, and every tab's way to its session.
+    /// Process-wide: a session outlives its tabs and windows.
+    private var sessions: SessionStore?
 
     /// Lazy AppKit-rooted Settings window. Created on the first
     /// `showSettingsWindow()` call (⌘, or App > Settings… menu item)
@@ -87,6 +90,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// File › New Session…: in the main window, shown first if it was closed.
+    func newSession() {
+        guard let mainWindowController else { return }
+        mainWindowController.showWindow(nil)
+        mainWindowController.window?.makeKeyAndOrderFront(nil)
+        mainWindowController.newSession()
+    }
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Hosted unit tests keep NSApp alive for AppKit rendering, but the host
         // shows no Dock icon and opens no window of its own.
@@ -127,12 +138,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             configurations: launch.$subscription.removeDuplicates().eraseToAnyPublisher())
         let library = LibraryStore(
             directories: launch.$sessionDirectory.removeDuplicates().eraseToAnyPublisher(), indexDirectory: caches)
+        // Sessions launch as General says, so they are written where the
+        // library reads.
+        let sessions = SessionStore(
+            configurations: launch.$general.eraseToAnyPublisher(),
+            directories: launch.$sessionDirectory.eraseToAnyPublisher(),
+            read: { [library] in try await library.transcript(at: $0) })
         self.accounts = accounts
         self.launch = launch
         self.launchCheck = launchCheck
         self.subscription = subscription
         self.library = library
-        let controller = MainWindowController(library: library, git: GitService())
+        self.sessions = sessions
+        let controller = MainWindowController(library: library, sessions: sessions, git: GitService())
         // Where the frame persists is the app's configuration, not the window's:
         // a `MainWindowController` built anywhere else writes no defaults.
         controller.windowFrameAutosaveName = "MainWindow"
@@ -160,6 +178,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    /// Ends every live session before quitting — asking first while a turn
+    /// runs — so no CLI is left behind.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let sessions, !sessions.activities.isEmpty else { return .terminateNow }
+        let working = sessions.activities.values.contains { $0 == .responding || $0 == .needsInput }
+        if working {
+            let alert = NSAlert()
+            alert.messageText = String(localized: "Quit While Claude Is Working?")
+            alert.informativeText = String(
+                localized: "Some sessions are still working. Quitting ends them; their conversations stay.")
+            alert.addButton(withTitle: String(localized: "Quit"))
+            alert.addButton(withTitle: String(localized: "Cancel"))
+            guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
+        }
+        Task {
+            await sessions.endAll()
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 
     /// XCTest injects this into a hosted test run.

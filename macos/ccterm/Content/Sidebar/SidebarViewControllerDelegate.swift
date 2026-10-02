@@ -9,4 +9,7 @@ protocol SidebarViewControllerDelegate: AnyObject {
 
     /// The reader double-clicked a node, to keep it open.
     func sidebarViewController(_ sidebar: SidebarViewController, didOpen node: LibraryNode)
+
+    /// End Session, from a live session's context menu.
+    func sidebarViewController(_ sidebar: SidebarViewController, didRequestEndOf node: LibraryNode)
 }

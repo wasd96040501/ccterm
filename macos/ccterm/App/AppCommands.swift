@@ -2,12 +2,13 @@ import AppKit
 import SwiftUI
 
 /// The app's menu commands, attached to `CCTermApp`'s placeholder scene.
-/// SwiftUI installs them as `NSMenuItem`s on the main menu; ⌘, and
-/// App > About ccterm call into `AppDelegate`, and everything else is a nil-
-/// targeted action the key window's responder chain answers.
+/// SwiftUI installs them as `NSMenuItem`s on the main menu; ⌘,, App > About
+/// ccterm and File > New Session… call into `AppDelegate`, and everything
+/// else is a nil-targeted action the key window's responder chain answers.
 struct AppCommands: Commands {
     let openSettings: @MainActor () -> Void
     let openAbout: @MainActor () -> Void
+    let newSession: @MainActor () -> Void
 
     var body: some Commands {
         CommandGroup(replacing: .appInfo) {
@@ -20,6 +21,14 @@ struct AppCommands: Commands {
                 openSettings()
             }
             .keyboardShortcut(",", modifiers: .command)
+        }
+        // From `AppDelegate`, not the responder chain: it works whichever
+        // window is key, or none.
+        CommandGroup(replacing: .newItem) {
+            Button("New Session…") {
+                newSession()
+            }
+            .keyboardShortcut("n", modifiers: .command)
         }
         // Xcode's pair: ⌘W closes a tab, ⇧⌘W the window. A window without
         // tabs answers no `closeTab:`, so ⌘W closes it.

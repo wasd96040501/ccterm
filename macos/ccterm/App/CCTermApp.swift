@@ -20,7 +20,8 @@ struct CCTermApp: App {
         .commands {
             AppCommands(
                 openSettings: { appDelegate.showSettingsWindow() },
-                openAbout: { appDelegate.showAboutWindow() }
+                openAbout: { appDelegate.showAboutWindow() },
+                newSession: { appDelegate.newSession() }
             )
         }
     }

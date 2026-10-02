@@ -3,7 +3,7 @@ import Combine
 import CryptoKit
 import Foundation
 
-/// Every transcript someone ran at the CLI's prompt, from the CLI's session
+/// Every transcript someone ran at the CLI's prompt or in ccterm, from the CLI's session
 /// directory, as a tree of `LibraryNode`s: project → session → its subagents
 /// and workflow runs. Left out: sessions run through `claude -p` or an SDK,
 /// those that record no working directory, and those run in a temporary or
@@ -232,7 +232,7 @@ final class LibraryStore {
     /// read.
     private nonisolated static func record(of session: SessionFile) throws -> Record {
         let metadata = try Transcript.metadata(contentsOf: session.url)
-        guard metadata.isInteractive, let cwd = metadata.cwd, !isScratch(project(ofDirectory: cwd)) else {
+        guard isPerson(metadata.entrypoint), let cwd = metadata.cwd, !isScratch(project(ofDirectory: cwd)) else {
             return Record(modificationDate: session.modificationDate, summary: nil)
         }
         let title =
@@ -300,6 +300,13 @@ final class LibraryStore {
     private nonisolated static func project(ofDirectory path: String) -> String {
         guard let range = path.range(of: "/.claude/worktrees/") else { return path }
         return String(path[..<range.lowerBound])
+    }
+
+    /// Whether a person ran the session — at the CLI's prompt, or in ccterm —
+    /// rather than a script through `claude -p` or an SDK. A transcript from
+    /// before the CLI recorded how it was started counts.
+    private nonisolated static func isPerson(_ entrypoint: String?) -> Bool {
+        entrypoint.map { $0 == "cli" || $0 == SessionStore.entrypoint } ?? true
     }
 
     /// A directory no one keeps a project in: a temporary one, or one inside

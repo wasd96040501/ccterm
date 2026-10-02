@@ -38,9 +38,30 @@ nonisolated struct TranscriptPageBuilder {
     private var exited = false
     private var foldingCompact = false
 
+    /// What a live session adds over its messages.
+    private let partial: AssistantMessage?
+    private let requests: [PermissionRequest]
+    /// The first request of each call, by the call's id.
+    private let requestForCall: [String: PermissionRequest]
+
     /// `workingDirectory` is the session's: paths under it read relative to it.
-    init(messages: [Message], workingDirectory: String?) {
+    ///
+    /// A live session's state goes on top: a call with a request in
+    /// `requests` is `.waiting(reason)`; a request whose call isn't on the page
+    /// (a subagent's) is an approval entry at the end. `partial` holds only
+    /// blocks not yet delivered, each of which the CLI will deliver as its own
+    /// message (one block per message), so its `k`-th block — thinking
+    /// included — gets the id its finished message will: a text block is a
+    /// reply entry `"<messages.count + k>.0"`, and finishing it reloads the row
+    /// in place; a tool call is `.preparing`.
+    init(
+        messages: [Message], workingDirectory: String?, partial: AssistantMessage? = nil,
+        requests: [PermissionRequest] = []
+    ) {
         self.messages = messages
+        self.partial = partial
+        self.requests = requests
+        requestForCall = Dictionary(requests.map { ($0.toolUseID, $0) }, uniquingKeysWith: { first, _ in first })
         writer = WorkLineWriter(workingDirectory: workingDirectory)
     }
 
@@ -49,6 +70,8 @@ nonisolated struct TranscriptPageBuilder {
         for (index, message) in messages.enumerated() {
             read(message, at: index)
         }
+        readPartial()
+        readOrphanRequests()
         flush()
         return entries
     }
@@ -124,6 +147,54 @@ nonisolated struct TranscriptPageBuilder {
         default:
             break
         }
+    }
+
+    /// The response streaming in: its `k`-th block is the message the CLI will
+    /// record next-but-`k`, so it gets that message's id.
+    private mutating func readPartial() {
+        guard let partial else { return }
+        for (offset, block) in partial.content.enumerated() {
+            switch block {
+            case .text(let text) where !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty:
+                appendEntry(.reply(id: "\(messages.count + offset).0", markdown: text), at: partial.timestamp)
+            case .toolUse(var use):
+                // A question or a plan has nothing to show until its input is whole.
+                if requestForCall[use.id] == nil, Self.speaksToReader(use.name) { continue }
+                // Its input is still streaming; a request already holds it whole.
+                let request = requestForCall[use.id]
+                if let request { use.input = request.input }
+                readStreamingCall(use, request: request, at: partial.timestamp)
+            default:
+                break
+            }
+        }
+    }
+
+    /// A call the page doesn't have — a subagent's — waits at the end as a
+    /// run of its own, so its approval card has somewhere to be.
+    private mutating func readOrphanRequests() {
+        let onPage = Set(calls.keys).union(
+            (partial?.content ?? []).compactMap { block -> String? in
+                if case .toolUse(let use) = block { use.id } else { nil }
+            })
+        for request in requests where !request.toolUseID.isEmpty && !onPage.contains(request.toolUseID) {
+            let use = ToolUseBlock(id: request.toolUseID, name: request.toolName, input: request.input)
+            readStreamingCall(use, request: request, at: nil)
+        }
+    }
+
+    private mutating func readStreamingCall(_ use: ToolUseBlock, request: PermissionRequest?, at date: Date?) {
+        let state: ToolCallState = request.map { .waiting(reason: $0.decisionReason) } ?? .preparing
+        flushNews()
+        if runCalls.isEmpty { markVisible(at: date) }
+        runCalls.append(
+            ToolCall(
+                use: use, result: nil, kind: ToolKind(use, result: nil), state: state, startedAt: date,
+                finishedAt: nil))
+    }
+
+    private static func speaksToReader(_ name: String) -> Bool {
+        Tools.AskUserQuestion.matches(name) || Tools.ExitPlanMode.matches(name)
     }
 
     private mutating func readUser(_ user: UserMessage, at index: Int) {
@@ -221,6 +292,9 @@ nonisolated struct TranscriptPageBuilder {
             use: use, result: result, kind: ToolKind(use, result: result), state: .done, startedAt: startedAt,
             finishedAt: result?.timestamp)
         call.state = state(of: call)
+        if call.result == nil, let request = requestForCall[use.id] {
+            call.state = .waiting(reason: request.decisionReason)
+        }
         if call.ranInBackground, let (report, at) = news[use.id], call.state == .background {
             call.finishedAt = at
             call.state = report.status.map(Self.isFailure) == true ? .failed(message: report.summary) : .done

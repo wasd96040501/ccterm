@@ -10,15 +10,23 @@ nonisolated struct Document: Sendable, Equatable {
     /// What the approval bar over it asks, while the call it is about waits
     /// for the reader.
     var approval: Approval? {
-        let call: ToolCall? =
-            switch content {
-            case .command(let call), .newFile(let call), .read(let call), .search(let call), .web(let call),
-                .agent(let call), .other(let call):
-                call
-            case .change(let calls): calls.last
-            case .shellCommand, .agentMessage, .taskList, .news, .commandOutput, .compactionSummary: nil
-            }
         guard let call, case .waiting = call.state else { return nil }
         return Approval(call)
+    }
+
+    /// Whether the call it is about is still going, so a live session can
+    /// still change it; a settled document never changes.
+    var isLive: Bool {
+        call?.state.isLive ?? false
+    }
+
+    private var call: ToolCall? {
+        switch content {
+        case .command(let call), .newFile(let call), .read(let call), .search(let call), .web(let call),
+            .agent(let call), .other(let call):
+            call
+        case .change(let calls): calls.last
+        case .shellCommand, .agentMessage, .taskList, .news, .commandOutput, .compactionSummary: nil
+        }
     }
 }

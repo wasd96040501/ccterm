@@ -24,10 +24,10 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     /// Waiting to show the window; see `showWindow(whenLoadedWithin:)`.
     private var pendingShow: AnyCancellable?
 
-    init(library: LibraryStore, git: GitService) {
+    init(library: LibraryStore, sessions: SessionStore, git: GitService) {
         self.library = library
         self.git = git
-        splitController = MainSplitViewController(library: library)
+        splitController = MainSplitViewController(library: library, sessions: sessions)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1200, height: 860),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -87,6 +87,11 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     override func showWindow(_ sender: Any?) {
         pendingShow = nil
         super.showWindow(sender)
+    }
+
+    /// File › New Session…, in this window's editors.
+    func newSession() {
+        splitController.newSession()
     }
 
     private func installToolbar() {

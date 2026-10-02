@@ -482,6 +482,45 @@ sends it. The user sees no difference from an applied change.
   either: effort is the CLI's control for it, and `ultrathink` in a prompt
   still works.
 
+## A prompt, from Send to the transcript
+
+The CLI is launched with `--replay-user-messages`: every prompt ccterm writes
+comes back on stdout as a `user` message with `isReplay: true` and **the
+same `uuid`** (`UserInput.uuid`), and only then is it in the transcript file.
+`Transcript.append` keeps it once, by uuid. Between the two the CLI reports
+the prompt's fate with `command_lifecycle` (`queued` → `started` →
+`completed` / `cancelled` / `discarded` / `refused`).
+
+Measured with `QueueTimingSmoke` (2.1.286, Haiku, streaming):
+
+| | idle | sent while a turn runs |
+|---|---|---|
+| `lifecycle.queued` | 2 ms | 1 ms |
+| `lifecycle.started` | 3 ms | when the running turn ends (or at its next tool boundary) |
+| **replay** | **2.1–2.6 s**, with the first streamed token | with `started`, or up to 0.7 s after it |
+| `result` | 3.8 s | — |
+
+So the replay is not an acknowledgement — it's the CLI writing the prompt
+into the conversation, as the model's request goes out. **Drawing the bubble
+only on the replay would leave the prompt invisible for two seconds after
+Send**, and today's app does exactly that. Instead the bubble is drawn at
+Send, keyed by its uuid, and each later signal changes it:
+
+| State | Signal | The bubble |
+|---|---|---|
+| **Held** | the CLI is starting | dimmed (50 %), *Sent when Claude is ready* under it; Stop returns its text to the field |
+| **Queued** | `queued` while a turn runs | dimmed at the end of the transcript, *Queued · Withdraw* (`cancel_async_message`) |
+| **Sent** | `started`, no replay yet | full strength, **no label**. A sent bubble is just a bubble, as in Messages; the working indicator under it says Claude has it |
+| **Confirmed** | the replay, same uuid | **nothing changes**: the transcript's message takes the local bubble's place. A queued prompt the CLI folds into a running turn moves once, from the end to where the CLI put it (after the tool result it was folded at), in one 0.25-s slide |
+| **Not sent** | `refused`, `discarded`, or the process exits before the replay | stays, with a red mark: *Not sent — the session ended* (or the refusal's reason) and **Resend** |
+| **Stopped before it was read** | Stop after `started`, before the replay (`cancelled`) | nothing was written to the transcript: the bubble leaves and **its text goes back into the field**, as the CLI's own prompt does on Esc — whoever stops that fast meant to edit |
+
+- Prompts the CLI makes itself (task notifications, local-command output)
+  are replayed with fresh uuids; they are their own rows (04, 05), never a
+  local bubble.
+- A slash command's bubble (05-local.md) follows the same states; its
+  output line appears with the replay.
+
 ## Keys
 
 | Key | Where | Does |
@@ -552,7 +591,10 @@ Every view on this page draws from the same few numbers.
 - Restart: end the process and resume with another account's environment
   and `--model`, then a divider row in the transcript.
 - `SessionState` gains: `starting`, `compacting`, current model / effort / mode
-  / fast, a pending model, queued prompts.
+  / fast, a pending model, and **local prompts by uuid** (text, state: held /
+  queued / sent / not sent) drawn until the replay with the same uuid
+  arrives. `cancelled` before the replay hands the text back to the
+  composer; `refused` / `discarded` / exit mark it not sent.
 - `SessionStore.start` takes model, effort, mode, fast, worktree and account.
   Resume passes the transcript's last settings. Worktree only when the
   folder is a git work tree (`GitService` knows the branch).

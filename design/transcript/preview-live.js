@@ -1357,6 +1357,30 @@ function contRect(w, h, r) {
     `L${P(0, a)}C${P(0, b)} ${P(i, c)} ${P(e, d)}C${P(g, f)} ${P(f, g)} ${P(d, e)}C${P(c, i)} ${P(b, 0)} ${P(a, 0)}Z`;
 }
 const RADII = { "--r-tag": 5, "--r-ctl": 7, "--r-pop": 12, "--r-card": 18 };
+/** A prompt's life, from Send to the transcript (08-live.md "A prompt, from
+ *  Send to the transcript"): the measured timeline, then each state its
+ *  bubble can be in. */
+function buildPrompt() {
+  // An idle send, as measured; the marks that matter to the bubble.
+  const X = (ms) => 16 + (ms / 4000) * 608;
+  const ev = [[0, "Send · started in 3 ms", "start"], [2084, "Replay, with the first token · 2.1 s", "middle"], [3839, "Result · 3.8 s", "end"]];
+  const tl = `<svg class="ptl" width="640" height="72" viewBox="0 0 640 72" role="img" aria-label="Timeline: started at 3 ms, replay at 2.1 s, result at 3.8 s">` +
+    `<line x1="16" y1="36" x2="624" y2="36" class="ax"/>` +
+    `<rect x="${X(0)}" y="31" width="${X(2084) - X(0)}" height="10" rx="5" class="gap"/>` +
+    `<text x="${(X(0) + X(2084)) / 2}" y="22" class="gl">sent, not yet confirmed — the bubble shows</text>` +
+    ev.map(([ms, label, anchor], i) => `<circle cx="${X(ms)}" cy="36" r="3.5" class="${i < 2 ? "you" : "pt"}"/><text x="${X(ms)}" y="60" class="l" text-anchor="${anchor}">${label}</text>`).join("") +
+    "</svg>";
+  const b = (t, sub, cls = "") => `<div class="pst ${cls}"><div class="bubble">${t}</div>${sub ? `<div class="q">${sub}</div>` : ""}</div>`;
+  const cards = [
+    card("<b>Held</b>Claude is still starting. The prompt waits in its bubble, dimmed; Stop takes it back to the field.", b("Tidy the tab bar", "<span>Sent when Claude is ready</span>", "dim")),
+    card("<b>Queued</b>A turn is running (<code>lifecycle.queued</code>). Dimmed at the end of the transcript; Withdraw sends <code>cancel_async_message</code>.", b("Also update the docs", '<span>Queued</span><span class="link">Withdraw</span>', "dim")),
+    card("<b>Sent</b>Started, not yet replayed — about two seconds when idle. Full strength and no label: a sent bubble is just a bubble, as in Messages. The working indicator under it already says Claude has it.", b("Make the summary 12 pt and rebuild.", "")),
+    card("<b>Confirmed</b>The replay arrives with the same uuid. Nothing moves: the transcript's message takes the local bubble's place. A queued prompt that the CLI folds in mid-turn moves once, from the end to where the CLI put it, in one 0.25-s slide.", b("Make the summary 12 pt and rebuild.", "")),
+    card("<b>Not sent</b>Refused, or the session ended before it was read (<code>refused</code>, <code>discarded</code>, the process exited). The bubble stays, with a red mark and what to do.", b("Make the summary 12 pt and rebuild.", `<span class="nx">${'<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5.5" fill="var(--red)"/><path d="M6 3.2v3.4" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/><circle cx="6" cy="8.8" r=".8" fill="#fff"/></svg>'}Not sent — the session ended</span><span class="link">Resend</span>`, "fail")),
+    card("<b>Stopped before Claude read it</b>Stop (⌘.) after started but before the replay: <code>lifecycle.cancelled</code>, nothing was written to the transcript. The bubble leaves and its text goes back into the field, as the CLI's own prompt does — the user meant to edit it.", `<div class="pst back"><div class="lv-comp static-mini"><span class="ret">Make the summary 12 pt and rebuild.</span></div></div>`),
+  ];
+  document.getElementById("lv-prompt").innerHTML = `<div class="lv-card ptl-card"><div class="stage">${tl}</div></div><div class="lv-specs">${cards.join("")}</div>`;
+}
 function buildLang() {
   const box = (r, w, h, label) => `<div><svg class="cbox" width="${w}" height="${h}" viewBox="-0.5 -0.5 ${w + 1} ${h + 1}"><path d="${contRect(w, h, RADII[r])}"/></svg><code>${r.replace("--r-", "")}</code>${label}</div>`;
   const css = CSS.supports("corner-shape", "squircle");
@@ -1410,5 +1434,6 @@ document.addEventListener("DOMContentLoaded", () => {
   bp.addEventListener("change", () => { LV_SETTINGS.allowBypass = bp.checked; });
   buildLiveSpecimens();
   buildLang();
+  buildPrompt();
   buildMatrix();
 });

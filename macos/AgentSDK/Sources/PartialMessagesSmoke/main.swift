@@ -8,7 +8,12 @@
 //     content_block_stop / message_delta / message_stop all present);
 //   - no event or delta decodes as `.unknown`;
 //   - the text deltas of each block, concatenated, equal the text of the
-//     finished `AssistantMessage` for that block (matched by `messageID`).
+//     finished `AssistantMessage` for that block (matched by `messageID`);
+//   - folding the events with `AssistantMessage(streamStart:)` / `apply(_:)`
+//     gives the same text and thinking blocks as the finished messages.
+// Also checks that a session launched with CLAUDE_CODE_ENTRYPOINT=ccterm
+// records `"entrypoint":"ccterm"` in its transcript, and that the file sits
+// where `SessionDirectory.transcriptURL` says.
 // With SMOKE_PARTIAL=0, checks that no stream events arrive at all. Both
 // modes check that finished assistant text arrives and the turn succeeds.
 //
@@ -62,7 +67,8 @@ let sessionID = UUID().uuidString.lowercased()
 let session = Session(
     configuration: SessionConfiguration(
         workingDirectory: workDir, model: model, sessionId: sessionID, binaryPath: env["CLAUDE_BINARY_PATH"],
-        includePartialMessages: partial, inheritsParentEnvironment: true, messageExportDirectory: exportDir))
+        includePartialMessages: partial, env: ["CLAUDE_CODE_ENTRYPOINT": "ccterm"],
+        inheritsParentEnvironment: true, messageExportDirectory: exportDir))
 
 var typedCounts: [String: Int] = [:]
 var unknownDeltas = 0
@@ -71,11 +77,20 @@ var currentMessageID = ""
 var streamedText: [String: [Int: String]] = [:]
 /// Finished text blocks per API response, in arrival order.
 var finishedText: [String: [String]] = [:]
+/// Each streamed response folded by `AssistantMessage.apply`, by `messageID`.
+var folded: [String: AssistantMessage] = [:]
+/// Finished text and thinking blocks per API response, in arrival order.
+var finishedBlocks: [String: [ContentBlock]] = [:]
 var result: ResultMessage?
 
 func record(_ event: SessionEvent) {
     switch event {
     case .message(.streamEvent(let e)):
+        if let start = AssistantMessage(streamStart: e) {
+            folded[start.messageID] = start
+        } else {
+            folded[currentMessageID]?.apply(e)
+        }
         typedCounts[name(e.event), default: 0] += 1
         switch e.event {
         case .messageStart(let id, _, _):
@@ -89,6 +104,12 @@ func record(_ event: SessionEvent) {
             break
         }
     case .message(.assistant(let m)):
+        for block in m.content {
+            switch block {
+            case .text, .thinking: finishedBlocks[m.messageID, default: []].append(block)
+            default: break
+            }
+        }
         for text in m.content.compactMap(\.text) { finishedText[m.messageID, default: []].append(text) }
     case .message(.result(let r)):
         result = r
@@ -147,9 +168,28 @@ if partial {
         if streamed != texts { mismatches.append(messageID) }
     }
     check(mismatches.isEmpty, "concatenated text deltas equal each finished text block (mismatched: \(mismatches))")
+    var unfolded: [String] = []
+    for (messageID, blocks) in finishedBlocks {
+        let response = folded[messageID]?.content.filter {
+            switch $0 {
+            case .text, .thinking: return true
+            default: return false
+            }
+        }
+        if response != blocks { unfolded.append(messageID) }
+    }
+    check(
+        !finishedBlocks.isEmpty && unfolded.isEmpty,
+        "folded stream events equal the finished blocks (differing: \(unfolded))")
+    if !unfolded.isEmpty { log("folded: \(folded) finished: \(finishedBlocks)") }
 } else {
     check(typedCounts.isEmpty && rawCounts.isEmpty, "no stream events without the flag (\(typedCounts.count))")
 }
+let transcriptFile = SessionDirectory(environment: env).transcriptURL(
+    forSession: sessionID, workingDirectory: workDir)
+let written = (try? String(contentsOf: transcriptFile, encoding: .utf8)) ?? ""
+check(!written.isEmpty, "the transcript is where transcriptURL says (\(transcriptFile.path))")
+check(written.contains("\"entrypoint\":\"ccterm\""), "the transcript records entrypoint ccterm")
 for (messageID, texts) in finishedText {
     log("finished \(messageID): \(texts.map { $0.prefix(60) })")
 }

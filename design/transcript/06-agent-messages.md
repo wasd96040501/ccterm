@@ -123,7 +123,8 @@ They are a boundary, not a voice: a **divider**, like *Resumed*, that says
 why — *Continued after the usage limit reset*, *Continued with the plan
 approved in the browser*, else *Continued automatically* — and a *Prompt*
 link that opens the CLI's words beside, marked *Written by Claude Code, not by
-you*.
+you*. A goal you set (`/goal`, *Goal set: …*) also arrives with this origin;
+you started it, so it wants its own words (*Goal set*), not the fallback.
 
 ## Names
 

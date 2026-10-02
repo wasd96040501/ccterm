@@ -33,6 +33,16 @@
         }
       }
     },
+    "%@ of the context is used — click for /context": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已使用 %@ 的上下文 — 点击查看 /context"
+          }
+        }
+      }
+    },
     "%@ only": {
       "localizations": {
         "zh-Hans": {
@@ -71,6 +81,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@。"
+          }
+        }
+      }
+    },
+    "%lld More Models": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "另外 %lld 个模型"
           }
         }
       }
@@ -622,6 +642,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "取消"
+          }
+        }
+      }
+    },
+    "Cancel ⌘.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消 ⌘."
           }
         }
       }
@@ -1245,6 +1275,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "失败"
+          }
+        }
+      }
+    },
+    "Fast Mode": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快速模式"
           }
         }
       }
@@ -2010,6 +2050,16 @@
         }
       }
     },
+    "Queue ↩": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "排队 ↩"
+          }
+        }
+      }
+    },
     "Quit": {
       "localizations": {
         "zh-Hans": {
@@ -2166,6 +2216,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在回复"
+          }
+        }
+      }
+    },
+    "Restart": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新启动"
           }
         }
       }
@@ -2421,6 +2481,16 @@
         }
       }
     },
+    "Send ↩": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送 ↩"
+          }
+        }
+      }
+    },
     "Sent %lld messages": {
       "localizations": {
         "zh-Hans": {
@@ -2467,6 +2537,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示其余 %lld 项"
+          }
+        }
+      }
+    },
+    "Show Log": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示日志"
           }
         }
       }
@@ -2607,6 +2687,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "停止"
+          }
+        }
+      }
+    },
+    "Stop ⌘.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止 ⌘."
           }
         }
       }

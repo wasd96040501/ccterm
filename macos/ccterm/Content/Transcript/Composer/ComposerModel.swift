@@ -168,8 +168,29 @@ nonisolated struct ComposerModel: Equatable, Sendable {
     var error: String?
     var commands: [SlashCommand]
 
+    /// A New tab's composer: its pop-ups and completion open below it (the
+    /// view is centred, with room under); a session's open above.
+    var isDraft: Bool
+    /// Whether the status slot's words come with the running arc (starting,
+    /// compacting).
+    var statusIsBusy: Bool
+    /// *50 %* beside the ring.
+    var contextRingText: String?
+    var contextRingToolTip: String?
+    var sendToolTip: String
+    var stopToolTip: String
+
     init(_ input: Input) {
         let facts = Facts(input)
+        isDraft = input.context == .draft
+        statusIsBusy = facts.isBusy
+        let percent = input.contextUsage.flatMap { $0 >= 0.5 ? Int((min($0, 1) * 100).rounded()) : nil }
+        contextRingText = percent.map { "\($0) %" }
+        contextRingToolTip = contextRingText.map {
+            String(localized: "\($0) of the context is used — click for /context")
+        }
+        sendToolTip = facts.isWorking ? String(localized: "Queue ↩") : String(localized: "Send ↩")
+        stopToolTip = facts.phase == .starting ? String(localized: "Cancel ⌘.") : String(localized: "Stop ⌘.")
         placeholder =
             input.context == .draft ? String(localized: "Ask Claude to…") : String(localized: "Message Claude")
         model = facts.modelChip()
@@ -326,6 +347,9 @@ extension ComposerModel {
             default: false
             }
         }
+
+        /// The running arc goes with the status words.
+        var isBusy: Bool { phase == .starting || phase == .compacting }
 
         var hasPendingChange: Bool { input.pendingModel != nil || input.pendingFastMode != nil }
 

@@ -82,6 +82,12 @@ final class NewSessionIconView: NSView {
         lightView.flash(rows: Self.rowCount)
         glowView.swell()
     }
+
+    /// Ends the rise where it is: the flashes gone, the glow back at rest, at once.
+    func settle() {
+        lightView.stop()
+        glowView.settle()
+    }
 }
 
 // MARK: - Glow
@@ -177,6 +183,17 @@ private final class GlowView: NSView {
         glowLayer.add(transform, forKey: "swell-transform")
     }
 
+    /// Back to rest at once: the swell's animations gone, strength and shape as before it.
+    func settle() {
+        isRisen = false
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        glowLayer.removeAllAnimations()
+        glowLayer.transform = CATransform3DIdentity
+        CATransaction.commit()
+        applyStrength()
+    }
+
     /// The glow, blurred, drawn once: `margin` of room on every side.
     private static let image: CGImage? = {
         let scale: CGFloat = 2
@@ -267,6 +284,11 @@ private final class LightView: NSView {
                 width: Self.cursor.width * unit, height: rowHeight * unit)
         }
         CATransaction.commit()
+    }
+
+    /// Every row dark again, at once.
+    func stop() {
+        for row in rowLayers { row.removeAllAnimations() }
     }
 
     /// Each row flashes white — up to 55 % in the first 30 % of 240 ms, then

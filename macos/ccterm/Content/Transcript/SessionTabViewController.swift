@@ -651,8 +651,8 @@ extension SessionTabViewController: ComposerViewControllerDelegate {
     }
 
     func composerViewControllerDidRequestContextUsage(_ composerViewController: ComposerViewController) {
-        guard let transcriptURL, let usage = state?.contextUsage else { return }
-        open(SessionTabDocuments.context(usage: usage, transcriptURL: transcriptURL))
+        guard let transcriptURL, let report = state?.contextReport else { return }
+        open(SessionTabDocuments.context(report, transcriptURL: transcriptURL))
     }
 
     func composerViewControllerDidChangeText(_ composerViewController: ComposerViewController) {

@@ -98,6 +98,9 @@ nonisolated struct SessionState: Sendable {
     var title: String?
     /// How full the context is, 0…1, after the last turn (`get_context_usage`).
     var contextUsage: Double?
+    /// The whole of that reading — what fills the window and what each part
+    /// costs — which the context ring opens as a document.
+    var contextReport: ContextUsage?
     /// The slash commands this session's CLI knows (`initialize`,
     /// `commands_changed`).
     var commands: [SlashCommand] = []
@@ -334,6 +337,13 @@ nonisolated struct SessionState: Sendable {
     /// How full the context is now.
     mutating func didReadContextUsage(_ fraction: Double) {
         contextUsage = min(max(fraction, 0), 1)
+    }
+
+    /// The CLI's `get_context_usage` answer: the ring's fraction and the report
+    /// behind it.
+    mutating func didReadContextUsage(_ report: ContextUsage) {
+        didReadContextUsage(Double(report.percentage) / 100)
+        contextReport = report
     }
 
     /// The process was ended to resume as another account: a divider, and

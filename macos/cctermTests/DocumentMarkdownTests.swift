@@ -180,4 +180,70 @@ final class DocumentMarkdownTests: XCTestCase {
             "### screenshot\n\n*computer-use*\n\n**\(input)**\n\n```json\n{\n  \"display\" : 1\n}\n```\n\n**\(result)**\n\n```\nTook it\n```"
         )
     }
+
+    // MARK: - A session's log and context
+
+    func testALogIsItsMessageAndItsWordsInAMonospacedBlock() {
+        let failure = SessionFailure(message: "Exit code 1 · boom", log: "line one\nline two\n")
+        XCTAssertEqual(
+            DocumentMarkdown.markdown(for: .log(failure)),
+            "### \(String(localized: "Session Log"))\n\n*Exit code 1 · boom*\n\n```\nline one\nline two\n```")
+    }
+
+    func testALogOfNothingSaysSo() {
+        let markdown = DocumentMarkdown.markdown(for: .log(SessionFailure(message: "boom")))
+        XCTAssertTrue(markdown.hasSuffix("*\(String(localized: "Claude wrote nothing to its log."))*"))
+        XCTAssertFalse(markdown.contains("```"))
+    }
+
+    func testTheContextIsTheModelTheTotalTheCategoriesAndEveryItemizedPart() {
+        let usage = ContextUsageFixture.sample
+        let markdown = DocumentMarkdown.markdown(for: .contextUsage(usage))
+        let total = 61880.formatted()
+        let window = 160000.formatted()
+        let percent = 39
+
+        XCTAssertTrue(markdown.hasPrefix("### \(String(localized: "Context Usage"))\n\n*claude-opus-4-5*\n\n"))
+        XCTAssertTrue(markdown.contains("**\(String(localized: "\(total) tokens of \(window) (\(percent)%)"))**"))
+        // A category's share is of the usable window, to a tenth of a percent.
+        XCTAssertTrue(markdown.contains("| Messages | \(31000.formatted()) | 19.4% |"), markdown)
+        XCTAssertTrue(markdown.contains("| Deferred tools · \(String(localized: "deferred")) |"), "deferred is marked")
+        XCTAssertTrue(markdown.contains("| --- | ---: | ---: |"))
+        for heading in ["Memory Files", "MCP Tools", "Agents", "Skills", "Slash Commands"] {
+            XCTAssertTrue(
+                markdown.contains("**\(heading)**") || markdown.contains("**\(localized(heading))**"), heading)
+        }
+        XCTAssertTrue(markdown.contains("`/Users/me/dev/ccterm/CLAUDE.md` | Project | \(1200.formatted()) |"))
+        XCTAssertTrue(
+            markdown.contains("`mcp__github__list_prs · \(String(localized: "deferred"))`"),
+            "an unloaded tool is marked")
+        XCTAssertTrue(markdown.contains("| Explore | Built-in | 220 |"))
+        let included = 11
+        let all = 14
+        let tokens = 610.formatted()
+        XCTAssertTrue(markdown.contains(String(localized: "\(included) of \(all) skills · \(tokens) tokens")))
+    }
+
+    func testAPartTheReportLeavesOutIsNotThere() {
+        var usage = ContextUsageFixture.sample
+        usage.memoryFiles = []
+        usage.mcpTools = []
+        usage.agents = []
+        usage.skills = nil
+        usage.slashCommands = nil
+        let markdown = DocumentMarkdown.markdown(for: .contextUsage(usage))
+        XCTAssertFalse(markdown.contains(String(localized: "Memory Files")))
+        XCTAssertFalse(markdown.contains(String(localized: "Skills")))
+        XCTAssertTrue(markdown.contains("| Messages |"))
+    }
+
+    private func localized(_ key: String) -> String {
+        switch key {
+        case "Memory Files": String(localized: "Memory Files")
+        case "MCP Tools": String(localized: "MCP Tools")
+        case "Agents": String(localized: "Agents")
+        case "Skills": String(localized: "Skills")
+        default: String(localized: "Slash Commands")
+        }
+    }
 }

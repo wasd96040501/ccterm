@@ -42,6 +42,17 @@ nonisolated extension DocumentHeader {
         case .commandOutput(let command):
             let title = command.title
             return DocumentHeader(tile: Tile(glyph: .tool(.command), state: .done), crumbs: [title], title: title)
+        case .log(let failure):
+            let title = String(localized: "Session Log")
+            return DocumentHeader(
+                tile: Tile(glyph: .tool(.command), state: .failed), crumbs: [title], stat: StyledText(failure.message),
+                title: title, showsTranscriptJump: false)
+        case .contextUsage(let usage):
+            let title = String(localized: "Context Usage")
+            let percent = usage.percentage
+            return DocumentHeader(
+                tile: Tile(glyph: .tool(.command), state: .done), crumbs: [title],
+                stat: StyledText("\(percent)%"), title: title, showsTranscriptJump: false)
         case .compactionSummary:
             let title = String(localized: "Summary")
             return DocumentHeader(tile: Tile(glyph: .tool(.other), state: .done), crumbs: [title], title: title)

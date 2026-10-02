@@ -4,7 +4,7 @@ import Foundation
 /// The markdown of a document that is words rather than code — a search, a
 /// page fetched, an agent's report, the task list (a `- [x]` checklist as it
 /// stood after that call), a task's news, a command's output, a
-/// compaction's summary, any other call. TranscriptKit sets it, so find,
+/// compaction's summary, a session's log and its context, any other call. TranscriptKit sets it, so find,
 /// selection and copy work in it as in a reply.
 ///
 /// Every document opens with its title as a heading and a status line under
@@ -44,6 +44,10 @@ nonisolated enum DocumentMarkdown {
                 ([command.title, command.arguments].filter { !$0.isEmpty }).joined(separator: " "),
                 [String(localized: "Local command output")], [fenced(output.trimmingCharacters(in: .newlines))]
             )
+        case .log(let failure):
+            return (title, [failure.message], [logBody(failure)])
+        case .contextUsage(let usage):
+            return (title, [usage.model].compactMap { $0 }, contextBody(usage))
         case .compactionSummary(let summary):
             return (title, [String(localized: "What the model continued from")], [summary])
         case .advice(let call):
@@ -256,7 +260,7 @@ nonisolated enum DocumentMarkdown {
     }
 
     /// A fenced block whose fence is longer than any run of backticks inside.
-    private static func fenced(_ text: String, language: String = "") -> String {
+    static func fenced(_ text: String, language: String = "") -> String {
         guard !text.isEmpty else { return "" }
         var longest = 0
         var run = 0
@@ -269,7 +273,7 @@ nonisolated enum DocumentMarkdown {
     }
 
     /// Words shown as they are, not read as markdown.
-    private static func escaped(_ text: String) -> String {
+    static func escaped(_ text: String) -> String {
         var result = ""
         for character in text {
             if "\\`*_[]<>~".contains(character) { result.append("\\") }

@@ -32,6 +32,11 @@ const GLYPHS = {
   tasks: '<path d="M4.8 6l.8.8 1.4-1.5M8.4 6h2.8M4.8 9.8l.8.8 1.4-1.5M8.4 9.8h2.8"/>',
   schedule: '<circle cx="8" cy="8" r="3.2"/><path d="M8 6.2V8l1.2.9"/>',
   message: '<path d="M4.6 7.8l6.6-3-3 6.6-.9-2.7z"/>',
+  advisor: '<path d="M6.4 9.6c-.8-.6-1.3-1.5-1.3-2.5a2.9 2.9 0 0 1 5.8 0c0 1-.5 1.9-1.3 2.5v.9H6.4z"/><path d="M6.7 11.8h2.6"/>',
+  skill: '<path d="M5.2 4.8h4.2c.8 0 1.4.6 1.4 1.4v5H6.6c-.8 0-1.4-.6-1.4-1.4z"/><path d="M5.2 9.6c0-.8.6-1.4 1.4-1.4h4.2"/>',
+  worktree: '<circle cx="6" cy="5.4" r="1"/><circle cx="6" cy="10.6" r="1"/><circle cx="10.2" cy="6.8" r="1"/><path d="M6 6.4v3.2M10.2 7.8c0 1.6-4.2 1-4.2 2"/>',
+  image: '<rect x="4.4" y="5" width="7.2" height="6" rx="1.2"/><path d="M4.6 10.2l2-1.9 1.5 1.3 1.3-1.1 1.9 1.7"/><circle cx="9.5" cy="6.8" r=".55"/>',
+  notify: '<path d="M5.4 10V7.6a2.6 2.6 0 0 1 5.2 0V10l.7.8H4.7z"/><path d="M7.2 12h1.6"/>',
   other: '<path d="M5.4 6.2h1.5a1 1 0 1 1 2 0h1.7v1.7a1 1 0 1 1 0 2v1.7H5.4z"/>',
   question: `<path d="M6.5 6.6a1.5 1.5 0 1 1 2.2 1.3c-.5.3-.7.6-.7 1.1v.2"/>${dot(8, 10.9)}`,
   plan: '<rect x="5" y="4.8" width="6" height="6.8" rx="1.2"/><path d="M6.8 7.2h2.4M6.8 9.2h2.4"/>',
@@ -120,6 +125,13 @@ const webfetch = (url, code, f = {}) => item("web", "WebFetch", { url, code, ...
 const websearch = (query, results, f = {}) => item("web", "WebSearch", { query, results, ...f });
 const agentCall = (desc, type, tools, dur, f = {}) => item("agent", "Agent", { desc, type, tools, dur, ...f });
 const taskCall = (label, f = {}) => item("tasks", "TaskUpdate", { label, ...f });
+/** SendMessage: to whom, the summary the model gave, the message (markdown).
+ *  Opens beside as the message. */
+const sendMessage = (to, summary, md, f = {}) => item("message", "SendMessage", { to, summary, docKind: "markdown", title: `To ${to}`, docGlyph: "message", status: esc(summary), md, ...f });
+/** The advisor (server tool): its advice opens beside; `redacted` (the usual
+ *  case) and `declined` have none to show, `error` is the result's error_code. */
+const advisor = (md, f = {}) => item("advisor", "advisor", { md, docKind: md ? "markdown" : null, title: "Advice", docGlyph: "advisor", status: esc(f.model || "advisor"), ...f });
+const skillCall = (name, f = {}) => item("skill", "Skill", { name, ...f });
 const clone = (it, f = {}) => {
   const { id, ...rest } = it;
   return item(it.kind, it.tool, { ...rest, ...f });
@@ -132,7 +144,7 @@ function run(items, f = {}) {
 
 // MARK: - The run row: the sentence (01-run.md "The sentence")
 
-const ORDER = ["change", "create", "command", "agent", "web", "search", "read", "tasks", "schedule", "message", "other"];
+const ORDER = ["change", "create", "command", "agent", "advisor", "web", "search", "read", "skill", "tasks", "schedule", "worktree", "message", "notify", "other"];
 const fileLink = (it) => `<a class="file" data-open="${it.id}">${esc(base(it.path))}</a>`;
 
 function namedFiles(items, verb, manyVerb) {
@@ -171,8 +183,19 @@ function clauses(all) {
   if (of("tasks").length) out.push("Updated the task list");
   const sc = of("schedule").length;
   if (sc) out.push(plural(sc, "Scheduled a task", "Scheduled # tasks"));
-  const ms = of("message").length;
-  if (ms) out.push(plural(ms, "Sent a message", "Sent # messages"));
+  const ad = of("advisor").length;
+  if (ad) out.push(plural(ad, "Asked the advisor", "Asked the advisor # times"));
+  const sk = of("skill");
+  if (sk.length === 1) out.push(`Used the <b>${esc(sk[0].name)}</b> skill`);
+  else if (sk.length) out.push(`Used ${sk.length} skills`);
+  const wt = of("worktree");
+  if (wt.length) out.push(wt[wt.length - 1].tool === "ExitWorktree" ? "Left the worktree" : "Moved into a worktree");
+  const ms = of("message");
+  const tos = [...new Set(ms.map((m) => m.to))];
+  if (ms.length && tos.length === 1) out.push(tos[0] === "*" ? "Messaged the team" : `Messaged <b>${esc(tos[0])}</b>${ms.length > 1 ? ` ${ms.length} times` : ""}`);
+  else if (ms.length) out.push(`Sent ${ms.length} messages`);
+  const nt = of("notify").length;
+  if (nt) out.push(plural(nt, "Sent you a notification", "Sent you # notifications"));
   const servers = new Map();
   for (const it of of("other")) servers.set(it.server, (servers.get(it.server) || 0) + 1);
   for (const [server, n] of servers) out.push(`Used ${esc(server)} ${plural(n, "once", "# times")}`);
@@ -223,10 +246,28 @@ function callText(it, single) {
       return `${single ? "Fetched " : ""}<span class="file">${esc(new URL(it.url).host)}</span><span class="mono">${esc(new URL(it.url).pathname)}</span>`;
     case "agent":
       return `${esc(it.desc)}<span class="mono">${esc(it.type)}</span>`;
+    case "message":
+      return `${single ? "Messaged " : "To "}<span class="file">${esc(it.to === "*" ? "the team" : it.to)}</span><span class="callsub">${esc(it.summary || "")}</span>`;
+    case "advisor":
+      if (it.error) return `${single ? "Asked the advisor" : "Advisor"}<span class="callsub">${esc(ADVISOR_ERRORS[it.error] || "Unavailable")}</span>`;
+      if (it.declined) return `${single ? "Asked the advisor" : "Advisor"}<span class="callsub">Declined to advise</span>`;
+      if (it.redacted) return `${single ? "Asked the advisor" : "Advisor"}<span class="callsub">Reviewed the conversation</span>`;
+      return `${single ? "Asked the advisor" : "Advice"}<span class="callsub">${esc(firstLine(it.md))}</span>`;
+    case "skill":
+      return `${single ? "Used the " : ""}<span class="file">${esc(it.name)}</span>${single ? " skill" : ""}`;
     default:
       return esc(it.label || it.tool);
   }
 }
+/** The advisor's error codes, in words (CLI: advisor_tool_result_error). */
+const ADVISOR_ERRORS = {
+  max_uses_exceeded: "Asked as often as this session allows",
+  too_many_requests: "Too many requests — try again shortly",
+  overloaded: "Overloaded — try again shortly",
+  prompt_too_long: "The conversation is too long for the advisor",
+  execution_time_exceeded: "Took too long",
+  unavailable: "Unavailable",
+};
 
 /** What a live call says it is doing (01-run.md "Live labels"). */
 function liveText(it) {
@@ -239,6 +280,9 @@ function liveText(it) {
     case "search": return `Searching for <code>${esc(it.pattern)}</code>`;
     case "web": return it.tool === "WebSearch" ? `Searching the web for “${esc(it.query)}”` : `Fetching <span class="file">${esc(new URL(it.url).host)}</span>`;
     case "agent": return esc(it.desc);
+    case "message": return `Messaging <span class="file">${esc(it.to)}</span>`;
+    case "advisor": return "Asking the advisor";
+    case "skill": return `Loading the <span class="file">${esc(it.name)}</span> skill`;
     default: return esc(it.label || it.tool);
   }
 }
@@ -375,9 +419,42 @@ function renderNews(row) {
   }</div>`;
 }
 
+// A pasted screenshot, drawn: a window, or a terminal. Screenshots keep their
+// own colours in either appearance — they are pictures, not chrome.
+function shotSVG(img, h) {
+  const w = Math.round(h * img.w / img.h);
+  const s = h / 100, W = 100 * img.w / img.h;
+  const lines = (x, y, n, c, wid) => Array.from({ length: n }, (_, i) => `<rect x="${x}" y="${y + i * 7}" width="${wid[i % wid.length]}" height="3" rx="1.5" fill="${c}"/>`).join("");
+  const body = img.look === "terminal"
+    ? `<rect width="${W}" height="100" fill="#1e1e1e"/>${lines(6, 10, 11, "#c8c8c8", [40, 62, 28, 55, 70, 34])}<rect x="6" y="38" width="44" height="3" rx="1.5" fill="#ff6961"/>`
+    : `<rect width="${W}" height="100" fill="#f6f6f6"/><rect width="${W * 0.28}" height="100" fill="#e9e9eb"/><rect width="${W}" height="9" fill="#ececec"/>`
+      + `<circle cx="5" cy="4.5" r="1.6" fill="#ff5f57"/><circle cx="10" cy="4.5" r="1.6" fill="#febc2e"/><circle cx="15" cy="4.5" r="1.6" fill="#28c840"/>`
+      + lines(4, 16, 8, "#cfcfd3", [W * 0.18, W * 0.14, W * 0.2])
+      + lines(W * 0.33, 16, 10, "#d4d4d8", [W * 0.5, W * 0.6, W * 0.42])
+      + (img.mark ? `<rect x="${W * 0.31}" y="${img.mark}" width="${W * 0.66}" height="16" rx="2" fill="none" stroke="#ff3b30" stroke-width="1.2"/>` : "");
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${W} 100" preserveAspectRatio="none" aria-hidden="true">${body}</svg>`;
+}
+// A prompt. Pasted images sit above its bubble, each a thumbnail that opens
+// beside; the CLI's [Image #N] in the text becomes a token naming one.
+function renderPrompt(row) {
+  const imgs = row.images || [];
+  const several = imgs.length > 1;
+  const shots = imgs.length ? `<div class="shots">${imgs.map((img) =>
+    `<span class="shot" data-n="${img.n}" data-open="${img.id}">${shotSVG(img, 96)}${several ? `<span class="n">${img.n}</span>` : ""}</span>`).join("")}</div>` : "";
+  const text = row.text ? inline(row.text).replace(/\[Image #(\d+)\]/g, (m, n) => {
+    const img = imgs.find((i) => String(i.n) === n);
+    return img ? `<span class="imgtok" data-n="${n}" data-open="${img.id}">${GLYPH_INLINE.image}Image ${n}</span>` : m;
+  }) : "";
+  return `<div class="user${imgs.length ? " withshots" : ""}">${shots}${text ? `<div class="bubble">${text}</div>` : ""}</div>`;
+}
+const GLYPH_INLINE = { image: `<svg viewBox="4 4 8 8" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">${'<rect x="4.4" y="5" width="7.2" height="6" rx="1.2"/><path d="M4.6 10.2l2-1.9 1.5 1.3 1.3-1.1 1.9 1.7"/>'}</svg>` };
+function imageDoc(it) {
+  return `<div class="doc">${jumpBar([it.title], `<span class="jstat">${it.w} × ${it.h} · ${it.format || "PNG"}</span>`, "image")}<div class="body"><div class="imgdoc">${shotSVG(it, Math.min(420, it.h / 2))}</div></div></div>`;
+}
+
 function renderRow(row) {
   switch (row.type) {
-    case "user": return `<div class="user"><div class="bubble">${inline(row.text)}</div></div>`;
+    case "user": return renderPrompt(row);
     case "text": {
       const html = paragraphs(row.text || " ");
       return `<div class="text">${row.streaming ? html.replace(/<\/p>$/, '<span class="caret"></span></p>') : html}</div>`;
@@ -385,21 +462,22 @@ function renderRow(row) {
     case "run": return renderRun(row.run);
     case "news": return renderNews(row);
     case "slash": {
-      // The output sits under the capsule, as Messages sets "Delivered" under a bubble.
+      // The user's bubble; only the command is a token. The output sits under
+      // the bubble, as Messages sets "Delivered" under one.
       const more = row.long ? ` · <span class="link" data-open="${row.long}">Show all</span>` : "";
       const out = row.out ? `<div class="cap-out${row.err ? " err" : ""}">${esc(row.out)}${more}</div>` : "";
-      return `<div class="capsule-row"><span class="capsule" title="${esc(row.full || row.name)}"><span class="sym">/</span><b>${esc(row.name.replace(/^\//, ""))}</b>${row.args ? " " + esc(row.args) : ""}</span>${out}</div>`;
+      return `<div class="cmd-row"><div class="bubble${row.args ? "" : " only"}">${cmdToken("/", row.name.replace(/^\//, ""), row.full)}${row.args ? " " + inline(row.args) : ""}</div>${out}</div>`;
     }
     case "shell": {
       const lines = row.item.out.length;
-      const out = lines === 1 ? `<div class="cap-out">${esc(row.item.out[0])}</div>` : `<div class="cap-out">${lines} lines</div>`;
-      return `<div class="capsule-row"><span class="capsule" data-open="${row.item.id}"><span class="sym">$</span><b>${esc(row.item.cmd)}</b>${lines === 1 ? "" : ICON.go.replace('class="go"', 'class="go" style="opacity:1;width:10px;height:10px"')}</span>${out}</div>`;
+      const out = lines === 1 ? `<div class="cap-out">${esc(row.item.out[0])}</div>` : `<div class="cap-out"><span class="link" data-open="${row.item.id}">${lines} lines ›</span></div>`;
+      return `<div class="cmd-row"><div class="bubble">${cmdToken("!", "")} <span class="shellcmd">${esc(row.item.cmd)}</span></div>${out}</div>`;
     }
     case "divider": return `<div class="divider"><span>${row.live ? `<span class="dtile">${tile("other", "running")}</span>` : ""}${row.text}${row.link ? `<span class="link" data-open="${row.link}">${row.linkText || "Summary"}</span>` : ""}</span></div>`;
     case "interrupt": return `<div class="interrupt">${ICON.stopcircle}Interrupted</div>`;
     // A caption row, then the words as TranscriptKit's markdown — a blockquote,
     // its form for someone else's words.
-    case "voice": return `<div class="caption">${row.glyph}<span>${esc(row.who)}</span></div><div class="caption-body"><blockquote>${paragraphs(row.text)}</blockquote></div>`;
+    case "voice": return `<div class="caption">${row.glyph}<span>${esc(row.who)}</span>${row.when ? `<span class="cmeta">${esc(row.when)}</span>` : ""}</div><div class="caption-body"><blockquote>${paragraphs(row.text)}</blockquote></div>`;
     case "question": return renderQuestion(row);
     // A caption row, then the plan itself as TranscriptKit's markdown, whole.
     case "plan": return `<div class="caption">${tile("plan", row.live ? "waiting" : "done")}<span>${row.live ? "Plan · Waiting for your approval" : "Plan"}</span></div><div class="caption-body"><ol>${row.steps.map((s) => `<li>${inline(s)}</li>`).join("")}</ol></div>${
@@ -410,14 +488,33 @@ function renderRow(row) {
   return "";
 }
 
+/** A command token inside the user's bubble (05-local.md): the sigil in
+ *  secondary, the name in mono, on an inset of the bubble's own blue. */
+function cmdToken(sigil, name, full) {
+  return `<span class="cmdtok"${full ? ` title="${esc(full)}"` : ""}><span class="sig">${esc(sigil)}</span>${esc(name)}</span>`;
+}
+
+/** AskUserQuestion (07-talk.md). One to four questions, each its options as
+ *  two lines — the label, the description under it, wrapped, never cut —
+ *  then the answers the CLI adds: *Other* (typed) and *Chat About This*. */
 function renderQuestion(row) {
-  const opts = row.options.map((o) => {
-    const on = !row.live && o.label === row.answer;
-    return `<div class="opt${on ? " on" : ""}${row.live ? " live" : ""}"><span class="radio"></span><span>${esc(o.label)}</span><span class="d">${esc(o.description)}</span></div>`;
-  }).join("");
-  return `<div class="qa">${tile("question", row.live ? "waiting" : "done")}<div><div class="hdr">${esc(row.header)}</div><div class="q">${esc(row.question)}</div>${opts}${
-    row.live ? '<div class="submit"><button class="btn primary">Submit<kbd>⌘↩</kbd></button></div>' : ""
-  }</div></div>`;
+  const qs = row.questions || [row];
+  const one = (q) => {
+    const answers = [].concat(q.answer || []);
+    const mark = q.multiSelect ? "cbx" : "radio";
+    const opts = q.options.map((o) => {
+      const on = !row.live && answers.includes(o.label);
+      return `<div class="opt${on ? " on" : ""}${row.live ? " live" : ""}"><span class="${mark}"></span><div class="ot"><span class="l">${esc(o.label)}</span>${o.description ? `<span class="d">${esc(o.description)}</span>` : ""}</div></div>`;
+    }).join("");
+    const other = row.live
+      ? `<div class="opt live other"><span class="${mark}"></span><div class="ot"><input class="oin" placeholder="Other — type something" spellcheck="false"></div></div>`
+      : q.other ? `<div class="opt on"><span class="${mark}"></span><div class="ot"><span class="l">${esc(q.other)}</span><span class="d">Other</span></div></div>` : "";
+    return `<div class="qone"><div class="hdr">${esc(q.header)}${q.multiSelect ? '<span class="ms">Choose any</span>' : ""}</div><div class="q">${esc(q.question)}</div>${row.chat ? "" : opts + other}</div>`;
+  };
+  const tail = row.live
+    ? '<div class="submit"><button class="btn primary">Submit<kbd>⌘↩</kbd></button><button class="btn plain" title="Tell Claude you\'d rather talk it over; it asks what to clarify">Chat About This</button></div>'
+    : row.chat ? '<div class="qnote">Not answered — talked over in the conversation</div>' : "";
+  return `<div class="qa">${tile("question", row.live ? "waiting" : "done")}<div>${qs.map(one).join("")}${tail}</div></div>`;
 }
 
 // MARK: - Columns: a transcript's rows, re-rendered a row at a time
@@ -644,6 +741,7 @@ function docFor(id) {
   if (!it) return '<div class="empty">Nothing to show</div>';
   if (it.docKind === "markdown") return markdownDoc(it.title, it.docGlyph || "other", it.status || "", it.md);
   if (it.docKind === "transcript") return transcriptDoc(it);
+  if (it.docKind === "image") return imageDoc(it);
   switch (it.kind) {
     case "command": return commandDoc(it);
     case "change": return changeDoc(it);

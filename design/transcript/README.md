@@ -2,10 +2,13 @@
 
 How a transcript shows what isn't plain conversation: tool calls, the documents
 they open beside the transcript, and the markup the CLI writes into user
-messages. Open `index.html` for the sheet — every state of every view, both
+messages — and how a session is started and steered live (08-live.md). Open `index.html` for the sheet — every state of every view, both
 appearances, and a playground window that replays a live turn.
 
 Every number below comes from [research/findings.md](research/findings.md).
+What the CLI sends and writes — the messages, fields and exact strings these
+views rest on, and whether AgentSDK decodes them yet — is in
+[protocol.md](protocol.md).
 
 ## The idea: conversation gets the page, work gets a line
 
@@ -45,7 +48,7 @@ the hover lights, its words' 16-pt line in the middle — and a glyph tile
 glyph sits under its run's text.
 
 **Spacing.** Two levels, each with one gap. **First level** — every entry
-of the transcript (a prompt, a reply, a run's line, news, a capsule, a
+of the transcript (a prompt, a reply, a run's line, news, a
 divider): 14 pt between them, TranscriptKit's row gap, the same everywhere.
 It is measured from a line of work's words, not its hover: the 6 pt the
 hover reaches above and below them is part of the gap.
@@ -81,21 +84,31 @@ tile, never the row:
 The arc is the only decoration that moves, and it is the tile's own outline —
 there is no separate spinner. Reduce Motion turns it into a slow pulse.
 
-**Kinds.** Tool names map to eleven kinds, each with one SF Symbol:
+**Kinds.** Tool names map to fifteen kinds, each with one SF Symbol. The
+built-in tools a session uses (CLI 2.1.286) have a row; MCP tools and the
+rarer built-ins (Artifact, DesignSync, REPL, …) fall to *other*, named by
+their server or tool:
 
 | kind | tools | symbol |
 |---|---|---|
-| command | Bash, `!` commands, TaskOutput | `terminal` |
+| command | Bash, PowerShell, `!` commands, TaskOutput, TaskStop, KillShell | `terminal` |
 | change | Edit, NotebookEdit, Write over a file | `pencil` |
 | create | Write a new file | `doc.badge.plus` |
-| read | Read | `doc.text` |
-| search | Grep, Glob, ToolSearch | `magnifyingglass` |
+| read | Read, ListMcpResources, ReadMcpResource | `doc.text` |
+| search | Grep, Glob, ToolSearch, LSP | `magnifyingglass` |
 | web | WebFetch, WebSearch | `globe` |
-| agent | Agent / Task, Workflow | the sidebar's Lamé star |
-| tasks | TaskCreate, TaskUpdate, TodoWrite | `checklist` |
-| schedule | Cron*, ScheduleWakeup, Monitor | `clock` |
+| agent | Agent / Task, Workflow, ListAgents | the sidebar's Lamé star |
+| advisor | advisor (a server tool: `server_tool_use` + `advisor_tool_result`) | `lightbulb` |
+| skill | Skill | `book.closed` |
+| tasks | TaskCreate, TaskUpdate, TaskList, TaskGet, TodoWrite | `checklist` |
+| schedule | Cron*, ScheduleWakeup, Monitor, RemoteTrigger | `clock` |
+| worktree | EnterWorktree, ExitWorktree | `arrow.triangle.branch` |
 | message | SendMessage | `paperplane` |
+| notify | PushNotification, SendUserMessage, SendUserFile | `bell` |
 | other | MCP tools, anything unknown | `puzzlepiece.extension` |
+
+AskUserQuestion, EnterPlanMode / ExitPlanMode and the task list are not
+run kinds: they break out of the run (07-talk.md).
 
 **Colour.** System colours only, plus the sidebar's coral. Red and green
 appear as text or 10–16 % washes, never as filled buttons.
@@ -108,9 +121,10 @@ appear as text or 10–16 % washes, never as filled buttons.
 | 2 | Command document — a Bash call beside the transcript | 76 % of calls | [02-command.md](02-command.md) |
 | 3 | File documents — change, new file, read | 14 % of calls | [03-file.md](03-file.md) |
 | 4 | Background news — task notifications | 27 % of prompts | [04-background.md](04-background.md) |
-| 5 | Local commands, interruptions, compaction | 15 % of prompts | [05-local.md](05-local.md) |
+| 5 | Local commands, interruptions, compaction, prompts with pasted images | 15 % of prompts | [05-local.md](05-local.md) |
 | 6 | Messages from other agents — a subagent's report (a line; the report beside), sessions, coordinator, plugins | — | [06-agent-messages.md](06-agent-messages.md) |
 | 7 | Tools that talk to you — questions, plans, task lists | < 3 % | [07-talk.md](07-talk.md) |
+| 8 | Live sessions — the New tab, the + on every tab bar, the composer and what each control can change when, the sidebar's conversation icon, one shape language | — | [08-live.md](08-live.md) |
 
 ## Opening a document beside the transcript
 
@@ -138,11 +152,14 @@ One rule for every view that opens something:
 ```
 design/transcript/
 ├── README.md          this file
-├── 01-run.md … 07-talk.md
+├── 01-run.md … 08-live.md
+├── protocol.md        what the CLI sends and writes, and how to re-check it
 ├── index.html         the sheet (open directly; no build)
 ├── preview.css        tokens for both appearances
 ├── preview.js         tiles, the run sentence, documents — the rules as code
 ├── preview-sheet.js   sample session, playground split, live replay, specimens
+├── preview-live.css   the New tab, the +, the composer, menus
+├── preview-live.js    the live window: sessions as state machines, menus, the matrix
 └── research/
     ├── corpus_stats.py
     └── findings.md

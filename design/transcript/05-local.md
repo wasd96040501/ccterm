@@ -1,9 +1,9 @@
 # 5 · Local commands, interruptions, compaction
 
-What the user did *to the CLI* rather than said *to the model*: slash
-commands, `!` commands, stopping a response — and the compaction that
-rewrites what the model remembers. Today a slash command is a user bubble,
-which says "you told Claude `/model opus`". You didn't; you set something.
+What the user typed *to the CLI* rather than *to the model*: slash commands,
+`!` commands, stopping a response — and the compaction that rewrites what the
+model remembers. A command is still something the user typed, so it stays a
+user message. Only the command part is set apart.
 
 ## What a reader wants
 
@@ -15,26 +15,47 @@ which says "you told Claude `/model opus`". You didn't; you set something.
 ## A slash command
 
 ```
-                                                          ( / model opus )
+                     ╭────────────────────────────────────────────────╮
+                     │ ⟦/dataviz⟧ Pull the latest code; this PR is     │
+                     │ about designing live sessions                   │
+                     ╰────────────────────────────────────────────────╯
+                                                    ╭──────────────────╮
+                                                    │ ⟦/model⟧ opus    │
+                                                    ╰──────────────────╯
                                                        Set model to opus
 ```
 
-- On the user's side (trailing) — the user did it — but **not a bubble**: a
-  24-pt capsule, 1-pt separator outline, no fill. The command in SF Mono 12,
-  secondary; its arguments in label colour.
-- Its output (`<local-command-stdout>`) is one 11-pt tertiary line **under**
-  the capsule, right-aligned — where Messages puts *Delivered* under a bubble:
-  a status of the thing above it, not a message of its own. stderr is red. An
-  empty output shows nothing.
-- A skill run as a command (`/skill-creator:skill-creator`) shows the skill's
-  short name; the full name is the tooltip.
-- A command output longer than two lines (rare: `/context`, `/usage`) is
-  cut with *Show all*, which opens it beside as a monospaced document.
+- **The user bubble, unchanged.** It has the same shape, the same width rule
+  and the same 14-pt text as any prompt. The user typed it, so it stays on the
+  user's side, in the user's form.
+- **Only the command is set apart.** The command is a *token* at the start of
+  the bubble: SF Mono 13, medium weight, in label ink, on a 5-pt-radius inset
+  of the bubble's own blue (accent at 16 % over the bubble). The token is a
+  deeper patch of the bubble's colour, not a new colour. The `/` is in
+  secondary ink. The token is padded 4 pt on each side, sits on the text's
+  baseline and doesn't change the line height.
+- **Arguments are ordinary text.** They follow the token and wrap like any
+  message: a skill's prompt reads as a prompt.
+- **A command without arguments** is a bubble holding only the token. It is
+  short, but it's still a bubble.
+- **Skills and plugins** show the short name in the token (`/skill-creator`).
+  The full name (`/skill-creator:skill-creator`) is its tooltip.
+- **The output** (`<local-command-stdout>`) is one 11-pt tertiary line *under*
+  the bubble, right-aligned, where Messages puts *Delivered*: it reports on the
+  message above it and is not a message of its own. stderr is red. An empty
+  output shows nothing. Output longer than two lines (rare: `/context`,
+  `/usage`) is cut with *Show all*, which opens it beside as a monospaced
+  document.
+- **The composer draws the same token** as you type (08-live.md): what you
+  typed is what the transcript shows.
+- **A setting changed from the composer is a command too.** The CLI writes a
+  model chosen from the composer's Model control as `/model`, so it shows as
+  this bubble. The transcript reads the same either way.
 
 ## Commands that change the session's shape
 
 Two commands are 77 % of all slash commands, and both mark a boundary. They
-don't get a capsule — they become the boundary.
+don't get a bubble — they become the boundary.
 
 - **`/compact`** — the command, its *Compacted* output and the compact boundary
   fold into one divider:
@@ -58,12 +79,17 @@ its days back.
 ## A `!` command
 
 ```
-                                               $ git status  12 lines  ›
+                                               ╭────────────────────────╮
+                                               │ ⟦!⟧ git status --short  │
+                                               ╰────────────────────────╯
+                                                          4 lines  ›
 ```
 
-- The same capsule, `$` for `⌘`. Its output is almost never one line, so the
-  capsule says how long it was and opens the **command document** beside,
-  titled *You ran*. One line of output fits inline like a slash command's.
+- The same bubble, with a `!` token. The command is all of the message, so the
+  text after the token is SF Mono 12.5 in label ink.
+- Its output is almost never one line, so the line under the bubble gives the
+  output's length, as a link that opens the **command document** beside,
+  titled *You ran*. One line of output fits inline, as a slash command's does.
 
 ## Interruption
 
@@ -78,9 +104,35 @@ its days back.
   word.
 - The next prompt follows as usual.
 
+## A prompt with pasted images
+
+The CLI sends each pasted image as an `image` block beside the text and
+writes `[Image #N]` in the text where it was pasted (27 prompts in the
+corpus: one image, text first, in most). Today the page builder keeps only
+the text, so the picture is lost and the token is read as words.
+
+- **Thumbnails above the bubble**, right-aligned with it: 96 pt tall, width
+  from the image's aspect, 4 pt apart and 4 pt over the bubble — one
+  message, as Messages sets a photo over its caption. 10-pt continuous
+  corners, a 0.5-pt hairline so a white screenshot keeps its edge on a white
+  page. They wrap within the bubble's 75 % width.
+- **Numbered when there are several**: an 11-pt badge, bottom left, on a
+  dark plate, so the text can name them.
+- **`[Image #N]` becomes a token**: the `photo` glyph and *Image N*, on the
+  command token's wash. Hovering it outlines its thumbnail in the accent.
+- **Click** a thumbnail or a token: the image opens beside at its size, the
+  jump bar giving its pixel size and format — rule 2, as everything with a
+  body.
+- **An image with no words** is the thumbnails alone, no empty bubble.
+- Screenshots keep their own colours in both appearances: they are
+  pictures, not chrome.
+- Code needs: the page builder's `.prompt` keeps the image blocks beside the
+  text, and a live prompt sent with images draws them from the local copy at
+  Send, as its text is (08-live.md, *A prompt, from Send to the transcript*).
+
 ## Live
 
-- A slash command appears at once; its output joins the capsule when it
+- A slash command appears at once; its output joins the bubble when it
   arrives. Commands that take time (`/compact`) show the divider with a
   travelling arc on a small tile at its centre — *Compacting…* — and settle to
   the counts.

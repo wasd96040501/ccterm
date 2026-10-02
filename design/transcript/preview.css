@@ -16,6 +16,7 @@
   --voice: rgba(0, 0, 0, 0.06);    /* secondarySystemFill */
   --accent: #007aff;
   --bubble: rgba(0, 122, 255, 0.15);
+  --tok: rgba(0, 122, 255, 0.16);   /* a command token: accent over the bubble */
   --sel: rgba(0, 122, 255, 0.13);
   --sel-quiet: rgba(0, 0, 0, 0.07);
   --red: #ff3b30;
@@ -56,6 +57,7 @@
     --voice: rgba(255, 255, 255, 0.08);
     --accent: #0a84ff;
     --bubble: rgba(10, 132, 255, 0.2);
+    --tok: rgba(10, 132, 255, 0.24);
     --sel: rgba(10, 132, 255, 0.24);
     --sel-quiet: rgba(255, 255, 255, 0.08);
     --red: #ff453a;
@@ -95,6 +97,7 @@
   --voice: rgba(255, 255, 255, 0.08);
   --accent: #0a84ff;
   --bubble: rgba(10, 132, 255, 0.2);
+  --tok: rgba(10, 132, 255, 0.24);
   --sel: rgba(10, 132, 255, 0.24);
   --sel-quiet: rgba(255, 255, 255, 0.08);
   --red: #ff453a;
@@ -213,6 +216,25 @@ html, body {
 
 .user { display: flex; justify-content: flex-end; }
 .bubble { max-width: 75%; background: var(--bubble); border-radius: 14px; padding: 10px 16px; }
+/* Pasted images: thumbnails 96 pt tall above the bubble, 4 pt apart and 4 pt
+   over it — one message, as Messages stacks a photo over its caption. */
+.user.withshots { flex-direction: column; align-items: flex-end; gap: 4px; }
+.shots { display: flex; gap: 4px; justify-content: flex-end; flex-wrap: wrap; max-width: 75%; }
+.shot { position: relative; display: block; border-radius: 10px; overflow: hidden; cursor: default; line-height: 0;
+  box-shadow: inset 0 0 0 0.5px var(--separator); }
+.shot svg { display: block; }
+.shot::after { content: ""; position: absolute; inset: 0; border-radius: 10px; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.12); }
+.shot .n { position: absolute; left: 6px; bottom: 6px; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 8px;
+  background: rgba(0, 0, 0, 0.55); color: #fff; font-size: 11px; line-height: 16px; text-align: center; font-variant-numeric: tabular-nums; }
+.imgtok { display: inline-flex; align-items: center; gap: 3px; font-size: 13px; font-weight: 500; color: var(--label);
+  background: var(--tok); border-radius: 5px; padding: 0 5px; line-height: 18px; cursor: default; white-space: nowrap; vertical-align: 1px; }
+.imgtok svg { color: var(--secondary); }
+.user:has(.imgtok[data-n="1"]:hover) .shot[data-n="1"],
+.user:has(.imgtok[data-n="2"]:hover) .shot[data-n="2"],
+.user:has(.imgtok[data-n="3"]:hover) .shot[data-n="3"],
+.user:has(.imgtok[data-n="4"]:hover) .shot[data-n="4"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+.imgdoc { display: flex; justify-content: center; padding: 24px; }
+.imgdoc svg { border-radius: 6px; box-shadow: 0 0 0 0.5px var(--separator); max-width: 100%; height: auto; }
 
 /* A run, a news line: 28-pt rows, items too. The hover's 6 pt above and
    below the words is part of the 14-pt gap between entries. */
@@ -274,15 +296,18 @@ html, body {
 .approval .mini { border-radius: 6px; overflow: hidden; background: var(--fill); padding: 4px 0; }
 
 /* Local commands */
-.capsule-row { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
-.capsule {
-  display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 11px; border-radius: 12px;
-  border: 1px solid var(--separator); font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; color: var(--secondary);
-  cursor: default;
+/* A command is the user's message: the bubble, with only the command as a
+   token — an inset of the bubble's own blue, never a new colour. */
+.cmd-row { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.cmd-row .bubble { max-width: 75%; }
+.cmdtok {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; font-weight: 500; color: var(--label);
+  background: var(--tok); border-radius: 5px; padding: 1px 4px; margin-left: -2px; white-space: nowrap; line-height: 1;
+  box-decoration-break: clone; -webkit-box-decoration-break: clone;
 }
-.capsule b { font-weight: 400; color: var(--label); }
-.capsule .sym { color: var(--tertiary); }
-.capsule:hover { background: var(--hover); }
+.cmdtok .sig { color: var(--secondary); margin-right: 1px; }
+.bubble.only .cmdtok { margin: 0 -6px; }
+.shellcmd { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; }
 .cap-out { font-size: 11px; color: var(--tertiary); padding-right: 12px; }
 .cap-out.err { color: var(--red-text); }
 .cap-out .link { color: var(--accent); cursor: default; }
@@ -299,6 +324,7 @@ html, body {
    for someone else's words: 3-pt secondary bar, 14-pt indent. */
 .caption { display: flex; align-items: center; gap: 8px; height: 20px; font-size: 13px; color: var(--secondary); }
 .caption .spacer { flex: 1; }
+.caption .cmeta { font-size: 11px; color: var(--tertiary); }
 .caption .open { color: var(--accent); cursor: default; }
 .caption-body { margin-top: 14px; }
 .caption-body blockquote { margin: 0; padding-left: 14px; border-left: 3px solid var(--secondary); }
@@ -313,14 +339,31 @@ html, body {
 .qa { display: grid; grid-template-columns: 16px 1fr; gap: 0 8px; }
 .qa .hdr { font-size: 13px; color: var(--secondary); line-height: 16px; }
 .qa .q { margin: 2px 0 6px; }
-.qa .opt { display: grid; grid-template-columns: 16px auto 1fr; align-items: baseline; gap: 6px; font-size: 13px; line-height: 22px; color: var(--tertiary); }
+/* An option is two lines: the label, then its description under it — wrapped,
+   never cut. The mark sits on the label's line. */
+.qa .qone + .qone { margin-top: 12px; }
+/* A call's second part when it's words, not code: the message's summary, the advice's first line. */
+.callsub { margin-left: 6px; color: var(--tertiary); }
+.qa .hdr .ms { margin-left: 8px; font-size: 11px; color: var(--tertiary); }
+.qa .opt { display: grid; grid-template-columns: 16px 1fr; align-items: start; column-gap: 6px; padding: 4px 8px 4px 0; color: var(--tertiary); }
+.qa .opt .ot { display: flex; flex-direction: column; min-width: 0; }
+.qa .opt .l { font-size: 13px; line-height: 18px; }
+.qa .opt .d { font-size: 12px; line-height: 16px; color: var(--tertiary); }
 .qa .opt.on { color: var(--label); }
-.qa .opt .d { font-size: 12px; color: var(--tertiary); }
-.qa .radio { width: 11px; height: 11px; border-radius: 50%; border: 1.25px solid currentColor; display: inline-block; transform: translateY(1px); }
+.qa .opt.on .d { color: var(--secondary); }
+.qa .radio, .qa .cbx { width: 12px; height: 12px; border: 1.25px solid currentColor; display: inline-block; margin-top: 3px; box-sizing: border-box; }
+.qa .radio { border-radius: 50%; }
+.qa .cbx { border-radius: 3.5px; }
 .qa .opt.on .radio { background: var(--accent); border-color: var(--accent); box-shadow: inset 0 0 0 2.5px var(--window); }
-.qa .opt.live { color: var(--label); cursor: default; }
-.qa .opt.live .radio { border-color: var(--tertiary); }
-.qa .submit { margin-top: 8px; }
+.qa .opt.on .cbx { background: var(--accent); border-color: var(--accent); }
+.qa .opt.live { color: var(--label); cursor: default; border-radius: var(--r-ctl, 7px); margin-left: -8px; padding-left: 8px; grid-template-columns: 16px 1fr; }
+.qa .opt.live:hover { background: var(--hover); }
+.qa .opt.live .radio, .qa .opt.live .cbx { border-color: var(--tertiary); }
+.qa .opt.live .d { color: var(--secondary); }
+.qa .opt.other .oin { font: inherit; font-size: 13px; line-height: 18px; border: 0; outline: 0; background: none; padding: 0; color: var(--label); width: 100%; }
+.qa .opt.other .oin::placeholder { color: var(--tertiary); }
+.qa .submit { margin-top: 8px; display: flex; gap: 8px; align-items: center; }
+.qa .qnote { margin-top: 4px; font-size: 12px; color: var(--tertiary); }
 
 
 

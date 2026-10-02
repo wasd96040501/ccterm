@@ -584,13 +584,14 @@ function buildSheet() {
   const ctxDoc = { id: nid("d"), docKind: "markdown", title: "/context", docGlyph: "local", status: "Local command output", md: "Context usage: 61k / 200k tokens (31%)\n\n- System prompt: 3.1k\n- Tools: 14.2k\n- Messages: 43.9k" };
   ITEMS.set(ctxDoc.id, ctxDoc);
   specimens(document.getElementById("local"), [
-    spec("<b>Slash command</b>Your side, not a bubble — you set something, you didn't say it.", [{ type: "slash", name: "/model", args: "opus", out: "Set model to opus" }]),
+    spec("<b>Slash command</b>Your message, so your bubble; only the command is a token — an inset of the bubble's own blue. Its output sits under it, like <i>Delivered</i>.", [{ type: "slash", name: "/model", args: "opus", out: "Set model to opus" }]),
     spec("<b>With an error · a skill</b>", [{ type: "slash", name: "/effort", args: "maximum", out: "Unknown effort level: maximum", err: true }, { type: "slash", name: "/skill-creator", full: "/skill-creator:skill-creator", args: "" }]),
+    spec("<b>A skill with a prompt</b>The arguments are a prompt, so they read and wrap as one.", [{ type: "slash", name: "/dataviz", args: "Pull the latest code. This PR is only about designing live-session interaction — the New tab, the + on every tab bar, and the composer." }]),
     spec("<b>Long output</b>/context, /usage: cut, the rest beside.", [{ type: "slash", name: "/context", out: "61k / 200k tokens (31%)", long: ctxDoc.id }]),
     spec("<b>/compact</b>Command, output and boundary fold into one divider.", [{ type: "divider", text: "Conversation compacted · 168k → 14k tokens", link: compactDoc.id }, { type: "divider", text: "Compacted automatically · 191k → 22k tokens", link: compactDoc.id }]),
     spec("<b>Compacting, live</b>", [{ type: "divider", text: "Compacting…", live: true }]),
     spec("<b>/exit, then resumed · a long gap</b>Messages' rule: a divider when more than an hour passes.", [{ type: "divider", text: "Resumed · Tue 14:02" }, { type: "divider", text: "Yesterday 18:40" }]),
-    spec("<b>! command</b>Several lines of output: the capsule says how many and opens it beside.", [{ type: "shell", item: clone(shell1) }, { type: "shell", item: bash(null, "git branch --show-current", { local: true, out: ["transcript-views-design"] }) }]),
+    spec("<b>! command</b>The same bubble, the command in mono. Several lines of output: the line under it says how many and opens them beside.", [{ type: "shell", item: clone(shell1) }, { type: "shell", item: bash(null, "git branch --show-current", { local: true, out: ["transcript-views-design"] }) }]),
     spec("<b>Interrupted while writing</b>Attached to the reply, not a row of its own.", [{ type: "text", text: "Sure. The run row's summary is set at 13 pt, one step below the 14-pt body, so the change is in" }, { type: "interrupt", tight: true }]),
     spec("<b>Interrupted during a call</b>The call's state; nothing else.", [RN([clone(b2), bash("Run the full test suite", "make test-unit", { state: "interrupted", out: [] })], { dur: 40 })]),
   ]);
@@ -599,11 +600,39 @@ function buildSheet() {
   const conv = tile("session", "done", { fill: "transparent", ink: "var(--coral)" });
   const flow = tile("workflow", "done", { fill: "transparent", ink: "var(--indigo)" });
   const puzzle = tile("other", "done", { fill: "transparent", ink: "var(--gray)" });
+  const autoDoc = { id: nid("d"), docKind: "markdown", title: "Prompt", docGlyph: "other", status: "Written by Claude Code, not by you", md: "Your claude.ai usage limit has reset. Continue the task you were working on when the limit was reached; do not repeat work that is already complete." };
+  ITEMS.set(autoDoc.id, autoDoc);
   const report = news("agent", "completed", "**Explore · Find hard-coded row gaps** reported", "", { title: "Explore · Find hard-coded row gaps", glyph: "agent", status: "", md: "Found three call sites of `rowSpacing`:\n\n- `TranscriptView.swift:324` — the declaration\n- `TranscriptView.swift:332` — `intercellSpacing`\n- `TranscriptViewTests.swift:88` — the test\n\nAnd one hard-coded 14 in `EditorAreaTests.swift:118`." });
+  // Talking out: the advisor and SendMessage (06-agent-messages.md "Talking out").
+  const advice = advisor("Check the narrow split before you change the default: at 320 pt the run rows wrap, and a 14-pt gap reads as a new paragraph there.\n\nKeep `EditorAreaTests` on its own value; it pins the editor, not the transcript.", { model: "Opus 5.5" });
+  const toLead = sendMessage("team-lead", "Row gap is public; tests pass", "`TranscriptView.rowSpacing` is public now and defaults to 14 pt.\n\n- `TranscriptViewTests` reads it from the view\n- `EditorAreaTests` keeps its own value\n\nReady for review.");
+  const toQa = sendMessage("qa", "Please check a 320-pt split", "Could you look at the transcript in a 320-pt split with the new gap? The run rows are what I'm least sure of.");
+  specimens(document.getElementById("talkout"), [
+    spec("<b>The advisor, as transcripts record it</b>The advice comes back encrypted (every result in the corpus): <i>Asked the advisor</i> and the CLI's own words for it, nothing to open.", [R1(advisor(null, { redacted: true }))]),
+    spec("<b>The advisor among other work</b>Its own kind and lightbulb glyph; the clause counts it.", [{ type: "run", run: run([edit("macos/TranscriptKit/Sources/TranscriptKit/TranscriptView.swift", 4, 2), advisor(null, { redacted: true }), bash("Run the kit tests", "make test-kit")], { open: true }) }]),
+    spec("<b>When the advice is in the clear</b>An <code>advisor_result</code> carries its text: the first line on the row; click opens it beside, with the advisor's model.", [R1(advice)]),
+    spec("<b>Declined · unavailable</b>A refusal says so; an error says why in words, and the tile is red.", [R1(advisor(null, { declined: true })), R1(advisor(null, { error: "overloaded", state: "failed" }))]),
+    spec("<b>A message, sent</b><i>Messaged team-lead</i>; the summary the model gave beside the name. Click: the message beside — the words that went out.", [R1(toLead)]),
+    spec("<b>Messages to two parties</b>Counted in the sentence; each item is <i>To whom</i> and its summary.", [{ type: "run", run: run([clone(toLead), clone(toQa)], { open: true }) }]),
+    spec("<b>Skills, worktrees, notifications</b>Kinds of their own, so the sentence can say what happened instead of <i>Used … once</i>.", [{ type: "run", run: run([skillCall("dataviz"), item("worktree", "EnterWorktree", { label: "Moved into .claude/worktrees/quiet-otter" }), item("notify", "PushNotification", { label: "“Tests pass — ready for review”" })], { open: true }) }]),
+  ]);
+
   specimens(document.getElementById("voices"), [
     spec("<b>A subagent's report</b>Work, like a diff: one line. Click: the report beside.", [{ type: "news", news: [report] }]),
     spec("<b>Another session</b>The conversation glyph, coral.", [{ type: "voice", glyph: conv, who: "Session “Squash merge admin”", text: "PR #314 is merged. You can rebase onto main." }]),
-    spec("<b>The coordinator · a plugin</b>", [{ type: "voice", glyph: flow, who: "Coordinator", text: "Hold the transcript work until the review lands." }, { type: "voice", glyph: puzzle, who: "Plugin “ralph-loop”", text: "Continue with the next item on the list." }]),
+    spec("<b>The coordinator</b>", [{ type: "voice", glyph: flow, who: "Coordinator", text: "Hold the transcript work until the review lands." }]),
+    spec("<b>A plugin, between turns</b>Any plugin, by the name its header gives. It starts the turn in your place, so the caption says so; the CLI's note to the model is dropped.", [{ type: "voice", glyph: puzzle, who: "Plugin “taskcut”", when: "Started this turn", text: "Continue." }, { type: "text", text: "Picking up item 9b: plugin prompts, then pasted images." }]),
+    spec("<b>A plugin, while Claude works</b>It arrives with the next tool result, so it splits the run where the model read it.", [{ type: "run", run: run([edit("design/transcript/preview.js", 12, 3), bash("Run the sheet's checks", "node check.js")]) }, { type: "voice", glyph: puzzle, who: "Plugin “ralph-loop”", when: "While Claude worked", text: "The tests on main are red; fix them before the next item." }, { type: "run", run: run([bash("Run the unit tests", "make test-unit")]) }]),
+    spec("<b>Continued on its own</b>The CLI starts a turn with no one's words: after a usage limit resets, or a plan approved in the browser. A divider says why; its prompt opens beside.", [{ type: "divider", text: "Continued after the usage limit reset", link: autoDoc.id, linkText: "Prompt" }, { type: "divider", text: "Continued with the plan approved in the browser", link: autoDoc.id, linkText: "Prompt" }]),
+  ]);
+
+  // 5 · Prompts with pasted images
+  const shot = (n, look, w, h, mark) => { const it = { id: nid("img"), docKind: "image", title: `Image #${n}`, n, look, w, h, mark }; ITEMS.set(it.id, it); return it; };
+  const s1 = shot(1, "window", 1440, 900, 34), s2 = shot(2, "terminal", 1200, 760), s3 = shot(3, "window", 900, 1100, 52);
+  specimens(document.getElementById("prompts"), [
+    spec("<b>One image</b>The thumbnail, 96 pt tall, over the bubble; <i>[Image #1]</i> in the text becomes a token. Click either: the image beside, at its size.", [{ type: "user", images: [s1], text: "[Image #1] The top of the transcript is cut off near the toolbar — is the composer pushing it up?" }]),
+    spec("<b>Several</b>Numbered, so the tokens can name them; hover a token and its picture lights.", [{ type: "user", images: [s2, s3], text: "[Image #2] is the build log, [Image #3] the window right after. Which one is wrong?" }]),
+    spec("<b>An image alone</b>No bubble when there are no words.", [{ type: "user", images: [shot(1, "window", 1440, 900)] }]),
   ]);
 
   // 7 · Tools that talk
@@ -611,10 +640,26 @@ function buildSheet() {
   const planDoc = { id: nid("d"), docKind: "markdown", title: "Plan", docGlyph: "plan", status: "~/.claude/plans/row-gap.md", md: "1. Make `rowSpacing` a public instance property with a `didSet` that re-applies `intercellSpacing`.\n\n2. Read it from the view in `TranscriptViewTests`.\n\n3. Leave `EditorAreaTests` on the default.\n\n4. Build the demo and look at a narrow split." };
   ITEMS.set(planDoc.id, planDoc);
   const q = { header: "Row gap", question: "What should the default gap between rows be?", options: [{ label: "14 pt", description: "Today's value" }, { label: "12 pt", description: "Same as between paragraphs" }, { label: "16 pt", description: "Roomier" }], answer: "14 pt" };
+  const qLong = {
+    questions: [
+      { header: "Scope", question: "The gap is hard-coded in two places besides the view. Which of them should read the new property, and which should keep their own value?", options: [
+        { label: "Both read rowSpacing", description: "TranscriptView and EditorArea always agree, and a change in one place moves both. The tests that pin 14 pt need updating." },
+        { label: "Only TranscriptView", description: "EditorArea keeps its own 14 pt for now; the two can drift, which is fine while it has no transcript of its own." },
+        { label: "Neither — a theme value", description: "Move the gap into the theme, which both read. Most work, and the theme has no spacing values yet." },
+      ] },
+      { header: "Checks", question: "What should run before the PR?", multiSelect: true, options: [
+        { label: "Unit tests", description: "make test-unit and make test-kit" },
+        { label: "Snapshot of a narrow split", description: "TranscriptSnapshotTests at 320 pt" },
+        { label: "The demo app", description: "make demo-kit, to look at it by hand" },
+      ] },
+    ],
+  };
   const planSteps = ["Make `rowSpacing` a public instance property with a `didSet` that re-applies `intercellSpacing`.", "Read it from the view in `TranscriptViewTests`.", "Leave `EditorAreaTests` on the default.", "Build the demo and look at a narrow split.", "Open a PR."];
   specimens(document.getElementById("talk"), [
     spec("<b>A question, answered</b>Question and answer kept together.", [{ type: "question", ...q }]),
-    spec("<b>A question, waiting</b>", [{ type: "question", ...q, live: true }]),
+    spec("<b>A question, waiting</b>Each option two lines — the label, its description under it. Then the answers the CLI adds: <i>Other</i>, typed in place, and <i>Chat About This</i>.", [{ type: "question", ...q, live: true }]),
+    spec("<b>Two questions, long options, waiting</b>Long descriptions wrap under their label; nothing is cut. A multi-select question says so and uses checkboxes.", [{ type: "question", ...qLong, live: true }]),
+    spec("<b>Answered with Other · talked over</b>A typed answer is the chosen one, marked <i>Other</i>. <i>Chat About This</i> answers nothing: the card says so, and the conversation goes on under it.", [{ type: "question", ...q, answer: null, other: "13 pt — between the two" }, { type: "question", ...q, chat: true }]),
     spec("<b>A plan</b>TranscriptKit's markdown, whole — it is addressed to you.", [{ type: "plan", steps: planSteps, doc: planDoc.id }]),
     spec("<b>A plan, waiting</b>", [{ type: "plan", steps: planSteps, doc: planDoc.id, live: true }]),
     spec("<b>Task list</b>Stays in the run; opens the list as it stood.", [R1(tasksItem)]),

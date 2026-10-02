@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Transcript Views</title>
 <link rel="stylesheet" href="preview.css">
+<link rel="stylesheet" href="preview-live.css">
 </head>
 <body>
 <div class="sheet">
@@ -13,7 +14,7 @@
       <h1>Transcript views</h1>
       <p class="lede">Conversation gets the page; work gets a line. How the transcript shows tool calls, the documents they open beside it, and the markup the CLI writes into user messages — every state, both appearances. Rationale per view in the <code>0N-*.md</code> files beside this page; numbers in <code>research/findings.md</code>.</p>
       <nav class="nav">
-        <a href="#playground-h">Playground</a><a href="#numbers">Numbers</a><a href="#run">1 · Run row</a><a href="#command">2 · Command</a><a href="#file">3 · Files</a><a href="#background">4 · Background</a><a href="#localh">5 · Local</a><a href="#voicesh">6 · Voices</a><a href="#talkh">7 · Talk</a>
+        <a href="#playground-h">Playground</a><a href="#numbers">Numbers</a><a href="#run">1 · Run row</a><a href="#command">2 · Command</a><a href="#file">3 · Files</a><a href="#background">4 · Background</a><a href="#localh">5 · Local</a><a href="#voicesh">6 · Voices</a><a href="#talkh">7 · Talk</a><a href="#liveh">8 · Live sessions</a>
       </nav>
     </div>
     <div class="seg" role="group" aria-label="Appearance">
@@ -69,14 +70,66 @@
   <h2 id="localh">5 · Local commands, dividers, interruptions</h2>
   <p class="note">What you did to the CLI rather than said to the model. <code>/exit</code> and <code>/compact</code> are 77 % of slash commands and both mark a boundary, so they become one. <b>See 05-local.md.</b></p>
   <div id="local"></div>
+  <h3>Prompts with pasted images</h3>
+  <p class="note">The CLI sends a pasted image as an image block beside the text, and writes <code>[Image #N]</code> where it was pasted. Today the app drops the image and shows the token as text.</p>
+  <div id="prompts"></div>
 
   <h2 id="voicesh">6 · Messages from other agents</h2>
-  <p class="note">Messages' group chat: the other party on the leading side, named above a grey bubble, with the sidebar's glyph for who they are. <b>See 06-agent-messages.md.</b></p>
+  <p class="note">Anyone else's words are conversation: a caption naming them, with the sidebar's glyph for who they are, then their words quoted. Plugins are one class, named by their header. <b>See 06-agent-messages.md.</b></p>
   <div id="voices"></div>
+  <h3>Talking out — the advisor, messages, and the kinds that were missing</h3>
+  <p class="note">Calls that reach another party: the advisor (a server tool: its call and result arrive in the reply itself, the result usually encrypted) and SendMessage. Both are work, so both are lines in a run; what can be read opens beside.</p>
+  <div id="talkout"></div>
 
   <h2 id="talkh">7 · Tools that talk to you</h2>
   <p class="note">Questions and plans are addressed to the reader, so they break out of the run. Task-list calls stay in it. <b>See 07-talk.md.</b></p>
   <div id="talk"></div>
+
+  <h2 id="liveh">8 · Live sessions — the New tab and the composer</h2>
+  <p class="note">Before the first prompt a session is a <b>form</b>: every choice is a launch flag, free and reversible. After it, the composer <b>steers a running CLI</b>, and each control lands at its own moment — the mode now, the effort from the next request, the model after this turn. Facts from <code>claude</code> 2.1.286, beautified and probed. <b>See 08-live.md.</b></p>
+  <div class="principles">
+    <div class="principle"><b>One composer</b><span>The New tab and a session tab share the field and its controls. Folder, branch and worktree are the New tab's alone — they can't change after launch. The account follows the model.</span></div>
+    <div class="principle"><b>The control says when</b><span>A model chosen mid-turn shows a clock on its chip: it switches after this turn. No alert, no toast.</span></div>
+    <div class="principle"><b>Greyed with a reason</b><span>Unavailable items are disabled with why — Not on Haiku 4.5, Unavailable while Fast Mode is on — never hidden.</span></div>
+    <div class="principle"><b>Transcript records the CLI</b><span>A model change is the <code>/model</code> bubble when the CLI applies it. Effort and mode leave no row; the chip is the record.</span></div>
+    <div class="principle"><b>Report the exception</b><span>Coral only when the session waits for you; red only for a failure or Bypass. The effort bars and the New view's glowing app icon are the only ornament.</span></div>
+  </div>
+
+  <h3>Playground — a window with no tabs opens on the New view</h3>
+  <p class="note"><b>Type and press ↩</b> to launch; the composer glides to the bottom. Then try the chips <i>while Claude works</i>: Model shows its clock, Effort and Mode apply at once. ↩ while it works <b>queues</b> (withdraw it before the CLI takes it). <b>⇧⇥</b> cycles the mode; <b>/</b> completes commands — try <code>/model sonnet</code>, <code>/effort max</code>, <code>/compact</code>. <b>⌘.</b> stops. The model menu lists every account; in a live session, a model from another account <b>asks before restarting</b> the CLI. Pick a <b>branch</b> (type to filter; <code>#327</code> offers that pull request) and toggle <b>Worktree</b> under a git folder. The <b>+</b> on each tab bar opens a New tab in that group — <b>⌃T</b> here, since the browser keeps ⌘T. Ask Permissions mode stops at an edit for your approval (⌘↩ / ⎋).</p>
+  <div class="lv-scen">
+    <div class="seg" role="group" aria-label="Scenario">
+      <button data-scene="empty">No tabs</button><button data-scene="new">New tab</button><button data-scene="responding">Responding</button><button data-scene="waiting">Waiting for you</button><button data-scene="rest">At rest</button><button data-scene="failed">Failed</button><button data-scene="split">Split</button>
+    </div>
+    <label class="note" style="display:inline-flex;gap:6px;align-items:center;font-size:12px;color:var(--secondary)"><input type="checkbox" id="lv-allow-bypass"> Settings › General › Allow Bypass Permissions</label>
+  </div>
+  <div id="live"></div>
+
+  <h3>Settings × state — what can be chosen, when it lands, how it's sent</h3>
+  <p class="note">The two halves the design splits on: the New tab sends everything as launch flags; a session tab sends control requests, with three timings. <i>Held</i>: kept until <code>initialize</code> answers, then sent — the user sees no difference.</p>
+  <div id="lv-matrix"></div>
+
+  <h3>Tabs and the +</h3>
+  <div class="lv-specs" id="lv-tabs"></div>
+
+  <h3>The New view</h3>
+  <div class="lv-specs" id="lv-newview"></div>
+
+  <h3>The conversation icon, redesigned</h3>
+  <div class="lv-specs" id="lv-icon"></div>
+
+  <h3>The composer, state by state</h3>
+  <div class="lv-specs" id="lv-composers"></div>
+
+  <h3>A prompt, from Send to the transcript</h3>
+  <p class="note">Measured on the CLI (2.1.286, <code>QueueTimingSmoke</code>): the prompt is <i>started</i> within 3 ms, but its replay — the CLI writing it into the conversation — comes with the first streamed token, 2–2.5 s later. Waiting for the replay would leave the prompt invisible for that long, so the bubble is drawn at Send and the replay only confirms it, by uuid, in place.</p>
+  <div id="lv-prompt"></div>
+
+  <h3>Menus — NSMenu with subtitles and section headers; the model panel scrolls</h3>
+  <div id="lv-menus"></div>
+
+  <h3>One shape language — radii, icon sizes, spacing</h3>
+  <div class="lv-specs" id="lv-lang"></div>
 </div>
 
 <div class="drawer" id="drawer" aria-label="Beside">
@@ -86,5 +139,6 @@
 
 <script src="preview.js"></script>
 <script src="preview-sheet.js"></script>
+<script src="preview-live.js"></script>
 </body>
 </html>

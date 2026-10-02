@@ -12,7 +12,7 @@ directly on `NSTableView`:
 - **Data source, not data storage.** `TranscriptViewDataSource` answers
   `numberOfRows(in:)` and `transcriptView(_:rowAt:)`; the host owns
   the backing data and announces every mutation through
-  `insertRows(at:withAnimation:)` / `removeRows(at:withAnimation:)` /
+  `insertRows(at:withAnimation:)` / `removeRows(at:withAnimation:)` / `moveRow(at:to:)` /
   `reloadRows(at:)` / `reloadData()`, optionally batched with
   `performBatchUpdates(anchoring:_:)`, which also says what holds still.
 - **Rows are identified by the host.** `transcriptView(_:rowAt:)` hands back a

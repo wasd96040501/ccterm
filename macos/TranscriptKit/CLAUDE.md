@@ -14,7 +14,7 @@ Run from the repo root: `make test-kit [FILTER=<Class>]` (`swift test`) and `mak
 
 ## 1. Mirror `NSTableView`
 
-The public surface is `NSTableView`'s, name for name and signature for signature: `numberOfRows`, `reloadData()`, `insertRows(at:withAnimation:)`, `removeRows(at:withAnimation:)`, `reloadRows(at:)`, `noteHeightOfRows(withIndexesChanged:)`, `rect(ofRow:)`, `row(for:)`, `makeView(withIdentifier:…)`. The data source says *what* the rows are; the delegate says *how they appear*. A host that has written an `NSTableViewDataSource` already knows the API and can check it against Apple's docs.
+The public surface is `NSTableView`'s, name for name and signature for signature: `numberOfRows`, `reloadData()`, `insertRows(at:withAnimation:)`, `removeRows(at:withAnimation:)`, `moveRow(at:to:)`, `reloadRows(at:)`, `noteHeightOfRows(withIndexesChanged:)`, `rect(ofRow:)`, `row(for:)`, `makeView(withIdentifier:…)`. The data source says *what* the rows are; the delegate says *how they appear*. A host that has written an `NSTableViewDataSource` already knows the API and can check it against Apple's docs.
 
 Before adding or renaming anything public, look up the AppKit counterpart (`make appkit-doc SYMBOL=NSTableView`) and take its spelling unless §2 applies.
 

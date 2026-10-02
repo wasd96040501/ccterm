@@ -63,15 +63,20 @@ line in a run like any call, and what was said opens beside.
   so it never appears as a tool result in a user message. AgentSDK decodes
   both as `.unknown` today, and the app shows nothing; it needs both blocks
   decoded and paired by id.
-  - Its own kind, lightbulb glyph. The clause: *Asked the advisor*. Alone:
-    *Asked the advisor* and the advice's first line in tertiary; in a list,
-    *Advice* and the first line. Live: *Asking the advisor*.
-  - Click: the advice beside, as markdown, the advisor's model as the
-    document's status.
-  - `advisor_redacted_result`: *Not shown in the transcript*, nothing to
-    open. `advisor_tool_result_error`: the red tile and the code in words —
+  - Its own kind, lightbulb glyph. The clause: *Asked the advisor*. Live:
+    *Asking the advisor*.
+  - **The usual result is encrypted** (`advisor_redacted_result`: every one
+    of the 72 results in the corpus). Nothing can be shown, so the row says
+    what the CLI says — *Asked the advisor* · *Reviewed the conversation* —
+    and opens nothing.
+  - `advisor_result` (the advice in the clear): the first line in tertiary;
+    click opens the advice beside, as markdown, the advisor's model as the
+    document's status. With `stop_reason: "refusal"`: *Declined to advise*.
+  - `advisor_tool_result_error`: the red tile and the code in words —
     *Overloaded — try again shortly*, *The conversation is too long for the
     advisor*, *Asked as often as this session allows* (`max_uses_exceeded`).
+  - A `server_tool_use` with no result (12 of 84 in the corpus: the turn
+    was stopped) is *Interrupted*, as any call.
 - **SendMessage** — the message kind, `paperplane`.
   - The clause names the party: *Messaged **team-lead***, *Messaged the
     team* (`to: "*"`), several parties *Sent 3 messages*. An item: *To

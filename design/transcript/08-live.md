@@ -582,8 +582,8 @@ Every view on this page draws from the same few numbers.
 ## What this needs from the code (for the PR that builds it)
 
 - AgentSDK: make `setModel` and `setPermissionMode` public. Decode
-  `session_title_changed`, `system/status.permissionMode` and
-  `per_turn_effort_changed`. Expose `cancel_async_message`, `get_context_usage`
+  `session_title_changed`, `system/status.permissionMode` and the
+  output-direction `apply_flag_settings` (a typed `/effort` or `/fast`). Expose `cancel_async_message`, `get_context_usage`
   (exists) and `list_models`.
 - `LiveSession` keeps the `initialize` result instead of discarding it. The
   catalog, cached on disk, is built from it — one per account, since each
@@ -609,6 +609,10 @@ Every view on this page draws from the same few numbers.
   colour image, not a template, so the row's tint no longer applies to it.
 
 ## Sources
+
+The line numbers below are of one beautified copy and won't match another;
+[protocol.md](protocol.md) gives each fact a string to search for, and how
+to extract the bundle.
 
 - CLI 2.1.286, beautified (`all.pretty.js`):
   - control dispatcher in `print.ts` (~1087600);

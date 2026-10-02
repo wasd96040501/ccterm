@@ -6,6 +6,9 @@ messages — and how a session is started and steered live (08-live.md). Open `i
 appearances, and a playground window that replays a live turn.
 
 Every number below comes from [research/findings.md](research/findings.md).
+What the CLI sends and writes — the messages, fields and exact strings these
+views rest on, and whether AgentSDK decodes them yet — is in
+[protocol.md](protocol.md).
 
 ## The idea: conversation gets the page, work gets a line
 
@@ -150,6 +153,7 @@ One rule for every view that opens something:
 design/transcript/
 ├── README.md          this file
 ├── 01-run.md … 08-live.md
+├── protocol.md        what the CLI sends and writes, and how to re-check it
 ├── index.html         the sheet (open directly; no build)
 ├── preview.css        tokens for both appearances
 ├── preview.js         tiles, the run sentence, documents — the rules as code

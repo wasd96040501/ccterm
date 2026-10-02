@@ -128,8 +128,8 @@ const taskCall = (label, f = {}) => item("tasks", "TaskUpdate", { label, ...f })
 /** SendMessage: to whom, the summary the model gave, the message (markdown).
  *  Opens beside as the message. */
 const sendMessage = (to, summary, md, f = {}) => item("message", "SendMessage", { to, summary, docKind: "markdown", title: `To ${to}`, docGlyph: "message", status: esc(summary), md, ...f });
-/** The advisor (server tool): its advice opens beside; `redacted` has none
- *  to show, `error` is the result's error_code. */
+/** The advisor (server tool): its advice opens beside; `redacted` (the usual
+ *  case) and `declined` have none to show, `error` is the result's error_code. */
 const advisor = (md, f = {}) => item("advisor", "advisor", { md, docKind: md ? "markdown" : null, title: "Advice", docGlyph: "advisor", status: esc(f.model || "advisor"), ...f });
 const skillCall = (name, f = {}) => item("skill", "Skill", { name, ...f });
 const clone = (it, f = {}) => {
@@ -250,7 +250,8 @@ function callText(it, single) {
       return `${single ? "Messaged " : "To "}<span class="file">${esc(it.to === "*" ? "the team" : it.to)}</span><span class="callsub">${esc(it.summary || "")}</span>`;
     case "advisor":
       if (it.error) return `${single ? "Asked the advisor" : "Advisor"}<span class="callsub">${esc(ADVISOR_ERRORS[it.error] || "Unavailable")}</span>`;
-      if (it.redacted) return `${single ? "Asked the advisor" : "Advice"}<span class="callsub">Not shown in the transcript</span>`;
+      if (it.declined) return `${single ? "Asked the advisor" : "Advisor"}<span class="callsub">Declined to advise</span>`;
+      if (it.redacted) return `${single ? "Asked the advisor" : "Advisor"}<span class="callsub">Reviewed the conversation</span>`;
       return `${single ? "Asked the advisor" : "Advice"}<span class="callsub">${esc(firstLine(it.md))}</span>`;
     case "skill":
       return `${single ? "Used the " : ""}<span class="file">${esc(it.name)}</span>${single ? " skill" : ""}`;

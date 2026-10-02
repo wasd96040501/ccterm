@@ -41,7 +41,7 @@ final class MainWindowAppKitSnapshotTests: XCTestCase {
         try fixture.write("-x-repo/s1.jsonl", lines, modified: 300)
 
         let store = LibraryStore(directories: Just(fixture.directory).eraseToAnyPublisher())
-        let split = MainSplitViewController(library: store)
+        let split = MainSplitViewController(library: store, sessions: .reading())
         split.loadViewIfNeeded()
         store.start()
         defer { store.stop() }
@@ -78,7 +78,7 @@ final class MainWindowAppKitSnapshotTests: XCTestCase {
     /// its line.
     func testLoadingSidebarSnapshot() throws {
         let store = LibraryStore(directories: Empty().eraseToAnyPublisher())
-        let split = MainSplitViewController(library: store)
+        let split = MainSplitViewController(library: store, sessions: .reading())
         let image = ViewSnapshot.renderViewController(split, size: CGSize(width: 1200, height: 800), settle: 0.5)
         let url = ViewSnapshot.writePNG(image, name: "MainWindowAppKit-LoadingSidebar")
         let attachment = XCTAttachment(contentsOfFile: url)

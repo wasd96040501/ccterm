@@ -38,10 +38,27 @@ nonisolated struct TranscriptPageBuilder {
     private var exited = false
     private var foldingCompact = false
 
+    /// What a live session adds over its messages.
+    private let partial: AssistantMessage?
+    private let requests: [PermissionRequest]
+
     /// `workingDirectory` is the session's: paths under it read relative to it.
-    init(messages: [Message], workingDirectory: String?) {
+    ///
+    /// A live session's state goes on top: a call with a request in
+    /// `requests` is `.waiting(reason)`; a request whose call isn't on the page
+    /// (a subagent's) is an approval entry at the end. `partial`'s text is a
+    /// reply entry with the id its finished block will get
+    /// (`"<messages.count>.<part>"`), so finishing it reloads the row in place;
+    /// its tool calls are `.preparing`.
+    init(
+        messages: [Message], workingDirectory: String?, partial: AssistantMessage? = nil,
+        requests: [PermissionRequest] = []
+    ) {
         self.messages = messages
+        self.partial = partial
+        self.requests = requests
         writer = WorkLineWriter(workingDirectory: workingDirectory)
+        // TODO(live): read `partial` and `requests` in `build()`.
     }
 
     mutating func build() -> [TranscriptEntry] {

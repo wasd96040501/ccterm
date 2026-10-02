@@ -1,6 +1,15 @@
 import Foundation
 
 extension SessionConfiguration {
+    /// A session in `workingDirectory` started as `launch` starts a one-off
+    /// run — the same binary, custom command and environment — with every
+    /// session knob at its default.
+    public init(workingDirectory: URL, launch: CLIConfiguration) {
+        self.init(
+            workingDirectory: workingDirectory, binaryPath: launch.binaryPath, customCommand: launch.customCommand,
+            env: launch.env, inheritsParentEnvironment: launch.inheritsParentEnvironment)
+    }
+
     /// How to start the CLI for this session. Blocking (the login-shell
     /// environment probe can take seconds); call off the main thread.
     func launch() throws -> CLILaunch {

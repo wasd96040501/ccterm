@@ -21,6 +21,13 @@ struct AppCommands: Commands {
             }
             .keyboardShortcut(",", modifiers: .command)
         }
+        // Answered by the main window's split, wherever the focus is in it.
+        CommandGroup(replacing: .newItem) {
+            Button("New Session…") {
+                NSApp.sendAction(Selector(("newSession:")), to: nil, from: nil)
+            }
+            .keyboardShortcut("n", modifiers: .command)
+        }
         // Xcode's pair: ⌘W closes a tab, ⇧⌘W the window. A window without
         // tabs answers no `closeTab:`, so ⌘W closes it.
         CommandGroup(replacing: .saveItem) {

@@ -43,8 +43,13 @@ nonisolated struct TranscriptPage: Sendable, Equatable {
         self.locations = locations
     }
 
-    init(_ transcript: Transcript) {
-        var builder = TranscriptPageBuilder(messages: transcript.messages, workingDirectory: transcript.metadata.cwd)
+    /// The page of `transcript`; and of a live session's state over it:
+    /// `partial`, the response streaming in, and `requests`, the calls waiting
+    /// for the reader (`TranscriptPageBuilder`).
+    init(_ transcript: Transcript, partial: AssistantMessage? = nil, requests: [PermissionRequest] = []) {
+        var builder = TranscriptPageBuilder(
+            messages: transcript.messages, workingDirectory: transcript.metadata.cwd, partial: partial,
+            requests: requests)
         self.init(entries: builder.build(), workingDirectory: transcript.metadata.cwd)
     }
 

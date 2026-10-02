@@ -1328,6 +1328,16 @@
         }
       }
     },
+    "New Session…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建会话…"
+          }
+        }
+      }
+    },
     "New sessions can’t use your subscription until you sign in again. Your API providers aren’t affected.": {
       "localizations": {
         "zh-Hans": {

@@ -41,7 +41,7 @@ final class TranscriptViewControllerTests: XCTestCase {
 
     private func mountTab(_ url: URL) throws -> TranscriptView {
         let stage = AppKitStage.mount(
-            TranscriptViewController(fileURL: url, title: "t") { try Transcript(contentsOf: $0) })
+            TranscriptViewController(fileURL: url, title: "t", sessions: .reading(), acceptsInput: false))
         self.stage = stage
         stage.rootViewController.viewDidAppear()
         return try XCTUnwrap(stage.find(TranscriptView.self))

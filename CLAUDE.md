@@ -2,7 +2,7 @@
 
 Native macOS client for Claude Code. Pure AppKit (Swift), programmatic, minimum target macOS 14 (Sonoma).
 
-The app is a main window — a sidebar listing every session transcript on disk (`AgentSDK`'s `SessionDirectory`, grouped by project) beside a tabbed, splittable editor area that shows them read-only (`TranscriptKit`'s view and workspace) — plus Settings and About. Running a live session is not wired yet.
+The app is a main window — a sidebar listing every session transcript on disk (`AgentSDK`'s `SessionDirectory`, grouped by project) beside a tabbed, splittable editor area that shows them (`TranscriptKit`'s view and workspace) — plus Settings and About. A session tab can also run its session: ccterm starts or resumes the CLI (`Sessions/`) and the tab follows it live.
 
 ## Where to read more
 
@@ -29,6 +29,7 @@ ccterm/
 │   │   ├── Content/          # About/, Settings/, Sidebar/ (session outline), Transcript/ (a transcript tab)
 │   │   ├── Accounts/         # AccountStore (JSON + keychain secrets), LaunchStore (how the CLI is launched), LaunchCheckService, SubscriptionService
 │   │   ├── Library/          # LibraryStore — the session tree on disk, and reading one transcript
+│   │   ├── Sessions/         # SessionStore — every session by transcript URL: read at rest, or run live (LiveSession, SessionState)
 │   │   ├── Git/              # GitService — a folder's branch, live
 │   │   ├── Logging/          # appLog, main-thread watchdog
 │   │   └── Resources/

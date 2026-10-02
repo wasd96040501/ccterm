@@ -28,6 +28,16 @@ public struct SessionDirectory: Sendable, Hashable {
         url = config.appendingPathComponent("projects", isDirectory: true)
     }
 
+    /// Where the CLI writes the transcript of session `id` run in
+    /// `workingDirectory` — its project folder (the directory's path, named
+    /// as the CLI names it) / `<id>.jsonl` — before the file exists.
+    public func transcriptURL(forSession id: String, workingDirectory: URL) -> URL {
+        // TODO(live): the CLI's project-folder naming (every character
+        // outside [A-Za-z0-9] becomes `-`; a long path is cut and hashed as
+        // the CLI does), checked against `sessions()` in a test.
+        fatalError("TODO(live): SessionDirectory.transcriptURL")
+    }
+
     /// The directory a CLI launched with `configuration` writes to. Blocking:
     /// one interactive login-shell spawn, so call it off the main thread.
     ///

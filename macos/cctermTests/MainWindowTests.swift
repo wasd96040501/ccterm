@@ -200,7 +200,7 @@ final class MainWindowTests: XCTestCase {
         split.transcriptTab(
             transcript, didRequestOpen: .document(document.reference), pinned: false,
             makeItem: {
-                TranscriptTab.makeItem(document, load: { _ in Transcript(data: Data()) }, delegate: split)
+                TranscriptTab.makeItem(document, sessions: .reading { _ in Transcript(data: Data()) }, delegate: split)
             })
         await stage.settle()
         XCTAssertTrue(
@@ -238,7 +238,7 @@ final class MainWindowTests: XCTestCase {
         split.transcriptTab(
             transcript, didRequestOpen: .document(document.reference), pinned: false,
             makeItem: {
-                TranscriptTab.makeItem(document, load: { _ in Transcript(data: Data()) }, delegate: split)
+                TranscriptTab.makeItem(document, sessions: .reading { _ in Transcript(data: Data()) }, delegate: split)
             })
         await stage.settle()
         let opened = try XCTUnwrap(split.editorArea.activeViewController as? DocumentViewController)
@@ -336,7 +336,7 @@ final class MainWindowTests: XCTestCase {
         defer { fixture.remove() }
         try LibraryStoreTests.writeLibrary(fixture)
         let library = LibraryStore(directories: Just(fixture.directory).eraseToAnyPublisher())
-        let controller = Self.parked(MainWindowController(library: library, git: GitService()))
+        let controller = Self.parked(MainWindowController(library: library, sessions: .reading(), git: GitService()))
         let window = try XCTUnwrap(controller.window)
         defer {
             window.orderOut(nil)
@@ -357,7 +357,7 @@ final class MainWindowTests: XCTestCase {
     /// saying it is loading.
     func testTheWindowOpensAtTheDeadlineWhileTheLibraryLoads() async throws {
         let library = LibraryStore(directories: Empty().eraseToAnyPublisher())
-        let controller = Self.parked(MainWindowController(library: library, git: GitService()))
+        let controller = Self.parked(MainWindowController(library: library, sessions: .reading(), git: GitService()))
         let window = try XCTUnwrap(controller.window)
         defer { window.orderOut(nil) }
 

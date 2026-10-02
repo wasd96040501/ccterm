@@ -4,17 +4,19 @@ import AppKit
 /// A tab beside the transcript: one document — a command, a file, a
 /// subagent's conversation, words — under the jump bar every document has.
 ///
-/// The shell only: it reads the document from its transcript when it first
-/// appears, unless it was handed one (a tab made again from editor history
-/// has only its reference); words the tab and the jump bar from it
+/// The shell only: it shows the document when it first appears — at once if
+/// it was handed one (a tab made again from editor history has only its
+/// reference, and reads it) — and follows it while its call is still going
+/// (`Document.isLive`); words the tab and the jump bar from it
 /// (`DocumentHeader`); puts an approval bar under it while the call waits
 /// for the reader; and embeds the body it picks (`makeBody(for:)`). What a
 /// body shows is the body's.
 @MainActor
 final class DocumentViewController: NSViewController {
-    /// Reads one document — the transcript's page already built, off the main
-    /// actor — or `nil` when the transcript no longer has it.
-    typealias DocumentLoader = @Sendable (DocumentReference) async -> Document?
+    /// The document as it stands in its transcript, then each change — the
+    /// page already built, off the main actor; `nil` when the transcript
+    /// doesn't have it (any more). One value for a transcript at rest.
+    typealias DocumentLoader = @MainActor (DocumentReference) -> AsyncStream<Document?>
 
     private let reference: DocumentReference
 
@@ -22,6 +24,8 @@ final class DocumentViewController: NSViewController {
     private var document: Document?
     private let loadDocument: DocumentLoader
     private let showInTranscript: @MainActor (DocumentReference) -> Void
+    /// Answers the call waiting on the reader: the approval bar's decision.
+    private let decide: @MainActor (Decision, String) -> Void
     /// A transcript tab for the conversation at a URL, titled — this module
     /// doesn't know the transcript view controller.
     private let makeConversation: @MainActor (URL, String) -> NSViewController
@@ -66,19 +70,22 @@ final class DocumentViewController: NSViewController {
     }()
 
     /// `document` is what the reader just opened; without one — a tab made
-    /// from history — the shell reads it with `load`, and the tab has no title
-    /// until then. `makeConversation` makes the transcript tab a subagent's
-    /// conversation opens as; `showInTranscript` is *Show in Transcript*.
+    /// from history — the tab has no title until `load` gives it.
+    /// `makeConversation` makes the transcript tab a subagent's conversation
+    /// opens as; `showInTranscript` is *Show in Transcript*; `decide` answers
+    /// the call (decision, call id).
     init(
         reference: DocumentReference, document: Document? = nil,
         load: @escaping DocumentLoader,
         makeConversation: @escaping @MainActor (URL, String) -> NSViewController,
-        showInTranscript: @escaping @MainActor (DocumentReference) -> Void
+        showInTranscript: @escaping @MainActor (DocumentReference) -> Void,
+        decide: @escaping @MainActor (Decision, String) -> Void
     ) {
         self.reference = reference
         self.document = document
         loadDocument = load
         self.showInTranscript = showInTranscript
+        self.decide = decide
         self.makeConversation = makeConversation
         super.init(nibName: nil, bundle: nil)
         title = document.map { DocumentHeader($0).title }
@@ -151,16 +158,25 @@ final class DocumentViewController: NSViewController {
         guard !hasLoaded else { return }
         hasLoaded = true
         view.layoutSubtreeIfNeeded()
+        var shown = false
         if let document {
             self.document = nil
             show(document)
-            return
+            // A settled document never changes: nothing to follow, nothing to read.
+            guard document.isLive else { return }
+            shown = true
         }
-        let (reference, loadDocument) = (reference, loadDocument)
+        let documents = loadDocument(reference)
         loadTask = Task { [weak self] in
-            let document = await loadDocument(reference)
-            guard !Task.isCancelled else { return }
-            self?.show(document)
+            for await document in documents {
+                guard let self, !Task.isCancelled else { return }
+                if shown {
+                    update(document)
+                } else {
+                    show(document)
+                    shown = true
+                }
+            }
             self?.loadTask = nil
         }
     }
@@ -190,6 +206,13 @@ final class DocumentViewController: NSViewController {
             approvalBar.isHidden = false
         }
         embed(makeBody(for: document))
+    }
+
+    /// Shows the document again as its live session changed it — its call
+    /// finished, its approval answered; nothing if it didn't change.
+    private func update(_ document: Document?) {
+        // TODO(live): compare with what is shown; re-word the jump bar, show
+        // or hide the approval bar, and swap the body when its content changed.
     }
 
     /// The view controller that shows a document under its jump bar — the one
@@ -242,8 +265,7 @@ extension DocumentViewController: JumpBarViewDelegate {
 }
 
 extension DocumentViewController: ApprovalBarViewDelegate {
-    /// Answering a call is not wired to a live session yet.
     func approvalBarView(_ approvalBar: ApprovalBarView, didDecide decision: Decision, forCall callID: String) {
-        appLog(.info, "DocumentViewController", "decision \(decision) for \(callID) — no live session")
+        decide(decision, callID)
     }
 }

@@ -29,10 +29,19 @@ final class SidebarViewController: NSViewController {
     /// republish isn't reported again.
     private var reportedSelection: String?
 
+    private let activities: AnyPublisher<[URL: SessionState.Activity], Never>
+    /// Each live session's activity, by transcript URL, as last published.
+    private var shownActivities: [URL: SessionState.Activity] = [:]
+
     /// `nodes`: the library's tree, current value first, then each change;
-    /// `nil` until the library is first read. Delivers on the main actor.
-    init(nodes: AnyPublisher<[LibraryNode]?, Never>) {
+    /// `nil` until the library is first read. `activities`: each live
+    /// session's, by transcript URL. Both deliver on the main actor.
+    init(
+        nodes: AnyPublisher<[LibraryNode]?, Never>,
+        activities: AnyPublisher<[URL: SessionState.Activity], Never>
+    ) {
         self.nodes = nodes
+        self.activities = activities
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -107,6 +116,20 @@ final class SidebarViewController: NSViewController {
         nodes
             .sink { [weak self] nodes in MainActor.assumeIsolated { self?.show(nodes) } }
             .store(in: &cancellables)
+        activities
+            .sink { [weak self] activities in MainActor.assumeIsolated { self?.show(activities) } }
+            .store(in: &cancellables)
+    }
+
+    /// Redraws the rows whose activity changed — a session's, and the groups
+    /// above it, which show their most urgent session's while collapsed —
+    /// and only those: activities change far more often than the tree.
+    private func show(_ activities: [URL: SessionState.Activity]) {
+        // TODO(live): rows of the changed URLs and their ancestors,
+        // `reloadData(forRowIndexes:columnIndexes:)`; the cell draws the
+        // activity (design/sidebar-icons), a collapsed group its children's
+        // most urgent; a live session's row gets End Session in its menu.
+        shownActivities = activities
     }
 
     private func configureHierarchy() {

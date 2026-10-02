@@ -19,6 +19,7 @@ final class MainSplitViewController: NSSplitViewController {
     weak var delegate: MainSplitViewControllerDelegate?
 
     private let library: LibraryStore
+    private let sessions: SessionStore
     private let sidebarViewController: SidebarViewController
 
     /// The tabs. It answers the window's tab commands itself — back, forward,
@@ -28,11 +29,13 @@ final class MainSplitViewController: NSSplitViewController {
     /// The transcript last reported to the delegate.
     private var shownTranscript: URL?
 
-    init(library: LibraryStore) {
+    init(library: LibraryStore, sessions: SessionStore) {
         self.library = library
+        self.sessions = sessions
         sidebarViewController = SidebarViewController(
             nodes: library.$isLoaded.combineLatest(library.$nodes) { isLoaded, nodes in isLoaded ? nodes : nil }
-                .eraseToAnyPublisher())
+                .eraseToAnyPublisher(),
+            activities: sessions.$activities.eraseToAnyPublisher())
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -83,11 +86,15 @@ final class MainSplitViewController: NSSplitViewController {
         #selector(EditorAreaViewController.closeTab(_:)),
     ]
 
-    // MARK: - Tabs
+    // MARK: - Sessions
 
-    /// Reads a transcript for the tabs the feature builds.
-    private var load: TranscriptLoader {
-        { [library] in try await library.transcript(at: $0) }
+    /// File › New Session…: asks for the folder to run it in, starts it, and
+    /// opens its tab, pinned, ready to type in.
+    @objc func newSession(_ sender: Any?) {
+        // TODO(live): NSOpenPanel (directories only) as a sheet on the window;
+        // `sessions.start(in:)`; `editorArea.open(TranscriptTab.makeItem(
+        // .transcript(url), title: "New Session", …), pinned: true)`; an alert
+        // when starting fails.
     }
 }
 
@@ -125,7 +132,14 @@ extension MainSplitViewController: SidebarViewControllerDelegate {
             !editorArea.selectTabViewItem(withIdentifier: TranscriptTab.transcript(url))
         else { return }
         editorArea.open(
-            TranscriptTab.makeItem(.transcript(url), title: node.title, load: load, delegate: self), pinned: false)
+            TranscriptTab.makeItem(.transcript(url), title: node.title, sessions: sessions, delegate: self),
+            pinned: false)
+    }
+
+    /// End Session: the session's CLI exits; its transcript stays.
+    func sidebarViewController(_ sidebar: SidebarViewController, didRequestEndOf node: LibraryNode) {
+        guard let url = node.transcriptURL else { return }
+        Task { await sessions.end(at: url) }
     }
 
     func sidebarViewController(_ sidebar: SidebarViewController, didOpen node: LibraryNode) {
@@ -134,7 +148,8 @@ extension MainSplitViewController: SidebarViewControllerDelegate {
             return
         }
         editorArea.open(
-            TranscriptTab.makeItem(.transcript(url), title: node.title, load: load, delegate: self), pinned: true)
+            TranscriptTab.makeItem(.transcript(url), title: node.title, sessions: sessions, delegate: self),
+            pinned: true)
     }
 }
 
@@ -157,10 +172,10 @@ extension MainSplitViewController: EditorAreaViewControllerDelegate {
     ) -> NSTabViewItem? {
         switch TranscriptTab(identifier: identifier) {
         case .document(let reference)?:
-            return TranscriptTab.makeItem(.document(reference), title: "", load: load, delegate: self)
+            return TranscriptTab.makeItem(.document(reference), title: "", sessions: sessions, delegate: self)
         case .transcript(let url)?:
             guard let node = library.path(toTranscriptAt: url).last else { return nil }
-            return TranscriptTab.makeItem(.transcript(url), title: node.title, load: load, delegate: self)
+            return TranscriptTab.makeItem(.transcript(url), title: node.title, sessions: sessions, delegate: self)
         case nil:
             return nil
         }

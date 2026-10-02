@@ -82,7 +82,9 @@ final class DocumentRoutingTests: XCTestCase {
     private func open(_ document: Document, pinned: Bool) {
         split.transcriptTab(
             transcript, didRequestOpen: .document(document.reference), pinned: pinned,
-            makeItem: { TranscriptTab.makeItem(document, load: { _ in Transcript(data: Data()) }, delegate: split) })
+            makeItem: {
+                TranscriptTab.makeItem(document, sessions: .reading { _ in Transcript(data: Data()) }, delegate: split)
+            })
     }
 
     private func reference(_ id: String) -> DocumentReference {

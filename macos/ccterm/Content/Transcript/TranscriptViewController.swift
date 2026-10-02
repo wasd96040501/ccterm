@@ -2,18 +2,22 @@ import AgentSDK
 import AppKit
 import TranscriptKit
 
-/// One editor tab: a transcript file, read-only, in a `TranscriptView`.
+/// One editor tab: a session's transcript in a `TranscriptView`, and — for a
+/// session's own tab — the composer under it.
 ///
-/// Loads once, when it first appears and has its size: the transcript comes
-/// from the injected `load` and becomes a `TranscriptPage` off the main
-/// actor; the last screen of its rows is shown at once, and the history
-/// prepended behind it a chunk at a time — scroll anchoring keeps the
-/// reader's place while it arrives.
+/// Follows the session from when it first appears and has its size
+/// (`SessionStore.states(at:)`): each state becomes a `TranscriptPage` off
+/// the main actor. The first page shows its last screen of rows at once and
+/// prepends the history behind it a chunk at a time — scroll anchoring keeps
+/// the reader's place while it arrives; every later page (a live session's)
+/// is applied as the changes from the rows shown (`PageRow.changes`). The
+/// next state is pulled only once a page is shown, and only the newest
+/// waits, so a live page never lands on a half-shown first one.
 ///
 /// Owns what the reader does to the page: which runs are open
 /// (`RunDisclosure`), which item's document is showing (the selection), and
-/// bringing an item back into view. What opening
-/// a document does is the delegate's.
+/// bringing an item back into view. What opening a document does is the
+/// delegate's; what sending, stopping and answering do is the store's.
 @MainActor
 final class TranscriptViewController: NSViewController {
     /// The file this tab shows — what the tab is, for finding it again.
@@ -21,8 +25,11 @@ final class TranscriptViewController: NSViewController {
 
     weak var delegate: TranscriptTabDelegate?
 
-    private let load: TranscriptLoader
+    private let sessions: SessionStore
     private let transcript = TranscriptView()
+    /// The composer, on a session's own tab; a subagent's conversation has
+    /// none — nothing can be sent to it.
+    private let composer: ComposerView?
     private var page = TranscriptPage(entries: [])
     /// The rows the transcript shows, in order — the data source's answer.
     private var rows: [PageRow] = []
@@ -35,9 +42,12 @@ final class TranscriptViewController: NSViewController {
     private var loadTask: Task<Void, Never>?
     private var hasLoaded = false
 
-    init(fileURL: URL, title: String, load: @escaping TranscriptLoader) {
+    /// `acceptsInput`: whether the tab has a composer — a session's own tab,
+    /// not a subagent's conversation.
+    init(fileURL: URL, title: String, sessions: SessionStore, acceptsInput: Bool) {
         self.fileURL = fileURL
-        self.load = load
+        self.sessions = sessions
+        composer = acceptsInput ? ComposerView() : nil
         super.init(nibName: nil, bundle: nil)
         self.title = title
     }
@@ -57,8 +67,20 @@ final class TranscriptViewController: NSViewController {
             transcript.topAnchor.constraint(equalTo: view.topAnchor),
             transcript.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             transcript.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            transcript.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+        if let composer {
+            composer.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(composer)
+            NSLayoutConstraint.activate([
+                composer.topAnchor.constraint(equalTo: transcript.bottomAnchor),
+                composer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                composer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                composer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            ])
+            composer.delegate = self
+        } else {
+            transcript.bottomAnchor.constraint(equalTo: view.bottomAnchor).isActive = true
+        }
         transcript.maxContentWidth = 720
         transcript.contentInsets = NSEdgeInsets(top: 12, left: 0, bottom: 24, right: 0)
         transcript.dataSource = self
@@ -72,10 +94,25 @@ final class TranscriptViewController: NSViewController {
         guard !hasLoaded else { return }
         hasLoaded = true
         view.layoutSubtreeIfNeeded()
-        let (url, load) = (fileURL, load)
+        let states = sessions.states(at: fileURL)
         loadTask = Task { [weak self] in
-            let page = await Task.detached(priority: .userInitiated) { await Self.page(url, load) }.value
-            await self?.show(page)
+            var first = true
+            do {
+                for try await state in states {
+                    let page = await Task.detached(priority: .userInitiated) { Self.page(state) }.value
+                    guard let self, !Task.isCancelled else { return }
+                    composer?.configure(isResponding: state.isResponding)
+                    if first {
+                        first = false
+                        await show(page)
+                    } else {
+                        apply(page)
+                    }
+                }
+            } catch {
+                guard let self, !Task.isCancelled else { return }
+                await show(Self.note(String(localized: "This transcript couldn’t be read.")))
+            }
             self?.loadTask = nil
         }
     }
@@ -89,16 +126,27 @@ final class TranscriptViewController: NSViewController {
 
     // MARK: - Loading
 
-    private nonisolated static func page(_ url: URL, _ load: TranscriptLoader) async -> TranscriptPage {
-        let note: String
-        do {
-            let page = TranscriptPage(try await load(url))
-            if !page.entries.isEmpty { return page }
-            note = String(localized: "This transcript has no messages.")
-        } catch {
-            note = String(localized: "This transcript couldn’t be read.")
+    /// The page of `state`; a transcript at rest with nothing on it says so —
+    /// a live one is just empty until the first prompt.
+    private nonisolated static func page(_ state: SessionState) -> TranscriptPage {
+        let page = TranscriptPage(state.transcript, partial: state.partial, requests: state.requests)
+        if page.entries.isEmpty, !state.isLive {
+            return note(String(localized: "This transcript has no messages."))
         }
-        return TranscriptPage(entries: [.reply(id: "note", markdown: "*\(note)*")])
+        return page
+    }
+
+    private nonisolated static func note(_ note: String) -> TranscriptPage {
+        TranscriptPage(entries: [.reply(id: "note", markdown: "*\(note)*")])
+    }
+
+    /// Shows a later page of a live session: the changes from the rows shown,
+    /// in one batch, the reader's disclosure kept.
+    private func apply(_ page: TranscriptPage) {
+        // TODO(live): rows for `page` under `disclosure`, `PageRow.changes`
+        // from `rows`, one `performBatchUpdates`; keep following the bottom
+        // when the reader is there.
+        self.page = page
     }
 
     /// The last screen synchronously, then the history in prepared chunks,
@@ -194,10 +242,10 @@ final class TranscriptViewController: NSViewController {
         select(id)
         guard let document = page.document(DocumentReference(transcriptURL: fileURL, id: id)) else { return }
         guard let delegate else { return }
-        let load = load
+        let sessions = sessions
         delegate.transcriptTab(
             self, didRequestOpen: .document(document.reference), pinned: pinned,
-            makeItem: { TranscriptTab.makeItem(document, load: load, delegate: delegate) })
+            makeItem: { TranscriptTab.makeItem(document, sessions: sessions, delegate: delegate) })
     }
 
     /// Brings `id` — an item, or the call an entry is about — into view and
@@ -292,8 +340,31 @@ extension TranscriptViewController: PageRowViewDelegate {
         reveal(callID, select: false)
     }
 
-    /// Answering a call is not wired to a live session yet.
     func pageRowView(_ rowView: NSView, didDecide decision: Decision, forCall callID: String) {
-        appLog(.info, "TranscriptViewController", "decision \(decision) for \(callID) — no live session")
+        decide(decision, forCall: callID)
+    }
+}
+
+extension TranscriptViewController {
+    private func decide(_ decision: Decision, forCall callID: String) {
+        sessions.respond(toCall: callID, at: fileURL) { decision.permissionDecision(for: $0) }
+    }
+}
+
+extension TranscriptViewController: ComposerViewDelegate {
+    func composerView(_ composerView: ComposerView, didSubmit text: String) {
+        let (sessions, url) = (sessions, fileURL)
+        Task {
+            do {
+                try await sessions.send(text, to: url)
+            } catch {
+                // TODO(live): tell the reader, in the composer.
+                appLog(.error, "TranscriptViewController", "send failed: \(error)")
+            }
+        }
+    }
+
+    func composerViewDidRequestStop(_ composerView: ComposerView) {
+        sessions.interrupt(at: fileURL)
     }
 }

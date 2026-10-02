@@ -29,34 +29,34 @@ nonisolated enum TranscriptTab: Hashable, Sendable {
     }
 }
 
-/// Reads a transcript, off the main actor; `LibraryStore.transcript(at:)`.
-typealias TranscriptLoader = @Sendable (URL) async throws -> Transcript
-
 extension TranscriptTab {
     /// Builds the tab item; identifier = the TranscriptTab value itself.
     /// `title` is used for `.transcript` only; a `.document` tab titles itself once loaded (callers pass "").
+    /// Every tab reads and talks to its session through `sessions`.
     @MainActor static func makeItem(
         _ tab: TranscriptTab, title: String,
-        load: @escaping TranscriptLoader,
+        sessions: SessionStore,
         delegate: TranscriptTabDelegate
     ) -> NSTabViewItem {
         switch tab {
         case .transcript(let url):
-            let item = NSTabViewItem(viewController: makeTranscript(url, title: title, load: load, delegate: delegate))
+            let item = NSTabViewItem(
+                viewController: makeTranscript(
+                    url, title: title, sessions: sessions, acceptsInput: true, delegate: delegate))
             item.identifier = tab
             return item
         case .document(let reference):
-            return makeDocumentItem(reference, document: nil, load: load, delegate: delegate)
+            return makeDocumentItem(reference, document: nil, sessions: sessions, delegate: delegate)
         }
     }
 
     /// Internal, feature-only (not used by App/AppKit): a document tab from an already-resolved Document
     /// (synchronous, no blank frame). Identifier `.document(document.reference)`.
     @MainActor static func makeItem(
-        _ document: Document, load: @escaping TranscriptLoader,
+        _ document: Document, sessions: SessionStore,
         delegate: TranscriptTabDelegate
     ) -> NSTabViewItem {
-        makeDocumentItem(document.reference, document: document, load: load, delegate: delegate)
+        makeDocumentItem(document.reference, document: document, sessions: sessions, delegate: delegate)
     }
 
     /// Stops what the tab's controllers have in flight — a transcript's load,
@@ -83,39 +83,66 @@ extension TranscriptTab {
     // MARK: - Building
 
     /// Every transcript controller the feature builds — a tab's, a subagent's
-    /// conversation — reports to the same delegate.
+    /// conversation — reports to the same delegate; only a session's own tab
+    /// takes input.
     @MainActor private static func makeTranscript(
-        _ url: URL, title: String, load: @escaping TranscriptLoader, delegate: TranscriptTabDelegate?
+        _ url: URL, title: String, sessions: SessionStore, acceptsInput: Bool, delegate: TranscriptTabDelegate?
     ) -> TranscriptViewController {
-        let transcript = TranscriptViewController(fileURL: url, title: title, load: load)
+        let transcript = TranscriptViewController(
+            fileURL: url, title: title, sessions: sessions, acceptsInput: acceptsInput)
         transcript.delegate = delegate
         return transcript
     }
 
     @MainActor private static func makeDocumentItem(
         _ reference: DocumentReference, document: Document?,
-        load: @escaping TranscriptLoader, delegate: TranscriptTabDelegate
+        sessions: SessionStore, delegate: TranscriptTabDelegate
     ) -> NSTabViewItem {
         weak var controller: DocumentViewController?
         let created = DocumentViewController(
             reference: reference, document: document,
-            load: { reference in
-                await Task.detached(priority: .userInitiated) {
-                    (try? await load(reference.transcriptURL)).flatMap { TranscriptPage($0).document(reference) }
-                }.value
-            },
+            load: { documents($0, in: sessions) },
             makeConversation: { [weak delegate] url, title in
-                makeTranscript(url, title: title, load: load, delegate: delegate)
+                makeTranscript(url, title: title, sessions: sessions, acceptsInput: false, delegate: delegate)
             },
             showInTranscript: { [weak delegate] reference in
                 guard let delegate, let controller else { return }
                 delegate.transcriptTab(
                     controller, didRequestReveal: reference.id, inTranscriptAt: reference.transcriptURL)
+            },
+            decide: { decision, callID in
+                sessions.respond(toCall: callID, at: reference.transcriptURL) {
+                    decision.permissionDecision(for: $0)
+                }
             })
         controller = created
         let item = NSTabViewItem(viewController: created)
         item.identifier = TranscriptTab.document(reference)
         return item
+    }
+
+    /// The document `reference` names, as each state of its session has it —
+    /// the page built off the main actor; `nil` when the session doesn't have
+    /// it, or its transcript can't be read.
+    @MainActor private static func documents(
+        _ reference: DocumentReference, in sessions: SessionStore
+    ) -> AsyncStream<Document?> {
+        let states = sessions.states(at: reference.transcriptURL)
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            let task = Task.detached(priority: .userInitiated) {
+                do {
+                    for try await state in states {
+                        continuation.yield(
+                            TranscriptPage(state.transcript, partial: state.partial, requests: state.requests)
+                                .document(reference))
+                    }
+                } catch {
+                    continuation.yield(nil)
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
 }
 

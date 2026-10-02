@@ -26,6 +26,30 @@ public struct Transcript: Sendable, Equatable {
     public var messages: [Message]
     public var metadata: SessionMetadata
 
+    /// A conversation as given: a stand-in for previews and tests, or the
+    /// start of one a live ``Session`` goes on with (``append(_:)``).
+    public init(messages: [Message], metadata: SessionMetadata = SessionMetadata()) {
+        self.messages = messages
+        self.metadata = metadata
+    }
+
+    /// Adds what a live ``Session`` emitted, by the rules the file is read
+    /// by, so a transcript kept live equals the file read afterwards
+    /// (TranscriptSmoke checks both on the real CLI):
+    ///
+    /// - Only `.user`, `.assistant` and `.system(.compactBoundary)` are kept;
+    ///   results, status, stream events and the rest are ignored.
+    /// - A subagent's messages (`parentToolUseID` set) are its own file's,
+    ///   not this conversation's.
+    /// - A prompt replayed as it enters a turn is kept once (its uuid).
+    /// - A local command comes before its output, as it was run; the stream
+    ///   echoes it after.
+    public mutating func append(_ message: Message) {
+        // TODO(live): the accumulation TranscriptSmoke's `Run` does today,
+        // moved here; TranscriptSmoke then calls this.
+        fatalError("TODO(live): Transcript.append")
+    }
+
     /// Reads a session file.
     public init(contentsOf url: URL) throws {
         self.init(data: try Data(contentsOf: url, options: .mappedIfSafe))

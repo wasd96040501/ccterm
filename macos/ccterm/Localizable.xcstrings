@@ -234,6 +234,17 @@
         }
       }
     },
+    "%lld%% of the context window is in use.": {
+      "comment": "What the context ring opens beside the transcript.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已使用上下文窗口的 %lld%%。"
+          }
+        }
+      }
+    },
     ", ": {
       "comment": "Between clauses of a work summary",
       "localizations": {
@@ -577,12 +588,34 @@
         }
       }
     },
+    "Claude Code reads its account when it starts. ccterm ends this session’s process and resumes the conversation as %@, on %@.": {
+      "comment": "The restart sheet's text; the account's name and the model's.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code 在启动时读取其账户。ccterm 会结束此会话的进程，并以 %@ 的身份、使用 %@ 继续这段对话。"
+          }
+        }
+      }
+    },
     "Claude Code’s settings, sign-in and sessions": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "Claude Code 的设置、登录状态和会话"
+          }
+        }
+      }
+    },
+    "Claude stops what it’s doing now.": {
+      "comment": "Added to the restart sheet's text while Claude is working.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 会立即停止当前的工作。"
           }
         }
       }
@@ -624,6 +657,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Claude 想使用 %@"
+          }
+        }
+      }
+    },
+    "Claude wrote nothing to its log.": {
+      "comment": "A failed session's log, when it is empty.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 没有写入任何日志。"
           }
         }
       }
@@ -1440,12 +1484,13 @@
         }
       }
     },
-    "New Session…": {
+    "New Tab": {
+      "comment": "File menu: opens a New tab.",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "新建会话…"
+            "value": "新建标签页"
           }
         }
       }
@@ -1886,6 +1931,28 @@
         }
       }
     },
+    "Restart": {
+      "comment": "The restart sheet's confirming button.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新启动"
+          }
+        }
+      }
+    },
+    "Restart this session as %@?": {
+      "comment": "The restart sheet's title; the account's name.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要以 %@ 重新启动此会话吗？"
+          }
+        }
+      }
+    },
     "Result": {
       "localizations": {
         "zh-Hans": {
@@ -2127,6 +2194,17 @@
         }
       }
     },
+    "Session Log": {
+      "comment": "The title of the document that opens from a failed session's Show Log.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话日志"
+          }
+        }
+      }
+    },
     "Settings…": {
       "localizations": {
         "zh-Hans": {
@@ -2257,16 +2335,6 @@
         }
       }
     },
-    "Start Session": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "开始会话"
-          }
-        }
-      }
-    },
     "Still using %@.": {
       "localizations": {
         "zh-Hans": {
@@ -2283,6 +2351,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "停止"
+          }
+        }
+      }
+    },
+    "Stop and Restart": {
+      "comment": "The restart sheet's confirming button while Claude is working.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止并重新启动"
           }
         }
       }

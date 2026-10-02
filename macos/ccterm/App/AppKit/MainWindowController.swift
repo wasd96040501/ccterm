@@ -21,6 +21,12 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
 
     /// The task following the shown transcript's branch.
     private var branchTask: Task<Void, Never>?
+    /// The transcript shown, and whether the library had its project when its
+    /// title was set — a session just started isn't listed until the CLI writes
+    /// its transcript, so the title waits for the library's next read.
+    private var shownTranscript: URL?
+    private var titleHasProject = false
+    private var libraryObservation: AnyCancellable?
     /// Waiting to show the window; see `showWindow(whenLoadedWithin:)`.
     private var pendingShow: AnyCancellable?
 
@@ -55,6 +61,12 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         window.center()
         splitController.delegate = self
         installToolbar()
+        libraryObservation = library.$nodes.dropFirst().sink { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let url = self.shownTranscript, !self.titleHasProject else { return }
+                self.showTitle(of: url)
+            }
+        }
     }
 
     @available(*, unavailable)
@@ -89,9 +101,9 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         super.showWindow(sender)
     }
 
-    /// File › New Session…, in this window's editors.
-    func newSession() {
-        splitController.newSession()
+    /// File › New Tab, in this window's editors.
+    func newTab() {
+        splitController.newTab()
     }
 
     private func installToolbar() {
@@ -168,12 +180,26 @@ extension MainWindowController: MainSplitViewControllerDelegate {
     /// a name never stands over another project's branch; with no transcript,
     /// the title goes at once.
     func mainSplitViewController(_ split: MainSplitViewController, didShowTranscriptAt url: URL?) {
-        branchTask?.cancel()
-        branchTask = nil
-        guard let url, let project = library.path(toTranscriptAt: url).first else {
+        shownTranscript = url
+        guard let url else {
+            branchTask?.cancel()
+            branchTask = nil
+            titleHasProject = false
             show(project: nil, branch: nil)
             return
         }
+        showTitle(of: url)
+    }
+
+    private func showTitle(of url: URL) {
+        branchTask?.cancel()
+        branchTask = nil
+        guard let project = library.path(toTranscriptAt: url).first else {
+            titleHasProject = false
+            show(project: nil, branch: nil)
+            return
+        }
+        titleHasProject = true
         branchTask = Task { [weak self, library, git] in
             // The live branch of the folder the session ran in (a worktree's
             // own); once that is no repository — a worktree removed — the

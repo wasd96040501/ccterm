@@ -32,11 +32,15 @@ final class TranscriptViewController: NSViewController {
     weak var delegate: TranscriptViewControllerDelegate?
 
     /// The space the container's floating composer covers at the bottom; the
-    /// last row scrolls clear of it.
+    /// last row scrolls clear of it. Assigned on every layout pass of the
+    /// container. The transcript anchors a change like a row mutation — at the
+    /// tail it stays at the tail, anywhere else the rows in view hold still —
+    /// so the reader keeps their place while the field grows.
     var bottomInset: CGFloat = 0 {
         didSet {
-            // TODO(fill E): keep the reader's place when it changes.
+            guard bottomInset != oldValue else { return }
             transcript.contentInsets.bottom = 24 + bottomInset
+            updateWaitingRequestVisibility()
         }
     }
 
@@ -64,6 +68,10 @@ final class TranscriptViewController: NSViewController {
     private var followTask: Task<Void, Never>?
     private var hasAppeared = false
     private var hasShownFirst = false
+    /// Whether the transcript is at its end (`didChangeTailFollowing`).
+    private var isFollowingTail = true
+    /// What the delegate was last told of the waiting request's visibility.
+    private var reportedWaitingRequestVisibility: Bool?
 
     init(fileURL: URL, title: String, sessions: SessionStore) {
         self.fileURL = fileURL
@@ -139,9 +147,60 @@ final class TranscriptViewController: NSViewController {
         showTask = nil
     }
 
-    /// Brings the request waiting for the reader into view (*Waiting for you ↑*).
+    /// Brings the request waiting for the reader into view (*Waiting for you ↑*):
+    /// its approval card, question or plan decision, centred.
     func revealWaitingRequest() {
-        // TODO(fill E): scroll the approval / question / plan decision row to centre.
+        guard let row = waitingRow else { return }
+        transcript.scrollToRow(at: row, scrollPosition: .center)
+        updateWaitingRequestVisibility()
+    }
+
+    /// The row of the request waiting for the reader — the newest, since a
+    /// request is always the end of the conversation — if any.
+    private var waitingRow: Int? {
+        rows.lastIndex { row in
+            switch row.kind {
+            case .approval, .planDecision: true
+            case .question(let question): question.isWaiting
+            default: false
+            }
+        }
+    }
+
+    /// Tells the delegate when the waiting request comes into view or leaves it:
+    /// at the tail, or any part of its row inside what the composer leaves
+    /// visible. With no request waiting it is trivially in view. A row not laid
+    /// out yet says nothing.
+    ///
+    /// Computed when the page changes, the inset or size changes, the transcript
+    /// reaches or leaves its end and on `revealWaitingRequest()` — TranscriptKit
+    /// has no per-scroll callback, so a scroll that leaves the request without
+    /// leaving the end is noticed at the next of those.
+    private func updateWaitingRequestVisibility() {
+        let visible: Bool
+        if let row = waitingRow {
+            let rect = transcript.rect(ofRow: row)
+            if isFollowingTail {
+                visible = true
+            } else if rect == .zero {
+                return
+            } else {
+                let shown = NSRect(
+                    x: 0, y: 0, width: transcript.bounds.width,
+                    height: max(transcript.bounds.height - bottomInset, 0))
+                visible = rect.intersects(shown)
+            }
+        } else {
+            visible = true
+        }
+        guard visible != reportedWaitingRequestVisibility else { return }
+        reportedWaitingRequestVisibility = visible
+        delegate?.transcriptViewController(self, didChangeWaitingRequestVisibility: visible)
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        updateWaitingRequestVisibility()
     }
 
     private func showPending() {
@@ -204,6 +263,7 @@ final class TranscriptViewController: NSViewController {
             if !changes.reloaded.isEmpty { transcript.reloadRows(at: changes.reloaded) }
             if !changes.regapped.isEmpty { transcript.noteHeightOfRows(withIndexesChanged: changes.regapped) }
         }
+        updateWaitingRequestVisibility()
     }
 
     /// The last screen synchronously, then the history in prepared chunks,
@@ -232,6 +292,7 @@ final class TranscriptViewController: NSViewController {
             transcript.noteHeightOfRows(withIndexesChanged: IndexSet(integer: chunk.count))
             await Task.yield()
         }
+        updateWaitingRequestVisibility()
     }
 
     /// Enough to fill a tall window; the point is that it is small.
@@ -371,6 +432,11 @@ extension TranscriptViewController: TranscriptViewDelegate {
 
     func transcriptView(_ transcriptView: TranscriptView, didActivate url: URL, inRow row: Int) {
         NSWorkspace.shared.open(url)
+    }
+
+    func transcriptView(_ transcriptView: TranscriptView, didChangeTailFollowing isFollowingTail: Bool) {
+        self.isFollowingTail = isFollowingTail
+        updateWaitingRequestVisibility()
     }
 }
 

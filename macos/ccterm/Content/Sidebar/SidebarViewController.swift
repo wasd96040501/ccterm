@@ -28,6 +28,9 @@ final class SidebarViewController: NSViewController {
     /// The node last reported selected, so restoring the selection after a
     /// republish isn't reported again.
     private var reportedSelection: String?
+    /// A session to select once the library lists it — a session just started
+    /// from a New tab isn't in the tree until the CLI writes its transcript.
+    private var pendingSelection: URL?
 
     private let activities: AnyPublisher<[URL: SessionState.Activity], Never>
     /// Each live session's activity, by transcript URL, as last published.
@@ -204,6 +207,34 @@ final class SidebarViewController: NSViewController {
             let row = outlineView.row(forItem: selected)
             if row >= 0 { outlineView.selectRowIndexes([row], byExtendingSelection: false) }
         }
+        applyPendingSelection()
+    }
+
+    /// Selects the row of the session at `url` — opening the project it is in —
+    /// without reporting it as chosen: the window already shows it. A session the
+    /// library doesn't list yet is selected when it does.
+    func select(transcriptAt url: URL?) {
+        pendingSelection = url
+        applyPendingSelection()
+    }
+
+    private func applyPendingSelection() {
+        guard let url = pendingSelection else { return }
+        func path(to url: URL, in items: [Item]) -> [Item]? {
+            for item in items {
+                if item.node.transcriptURL == url { return [item] }
+                if let rest = path(to: url, in: item.children) { return [item] + rest }
+            }
+            return nil
+        }
+        guard let chain = path(to: url, in: roots), let item = chain.last else { return }
+        pendingSelection = nil
+        for ancestor in chain.dropLast() { outlineView.expandItem(ancestor) }
+        let row = outlineView.row(forItem: item)
+        guard row >= 0 else { return }
+        reportedSelection = item.node.id
+        outlineView.selectRowIndexes([row], byExtendingSelection: false)
+        outlineView.scrollRowToVisible(row)
     }
 
     private func showLoading(_ loading: Bool) {

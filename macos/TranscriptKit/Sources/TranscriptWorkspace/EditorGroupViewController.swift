@@ -200,8 +200,9 @@ public final class EditorGroupViewController: NSViewController {
         insertTabViewItem(item, at: tabViewItems.count)
     }
 
-    /// Inserts a tab and selects it.
-    func insertTabViewItem(_ item: NSTabViewItem, at index: Int) {
+    /// Inserts a tab at `index` (clamped to the tabs there are) and selects it —
+    /// after the active tab, for a host that opens a new tab beside it.
+    public func insertTabViewItem(_ item: NSTabViewItem, at index: Int) {
         attach(item, at: index)
         tabsDidChange()
     }

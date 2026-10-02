@@ -1,8 +1,9 @@
 import Foundation
 
 /// A response as it streams (``SessionConfiguration/includePartialMessages``):
-/// every block of it so far, the last one possibly unfinished. The finished
-/// blocks still arrive as their own ``AssistantMessage``s, which replace it.
+/// every block of it so far, the last one possibly unfinished. Each finished
+/// block still arrives as its own ``AssistantMessage``; a host keeping both
+/// drops a block from the streaming one when its finished message arrives.
 extension AssistantMessage {
     /// The empty response `event` begins (`messageStart`); `nil` for any
     /// other event.

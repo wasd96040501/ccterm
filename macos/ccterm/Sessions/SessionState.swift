@@ -25,7 +25,9 @@ nonisolated struct SessionState: Sendable {
     /// The conversation: what was on disk, then what the live session added.
     var transcript: Transcript
     /// The response streaming in, only the blocks `transcript` doesn't have
-    /// yet; `nil` between responses.
+    /// yet; `nil` between responses. The fold that appends a finished block's
+    /// message drops that block from here, so no state holds a block twice.
+    /// Stream events of a subagent (`parentToolUseID`) never fold in here.
     var partial: AssistantMessage?
     /// Permission requests waiting for the reader, oldest first.
     var requests: [PermissionRequest] = []

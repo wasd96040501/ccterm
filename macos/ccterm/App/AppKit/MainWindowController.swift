@@ -89,6 +89,11 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         super.showWindow(sender)
     }
 
+    /// File › New Session…, in this window's editors.
+    func newSession() {
+        splitController.newSession()
+    }
+
     private func installToolbar() {
         let toolbar = NSToolbar(identifier: "ccterm.main")
         toolbar.delegate = self

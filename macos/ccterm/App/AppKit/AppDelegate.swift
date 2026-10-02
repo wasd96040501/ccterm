@@ -90,6 +90,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// File › New Session…: in the main window, shown first if it was closed.
+    func newSession() {
+        guard let mainWindowController else { return }
+        mainWindowController.showWindow(nil)
+        mainWindowController.window?.makeKeyAndOrderFront(nil)
+        mainWindowController.newSession()
+    }
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Hosted unit tests keep NSApp alive for AppKit rendering, but the host
         // shows no Dock icon and opens no window of its own.

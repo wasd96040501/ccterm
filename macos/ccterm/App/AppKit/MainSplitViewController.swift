@@ -90,7 +90,7 @@ final class MainSplitViewController: NSSplitViewController {
 
     /// File › New Session…: asks for the folder to run it in, starts it, and
     /// opens its tab, pinned, ready to type in.
-    @objc func newSession(_ sender: Any?) {
+    func newSession() {
         // TODO(live): NSOpenPanel (directories only) as a sheet on the window;
         // `sessions.start(in:)`; `editorArea.open(TranscriptTab.makeItem(
         // .transcript(url), title: "New Session", …), pinned: true)`; an alert

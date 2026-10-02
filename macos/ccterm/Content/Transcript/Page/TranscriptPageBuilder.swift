@@ -46,10 +46,12 @@ nonisolated struct TranscriptPageBuilder {
     ///
     /// A live session's state goes on top: a call with a request in
     /// `requests` is `.waiting(reason)`; a request whose call isn't on the page
-    /// (a subagent's) is an approval entry at the end. `partial`'s text is a
-    /// reply entry with the id its finished block will get
-    /// (`"<messages.count>.<part>"`), so finishing it reloads the row in place;
-    /// its tool calls are `.preparing`.
+    /// (a subagent's) is an approval entry at the end. `partial` holds only
+    /// blocks not yet delivered, each of which the CLI will deliver as its own
+    /// message (one block per message), so its `k`-th block — thinking
+    /// included — gets the id its finished message will: a text block is a
+    /// reply entry `"<messages.count + k>.0"`, and finishing it reloads the row
+    /// in place; a tool call is `.preparing`.
     init(
         messages: [Message], workingDirectory: String?, partial: AssistantMessage? = nil,
         requests: [PermissionRequest] = []

@@ -16,6 +16,7 @@
   --voice: rgba(0, 0, 0, 0.06);    /* secondarySystemFill */
   --accent: #007aff;
   --bubble: rgba(0, 122, 255, 0.15);
+  --tok: rgba(0, 122, 255, 0.16);   /* a command token: accent over the bubble */
   --sel: rgba(0, 122, 255, 0.13);
   --sel-quiet: rgba(0, 0, 0, 0.07);
   --red: #ff3b30;
@@ -56,6 +57,7 @@
     --voice: rgba(255, 255, 255, 0.08);
     --accent: #0a84ff;
     --bubble: rgba(10, 132, 255, 0.2);
+    --tok: rgba(10, 132, 255, 0.24);
     --sel: rgba(10, 132, 255, 0.24);
     --sel-quiet: rgba(255, 255, 255, 0.08);
     --red: #ff453a;
@@ -95,6 +97,7 @@
   --voice: rgba(255, 255, 255, 0.08);
   --accent: #0a84ff;
   --bubble: rgba(10, 132, 255, 0.2);
+  --tok: rgba(10, 132, 255, 0.24);
   --sel: rgba(10, 132, 255, 0.24);
   --sel-quiet: rgba(255, 255, 255, 0.08);
   --red: #ff453a;
@@ -274,15 +277,18 @@ html, body {
 .approval .mini { border-radius: 6px; overflow: hidden; background: var(--fill); padding: 4px 0; }
 
 /* Local commands */
-.capsule-row { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
-.capsule {
-  display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 11px; border-radius: 12px;
-  border: 1px solid var(--separator); font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; color: var(--secondary);
-  cursor: default;
+/* A command is the user's message: the bubble, with only the command as a
+   token — an inset of the bubble's own blue, never a new colour. */
+.cmd-row { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.cmd-row .bubble { max-width: 75%; }
+.cmdtok {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; font-weight: 500; color: var(--label);
+  background: var(--tok); border-radius: 5px; padding: 1px 4px; margin-left: -2px; white-space: nowrap; line-height: 1;
+  box-decoration-break: clone; -webkit-box-decoration-break: clone;
 }
-.capsule b { font-weight: 400; color: var(--label); }
-.capsule .sym { color: var(--tertiary); }
-.capsule:hover { background: var(--hover); }
+.cmdtok .sig { color: var(--secondary); margin-right: 1px; }
+.bubble.only .cmdtok { margin: 0 -6px; }
+.shellcmd { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; }
 .cap-out { font-size: 11px; color: var(--tertiary); padding-right: 12px; }
 .cap-out.err { color: var(--red-text); }
 .cap-out .link { color: var(--accent); cursor: default; }

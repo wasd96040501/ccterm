@@ -584,13 +584,14 @@ function buildSheet() {
   const ctxDoc = { id: nid("d"), docKind: "markdown", title: "/context", docGlyph: "local", status: "Local command output", md: "Context usage: 61k / 200k tokens (31%)\n\n- System prompt: 3.1k\n- Tools: 14.2k\n- Messages: 43.9k" };
   ITEMS.set(ctxDoc.id, ctxDoc);
   specimens(document.getElementById("local"), [
-    spec("<b>Slash command</b>Your side, not a bubble — you set something, you didn't say it.", [{ type: "slash", name: "/model", args: "opus", out: "Set model to opus" }]),
+    spec("<b>Slash command</b>Your message, so your bubble; only the command is a token — an inset of the bubble's own blue. Its output sits under it, like <i>Delivered</i>.", [{ type: "slash", name: "/model", args: "opus", out: "Set model to opus" }]),
     spec("<b>With an error · a skill</b>", [{ type: "slash", name: "/effort", args: "maximum", out: "Unknown effort level: maximum", err: true }, { type: "slash", name: "/skill-creator", full: "/skill-creator:skill-creator", args: "" }]),
+    spec("<b>A skill with a prompt</b>The arguments are a prompt, so they read and wrap as one.", [{ type: "slash", name: "/dataviz", args: "Pull the latest code. This PR is only about designing live-session interaction — the New tab, the + on every tab bar, and the composer." }]),
     spec("<b>Long output</b>/context, /usage: cut, the rest beside.", [{ type: "slash", name: "/context", out: "61k / 200k tokens (31%)", long: ctxDoc.id }]),
     spec("<b>/compact</b>Command, output and boundary fold into one divider.", [{ type: "divider", text: "Conversation compacted · 168k → 14k tokens", link: compactDoc.id }, { type: "divider", text: "Compacted automatically · 191k → 22k tokens", link: compactDoc.id }]),
     spec("<b>Compacting, live</b>", [{ type: "divider", text: "Compacting…", live: true }]),
     spec("<b>/exit, then resumed · a long gap</b>Messages' rule: a divider when more than an hour passes.", [{ type: "divider", text: "Resumed · Tue 14:02" }, { type: "divider", text: "Yesterday 18:40" }]),
-    spec("<b>! command</b>Several lines of output: the capsule says how many and opens it beside.", [{ type: "shell", item: clone(shell1) }, { type: "shell", item: bash(null, "git branch --show-current", { local: true, out: ["transcript-views-design"] }) }]),
+    spec("<b>! command</b>The same bubble, the command in mono. Several lines of output: the line under it says how many and opens them beside.", [{ type: "shell", item: clone(shell1) }, { type: "shell", item: bash(null, "git branch --show-current", { local: true, out: ["transcript-views-design"] }) }]),
     spec("<b>Interrupted while writing</b>Attached to the reply, not a row of its own.", [{ type: "text", text: "Sure. The run row's summary is set at 13 pt, one step below the 14-pt body, so the change is in" }, { type: "interrupt", tight: true }]),
     spec("<b>Interrupted during a call</b>The call's state; nothing else.", [RN([clone(b2), bash("Run the full test suite", "make test-unit", { state: "interrupted", out: [] })], { dur: 40 })]),
   ]);

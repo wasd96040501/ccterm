@@ -385,15 +385,16 @@ function renderRow(row) {
     case "run": return renderRun(row.run);
     case "news": return renderNews(row);
     case "slash": {
-      // The output sits under the capsule, as Messages sets "Delivered" under a bubble.
+      // The user's bubble; only the command is a token. The output sits under
+      // the bubble, as Messages sets "Delivered" under one.
       const more = row.long ? ` · <span class="link" data-open="${row.long}">Show all</span>` : "";
       const out = row.out ? `<div class="cap-out${row.err ? " err" : ""}">${esc(row.out)}${more}</div>` : "";
-      return `<div class="capsule-row"><span class="capsule" title="${esc(row.full || row.name)}"><span class="sym">/</span><b>${esc(row.name.replace(/^\//, ""))}</b>${row.args ? " " + esc(row.args) : ""}</span>${out}</div>`;
+      return `<div class="cmd-row"><div class="bubble${row.args ? "" : " only"}">${cmdToken("/", row.name.replace(/^\//, ""), row.full)}${row.args ? " " + inline(row.args) : ""}</div>${out}</div>`;
     }
     case "shell": {
       const lines = row.item.out.length;
-      const out = lines === 1 ? `<div class="cap-out">${esc(row.item.out[0])}</div>` : `<div class="cap-out">${lines} lines</div>`;
-      return `<div class="capsule-row"><span class="capsule" data-open="${row.item.id}"><span class="sym">$</span><b>${esc(row.item.cmd)}</b>${lines === 1 ? "" : ICON.go.replace('class="go"', 'class="go" style="opacity:1;width:10px;height:10px"')}</span>${out}</div>`;
+      const out = lines === 1 ? `<div class="cap-out">${esc(row.item.out[0])}</div>` : `<div class="cap-out"><span class="link" data-open="${row.item.id}">${lines} lines ›</span></div>`;
+      return `<div class="cmd-row"><div class="bubble">${cmdToken("!", "")} <span class="shellcmd">${esc(row.item.cmd)}</span></div>${out}</div>`;
     }
     case "divider": return `<div class="divider"><span>${row.live ? `<span class="dtile">${tile("other", "running")}</span>` : ""}${row.text}${row.link ? `<span class="link" data-open="${row.link}">${row.linkText || "Summary"}</span>` : ""}</span></div>`;
     case "interrupt": return `<div class="interrupt">${ICON.stopcircle}Interrupted</div>`;
@@ -408,6 +409,12 @@ function renderRow(row) {
     case "html": return row.html;
   }
   return "";
+}
+
+/** A command token inside the user's bubble (05-local.md): the sigil in
+ *  secondary, the name in mono, on an inset of the bubble's own blue. */
+function cmdToken(sigil, name, full) {
+  return `<span class="cmdtok"${full ? ` title="${esc(full)}"` : ""}><span class="sig">${esc(sigil)}</span>${esc(name)}</span>`;
 }
 
 function renderQuestion(row) {

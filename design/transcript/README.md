@@ -45,7 +45,7 @@ the hover lights, its words' 16-pt line in the middle — and a glyph tile
 glyph sits under its run's text.
 
 **Spacing.** Two levels, each with one gap. **First level** — every entry
-of the transcript (a prompt, a reply, a run's line, news, a capsule, a
+of the transcript (a prompt, a reply, a run's line, news, a
 divider): 14 pt between them, TranscriptKit's row gap, the same everywhere.
 It is measured from a line of work's words, not its hover: the 6 pt the
 hover reaches above and below them is part of the gap.

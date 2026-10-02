@@ -717,6 +717,16 @@
         }
       }
     },
+    "Couldn’t send the message: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法发送消息：%@"
+          }
+        }
+      }
+    },
     "Couldn’t start": {
       "localizations": {
         "zh-Hans": {
@@ -1284,6 +1294,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "管理"
+          }
+        }
+      }
+    },
+    "Message Claude": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "给 Claude 发消息"
           }
         }
       }
@@ -1955,6 +1975,16 @@
         }
       }
     },
+    "Send": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送"
+          }
+        }
+      }
+    },
     "Sent %lld messages": {
       "localizations": {
         "zh-Hans": {
@@ -2101,6 +2131,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "仍在使用 %@。"
+          }
+        }
+      }
+    },
+    "Stop": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止"
           }
         }
       }

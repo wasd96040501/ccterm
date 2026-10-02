@@ -31,6 +31,9 @@ final class DocumentViewController: NSViewController {
     private let makeConversation: @MainActor (URL, String) -> NSViewController
     private var loadTask: Task<Void, Never>?
     private var hasLoaded = false
+    /// What the tab shows now, and the body that shows its content.
+    private var shown: Document?
+    private var body: NSViewController?
 
     private lazy var jumpBar: JumpBarView = {
         let bar = JumpBarView()
@@ -198,21 +201,54 @@ final class DocumentViewController: NSViewController {
             appLog(.warning, "DocumentViewController", "no document for \(reference.id)")
             return
         }
+        shown = document
+        word(document)
+        embed(makeBody(for: document))
+    }
+
+    /// The tab's title, the jump bar and the approval bar, from `document`.
+    private func word(_ document: Document) {
         let header = DocumentHeader(document)
         title = header.title
         jumpBar.configure(with: header)
         if let approval = document.approval {
             approvalBar.configure(with: approval)
-            approvalBar.isHidden = false
         }
-        embed(makeBody(for: document))
+        approvalBar.isHidden = document.approval == nil
     }
 
     /// Shows the document again as its live session changed it — its call
     /// finished, its approval answered; nothing if it didn't change.
     private func update(_ document: Document?) {
-        // TODO(live): compare with what is shown; re-word the jump bar, show
-        // or hide the approval bar, and swap the body when its content changed.
+        guard let document else {
+            // Gone from its transcript: keep what was read.
+            appLog(.warning, "DocumentViewController", "document \(reference.id) is gone from its transcript")
+            return
+        }
+        guard let previous = shown, document != previous else { return }
+        shown = document
+        word(document)
+        guard document.content != previous.content, !keepsBody(from: previous, to: document) else { return }
+        if let body {
+            body.view.removeFromSuperview()
+            body.removeFromParent()
+        }
+        embed(makeBody(for: document))
+    }
+
+    /// Whether the body already shown still serves `document`: a subagent's
+    /// conversation follows its own file, so its call finishing leaves it be.
+    private func keepsBody(from previous: Document, to document: Document) -> Bool {
+        guard case .agent = previous.content, case .agent = document.content, body != nil else { return false }
+        guard let before = conversationURL(of: previous) else { return false }
+        return conversationURL(of: document) == before
+    }
+
+    /// The transcript a subagent's document opens as, when its file is on disk.
+    private func conversationURL(of document: Document) -> URL? {
+        guard case .agent(let call) = document.content, let agentID = call.agentID else { return nil }
+        let url = document.reference.conversationURL(ofAgent: agentID)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
     /// The view controller that shows a document under its jump bar — the one
@@ -232,12 +268,9 @@ final class DocumentViewController: NSViewController {
             return SourceDocumentViewController(.newFile(call))
         case .read(let call):
             return SourceDocumentViewController(.read(call))
-        case .agent(let call):
-            if let agentID = call.agentID {
-                let url = document.reference.conversationURL(ofAgent: agentID)
-                if FileManager.default.fileExists(atPath: url.path) {
-                    return makeConversation(url, DocumentHeader(document).title)
-                }
+        case .agent:
+            if let url = conversationURL(of: document) {
+                return makeConversation(url, DocumentHeader(document).title)
             }
             return MarkdownDocumentViewController(markdown: DocumentMarkdown.markdown(for: document.content))
         case .agentMessage, .search, .web, .taskList, .news, .commandOutput, .compactionSummary, .other:
@@ -246,6 +279,7 @@ final class DocumentViewController: NSViewController {
     }
 
     private func embed(_ body: NSViewController) {
+        self.body = body
         addChild(body)
         body.view.translatesAutoresizingMaskIntoConstraints = false
         bodyArea.addSubview(body.view)

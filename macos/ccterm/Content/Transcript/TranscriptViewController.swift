@@ -105,6 +105,8 @@ final class TranscriptViewController: NSViewController {
                     if first {
                         first = false
                         await show(page)
+                        // A session just made is empty and live: ready to type.
+                        if state.isLive, page.entries.isEmpty { composer?.focus() }
                     } else {
                         apply(page)
                     }
@@ -143,10 +145,21 @@ final class TranscriptViewController: NSViewController {
     /// Shows a later page of a live session: the changes from the rows shown,
     /// in one batch, the reader's disclosure kept.
     private func apply(_ page: TranscriptPage) {
-        // TODO(live): rows for `page` under `disclosure`, `PageRow.changes`
-        // from `rows`, one `performBatchUpdates`; keep following the bottom
-        // when the reader is there.
         self.page = page
+        let new = page.entries.flatMap { PageRow.rows(for: $0, disclosure: disclosure(of: $0.id)) }
+        let changes = PageRow.changes(from: rows, to: new)
+        guard !changes.isEmpty else { return }
+        // No suspension between changing the rows and announcing it. The
+        // transcript holds the reader's place itself: at the bottom it stays
+        // at the bottom as rows arrive and grow, anywhere else the rows in
+        // view hold still. Selection and flashing are ids, so the rows that
+        // keep them are reloaded under the same marks.
+        rows = new
+        transcript.performBatchUpdates {
+            if !changes.removed.isEmpty { transcript.removeRows(at: changes.removed) }
+            if !changes.inserted.isEmpty { transcript.insertRows(at: changes.inserted) }
+            if !changes.reloaded.isEmpty { transcript.reloadRows(at: changes.reloaded) }
+        }
     }
 
     /// The last screen synchronously, then the history in prepared chunks,
@@ -354,12 +367,13 @@ extension TranscriptViewController {
 extension TranscriptViewController: ComposerViewDelegate {
     func composerView(_ composerView: ComposerView, didSubmit text: String) {
         let (sessions, url) = (sessions, fileURL)
-        Task {
+        Task { [weak composerView] in
             do {
                 try await sessions.send(text, to: url)
             } catch {
-                // TODO(live): tell the reader, in the composer.
                 appLog(.error, "TranscriptViewController", "send failed: \(error)")
+                composerView?.showFailure(
+                    String(localized: "Couldn’t send the message: \(error.localizedDescription)"), of: text)
             }
         }
     }

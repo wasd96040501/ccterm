@@ -184,10 +184,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// runs — so no CLI is left behind.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let sessions, !sessions.activities.isEmpty else { return .terminateNow }
-        // TODO(live): confirm when any is responding (an alert; Cancel →
-        // .terminateCancel), then `await sessions.endAll()` and
-        // `NSApp.reply(toApplicationShouldTerminate: true)`.
-        return .terminateNow
+        let working = sessions.activities.values.contains { $0 == .responding || $0 == .needsInput }
+        if working {
+            let alert = NSAlert()
+            alert.messageText = String(localized: "Quit While Claude Is Working?")
+            alert.informativeText = String(
+                localized: "Some sessions are still working. Quitting ends them; their conversations stay.")
+            alert.addButton(withTitle: String(localized: "Quit"))
+            alert.addButton(withTitle: String(localized: "Cancel"))
+            guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
+        }
+        Task {
+            await sessions.endAll()
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 
     /// XCTest injects this into a hosted test run.

@@ -30,30 +30,50 @@ final class LiveSession {
 
     /// Launches the CLI and follows its events until it exits.
     func start() async throws {
-        // TODO(live): follow `session.events` into `state.apply(_:)` (the task
-        // in `events`), then `session.start()`.
-        fatalError("TODO(live): LiveSession.start")
+        events = Task { [weak self, stream = session.events] in
+            for await event in stream {
+                guard let self else { return }
+                state.apply(event)
+            }
+        }
+        do {
+            try await session.start()
+        } catch {
+            events?.cancel()
+            events = nil
+            throw error
+        }
     }
 
     /// Sends a prompt; a turn starts (`state.isResponding`) at once.
     func send(_ text: String) throws {
-        // TODO(live): `session.send(UserInput(text))`.
-        fatalError("TODO(live): LiveSession.send")
+        try session.send(UserInput(text))
+        state.isResponding = true
     }
 
     /// Interrupts the running turn.
     func interrupt() {
-        // TODO(live): `session.interrupt()`, logging a failure.
+        Task { [session] in
+            do { try await session.interrupt() } catch {
+                appLog(.warning, "LiveSession", "interrupt failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     /// Answers the request waiting on call `callID` with what `answer` makes
     /// of it, and takes it out of `state`; nothing if none waits.
     func respond(toCall callID: String, with answer: (PermissionRequest) -> PermissionDecision) {
-        // TODO(live): find the request, `respond`, remove it from `state`.
+        guard let request = state.requests.first(where: { $0.toolUseID == callID }) else { return }
+        request.respond(answer(request))
+        state.requests.removeAll { $0.id == request.id }
     }
 
     /// Ends the session: the CLI finishes its turn and exits.
     func close() async {
-        // TODO(live): `session.close()`, then stop following events.
+        // Stopped first: the CLI's own goodbye is not news, and its exit must
+        // not show as a failure while the store is about to drop the session.
+        events?.cancel()
+        events = nil
+        await session.close()
     }
 }

@@ -27,6 +27,11 @@ final class SessionStore {
     private var configuration: CLIConfiguration?
     private var directory: SessionDirectory?
     private var subscriptions: Set<AnyCancellable> = []
+    /// Each live session's state, followed into `activities`.
+    private var followers: [URL: AnyCancellable] = [:]
+    /// Sessions being resumed, so that a second prompt while the CLI starts
+    /// waits for it instead of launching another on the same session id.
+    private var resuming: [URL: Task<LiveSession, Error>] = [:]
 
     /// `configurations`: how the CLI is launched (General's); `directories`:
     /// where that launch writes sessions — both must deliver on the main
@@ -90,18 +95,87 @@ final class SessionStore {
     /// Starts a new session in `workingDirectory` and returns its transcript
     /// URL — the tab's identity before the CLI has written anything.
     func start(in workingDirectory: URL) async throws -> URL {
-        // TODO(live): a session id; `SessionConfiguration(workingDirectory:
-        // launch:)` with it, `CLAUDE_CODE_ENTRYPOINT`, partial messages on;
-        // the URL from `directory.transcriptURL(forSession:workingDirectory:)`;
-        // a `LiveSession` started, kept in `live`, its activity followed.
-        fatalError("TODO(live): SessionStore.start")
+        guard let configuration, let directory else {
+            throw AgentSDKError.launchFailed("the launch settings are not known yet")
+        }
+        let id = UUID().uuidString.lowercased()
+        var session = makeConfiguration(in: workingDirectory, launch: configuration)
+        session.sessionId = id
+        let url = directory.transcriptURL(forSession: id, workingDirectory: workingDirectory)
+        let running = LiveSession(
+            transcriptURL: url, configuration: session, history: Transcript(messages: []))
+        try await running.start()
+        keep(running)
+        appLog(.info, "SessionStore", "started \(url.lastPathComponent) in \(workingDirectory.path)")
+        return url
     }
 
     /// Sends a prompt to the session at `url`, resuming it first when it is
     /// at rest (its history read, `resume` = its id, in its recorded cwd).
     func send(_ text: String, to url: URL) async throws {
-        // TODO(live): resume when not live, then `LiveSession.send`.
-        fatalError("TODO(live): SessionStore.send")
+        if let live = live[url] {
+            try live.send(text)
+        } else {
+            try await resume(at: url).send(text)
+        }
+    }
+
+    /// The live session for `url`, started from its transcript on disk — at
+    /// most once at a time per URL.
+    private func resume(at url: URL) async throws -> LiveSession {
+        if let pending = resuming[url] { return try await pending.value }
+        // A resume that finished while this waited is already live.
+        if let live = live[url] { return live }
+        let pending = Task { @MainActor [self, read, configuration] () -> LiveSession in
+            defer { resuming[url] = nil }
+            guard let configuration else {
+                throw AgentSDKError.launchFailed("the launch settings are not known yet")
+            }
+            let history = try await read(url)
+            guard let cwd = history.metadata.cwd else {
+                throw AgentSDKError.launchFailed(String(localized: "This session doesn't record the folder it ran in."))
+            }
+            var session = makeConfiguration(in: URL(fileURLWithPath: cwd, isDirectory: true), launch: configuration)
+            session.resume = url.deletingPathExtension().lastPathComponent
+            let running = LiveSession(transcriptURL: url, configuration: session, history: history)
+            try await running.start()
+            keep(running)
+            appLog(.info, "SessionStore", "resumed \(url.lastPathComponent) in \(cwd)")
+            return running
+        }
+        resuming[url] = pending
+        return try await pending.value
+    }
+
+    private func makeConfiguration(in workingDirectory: URL, launch: CLIConfiguration) -> SessionConfiguration {
+        var session = SessionConfiguration(workingDirectory: workingDirectory, launch: launch)
+        session.includePartialMessages = true
+        session.env["CLAUDE_CODE_ENTRYPOINT"] = Self.entrypoint
+        return session
+    }
+
+    /// Keeps `session` in `live` and follows its state into `activities`.
+    /// A session that exits cleanly without being asked to (the reader typed
+    /// `/exit`) is at rest, and goes; one that failed stays to say so.
+    private func keep(_ session: LiveSession) {
+        let url = session.transcriptURL
+        live[url] = session
+        followers[url] = session.$state.sink { [weak self, weak session] state in
+            MainActor.assumeIsolated {
+                guard let self, let session else { return }
+                guard let activity = state.activity else { return self.drop(session) }
+                if self.activities[url] != activity { self.activities[url] = activity }
+            }
+        }
+    }
+
+    /// Forgets `session` — only if it is still the one at its URL.
+    private func drop(_ session: LiveSession) {
+        let url = session.transcriptURL
+        guard live[url] === session else { return }
+        live[url] = nil
+        followers[url] = nil
+        activities[url] = nil
     }
 
     /// Interrupts the turn running at `url`; nothing if none.
@@ -119,11 +193,18 @@ final class SessionStore {
 
     /// Ends the live session at `url`; it is at rest after.
     func end(at url: URL) async {
-        // TODO(live): close it, drop it from `live` and `activities`.
+        if let pending = resuming[url] { _ = try? await pending.value }
+        guard let session = live[url] else { return }
+        await session.close()
+        drop(session)
+        appLog(.info, "SessionStore", "ended \(url.lastPathComponent)")
     }
 
     /// Ends every live session — the app is quitting.
     func endAll() async {
-        // TODO(live): `end(at:)` for each, together.
+        let urls = Set(live.keys).union(resuming.keys)
+        await withTaskGroup(of: Void.self) { group in
+            for url in urls { group.addTask { @MainActor in await self.end(at: url) } }
+        }
     }
 }

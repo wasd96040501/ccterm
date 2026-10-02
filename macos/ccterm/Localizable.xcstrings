@@ -506,6 +506,16 @@
         }
       }
     },
+    "Choose the folder Claude will work in.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择 Claude 工作的文件夹。"
+          }
+        }
+      }
+    },
     "Claude %@": {
       "localizations": {
         "zh-Hans": {
@@ -1358,6 +1368,16 @@
         }
       }
     },
+    "New Session": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新会话"
+          }
+        }
+      }
+    },
     "New Session…": {
       "localizations": {
         "zh-Hans": {
@@ -1650,6 +1670,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "准备中"
+          }
+        }
+      }
+    },
+    "Quit": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出"
+          }
+        }
+      }
+    },
+    "Quit While Claude Is Working?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 正在工作，仍要退出吗？"
           }
         }
       }
@@ -2125,12 +2165,32 @@
         }
       }
     },
+    "Some sessions are still working. Quitting ends them; their conversations stay.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "部分会话仍在工作。退出会结束它们，对话记录会保留。"
+          }
+        }
+      }
+    },
     "Sonnet": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "Sonnet"
+          }
+        }
+      }
+    },
+    "Start Session": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始会话"
           }
         }
       }
@@ -2271,6 +2331,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "此文件已作为图片读取。"
+          }
+        }
+      }
+    },
+    "This session doesn't record the folder it ran in.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此会话没有记录它运行所在的文件夹。"
           }
         }
       }

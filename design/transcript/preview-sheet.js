@@ -612,10 +612,26 @@ function buildSheet() {
   const planDoc = { id: nid("d"), docKind: "markdown", title: "Plan", docGlyph: "plan", status: "~/.claude/plans/row-gap.md", md: "1. Make `rowSpacing` a public instance property with a `didSet` that re-applies `intercellSpacing`.\n\n2. Read it from the view in `TranscriptViewTests`.\n\n3. Leave `EditorAreaTests` on the default.\n\n4. Build the demo and look at a narrow split." };
   ITEMS.set(planDoc.id, planDoc);
   const q = { header: "Row gap", question: "What should the default gap between rows be?", options: [{ label: "14 pt", description: "Today's value" }, { label: "12 pt", description: "Same as between paragraphs" }, { label: "16 pt", description: "Roomier" }], answer: "14 pt" };
+  const qLong = {
+    questions: [
+      { header: "Scope", question: "The gap is hard-coded in two places besides the view. Which of them should read the new property, and which should keep their own value?", options: [
+        { label: "Both read rowSpacing", description: "TranscriptView and EditorArea always agree, and a change in one place moves both. The tests that pin 14 pt need updating." },
+        { label: "Only TranscriptView", description: "EditorArea keeps its own 14 pt for now; the two can drift, which is fine while it has no transcript of its own." },
+        { label: "Neither — a theme value", description: "Move the gap into the theme, which both read. Most work, and the theme has no spacing values yet." },
+      ] },
+      { header: "Checks", question: "What should run before the PR?", multiSelect: true, options: [
+        { label: "Unit tests", description: "make test-unit and make test-kit" },
+        { label: "Snapshot of a narrow split", description: "TranscriptSnapshotTests at 320 pt" },
+        { label: "The demo app", description: "make demo-kit, to look at it by hand" },
+      ] },
+    ],
+  };
   const planSteps = ["Make `rowSpacing` a public instance property with a `didSet` that re-applies `intercellSpacing`.", "Read it from the view in `TranscriptViewTests`.", "Leave `EditorAreaTests` on the default.", "Build the demo and look at a narrow split.", "Open a PR."];
   specimens(document.getElementById("talk"), [
     spec("<b>A question, answered</b>Question and answer kept together.", [{ type: "question", ...q }]),
-    spec("<b>A question, waiting</b>", [{ type: "question", ...q, live: true }]),
+    spec("<b>A question, waiting</b>Each option two lines — the label, its description under it. Then the answers the CLI adds: <i>Other</i>, typed in place, and <i>Chat About This</i>.", [{ type: "question", ...q, live: true }]),
+    spec("<b>Two questions, long options, waiting</b>Long descriptions wrap under their label; nothing is cut. A multi-select question says so and uses checkboxes.", [{ type: "question", ...qLong, live: true }]),
+    spec("<b>Answered with Other · talked over</b>A typed answer is the chosen one, marked <i>Other</i>. <i>Chat About This</i> answers nothing: the card says so, and the conversation goes on under it.", [{ type: "question", ...q, answer: null, other: "13 pt — between the two" }, { type: "question", ...q, chat: true }]),
     spec("<b>A plan</b>TranscriptKit's markdown, whole — it is addressed to you.", [{ type: "plan", steps: planSteps, doc: planDoc.id }]),
     spec("<b>A plan, waiting</b>", [{ type: "plan", steps: planSteps, doc: planDoc.id, live: true }]),
     spec("<b>Task list</b>Stays in the run; opens the list as it stood.", [R1(tasksItem)]),

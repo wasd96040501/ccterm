@@ -417,14 +417,27 @@ function cmdToken(sigil, name, full) {
   return `<span class="cmdtok"${full ? ` title="${esc(full)}"` : ""}><span class="sig">${esc(sigil)}</span>${esc(name)}</span>`;
 }
 
+/** AskUserQuestion (07-talk.md). One to four questions, each its options as
+ *  two lines — the label, the description under it, wrapped, never cut —
+ *  then the answers the CLI adds: *Other* (typed) and *Chat About This*. */
 function renderQuestion(row) {
-  const opts = row.options.map((o) => {
-    const on = !row.live && o.label === row.answer;
-    return `<div class="opt${on ? " on" : ""}${row.live ? " live" : ""}"><span class="radio"></span><span>${esc(o.label)}</span><span class="d">${esc(o.description)}</span></div>`;
-  }).join("");
-  return `<div class="qa">${tile("question", row.live ? "waiting" : "done")}<div><div class="hdr">${esc(row.header)}</div><div class="q">${esc(row.question)}</div>${opts}${
-    row.live ? '<div class="submit"><button class="btn primary">Submit<kbd>⌘↩</kbd></button></div>' : ""
-  }</div></div>`;
+  const qs = row.questions || [row];
+  const one = (q) => {
+    const answers = [].concat(q.answer || []);
+    const mark = q.multiSelect ? "cbx" : "radio";
+    const opts = q.options.map((o) => {
+      const on = !row.live && answers.includes(o.label);
+      return `<div class="opt${on ? " on" : ""}${row.live ? " live" : ""}"><span class="${mark}"></span><div class="ot"><span class="l">${esc(o.label)}</span>${o.description ? `<span class="d">${esc(o.description)}</span>` : ""}</div></div>`;
+    }).join("");
+    const other = row.live
+      ? `<div class="opt live other"><span class="${mark}"></span><div class="ot"><input class="oin" placeholder="Other — type something" spellcheck="false"></div></div>`
+      : q.other ? `<div class="opt on"><span class="${mark}"></span><div class="ot"><span class="l">${esc(q.other)}</span><span class="d">Other</span></div></div>` : "";
+    return `<div class="qone"><div class="hdr">${esc(q.header)}${q.multiSelect ? '<span class="ms">Choose any</span>' : ""}</div><div class="q">${esc(q.question)}</div>${row.chat ? "" : opts + other}</div>`;
+  };
+  const tail = row.live
+    ? '<div class="submit"><button class="btn primary">Submit<kbd>⌘↩</kbd></button><button class="btn plain" title="Tell Claude you\'d rather talk it over; it asks what to clarify">Chat About This</button></div>'
+    : row.chat ? '<div class="qnote">Not answered — talked over in the conversation</div>' : "";
+  return `<div class="qa">${tile("question", row.live ? "waiting" : "done")}<div>${qs.map(one).join("")}${tail}</div></div>`;
 }
 
 // MARK: - Columns: a transcript's rows, re-rendered a row at a time

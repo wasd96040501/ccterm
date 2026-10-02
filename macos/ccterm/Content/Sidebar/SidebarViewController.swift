@@ -300,6 +300,7 @@ extension SidebarViewController: NSOutlineViewDelegate {
         cell.objectValue = item.node.title
         cell.toolTip = item.node.kind == .project ? item.node.id : item.node.title
         cell.activity = activity(of: item)
+        cell.worktreeBranch = item.node.worktreeBranch
         return cell
     }
 
@@ -402,6 +403,11 @@ extension SidebarViewController {
     private final class Cell: NSTableCellView {
         private let title = NSTextField(labelWithString: "")
         private let mark = ActivityMarkView()
+        /// A worktree session's branch glyph, after its title in tertiary
+        /// (design 08 *The sidebar*); out of the layout on every other row.
+        private let branchGlyph = NSImageView()
+        private lazy var glyphWidth = branchGlyph.widthAnchor.constraint(equalToConstant: 0)
+        private lazy var glyphGap = branchGlyph.leadingAnchor.constraint(equalTo: title.trailingAnchor)
         /// The mark's slot: its width while one shows, none otherwise, so a
         /// row at rest gives its title the whole line.
         private lazy var markWidth = mark.widthAnchor.constraint(equalToConstant: 0)
@@ -413,6 +419,20 @@ extension SidebarViewController {
                 markWidth.constant = activity == nil ? 0 : ActivityMarkView.slot
             }
         }
+
+        /// The branch of the worktree the session ran in; `nil` draws no glyph.
+        var worktreeBranch: String? {
+            didSet {
+                let shown = worktreeBranch != nil
+                branchGlyph.isHidden = !shown
+                glyphWidth.constant = shown ? Self.glyphSize.width : 0
+                glyphGap.constant = shown ? 5 : 0
+                branchGlyph.toolTip = worktreeBranch.map(SessionTabTitle.worktreeSubtitle(branch:))
+                branchGlyph.setAccessibilityLabel(branchGlyph.toolTip)
+            }
+        }
+
+        private static let glyphSize = NSSize(width: 10, height: 12)
 
         override var objectValue: Any? {
             didSet { title.stringValue = objectValue as? String ?? "" }
@@ -427,6 +447,7 @@ extension SidebarViewController {
         override var backgroundStyle: NSView.BackgroundStyle {
             didSet {
                 showIconTint()
+                branchGlyph.contentTintColor = backgroundStyle == .emphasized ? nil : .tertiaryLabelColor
                 mark.isEmphasized = backgroundStyle == .emphasized
             }
         }
@@ -443,7 +464,14 @@ extension SidebarViewController {
             imageView = image
             title.font = .systemFont(ofSize: NSFont.systemFontSize)
             title.lineBreakMode = .byTruncatingTail
-            for subview in [image, title, mark] as [NSView] {
+            branchGlyph.image = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .medium))
+            branchGlyph.imageScaling = .scaleProportionallyDown
+            branchGlyph.contentTintColor = .tertiaryLabelColor
+            branchGlyph.isHidden = true
+            branchGlyph.setContentCompressionResistancePriority(.required, for: .horizontal)
+            title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            for subview in [image, title, branchGlyph, mark] as [NSView] {
                 subview.translatesAutoresizingMaskIntoConstraints = false
                 addSubview(subview)
             }
@@ -453,7 +481,11 @@ extension SidebarViewController {
                 image.widthAnchor.constraint(equalToConstant: 16),
                 image.heightAnchor.constraint(equalToConstant: 16),
                 title.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 5),
-                title.trailingAnchor.constraint(lessThanOrEqualTo: mark.leadingAnchor),
+                glyphGap,
+                glyphWidth,
+                branchGlyph.heightAnchor.constraint(equalToConstant: Self.glyphSize.height),
+                branchGlyph.centerYAnchor.constraint(equalTo: centerYAnchor),
+                branchGlyph.trailingAnchor.constraint(lessThanOrEqualTo: mark.leadingAnchor),
                 title.centerYAnchor.constraint(equalTo: centerYAnchor),
                 mark.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
                 mark.centerYAnchor.constraint(equalTo: centerYAnchor),

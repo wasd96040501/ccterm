@@ -94,6 +94,17 @@
         }
       }
     },
+    "%@ · worktree": {
+      "comment": "The window's line under a worktree session's project: the worktree's name.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 工作树"
+          }
+        }
+      }
+    },
     "%@ → %@ tokens": {
       "comment": "Token counts before and after a compaction, e.g. 168k → 14k tokens.",
       "localizations": {

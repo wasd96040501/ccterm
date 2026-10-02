@@ -300,7 +300,8 @@ final class ComposerViewControllerTests: XCTestCase {
         (composer.view as? ComposerView)?.complete(command: "review")
         try type("the diff")
         let words = try XCTUnwrap(try textView().enclosingScrollView)
-        let token = try XCTUnwrap(find(NSView.self) { String(describing: Swift.type(of: $0)).contains("CommandTokenView") })
+        let token = try XCTUnwrap(
+            find(NSView.self) { String(describing: Swift.type(of: $0)).contains("CommandTokenView") })
         let chip = try XCTUnwrap(find(ComposerChipButton.self))
 
         composer.isFieldDimmed = true

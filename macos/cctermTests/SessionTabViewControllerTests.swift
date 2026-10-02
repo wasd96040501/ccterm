@@ -185,6 +185,17 @@ final class SessionTabViewControllerTests: XCTestCase {
         XCTAssertEqual(SessionTabTitle.resolved(cli: "Named", prompt: nil, fallback: "From the sidebar"), "Named")
     }
 
+    func testAWorktreeSessionIsNamedByItsWorktreeNotTheCLIsBranch() {
+        XCTAssertEqual(
+            SessionTabTitle.worktreeSubtitle(branch: "worktree-quiet-otter"),
+            String(localized: "\("quiet-otter") · worktree"))
+        XCTAssertEqual(
+            SessionTabTitle.worktreeSubtitle(branch: "pr-327"), String(localized: "\("pr-327") · worktree"))
+        XCTAssertEqual(
+            SessionTabTitle.worktreeSubtitle(branch: "worktree-"), String(localized: "\("worktree-") · worktree"),
+            "a branch that is only the prefix is kept")
+    }
+
     // MARK: - The restart sheet
 
     func testTheRestartSheetNamesTheAccountAndTheModel() {

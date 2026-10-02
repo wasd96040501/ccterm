@@ -200,6 +200,14 @@ extension MainWindowController: MainSplitViewControllerDelegate {
             return
         }
         titleHasProject = true
+        // A worktree session says so under its project, in place of the branch.
+        let worktree = library.path(toTranscriptAt: url).last?.worktreeBranch.map {
+            SessionTabTitle.worktreeSubtitle(branch: $0)
+        }
+        if let worktree {
+            show(project: project.title, branch: worktree)
+            return
+        }
         branchTask = Task { [weak self, library, git] in
             // The live branch of the folder the session ran in (a worktree's
             // own); once that is no repository — a worktree removed — the

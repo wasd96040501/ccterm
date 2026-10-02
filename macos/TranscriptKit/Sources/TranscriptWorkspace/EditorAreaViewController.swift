@@ -47,7 +47,8 @@ public final class EditorAreaViewController: NSSplitViewController {
     /// same object; the host sets a new one for the next time the tabs run out.
     public var emptyViewController: NSViewController? {
         didSet {
-            // TODO(fill E): mount in the empty area while there are no tabs; EditorAreaTests.
+            guard emptyViewController !== oldValue else { return }
+            groups.forEach { $0.reloadTabBar() }
         }
     }
 
@@ -55,7 +56,7 @@ public final class EditorAreaViewController: NSSplitViewController {
     /// that sends `newTab(_:)` from its editor.
     public var showsNewTabButton = false {
         didSet {
-            // TODO(fill E)
+            groups.forEach { $0.showsNewTabButton = showsNewTabButton }
         }
     }
 
@@ -269,6 +270,7 @@ public final class EditorAreaViewController: NSSplitViewController {
         super.insertSplitViewItem(splitViewItem, at: index)
         guard let group = splitViewItem.viewController as? EditorGroupViewController else { return }
         group.delegate = self
+        group.showsNewTabButton = showsNewTabButton
         if !draggedTypes.isEmpty { group.acceptDrops(of: draggedTypes) }
     }
 
@@ -306,7 +308,9 @@ public final class EditorAreaViewController: NSSplitViewController {
     /// (`editorArea(_:didRequestNewTabIn:)`). A standard responder action, so
     /// a nil-targeted menu item (⌘T) finds it.
     @objc public func newTab(_ sender: Any?) {
-        // TODO(fill E): the sender's group when it is a + inside one.
+        if let view = sender as? NSView, let group = groups.first(where: { view.isDescendant(of: $0.view) }) {
+            activate(group)
+        }
         delegate?.editorArea(self, didRequestNewTabIn: activeGroup)
     }
 
@@ -315,7 +319,7 @@ public final class EditorAreaViewController: NSSplitViewController {
     /// its rows; a tab whose answer is the same view keeps it untouched, so an
     /// animating indicator doesn't restart.
     public func reloadIndicators() {
-        // TODO(fill E)
+        groups.forEach { $0.reloadTabBar() }
     }
 
     /// Back through the active editor's history — a toolbar's back button.
@@ -449,6 +453,18 @@ extension EditorAreaViewController: EditorGroupViewControllerDelegate {
             return nil
         }
         return delegate.editorArea(self, tabViewItemWithIdentifier: identifier)
+    }
+
+    func editorGroupDidTakeEmptyViewController(_ group: EditorGroupViewController) {
+        emptyViewController = nil
+    }
+
+    func editorGroupDidRequestNewTab(_ group: EditorGroupViewController) {
+        newTab(group.view)
+    }
+
+    func editorGroup(_ group: EditorGroupViewController, indicatorViewFor item: NSTabViewItem) -> NSView? {
+        delegate?.editorArea(self, indicatorViewFor: item)
     }
 
     func position(of group: EditorGroupViewController) -> EditorGroupViewController.Position {

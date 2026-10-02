@@ -12,6 +12,15 @@ import TranscriptWorkspace
 /// and forward walk the active editor's history, which knows each tab by its
 /// `TranscriptTab` (`NSTabViewItem.identifier`).
 ///
+/// **New tabs** (design 08 *Tabs and the +*): every editor's bar ends in a +, and
+/// ⌘T opens a New tab — a `SessionTabViewController` as a draft — after the
+/// active one, or selects the group's New tab that nobody has touched. With no
+/// tab at all the area shows a New view of its own, no bar; sending from it
+/// moves that same controller into the first tab. A New tab becomes its
+/// session's at Send (`transcriptTab(_:didStartSessionAt:)`): the item is
+/// re-identified in place, so nothing about the tab changes but what it is.
+/// The words of a New tab that closes are kept for the next one made.
+///
 /// The sidebar never collapses: it is where transcripts are opened from, and
 /// the window is always wide enough for it.
 @MainActor
@@ -29,6 +38,18 @@ final class MainSplitViewController: NSSplitViewController {
 
     /// The transcript last reported to the delegate.
     private var shownTranscript: URL?
+
+    /// The words of the New tab closed last, for the next New tab made.
+    private var closedDraftText = ""
+    /// The sidebar's projects, most recent first: where a New tab starts when
+    /// nothing else says.
+    private var recentFolders: [URL] = []
+    /// Each live session's activity, from the store.
+    private var activities: [URL: SessionState.Activity] = [:]
+    /// One mark per session shown in a tab, kept so an animating mark is the
+    /// same view for as long as its state is.
+    private var marks: [URL: ActivityMarkView] = [:]
+    private var subscriptions: Set<AnyCancellable> = []
 
     init(library: LibraryStore, context: TranscriptTab.Context) {
         self.library = library
@@ -75,51 +96,124 @@ final class MainSplitViewController: NSSplitViewController {
         sidebarViewController.delegate = self
         editorArea.delegate = self
         editorArea.registerForDraggedTypes([.fileURL])
+        editorArea.showsNewTabButton = true
+        context.recentFolders
+            .sink { [weak self] in self?.recentFolders = $0 }
+            .store(in: &subscriptions)
+        // With no tab the area is a New tab without its tab.
+        editorArea.emptyViewController = makeNewSession()
+        sessions.$activities
+            .sink { [weak self] in self?.activitiesDidChange($0) }
+            .store(in: &subscriptions)
     }
 
     /// A tab command sent to nil — ⌘W — reaches the editor area from the
     /// sidebar too, not only from inside a tab.
     override func supplementalTarget(forAction action: Selector, sender: Any?) -> Any? {
-        Self.areaCommands.contains(action) ? editorArea : super.supplementalTarget(forAction: action, sender: sender)
+        // ⌘. stops the active session tab's turn from anywhere in the window.
+        if action == #selector(SessionTabViewController.stopResponding(_:)) {
+            return editorArea.activeViewController as? SessionTabViewController
+        }
+        return Self.areaCommands.contains(action)
+            ? editorArea : super.supplementalTarget(forAction: action, sender: sender)
     }
 
     private static let areaCommands: Set<Selector> = [
         #selector(EditorAreaViewController.goBack(_:)), #selector(EditorAreaViewController.goForward(_:)),
-        #selector(EditorAreaViewController.closeTab(_:)),
+        #selector(EditorAreaViewController.closeTab(_:)), #selector(EditorAreaViewController.newTab(_:)),
     ]
 
     // MARK: - New tabs
 
-    // TODO(fill E): the New tab (design 08 *Tabs and the +*):
-    // - `editorArea.showsNewTabButton = true`; `editorArea.emptyViewController`
-    //   = `TranscriptTab.makeNewSession(...)`, made again whenever the tabs run out;
-    // - ⌘T / + (`editorArea(_:didRequestNewTabIn:)`): the group's untouched New tab
-    //   if it has one (`TranscriptTab.isUntouchedDraft`), else a New tab after the
-    //   active one, in the active session tab's folder or the most recent project,
-    //   with the words of the last New tab closed (`TranscriptTab.draftText`, kept
-    //   in `willClose`);
-    // - tab marks: `editorArea(_:indicatorViewFor:)` from `sessions.$activities`,
-    //   one cached `ActivityMarkView` per transcript URL, `reloadIndicators()` on change.
-
-    // MARK: - Sessions
-
-    /// File › New Session…: opens a New tab, pinned, where the folder and the
-    /// first prompt are chosen (the sheet that asked for the folder is gone;
-    /// `SessionStore.start(in:)` with it).
-    func newSession() {
-        editorArea.open(
-            TranscriptTab.makeNewSessionItem(folder: nil, text: "", context: context, delegate: self), pinned: true)
+    /// File › New Tab: in the active editor, as the + of its bar does.
+    func newTab() {
+        editorArea.newTab(nil)
     }
+
+    /// A New view for the area to show while it has no tab, starting in the
+    /// default folder with the words of the New tab closed last.
+    private func makeNewSession() -> NSViewController {
+        TranscriptTab.makeNewSession(
+            folder: defaultFolder(), text: takeClosedDraftText(), context: context, delegate: self)
+    }
+
+    private func takeClosedDraftText() -> String {
+        defer { closedDraftText = "" }
+        return closedDraftText
+    }
+
+    /// Where a New tab starts: the folder of the session tab that is active —
+    /// a New tab's choice, or the project its transcript is listed under —
+    /// else the most recent project.
+    private func defaultFolder() -> URL? {
+        let group = editorArea.activeGroup
+        if group.tabViewItems.indices.contains(group.selectedTabViewItemIndex) {
+            let item = group.tabViewItems[group.selectedTabViewItemIndex]
+            if let tab = item.viewController as? SessionTabViewController, let folder = tab.folder { return folder }
+            if let url = TranscriptTab(identifier: item.identifier)?.transcriptURL,
+                let project = library.path(toTranscriptAt: url).first
+            {
+                return URL(fileURLWithPath: project.id, isDirectory: true)
+            }
+        }
+        return recentFolders.first
+    }
+
+    /// Makes a New view for the empty area again — the one it showed became a
+    /// tab, or the tabs ran out and the words of the last New tab go with it.
+    private func renewEmptyNewSession() {
+        let previous = editorArea.emptyViewController
+        editorArea.emptyViewController = makeNewSession()
+        if let previous { TranscriptTab.prepareForRemoval(previous) }
+    }
+
+    /// Tells the window the reader is in `transcript`, unless it already knows.
+    private func show(transcript: URL?) {
+        guard transcript != shownTranscript else { return }
+        shownTranscript = transcript
+        delegate?.mainSplitViewController(self, didShowTranscriptAt: transcript)
+    }
+
+    /// The tabs' marks: a session's activity in the slot its close button uses —
+    /// nothing while idle or at rest, which the sidebar shows and the tab bar
+    /// has no room for.
+    private func activitiesDidChange(_ activities: [URL: SessionState.Activity]) {
+        self.activities = activities
+        marks = marks.filter { activities[$0.key] != nil }
+        editorArea.reloadIndicators()
+    }
+
 }
 
 extension MainSplitViewController: TranscriptTabDelegate {
+    /// The New tab is its session's from here: the item changes what it is, in
+    /// place — or, for the New view the empty area shows, becomes the first tab
+    /// with the same controller in it — before this returns, so the window,
+    /// told below, never sees a tab that is neither. The active controller is
+    /// the same object, so the editor area reports no activation of its own.
     func transcriptTab(_ source: NSViewController, didStartSessionAt url: URL) {
-        // TODO(fill E): re-identify the item (or move `source` from the empty
-        // area into the first tab), then what `editorArea(_:didActivate:)` does.
+        let identifier = TranscriptTab.transcript(url)
+        if let item = editorArea.groups.lazy.flatMap(\.tabViewItems).first(where: { $0.viewController === source }) {
+            item.identifier = identifier
+        } else if source === editorArea.emptyViewController {
+            let item = NSTabViewItem(viewController: source)
+            item.identifier = identifier
+            editorArea.open(item, pinned: true)
+            renewEmptyNewSession()
+        } else {
+            appLog(.warning, "MainSplitViewController", "a session started in a tab that is not open")
+            return
+        }
+        show(transcript: url)
+        sidebarViewController.select(transcriptAt: url)
     }
 
+    /// A launch stopped before it began: the tab is a New tab again.
     func transcriptTabDidReturnToDraft(_ source: NSViewController) {
-        // TODO(fill E): the item is a `.newSession` again.
+        guard let item = editorArea.groups.lazy.flatMap(\.tabViewItems).first(where: { $0.viewController === source })
+        else { return }
+        item.identifier = TranscriptTab.newSession(UUID())
+        show(transcript: nil)
     }
 
     /// Opens a tab beside its source — in the *other* editor as its temporary
@@ -183,9 +277,41 @@ extension MainSplitViewController: EditorAreaViewControllerDelegate {
         let transcript = viewController.flatMap { viewController in
             editorArea.activeGroup.tabViewItems.first { $0.viewController === viewController }
         }.flatMap { TranscriptTab(identifier: $0.identifier)?.transcriptURL }
-        guard transcript != shownTranscript else { return }
-        shownTranscript = transcript
-        delegate?.mainSplitViewController(self, didShowTranscriptAt: transcript)
+        show(transcript: transcript)
+        // The tabs ran out: the area is a New view again, with the words of the
+        // New tab closed last.
+        if viewController == nil { renewEmptyNewSession() }
+    }
+
+    /// ⌘T or a + on a bar: the group's New tab nobody has touched, selected;
+    /// else a New tab after the active one, pinned, in its folder. With no tab
+    /// the New view is already there.
+    func editorArea(_ editorArea: EditorAreaViewController, didRequestNewTabIn group: EditorGroupViewController) {
+        guard !group.tabViewItems.isEmpty else {
+            (editorArea.emptyViewController as? SessionTabViewController)?.focusComposer()
+            return
+        }
+        if let index = group.tabViewItems.firstIndex(where: {
+            $0.viewController.map(TranscriptTab.isUntouchedDraft) ?? false
+        }) {
+            group.selectedTabViewItemIndex = index
+            return
+        }
+        let item = TranscriptTab.makeNewSessionItem(
+            folder: defaultFolder(), text: takeClosedDraftText(), context: context, delegate: self)
+        group.insertTabViewItem(item, at: group.selectedTabViewItemIndex + 1)
+    }
+
+    /// A live session's mark in its tab: the running arc, coral, red — and
+    /// nothing while it is idle.
+    func editorArea(_ editorArea: EditorAreaViewController, indicatorViewFor tabViewItem: NSTabViewItem) -> NSView? {
+        guard case .transcript(let url)? = TranscriptTab(identifier: tabViewItem.identifier),
+            let activity = activities[url], activity != .idle
+        else { return nil }
+        let mark = marks[url] ?? ActivityMarkView()
+        marks[url] = mark
+        mark.activity = activity
+        return mark
     }
 
     /// A tab again for a transcript the history goes back to, while the library
@@ -205,7 +331,9 @@ extension MainSplitViewController: EditorAreaViewControllerDelegate {
         }
     }
 
+    /// A New tab closing leaves its words for the next one.
     func editorArea(_ editorArea: EditorAreaViewController, willClose viewController: NSViewController) {
+        if let words = TranscriptTab.draftText(of: viewController) { closedDraftText = words }
         TranscriptTab.prepareForRemoval(viewController)
     }
 

@@ -21,7 +21,7 @@ struct CCTermApp: App {
             AppCommands(
                 openSettings: { appDelegate.showSettingsWindow() },
                 openAbout: { appDelegate.showAboutWindow() },
-                newSession: { appDelegate.newSession() }
+                newTab: { appDelegate.newTab() }
             )
         }
     }

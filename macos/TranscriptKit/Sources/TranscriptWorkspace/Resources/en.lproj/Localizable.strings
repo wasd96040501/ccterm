@@ -21,3 +21,6 @@
 
 /* Shown in an editor that has no tabs. */
 "No Editor" = "No Editor";
+
+/* The + at the end of a tab bar: its tooltip (⌘T is appended) and accessibility label. */
+"New Tab" = "New Tab";

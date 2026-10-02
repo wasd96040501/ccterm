@@ -45,6 +45,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// one probe per account serves every window.
     private var catalog: ModelCatalogStore?
 
+    /// Watches for ⌘N (`installNewTabKey`).
+    private var newTabKeyMonitor: Any?
+
     /// Lazy AppKit-rooted Settings window. Created on the first
     /// `showSettingsWindow()` call (⌘, or App > Settings… menu item)
     /// — never at launch, so the OS cannot resurface it from saved
@@ -93,12 +96,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// File › New Session…: in the main window, shown first if it was closed.
-    func newSession() {
+    /// File › New Tab, ⌘T and ⌘N: in the main window, shown first if it was
+    /// closed. With the main window key the menu's `newTab:` already reached its
+    /// editor area; this is for when another window is key, or none.
+    func newTab() {
         guard let mainWindowController else { return }
         mainWindowController.showWindow(nil)
         mainWindowController.window?.makeKeyAndOrderFront(nil)
-        mainWindowController.newSession()
+        mainWindowController.newTab()
+    }
+
+    /// ⌘N as a second key for New Tab: a menu item takes one key equivalent, so
+    /// this watches for the other. It does what the menu item does — the key
+    /// window's editor area answers `newTab:`, else the main window is shown.
+    private func installNewTabKey() {
+        newTabKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard flags == .command, event.charactersIgnoringModifiers == "n" else { return event }
+            MainActor.assumeIsolated {
+                if !NSApp.sendAction(Selector(("newTab:")), to: nil, from: nil) { self?.newTab() }
+            }
+            return nil
+        }
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -111,6 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(0, forKey: "NSInitialToolTipDelay")
         MainThreadWatchdog.start()
         assemble()
+        installNewTabKey()
         // The Dock bounces the icon until this returns — measured: waiting in
         // `applicationDidFinishLaunching` instead, it has stopped by then. So
         // the wait for the main window reads as the app launching, not as an

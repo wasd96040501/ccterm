@@ -61,9 +61,10 @@ final class TranscriptViewControllerTests: XCTestCase {
             visible.insetBy(dx: 0, dy: -1).contains(last), "last row \(last) not in view \(visible)")
     }
 
-    /// A session's own tab: the composer sits under the transcript and takes
-    /// none of its rows.
-    func testASessionsOwnTabHasAComposerUnderTheTranscript() throws {
+    /// A session's own tab: the composer floats 16 pt above the bottom edge,
+    /// 720 pt at most, and the transcript runs behind it at full size — its last
+    /// row comes to rest clear above the card.
+    func testASessionsOwnTabHasAComposerFloatingOverTheTranscript() throws {
         let url = try writeConversation("-p/own.jsonl", turns: 5)
         let stage = AppKitStage.mount(SessionTabViewController(.session(url), title: "t", context: .reading()))
         self.stage = stage
@@ -76,9 +77,15 @@ final class TranscriptViewControllerTests: XCTestCase {
         let composerFrame = host.convert(composer.bounds, from: composer)
         let transcriptFrame = host.convert(transcript.bounds, from: transcript)
         XCTAssertGreaterThan(composerFrame.height, 30)
-        // The host is not flipped: under means lower.
-        XCTAssertGreaterThanOrEqual(transcriptFrame.minY, composerFrame.maxY - 0.5)
-        XCTAssertEqual(transcriptFrame.width, host.bounds.width)
+        // The host is not flipped: the card stands 16 pt above its bottom edge.
+        XCTAssertEqual(composerFrame.minY, 16, accuracy: 0.5)
+        XCTAssertLessThanOrEqual(composerFrame.width, 720.5)
+        XCTAssertEqual(composerFrame.midX, host.bounds.midX, accuracy: 0.5)
+        // The transcript is the whole tab, the card over it.
+        XCTAssertEqual(transcriptFrame, host.bounds)
+        // The last row rests above the card (transcript coordinates grow downward).
+        let lastRow = transcript.rect(ofRow: transcript.numberOfRows - 1)
+        XCTAssertLessThanOrEqual(lastRow.maxY, transcript.bounds.height - composerFrame.maxY + 0.5)
     }
 
     func testAnUnreadableFileShowsANote() throws {

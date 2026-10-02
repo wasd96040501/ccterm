@@ -28,6 +28,9 @@ final class SidebarViewController: NSViewController {
     /// The node last reported selected, so restoring the selection after a
     /// republish isn't reported again.
     private var reportedSelection: String?
+    /// A session to select once the library lists it — a session just started
+    /// from a New tab isn't in the tree until the CLI writes its transcript.
+    private var pendingSelection: URL?
 
     private let activities: AnyPublisher<[URL: SessionState.Activity], Never>
     /// Each live session's activity, by transcript URL, as last published.
@@ -204,6 +207,34 @@ final class SidebarViewController: NSViewController {
             let row = outlineView.row(forItem: selected)
             if row >= 0 { outlineView.selectRowIndexes([row], byExtendingSelection: false) }
         }
+        applyPendingSelection()
+    }
+
+    /// Selects the row of the session at `url` — opening the project it is in —
+    /// without reporting it as chosen: the window already shows it. A session the
+    /// library doesn't list yet is selected when it does.
+    func select(transcriptAt url: URL?) {
+        pendingSelection = url
+        applyPendingSelection()
+    }
+
+    private func applyPendingSelection() {
+        guard let url = pendingSelection else { return }
+        func path(to url: URL, in items: [Item]) -> [Item]? {
+            for item in items {
+                if item.node.transcriptURL == url { return [item] }
+                if let rest = path(to: url, in: item.children) { return [item] + rest }
+            }
+            return nil
+        }
+        guard let chain = path(to: url, in: roots), let item = chain.last else { return }
+        pendingSelection = nil
+        for ancestor in chain.dropLast() { outlineView.expandItem(ancestor) }
+        let row = outlineView.row(forItem: item)
+        guard row >= 0 else { return }
+        reportedSelection = item.node.id
+        outlineView.selectRowIndexes([row], byExtendingSelection: false)
+        outlineView.scrollRowToVisible(row)
     }
 
     private func showLoading(_ loading: Bool) {
@@ -340,15 +371,6 @@ extension SessionState.Activity {
     static func mostUrgent(of activities: some Sequence<SessionState.Activity>) -> SessionState.Activity? {
         activities.max { $0.urgency < $1.urgency }
     }
-
-    fileprivate var accessibilityLabel: String {
-        switch self {
-        case .idle: String(localized: "Idle")
-        case .responding: String(localized: "Responding")
-        case .needsInput: String(localized: "Needs Your Input")
-        case .failed: String(localized: "Failed")
-        }
-    }
 }
 
 extension LibraryNode {
@@ -458,123 +480,6 @@ extension SidebarViewController {
     }
 }
 
-// MARK: - Activity mark
-
-extension SidebarViewController {
-    /// A live session's state, one small mark at the row's trailing edge
-    /// (design/sidebar-icons): idle a quiet dot, needs-input a coral dot, failed
-    /// a red one, and responding a ring with an arc travelling it — the
-    /// tile's motion, since a running thing moves and isn't coloured. On a
-    /// selected, focused row every mark is white, as the icon is. Reduce Motion
-    /// stills the arc.
-    private final class ActivityMarkView: NSView {
-        /// The width and height of the mark's slot.
-        static let slot: CGFloat = 14
-
-        private let shape = CAShapeLayer()
-
-        var activity: SessionState.Activity? {
-            didSet {
-                guard activity != oldValue else { return }
-                setAccessibilityLabel(activity?.accessibilityLabel)
-                update()
-            }
-        }
-
-        var isEmphasized = false {
-            didSet {
-                guard isEmphasized != oldValue else { return }
-                needsDisplay = true
-            }
-        }
-
-        override init(frame: NSRect) {
-            super.init(frame: frame)
-            wantsLayer = true
-            layer?.addSublayer(shape)
-            setAccessibilityElement(true)
-            setAccessibilityRole(.image)
-            update()
-        }
-
-        @available(*, unavailable)
-        required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
-
-        override var wantsUpdateLayer: Bool { true }
-
-        override func updateLayer() {
-            effectiveAppearance.performAsCurrentDrawingAppearance { paint() }
-        }
-
-        override func layout() {
-            super.layout()
-            // The shape is its own centred square, so the arc turns about its middle.
-            let side = Self.slot
-            shape.bounds = CGRect(x: 0, y: 0, width: side, height: side)
-            shape.position = CGPoint(x: bounds.midX, y: bounds.midY)
-        }
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            animate()
-        }
-
-        private func update() {
-            isHidden = activity == nil
-            let side = Self.slot
-            let path = CGMutablePath()
-            if case .responding = activity {
-                path.addEllipse(in: CGRect(x: 2, y: 2, width: side - 4, height: side - 4))
-            } else {
-                path.addEllipse(in: CGRect(x: (side - 6) / 2, y: (side - 6) / 2, width: 6, height: 6))
-            }
-            shape.path = path
-            needsDisplay = true
-            animate()
-        }
-
-        /// Colours are resolved here, in the view's appearance, so they follow
-        /// light and dark.
-        private func paint() {
-            let colour: NSColor? =
-                switch activity {
-                case .idle: NSColor.secondaryLabelColor.withAlphaComponent(0.55)
-                case .responding: .secondaryLabelColor
-                case .needsInput: NSColor(resource: .sidebarCoral)
-                case .failed: .systemRed
-                case nil: nil
-                }
-            // The white of a selected row, quieter for the quiet dot.
-            let ink = isEmphasized ? NSColor.white.withAlphaComponent(activity == .idle ? 0.55 : 1) : colour
-            if case .responding = activity {
-                shape.fillColor = nil
-                shape.strokeColor = ink?.cgColor
-                shape.lineWidth = 1.5
-                shape.lineCap = .round
-                shape.strokeStart = 0
-                shape.strokeEnd = 1.0 / 3
-            } else {
-                shape.fillColor = ink?.cgColor
-                shape.strokeColor = nil
-                shape.strokeEnd = 1
-            }
-        }
-
-        private func animate() {
-            shape.removeAllAnimations()
-            guard case .responding = activity, window != nil,
-                !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-            else { return }
-            let turn = CABasicAnimation(keyPath: "transform.rotation.z")
-            turn.fromValue = 0
-            turn.toValue = -2 * Double.pi
-            turn.duration = 1
-            turn.repeatCount = .infinity
-            shape.add(turn, forKey: "turn")
-        }
-    }
-}
-
 // MARK: - Item
 
 extension SidebarViewController {
@@ -602,13 +507,12 @@ extension LibraryNode.Kind {
         }
     }
 
-    /// A glyph's colour, as Xcode's navigator gives each file type one
-    /// (`design/sidebar-icons`). The folder icon has its own colours and
-    /// takes none.
+    /// A template glyph's colour, as Xcode's navigator gives each file type one
+    /// (`design/sidebar-icons`). The folder icon and the conversation's white
+    /// document have their own colours and take none.
     fileprivate var tintColor: NSColor? {
         switch self {
-        case .project, .subagents: nil
-        case .session: NSColor(resource: .sidebarCoral)
+        case .project, .subagents, .session: nil
         case .agent: .systemGray
         case .workflow: .systemIndigo
         }

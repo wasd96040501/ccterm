@@ -45,9 +45,34 @@ public struct Transcript: Sendable, Equatable {
     /// - A local command comes before its output, as it was run; the stream
     ///   echoes it after.
     public mutating func append(_ message: Message) {
-        // TODO(live): the accumulation TranscriptSmoke's `Run` does today,
-        // moved here; TranscriptSmoke then calls this.
-        fatalError("TODO(live): Transcript.append")
+        switch message {
+        case .user(let user):
+            guard user.parentToolUseID == nil else { return }
+            if let uuid = user.uuid, messages.contains(where: { $0.isUser(uuid) }) { return }
+            if user.isReplay, user.kind.isLocalCommand, let run = trailingCommandOutputs {
+                // The echo of a command whose output came first. An earlier
+                // command's output before this run has its echo already in
+                // place, so only the run's last output is this command's then.
+                let precededByCommand = run.lowerBound > 0 && messages[run.lowerBound - 1].isUserCommand
+                messages.insert(message, at: precededByCommand ? run.upperBound - 1 : run.lowerBound)
+                return
+            }
+            messages.append(message)
+        case .assistant(let assistant):
+            guard assistant.parentToolUseID == nil else { return }
+            messages.append(message)
+        case .system(.compactBoundary):
+            messages.append(message)
+        default:
+            return
+        }
+    }
+
+    /// The run of local-command outputs at the end of ``messages``.
+    private var trailingCommandOutputs: Range<Int>? {
+        var start = messages.count
+        while start > 0, messages[start - 1].isCommandOutput { start -= 1 }
+        return start == messages.count ? nil : start..<messages.count
     }
 
     /// Reads a session file.
@@ -87,4 +112,30 @@ public struct Transcript: Sendable, Equatable {
     }
 
     private static let metadataSliceSize = 64 * 1024
+}
+
+extension UserMessage.Kind {
+    fileprivate var isLocalCommand: Bool {
+        switch self {
+        case .slashCommand, .shellCommand: return true
+        default: return false
+        }
+    }
+}
+
+extension Message {
+    fileprivate func isUser(_ uuid: String) -> Bool {
+        if case .user(let user) = self { return user.uuid == uuid }
+        return false
+    }
+
+    fileprivate var isCommandOutput: Bool {
+        if case .user(let user) = self, case .commandOutput = user.kind { return true }
+        return false
+    }
+
+    fileprivate var isUserCommand: Bool {
+        if case .user(let user) = self { return user.kind.isLocalCommand }
+        return false
+    }
 }

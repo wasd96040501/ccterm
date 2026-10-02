@@ -32,10 +32,36 @@ public struct SessionDirectory: Sendable, Hashable {
     /// `workingDirectory` — its project folder (the directory's path, named
     /// as the CLI names it) / `<id>.jsonl` — before the file exists.
     public func transcriptURL(forSession id: String, workingDirectory: URL) -> URL {
-        // TODO(live): the CLI's project-folder naming (every character
-        // outside [A-Za-z0-9] becomes `-`; a long path is cut and hashed as
-        // the CLI does), checked against `sessions()` in a test.
-        fatalError("TODO(live): SessionDirectory.transcriptURL")
+        let path = Self.physicalPath(workingDirectory)
+        // The CLI works on UTF-16 units: a character outside the BMP is two.
+        var name = String(
+            path.utf16.map { unit -> Character in
+                switch unit {
+                case 0x30...0x39, 0x41...0x5A, 0x61...0x7A: return Character(UnicodeScalar(UInt8(unit)))
+                default: return "-"
+                }
+            })
+        if name.count > Self.projectNameLimit {
+            // `hash * 31 + unit` in 32 bits, as a signed value, its magnitude in base 36.
+            var hash: Int32 = 0
+            for unit in path.utf16 { hash = hash &* 31 &+ Int32(unit) }
+            name = "\(name.prefix(Self.projectNameLimit))-\(String(abs(Int64(hash)), radix: 36))"
+        }
+        return url.appendingPathComponent(name, isDirectory: true)
+            .appendingPathComponent("\(id).jsonl", isDirectory: false)
+    }
+
+    /// Longest project folder name the CLI keeps whole; a longer one is cut
+    /// here and a hash of the path follows.
+    private static let projectNameLimit = 200
+
+    /// `directory`'s path with symlinks resolved, as the CLI sees its own
+    /// working directory (`/tmp` is `/private/tmp`); the path as given when
+    /// it doesn't exist.
+    private static func physicalPath(_ directory: URL) -> String {
+        guard let resolved = realpath(directory.path, nil) else { return directory.path }
+        defer { free(resolved) }
+        return String(cString: resolved)
     }
 
     /// The directory a CLI launched with `configuration` writes to. Blocking:

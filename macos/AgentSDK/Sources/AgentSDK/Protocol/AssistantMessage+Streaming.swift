@@ -8,9 +8,10 @@ extension AssistantMessage {
     /// The empty response `event` begins (`messageStart`); `nil` for any
     /// other event.
     public init?(streamStart event: StreamEvent) {
-        // TODO(live): messageStart → uuid / sessionID / parentToolUseID from
-        // the event, messageID and model from its payload, no content.
-        return nil
+        guard case .messageStart(let messageID, let model, _) = event.event else { return nil }
+        self.init(
+            uuid: event.uuid, sessionID: event.sessionID, messageID: messageID, model: model, content: [],
+            parentToolUseID: event.parentToolUseID)
     }
 
     /// Folds the next event of this response: a block starts empty, text and
@@ -21,6 +22,17 @@ extension AssistantMessage {
     /// different `messageStart`) are not this one's to fold; the caller
     /// starts a new message for them.
     public mutating func apply(_ event: StreamEvent) {
-        // TODO(live): contentBlockStart / contentBlockDelta(.text, .thinking).
+        switch event.event {
+        case .contentBlockStart(_, let block):
+            content.append(block)
+        case .contentBlockDelta(_, .text(let text)):
+            guard case .text(let soFar)? = content.last else { return }
+            content[content.count - 1] = .text(soFar + text)
+        case .contentBlockDelta(_, .thinking(let text)):
+            guard case .thinking(let soFar)? = content.last else { return }
+            content[content.count - 1] = .thinking(soFar + text)
+        default:
+            break
+        }
     }
 }

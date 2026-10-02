@@ -11,6 +11,11 @@ import AppKit
 /// Hover, selection and the flash are paint: a wash behind the line, and the
 /// accessory's alpha. The accessory's slot is always laid out.
 ///
+/// The row is as tall as its wash, at either level, so the wash and the
+/// click reach the same box. The words sit `air` in from its top and bottom,
+/// and that much of the transcript's gap is already in the box
+/// (`PageRow.spacingAbove(after:)`).
+///
 /// Laid out by hand and its words drawn, not four text fields under
 /// constraints: a screen of work lines is dozens of rows, and each one
 /// mounted as the transcript scrolls paid for its fields' constraints, key
@@ -23,9 +28,9 @@ import AppKit
 final class WorkLineRowView: NSView, PageRowView {
     struct Model: Equatable {
         enum Level: Equatable {
-            /// A run's or news's own row: 28 pt.
+            /// A run's or news's own row.
             case line
-            /// One item under an expanded row: 24 pt, indented 24.
+            /// One item under an expanded row, indented 24.
             case item
         }
 
@@ -61,6 +66,11 @@ final class WorkLineRowView: NSView, PageRowView {
     private static let flashDuration: CFTimeInterval = 1.2
 
     private static let accessorySide: CGFloat = 12
+
+    /// The row's height, which is the wash's: a run's line and its items alike.
+    static let rowHeight: CGFloat = 28
+    /// Between the wash's edge and the words' line, above and below them.
+    static let air: CGFloat = 6
 
     private let tile = TileView()
     private let wordsView = WordsView()
@@ -105,15 +115,8 @@ final class WorkLineRowView: NSView, PageRowView {
 
     // MARK: - Height
 
-    private static func lineHeight(_ level: Model.Level) -> CGFloat {
-        switch level {
-        case .line: 28
-        case .item: 24
-        }
-    }
-
     static func height(for model: Model, width: CGFloat) -> CGFloat {
-        lineHeight(model.level)
+        rowHeight
     }
 
     // MARK: - Model
@@ -207,7 +210,7 @@ final class WorkLineRowView: NSView, PageRowView {
         super.layout()
         updateWashFrame()
         guard let model else { return }
-        let center = Self.lineHeight(model.level) / 2
+        let center = Self.rowHeight / 2
         let side = tile.intrinsicContentSize.width
         tile.frame = NSRect(x: model.level == .item ? Self.indent : 0, y: center - side / 2, width: side, height: side)
         accessory.frame = NSRect(
@@ -264,8 +267,8 @@ final class WorkLineRowView: NSView, PageRowView {
     override var wantsUpdateLayer: Bool { true }
 
     private func updateWashFrame() {
-        let height = Self.lineHeight(model?.level ?? .line)
-        wash.frame = NSRect(x: -Self.washOutset, y: 0, width: bounds.width + 2 * Self.washOutset, height: height)
+        wash.frame = NSRect(
+            x: -Self.washOutset, y: 0, width: bounds.width + 2 * Self.washOutset, height: Self.rowHeight)
     }
 
     override func updateLayer() {

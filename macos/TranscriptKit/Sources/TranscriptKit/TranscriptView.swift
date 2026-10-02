@@ -153,7 +153,10 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
     /// the speaker changes and the hard-edged things that live in rows —
     /// bubbles, cards, images — have no glyph leading around them to read as
     /// part of the gap.
-    private static let rowSpacing: CGFloat = 14
+    ///
+    /// Public for a host whose row holds some of the gap inside its box (a
+    /// hover reaching past its words) and answers the rest.
+    public static let rowSpacing: CGFloat = 14
 
     // MARK: - Lifecycle
 

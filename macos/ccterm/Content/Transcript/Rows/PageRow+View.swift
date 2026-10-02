@@ -17,18 +17,32 @@ extension PageRow {
         }
     }
 
-    /// The gap above this row, when it isn't the transcript's between entries
-    /// (design README "Spacing"): what a line discloses sits flush under it,
-    /// and a run's approval card 6 pt under its run.
-    var spacingAbove: CGFloat? {
+    /// The gap above this row, under `above` (design README "Spacing"): what
+    /// a line discloses sits flush under it, and a run's approval card 6 pt
+    /// under its run. Between entries it is the transcript's gap, less the air
+    /// a line of work already holds inside its box on either side; `nil` when
+    /// neither holds any.
+    func spacingAbove(after above: PageRow?) -> CGFloat? {
         switch kind {
-        case .runItem, .newsItem, .showMore: 0
-        case .approval: Self.approvalSpacing
-        default: nil
+        case .runItem, .newsItem, .showMore: return 0
+        case .approval: return Self.approvalSpacing
+        default:
+            let air = air + (above?.air ?? 0)
+            return air == 0 ? nil : TranscriptView.rowSpacing - air
         }
     }
 
     private static let approvalSpacing: CGFloat = 6
+
+    /// The room above and below this row's words inside its box: a line of
+    /// work's wash. Every row a run or news can end on has the same, so
+    /// opening or closing one leaves the gap under it as it was.
+    private var air: CGFloat {
+        switch kind {
+        case .runLine, .runItem, .showMore, .newsLine, .newsItem, .agentReport: WorkLineRowView.air
+        default: 0
+        }
+    }
 
     /// A `.view` row's height at `width`, from the model alone.
     @MainActor

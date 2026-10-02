@@ -23,6 +23,17 @@ const MODELS = [
   { v: "opus-4-6", label: "Opus 4.6", other: true, eff: NO_X, auto: true },
   { v: "sonnet-4-6", label: "Sonnet 4.6", other: true, eff: NO_X, auto: true },
 ];
+for (const m of MODELS) m.acct = "sub";
+// An API provider's models are the names its account sets (design/settings:
+// Default Model, then Opus, Sonnet, Haiku); what each supports comes from that
+// account's own catalog.
+MODELS.push(
+  { v: "relay:default", acct: "relay", label: "Default", sub: "claude-sonnet-4-6", short: "Sonnet 4.6", eff: NO_X, auto: true },
+  { v: "relay:opus", acct: "relay", label: "Opus", sub: "claude-opus-4-6", short: "Opus 4.6", eff: NO_X, auto: true },
+  { v: "relay:sonnet", acct: "relay", label: "Sonnet", sub: "claude-sonnet-4-6", short: "Sonnet 4.6", eff: NO_X, auto: true },
+  { v: "relay:haiku", acct: "relay", label: "Haiku", sub: "claude-haiku-4-5", short: "Haiku 4.5", eff: [], auto: false },
+  { v: "deepseek:default", acct: "deepseek", label: "Default", sub: "deepseek-v3.2", short: "deepseek-v3.2", eff: [], auto: false },
+);
 const MODEL = (v) => MODELS.find((m) => m.v === v);
 const shortName = (v) => MODEL(v).short || MODEL(v).label;
 
@@ -40,10 +51,17 @@ const CYCLE = ["default", "acceptEdits", "plan", "auto"]; // ⇧⇥, the CLI's o
 const FOLDERS = [
   { name: "ccterm", path: "~/dev/ccterm", branch: "main" },
   { name: "ghostty", path: "~/dev/ghostty", branch: "main" },
-  { name: "claude-notes", path: "~/notes/claude-notes", branch: null },
+  { name: "claude-notes", path: "~/notes/claude-notes", branch: null }, // not a git repository
   { name: "dotfiles", path: "~/dotfiles", branch: "master" },
 ];
-const ACCOUNTS = ["Claude Max", "Work Relay"];
+// Accounts, as Settings has them: the subscription, then API providers.
+const ACCOUNTS = [
+  { id: "sub", name: "Claude Max", kind: "subscription", detail: "Subscription" },
+  { id: "relay", name: "Work Relay", kind: "provider", detail: "relay.example.com" },
+  { id: "deepseek", name: "DeepSeek", kind: "provider", detail: "api.deepseek.com" },
+];
+const ACCT = (id) => ACCOUNTS.find((a) => a.id === id);
+const acctOf = (v) => ACCT(MODEL(v).acct);
 const COMMANDS = [
   ["model", "[model]", "Set the AI model for this session"],
   ["effort", "[low|medium|high|xhigh|max]", "Set how hard Claude thinks"],
@@ -56,7 +74,7 @@ const COMMANDS = [
 ];
 
 // Settings a viewer can flip on the sheet (they're app settings, not session state).
-const LV_SETTINGS = { allowBypass: false, accounts: 1 };
+const LV_SETTINGS = { allowBypass: false };
 // The last choices made in a New tab — the next New tab starts from them.
 const LAST = { model: "default", effort: "high", mode: "auto", fast: false, draft: "" };
 
@@ -85,8 +103,43 @@ const LV = {
   folder: '<path d="M2.8 5.2V4.4c0-.6.4-1 1-1h2.6l1.2 1.4h4.6c.6 0 1 .4 1 1v5.8c0 .6-.4 1-1 1H3.8c-.6 0-1-.4-1-1z"/>',
   branch: '<svg width="9" height="10" viewBox="0 0 9 10"><circle cx="2.2" cy="2" r="1.2" fill="none" stroke="currentColor"/><circle cx="2.2" cy="8" r="1.2" fill="none" stroke="currentColor"/><circle cx="6.8" cy="3.4" r="1.2" fill="none" stroke="currentColor"/><path d="M2.2 3.2v3.6M6.8 4.6c0 1.6-4.6 1-4.6 2.2" fill="none" stroke="currentColor"/></svg>',
 };
-// The glyph fills the middle of its 16-pt box; the crop sets it at its own size.
-const sessionGlyph = (size, color = "var(--coral)") => `<svg width="${size}" height="${size}" viewBox="3.6 3.4 8.8 9" style="color:${color}" aria-hidden="true">${GLYPHS.session}</svg>`;
+/** The conversation icon, redesigned (08-live.md "The conversation icon"):
+ *  white, as a Mac document is, with the app's own prompt and cursor as its
+ *  emblem — the way a Swift file is white paper with an orange bird. Full
+ *  colour, not a template: it stays itself on a selected row, as Finder's do. */
+const BUBBLE = lame(8, 7.2, 6.6, 5.1, 4, 96) + "M3.5 10.8L8.2 11.6L3.7 14.7Q3.2 15 3.2 14.4Z";
+const RAMP3 = ["#FFA96E", "#FF6E7C", "#B95CF8"];
+function sessionIcon(size = 16) {
+  return `<svg class="sicon" width="${size}" height="${size}" viewBox="0 0 16 16" aria-hidden="true">` +
+    // The edge is drawn twice as wide under the fill, so only its outer half
+    // shows and the tail joins the body without a seam.
+    `<path class="se" d="${BUBBLE}"/><path class="sb" d="${BUBBLE}"/>` +
+    '<path d="M5.1 5.3l1.9 1.9-1.9 1.9" fill="none" stroke="var(--si-ink)" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"/>' +
+    RAMP3.map((c, i) => `<rect x="8.6" y="${5.3 + i * 1.27}" width="2.1" height="1.31" fill="${c}"/>`).join("") +
+    "</svg>";
+}
+/** The app icon (design/icon SHIP): 48-unit pixels on the 1024 canvas, a
+ *  5 × 7 chevron, a 2-pixel gap, a 3 × 5 cursor stepped peach → violet. */
+const CURSOR5 = ["#FFB46C", "#FF8F73", "#FF6E7C", "#DE64B6", "#B95CF8"];
+const CHEV = ["##...", ".##..", "..##.", "...##", "..##.", ".##..", "##..."];
+function appIcon(size) {
+  const c = 48, x0 = 272, y0 = 332;
+  let px = "";
+  CHEV.forEach((row, r) => [...row].forEach((ch, k) => { if (ch === "#") px += `<rect x="${x0 + k * c}" y="${y0 + r * c}" width="${c + 0.5}" height="${c + 0.5}"/>`; }));
+  const cur = CURSOR5.map((col, r) => `<rect x="${x0 + 7 * c}" y="${y0 + (2 + r) * c}" width="${3 * c}" height="${c + 0.5}" fill="${col}"/>`).join("");
+  return `<svg class="appicon" width="${size}" height="${size}" viewBox="0 0 1024 1024" aria-hidden="true"><defs><linearGradient id="lvicbg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2D2A38"/><stop offset="1" stop-color="#141218"/></linearGradient></defs>` +
+    `<path d="${lame(512, 512, 512, 512, 5, 160)}" fill="url(#lvicbg)"/><path d="${lame(512, 512, 510, 510, 5, 160)}" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="4"/>` +
+    `<g fill="#F4F2EE">${px}</g><g class="cur">${cur}</g></svg>`;
+}
+const RACK = '<rect x="3" y="3.2" width="10" height="4" rx="1.2"/><rect x="3" y="8.8" width="10" height="4" rx="1.2"/><path d="M5.2 5.2h.01M5.2 10.8h.01"/>';
+/** An account's mark, as Settings draws it: Claude's for the subscription,
+ *  server.rack in secondary for every provider. */
+function acctMark(a, size = 16) {
+  return a.kind === "subscription"
+    ? `<img class="g" src="../settings/assets/claude.svg" width="${size}" height="${size}" alt="">`
+    : svg16(RACK);
+}
+const RESTART = '<path d="M11.6 6.2A4 4 0 1 0 12 9"/><path d="M12 3.6v2.8H9.2"/>';
 
 /** The effort glyph: five bars rising, filled to the level — the composer's one ornament. */
 function bars(level) {
@@ -111,7 +164,7 @@ const SESSIONS = new Map();
 
 function draft(o = {}) {
   const s = {
-    id: nid("s"), state: "new", folder: FOLDERS[0], worktree: false, account: 0,
+    id: nid("s"), state: "new", folder: FOLDERS[0], worktree: false,
     model: LAST.model, effort: LAST.effort, mode: LAST.mode, fast: LAST.fast,
     pendingModel: null, pendingFast: null, title: "New Session", rows: [], ctx: 0, err: "", text: "", token: null, ...o,
   };
@@ -130,8 +183,12 @@ function effectiveEffort(s) {
 
 // MARK: - Choosing: each control knows when its change lands (08-live.md "Settings × state")
 
+/** The CLI is running: an account change means a restart. */
+const RUNNING = new Set(["idle", "responding", "waiting", "compacting"]);
 function chooseModel(s, v) {
   const m = MODEL(v);
+  // Another account is another launch environment: the CLI must restart, so ask.
+  if (RUNNING.has(s.state) && m.acct !== MODEL(s.model).acct) return confirmRestart(s, v);
   const before = { model: s.model, pending: s.pendingModel };
   if (isNew(s) || s.state === "rest" || s.state === "failed" || s.state === "starting") {
     s.model = v; s.pendingModel = null; // a flag on launch / resume, or held until initialize
@@ -199,18 +256,26 @@ function flashLater(s, which) { FLASH = { sid: s.id, which }; }
 function menuItems(kind, s) {
   if (kind === "model") {
     const cur = shownModel(s);
-    const top = MODELS.filter((m) => !m.other).map((m) => ({ label: m.label, sub: m.sub, checked: cur === m.v, act: () => chooseModel(s, m.v) }));
-    const other = MODELS.filter((m) => m.other).map((m) => ({ label: m.label, checked: cur === m.v, act: () => chooseModel(s, m.v) }));
+    const live = RUNNING.has(s.state);
+    const here = MODEL(s.model).acct;
     const fm = MODEL(cur);
-    const fastReason = fm.fast ? "Faster output on Opus · billed as extra usage" : "Opus 5.5, Opus 5 and Opus 4.8 only";
-    return [
-      ...(WORKING.has(s.state) ? [{ header: "Applies after this turn" }] : []),
-      ...top,
-      { sep: true },
-      { label: "Other Models", submenu: other, checked: other.some((o) => o.checked) },
-      { sep: true },
-      { label: "Fast Mode", glyph: LV.bolt.replace('class="bolt"', 'class="g" style="padding:1px 2px"'), sub: fastReason, checked: shownFast(s), disabled: !fm.fast, act: () => setFast(s, !shownFast(s)) },
-    ];
+    const out = [];
+    if (WORKING.has(s.state)) out.push({ header: "Applies after this turn" });
+    for (const a of ACCOUNTS) {
+      const ms = MODELS.filter((m) => m.acct === a.id);
+      const restarts = live && a.id !== here;
+      out.push({ acct: a, note: restarts ? "Restarts the session" : "" });
+      const item = (m) => ({ label: m.label, sub: m.sub, checked: cur === m.v, trail: restarts ? svg16(RESTART) : "", act: () => chooseModel(s, m.v) });
+      out.push(...ms.filter((m) => !m.other).map(item));
+      const older = ms.filter((m) => m.other);
+      if (older.length) {
+        if (s.moreModels || older.some((m) => m.v === cur)) out.push(...older.map(item));
+        else out.push({ label: `${older.length} More Models`, more: true, keep: true, act: () => { s.moreModels = true; } });
+      }
+    }
+    out.push({ sep: true });
+    out.push({ label: "Fast Mode", glyph: LV.bolt.replace('class="bolt"', 'class="g" style="padding:2px 3px"'), sub: fm.fast ? "Faster output on Opus · billed as extra usage" : fm.acct === "sub" ? "Opus 5.5, Opus 5 and Opus 4.8 only" : "Only with the subscription", checked: shownFast(s), disabled: !fm.fast, act: () => setFast(s, !shownFast(s)) });
+    return out;
   }
   if (kind === "effort") {
     const m = MODEL(shownModel(s));
@@ -233,29 +298,28 @@ function menuItems(kind, s) {
   if (kind === "folder") {
     return [
       { header: "Recent" },
-      ...FOLDERS.map((f) => ({ label: f.name, glyph: svg16(LV.folder), k: f.path, checked: s.folder === f, act: () => { if (s.folder !== f) s.worktree = false; s.folder = f; LW.refresh(s); } })),
+      ...FOLDERS.map((f) => ({ label: f.name, glyph: svg16(LV.folder), k: f.path, checked: s.folder === f, act: () => { s.folder = f; if (!f.branch) s.worktree = false; LW.refresh(s); } })),
       { sep: true },
       { label: "Choose Folder…", k: "⌘O", act: () => {} },
-      { sep: true },
-      { label: "New Worktree", sub: s.folder.branch ? "Claude works on a new branch in .claude/worktrees" : "Not a git repository", checked: s.worktree, disabled: !s.folder.branch, act: () => { s.worktree = !s.worktree; LW.refresh(s); } },
     ];
-  }
-  if (kind === "account") {
-    return [{ header: "Account" }, ...ACCOUNTS.map((a, i) => ({ label: a, sub: i ? "relay.example.com · API key" : "Subscription · claude.ai", checked: s.account === i, act: () => { s.account = i; LW.refresh(s); } }))];
   }
   return [];
 }
 
 function menuHTML(items, opts = {}) {
   const anyGlyph = items.some((i) => i.glyph);
-  return `<div class="lv-menu${opts.static ? " static" : ""}" role="menu">${items.map((it, i) => {
+  const body = items.map((it, i) => {
     if (it.sep) return '<div class="msep"></div>';
     if (it.header) return `<div class="mh"><span>${esc(it.header)}</span>${it.key ? `<kbd>${it.key}</kbd>` : ""}</div>`;
-    const cls = ["mi", anyGlyph ? "" : "nog", it.disabled ? "dis" : "", it.danger ? "danger" : "", opts.hl === i ? "hl" : ""].join(" ");
+    if (it.acct) return `<div class="mh acct">${acctMark(it.acct, 14)}<span>${esc(it.acct.name)}<i>${esc(it.acct.detail)}</i></span>${it.note ? `<em>${esc(it.note)}</em>` : ""}</div>`;
+    const cls = ["mi", anyGlyph ? "" : "nog", it.disabled ? "dis" : "", it.danger ? "danger" : "", it.more ? "more" : "", opts.hl === i ? "hl" : ""].join(" ");
     return `<div class="${cls}" data-mi="${i}">${it.checked ? LV.check : "<span></span>"}${anyGlyph ? it.glyph || "<span></span>" : ""}<span class="l">${esc(it.label)}</span>${
-      it.submenu ? `<span class="k">${LV.sub}</span>` : it.k ? `<span class="k">${esc(it.k)}</span>` : "<span></span>"
+      it.submenu ? `<span class="k">${LV.sub}</span>` : it.k ? `<span class="k">${esc(it.k)}</span>` : it.trail ? `<span class="k t">${it.trail}</span>` : "<span></span>"
     }${it.sub ? `<span class="s">${esc(it.sub)}</span>` : ""}</div>`;
-  }).join("")}</div>`;
+  }).join("");
+  // A long list is a panel with its own scroller, capped in height.
+  const panel = opts.panel || items.some((i) => i.acct);
+  return `<div class="lv-menu${opts.static ? " static" : ""}${panel ? " panel" : ""}" role="menu">${panel ? `<div class="mscroll">${body}</div>` : body}</div>`;
 }
 
 const MENU = {
@@ -263,6 +327,8 @@ const MENU = {
   open(chip, kind, s) {
     this.close();
     this.items = menuItems(kind, s);
+    this.kind = kind;
+    this.s = s;
     this.chip = chip;
     chip.classList.add("open");
     const host = document.createElement("div");
@@ -275,6 +341,17 @@ const MENU = {
       if (!mi) return;
       const it = this.items[+mi.dataset.mi];
       if (it.disabled || it.submenu) return;
+      if (it.keep) { // expands in place: the panel stays open where it is
+        e.stopPropagation();
+        it.act();
+        const top = this.el.querySelector(".mscroll") && this.el.querySelector(".mscroll").scrollTop;
+        this.items = menuItems(this.kind, this.s);
+        const host = document.createElement("div");
+        host.innerHTML = menuHTML(this.items);
+        this.el.innerHTML = host.firstElementChild.innerHTML;
+        if (top != null) this.el.querySelector(".mscroll").scrollTop = top;
+        return;
+      }
       this.close();
       it.act();
     });
@@ -332,10 +409,12 @@ function accHTML(s, o = {}) {
   const working = WORKING.has(s.state);
   const hasText = o.text != null ? !!o.text : !!(s.text || s.token);
   let h = "";
-  h += chip("model", s, `${shownFast(s) ? LV.bolt : ""}<span>${esc(m.short || m.label)}</span>${pending ? LV.clock : ""}`, { title: pending ? "Switches after this turn" : "" });
-  h += eff ? chip("effort", s, `${bars(eff)}<span>${EFFORTS.find((e) => e[0] === eff)[1]}</span>`) : chip("effort", s, `${bars(null)}<span>—</span>`, { disabled: true, title: `${m.label} doesn't take an effort level` });
-  h += chip("mode", s, `${svg16(MODE_GLYPH[md.v])}<span>${esc(md.short)}</span>`, { danger: md.danger });
-  if (isNew(s) && LV_SETTINGS.accounts > 1) h += chip("account", s, `<span>${esc(ACCOUNTS[s.account])}</span>`);
+  const a = acctOf(shownModel(s));
+  // A provider's model names its account; the subscription's needs no name.
+  const acct = a.kind === "provider" ? `<span class="acct">${esc(a.name)}</span>` : "";
+  h += chip("model", s, `${shownFast(s) ? LV.bolt : ""}<span>${esc(m.short || m.label)}</span>${acct}${pending ? LV.clock : ""}`, { title: `${a.name} · ${m.sub || m.short || m.label}${pending ? " — switches after this turn" : ""}` });
+  h += eff ? chip("effort", s, `${bars(eff)}<span class="opt">${EFFORTS.find((e) => e[0] === eff)[1]}</span>`, { title: `Effort: ${EFFORTS.find((e) => e[0] === eff)[1]}` }) : chip("effort", s, `${bars(null)}<span class="opt">—</span>`, { disabled: true, title: `${m.short || m.label} doesn't take an effort level` });
+  h += chip("mode", s, `${svg16(MODE_GLYPH[md.v])}<span class="opt">${esc(md.short)}</span>`, { danger: md.danger, title: md.label });
   h += '<span class="sp"></span>';
   // The status slot: empty unless something is out of the ordinary.
   if (s.state === "starting") h += `<span class="lv-status">${tile("other", "running")}Starting Claude…</span>`;
@@ -361,10 +440,15 @@ function composerHTML(s, o = {}) {
 }
 function heroHTML(s) {
   const f = s.folder;
-  const where = [f.path, f.branch ? `${LV.branch} ${esc(f.branch)}` : ""].filter(Boolean).join(" · ");
-  return `<div class="lv-hero"><div class="lv-glyph">${sessionGlyph(32)}</div>
+  const branch = !f.branch ? "" : s.worktree
+    ? ` · ${LV.branch} <span class="wt">new branch from origin/${esc(f.branch)}</span>`
+    : ` · ${LV.branch} ${esc(f.branch)}`;
+  // A worktree is a way to open a git folder, so it sits beside the folder,
+  // and only a git folder has one.
+  const wt = f.branch ? `<button class="lv-check${s.worktree ? " on" : ""}" role="checkbox" aria-checked="${s.worktree}" data-lv="worktree" data-sid="${s.id}" title="--worktree: a new git worktree in .claude/worktrees, on its own branch"><i>${LV.check}</i>Worktree</button>` : "";
+  return `<div class="lv-hero"><div class="lv-appicon">${appIcon(64)}</div>
     <button class="lv-folder" data-lv-menu="folder" data-sid="${s.id}">${esc(f.name)}${LV.chev2}</button>
-    <div class="lv-path">${where}${s.worktree ? ' · <span class="wt">new worktree</span>' : ""}</div></div>`;
+    <div class="lv-path"><span>${esc(f.path)}${branch}</span>${wt}</div></div>`;
 }
 const hintHTML = () => '<div class="lv-hint"><span><kbd>↩</kbd>Send</span><span><kbd>⇧↩</kbd>New Line</span><span><kbd>⇧⇥</kbd>Mode</span><span><kbd>/</kbd>Commands</span></div>';
 
@@ -372,6 +456,21 @@ function slashHTML(q, on = 0, opts = {}) {
   const list = COMMANDS.filter(([n]) => n.startsWith(q));
   if (!list.length) return "";
   return `<div class="lv-slash${opts.static ? " static" : ""}">${list.map(([n, h, d], i) => `<div class="sl${i === on ? " on" : ""}" data-slash="${n}"><span class="n"><span class="sig">/</span>${n}</span><span class="h">${esc(h)}</span><span class="d">${esc(d)}</span></div>`).join("")}</div>`;
+}
+
+// MARK: - The sidebar's rows (design/sidebar-icons geometry)
+
+const FOLDER_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M1 4.2Q1 3 2.2 3H6L7.4 4.4H13.8Q15 4.4 15 5.6V6H1Z" fill="#5aa8ec"/><path d="M1 5.6H15V12.8Q15 14 13.8 14H2.2Q1 14 1 12.8Z" fill="#7cc0f6"/></svg>';
+function markOf(s) {
+  if (s.state === "starting" || s.state === "responding" || s.state === "compacting") return arcMark();
+  if (s.state === "waiting") return '<span class="dotmark coral"></span>';
+  if (s.state === "failed") return '<span class="dotmark red"></span>';
+  if (s.state === "idle") return '<span class="dotmark idle"></span>';
+  return "";
+}
+function sideRow(level, open, icon, title, mark = "", selected = false, sid = "") {
+  const chev = open == null ? '<span class="dc"></span>' : `<svg class="dc" viewBox="0 0 10 10"><path d="${open ? "M2 3.5l3 3 3-3" : "M3.5 2l3 3-3 3"}" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  return `<div class="it${selected ? " on" : ""}" style="--lvl:${level}"${sid ? ` data-lv-side="${sid}"` : ""}>${chev}${icon}<span class="t">${title}</span><span class="mark">${mark}</span></div>`;
 }
 
 // MARK: - The window
@@ -387,7 +486,8 @@ const LW = {
       <div class="titlebar"><div class="lights"><i></i><i></i><i></i></div>
         <div><div class="ttl" data-ttl></div><div class="sub" data-sub></div></div><span class="spacer"></span>
         <div class="seg" role="group"><button data-lv="split" aria-pressed="false">Split</button></div></div>
-      <div class="lv-body"><aside class="lv-side" data-side></aside><div class="lv-editors" data-editors></div></div>`;
+      <div class="lv-body"><aside class="lv-side" data-side></aside><div class="lv-editors" data-editors></div></div>
+      <div class="lv-sheethost" data-sheet></div>`;
     root.addEventListener("keydown", (e) => this.key(e));
     root.addEventListener("click", (e) => this.click(e));
     root.addEventListener("input", (e) => this.input(e));
@@ -552,22 +652,18 @@ const LW = {
     const t = this.tabsAll().length ? this.activeTab() : this.empty;
     const s = t && t.s;
     this.root.querySelector("[data-ttl]").textContent = s ? s.folder.name : "ccterm";
-    this.root.querySelector("[data-sub]").textContent = s ? (isNew(s) ? "New Session" : s.folder.branch || "") : "";
+    this.root.querySelector("[data-sub]").textContent = s ? (isNew(s) ? "New Session" : s.wtBranch ? `${s.wtBranch} · worktree` : s.folder.branch || "") : "";
   },
+  /** The sidebar as the app draws it (SidebarViewController): a source list,
+   *  22-pt rows, 14-pt indent, a project is the system folder, its sessions
+   *  under it with the conversation icon, a live one's mark at the end. */
   renderSide() {
     const side = this.root.querySelector("[data-side]");
     const active = this.activeTab();
     const live = [...SESSIONS.values()].filter((s) => !isNew(s) && !s.spec);
     side.innerHTML = FOLDERS.slice(0, 2).map((f) => {
       const rows = live.filter((s) => s.folder === f);
-      return `<div class="grp">${esc(f.name)}</div>${rows.map((s) => {
-        let mark = "";
-        if (s.state === "starting" || s.state === "responding" || s.state === "compacting") mark = arcMark();
-        else if (s.state === "waiting") mark = '<span class="dotmark coral"></span>';
-        else if (s.state === "failed") mark = '<span class="dotmark red"></span>';
-        else if (s.state === "idle") mark = '<span class="dotmark" style="background:var(--tertiary)"></span>';
-        return `<div class="it${active && active.s === s ? " on" : ""}" data-lv-side="${s.id}">${sessionGlyph(12)}<span class="t">${esc(s.title)}</span><span class="mark">${mark}</span></div>`;
-      }).join("") || '<div class="it" style="color:var(--tertiary)">No sessions</div>'}`;
+      return sideRow(0, true, FOLDER_ICON, esc(f.name)) + rows.map((s) => sideRow(1, null, sessionIcon(), `${esc(s.title)}${s.wtBranch ? `<span class="wtb">${LV.branch}</span>` : ""}`, markOf(s), active && active.s === s, s.id)).join("");
     }).join("");
   },
   sizeFields() {
@@ -605,6 +701,7 @@ const LW = {
       case "stop": return stop(s);
       case "restart": return restart(s);
       case "split": return this.split();
+      case "worktree": s.worktree = !s.worktree; return this.refresh(s);
       case "to-request": { const el = this.panes.get(this.activeTab().id).querySelector(".approval"); if (el) el.scrollIntoView({ block: "center", behavior: "smooth" }); return; }
       case "context": return;
     }
@@ -699,6 +796,7 @@ const LW = {
     }
     s.state = "starting";
     s.wasAt = "new";
+    if (s.worktree) s.wtBranch = "quiet-otter"; // --worktree with no name: the CLI names it
     s.title = text.split("\n")[0];
     LAST.model = s.model; LAST.effort = s.effort; LAST.mode = s.mode; LAST.fast = s.fast;
     s.rows.push({ type: "html", html: heldBubble(text, "start"), held: row });
@@ -928,6 +1026,55 @@ function resume(s, row) {
     startTurn(s, row);
   }, 1200);
 }
+/** NSAlert as a sheet on the window: the app icon, a bold question, what will
+ *  happen, two buttons. While Claude works the default is Cancel — stopping
+ *  work isn't what Return should do. */
+function alertHTML(o) {
+  return `<div class="lv-alert" role="alertdialog"><div class="ai">${appIcon(56)}</div><b>${esc(o.title)}</b><p>${esc(o.text)}</p><div class="ab">` +
+    `<button class="abtn${o.cancelDefault ? " def" : ""}" data-alert="0">Cancel</button><button class="abtn${o.cancelDefault ? "" : " def"}" data-alert="1">${esc(o.ok)}</button></div></div>`;
+}
+function restartAlert(s, v) {
+  const a = acctOf(v), m = MODEL(v), working = WORKING.has(s.state);
+  return {
+    title: `Restart this session as ${a.name}?`,
+    text: `Claude Code reads its account when it starts. ccterm ends this session's process and resumes the conversation as ${a.name}, on ${m.short || m.label}.${working ? " Claude stops what it's doing now." : ""}`,
+    ok: working ? "Stop and Restart" : "Restart",
+    cancelDefault: working,
+  };
+}
+function confirmRestart(s, v) {
+  const host = LW.root.querySelector("[data-sheet]");
+  host.innerHTML = alertHTML(restartAlert(s, v));
+  host.classList.add("on");
+  const done = (ok) => {
+    host.classList.remove("on");
+    host.innerHTML = "";
+    document.removeEventListener("keydown", onKey, true);
+    if (ok) restartAs(s, v);
+  };
+  const onKey = (e) => {
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(false); }
+    if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); done(!restartAlert(s, v).cancelDefault); }
+  };
+  document.addEventListener("keydown", onKey, true);
+  host.onclick = (e) => { const b = e.target.closest("[data-alert]"); if (b) done(b.dataset.alert === "1"); };
+}
+/** End the process, resume as the other account: a boundary in the transcript. */
+function restartAs(s, v) {
+  if (s.turn) { s.turn.stopped = true; if (s.turn.onStop) s.turn.onStop(); }
+  setTimeout(() => {
+    const m = MODEL(v), a = acctOf(v);
+    s.model = v; s.pendingModel = null; s.pendingFast = null;
+    if (!m.fast) s.fast = false;
+    if (!m.auto && s.mode === "auto") s.mode = "default";
+    s.state = "starting";
+    LW.refresh(s);
+    setTimeout(() => {
+      appendRow(s, { type: "divider", text: `Restarted as ${a.name} · ${m.short || m.label}` });
+      setState(s, "idle");
+    }, 1300);
+  }, 150);
+}
 function restart(s) {
   s.state = "starting";
   LW.refresh(s);
@@ -993,15 +1140,24 @@ function buildLiveSpecimens() {
     card("<b>Activity in the tab — exceptions only</b>The sidebar's marks in the close button's slot: working, waiting for you (coral), failed (red). Idle and at rest show nothing; hover shows ×.", tb([["Smaller run-row summary", false, arcMark()], ["Review the diff", true, '<span class="dotmark coral"></span>'], ["Nightly build", false, '<span class="dotmark red"></span>'], ["New Session", false]]), true),
   ].join("");
 
-  // New view, small
+  // New view
   const nv = specS({ folder: FOLDERS[0] });
-  const nv2 = specS({ folder: FOLDERS[0], worktree: true });
-  LV_SETTINGS.accounts = 2;
-  const nvA = composerHTML(nv2, { static: true });
-  LV_SETTINGS.accounts = 1;
+  const nv2 = specS({ folder: FOLDERS[0], worktree: true, model: "relay:default", effort: "high", mode: "acceptEdits" });
+  const nv3 = specS({ folder: FOLDERS[2] });
+  const newv = (x, hint) => `<div class="lv-new static" style="padding:28px 8px 22px">${heroHTML(x)}<div style="width:100%">${composerHTML(x, { static: true })}</div>${hint ? hintHTML() : ""}</div>`;
   document.getElementById("lv-newview").innerHTML = [
-    card("<b>The New view</b>The folder is the title — the one choice that can't change after Send. The session glyph, coral with a soft halo, is the page's only colour.", `<div class="lv-new" style="padding:28px 8px 22px">${heroHTML(nv)}<div style="width:100%">${composerHTML(nv, { static: true })}</div>${hintHTML()}</div>`),
-    card("<b>New worktree · two accounts</b>Launch-only choices live only here. The account chip appears only when Settings has more than one.", `<div class="lv-new" style="padding:28px 8px 22px">${heroHTML(nv2)}<div style="width:100%">${nvA}</div></div>`),
+    card("<b>The New view</b>The app icon, its cursor's light spilling onto the page — the one bit of colour. The folder is the title: the one choice Send makes final. <i>Worktree</i> sits beside it.", newv(nv, true)),
+    card("<b>Worktree on · a provider's model</b>The branch line says what <code>--worktree</code> will do. A provider's model names its account on the chip.", newv(nv2)),
+    card("<b>A folder that isn't a git repository</b>No branch, so no worktree: the control isn't there, as the branch isn't.", newv(nv3)),
+  ].join("");
+
+  // The conversation icon
+  const big = sessionIcon(128).replace('class="sicon"', 'class="sicon big"');
+  const oldIcon = (sz) => `<svg width="${sz}" height="${sz}" viewBox="0 0 16 16" style="color:var(--coral)">${GLYPHS.session}</svg>`;
+  const mini = (dark) => `<div class="lv-side mini${dark ? " dk" : ""}">${sideRow(0, true, FOLDER_ICON, "ccterm")}${sideRow(1, null, sessionIcon(), "Smaller run-row summary", arcMark())}${sideRow(1, null, sessionIcon(), "Row gap and tool rows", "", true)}${sideRow(1, null, sessionIcon(), "Review the diff", '<span class="dotmark coral"></span>')}${sideRow(1, null, sessionIcon(), "Nightly build")}${sideRow(0, false, FOLDER_ICON, "ghostty")}</div>`;
+  document.getElementById("lv-icon").innerHTML = [
+    card("<b>White, as a Mac document is — the app's prompt for its emblem</b>A squircle bubble (n = 4) in white with a hairline edge, holding the app icon's chevron and its stepped cursor. Xcode's Swift file is white paper with an orange bird; this is white paper with our cursor. Full colour, not a template: it stays itself on a selected row.", `<div class="iconstage">${big}<div class="iconsizes">${sessionIcon(32)}${sessionIcon(16)}<span class="was">${oldIcon(32)}${oldIcon(16)}<i>today</i></span></div></div>`),
+    card("<b>In the sidebar</b>The app's own geometry: 22-pt rows, 14-pt indent, the system folder for a project. The white reads on both appearances; the selected row keeps it.", `<div class="sidepair">${mini(false)}${mini(true)}</div>`),
   ].join("");
 
   // Composer states
@@ -1021,14 +1177,16 @@ function buildLiveSpecimens() {
 
   // Menus
   const idle = specS({ state: "idle", model: "opus", effort: "high", mode: "auto" });
+  const newp = specS({ model: "opus", effort: "high", mode: "auto" });
   const busy = specS({ state: "responding", model: "opus", pendingModel: "sonnet", effort: "high", mode: "auto" });
   const s46 = specS({ state: "idle", model: "sonnet-4-6", effort: "xhigh", mode: "default" });
   const fast = specS({ state: "idle", model: "opus", fast: true, effort: "high", mode: "acceptEdits" });
   const hk = specS({ state: "idle", model: "haiku", mode: "default" });
   const fig = (cap, html) => `<figure><figcaption>${cap}</figcaption>${html}</figure>`;
   document.getElementById("lv-menus").innerHTML = `<div class="lv-menus">${[
-    fig("<b>Model · idle</b>Applied now (≈ 1.5 s); the /model bubble follows.", menuHTML(menuItems("model", idle), { static: true })),
-    fig("<b>Model · while Claude works</b>The header says when.", menuHTML(menuItems("model", busy), { static: true })),
+    fig("<b>Model · a New tab</b>One list, a section per account, in Settings' order. The account follows the model. Capped at 360 pt; it scrolls inside.", menuHTML(menuItems("model", newp), { static: true })),
+    fig("<b>Model · a live session, while Claude works</b>Within the account: after this turn. Another account restarts the CLI — its items say so, and choosing one asks first.", menuHTML(menuItems("model", busy), { static: true })),
+    fig("<b>Switching account in a live session</b>An NSAlert sheet. Idle: Restart is the default. While Claude works, Cancel is.", `<div class="lv-sheethost static">${alertHTML(restartAlert(busy, "relay:default"))}</div>`),
     fig("<b>Effort · Sonnet 4.6</b>Extra High isn't on this model: it runs as High, and says why.", menuHTML(menuItems("effort", s46), { static: true })),
     fig("<b>Permission mode · Fast on</b>Auto is greyed with its reason; Bypass waits on Settings.", menuHTML(menuItems("mode", fast), { static: true })),
     fig("<b>Permission mode · Haiku</b>", menuHTML(menuItems("mode", hk), { static: true })),
@@ -1037,16 +1195,28 @@ function buildLiveSpecimens() {
   ].join("")}</div>`;
 }
 
+// MARK: - The language: radii, icon sizes
+
+function buildLang() {
+  const box = (r, w, h, label) => `<div><span class="box" style="width:${w}px;height:${h}px;border-radius:var(${r});display:block;corner-shape:squircle"></span><code>${r.replace("--r-", "")}</code>${label}</div>`;
+  const ic = (html, label) => `<div>${html}<span>${label}</span></div>`;
+  document.getElementById("lv-lang").innerHTML = [
+    card("<b>Four radii, continuous</b>tag 5 · control 7 · popover 12 · card 18 — a squircle where the platform draws one (AppKit's continuous corners; CSS <code>corner-shape</code> here), its radius scaled so the size reads the same. The + and the action button stay circles; tiles stay Lamé curves.", `<div class="sw">${box("--r-tag", 28, 22, "token")}${box("--r-ctl", 64, 24, "chip · tab · row")}${box("--r-pop", 88, 56, "menu · panel")}${box("--r-card", 120, 72, "composer · alert")}</div>`),
+    card("<b>Three icon sizes</b>16 for anything that heads a row (sidebar, menu items, tiles); 14 inside a 12-pt control (chips, the action button, ring); 10 for a badge on a word (clock, bolt, check).", `<div class="sw">${ic(sessionIcon(16), "16 · row")}${ic(`<svg width="16" height="16" viewBox="0 0 16 16">${GLYPHS.change.replace("<path", '<path fill="none" stroke="currentColor" stroke-width="1.3"')}</svg>`, "16 · menu")}${ic(`<span style="color:var(--secondary)">${bars("high").replace('class="g"', 'width="14" height="14"')}</span>`, "14 · chip")}${ic(`<span style="color:var(--secondary)">${svg16(MODE_GLYPH.auto).replace('class="g"', 'width="14" height="14"')}</span>`, "14 · chip")}${ic(`<span style="color:var(--tertiary)">${LV.clock.replace('class="pend"', 'width="10" height="10"')}</span>`, "10 · badge")}</div>`),
+    card("<b>A 4-pt grid; words never cut</b>Padding and gaps are 4, 8, 12, 16 or 24. When the composer narrows, labels the glyph already says go first — the provider name, then Effort's and Mode's words (kept in their tooltips) — so the status line keeps its sentence. Only titles, which can be any length, truncate.", `<div style="display:grid;gap:12px">${staticComposer({ state: "rest", model: "relay:default", effort: "high", mode: "acceptEdits" })}<div style="width:min(330px,100%)">${staticComposer({ state: "rest", model: "relay:default", effort: "high", mode: "acceptEdits" })}</div></div>`),
+  ].join("");
+}
+
 // MARK: - The matrix (08-live.md "Settings × state")
 
 function buildMatrix() {
   const W = (t) => `<span class="when">${LV.clock.replace('class="pend"', 'class="pend" style="width:10px;height:10px"')} ${t}</span>`;
   const cols = [["New tab", "a draft · launch flags"], ["Starting", "launching"], ["Idle", "control requests"], ["Responding", ""], ["Waiting for you", ""], ["At rest", "flags on resume"], ["Failed", "flags on restart"]];
   const rows = [
-    ["grp", "Launch-only"],
+    ["grp", "Launch-only — or a restart"],
     ["Folder", '<span class="y">choose</span> · <code>cwd</code>', '<span class="no">fixed</span>', '<span class="no">fixed</span>', '<span class="no">fixed</span>', '<span class="no">fixed</span>', '<span class="no">fixed</span>', '<span class="no">fixed</span>'],
-    ["Worktree", '<span class="y">toggle</span> · <code>--worktree</code>', "—", "—", "—", "—", "—", "—"],
-    ["Account", '<span class="y">choose</span> (&gt; 1) · env', "—", "—", "—", "—", "—", "—"],
+    ["Worktree", '<span class="y">toggle</span>, git folders only · <code>--worktree</code>', "—", "—", "—", "—", "—", "—"],
+    ["Account", '<span class="y">follows the model</span> · env', "follows the model · relaunch", '<span class="y">confirm</span> → restart, resume', '<span class="y">confirm</span> → stop, restart', '<span class="y">confirm</span> → stop, restart', "env on resume", "env on restart"],
     ["grp", "Steerable"],
     ["Model", '<span class="y">choose</span> · <code>--model</code>', '<span class="y">choose</span> · held', '<span class="y">now</span> · <code>set_model</code> ≈ 1.5 s', W("after this turn"), W("after this turn"), '<span class="y">choose</span> · <code>--model</code>', '<span class="y">choose</span> · <code>--model</code>'],
     ["Fast", '<span class="y">toggle</span> · <code>fastMode</code>', "held", '<span class="y">now</span> · <code>apply_flag_settings</code>', W("after this turn"), W("after this turn"), "flag", "flag"],
@@ -1073,5 +1243,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const bp = document.getElementById("lv-allow-bypass");
   bp.addEventListener("change", () => { LV_SETTINGS.allowBypass = bp.checked; });
   buildLiveSpecimens();
+  buildLang();
   buildMatrix();
 });

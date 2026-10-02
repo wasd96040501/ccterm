@@ -90,7 +90,7 @@
   </div>
 
   <h3>Playground — a window with no tabs opens on the New view</h3>
-  <p class="note"><b>Type and press ↩</b> to launch; the composer glides to the bottom. Then try the chips <i>while Claude works</i>: Model shows its clock, Effort and Mode apply at once. ↩ while it works <b>queues</b> (withdraw it before the CLI takes it). <b>⇧⇥</b> cycles the mode; <b>/</b> completes commands — try <code>/model sonnet</code>, <code>/effort max</code>, <code>/compact</code>. <b>⌘.</b> stops. The <b>+</b> on each tab bar opens a New tab in that group — <b>⌃T</b> here, since the browser keeps ⌘T. Ask Permissions mode stops at an edit for your approval (⌘↩ / ⎋).</p>
+  <p class="note"><b>Type and press ↩</b> to launch; the composer glides to the bottom. Then try the chips <i>while Claude works</i>: Model shows its clock, Effort and Mode apply at once. ↩ while it works <b>queues</b> (withdraw it before the CLI takes it). <b>⇧⇥</b> cycles the mode; <b>/</b> completes commands — try <code>/model sonnet</code>, <code>/effort max</code>, <code>/compact</code>. <b>⌘.</b> stops. The model menu lists every account; in a live session, a model from another account <b>asks before restarting</b> the CLI. Tick <b>Worktree</b> beside a git folder. The <b>+</b> on each tab bar opens a New tab in that group — <b>⌃T</b> here, since the browser keeps ⌘T. Ask Permissions mode stops at an edit for your approval (⌘↩ / ⎋).</p>
   <div class="lv-scen">
     <div class="seg" role="group" aria-label="Scenario">
       <button data-scene="empty">No tabs</button><button data-scene="new">New tab</button><button data-scene="responding">Responding</button><button data-scene="waiting">Waiting for you</button><button data-scene="rest">At rest</button><button data-scene="failed">Failed</button><button data-scene="split">Split</button>
@@ -109,11 +109,17 @@
   <h3>The New view</h3>
   <div class="lv-specs" id="lv-newview"></div>
 
+  <h3>The conversation icon, redesigned</h3>
+  <div class="lv-specs" id="lv-icon"></div>
+
   <h3>The composer, state by state</h3>
   <div class="lv-specs" id="lv-composers"></div>
 
-  <h3>Menus — NSMenu with subtitles and section headers</h3>
+  <h3>Menus — NSMenu with subtitles and section headers; the model panel scrolls</h3>
   <div id="lv-menus"></div>
+
+  <h3>One shape language — radii, icon sizes, spacing</h3>
+  <div class="lv-specs" id="lv-lang"></div>
 </div>
 
 <div class="drawer" id="drawer" aria-label="Beside">

@@ -51,8 +51,9 @@ public enum TranscriptRowContent: Sendable, Equatable {
     /// and typesetting, and never splits one document across multiple rows.
     case markdown(String)
 
-    /// A message authored by the user.
-    case userMessage(String)
+    /// A message authored by the user: its words, and the runs of them the bubble
+    /// sets apart (`UserMessage`).
+    case userMessage(UserMessage)
 
     /// A row drawn by a host-supplied `NSView`.
     ///
@@ -91,7 +92,8 @@ extension TranscriptRowContent {
     /// silently stops being re-measured.
     var source: String? {
         switch self {
-        case .markdown(let source), .userMessage(let source): return source
+        case .markdown(let source): return source
+        case .userMessage(let message): return message.text
         case .view: return nil
         }
     }

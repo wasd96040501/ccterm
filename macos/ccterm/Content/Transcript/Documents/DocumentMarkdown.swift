@@ -46,9 +46,16 @@ nonisolated enum DocumentMarkdown {
             )
         case .compactionSummary(let summary):
             return (title, [String(localized: "What the model continued from")], [summary])
+        case .advice(let call):
+            return (title, [call.advisor?.model].compactMap { $0 }, [call.advisor?.advice ?? ""])
+        case .sentMessage(let call):
+            let message = call.sentMessage
+            return (title, [message?.summary ?? ""].filter { !$0.isEmpty }, [message?.body ?? ""])
+        case .continuationPrompt(let text):
+            return (title, [String(localized: "Written by Claude Code, not by you")], [text])
         case .other(let call):
             return (title, otherStatus(call), other(call))
-        case .command, .shellCommand, .change, .newFile, .read:
+        case .command, .shellCommand, .change, .newFile, .read, .image:
             // Not words; their own bodies show them.
             return (title, [], [])
         }

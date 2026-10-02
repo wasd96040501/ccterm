@@ -17,6 +17,8 @@ final class CaptionRowView: NSView, PageRowView {
     private let glyph = NSImageView()
     private let tile = TileView()
     private let label = NSTextField(labelWithString: "")
+    /// After the name, 11-pt tertiary: when a plugin spoke.
+    private let detail = NSTextField(labelWithString: "")
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -26,7 +28,12 @@ final class CaptionRowView: NSView, PageRowView {
         label.lineBreakMode = .byTruncatingTail
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let stack = NSStackView(views: [glyph, tile, label])
+        detail.font = .systemFont(ofSize: 11)
+        detail.textColor = .tertiaryLabelColor
+        detail.lineBreakMode = .byTruncatingTail
+        detail.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let stack = NSStackView(views: [glyph, tile, label, detail])
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.orientation = .horizontal
         stack.alignment = .centerY
@@ -52,6 +59,8 @@ final class CaptionRowView: NSView, PageRowView {
 
     func configure(with model: Caption) {
         label.stringValue = model.text
+        detail.stringValue = model.detail ?? ""
+        detail.isHidden = model.detail == nil
         if case .tile(let value) = model.glyph {
             tile.tile = value
             tile.isHidden = false

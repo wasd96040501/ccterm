@@ -134,6 +134,31 @@ final class BlockView: NSView, SurfaceLayerDelegate {
         // just moves the band to where those same characters are now. This is the
         // reason a link reports where it is rather than only what it is.
         updateHoverBand()
+        updateToolTips()
+    }
+
+    // MARK: - Tool tips
+
+    /// The words AppKit shows over each rectangle, by the tag it handed back —
+    /// a user message's tokens are the only thing that has any.
+    private var toolTipTexts: [NSView.ToolTipTag: String] = [:]
+
+    /// AppKit's own tooltip, with its system delay and look: a token's full name
+    /// is a gloss, not something the host has to react to.
+    private func updateToolTips() {
+        removeAllToolTips()
+        toolTipTexts = [:]
+        guard let tips = (block as? UserMessageBlock.Measured)?.toolTips else { return }
+        for tip in tips {
+            toolTipTexts[addToolTip(tip.rect, owner: self, userData: nil)] = tip.text
+        }
+    }
+
+    @objc(view:stringForToolTip:point:userData:)
+    func view(
+        _ view: NSView, stringForToolTip tag: NSView.ToolTipTag, point: NSPoint, userData data: UnsafeMutableRawPointer?
+    ) -> String {
+        toolTipTexts[tag] ?? ""
     }
 
     /// The one place this view is marked for repaint.

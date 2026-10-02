@@ -9,7 +9,7 @@ import Foundation
 /// and a markdown row (`PageRow.rows`).
 nonisolated enum TranscriptEntry: Sendable, Equatable, Identifiable {
     /// What the reader typed.
-    case prompt(id: String, text: String)
+    case prompt(PromptEntry)
     /// What the model wrote, as markdown.
     case reply(id: String, markdown: String)
     case run(ToolRun)
@@ -25,7 +25,8 @@ nonisolated enum TranscriptEntry: Sendable, Equatable, Identifiable {
 
     var id: String {
         switch self {
-        case .prompt(let id, _), .reply(let id, _), .interruption(let id): id
+        case .prompt(let prompt): prompt.id
+        case .reply(let id, _), .interruption(let id): id
         case .run(let run): run.id
         case .news(let news): news.id
         case .command(let command): command.id

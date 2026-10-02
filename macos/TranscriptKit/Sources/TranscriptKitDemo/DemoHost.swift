@@ -357,7 +357,8 @@ final class DemoHost: NSObject, TranscriptViewDataSource, TranscriptViewDelegate
         let content: TranscriptRowContent
         switch message.content {
         case .assistant(let text): content = .markdown(text)
-        case .user(let text): content = .userMessage(text)
+        case .user(let text): content = .userMessage(.init(text))
+        case .bubble(let message): content = .userMessage(message)
         case .images: content = .view
         }
         return TranscriptRow(id: message.id, content: content)

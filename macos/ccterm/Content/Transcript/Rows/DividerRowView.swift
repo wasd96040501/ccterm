@@ -3,8 +3,8 @@ import AppKit
 /// A hairline where the session's shape changed — compacted, resumed, an
 /// hour of silence — with its label centred on it (05-local.md).
 ///
-/// The label is 11-pt secondary; *Summary*, when the model has one, is a link
-/// after it. A compaction in progress puts a small running tile before the
+/// The label is 11-pt secondary; *Summary*, when the model has one — or *Prompt*,
+/// for a turn the CLI started — is a link after it. A compaction in progress puts a small running tile before the
 /// label.
 @MainActor
 final class DividerRowView: NSView, PageRowView {
@@ -31,9 +31,6 @@ final class DividerRowView: NSView, PageRowView {
         tile.tile = Tile(glyph: .tool(.other), state: .running)
 
         summary.isBordered = false
-        summary.attributedTitle = NSAttributedString(
-            string: String(localized: "Summary"),
-            attributes: [.font: Self.font, .foregroundColor: NSColor.linkColor])
         summary.target = self
         summary.action = #selector(summaryClicked)
 
@@ -75,8 +72,12 @@ final class DividerRowView: NSView, PageRowView {
     func configure(with model: SessionDivider) {
         label.stringValue = model.label
         if case .compacting = model.kind { tile.isHidden = false } else { tile.isHidden = true }
-        summaryID = model.summary == nil ? nil : model.id
-        summary.isHidden = model.summary == nil
+        summaryID = model.opensDocument ? model.id : nil
+        summary.isHidden = !model.opensDocument
+        if let title = model.linkTitle {
+            summary.attributedTitle = NSAttributedString(
+                string: title, attributes: [.font: Self.font, .foregroundColor: NSColor.linkColor])
+        }
     }
 
     @objc private func summaryClicked() {

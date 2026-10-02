@@ -161,24 +161,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             configurations: launch.$subscription.removeDuplicates().eraseToAnyPublisher())
         let library = LibraryStore(
             directories: launch.$sessionDirectory.removeDuplicates().eraseToAnyPublisher(), indexDirectory: caches)
-        // Sessions launch as General says, so they are written where the
-        // library reads.
-        // TODO(fill B): the account-aware init — `launch:` from `accounts` +
-        // `launch.configuration(for:secrets:)`, `catalog:`, `preferences:`, `branches:`.
-        let sessions = SessionStore(
-            configurations: launch.$general.eraseToAnyPublisher(),
-            directories: launch.$sessionDirectory.eraseToAnyPublisher(),
-            read: { [library] in try await library.transcript(at: $0) })
+        // A launch of an account's CLI changes with its own settings and with
+        // General's, so the catalog re-reads when either does.
         let catalog = ModelCatalogStore(
-            accounts: accounts.$accounts.eraseToAnyPublisher(),
+            accounts: accounts.$accounts.combineLatest(launch.$preferences).map(\.0).eraseToAnyPublisher(),
             configuration: { [accounts, launch] account in
                 launch.configuration(for: account, secrets: try await accounts.secrets(for: account.id))
             },
-            probe: { configuration in
-                // TODO(fill B): a short-lived Session: start → initialize → close.
-                throw AgentSDKError.launchFailed("not built yet: \(configuration)")
-            },
+            probe: Self.probe,
             cacheURL: caches.appendingPathComponent("ModelCatalog.json"))
+        // Sessions launch as their account says, under General, so they are
+        // written where the library reads.
+        let sessions = SessionStore(
+            launch: { [accounts, launch] id in
+                guard let account = accounts.accounts.first(where: { $0.id == id }) else {
+                    throw AgentSDKError.launchFailed(String(localized: "That account no longer exists."))
+                }
+                return launch.configuration(for: account, secrets: try await accounts.secrets(for: id))
+            },
+            directories: launch.$sessionDirectory.eraseToAnyPublisher(),
+            catalog: catalog.$catalog.eraseToAnyPublisher(),
+            preferences: launch.$preferences.eraseToAnyPublisher(),
+            branches: BranchService(),
+            read: { [library] in try await library.transcript(at: $0) })
         let context = TranscriptTab.Context(
             sessions: sessions,
             catalog: catalog.$catalog.eraseToAnyPublisher(),
@@ -244,6 +249,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
+    }
+
+    /// A short-lived CLI that answers `initialize` and is ended: what an
+    /// account offers, read without a session (`ModelCatalogStore`). It writes
+    /// no transcript; a CLI that doesn't answer in a minute is given up on.
+    private static let probe: @Sendable (CLIConfiguration) async throws -> InitializationResult = { configuration in
+        let session = Session(
+            configuration: SessionConfiguration(
+                workingDirectory: FileManager.default.homeDirectoryForCurrentUser, launch: configuration))
+        defer { session.terminate() }
+        return try await withThrowingTaskGroup(of: InitializationResult.self) { group in
+            group.addTask { try await session.start() }
+            group.addTask {
+                try await Task.sleep(for: .seconds(60))
+                throw AgentSDKError.launchFailed("the CLI did not answer")
+            }
+            defer { group.cancelAll() }
+            return try await group.next()!
+        }
     }
 
     /// XCTest injects this into a hosted test run.

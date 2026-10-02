@@ -23,6 +23,8 @@ struct LibraryIndex: Codable, Equatable, Sendable {
             let title: String?
             /// The nodes of its subagents and workflow runs.
             let children: [LibraryNode]
+            /// The branch of the worktree it ran in, if it ran in one.
+            var worktreeBranch: String? = nil
         }
 
         let modificationDate: Date
@@ -33,11 +35,13 @@ struct LibraryIndex: Codable, Equatable, Sendable {
         func relisting(_ children: [LibraryNode]) -> Record {
             Record(
                 modificationDate: modificationDate,
-                summary: summary.map { Summary(project: $0.project, title: $0.title, children: children) })
+                summary: summary.map {
+                    Summary(project: $0.project, title: $0.title, children: children, worktreeBranch: $0.worktreeBranch)
+                })
         }
     }
 
-    private static let currentVersion = 1
+    private static let currentVersion = 2
 
     private var version = LibraryIndex.currentVersion
     /// By transcript path.

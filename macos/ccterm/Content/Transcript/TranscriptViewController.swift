@@ -55,6 +55,8 @@ final class TranscriptViewController: NSViewController {
     private var selection: String?
     /// The id brought back into view just now, flashing once.
     private var flashing: String?
+    /// The picture whose token the pointer is over: its thumbnail is outlined.
+    private var hoveredImage: (entry: String, number: Int)?
     /// The newest state handed over and not shown yet, or that the session
     /// couldn't be read.
     private var pending: Pending?
@@ -425,18 +427,40 @@ extension TranscriptViewController: TranscriptViewDelegate {
     func transcriptView(_ transcriptView: TranscriptView, viewForRow row: Int) -> NSView {
         let pageRow = rows[row]
         let opens = pageRow.opens
+        let highlighted = hoveredImage.flatMap { $0.entry == pageRow.id.entry ? $0.number : nil }
         return pageRow.makeView(
             in: transcriptView, isSelected: opens != nil && opens == selection,
-            flashes: opens != nil && opens == flashing, delegate: self)
+            flashes: opens != nil && opens == flashing, highlightedImage: highlighted, delegate: self)
     }
 
     func transcriptView(_ transcriptView: TranscriptView, didActivate url: URL, inRow row: Int) {
+        // A picture's token opens the picture beside, as its thumbnail does.
+        if let number = Bubble.imageNumber(of: url), rows.indices.contains(row) {
+            open(PromptImage.id(entryID: rows[row].id.entry, number: number), pinned: false)
+            return
+        }
         NSWorkspace.shared.open(url)
     }
 
     func transcriptView(_ transcriptView: TranscriptView, didChangeTailFollowing isFollowingTail: Bool) {
         self.isFollowingTail = isFollowingTail
         updateWaitingRequestVisibility()
+    }
+
+    /// Over a picture's token the thumbnail above the bubble is outlined.
+    func transcriptView(_ transcriptView: TranscriptView, didHover url: URL?, at point: NSPoint, inRow row: Int) {
+        let hovered: (entry: String, number: Int)? =
+            if let url, let number = Bubble.imageNumber(of: url), rows.indices.contains(row) {
+                (rows[row].id.entry, number)
+            } else {
+                nil
+            }
+        guard hovered?.entry != hoveredImage?.entry || hovered?.number != hoveredImage?.number else { return }
+        let entries = Set([hoveredImage?.entry, hovered?.entry].compactMap { $0 })
+        hoveredImage = hovered
+        let thumbnails = IndexSet(
+            rows.indices.filter { entries.contains(rows[$0].id.entry) && rows[$0].id.part == .attachments })
+        if !thumbnails.isEmpty { self.transcript.reloadRows(at: thumbnails) }
     }
 }
 
@@ -468,10 +492,25 @@ extension TranscriptViewController: PageRowViewDelegate {
     func pageRowView(_ rowView: NSView, didDecide decision: Decision, forCall callID: String) {
         decide(decision, forCall: callID)
     }
+
+    func pageRowView(_ rowView: NSView, didRequestWithdrawOfPrompt uuid: String) {
+        sessions.withdraw(prompt: uuid, at: fileURL)
+    }
+
+    /// Sends the words again as a new prompt; the one that wasn't sent goes.
+    func pageRowView(_ rowView: NSView, didRequestResendOfPrompt uuid: String) {
+        guard let index = page.entryIndex(containing: uuid), case .prompt(let prompt) = page.entries[index] else {
+            return
+        }
+        sessions.dismiss(prompt: uuid, at: fileURL)
+        sessions.send(prompt.text, to: fileURL)
+    }
 }
 
 extension TranscriptViewController {
     private func decide(_ decision: Decision, forCall callID: String) {
         sessions.respond(toCall: callID, at: fileURL) { decision.permissionDecision(for: $0) }
+        // *Chat About This* answers nothing: the conversation is the answer.
+        if case .chatAbout = decision { delegate?.transcriptViewControllerDidRequestComposer(self) }
     }
 }

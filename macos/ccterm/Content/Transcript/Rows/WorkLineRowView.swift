@@ -39,6 +39,9 @@ final class WorkLineRowView: NSView, PageRowView {
             case open(String)
             /// A click expands or collapses run `id`; the chevron shows which.
             case toggle(String, expanded: Bool)
+            /// Nothing opens: a line that says all there is to say (an advisor
+            /// whose advice is encrypted). No accessory, and a click does nothing.
+            case none
         }
 
         var line: WorkLine
@@ -181,6 +184,9 @@ final class WorkLineRowView: NSView, PageRowView {
                 visible = true
             case .open:
                 name = "arrow.up.right"
+            case .none:
+                name = "arrow.up.right"
+                visible = false
             }
         }
         accessory.image = .symbol(name, pointSize: 10, weight: .semibold)
@@ -366,6 +372,7 @@ final class WorkLineRowView: NSView, PageRowView {
             case .toggle(let id, _):
                 delegate.pageRowView(self, didToggleDisclosureOf: id, inAllRuns: event.modifierFlags.contains(.option))
             case .open(let id): opened = id
+            case .none: break
             }
         }
         guard let opened else { return super.mouseDown(with: event) }

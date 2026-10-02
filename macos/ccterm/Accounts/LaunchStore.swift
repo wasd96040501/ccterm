@@ -13,6 +13,7 @@ final class LaunchStore {
     /// The keys the settings have always been kept under.
     private static let commandKey = "customCLICommand"
     private static let configDirectoryKey = "claudeConfigDirectory"
+    private static let allowsBypassKey = "allowsBypassPermissions"
 
     /// What General says.
     @Published private(set) var preferences: LaunchPreferences
@@ -52,7 +53,8 @@ final class LaunchStore {
         self.resolveDirectory = resolveDirectory
         let preferences = LaunchPreferences(
             command: defaults.string(forKey: Self.commandKey) ?? "",
-            configDirectory: defaults.string(forKey: Self.configDirectoryKey) ?? "")
+            configDirectory: defaults.string(forKey: Self.configDirectoryKey) ?? "",
+            allowsBypassPermissions: defaults.bool(forKey: Self.allowsBypassKey))
         self.preferences = preferences
         let general = LaunchEnvironment.resolve(command: "", general: preferences)
         self.general = general
@@ -89,18 +91,15 @@ final class LaunchStore {
     /// variables. The account is read from the CLI's environment at launch;
     /// nothing in the control protocol changes it.
     func configuration(for account: Account, secrets: AccountSecrets) -> CLIConfiguration {
-        // TODO(fill B): LaunchEnvironment.resolve(account:secrets:general:) + LaunchEnvironmentTests.
-        LaunchEnvironment.resolve(command: account.command, general: preferences)
+        LaunchEnvironment.resolve(account: account, secrets: secrets, general: preferences)
     }
 
     /// Sets General's *Allow Bypass Permissions*. Sessions already running keep
     /// how they were launched.
     func setAllowsBypassPermissions(_ allows: Bool) {
-        // TODO(fill B): persist under its own defaults key, as `update(_:)` does the others.
         var next = preferences
         next.allowsBypassPermissions = allows
-        guard next != preferences else { return }
-        preferences = next
+        update(next)
     }
 
     /// Sets General's launch command; empty runs `claude`. Nothing is checked
@@ -126,6 +125,7 @@ final class LaunchStore {
         for (value, key) in [(next.command, Self.commandKey), (next.configDirectory, Self.configDirectoryKey)] {
             if value.isEmpty { defaults.removeObject(forKey: key) } else { defaults.set(value, forKey: key) }
         }
+        defaults.set(next.allowsBypassPermissions, forKey: Self.allowsBypassKey)
         publishConfigurations()
     }
 

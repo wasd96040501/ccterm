@@ -357,4 +357,19 @@ final class SessionTests: XCTestCase {
         // Closing twice is harmless.
         await session.close()
     }
+
+    /// Between closing stdin and the process's exit the session still runs, so
+    /// a send can reach a closed handle: it is dropped, never raised.
+    func testASendWhileClosingIsDropped() async throws {
+        let session = makeSession()
+        try await session.start()
+        let closing = Task { await session.close() }
+        var sent = 0
+        while (try? session.send(UserInput("hi"))) != nil, sent < 10_000 {
+            sent += 1
+            await Task.yield()
+        }
+        await closing.value
+        XCTAssertThrowsError(try session.send(UserInput("hi")))
+    }
 }

@@ -88,8 +88,8 @@ extension UserMessage.Kind {
         case "peer", "coordinator", "plugin":
             return relayedMessage(text) ?? .prompt
         case "auto-continuation":
-            // TODO(fill A): .autoContinuation(text:) — and the mid-turn plugin header + its note.
-            return .synthetic
+            let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return words.isEmpty ? .synthetic : .autoContinuation(text: words)
         default:
             break
         }
@@ -129,7 +129,9 @@ extension UserMessage.Kind {
     /// `The coordinator sent a message while you were working:` — and, for
     /// some senders, followed by a note to the model.
     private static func relayedMessage(_ text: Substring) -> Self? {
-        guard let newline = text.firstIndex(of: "\n"), let sender = sender(inHeader: text[..<newline]) else {
+        guard let newline = text.firstIndex(of: "\n"),
+            let (sender, duringTurn) = Self.sender(inHeader: text[..<newline])
+        else {
             return nil
         }
         let body = text[text.index(after: newline)...]
@@ -141,15 +143,19 @@ extension UserMessage.Kind {
         }
         if sender.hasPrefix("The "), sender.hasSuffix(" plugin") {
             let name = String(sender.dropFirst("The ".count).dropLast(" plugin".count))
-            return .message(from: .plugin(name: name, duringTurn: false), text: body.removingSuffix(pluginNote))
+            return .message(
+                from: .plugin(name: name, duringTurn: duringTurn),
+                text: body.removingSuffix(duringTurn ? pluginMidTurnNote : pluginNote))
         }
         return nil
     }
 
-    /// `<sender>` in `<sender> sent a message:` or `… while you were working:`.
-    private static func sender(inHeader header: Substring) -> Substring? {
-        for ending in [" sent a message:", " sent a message while you were working:"] where header.hasSuffix(ending) {
-            return header.dropLast(ending.count)
+    /// `<sender>` in `<sender> sent a message:` or `… while you were working:`,
+    /// and whether it was the second.
+    private static func sender(inHeader header: Substring) -> (Substring, duringTurn: Bool)? {
+        for (ending, duringTurn) in [(" sent a message:", false), (" sent a message while you were working:", true)]
+        where header.hasSuffix(ending) {
+            return (header.dropLast(ending.count), duringTurn)
         }
         return nil
     }
@@ -157,6 +163,9 @@ extension UserMessage.Kind {
     private static let coordinatorNote = "Address this before completing your current task."
     private static let pluginNote =
         "This is how Claude Code surfaces a prompt a plugin submits between turns — it starts this turn in the user's place. Address the message above."
+
+    private static let pluginMidTurnNote =
+        "This is how Claude Code surfaces prompts a plugin submits mid-turn — within the running turn, often alongside the next tool result. Address the message above as you continue this turn."
 
     /// An element carrying another party's message.
     private static func message(_ element: TaggedElement) -> Self? {

@@ -155,13 +155,18 @@ final class TileView: NSView {
             case .agent: return NSImage(resource: .sidebarAgent)
             case .tasks: return symbol("checklist")
             case .schedule: return symbol("clock")
+            case .advisor: return symbol("lightbulb")
+            case .skill: return symbol("book.closed")
+            case .worktree: return symbol("arrow.triangle.branch")
             case .message: return symbol("paperplane")
+            case .notify: return symbol("bell")
             case .other: return symbol("puzzlepiece.extension")
             }
         case .workflow: return NSImage(resource: .sidebarWorkflow)
         case .monitor: return symbol("waveform.path.ecg")
         case .question: return symbol("questionmark.bubble")
         case .plan: return symbol("list.bullet.rectangle.portrait")
+        case .image: return symbol("photo")
         }
     }
 

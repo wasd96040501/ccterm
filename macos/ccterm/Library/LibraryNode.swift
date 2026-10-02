@@ -25,4 +25,8 @@ struct LibraryNode: Identifiable, Hashable, Codable, Sendable {
     /// The transcript this node opens; `nil` for a group.
     let transcriptURL: URL?
     let children: [LibraryNode]
+    /// For a session run in one of its repository's worktrees: the worktree's
+    /// branch (`worktree-quiet-otter`), which the sidebar marks with a branch
+    /// glyph after the title. `nil` for every other node.
+    var worktreeBranch: String? = nil
 }

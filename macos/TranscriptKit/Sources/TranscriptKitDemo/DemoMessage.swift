@@ -1,4 +1,5 @@
 import AppKit
+import TranscriptKit
 
 /// One turn in the demo transcript.
 struct DemoMessage {
@@ -9,6 +10,9 @@ struct DemoMessage {
     /// `viewForRow` where it used to implement neither.
     enum Content {
         case user(String)
+        /// A bubble with tokens: a command, a shell command, a picture, or one
+        /// still pending.
+        case bubble(TranscriptRowContent.UserMessage)
         case assistant(String)
 
         /// Pictures the reader attached, drawn by `ImageGridView`. Addresses
@@ -39,6 +43,7 @@ struct DemoMessage {
     var text: String? {
         switch content {
         case .user(let text), .assistant(let text): return text
+        case .bubble(let message): return message.text
         case .images: return nil
         }
     }
@@ -60,7 +65,7 @@ struct DemoMessage {
         case .user(let text): return DemoMessage(id: id, content: .user("\(text) \(suffix)"))
         case .assistant(let text):
             return DemoMessage(id: id, content: .assistant("\(text) \(suffix)"))
-        case .images: return self
+        case .bubble, .images: return self
         }
     }
 }
@@ -91,6 +96,27 @@ extension DemoMessage {
         [
             .user("What shipped in 0.3?"),
             .assistant(releaseNotes),
+            // Tokens: a slash command, a skill (its full name is the tooltip), a
+            // shell command, a picture, and a bubble still waiting to be sent.
+            .bubble(
+                .init(
+                    "/model opus", tokens: [.init(range: 0..<6, kind: .command)])),
+            .bubble(
+                .init(
+                    "/skill-creator Pull the latest code; this PR is about designing live sessions",
+                    tokens: [
+                        .init(range: 0..<14, kind: .command, toolTip: "/skill-creator:skill-creator")
+                    ])),
+            .bubble(
+                .init(
+                    "!git status --short", tokens: [.init(range: 0..<1, kind: .command)], isMonospaced: true)),
+            .bubble(
+                .init(
+                    "Image 1 is what I mean",
+                    tokens: [.init(range: 0..<7, kind: .image(URL(string: "demo-image:1")!))])),
+            .bubble(
+                .init(
+                    "Sent when Claude is ready", isPending: true)),
             .user(
                 "Remind me what actually happens in one runloop iteration — I keep having to "
                     + "re-derive which half of it runs my code and which half is AppKit "
@@ -144,6 +170,10 @@ extension DemoMessage {
 
     static func user(_ text: String) -> DemoMessage {
         DemoMessage(content: .user(text))
+    }
+
+    static func bubble(_ message: TranscriptRowContent.UserMessage) -> DemoMessage {
+        DemoMessage(content: .bubble(message))
     }
 
     static func assistant(_ text: String) -> DemoMessage {

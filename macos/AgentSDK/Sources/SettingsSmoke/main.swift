@@ -157,6 +157,7 @@ all[.enableAllProjectMCPServers] = false
 all[.enabledMCPJSONServers] = ["smoke-enabled"]
 all[.disabledMCPJSONServers] = ["smoke-disabled"]
 all[.agent] = "general-purpose"
+all[.worktree] = ["baseRef": "head"]
 
 await apply("every key", all)
 let full = await snapshot("every key")

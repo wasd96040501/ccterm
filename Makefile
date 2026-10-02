@@ -120,8 +120,9 @@ dmg: ## Create DMG installer (usage: make dmg APP=/path/to/ccterm.app)
 
 # App icon: design/icon/src/design.ts is the source of truth. This regenerates
 # macos/ccterm/AppIcon.icon (Icon Composer document, SVG layers) from it and,
-# with Xcode 26+, renders every system appearance to design/icon/out/review.png.
-icon: ## Regenerate AppIcon.icon from design/icon (+ review renders in design/icon/out)
+# with Xcode 26+, renders every system appearance to design/icon/out/review.png
+# and the in-app icon (Assets.xcassets/AppIconArt, Any + Dark) the New tab shows.
+icon: ## Regenerate AppIcon.icon and the AppIconArt image set from design/icon (+ review renders in design/icon/out)
 	cd design/icon && bun install --frozen-lockfile && bun run build
 
 sidebar-icons: ## Regenerate the sidebar glyph assets (Assets.xcassets/Sidebar) from design/sidebar-icons

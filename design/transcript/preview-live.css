@@ -22,6 +22,7 @@
   --si-edge: rgba(0, 0, 0, 0.34);
   --si-ink: #6e6e73;
   --glow: 0.42;
+  --ic-top: #2d2a38; --ic-bot: #141218; --rim-top: 0.16; --rim-mid: 0.05; --rim-bot: 0.1;
 }
 @supports (corner-shape: squircle) {
   :root { --k: 1.45; }
@@ -29,9 +30,9 @@
   .lv-side .it::before, .lv-folder, .lv-group > .tabbar .tab, .tabbar.spec-bar .tab, .matrix-wrap { corner-shape: squircle; }
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --side-bg: #2b2b2e; --side-sel: rgba(255, 255, 255, 0.12); --si-fill: #f5f5f7; --si-edge: rgba(0, 0, 0, 0.5); --glow: 0.36; }
+  :root:not([data-theme="light"]) { --side-bg: #2b2b2e; --side-sel: rgba(255, 255, 255, 0.12); --si-fill: #f5f5f7; --si-edge: rgba(0, 0, 0, 0.5); --glow: 0.36; --ic-top: #1f1f21; --ic-bot: #0e0e0f; --rim-top: 0.34; --rim-mid: 0.1; --rim-bot: 0.2; }
 }
-:root[data-theme="dark"] { --side-bg: #2b2b2e; --side-sel: rgba(255, 255, 255, 0.12); --si-fill: #f5f5f7; --si-edge: rgba(0, 0, 0, 0.5); --glow: 0.36; }
+:root[data-theme="dark"] { --side-bg: #2b2b2e; --side-sel: rgba(255, 255, 255, 0.12); --si-fill: #f5f5f7; --si-edge: rgba(0, 0, 0, 0.5); --glow: 0.36; --ic-top: #1f1f21; --ic-bot: #0e0e0f; --rim-top: 0.34; --rim-mid: 0.1; --rim-bot: 0.2; }
 
 /* MARK: - Window: the sidebar + editor groups */
 

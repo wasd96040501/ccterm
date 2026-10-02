@@ -127,8 +127,13 @@ function appIcon(size) {
   let px = "";
   CHEV.forEach((row, r) => [...row].forEach((ch, k) => { if (ch === "#") px += `<rect x="${x0 + k * c}" y="${y0 + r * c}" width="${c + 0.5}" height="${c + 0.5}"/>`; }));
   const cur = CURSOR5.map((col, r) => `<rect x="${x0 + 7 * c}" y="${y0 + (2 + r) * c}" width="${3 * c}" height="${c + 0.5}" fill="${col}"/>`).join("");
-  return `<svg class="appicon" width="${size}" height="${size}" viewBox="0 0 1024 1024" aria-hidden="true"><defs><linearGradient id="lvicbg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2D2A38"/><stop offset="1" stop-color="#141218"/></linearGradient></defs>` +
-    `<path d="${lame(512, 512, 512, 512, 5, 160)}" fill="url(#lvicbg)"/><path d="${lame(512, 512, 510, 510, 5, 160)}" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="4"/>` +
+  // Plate and rim follow the appearance as the system renders the .icon
+  // (ictool): Default keeps the plum plate; Dark turns it neutral and leans on
+  // the glass rim — lit at the top and bottom — to stand off a dark window.
+  return `<svg class="appicon" width="${size}" height="${size}" viewBox="0 0 1024 1024" aria-hidden="true"><defs>` +
+    '<linearGradient id="lvicbg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--ic-top)"/><stop offset="1" style="stop-color:var(--ic-bot)"/></linearGradient>' +
+    '<linearGradient id="lvicrim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:#fff;stop-opacity:var(--rim-top)"/><stop offset=".5" style="stop-color:#fff;stop-opacity:var(--rim-mid)"/><stop offset="1" style="stop-color:#fff;stop-opacity:var(--rim-bot)"/></linearGradient></defs>' +
+    `<path d="${lame(512, 512, 512, 512, 5, 160)}" fill="url(#lvicbg)"/><path d="${lame(512, 512, 506, 506, 5, 160)}" fill="none" stroke="url(#lvicrim)" stroke-width="12"/>` +
     `<g fill="#F4F2EE">${px}</g><g class="cur">${cur}</g></svg>`;
 }
 const RACK = '<rect x="3" y="3.2" width="10" height="4" rx="1.2"/><rect x="3" y="8.8" width="10" height="4" rx="1.2"/><path d="M5.2 5.2h.01M5.2 10.8h.01"/>';

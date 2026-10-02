@@ -125,6 +125,15 @@ badge, not a thing.
   in time with the icon's cursor, which blinks in 1.1-s steps as a terminal's does. Both hold still while
   the field has focus, so typing has nothing moving above it; Reduce Motion
   holds them always. It is the only coloured thing on the page.
+- **In Dark the icon is the system's Dark rendition**, not the Default one
+  laid on a dark window. `ictool --rendition Dark` turns the plum plate a
+  neutral near-black (≈ `#1F1F21` → `#0E0E0F`) and keeps the Liquid Glass
+  rim, a white edge lit at the top (≈ 34 %) and bottom (≈ 20 %). That rim,
+  not the plate, is what sets the icon off a dark window. The implementation
+  must draw the rendition of the view's effective appearance: if
+  `NSApp.applicationIconImage` doesn't follow the appearance (to be verified
+  on macOS 26), `design/icon`'s build exports the Default and Dark renders
+  into an image set with Any / Dark appearances.
 - **The folder is the title**, because it is the one choice that can't be
   undone: a 22-pt semibold pop-up with the folder's name, its path and git
   branch under it in 11-pt tertiary. Its menu:

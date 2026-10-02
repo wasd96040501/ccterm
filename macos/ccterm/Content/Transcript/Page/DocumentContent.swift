@@ -27,7 +27,7 @@ nonisolated enum DocumentContent: Sendable, Equatable {
     /// What a background agent, workflow or monitor reported. A command's
     /// news opens the command's own document instead.
     case news(TaskNews)
-    /// A slash command's output, too long for the line under its capsule.
+    /// A slash command's output, too long for the line under its bubble.
     case commandOutput(LocalCommand)
     /// The summary a compaction left for the model to continue from.
     case compactionSummary(String)

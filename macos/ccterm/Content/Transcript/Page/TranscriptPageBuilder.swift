@@ -515,7 +515,7 @@ nonisolated struct TranscriptPageBuilder {
 
     // MARK: - Folding into what came before
 
-    /// A command's output joins its capsule; `/compact`'s and `/exit`'s
+    /// A command's output joins its bubble; `/compact`'s and `/exit`'s
     /// fold away with them.
     private mutating func attachOutput(_ output: String, _ errorOutput: String) {
         if foldingCompact || exited { return }

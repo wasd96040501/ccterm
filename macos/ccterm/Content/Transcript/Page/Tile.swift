@@ -5,7 +5,7 @@ import Foundation
 /// row (design/transcript/README.md "Tile").
 nonisolated struct Tile: Sendable, Equatable {
     enum Glyph: Sendable, Equatable {
-        /// One of the eleven kinds of tool call.
+        /// One of the fifteen kinds of tool call.
         case tool(ToolKind)
         /// A workflow run — the sidebar's workflow glyph.
         case workflow

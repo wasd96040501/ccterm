@@ -113,7 +113,7 @@ extension RowCache {
                     content: content, body: .markdown(memo), measured: measured,
                     measuredWidth: width)
 
-            case .userMessage(let text):
+            case .userMessage(let message):
                 // One block, and it does not depend on the width — so a previous
                 // one is reused whole and only the measure re-runs. A text that
                 // moved has nothing reusable in it; the bubble is rebuilt.
@@ -121,7 +121,7 @@ extension RowCache {
                 if case .block(let donor)? = previous?.body, previous?.content == content {
                     block = donor
                 } else {
-                    block = UserMessageBlock(text)
+                    block = UserMessageBlock(message)
                 }
                 self.init(
                     content: content, body: .block(block), measured: block.measure(width),

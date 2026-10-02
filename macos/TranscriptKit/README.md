@@ -27,7 +27,7 @@ directly on `NSTableView`:
   | Case | Payload | Drawn by | Height from |
   |---|---|---|---|
   | `.markdown` | one complete markdown document as `String` | the transcript | self-sizing |
-  | `.userMessage` | message text as `String` | the transcript | self-sizing |
+  | `.userMessage` | `UserMessage`: text, tokens (a command, a picture) and `isPending` | the transcript | self-sizing |
   | `.view` | none | a host `NSView` | the delegate |
 
   A markdown document is always one row; the view never splits it. Anything

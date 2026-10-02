@@ -69,12 +69,11 @@ struct ShapedText: @unchecked Sendable {
     /// would mean deriving where the ellipsis cut, which Core Text does not
     /// report.
     ///
-    /// **Not for text carrying inline symbols.** A symbol is placed by asking the
-    /// line for the pen at its index, and every index in the hidden tail reports
-    /// the truncation point — so a symbol in the part that was cut would be drawn
-    /// on top of the ellipsis. Nothing passes a limit for such text today
-    /// (`UserMessageBlock` is plain), and this is the constraint to check before
-    /// something does.
+    /// **Inline symbols in the hidden tail are not placed.** A symbol is placed
+    /// by asking the line for the pen at its index, and every index in the hidden
+    /// tail reports the truncation point — so on a truncated line a symbol whose
+    /// next position has the same pen is skipped, rather than drawn on top of the
+    /// ellipsis (`UserMessageTokenTests.testAPictureGlyphInTheHiddenTailIsNotDrawn`).
     ///
     /// ## The exclusion
     ///
@@ -163,15 +162,22 @@ struct ShapedText: @unchecked Sendable {
             // that owns it, rather than re-deriving it on every repaint.
             attributed.enumerateAttribute(.inlineSymbol, in: range) { value, at, _ in
                 guard let symbol = value as? InlineSymbol else { return }
+                let pen = CTLineGetOffsetForStringIndex(ctLine, at.location, nil)
+                // On a truncated line every position of the hidden tail reports
+                // the ellipsis's pen, so a symbol there takes no room: it is not
+                // on screen, and drawing it would land on the ellipsis.
+                if isTruncated,
+                    CTLineGetOffsetForStringIndex(ctLine, at.location + 1, nil) - pen < symbol.inkWidth / 2
+                {
+                    return
+                }
                 symbols.append(
                     TypesetText.Symbol(
                         symbol: symbol,
                         // The pen and the baseline are all this knows; where the
                         // artwork goes relative to them is the symbol's own
                         // arithmetic.
-                        rect: symbol.frame(
-                            pen: CTLineGetOffsetForStringIndex(ctLine, at.location, nil),
-                            baseline: y + ascent)))
+                        rect: symbol.frame(pen: pen, baseline: y + ascent)))
             }
 
             widest = max(widest, lineWidth)

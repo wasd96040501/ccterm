@@ -191,6 +191,44 @@ final class SessionTabLiveTests: XCTestCase {
         XCTAssertEqual(bubbles(in: tab).map(\.text), ["echo"], "the conversation stays")
     }
 
+    func testStopDuringTheRiseCancelsTheLaunchAndStaysTheNewTab() throws {
+        let tab = try mountDraft(launchDelay: 5)
+        try send("echo", in: tab)
+        // Still rising: the tab is not the session's yet.
+        XCTAssertNil(tab.transcriptURL)
+        XCTAssertEqual(store?.activities.count, 1, "starting")
+
+        tab.composerViewControllerDidRequestStop(try composer(of: tab))
+
+        XCTAssertEqual(store?.activities.isEmpty, true, "the launch is gone")
+        stage!.drain(seconds: 1)
+        XCTAssertNil(tab.transcriptURL, "the rise's end did nothing")
+        XCTAssertEqual(recorder.started, [])
+        XCTAssertEqual(recorder.returnedToDraft, 0)
+        XCTAssertEqual(try composer(of: tab).text, "echo")
+        XCTAssertTrue(tab.children.contains { $0 is NewSessionViewController })
+    }
+
+    // MARK: - Failure
+
+    func testACrashShowsItsLogBeside() throws {
+        let tab = try mountDraft()
+        try send("crash", in: tab)
+        XCTAssertTrue(stage!.drainUntil(timeout: 5) { tab.transcriptURL != nil })
+        let url = try XCTUnwrap(tab.transcriptURL)
+        XCTAssertTrue(
+            stage!.drainUntil(timeout: 15) {
+                if case .failed? = self.store?.activities[url] { return true }
+                return false
+            }, "the CLI never failed")
+        stage!.drain(seconds: 0.3)
+
+        tab.composerViewControllerDidRequestLog(try composer(of: tab))
+
+        XCTAssertEqual(recorder.opened.count, 1, "the log opens beside")
+        guard case .document? = recorder.opened.first else { return XCTFail("not a document: \(recorder.opened)") }
+    }
+
     // MARK: - Queued
 
     func testAPromptSentWhileClaudeWorksIsQueuedUnderTheFirst() throws {

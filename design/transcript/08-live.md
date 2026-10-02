@@ -400,7 +400,7 @@ sends it. The user sees no difference from an applied change.
 | **Waiting for you** | a permission request, question or plan | stop; coral *Waiting for you ↑* when it is off screen; ⌘↩ / ⎋ answer the request | coral dot |
 | **Compacting** | `system/status` = `compacting` | *Compacting…*; the transcript's live divider (05-local.md) | arc |
 | **At rest** | no CLI: never started here, `/exit`, End Session, quit | *Will resume when you send*; chips show the session's last settings | — |
-| **Failed** | the CLI exited non-zero | a red banner over the card: *Claude exited (code 1)*, stderr's last line, **Show Log**, **Restart** | red dot |
+| **Failed** | the CLI exited non-zero | the card's top section: a red octagon, *Claude quit unexpectedly* over *Exit code 1 · stderr's last line*, then **Show Log** and **Restart** (default) | red dot |
 
 - **Starting is a real state.** Launch runs a login-shell environment probe
   that can take seconds. Today the tab shows the at-rest page with Send
@@ -408,7 +408,7 @@ sends it. The user sees no difference from an applied change.
   bubble until the CLI takes it. The probe's result should be reused across
   launches in an app run, so only the first launch pays for it.
 - **Failure shows in the tab.** Today only the sidebar's red mark says so,
-  and Send silently resumes. The banner says what happened. **Restart** is
+  and Send silently resumes. The card says what happened, in its own top section (a 6 % red wash, a hairline under it) — not a strip with a radius of its own above it. It reads as a notification does: symbol, title over detail, buttons trailing; narrow, the buttons move under the text. **Restart** is
   Send's resume without a prompt.
 - **At rest, the chips show the session's last settings** — the last
   assistant entry's `model` and `effort`, the last user entry's
@@ -455,7 +455,7 @@ Every view on this page draws from the same few numbers.
 |---|---|---|
 | **Radius · tag** | 5 | the command token, tooltips |
 | **Radius · control** | 7 | chips, tabs, sidebar and menu rows (row = control − 2) |
-| **Radius · popover** | 12 | menus, the model panel, the slash list, the banner |
+| **Radius · popover** | 12 | menus, the model panel, the slash list |
 | **Radius · card** | 18 | the composer, the alert, cards |
 | **Icon · row** | 16 | anything that heads a row: sidebar, menu items, tiles |
 | **Icon · control** | 14 | inside a 12-pt control: chips, the action button, the ring |

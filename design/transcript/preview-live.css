@@ -226,11 +226,16 @@
 
 /* The failed banner: a red wash over the card, never a filled button. */
 .lv-banner {
-  display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap; font-size: 12.5px; padding: 8px 8px 8px 16px; margin-bottom: 8px; border-radius: var(--r-pop);
-  background: color-mix(in srgb, var(--red) 10%, var(--window)); box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--red) 25%, transparent);
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin: -12px -8px 12px -16px; padding: 12px 12px 12px 16px;
+  border-radius: var(--r-card) var(--r-card) 0 0; background: color-mix(in srgb, var(--red) 6%, transparent); border-bottom: 0.5px solid var(--separator);
 }
-.lv-banner b { color: var(--red-text); font-weight: 600; }
-.lv-banner .why { flex: 1 1 200px; color: var(--secondary); font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; }
+.lv-banner .oct { width: var(--i-row); height: var(--i-row); flex: none; align-self: flex-start; margin-top: 1px; }
+.lv-banner .tx { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.lv-banner b { font-size: 13px; font-weight: 600; color: var(--label); }
+.lv-banner .why { font-size: 11px; color: var(--secondary); line-height: 15px; }
+.lv-banner .why code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; }
+.lv-banner .bt { display: flex; gap: 8px; flex: none; margin-left: auto; }
+.lv-banner .abtn { height: 24px; padding: 0 12px; font-size: 12px; }
 
 /* Queued and held prompts: the bubble at half strength, a status under it. */
 .qrow { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }

@@ -450,13 +450,19 @@ function accHTML(s, o = {}) {
   if (!stoppable || hasText) h += `<button class="act-btn" data-lv="send" data-sid="${s.id}" title="${working ? "Queue" : "Send"} ↩"${hasText ? "" : " disabled"}>${LV.up}</button>`;
   return h;
 }
+/** A failure is the composer's own top section, not a strip above it: one
+ *  shape, one radius. Symbol, then the title over the detail, then the
+ *  buttons — a notification's layout. */
+const OCTAGON = '<svg class="oct" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.3 1.5h5.4l3.8 3.8v5.4l-3.8 3.8H5.3l-3.8-3.8V5.3z" fill="var(--red)"/><path d="M8 4.6v4.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="11.2" r=".95" fill="#fff"/></svg>';
+function bannerHTML(s) {
+  if (s.state !== "failed") return "";
+  return `<div class="lv-banner" role="alert">${OCTAGON}<div class="tx"><b>Claude quit unexpectedly</b><span class="why">Exit code 1 · <code>${esc(s.stderr || "API Error: 529 overloaded_error · retries exhausted")}</code></span></div>` +
+    `<div class="bt"><button class="abtn">Show Log</button><button class="abtn def" data-lv="restart" data-sid="${s.id}">Restart</button></div></div>`;
+}
 function composerHTML(s, o = {}) {
   const ph = isNew(s) ? "Ask Claude to…" : "Message Claude";
   const tok = s.token ? cmdToken("/", s.token) : "";
-  const banner = s.state === "failed"
-    ? `<div class="lv-banner"><b>Claude exited (code 1)</b><span class="why">${esc(s.stderr || "API Error: 529 overloaded_error · retries exhausted")}</span><button class="btn plain">Show Log</button><button class="btn" data-lv="restart" data-sid="${s.id}">Restart</button></div>`
-    : "";
-  return `${banner}<div class="lv-comp${o.focus ? " focus" : ""}" data-sid="${s.id}">
+  return `<div class="lv-comp${o.focus ? " focus" : ""}" data-sid="${s.id}">${bannerHTML(s)}
     <div class="lv-field">${tok}<textarea rows="1" placeholder="${ph}" data-sid="${s.id}"${o.static ? " readonly tabindex=-1" : ""}>${esc(o.text != null ? o.text : s.text || "")}</textarea></div>
     <div class="lv-acc">${accHTML(s, o)}</div>
   </div><div class="lv-err">${esc(s.err || "")}</div>`;
@@ -641,7 +647,7 @@ const LW = {
     }
     const dock = el.querySelector(".lv-dock") || el.querySelector(".lv-compwrap");
     const banner = dock.querySelector(".lv-banner");
-    if (s.state === "failed" && !banner) dock.insertAdjacentHTML("afterbegin", composerHTML(s).split('<div class="lv-comp')[0]);
+    if (s.state === "failed" && !banner) dock.querySelector(".lv-comp").insertAdjacentHTML("afterbegin", bannerHTML(s));
     if (s.state !== "failed" && banner) banner.remove();
     const field = dock.querySelector(".lv-field");
     const tok = field.querySelector(".cmdtok");
@@ -1190,7 +1196,7 @@ function buildLiveSpecimens() {
     ["<b>Waiting for you</b>Coral, the one time: the request is off screen; click scrolls to it.", { state: "waiting", model: "opus", effort: "high", mode: "default" }, {}],
     ["<b>Starting</b>The launch's login-shell probe can take seconds; the prompt waits, dim, in its bubble.", { state: "starting", model: "opus", effort: "high", mode: "auto" }, {}],
     ["<b>At rest</b>The chips are the session's last settings; resume passes them as flags.", { state: "rest", model: "sonnet", effort: "xhigh", mode: "acceptEdits" }, {}],
-    ["<b>Failed</b>A red wash over the card, stderr's last line, Restart. Send restarts too.", { state: "failed", model: "opus", effort: "high", mode: "auto" }, {}],
+    ["<b>Failed</b>The card's own top section — symbol, the title over stderr's last line, then the buttons. Send restarts too.", { state: "failed", model: "opus", effort: "high", mode: "auto" }, {}],
     ["<b>Haiku · Fast · Bypass</b>No effort on Haiku: the chip stays, disabled. Fast is a bolt. Bypass is the one red mode.", { state: "idle", model: "haiku", mode: "bypassPermissions" }, {}],
     ["<b>Fast on Opus · context past half</b>The ring appears at 50 % and opens /context.", { state: "idle", model: "opus", fast: true, effort: "max", mode: "acceptEdits", ctx: 0.72 }, {}],
     ["<b>Refused</b>The control reverts; the reason is one red line under the card.", { state: "idle", model: "opus", effort: "high", mode: "auto", err: "Opus 4.8 isn't available to your organization." }, {}],

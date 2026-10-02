@@ -3,8 +3,8 @@ import XCTest
 
 @testable import ccterm
 
-/// Which key-downs the ⌘N monitor takes: ⌘N in the main window and nowhere
-/// else.
+/// Which key-downs the ⌘N monitor takes: exactly ⌘N, from every window ⌘T
+/// works from, and not over a sheet or a modal session.
 @MainActor
 final class NewTabKeyTests: XCTestCase {
     private var windows: [NSWindow] = []
@@ -23,22 +23,22 @@ final class NewTabKeyTests: XCTestCase {
         return window
     }
 
-    func testCommandNInTheMainWindowIsTaken() {
-        let main = makeWindow()
-        XCTAssertTrue(NewTabKey.handles(modifiers: .command, characters: "n", in: main, mainWindow: main))
+    private func handles(_ window: NSWindow?, modal: NSWindow? = nil) -> Bool {
+        NewTabKey.handles(modifiers: .command, characters: "n", in: window, modalWindow: modal)
     }
 
-    func testAnotherWindowKeepsItsKey() {
-        let main = makeWindow()
-        let settings = makeWindow()
-        XCTAssertFalse(
-            NewTabKey.handles(modifiers: .command, characters: "n", in: settings, mainWindow: main),
-            "Settings or About is not where a tab opens from")
-        XCTAssertFalse(NewTabKey.handles(modifiers: .command, characters: "n", in: nil, mainWindow: main))
-        XCTAssertFalse(NewTabKey.handles(modifiers: .command, characters: "n", in: main, mainWindow: nil))
+    func testCommandNIsTakenFromEveryWindowCommandTWorksFrom() {
+        XCTAssertTrue(handles(makeWindow()), "the main window")
+        XCTAssertTrue(handles(makeWindow()), "Settings, About, a panel")
+        XCTAssertTrue(handles(nil), "no window key")
     }
 
-    func testASheetOnTheMainWindowKeepsTheKey() {
+    func testAModalSessionKeepsTheKey() {
+        XCTAssertFalse(handles(makeWindow(), modal: makeWindow()))
+        XCTAssertFalse(handles(nil, modal: makeWindow()))
+    }
+
+    func testASheetKeepsTheKeyAndSoDoesItsParent() {
         let main = makeWindow()
         let sheet = makeWindow()
         main.alphaValue = 0.01
@@ -47,8 +47,8 @@ final class NewTabKeyTests: XCTestCase {
         defer { main.endSheet(sheet) }
         XCTAssertNotNil(main.attachedSheet, "premise: the sheet is attached")
 
-        XCTAssertFalse(NewTabKey.handles(modifiers: .command, characters: "n", in: main, mainWindow: main))
-        XCTAssertFalse(NewTabKey.handles(modifiers: .command, characters: "n", in: sheet, mainWindow: main))
+        XCTAssertFalse(handles(main))
+        XCTAssertFalse(handles(sheet))
     }
 
     func testOnlyExactlyCommandN() {
@@ -56,11 +56,11 @@ final class NewTabKeyTests: XCTestCase {
         for flags: NSEvent.ModifierFlags in [
             [], [.command, .shift], [.command, .option], [.control], [.command, .control],
         ] {
-            XCTAssertFalse(NewTabKey.handles(modifiers: flags, characters: "n", in: main, mainWindow: main), "\(flags)")
+            XCTAssertFalse(NewTabKey.handles(modifiers: flags, characters: "n", in: main, modalWindow: nil), "\(flags)")
         }
-        XCTAssertFalse(NewTabKey.handles(modifiers: .command, characters: "t", in: main, mainWindow: main))
-        XCTAssertFalse(NewTabKey.handles(modifiers: .command, characters: nil, in: main, mainWindow: main))
+        XCTAssertFalse(NewTabKey.handles(modifiers: .command, characters: "t", in: main, modalWindow: nil))
+        XCTAssertFalse(NewTabKey.handles(modifiers: .command, characters: nil, in: main, modalWindow: nil))
         // Caps Lock is a state, not a chord.
-        XCTAssertTrue(NewTabKey.handles(modifiers: [.command, .capsLock], characters: "n", in: main, mainWindow: main))
+        XCTAssertTrue(NewTabKey.handles(modifiers: [.command, .capsLock], characters: "n", in: main, modalWindow: nil))
     }
 }

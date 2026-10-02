@@ -106,15 +106,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindowController.newTab()
     }
 
-    /// ⌘N as a second key for New Tab, in the main window (`NewTabKey`). It does
-    /// what the menu item does: the key window's editor area answers `newTab:`.
+    /// ⌘N as a second key for New Tab (`NewTabKey`). It does what the menu item
+    /// does: the key window's editor area answers `newTab:`, and from any other
+    /// window the main window is shown and takes the tab.
     private func installNewTabKey() {
         newTabKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             MainActor.assumeIsolated {
                 guard
                     NewTabKey.handles(
                         modifiers: event.modifierFlags, characters: event.charactersIgnoringModifiers,
-                        in: event.window, mainWindow: self?.mainWindowController?.window)
+                        in: event.window, modalWindow: NSApp.modalWindow)
                 else { return event }
                 if !NSApp.sendAction(Selector(("newTab:")), to: nil, from: nil) { self?.newTab() }
                 return nil

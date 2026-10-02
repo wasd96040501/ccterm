@@ -12,6 +12,16 @@
         }
       }
     },
+    "%@ doesn’t take an effort level": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 不支持思考强度"
+          }
+        }
+      }
+    },
     "%@ from the first of %lld": {
       "comment": "A paste into the account sheet held several providers; the sheet took the first.",
       "localizations": {
@@ -19,6 +29,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$@（取自 %2$lld 个中的第一个）"
+          }
+        }
+      }
+    },
+    "%@ only": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅限 %@"
           }
         }
       }
@@ -325,6 +345,16 @@
         }
       }
     },
+    "Accept Edits": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接受编辑"
+          }
+        }
+      }
+    },
     "Account": {
       "localizations": {
         "zh-Hans": {
@@ -375,6 +405,16 @@
         }
       }
     },
+    "After this turn": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本轮结束后"
+          }
+        }
+      }
+    },
     "Agent": {
       "localizations": {
         "zh-Hans": {
@@ -395,12 +435,32 @@
         }
       }
     },
+    "Applies after this turn": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本轮结束后生效"
+          }
+        }
+      }
+    },
     "Approve": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "批准"
+          }
+        }
+      }
+    },
+    "Approves safe actions, asks when unsure": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动批准安全操作，拿不准时询问"
           }
         }
       }
@@ -415,12 +475,42 @@
         }
       }
     },
+    "Ask": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "询问"
+          }
+        }
+      }
+    },
     "Ask Claude to…": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "让 Claude…"
+          }
+        }
+      }
+    },
+    "Ask Permissions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "询问权限"
+          }
+        }
+      }
+    },
+    "Asks before edits and commands": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑和执行命令前询问"
           }
         }
       }
@@ -441,6 +531,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "认证方式"
+          }
+        }
+      }
+    },
+    "Auto": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动"
           }
         }
       }
@@ -492,6 +592,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Base URL"
+          }
+        }
+      }
+    },
+    "Bypass": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "绕过"
+          }
+        }
+      }
+    },
+    "Bypass Permissions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "绕过权限"
           }
         }
       }
@@ -572,6 +692,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Claude Code 的设置、登录状态和会话"
+          }
+        }
+      }
+    },
+    "Claude quit unexpectedly": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 意外退出"
           }
         }
       }
@@ -808,6 +938,16 @@
         }
       }
     },
+    "Default": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认"
+          }
+        }
+      }
+    },
     "Default Model": {
       "localizations": {
         "zh-Hans": {
@@ -918,6 +1058,16 @@
         }
       }
     },
+    "Don’t Ask": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不再询问"
+          }
+        }
+      }
+    },
     "Duplicate": {
       "localizations": {
         "zh-Hans": {
@@ -979,6 +1129,36 @@
         }
       }
     },
+    "Edits files without asking; asks before commands": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直接编辑文件；执行命令前询问"
+          }
+        }
+      }
+    },
+    "Effort · %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "思考强度 · %@"
+          }
+        }
+      }
+    },
+    "Effort: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "思考强度：%@"
+          }
+        }
+      }
+    },
     "Email": {
       "localizations": {
         "zh-Hans": {
@@ -1029,6 +1209,16 @@
         }
       }
     },
+    "Extra High": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超高"
+          }
+        }
+      }
+    },
     "Fable": {
       "localizations": {
         "zh-Hans": {
@@ -1055,6 +1245,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "失败"
+          }
+        }
+      }
+    },
+    "Faster output on Opus · billed as extra usage": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opus 上输出更快 · 按额外用量计费"
           }
         }
       }
@@ -1156,6 +1356,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "隐藏"
+          }
+        }
+      }
+    },
+    "High": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高"
           }
         }
       }
@@ -1338,12 +1548,42 @@
         }
       }
     },
+    "Low": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "低"
+          }
+        }
+      }
+    },
     "Manage": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "管理"
+          }
+        }
+      }
+    },
+    "Max": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最高"
+          }
+        }
+      }
+    },
+    "Medium": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中"
           }
         }
       }
@@ -1538,6 +1778,26 @@
         }
       }
     },
+    "Not on %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 不支持"
+          }
+        }
+      }
+    },
+    "Not on this model": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此模型不支持"
+          }
+        }
+      }
+    },
     "Not signed in": {
       "localizations": {
         "zh-Hans": {
@@ -1554,6 +1814,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有可粘贴的内容——需要 KEY=value"
+          }
+        }
+      }
+    },
+    "Only with the subscription": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅限订阅"
           }
         }
       }
@@ -1668,12 +1938,38 @@
         }
       }
     },
+    "Permission Mode": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "权限模式"
+          }
+        }
+      }
+    },
     "Plan": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "套餐"
+          }
+        }
+      }
+    },
+    "Plan (permission mode)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plan"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规划"
           }
         }
       }
@@ -1814,6 +2110,16 @@
         }
       }
     },
+    "Reads and plans; changes nothing": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只阅读和规划，不做任何更改"
+          }
+        }
+      }
+    },
     "Recovery": {
       "localizations": {
         "zh-Hans": {
@@ -1860,6 +2166,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在回复"
+          }
+        }
+      }
+    },
+    "Restarts the session": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将重启会话"
           }
         }
       }
@@ -1941,6 +2257,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "后台运行中"
+          }
+        }
+      }
+    },
+    "Runs everything without asking": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不经询问直接运行一切"
+          }
+        }
+      }
+    },
+    "Runs only what’s already allowed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只运行已允许的操作"
           }
         }
       }
@@ -2245,6 +2581,16 @@
         }
       }
     },
+    "Starting Claude…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在启动 Claude…"
+          }
+        }
+      }
+    },
     "Still using %@.": {
       "localizations": {
         "zh-Hans": {
@@ -2405,6 +2751,16 @@
         }
       }
     },
+    "This session only": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅限本次会话"
+          }
+        }
+      }
+    },
     "This transcript couldn’t be read.": {
       "localizations": {
         "zh-Hans": {
@@ -2556,6 +2912,16 @@
         }
       }
     },
+    "Waiting for you ↑": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待你的操作 ↑"
+          }
+        }
+      }
+    },
     "Waiting for your approval": {
       "localizations": {
         "zh-Hans": {
@@ -2592,6 +2958,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "模型据以继续的内容"
+          }
+        }
+      }
+    },
+    "Will resume when you send": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送时将继续会话"
           }
         }
       }
@@ -2704,6 +3080,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "名称"
+          }
+        }
+      }
+    },
+    "switches after this turn": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本轮结束后切换"
           }
         }
       }

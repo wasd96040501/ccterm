@@ -3,11 +3,13 @@ import AppKit
 import Combine
 
 /// General: where Claude Code comes from — the command that starts it and the
-/// folder it keeps its settings, sign-in and sessions in. Each field is
+/// folder it keeps its settings, sign-in and sessions in — and whether its
+/// sessions may enter Bypass Permissions. Each field is
 /// checked as it is typed and reaches ``LaunchStore`` only once it passes;
 /// what the check found shows in the row's description line. Empty fields run
 /// the `claude` found on this Mac and the CLI's own folder, which the
-/// placeholders show.
+/// placeholders show. *Allow Bypass Permissions* is a checkbox that takes
+/// effect at once: sessions started after it carry the flag.
 @MainActor
 final class GeneralSettingsViewController: NSViewController {
     private let launch: LaunchStore
@@ -36,11 +38,21 @@ final class GeneralSettingsViewController: NSViewController {
     private lazy var configDirectoryRow = FormRowView(
         title: String(localized: "Configuration Folder"), accessory: configDirectoryField)
 
+    private lazy var bypassCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    private lazy var bypassRow: FormRowView = {
+        let row = FormRowView(title: String(localized: "Allow Bypass Permissions"), accessory: bypassCheckbox)
+        row.detail = String(
+            localized:
+                "Lets a session switch to Bypass Permissions, which skips every permission check. Applies to sessions started after this."
+        )
+        return row
+    }()
+
     override func loadView() {
         view = FormView(sections: [
             FormSectionView(
                 title: String(localized: "Claude Code"),
-                content: FormGroupView(rows: [launchCommandRow, configDirectoryRow]))
+                content: FormGroupView(rows: [launchCommandRow, configDirectoryRow, bypassRow]))
         ])
     }
 
@@ -54,8 +66,16 @@ final class GeneralSettingsViewController: NSViewController {
         launchCommandField.action = #selector(commitLaunchCommand(_:))
         configDirectoryField.stringValue = launch.preferences.configDirectory
         configDirectoryField.action = #selector(commitConfigDirectory(_:))
+        bypassCheckbox.target = self
+        bypassCheckbox.action = #selector(commitBypass(_:))
+        bypassCheckbox.setAccessibilityLabel(String(localized: "Allow Bypass Permissions"))
         // Each state and the folder in effect arrive on subscribing, on the
         // main actor, so the first frame is already right.
+        launch.$preferences
+            .sink { [weak self] preferences in
+                self?.bypassCheckbox.state = preferences.allowsBypassPermissions ? .on : .off
+            }
+            .store(in: &cancellables)
         launch.$sessionDirectory
             .sink { [weak self] directory in self?.showFolderInEffect(directory) }
             .store(in: &cancellables)
@@ -131,6 +151,10 @@ final class GeneralSettingsViewController: NSViewController {
 
     @objc private func commitLaunchCommand(_ sender: NSTextField) {
         commandValidation.commit(sender.stringValue) { [launch] command in launch.setCommand(command) }
+    }
+
+    @objc private func commitBypass(_ sender: NSButton) {
+        launch.setAllowsBypassPermissions(sender.state == .on)
     }
 
     @objc private func commitConfigDirectory(_ sender: NSTextField) {

@@ -395,6 +395,17 @@
         }
       }
     },
+    "Allow Bypass Permissions": {
+      "comment": "General: the checkbox that lets a session enter Bypass Permissions mode.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许绕过权限"
+          }
+        }
+      }
+    },
     "Approve": {
       "localizations": {
         "zh-Hans": {
@@ -1274,6 +1285,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "启动命令"
+          }
+        }
+      }
+    },
+    "Lets a session switch to Bypass Permissions, which skips every permission check. Applies to sessions started after this.": {
+      "comment": "General: the description under Allow Bypass Permissions.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许会话切换到“绕过权限”模式，该模式会跳过所有权限检查。对此后启动的会话生效。"
           }
         }
       }

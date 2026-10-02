@@ -121,9 +121,10 @@ final class NewSessionViewController: NSViewController {
         view.addLayoutGuide(above)
         view.addLayoutGuide(below)
 
-        // Until the container sets the slot's height, a composer's worth.
+        // Until a composer is in the slot, a composer's worth — weaker than any
+        // view's hugging, so the composer in it keeps its own height.
         let slotHeight = composerGuide.heightAnchor.constraint(equalToConstant: 100)
-        slotHeight.priority = .defaultLow
+        slotHeight.priority = .fittingSizeCompression
         let slotWidth = composerGuide.widthAnchor.constraint(equalTo: view.widthAnchor, constant: -32)
         slotWidth.priority = .defaultHigh
 

@@ -280,7 +280,7 @@ function menuItems(kind, s) {
       }
     }
     out.push({ sep: true });
-    out.push({ label: "Fast Mode", glyph: LV.bolt.replace('class="bolt"', 'class="g" style="padding:2px 3px"'), sub: fm.fast ? "Faster output on Opus · billed as extra usage" : fm.acct === "sub" ? "Opus 5.5, Opus 5 and Opus 4.8 only" : "Only with the subscription", checked: shownFast(s), disabled: !fm.fast, act: () => setFast(s, !shownFast(s)) });
+    out.push({ label: "Fast Mode", glyph: LV.bolt.replace('class="bolt"', 'class="g" style="padding:2px 3px"'), sub: fm.fast ? "Faster output on Opus · billed as extra usage" : fm.acct === "sub" ? "Opus 5.5, Opus 5 and Opus 4.8 only" : "Only with the subscription", toggle: true, on: shownFast(s), disabled: !fm.fast, keep: true, act: () => setFast(s, !shownFast(s)) });
     return out;
   }
   if (kind === "effort") {
@@ -318,7 +318,10 @@ function menuHTML(items, opts = {}) {
     if (it.sep) return '<div class="msep"></div>';
     if (it.header) return `<div class="mh"><span>${esc(it.header)}</span>${it.key ? `<kbd>${it.key}</kbd>` : ""}</div>`;
     if (it.acct) return `<div class="mh acct">${acctMark(it.acct, 14)}<span>${esc(it.acct.name)}<i>${esc(it.acct.detail)}</i></span>${it.note ? `<em>${esc(it.note)}</em>` : ""}</div>`;
-    const cls = ["mi", anyGlyph ? "" : "nog", it.disabled ? "dis" : "", it.danger ? "danger" : "", it.more ? "more" : "", opts.hl === i ? "hl" : ""].join(" ");
+    const cls = ["mi", anyGlyph ? "" : "nog", it.toggle ? "tg" : "", it.disabled ? "dis" : "", it.danger ? "danger" : "", it.more ? "more" : "", opts.hl === i ? "hl" : ""].join(" ");
+    // A setting, not a choice: a switch at the trailing edge (NSSwitch, small),
+    // and the menu stays open so the chip can be seen to change.
+    if (it.toggle) return `<div class="${cls}" data-mi="${i}" role="switch" aria-checked="${!!it.on}"><span></span>${it.glyph || "<span></span>"}<span class="l">${esc(it.label)}</span><span class="k"><span class="nsw${it.on ? " on" : ""}"></span></span>${it.sub ? `<span class="s">${esc(it.sub)}</span>` : ""}</div>`;
     return `<div class="${cls}" data-mi="${i}">${it.checked ? LV.check : "<span></span>"}${anyGlyph ? it.glyph || "<span></span>" : ""}<span class="l">${esc(it.label)}</span>${
       it.submenu ? `<span class="k">${LV.sub}</span>` : it.k ? `<span class="k">${esc(it.k)}</span>` : it.trail ? `<span class="k t">${it.trail}</span>` : "<span></span>"
     }${it.sub ? `<span class="s">${esc(it.sub)}</span>` : ""}</div>`;
@@ -354,12 +357,14 @@ const MENU = {
       if (it.keep) { // expands in place: the panel stays open where it is
         e.stopPropagation();
         it.act();
-        const top = this.el.querySelector(".mscroll") && this.el.querySelector(".mscroll").scrollTop;
+        const old = this.el.querySelector(".mscroll");
+        const top = old && old.scrollTop, cap = old && old.style.maxHeight;
         this.items = menuItems(this.kind, this.s);
         const host = document.createElement("div");
         host.innerHTML = menuHTML(this.items);
         this.el.innerHTML = host.firstElementChild.innerHTML;
-        if (top != null) this.el.querySelector(".mscroll").scrollTop = top;
+        const sc = this.el.querySelector(".mscroll");
+        if (sc && old) { sc.style.maxHeight = cap; sc.scrollTop = top; }
         return;
       }
       this.close();
@@ -393,8 +398,16 @@ const MENU = {
     });
   },
   place(el, r, dir) {
-    const h = el.offsetHeight, w = el.offsetWidth;
-    const below = dir === "below" || (dir === "auto" && r.top - h - 6 < 8);
+    // As NSMenu does: the preferred side if it fits, else the other, else the
+    // roomier one with the panel's scroller shortened to fit.
+    const roomBelow = innerHeight - 8 - (r.bottom + 4), roomAbove = r.top - 4 - 8;
+    let h = el.offsetHeight;
+    const prefer = dir === "below" ? "below" : "above";
+    const fits = (side) => (side === "below" ? roomBelow : roomAbove) >= h;
+    const below = fits(prefer) ? prefer === "below" : fits(prefer === "below" ? "above" : "below") ? prefer !== "below" : roomBelow > roomAbove;
+    const sc = el.querySelector(".mscroll"), room = below ? roomBelow : roomAbove;
+    if (sc && h > room) { sc.style.maxHeight = `${Math.max(120, sc.offsetHeight - (h - room))}px`; h = el.offsetHeight; }
+    const w = el.offsetWidth;
     el.style.top = `${below ? r.bottom + 4 : r.top - h - 4}px`;
     el.style.left = `${Math.max(8, Math.min(r.left - 4, innerWidth - w - 8))}px`;
   },

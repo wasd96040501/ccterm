@@ -241,7 +241,7 @@ each account is a section of it, in Settings' order:
   │ ▤ DeepSeek  api.deepseek.com                  │
   │   Default                                   ↻ │  ↕ scrolls, 360 pt at most
   │ ───────────────────────────────────────────── │
-  │ ⚡︎ Fast Mode   Faster output on Opus · billed as extra usage │  outside the scroll
+  │ ⚡︎ Fast Mode                            ( ●) │  a switch, outside the scroll
   └──────────────────────────────────────────────┘
 ```
 
@@ -285,7 +285,10 @@ account — is marked where it is chosen.
   resumes in that account. While Starting nothing has run yet, so there is no
   alert either: the launch starts over in the new account.
 
-- **Fast Mode** is a checkbox for models with `supportsFastMode`. On others it's
+- **Fast Mode** is a switch (a small `NSSwitch` at the row's trailing edge) — a
+  setting that stays on, not a choice among items — so toggling it leaves the
+  panel open and the chip's bolt appears behind it. Only models with
+  `supportsFastMode` enable it. On others it's
   disabled: *Opus 5.5, Opus 5 and Opus 4.8 only*; on a provider's model,
   *Only with the subscription*. When the account can't use
   it, the subtitle is `fast_mode_disabled_reason` in words (*Requires extra

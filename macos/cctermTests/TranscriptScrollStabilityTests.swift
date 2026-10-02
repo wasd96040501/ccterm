@@ -156,10 +156,16 @@ final class TranscriptScrollStabilityTests: XCTestCase {
                 transcript.rect(ofRow: row).minY, transcript.rect(ofRow: row - 1).maxY,
                 "item \(row - first) isn't flush under the row above")
         }
+        // Between entries the gap is measured from a line of work's words,
+        // which sit `air` inside its box.
         let next = items.upperBound
+        let nextIsWork = stage.findAll(WorkLineRowView.self, in: transcript).contains {
+            transcript.row(for: $0) == next
+        }
+        let air = WorkLineRowView.air * (nextIsWork ? 2 : 1)
         XCTAssertEqual(
-            transcript.rect(ofRow: next).minY - transcript.rect(ofRow: next - 1).maxY, 14,
-            "the next entry isn't the gap between entries below the last item")
+            transcript.rect(ofRow: next).minY - transcript.rect(ofRow: next - 1).maxY + air, 14,
+            "the next entry isn't the gap between entries below the last item's words")
     }
 
     /// A hovered item slides down as a run opens above it, under a pointer

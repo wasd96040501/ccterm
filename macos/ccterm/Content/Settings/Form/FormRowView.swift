@@ -54,6 +54,10 @@ final class FormRowView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     private func configureHierarchy() {
+        // Not selectable, as System Settings' aren't: a click hands a
+        // selectable field to the field editor, which redraws it in the
+        // field's own 13-pt font.
+        detailLabel.isSelectable = false
         titleLabel.font = .systemFont(ofSize: 13)
         titleLabel.lineBreakMode = .byTruncatingTail
         for view in [titleLabel, detailLabel] + [accessory].compactMap({ $0 }) {

@@ -184,6 +184,8 @@ final class TranscriptViewController: NSViewController {
             // No suspension between changing the rows and announcing it.
             rows.insert(contentsOf: chunk, at: 0)
             transcript.insertRows(at: IndexSet(0..<chunk.count), prepared: prepared)
+            // The row that was first has one above it now, and its gap depends on it.
+            transcript.noteHeightOfRows(withIndexesChanged: IndexSet(integer: chunk.count))
             await Task.yield()
         }
     }
@@ -312,7 +314,7 @@ extension TranscriptViewController: TranscriptViewDelegate {
     }
 
     func transcriptView(_ transcriptView: TranscriptView, customSpacingAboveRow row: Int) -> CGFloat? {
-        rows[row].spacingAbove
+        rows[row].spacingAbove(after: row > 0 ? rows[row - 1] : nil)
     }
 
     func transcriptView(_ transcriptView: TranscriptView, viewForRow row: Int) -> NSView {

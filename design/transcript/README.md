@@ -39,15 +39,18 @@ The views follow five rules.
 
 ## The system
 
-**Grid.** 4-pt unit. A run row is 28 pt (7u), an item row 24 pt (6u), a glyph
-tile 16 pt (4u). Items indent 24 pt — one tile plus its gap — so an item's
+**Grid.** 4-pt unit. A run row and an item row are 28 pt (7u) — the box
+the hover lights, its words' 16-pt line in the middle — and a glyph tile
+16 pt (4u). Items indent 24 pt — one tile plus its gap — so an item's
 glyph sits under its run's text.
 
 **Spacing.** Two levels, each with one gap. **First level** — every entry
 of the transcript (a prompt, a reply, a run's line, news, a capsule, a
 divider): 14 pt between them, TranscriptKit's row gap, the same everywhere.
+It is measured from a line of work's words, not its hover: the 6 pt the
+hover reaches above and below them is part of the gap.
 **Second level** — what a line discloses (a run's items, *Show N more*): 0 pt,
-flush under the line and each other; a 24-pt row is its own air, as an
+flush under the line and each other; a 28-pt row is its own air, as an
 outline view's children are. The approval card, level with its run, sits 6 pt
 under it. Nothing else adds space between rows.
 

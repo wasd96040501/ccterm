@@ -41,7 +41,11 @@ public final class EditorAreaViewController: NSSplitViewController {
     public weak var delegate: EditorAreaViewControllerDelegate?
 
     /// The editor the reader is working in. Never `nil`: there is always one.
-    public private(set) var activeGroup: EditorGroupViewController
+    public private(set) var activeGroup: EditorGroupViewController {
+        didSet {
+            for group in groups { group.tabBar.isActive = group === activeGroup }
+        }
+    }
 
     private weak var reportedViewController: NSViewController?
     private var hasReported = false

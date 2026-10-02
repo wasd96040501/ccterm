@@ -47,8 +47,9 @@ final class LiveSession {
 
     /// Sends a prompt; a turn starts (`state.isResponding`) at once.
     func send(_ text: String) throws {
-        try session.send(UserInput(text))
-        state.isResponding = true
+        let input = UserInput(text)
+        try session.send(input)
+        state.didSend(input.uuid)
     }
 
     /// Interrupts the running turn.

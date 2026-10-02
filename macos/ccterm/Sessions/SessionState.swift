@@ -33,8 +33,14 @@ nonisolated struct SessionState: Sendable {
     var requests: [PermissionRequest] = []
     /// Whether a CLI runs this session.
     var isLive = false
-    /// Whether a turn is running: from a prompt sent until its result.
-    var isResponding = false
+    /// Whether a turn is running, or a prompt sent waits to start one: from
+    /// `didSend` until the result of the turn that consumed it, or until the
+    /// prompt ends without starting (refused, cancelled while queued).
+    var isResponding: Bool { isTurnRunning || !waitingPrompts.isEmpty }
+    /// From a prompt's `started` to its turn's result.
+    private var isTurnRunning = false
+    /// Prompts sent that have neither started nor ended, by uuid.
+    private var waitingPrompts: Set<String> = []
     /// How the CLI ended, when it ended without being asked to.
     var failure: Termination?
     /// Whether the response in `partial` has stopped streaming (its
@@ -53,6 +59,12 @@ nonisolated struct SessionState: Sendable {
         return isResponding ? .responding : .idle
     }
 
+    /// A prompt with `uuid` was sent: the session responds from now, before
+    /// the CLI says the prompt started.
+    mutating func didSend(_ uuid: String) {
+        waitingPrompts.insert(uuid)
+    }
+
     /// Folds one event of the live session: messages into `transcript`
     /// (`Transcript.append`) and `partial` (stream events), requests in and
     /// out, a turn's start (`commandLifecycle` started) and end (`result`),
@@ -67,7 +79,8 @@ nonisolated struct SessionState: Sendable {
             requests.removeAll { $0.id == id }
         case .exited(let termination):
             isLive = false
-            isResponding = false
+            isTurnRunning = false
+            waitingPrompts = []
             requests = []
             partial = nil
             // A clean exit nobody asked for is the reader's `/exit`: the
@@ -88,11 +101,19 @@ nonisolated struct SessionState: Sendable {
             transcript.append(message)
         case .user, .system:
             transcript.append(message)
-        case .result:
-            isResponding = false
+        case .result(let result):
+            isTurnRunning = false
+            // The prompts the turn consumed, whether or not their lifecycle
+            // was reported.
+            waitingPrompts.subtract(result.userMessageUUIDs)
             partial = nil
         case .commandLifecycle(let lifecycle):
-            if lifecycle.state == .started { isResponding = true }
+            if lifecycle.state == .started {
+                isTurnRunning = true
+                waitingPrompts.remove(lifecycle.commandUUID)
+            } else if lifecycle.state.isTerminal {
+                waitingPrompts.remove(lifecycle.commandUUID)
+            }
         default:
             break
         }

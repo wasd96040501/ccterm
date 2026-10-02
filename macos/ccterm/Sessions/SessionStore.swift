@@ -110,14 +110,16 @@ final class SessionStore {
         return url
     }
 
-    /// Sends a prompt to the session at `url`, resuming it first when it is
-    /// at rest (its history read, `resume` = its id, in its recorded cwd).
+    /// Sends a prompt to the session at `url`, resuming it first when no CLI
+    /// runs it — at rest (its history read, `resume` = its id, in its
+    /// recorded cwd), or failed, which a new prompt leaves behind.
     func send(_ text: String, to url: URL) async throws {
-        if let live = live[url] {
+        if let live = live[url], live.state.isLive {
             try live.send(text)
-        } else {
-            try await resume(at: url).send(text)
+            return
         }
+        if let failed = live[url] { drop(failed) }
+        try await resume(at: url).send(text)
     }
 
     /// The live session for `url`, started from its transcript on disk — at

@@ -254,6 +254,21 @@ final class SessionStoreTests: XCTestCase {
         await store.endAll()
     }
 
+    func testAPromptToACrashedSessionResumesIt() async throws {
+        var history = Transcript(messages: [])
+        history.metadata.cwd = scratch.path
+        let store = try store(history: history)
+        let url = try await store.start(in: folder)
+        try await store.send("crash", to: url)
+        try await state(of: store, at: url) { $0.failure != nil }
+
+        try await store.send("echo", to: url)
+        XCTAssertEqual(launchCount(), 2, "a new CLI, not the dead one")
+        XCTAssertEqual(store.activities[url], .responding)
+        try await state(of: store, at: url) { $0.isLive && !$0.isResponding }
+        await store.endAll()
+    }
+
     func testResumingASessionWithoutAFolderFails() async throws {
         let store = try store()
         do {

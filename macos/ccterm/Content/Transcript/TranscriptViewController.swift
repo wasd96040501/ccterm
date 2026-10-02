@@ -260,6 +260,7 @@ final class TranscriptViewController: NSViewController {
         rows = new
         transcript.performBatchUpdates {
             if !changes.removed.isEmpty { transcript.removeRows(at: changes.removed) }
+            for move in changes.moved { transcript.moveRow(at: move.from, to: move.to) }
             if !changes.inserted.isEmpty { transcript.insertRows(at: changes.inserted) }
             if !changes.reloaded.isEmpty { transcript.reloadRows(at: changes.reloaded) }
             if !changes.regapped.isEmpty { transcript.noteHeightOfRows(withIndexesChanged: changes.regapped) }

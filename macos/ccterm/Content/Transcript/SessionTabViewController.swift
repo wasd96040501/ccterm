@@ -387,6 +387,7 @@ final class SessionTabViewController: NSViewController {
     /// field. The coordinator was never told, so there is nothing to undo.
     private func cancelHandover(at url: URL) {
         _ = context.sessions.cancelLaunch(at: url)
+        newSession?.settleRise()
         handoverURL = nil
         isHandingOver = false
         startedDraft = nil

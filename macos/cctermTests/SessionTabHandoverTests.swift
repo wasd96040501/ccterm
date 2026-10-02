@@ -225,7 +225,12 @@ final class SessionTabHandoverTests: XCTestCase {
         try send("Fix the gutter", in: tab)
         XCTAssertTrue(composer.isFieldDimmed, "premise: the handover is under way")
 
+        let newView = try XCTUnwrap(tab.children.first { $0 is NewSessionViewController }).view
+        XCTAssertNotNil(layer(named: "rise-row-0", in: newView)?.animation(forKey: "flash"), "premise: the rise plays")
+
         tab.composerViewControllerDidRequestStop(composer)
+        XCTAssertNil(
+            layer(named: "rise-row-0", in: newView)?.animation(forKey: "flash"), "the rise played on after Stop")
         stage!.drain(seconds: 1.0)
 
         XCTAssertTrue(recorder.started.isEmpty, "the window was told a session started")
@@ -239,6 +244,15 @@ final class SessionTabHandoverTests: XCTestCase {
         // And the tab can send again.
         try send("Again", in: tab)
         XCTAssertTrue(stage!.drainUntil(timeout: 5) { self.recorder.started.count == 1 })
+    }
+
+    private func layer(named name: String, in root: NSView) -> CALayer? {
+        func search(_ layer: CALayer) -> CALayer? {
+            if layer.name == name { return layer }
+            return (layer.sublayers ?? []).lazy.compactMap(search).first
+        }
+        if let found = root.layer.flatMap(search) { return found }
+        return root.subviews.lazy.compactMap { self.layer(named: name, in: $0) }.first
     }
 
     private func find<V: NSView>(_ type: V.Type, in root: NSView, where match: (V) -> Bool) -> V? {

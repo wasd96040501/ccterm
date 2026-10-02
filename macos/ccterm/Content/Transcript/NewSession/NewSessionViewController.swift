@@ -26,6 +26,8 @@ final class NewSessionViewController: NSViewController {
     private let prefersReducedMotion: () -> Bool
     private var riseCompletions: [@MainActor () -> Void] = []
     private var isRising = false
+    /// Which rise is playing; a rise that was settled finds its timer stale.
+    private var riseGeneration = 0
     private var branchPopover: NSPopover?
 
     private let iconView = NewSessionIconView()
@@ -41,7 +43,10 @@ final class NewSessionViewController: NSViewController {
 
     private lazy var branchChip: NewSessionChip = {
         let chip = NewSessionChip(title: "", look: .row)
-        chip.glyph = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)
+        // The design's branch glyph, 10 × 11 on the pop-up.
+        let glyph = NSImage(resource: .sidebarWorktree)
+        glyph.size = NSSize(width: 10, height: 11)
+        chip.glyph = glyph
         chip.toolTip = String(localized: "Branch")
         chip.target = self
         chip.action = #selector(showBranchPicker(_:))
@@ -234,13 +239,25 @@ final class NewSessionViewController: NSViewController {
         isRising = true
         view.layoutSubtreeIfNeeded()
         iconView.rise()
+        let generation = riseGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + NewSessionIconView.riseDuration) { [weak self] in
-            guard let self else { return }
+            guard let self, riseGeneration == generation else { return }
             isRising = false
             let completions = riseCompletions
             riseCompletions = []
             for completion in completions { completion() }
         }
+    }
+
+    /// Ends a rise that is playing, back to rest at once; its completions
+    /// are dropped, never called (Stop during the rise). Does nothing when
+    /// none is playing.
+    func settleRise() {
+        guard isRising else { return }
+        riseGeneration += 1
+        isRising = false
+        riseCompletions = []
+        iconView.settle()
     }
 
     // MARK: - The folder

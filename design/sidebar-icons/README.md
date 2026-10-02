@@ -1,6 +1,7 @@
 # Sidebar icons
 
-The sidebar's own glyphs: a conversation, a subagent, a workflow run. Folders
+The sidebar's own glyphs: a conversation, a subagent, a workflow run, and the
+mark of a worktree session. Folders
 stay the system folder icon. Open `index.html` for the sheet: each glyph on
 its construction grid, and both appearances in a sidebar.
 
@@ -20,7 +21,14 @@ its construction grid, and both appearances in a sidebar.
     coral of our own, `oklch(0.70 0.155 50)`, `#e97d39`, remains as the one
     colour set, `SidebarCoral`, for the needs-input mark.
   - a subagent, nested and secondary, is `systemGray`;
-  - a workflow, which is rare, is `systemIndigo`, the one cool accent.
+  - a workflow, which is rare, is `systemIndigo`, the one cool accent;
+  - the worktree mark, after a session's title, is the tertiary label colour,
+    as the design's `.wtb` is.
+- **The worktree mark is the design's own.** `SidebarWorktree` is the design's
+  branch glyph (design/transcript/preview-live.js `LV.branch`) as drawn there:
+  three 1.2-pt rings and a 1-pt line on a 9 × 10 box, which is the size it is
+  shown at. Not a Lamé shape and not an SF Symbol: the system's
+  `arrow.triangle.branch` is an arrow, a different mark.
 - **Flat and restrained.** Filled shapes, no gradients, no outlines. Detail is
   cut out of a shape (1.5-pt slots) rather than drawn on it.
 

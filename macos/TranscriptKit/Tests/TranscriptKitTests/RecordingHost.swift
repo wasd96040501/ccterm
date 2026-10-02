@@ -65,6 +65,10 @@ final class RecordingHost: NSObject, TranscriptViewDataSource, TranscriptViewDel
         for index in indexes.sorted(by: >) { rows.remove(at: index) }
     }
 
+    func moveRow(at oldIndex: Int, to newIndex: Int) {
+        rows.insert(rows.remove(at: oldIndex), at: newIndex)
+    }
+
     func setHeight(_ height: CGFloat, forRow row: Int) {
         rows[row].height = height
     }

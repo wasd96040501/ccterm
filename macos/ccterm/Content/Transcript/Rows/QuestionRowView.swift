@@ -584,14 +584,17 @@ final class QuestionRowView: NSView, PageRowView {
         delegate?.pageRowView(self, didDecide: .answer(answers, notes: written), forCall: model.id)
     }
 
-    /// *Chat About This*: nothing is answered, and what was picked goes along.
+    /// *Chat About This*: nothing is answered, and what was picked and noted goes along.
     @objc private func chatPressed(_ sender: NSButton) {
         guard let model else { return }
         var answers: [String: String] = [:]
+        var written: [String: String] = [:]
         for (index, item) in model.items.enumerated() {
             if let given = answer(index) { answers[item.text] = given }
+            let words = notes[index].trimmingCharacters(in: .whitespacesAndNewlines)
+            if item.hasPreviews, !words.isEmpty { written[item.text] = words }
         }
-        delegate?.pageRowView(self, didDecide: .chatAbout(answers: answers), forCall: model.id)
+        delegate?.pageRowView(self, didDecide: .chatAbout(answers: answers, notes: written), forCall: model.id)
     }
 
     /// ⎋ declines the question.

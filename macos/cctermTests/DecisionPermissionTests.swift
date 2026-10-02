@@ -65,4 +65,21 @@ final class DecisionPermissionTests: XCTestCase {
         XCTAssertEqual(updated["answers"], MessageScript.json(#"{"Which?":"A, B"}"#))
         XCTAssertEqual(updated["questions"]?.arrayValue?.count, 1)
     }
+
+    func testChatAboutThisWordsEachQuestionWithItsAnswerAndNotesAsTheCLIDoes() {
+        let input =
+            #"{"questions":[{"question":"Which?","header":"H","options":[],"multiSelect":false},{"question":"Ship?","header":"S","options":[],"multiSelect":false},{"question":"Where?","header":"W","options":[],"multiSelect":false}]}"#
+        let decision = Decision.chatAbout(
+            answers: ["Which?": "A", "Where?": "Here"], notes: ["Which?": "but not B", "Ship?": ""]
+        ).permissionDecision(for: request("AskUserQuestion", input: input))
+        guard case .deny(let message, _) = decision else { return XCTFail("\(decision)") }
+        let tail = message.components(separatedBy: "Questions asked:\n").last
+        XCTAssertEqual(
+            tail,
+            [
+                "- \"Which?\"", "  Answer: A", "  User notes: but not B",
+                "- \"Ship?\"", "  (No answer provided)",
+                "- \"Where?\"", "  Answer: Here",
+            ].joined(separator: "\n"))
+    }
 }

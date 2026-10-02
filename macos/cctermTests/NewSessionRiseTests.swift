@@ -138,6 +138,39 @@ final class NewSessionRiseTests: XCTestCase {
         for row in try rowLayers(controller) { XCTAssertNil(row.animation(forKey: "flash")) }
     }
 
+    func testSettlingTheRiseEndsItAtOnceWithoutItsCompletion() throws {
+        let controller = mount()
+        let rows = try rowLayers(controller)
+        let glow = try XCTUnwrap(layer(named: "glow", in: controller.view))
+        let restOpacity = glow.opacity
+        var completed = false
+        controller.rise { completed = true }
+        XCTAssertNotNil(rows[0].animation(forKey: "flash"))
+
+        controller.settleRise()
+
+        for row in rows { XCTAssertNil(row.animation(forKey: "flash")) }
+        XCTAssertNil(glow.animation(forKey: "swell-opacity"))
+        XCTAssertNil(glow.animation(forKey: "swell-transform"))
+        XCTAssertEqual(glow.opacity, restOpacity, accuracy: 0.001)
+        XCTAssertTrue(CATransform3DIsIdentity(glow.transform))
+
+        // Past the rise's end: its completion never comes.
+        let later = expectation(description: "past the rise")
+        DispatchQueue.main.asyncAfter(deadline: .now() + NewSessionIconView.riseDuration + 0.2) { later.fulfill() }
+        wait(for: [later], timeout: 3)
+        XCTAssertFalse(completed)
+    }
+
+    func testARiseAfterASettledOneStillCompletes() {
+        let controller = mount()
+        controller.rise {}
+        controller.settleRise()
+        let done = expectation(description: "second rise ended")
+        controller.rise { done.fulfill() }
+        wait(for: [done], timeout: 3)
+    }
+
     // MARK: - Needs the display awake
 
     /// Samples the rows' presentation opacity per frame and checks each lights

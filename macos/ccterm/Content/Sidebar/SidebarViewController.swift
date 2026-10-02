@@ -432,7 +432,8 @@ extension SidebarViewController {
             }
         }
 
-        private static let glyphSize = NSSize(width: 10, height: 12)
+        /// The design's branch glyph at the size it is drawn (`SidebarWorktree`).
+        private static let glyphSize = NSSize(width: 9, height: 10)
 
         override var objectValue: Any? {
             didSet { title.stringValue = objectValue as? String ?? "" }
@@ -464,8 +465,7 @@ extension SidebarViewController {
             imageView = image
             title.font = .systemFont(ofSize: NSFont.systemFontSize)
             title.lineBreakMode = .byTruncatingTail
-            branchGlyph.image = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)?
-                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .medium))
+            branchGlyph.image = NSImage(resource: .sidebarWorktree)
             branchGlyph.imageScaling = .scaleProportionallyDown
             branchGlyph.contentTintColor = .tertiaryLabelColor
             branchGlyph.isHidden = true

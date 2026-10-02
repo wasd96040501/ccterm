@@ -107,19 +107,21 @@ nonisolated struct SessionState: Sendable {
     /// Restarts into another account, oldest first.
     var restarts: [Restart] = []
 
-    // TODO(fill B): replace the four below with a stored `phase`.
-    /// Whether a CLI runs this session.
-    var isLive = false
-    /// Whether a turn is running, or a prompt sent waits to start one: from
-    /// `didSend` until the result of the turn that consumed it, or until the
-    /// prompt ends without starting (refused, cancelled while queued).
-    var isResponding: Bool { isTurnRunning || !waitingPrompts.isEmpty }
+    /// Where the session is in its life; set by the mutators below only.
+    private(set) var phase: Phase = .atRest
     /// From a prompt's `started` to its turn's result.
-    private var isTurnRunning = false
+    private(set) var isTurnRunning = false
     /// Prompts sent that have neither started nor ended, by uuid.
     private var waitingPrompts: Set<String> = []
-    /// How the CLI ended, when it ended without being asked to.
-    var failure: Termination?
+    /// Whether `system/status` says the CLI is compacting.
+    private var isCompacting = false
+    /// Queued prompts whose withdrawal is in flight: the CLI's `cancelled` for
+    /// them is our own doing, not a stop that hands the words back.
+    private var withdrawing: Set<String> = []
+    /// What the CLI runs now of the two settings that wait for a turn's end —
+    /// `settings` shows the choice, these the fact.
+    private var appliedModel: ModelChoice?
+    private var appliedFastMode: Bool?
     /// Whether the response in `partial` has stopped streaming (its
     /// `messageStop` came), so that dropping its last finished block ends it.
     private var partialHasStopped = false
@@ -131,12 +133,17 @@ nonisolated struct SessionState: Sendable {
         self.settings = settings
     }
 
-    var phase: Phase {
-        // TODO(fill B): stored, set by the mutators.
-        if let failure { return .failed(SessionFailure(failure)) }
-        guard isLive else { return .atRest }
-        return isResponding ? .responding : .idle
+    /// `settings` as the CLI runs them now: without a model or Fast Mode choice
+    /// that waits for the turn's end.
+    var runningSettings: SessionSettings? {
+        guard var running = settings else { return nil }
+        if let appliedModel { running.model = appliedModel }
+        if let appliedFastMode { running.fastMode = appliedFastMode }
+        return running
     }
+
+    /// Whether a CLI runs this session (or is being started for it).
+    var hasProcess: Bool { phase.isRunning }
 
     /// `nil` while no CLI runs it; otherwise the most urgent thing true of it.
     var activity: Activity? {
@@ -152,75 +159,190 @@ nonisolated struct SessionState: Sendable {
     /// account is `.restart` only while a process runs; at rest, failed or
     /// starting it is `.atLaunch`.
     func timing(of change: SessionSettings.Change) -> ChangeTiming {
-        // TODO(fill B)
-        .atLaunch
+        settings.map { phase.timing(of: change, from: $0) } ?? .atLaunch
     }
 
     // MARK: - What LiveSession did, or was answered
 
     /// The CLI is being launched (a start, a resume, a restart).
     mutating func didBeginLaunch() {
-        // TODO(fill B): phase = .starting
+        phase = .starting
+        isTurnRunning = false
+        waitingPrompts = []
+        isCompacting = false
+        withdrawing = []
+        requests = []
+        partial = nil
+        partialHasStopped = false
+        pendingModel = nil
+        pendingFastMode = nil
     }
 
-    /// `initialize` answered: idle, on the settings it reports; held prompts
-    /// and held changes are LiveSession's to send next.
+    /// `initialize` answered: idle, on the settings it was launched with —
+    /// the CLI reports no model over stdio, and choices made while starting
+    /// stay (`LiveSession` sends them next, then the held prompts).
     mutating func didLaunch(_ result: InitializationResult) {
-        // TODO(fill B): phase = .idle; commands; settings from current_model / current_permission_mode
-        isLive = true
+        commands = result.commands
+        appliedModel = settings?.model
+        appliedFastMode = settings?.fastMode
+        // The held prompts are written next: the session responds from now,
+        // without an idle in between.
+        for prompt in prompts where prompt.delivery == .held { waitingPrompts.insert(prompt.id) }
+        phase = .idle
+        refreshPhase()
     }
 
     /// The launch failed before `initialize` (bad folder, git refused, the CLI
     /// would not start).
     mutating func didFailToLaunch(_ failure: SessionFailure) {
-        // TODO(fill B): phase = .failed(failure); held prompts become notSent
+        endProcessState()
+        phase = .failed(failure)
+        failPrompts(reason: String(localized: "Claude didn't start"), where: { $0 == .held })
     }
 
     /// A prompt was sent (or held, while starting): it shows at once as
     /// `prompt.delivery` says, and the session responds from now.
     mutating func didSend(_ prompt: LocalPrompt) {
-        // TODO(fill B): prompts.append(prompt) once the page builder draws local prompts (fill F)
-        waitingPrompts.insert(prompt.id)
+        prompts.removeAll { $0.id == prompt.id }
+        prompts.append(prompt)
+        if prompt.delivery != .held, !prompt.delivery.isFinal { waitingPrompts.insert(prompt.id) }
         refusal = nil
+        refreshPhase()
+    }
+
+    /// A held prompt was written to the CLI (`initialize` answered): queued
+    /// behind a turn that runs, else sent.
+    mutating func didRelease(prompt uuid: String) {
+        guard let index = prompts.firstIndex(where: { $0.id == uuid }) else { return }
+        prompts[index].delivery = isTurnRunning ? .queued : .sent
+        waitingPrompts.insert(uuid)
+        refreshPhase()
+    }
+
+    /// A prompt could not be written to the CLI.
+    mutating func didNotSend(prompt uuid: String, reason: String) {
+        guard let index = prompts.firstIndex(where: { $0.id == uuid }) else { return }
+        prompts[index].delivery = .notSent(reason: reason)
+        waitingPrompts.remove(uuid)
+        refreshPhase()
     }
 
     /// The reader chose `change`, landing as `timing` says: the settings show
     /// it at once; `.afterTurn` keeps it pending.
     mutating func didChoose(_ change: SessionSettings.Change, timing: ChangeTiming, catalog: ModelCatalog) {
-        // TODO(fill B)
+        refusal = nil
+        guard let current = settings else { return }
+        let next = current.applying(change, catalog: catalog)
+        settings = next
+        guard timing == .afterTurn else { return }
+        switch change {
+        case .model(let choice): pendingModel = choice == appliedModel ? nil : choice
+        case .fastMode(let on): pendingFastMode = on == appliedFastMode ? nil : on
+        case .effort, .permissionMode: break
+        }
+        // A cascade the change brought along waits with it.
+        if case .model = change, next.fastMode != current.fastMode {
+            pendingFastMode = next.fastMode == appliedFastMode ? nil : next.fastMode
+        }
     }
 
     /// The CLI applied `change` (a pending one at turn end included).
     mutating func didApply(_ change: SessionSettings.Change) {
-        // TODO(fill B)
+        switch change {
+        case .model(let choice):
+            appliedModel = choice
+            if pendingModel == choice { pendingModel = nil }
+            if pendingModel == nil, var current = settings, current.model != choice {
+                current.model = choice
+                settings = current
+            }
+        case .fastMode(let on):
+            appliedFastMode = on
+            if pendingFastMode == on { pendingFastMode = nil }
+            if pendingFastMode == nil, var current = settings, current.fastMode != on {
+                current.fastMode = on
+                settings = current
+            }
+        case .effort(let effort):
+            if var current = settings, current.effort != effort {
+                current.effort = effort
+                settings = current
+            }
+        case .permissionMode(let mode):
+            if var current = settings, current.permissionMode != mode {
+                current.permissionMode = mode
+                settings = current
+            }
+        }
     }
 
     /// The CLI refused `change`: the settings go back to `previous`, and
     /// `reason` is the red line under the composer.
     mutating func didRefuse(_ change: SessionSettings.Change, previous: SessionSettings, reason: String) {
-        // TODO(fill B)
+        settings = previous
+        switch change {
+        case .model(let choice) where pendingModel == choice: pendingModel = nil
+        case .fastMode(let on) where pendingFastMode == on: pendingFastMode = nil
+        default: break
+        }
+        refusal = reason
+    }
+
+    /// A withdrawal of the queued prompt `uuid` is on its way.
+    mutating func didBeginWithdraw(prompt uuid: String) {
+        withdrawing.insert(uuid)
     }
 
     /// The queued prompt `uuid` was withdrawn (`cancel_async_message` said
     /// cancelled): it leaves.
     mutating func didWithdraw(prompt uuid: String) {
-        // TODO(fill B)
+        withdrawing.remove(uuid)
+        prompts.removeAll { $0.id == uuid }
+        waitingPrompts.remove(uuid)
+        refreshPhase()
+    }
+
+    /// The withdrawal found the prompt already out of the queue: it stays.
+    mutating func didFailToWithdraw(prompt uuid: String) {
+        withdrawing.remove(uuid)
+    }
+
+    /// Stop while *Starting*: no CLI, the held prompts leave and their words
+    /// come back, oldest first.
+    mutating func didCancelLaunch() -> [String] {
+        let held = prompts.filter { $0.delivery == .held }
+        prompts.removeAll { $0.delivery == .held }
+        endProcessState()
+        phase = .atRest
+        return held.map(\.text)
+    }
+
+    /// The transcript read for a session whose launch began before it was
+    /// known (a resume from a tab that had not read it).
+    mutating func didReadHistory(_ history: Transcript, settings read: SessionSettings?) {
+        transcript = history
+        if settings == nil { settings = read }
+        appliedModel = settings?.model
+        appliedFastMode = settings?.fastMode
     }
 
     /// The tab took a returned prompt's words back into its field.
     mutating func didDismiss(prompt uuid: String) {
-        // TODO(fill B)
+        prompts.removeAll { $0.id == uuid }
     }
 
     /// How full the context is now.
     mutating func didReadContextUsage(_ fraction: Double) {
-        // TODO(fill B)
+        contextUsage = min(max(fraction, 0), 1)
     }
 
     /// The process was ended to resume as another account: a divider, and
     /// starting again.
     mutating func didRestart(_ restart: Restart) {
-        // TODO(fill B)
+        failPrompts(
+            reason: String(localized: "the session restarted"), where: { $0 == .sent || $0 == .queued })
+        restarts.append(restart)
+        didBeginLaunch()
     }
 
     // MARK: - The CLI's events
@@ -237,18 +359,64 @@ nonisolated struct SessionState: Sendable {
             requests.append(request)
         case .permissionRequestCancelled(let id):
             requests.removeAll { $0.id == id }
-        case .flagSettingsChanged:
-            // TODO(fill B): a typed /effort or /fast changed a setting
-            break
+        case .flagSettingsChanged(let patch):
+            applyFlagSettings(patch)
         case .exited(let termination):
-            isLive = false
-            isTurnRunning = false
-            waitingPrompts = []
-            requests = []
-            partial = nil
+            endProcessState()
+            failPrompts(reason: String(localized: "the session ended"), where: { $0 != .returned })
             // A clean exit nobody asked for is the reader's `/exit`: the
             // session is at rest, not failed.
-            if termination.exitCode != 0 { failure = termination }
+            phase = termination.exitCode != 0 ? .failed(SessionFailure(termination)) : .atRest
+        }
+    }
+
+    /// A typed `/effort` or `/fast` changed a setting: the patch the CLI applied.
+    private mutating func applyFlagSettings(_ patch: JSONValue) {
+        guard var current = settings else { return }
+        if let level = patch["effortLevel"] {
+            current.effort = level.stringValue.flatMap(Effort.init(rawValue:))
+        }
+        if let fast = patch["fastMode"] {
+            let on = fast.boolValue ?? false
+            current.fastMode = on
+            appliedFastMode = on
+            pendingFastMode = nil
+            if on, current.permissionMode == .auto { current.permissionMode = .default }
+        }
+        settings = current
+    }
+
+    /// The process is gone: nothing is running, nothing waits for the reader.
+    private mutating func endProcessState() {
+        isTurnRunning = false
+        isCompacting = false
+        waitingPrompts = []
+        withdrawing = []
+        requests = []
+        partial = nil
+        pendingModel = nil
+        pendingFastMode = nil
+    }
+
+    /// Marks every prompt `matches` accepts, still waiting on the CLI, not sent.
+    private mutating func failPrompts(reason: String, where matches: (LocalPrompt.Delivery) -> Bool) {
+        for index in prompts.indices where matches(prompts[index].delivery) && !prompts[index].delivery.isFinal {
+            prompts[index].delivery = .notSent(reason: reason)
+        }
+    }
+
+    /// `idle` or `responding` (or `compacting`) from what is going on, while a
+    /// process runs.
+    private mutating func refreshPhase() {
+        switch phase {
+        case .idle, .responding, .compacting:
+            if isCompacting {
+                phase = .compacting
+            } else {
+                phase = isTurnRunning || !waitingPrompts.isEmpty ? .responding : .idle
+            }
+        case .atRest, .starting, .failed:
+            break
         }
     }
 
@@ -262,24 +430,91 @@ nonisolated struct SessionState: Sendable {
                 partial = streaming.content.isEmpty && partialHasStopped ? nil : streaming
             }
             transcript.append(message)
-        case .user, .system:
+        case .user(let user):
+            transcript.append(message)
+            // The replay of a prompt written here: the transcript has it now,
+            // and its message takes the local bubble's place.
+            if user.isReplay, user.parentToolUseID == nil, let uuid = user.uuid {
+                prompts.removeAll { $0.id == uuid }
+                waitingPrompts.remove(uuid)
+                refreshPhase()
+            }
+        case .system(let system):
+            apply(system)
             transcript.append(message)
         case .result(let result):
             isTurnRunning = false
             // The prompts the turn consumed, whether or not their lifecycle
-            // was reported.
+            // was reported; one whose replay is in the transcript has done its
+            // part.
             waitingPrompts.subtract(result.userMessageUUIDs)
+            let consumed = Set(result.userMessageUUIDs)
+            prompts.removeAll { consumed.contains($0.id) && transcript.containsUser($0.id) }
             partial = nil
+            refreshPhase()
         case .commandLifecycle(let lifecycle):
-            if lifecycle.state == .started {
-                isTurnRunning = true
-                waitingPrompts.remove(lifecycle.commandUUID)
-            } else if lifecycle.state.isTerminal {
-                waitingPrompts.remove(lifecycle.commandUUID)
-            }
+            apply(lifecycle)
         default:
             break
         }
+    }
+
+    private mutating func apply(_ system: SystemMessage) {
+        switch system {
+        case .status(let status):
+            isCompacting = status.status == "compacting"
+            if let mode = status.permissionMode, var current = settings, current.permissionMode != mode {
+                current.permissionMode = mode
+                settings = current
+            }
+            refreshPhase()
+        case .compactBoundary:
+            isCompacting = false
+            refreshPhase()
+        case .commandsChanged(let list):
+            commands = list
+        case .sessionTitleChanged(let name):
+            title = name
+        default:
+            break
+        }
+    }
+
+    private mutating func apply(_ lifecycle: CommandLifecycle) {
+        let uuid = lifecycle.commandUUID
+        let index = prompts.firstIndex { $0.id == uuid }
+        switch lifecycle.state {
+        case .queued:
+            // Reported even when nothing runs; only a turn in progress makes it a wait.
+            if let index, isTurnRunning, prompts[index].delivery == .sent { prompts[index].delivery = .queued }
+        case .started:
+            isTurnRunning = true
+            waitingPrompts.remove(uuid)
+            if let index, !prompts[index].delivery.isFinal { prompts[index].delivery = .sent }
+        case .cancelled:
+            waitingPrompts.remove(uuid)
+            if let index {
+                if withdrawing.contains(uuid) {
+                    // Our own withdrawal; the RPC's answer removes it.
+                } else if !prompts[index].delivery.isFinal {
+                    prompts[index].delivery = .returned
+                }
+            }
+        case .discarded:
+            waitingPrompts.remove(uuid)
+            if let index, !prompts[index].delivery.isFinal {
+                prompts[index].delivery = .notSent(reason: String(localized: "the session ended"))
+            }
+        case .refused:
+            waitingPrompts.remove(uuid)
+            if let index, !prompts[index].delivery.isFinal {
+                prompts[index].delivery = .notSent(reason: String(localized: "Claude Code refused it"))
+            }
+        default:
+            // `completed`: a prompt whose replay never came stays as it is.
+            waitingPrompts.remove(uuid)
+        }
+        refreshPhase()
     }
 
     private mutating func apply(_ event: StreamEvent) {
@@ -293,6 +528,26 @@ nonisolated struct SessionState: Sendable {
             if partial?.content.isEmpty == true { partial = nil }
         default:
             partial?.apply(event)
+        }
+    }
+}
+
+extension LocalPrompt.Delivery {
+    /// Past help from the CLI: not sent, or handed back.
+    fileprivate nonisolated var isFinal: Bool {
+        switch self {
+        case .notSent, .returned: true
+        case .held, .queued, .sent: false
+        }
+    }
+}
+
+extension Transcript {
+    /// Whether the conversation has the user message `uuid`.
+    fileprivate nonisolated func containsUser(_ uuid: String) -> Bool {
+        messages.contains { message in
+            if case .user(let user) = message { return user.uuid == uuid }
+            return false
         }
     }
 }

@@ -182,4 +182,38 @@ final class LaunchStoreTests: XCTestCase {
         XCTAssertEqual(
             seen.values.count, 1, "only the value it started with: the folder didn’t change, so nothing moves")
     }
+
+    func testAllowBypassPermissionsIsKeptInTheDefaultsAndReadBack() {
+        let launch = store()
+        XCTAssertFalse(launch.preferences.allowsBypassPermissions)
+        launch.setAllowsBypassPermissions(true)
+        XCTAssertTrue(launch.preferences.allowsBypassPermissions)
+        XCTAssertTrue(defaults.bool(forKey: "allowsBypassPermissions"))
+        XCTAssertTrue(store().preferences.allowsBypassPermissions, "a new launch reads it")
+        launch.setAllowsBypassPermissions(false)
+        XCTAssertFalse(store().preferences.allowsBypassPermissions)
+    }
+
+    func testAllowingBypassDoesNotChangeHowTheCLIIsLaunched() async {
+        let launch = store()
+        await waitFor(launch.$sessionDirectory) { $0.url.path == "/resolved" }
+        let general = launch.general
+        launch.setAllowsBypassPermissions(true)
+        XCTAssertEqual(launch.general, general)
+    }
+
+    func testAnAccountsLaunchIsItsEnvironmentUnderTheCurrentGeneral() {
+        let launch = store()
+        launch.setConfigDirectory("/tmp/claude")
+        let account = Account(
+            id: UUID(),
+            kind: .provider(
+                Account.Provider(
+                    name: "R", baseURL: "https://r.example", authentication: .apiKey, models: Account.Models())),
+            command: "", arguments: "")
+        let configuration = launch.configuration(for: account, secrets: AccountSecrets(credential: "k"))
+        XCTAssertEqual(
+            configuration.env,
+            ["CLAUDE_CONFIG_DIR": "/tmp/claude", "ANTHROPIC_BASE_URL": "https://r.example", "ANTHROPIC_API_KEY": "k"])
+    }
 }

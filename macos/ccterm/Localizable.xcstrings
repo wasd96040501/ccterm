@@ -23,6 +23,26 @@
         }
       }
     },
+    "%@ isn’t a model Claude Code knows.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code 不认识模型 %@。"
+          }
+        }
+      }
+    },
+    "%@ isn’t available to your organization.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的组织无法使用 %@。"
+          }
+        }
+      }
+    },
     "%@ reported": {
       "localizations": {
         "zh-Hans": {
@@ -425,6 +445,16 @@
         }
       }
     },
+    "Allow it in Settings › General": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在“设置 › 通用”中允许"
+          }
+        }
+      }
+    },
     "Approve": {
       "localizations": {
         "zh-Hans": {
@@ -535,6 +565,26 @@
         }
       }
     },
+    "Auto mode isn’t available here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此处无法使用自动模式。"
+          }
+        }
+      }
+    },
+    "Auto mode isn’t available while Fast Mode is on.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快速模式开启时无法使用自动模式。"
+          }
+        }
+      }
+    },
     "Automatic": {
       "localizations": {
         "zh-Hans": {
@@ -592,6 +642,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "分支"
+          }
+        }
+      }
+    },
+    "Bypass Permissions isn’t allowed. Allow it in Settings › General, then restart.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不允许绕过权限。请在“设置 › 通用”中允许后重启会话。"
           }
         }
       }
@@ -686,6 +746,16 @@
         }
       }
     },
+    "Claude": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude"
+          }
+        }
+      }
+    },
     "Claude %@": {
       "localizations": {
         "zh-Hans": {
@@ -716,12 +786,42 @@
         }
       }
     },
+    "Claude Code couldn’t check this account for %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code 无法为此账号核对 %@。"
+          }
+        }
+      }
+    },
+    "Claude Code refused it": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code 拒绝了它"
+          }
+        }
+      }
+    },
     "Claude Code’s settings, sign-in and sessions": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "Claude Code 的设置、登录状态和会话"
+          }
+        }
+      }
+    },
+    "Claude didn't start": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 没有启动"
           }
         }
       }
@@ -998,6 +1098,16 @@
         }
       }
     },
+    "Currently unavailable": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂不可用"
+          }
+        }
+      }
+    },
     "Declined to advise": {
       "localizations": {
         "zh-Hans": {
@@ -1225,6 +1335,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "环境变量"
+          }
+        }
+      }
+    },
+    "Exit code %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出码 %lld"
           }
         }
       }
@@ -1808,6 +1928,16 @@
         }
       }
     },
+    "No account is set up to run this session.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可用来运行此会话的账号。"
+          }
+        }
+      }
+    },
     "No base URL": {
       "localizations": {
         "zh-Hans": {
@@ -1868,6 +1998,16 @@
         }
       }
     },
+    "Not allowed for this model": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此模型不可用"
+          }
+        }
+      }
+    },
     "Not answered": {
       "localizations": {
         "zh-Hans": {
@@ -1904,6 +2044,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "未找到"
+          }
+        }
+      }
+    },
+    "Not on %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 不支持"
           }
         }
       }
@@ -1954,6 +2104,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有可粘贴的内容——需要 KEY=value"
+          }
+        }
+      }
+    },
+    "Only with the subscription": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅限订阅账号"
           }
         }
       }
@@ -2164,6 +2324,16 @@
         }
       }
     },
+    "Provider": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务商"
+          }
+        }
+      }
+    },
     "Pull Request": {
       "localizations": {
         "zh-Hans": {
@@ -2350,6 +2520,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "必填"
+          }
+        }
+      }
+    },
+    "Requires a paid plan": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要付费套餐"
+          }
+        }
+      }
+    },
+    "Requires extra usage": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要额外用量"
           }
         }
       }
@@ -2835,6 +3025,16 @@
         }
       }
     },
+    "Still being checked": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仍在检查"
+          }
+        }
+      }
+    },
     "Still using %@.": {
       "localizations": {
         "zh-Hans": {
@@ -2921,6 +3121,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "任务列表"
+          }
+        }
+      }
+    },
+    "That account no longer exists.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该账号已不存在。"
           }
         }
       }
@@ -3105,6 +3315,26 @@
         }
       }
     },
+    "Turned off by your organization": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已被你的组织关闭"
+          }
+        }
+      }
+    },
+    "Turned off in the environment": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已被环境变量关闭"
+          }
+        }
+      }
+    },
     "Type something": {
       "localizations": {
         "zh-Hans": {
@@ -3121,6 +3351,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "请输入。"
+          }
+        }
+      }
+    },
+    "Unavailable while Fast Mode is on": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快速模式开启时不可用"
+          }
+        }
+      }
+    },
+    "Unavailable without a network connection": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有网络连接时不可用"
           }
         }
       }
@@ -3464,6 +3714,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "名称"
+          }
+        }
+      }
+    },
+    "the session ended": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话已结束"
+          }
+        }
+      }
+    },
+    "the session restarted": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话已重启"
           }
         }
       }

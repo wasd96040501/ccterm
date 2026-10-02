@@ -17,6 +17,10 @@ import Foundation
 /// `.failed` with the reason — so a tab only ever follows `states(at:)`.
 /// `start` and `send` to a session no CLI runs make its `LiveSession`
 /// synchronously, in `.starting`, before anything is awaited.
+///
+/// A session at rest keeps the choices made in its tab here (`rest`), as a
+/// session no process holds has nowhere else to put them; the next send
+/// resumes on them.
 @MainActor
 final class SessionStore {
     /// What ccterm sets in `CLAUDE_CODE_ENTRYPOINT`: the CLI records it in
@@ -28,16 +32,23 @@ final class SessionStore {
     @Published private(set) var activities: [URL: SessionState.Activity] = [:]
 
     @Published private var live: [URL: LiveSession] = [:]
+    /// Settings chosen in the tab of a session no CLI runs.
+    @Published private var rest: [URL: SessionSettings] = [:]
+    @Published private var catalog = ModelCatalog()
+    @Published private var preferences = LaunchPreferences()
 
+    private let launchFor: @MainActor (UUID) async throws -> CLIConfiguration
+    private let branches: BranchService
     private let read: @Sendable (URL) async throws -> Transcript
-    private var configuration: CLIConfiguration?
     private var directory: SessionDirectory?
     private var subscriptions: Set<AnyCancellable> = []
     /// Each live session's state, followed into `activities`.
     private var followers: [URL: AnyCancellable] = [:]
-    /// Sessions being resumed, so that a second prompt while the CLI starts
-    /// waits for it instead of launching another on the same session id.
-    private var resuming: [URL: Task<LiveSession, Error>] = [:]
+    /// The transcripts tabs have read, so that a resume starts from what the
+    /// tab shows.
+    private var known: [URL: Transcript] = [:]
+    /// Where each session's CLI works: what a restart or a resume launches in.
+    private var workingDirectories: [URL: URL] = [:]
 
     /// `launch`: how the CLI is launched for an account (its id), secrets
     /// read. `directories`: where launches write sessions. `catalog`: what
@@ -46,7 +57,7 @@ final class SessionStore {
     /// Bypass Permissions). The publishers deliver on the main actor; a new
     /// launch takes the latest of each. `branches`: the git step of a launch.
     /// `read` reads a transcript at rest, off the main actor.
-    convenience init(
+    init(
         launch: @escaping @MainActor (UUID) async throws -> CLIConfiguration,
         directories: AnyPublisher<SessionDirectory, Never>,
         catalog: AnyPublisher<ModelCatalog, Never>,
@@ -54,52 +65,64 @@ final class SessionStore {
         branches: BranchService,
         read: @escaping @Sendable (URL) async throws -> Transcript
     ) {
-        // TODO(fill B): the designated init; the one below goes with `start(in:)`.
-        self.init(configurations: Empty().eraseToAnyPublisher(), directories: directories, read: read)
-    }
-
-    /// `configurations`: how the CLI is launched (General's); `directories`:
-    /// where that launch writes sessions — both must deliver on the main
-    /// actor, and a new session takes the latest of each. `read` reads a
-    /// transcript at rest, off the main actor.
-    init(
-        configurations: AnyPublisher<CLIConfiguration, Never>,
-        directories: AnyPublisher<SessionDirectory, Never>,
-        read: @escaping @Sendable (URL) async throws -> Transcript
-    ) {
+        launchFor = launch
+        self.branches = branches
         self.read = read
-        configurations.sink { [weak self] value in MainActor.assumeIsolated { self?.configuration = value } }
-            .store(in: &subscriptions)
         directories.sink { [weak self] value in MainActor.assumeIsolated { self?.directory = value } }
+            .store(in: &subscriptions)
+        catalog.sink { [weak self] value in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.catalog = value
+                for session in self.live.values { session.catalog = value }
+            }
+        }
+        .store(in: &subscriptions)
+        preferences.sink { [weak self] value in MainActor.assumeIsolated { self?.preferences = value } }
             .store(in: &subscriptions)
     }
 
     // MARK: - Reading
 
     /// The session at `url` as it stands, then each change — newest only, so
-    /// a slow reader skips to the latest. At rest that is one value, read from
-    /// disk; live, every change of its state; it switches when the session
-    /// goes live or ends. Throws when a transcript at rest can't be read.
+    /// a slow reader skips to the latest. At rest that is the transcript read
+    /// from disk on the settings it last ran on (or the tab's choices since),
+    /// again when the catalog or General changes; live, every change of its
+    /// state; it switches when the session goes live or ends. Throws when a
+    /// transcript at rest can't be read.
     func states(at url: URL) -> AsyncThrowingStream<SessionState, Error> {
         let read = read
         let current = $live.map { $0[url] }.removeDuplicates { $0 === $1 }
+        let inputs = Publishers.CombineLatest3($catalog, $preferences, $rest.map { $0[url] }.removeDuplicates())
         return AsyncThrowingStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
             let subscription =
                 current
-                .map { live -> AnyPublisher<SessionState, Error> in
+                .map { [weak self] live -> AnyPublisher<SessionState, Error> in
                     if let live { return live.$state.setFailureType(to: Error.self).eraseToAnyPublisher() }
-                    return Deferred {
-                        Future { promise in
+                    let reading = Deferred {
+                        Future<Transcript, Error> { promise in
                             nonisolated(unsafe) let promise = promise
                             Task.detached {
-                                do { promise(.success(SessionState(transcript: try await read(url)))) } catch {
-                                    promise(.failure(error))
-                                }
+                                do { promise(.success(try await read(url))) } catch { promise(.failure(error)) }
                             }
                         }
                     }
-                    .receive(on: DispatchQueue.main)
-                    .eraseToAnyPublisher()
+                    return
+                        reading
+                        .receive(on: DispatchQueue.main)
+                        .flatMap { (transcript: Transcript) -> AnyPublisher<SessionState, Error> in
+                            MainActor.assumeIsolated { self?.known[url] = transcript }
+                            return inputs.map { catalog, preferences, chosen in
+                                SessionState(
+                                    transcript: transcript,
+                                    settings: chosen
+                                        ?? SessionSettings(
+                                            lastOf: transcript, catalog: catalog,
+                                            allowsBypassPermissions: preferences.allowsBypassPermissions))
+                            }
+                            .setFailureType(to: Error.self).eraseToAnyPublisher()
+                        }
+                        .eraseToAnyPublisher()
                 }
                 .switchToLatest()
                 .sink(
@@ -123,29 +146,32 @@ final class SessionStore {
     /// the prompt held from this moment; the git step, the account's launch
     /// and `initialize` follow, and a failure in any is `.failed`. The URL is
     /// known up front because ccterm mints the session id and names any
-    /// worktree (`BranchService.prepare`).
+    /// worktree (`BranchService.plannedDirectory`).
     func start(_ launch: SessionLaunch, prompt: String) -> URL {
-        // TODO(fill B): the account, the git step, the settings as flags, the
-        // held prompt in state, `.failed` instead of a log. This body only keeps
-        // a New tab's Send working against the frozen signature meanwhile.
         let id = UUID().uuidString.lowercased()
-        guard let configuration, let directory else {
-            appLog(.error, "SessionStore", "start: the launch settings are not known yet")
-            return (directory ?? SessionDirectory(url: FileManager.default.temporaryDirectory))
-                .transcriptURL(forSession: id, workingDirectory: launch.folder)
-        }
-        var session = makeConfiguration(in: launch.folder, launch: configuration)
-        session.sessionId = id
-        let url = directory.transcriptURL(forSession: id, workingDirectory: launch.folder)
-        let running = LiveSession(transcriptURL: url, configuration: session, history: Transcript(messages: []))
-        keep(running)
-        Task {
-            do {
-                try await running.start()
-                try running.send(prompt)
-            } catch {
-                appLog(.error, "SessionStore", "start of \(url.lastPathComponent) failed — \(error)")
+        let name = BranchService.makeWorktreeName()
+        let directory = directory ?? SessionDirectory(url: FileManager.default.temporaryDirectory)
+        let planned = BranchService.plannedDirectory(for: launch.checkout, in: launch.folder, name: name)
+        let url = directory.transcriptURL(forSession: id, workingDirectory: planned ?? launch.folder)
+        let session = LiveSession(
+            transcriptURL: url, history: Transcript(messages: []), settings: launch.settings)
+        session.catalog = catalog
+        keep(session)
+        session.send(prompt)
+        workingDirectories[url] = planned ?? launch.folder
+        appLog(.info, "SessionStore", "starting \(url.lastPathComponent) in \(launch.folder.path)")
+        session.launch { [weak self, weak session, branches] in
+            guard let self, let session else { throw CancellationError() }
+            let prepared = try await branches.prepare(launch.checkout, in: launch.folder, name: name)
+            workingDirectories[url] = prepared.sessionDirectory
+            var configuration = try await makeConfiguration(
+                for: session, workingDirectory: prepared.workingDirectory)
+            configuration.sessionId = id
+            if let worktree = prepared.worktreeName { configuration.worktree = worktree }
+            if prepared.worktreeBaseRef != nil {
+                configuration.settings[.worktree] = ["baseRef": .string("head")]
             }
+            return configuration
         }
         return url
     }
@@ -155,15 +181,28 @@ final class SessionStore {
     /// held; at rest or failed, the session is resumed — on the settings its
     /// transcript last ran on — and the prompt held until it is up.
     func send(_ prompt: String, to url: URL) {
-        // TODO(fill B): replaces `send(_:to:) async throws` below.
-        Task { try? await sendResuming(prompt, to: url) }
+        if let session = live[url], session.state.hasProcess {
+            session.send(prompt)
+        } else {
+            resume(at: url, prompt: prompt)
+        }
     }
 
     /// Applies a control's change to the session at `url` when its timing
     /// says (`SessionState.timing(of:)`); another account while a process
     /// runs restarts it, resuming as that account — the tab has confirmed.
     func update(_ change: SessionSettings.Change, at url: URL) {
-        // TODO(fill B)
+        if let session = live[url] {
+            if session.state.timing(of: change) == .restart, case .model(let choice) = change {
+                restart(session, as: choice, applying: change)
+            } else {
+                session.update(change, catalog: catalog)
+            }
+            return
+        }
+        let base = rest[url] ?? known[url].flatMap { lastSettings(of: $0) }
+        guard let base else { return }
+        rest[url] = base.applying(change, catalog: catalog)
     }
 
     /// Stops a launch in progress at `url` (Stop while *Starting*): the
@@ -171,8 +210,7 @@ final class SessionStore {
     /// never run — and the texts of the prompts it held come back, oldest
     /// first, for the tab to put in its field.
     func cancelLaunch(at url: URL) -> [String] {
-        // TODO(fill B)
-        []
+        live[url]?.cancelLaunch() ?? []
     }
 
     /// Withdraws the queued prompt `uuid` at `url` (*Withdraw*).
@@ -189,74 +227,112 @@ final class SessionStore {
     /// Restarts a failed session at `url` with no prompt (the failure's
     /// *Restart*): Send's resume without a prompt.
     func restart(at url: URL) {
-        // TODO(fill B)
+        resume(at: url, prompt: nil)
     }
 
-    /// Starts a new session in `workingDirectory` and returns its transcript
-    /// URL — the tab's identity before the CLI has written anything.
-    // TODO(fill B): remove with its tests once `start(_:prompt:)` is built.
-    func start(in workingDirectory: URL) async throws -> URL {
-        guard let configuration, let directory else {
-            throw AgentSDKError.launchFailed("the launch settings are not known yet")
-        }
-        let id = UUID().uuidString.lowercased()
-        var session = makeConfiguration(in: workingDirectory, launch: configuration)
-        session.sessionId = id
-        let url = directory.transcriptURL(forSession: id, workingDirectory: workingDirectory)
-        let running = LiveSession(
-            transcriptURL: url, configuration: session, history: Transcript(messages: []))
-        try await running.start()
-        keep(running)
-        appLog(.info, "SessionStore", "started \(url.lastPathComponent) in \(workingDirectory.path)")
-        return url
-    }
+    // MARK: - Launching
 
-    /// Sends a prompt to the session at `url`, resuming it first when no CLI
-    /// runs it — at rest (its history read, `resume` = its id, in its
-    /// recorded cwd), or failed, which a new prompt leaves behind.
-    // TODO(fill B): remove with its tests once `send(_:to:)` is built.
-    func sendResuming(_ text: String, to url: URL) async throws {
-        if let live = live[url], live.state.isLive {
-            try live.send(text)
-            return
-        }
-        if let failed = live[url] { drop(failed) }
-        try await resume(at: url).send(text)
-    }
-
-    /// The live session for `url`, started from its transcript on disk — at
-    /// most once at a time per URL.
-    private func resume(at url: URL) async throws -> LiveSession {
-        if let pending = resuming[url] { return try await pending.value }
-        // A resume that finished while this waited is already live.
-        if let live = live[url] { return live }
-        let pending = Task { @MainActor [self, read, configuration] () -> LiveSession in
-            defer { resuming[url] = nil }
-            guard let configuration else {
-                throw AgentSDKError.launchFailed("the launch settings are not known yet")
+    /// Resumes the session at `url` — no CLI runs it: at rest, or failed — on
+    /// the settings its tab chose, else the ones it last ran on, with `prompt`
+    /// held until `initialize` answers.
+    private func resume(at url: URL, prompt: String?) {
+        let failed = live[url]
+        if let failed { drop(failed) }
+        let history = failed?.state.transcript ?? known[url]
+        let settings =
+            rest[url] ?? failed?.state.settings
+            // Unread history: the launch reads it and takes what it last ran on.
+            ?? history.flatMap { lastSettings(of: $0) ?? fallbackSettings() }
+        rest[url] = nil
+        let id = url.deletingPathExtension().lastPathComponent
+        let session = LiveSession(transcriptURL: url, history: history ?? Transcript(messages: []), settings: settings)
+        session.catalog = catalog
+        keep(session)
+        if let prompt { session.send(prompt) }
+        appLog(.info, "SessionStore", "resuming \(url.lastPathComponent)")
+        session.launch { [weak self, weak session] in
+            guard let self, let session else { throw CancellationError() }
+            var transcript = history
+            if transcript == nil {
+                let read = try await read(url)
+                session.adopt(history: read, settings: lastSettings(of: read) ?? fallbackSettings())
+                transcript = read
             }
-            let history = try await read(url)
-            guard let cwd = history.metadata.cwd else {
+            guard let cwd = transcript?.metadata.cwd ?? workingDirectories[url]?.path else {
                 throw AgentSDKError.launchFailed(String(localized: "This session doesn't record the folder it ran in."))
             }
-            var session = makeConfiguration(in: URL(fileURLWithPath: cwd, isDirectory: true), launch: configuration)
-            session.resume = url.deletingPathExtension().lastPathComponent
-            let running = LiveSession(transcriptURL: url, configuration: session, history: history)
-            try await running.start()
-            keep(running)
-            appLog(.info, "SessionStore", "resumed \(url.lastPathComponent) in \(cwd)")
-            return running
+            let directory = URL(fileURLWithPath: cwd, isDirectory: true)
+            workingDirectories[url] = directory
+            var configuration = try await makeConfiguration(for: session, workingDirectory: directory)
+            configuration.resume = id
+            return configuration
         }
-        resuming[url] = pending
-        return try await pending.value
     }
 
-    private func makeConfiguration(in workingDirectory: URL, launch: CLIConfiguration) -> SessionConfiguration {
-        var session = SessionConfiguration(workingDirectory: workingDirectory, launch: launch)
-        session.includePartialMessages = true
-        session.env["CLAUDE_CODE_ENTRYPOINT"] = Self.entrypoint
-        return session
+    /// Another account's model while a process runs: ends the process and
+    /// resumes this session as that account, recording the divider.
+    private func restart(_ session: LiveSession, as choice: ModelChoice, applying change: SessionSettings.Change) {
+        session.update(change, catalog: catalog)
+        let url = session.transcriptURL
+        let id = url.deletingPathExtension().lastPathComponent
+        let restart = SessionState.Restart(
+            afterMessage: session.lastMessageUUID, accountName: catalog.account(choice.account)?.name ?? "",
+            modelName: catalog.shortName(of: choice) ?? choice.value)
+        let isEmpty = session.state.transcript.messages.isEmpty
+        appLog(.info, "SessionStore", "restarting \(url.lastPathComponent) as another account")
+        session.restart(restart) { [weak self, weak session] in
+            guard let self, let session else { throw CancellationError() }
+            guard let directory = workingDirectories[url] else {
+                throw AgentSDKError.launchFailed(String(localized: "This session doesn't record the folder it ran in."))
+            }
+            var configuration = try await makeConfiguration(for: session, workingDirectory: directory)
+            // Nothing written yet: there is no conversation to resume.
+            if isEmpty { configuration.sessionId = id } else { configuration.resume = id }
+            return configuration
+        }
     }
+
+    /// The configuration a launch of `session` runs on now: its account's
+    /// environment and the flags of its settings.
+    private func makeConfiguration(
+        for session: LiveSession, workingDirectory: URL
+    ) async throws
+        -> SessionConfiguration
+    {
+        let settings = session.state.settings
+        guard let account = settings?.model.account ?? catalog.subscription?.id else {
+            throw AgentSDKError.launchFailed(String(localized: "No account is set up to run this session."))
+        }
+        let launch = try await launchFor(account)
+        var configuration = SessionConfiguration(workingDirectory: workingDirectory, launch: launch)
+        configuration.includePartialMessages = true
+        configuration.env["CLAUDE_CODE_ENTRYPOINT"] = Self.entrypoint
+        configuration.allowDangerouslySkipPermissions = preferences.allowsBypassPermissions
+        if let settings = session.state.settings {
+            if settings.model.value != "default" { configuration.model = settings.model.value }
+            configuration.effort = settings.effort
+            configuration.permissionMode = settings.permissionMode
+            // An SDK host opts into Fast Mode with the flag setting.
+            if settings.fastMode { configuration.settings[.fastMode] = true }
+        }
+        return configuration
+    }
+
+    private func lastSettings(of transcript: Transcript) -> SessionSettings? {
+        SessionSettings(
+            lastOf: transcript, catalog: catalog, allowsBypassPermissions: preferences.allowsBypassPermissions)
+    }
+
+    /// The CLI's own settings on the subscription — for a session whose last
+    /// ones can't be read.
+    private func fallbackSettings() -> SessionSettings? {
+        guard let account = catalog.subscription ?? catalog.accounts.first else { return nil }
+        return SessionSettings(
+            model: .default(on: account.id), effort: nil, permissionMode: account.defaultPermissionMode ?? .default,
+            fastMode: false)
+    }
+
+    // MARK: - Following
 
     /// Keeps `session` in `live` and follows its state into `activities`.
     /// A session that exits cleanly without being asked to (the reader typed
@@ -297,7 +373,6 @@ final class SessionStore {
 
     /// Ends the live session at `url`; it is at rest after.
     func end(at url: URL) async {
-        if let pending = resuming[url] { _ = try? await pending.value }
         guard let session = live[url] else { return }
         await session.close()
         drop(session)
@@ -306,7 +381,7 @@ final class SessionStore {
 
     /// Ends every live session — the app is quitting.
     func endAll() async {
-        let urls = Set(live.keys).union(resuming.keys)
+        let urls = Set(live.keys)
         await withTaskGroup(of: Void.self) { group in
             for url in urls { group.addTask { @MainActor in await self.end(at: url) } }
         }

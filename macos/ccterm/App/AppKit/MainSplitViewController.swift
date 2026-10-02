@@ -103,37 +103,12 @@ final class MainSplitViewController: NSSplitViewController {
 
     // MARK: - Sessions
 
-    /// File › New Session…: asks for the folder to run it in, starts it, and
-    /// opens its tab, pinned, ready to type in.
+    /// File › New Session…: opens a New tab, pinned, where the folder and the
+    /// first prompt are chosen (the sheet that asked for the folder is gone;
+    /// `SessionStore.start(in:)` with it).
     func newSession() {
-        guard let window = view.window else { return }
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.message = String(localized: "Choose the folder Claude will work in.")
-        panel.prompt = String(localized: "Start Session")
-        panel.beginSheetModal(for: window) { [weak self] response in
-            guard response == .OK, let folder = panel.url else { return }
-            self?.startSession(in: folder, window: window)
-        }
-    }
-
-    private func startSession(in folder: URL, window: NSWindow) {
-        Task {
-            do {
-                let url = try await sessions.start(in: folder)
-                editorArea.open(
-                    TranscriptTab.makeItem(
-                        .transcript(url), title: String(localized: "New Session"), context: context,
-                        delegate: self),
-                    pinned: true)
-            } catch {
-                appLog(.error, "MainSplitViewController", "New Session in \(folder.path) failed — \(error)")
-                _ = await NSAlert(error: error).beginSheetModal(for: window)
-            }
-        }
+        editorArea.open(
+            TranscriptTab.makeNewSessionItem(folder: nil, text: "", context: context, delegate: self), pinned: true)
     }
 }
 

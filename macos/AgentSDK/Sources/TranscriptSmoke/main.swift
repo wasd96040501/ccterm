@@ -50,11 +50,13 @@ func key(_ message: Message) -> String? {
     }
 }
 
-/// One CLI process: sends prompts and keeps the conversation it emits.
+/// One CLI process: sends prompts and keeps the conversation it emits with
+/// `Transcript.append`.
 final class Run {
     let session: Session
     private var events: AsyncStream<SessionEvent>.AsyncIterator
-    private(set) var conversation: [Message] = []
+    private var transcript = Transcript(messages: [])
+    var conversation: [Message] { transcript.messages }
 
     init(resume: Bool) {
         session = Session(
@@ -65,24 +67,17 @@ final class Run {
         events = session.events.makeAsyncIterator()
     }
 
-    /// Sends `text` and reads until its turn's result. A local command's
-    /// echo arrives after its output; the contract puts the command first.
+    /// Sends `text` and reads until its turn's result.
     func turn(_ text: String) async throws -> UserInput {
         let input = UserInput(text)
         try session.send(input)
-        var output: Int?
         while let event = await events.next() {
             switch event {
             case .message(.result(let result)):
                 log("turn \(text.prefix(40).debugDescription) → \(result.subtype.rawValue)")
                 return input
-            case .message(.user(let m)) where m.isReplay && m.uuid == input.uuid && output != nil:
-                conversation.insert(.user(m), at: output!)
-            case .message(.user(let m)) where m.isReplay && m.kind.isCommandOutput:
-                output = output ?? conversation.count
-                conversation.append(.user(m))
             case .message(let message):
-                if key(message) != nil { conversation.append(message) }
+                transcript.append(message)
             case .permissionRequest(let request):
                 request.respond(.allow())
             case .permissionRequestCancelled, .exited:
@@ -107,14 +102,14 @@ final class Run {
             throw AgentSDKError.invalidResponse(subtype: "rewind_conversation")
         }
         if let cut = conversation.firstIndex(where: { key($0)?.hasPrefix("user \(prompt.uuid) ") == true }) {
-            conversation.removeSubrange(cut...)
+            transcript.messages.removeSubrange(cut...)
         }
     }
 
     func close() async {
         await session.close()
         while let event = await events.next() {
-            if case .message(let message) = event, key(message) != nil { conversation.append(message) }
+            if case .message(let message) = event { transcript.append(message) }
         }
     }
 }

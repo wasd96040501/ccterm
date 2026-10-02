@@ -1,0 +1,232 @@
+/* Live sessions — the New tab, the + on every tab bar, the composer
+   (08-live.md). Uses preview.css's tokens; adds none but the halo. */
+
+/* MARK: - Window: sidebar + editor groups */
+
+.lv-win { grid-template-rows: 44px 1fr; height: 720px; }
+.lv-body { display: grid; grid-template-columns: 210px minmax(0, 1fr); min-height: 0; }
+.lv-side { background: var(--chrome); border-right: 0.5px solid var(--separator); padding: 10px 8px; overflow: auto; font-size: 13px; }
+.lv-side .grp { font-size: 11px; font-weight: 600; color: var(--tertiary); padding: 10px 8px 4px; }
+.lv-side .it { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border-radius: 6px; color: var(--label); cursor: default; white-space: nowrap; }
+.lv-side .it span.t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.lv-side .it:hover { background: var(--hover); }
+.lv-side .it.on { background: var(--sel-quiet); }
+.lv-side .it svg { flex: none; }
+.lv-side .mark { flex: none; width: 12px; display: flex; justify-content: center; }
+
+.lv-editors { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); min-height: 0; min-width: 0; }
+.lv-group { display: grid; grid-template-rows: auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); min-height: 0; min-width: 0; position: relative; overflow: hidden; }
+.lv-group + .lv-group { border-left: 0.5px solid var(--separator); }
+.lv-group > .tabbar { align-items: center; height: 34px; }
+.lv-group > .tabbar .tab { height: 26px; }
+.lv-group.focused > .tabbar .tab.on { box-shadow: 0 0 0 0.5px var(--separator), 0 1px 2px rgba(0,0,0,.06); }
+.lv-group:not(.focused) > .tabbar .tab.on { color: var(--secondary); }
+.lv-paneholder { min-height: 0; min-width: 0; position: relative; display: grid; grid-template-columns: minmax(0, 1fr); }
+
+/* A tab's activity mark sits in the close button's slot; hover swaps it for ×. */
+.tab .act { position: absolute; left: 7px; width: 12px; height: 12px; display: flex; align-items: center; justify-content: center; }
+.tab:hover .act { display: none; }
+.dotmark { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.dotmark.coral { background: var(--coral); }
+.dotmark.red { background: var(--red); }
+.arcmark { width: 11px; height: 11px; }
+.arcmark circle { fill: none; stroke-width: 1.5; }
+.arcmark .bgc { stroke: var(--tile); }
+.arcmark .fgc { stroke: var(--secondary); stroke-dasharray: 9 26; stroke-linecap: round; transform-origin: 50% 50%; animation: spin 1s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .arcmark .fgc { animation: pulse 2s ease-in-out infinite; } }
+
+/* MARK: - The + (Ghostty's control, at the sheet's scale) */
+
+.lv-plus {
+  flex: none; position: relative; width: 24px; height: 24px; margin: 0 2px 0 6px; border-radius: 50%; border: 0;
+  background: var(--hover); box-shadow: inset 0 0 0 0.5px var(--separator); color: var(--secondary);
+  display: grid; place-items: center; cursor: default; transition: background .12s, color .12s;
+}
+.lv-plus:hover, .lv-plus.hover { background: var(--sel-quiet); color: var(--label); }
+.lv-plus:active { background: var(--tile); }
+.lv-tip {
+  position: absolute; top: calc(100% + 6px); right: -4px; z-index: 20; white-space: nowrap; pointer-events: none;
+  background: var(--window); color: var(--label); font-size: 11px; padding: 3px 8px; border-radius: 6px; box-shadow: var(--shadow);
+  opacity: 0; transition: opacity .1s; display: flex; gap: 8px; align-items: center;
+}
+.lv-tip kbd { font: inherit; color: var(--secondary); }
+.lv-plus:hover .lv-tip { opacity: 1; transition-delay: .5s; }
+.lv-plus.hover .lv-tip { opacity: 1; }
+
+/* MARK: - New view */
+
+.lv-new { display: flex; flex-direction: column; align-items: center; padding: 0 24px; overflow: auto; }
+.lv-new::before { content: ""; flex: 0.62 1 0; }   /* the optical centre: a third of the way down */
+.lv-new::after { content: ""; flex: 1 1 0; }
+.lv-hero { display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 22px; }
+.lv-glyph { position: relative; width: 32px; height: 32px; color: var(--coral); margin-bottom: 14px; }
+.lv-glyph::before {
+  content: ""; position: absolute; inset: -14px; border-radius: 50%; z-index: 0;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--coral) 24%, transparent), transparent);
+  filter: blur(6px);
+}
+.lv-glyph svg { position: relative; z-index: 1; display: block; }
+.lv-folder {
+  font: inherit; font-size: 22px; font-weight: 650; letter-spacing: -0.01em; color: var(--label); background: none; border: 0;
+  border-radius: 8px; padding: 1px 8px 1px 10px; display: inline-flex; align-items: center; gap: 6px; cursor: default;
+}
+.lv-folder:hover, .lv-folder.open { background: var(--hover); }
+.lv-folder .chev2 { width: 11px; height: 11px; color: var(--tertiary); }
+.lv-path { font-size: 11px; color: var(--tertiary); margin-top: 3px; font-variant-numeric: tabular-nums; display: flex; gap: 6px; align-items: center; }
+.lv-path .wt { color: var(--secondary); }
+.lv-hint { font-size: 11px; color: var(--tertiary); margin-top: 12px; display: flex; gap: 14px; height: 16px; transition: opacity .2s; }
+.lv-hint kbd { font: inherit; color: var(--secondary); margin-right: 3px; }
+.lv-new .lv-comp { width: min(640px, 100%); }
+
+/* MARK: - Session view: transcript above, composer docked */
+
+.lv-sess { display: grid; grid-template-rows: minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); min-height: 0; min-width: 0; position: relative; }
+.lv-scroll { overflow: auto; min-height: 0; }
+.lv-scroll .transcript { max-width: 640px; margin: 0 auto; padding: 16px 24px 24px; }
+.lv-dock { padding: 0 24px 16px; display: flex; flex-direction: column; align-items: center; position: relative; }
+.lv-dock::before { content: ""; position: absolute; left: 0; right: 0; top: -24px; height: 24px; background: linear-gradient(transparent, var(--window)); pointer-events: none; }
+.lv-dock > * { width: min(720px, 100%); }
+
+/* MARK: - The composer */
+
+.lv-comp {
+  position: relative; background: var(--window); border-radius: 16px; padding: 10px 10px 8px 14px;
+  box-shadow: 0 0 0 0.5px var(--separator), 0 1px 2px rgba(0,0,0,.04), 0 6px 20px rgba(0,0,0,.06);
+  transition: box-shadow .15s;
+}
+.lv-comp.focus { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent), 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent), 0 6px 20px rgba(0,0,0,.06); }
+.lv-field { display: flex; align-items: flex-start; gap: 6px; min-height: 22px; }
+.lv-field textarea {
+  flex: 1; min-width: 0; border: 0; outline: 0; resize: none; background: none; color: var(--label); padding: 0; margin: 0 4px 0 0;
+  font: 14px/22px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; min-height: 22px; max-height: 176px; overflow-y: auto;
+}
+.lv-field textarea::placeholder { color: var(--tertiary); }
+.lv-field .cmdtok { margin: 2px 0 0; padding: 2px 5px; font-size: 13px; background: var(--fill); flex: none; }
+.lv-acc { display: flex; align-items: center; gap: 2px; margin-top: 8px; height: 28px; margin-left: -6px; min-width: 0; }
+.lv-acc .sp { flex: 1; min-width: 8px; }
+
+.chip {
+  flex: none; height: 24px; border: 0; background: none; border-radius: 6px; padding: 0 6px; display: inline-flex; align-items: center; gap: 5px;
+  font: inherit; font-size: 12px; color: var(--secondary); cursor: default; white-space: nowrap;
+}
+.chip:hover:not(:disabled), .chip.open { background: var(--hover); color: var(--label); }
+.chip:disabled { color: var(--tertiary); }
+.chip .g { width: 14px; height: 14px; flex: none; display: block; }
+.chip .cv { width: 8px; height: 8px; opacity: .7; flex: none; }
+.chip.danger, .chip.danger:hover { color: var(--red-text); }
+.chip .pend { width: 10px; height: 10px; color: var(--tertiary); margin-left: -1px; }
+.chip .bolt { width: 10px; height: 12px; margin-right: -2px; }
+.chip.flash { animation: chipflash .9s ease-out; }
+@keyframes chipflash { 0%, 30% { background: var(--sel); } 100% { background: transparent; } }
+
+.lv-status { font-size: 11px; color: var(--tertiary); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; margin-right: 8px; overflow: hidden; }
+.lv-status.coral { color: var(--coral); cursor: default; }
+.lv-status .tile { transform: scale(.75); margin: -3px; }
+.ring { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--secondary); margin-right: 8px; cursor: default; font-variant-numeric: tabular-nums; }
+.ring svg { width: 14px; height: 14px; transform: rotate(-90deg); }
+.ring .bgc { fill: none; stroke: var(--tile); stroke-width: 2; }
+.ring .fgc { fill: none; stroke: var(--secondary); stroke-width: 2; stroke-linecap: round; }
+
+.act-btn {
+  flex: none; width: 28px; height: 28px; border-radius: 50%; border: 0; display: grid; place-items: center; cursor: default; margin-left: 4px;
+  background: var(--accent); color: #fff; transition: background .12s, opacity .12s;
+}
+.act-btn svg { width: 14px; height: 14px; }
+.act-btn:disabled { background: var(--tile); color: var(--tertiary); }
+.act-btn.stop { background: var(--label); color: var(--window); }
+.act-btn.stop svg { width: 10px; height: 10px; }
+
+.lv-err { font-size: 12px; color: var(--red-text); padding: 6px 14px 0; min-height: 0; }
+.lv-err:empty { display: none; }
+
+/* The failed banner: a red wash over the card, never a filled button. */
+.lv-banner {
+  display: flex; align-items: center; gap: 10px; font-size: 12.5px; padding: 8px 10px 8px 14px; margin-bottom: 8px; border-radius: 12px;
+  background: color-mix(in srgb, var(--red) 10%, var(--window)); box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--red) 25%, transparent);
+}
+.lv-banner b { color: var(--red-text); font-weight: 600; }
+.lv-banner .why { flex: 1; min-width: 0; color: var(--secondary); font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Queued and held prompts: the bubble at half strength, a status under it. */
+.qrow { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.qrow .bubble { opacity: .5; position: relative; }
+.qrow .q { font-size: 11px; color: var(--tertiary); padding-right: 12px; display: flex; gap: 8px; }
+.qrow .q .link { color: var(--accent); cursor: default; }
+
+/* MARK: - Menus (NSMenu with subtitles and section headers) */
+
+.lv-menu {
+  position: fixed; z-index: 50; min-width: 220px; max-width: 320px; padding: 5px; border-radius: 10px; font-size: 13px;
+  background: color-mix(in srgb, var(--window) 92%, transparent); backdrop-filter: blur(20px) saturate(1.6); -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  box-shadow: 0 0 0 0.5px var(--separator), 0 10px 32px rgba(0,0,0,.18); color: var(--label); user-select: none;
+}
+.lv-menu.static { position: relative; z-index: 0; display: inline-block; vertical-align: top; }
+.mi { display: grid; grid-template-columns: 14px 18px 1fr auto; align-items: center; column-gap: 4px; padding: 3px 10px 3px 6px; border-radius: 5px; min-height: 22px; cursor: default; }
+.mi.nog { grid-template-columns: 14px 1fr auto; }
+.mi .ck { width: 10px; height: 10px; }
+.mi .g { width: 14px; height: 14px; color: var(--secondary); }
+.mi .l { white-space: nowrap; }
+.mi .s { grid-column: 3; font-size: 11px; color: var(--secondary); line-height: 14px; padding-bottom: 1px; }
+.mi.nog .s { grid-column: 2; }
+.mi .k { font-size: 12px; color: var(--tertiary); padding-left: 16px; }
+.mi:not(.dis):hover, .mi.hl { background: var(--accent); color: #fff; }
+.mi:not(.dis):hover .s, .mi:not(.dis):hover .g, .mi:not(.dis):hover .k, .mi.hl .s, .mi.hl .g, .mi.hl .k { color: rgba(255,255,255,.85); }
+.mi.dis { color: var(--tertiary); }
+.mi.dis .g, .mi.dis .s { color: var(--tertiary); }
+.mi.danger .l, .mi.danger .g { color: var(--red-text); }
+.mi.danger:not(.dis):hover .l, .mi.danger:not(.dis):hover .g { color: #fff; }
+.mi.danger.dis .l, .mi.danger.dis .g { color: var(--tertiary); }
+.mh { font-size: 11px; font-weight: 600; color: var(--tertiary); padding: 4px 10px 2px 24px; display: flex; justify-content: space-between; gap: 12px; }
+.mh kbd { font: inherit; font-weight: 400; }
+.msep { height: 0.5px; background: var(--separator); margin: 5px 10px; }
+
+/* Command completion: above the card, 28-pt rows. */
+.lv-slash {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); padding: 5px; border-radius: 12px; z-index: 30;
+  background: var(--window); box-shadow: 0 0 0 0.5px var(--separator), 0 10px 32px rgba(0,0,0,.14);
+}
+.lv-new .lv-slash { bottom: auto; top: calc(100% + 6px); }
+.lv-slash.static { position: relative; bottom: auto; top: auto; }
+.sl { display: grid; grid-template-columns: max-content max-content 1fr; gap: 8px; align-items: baseline; height: 28px; padding: 0 10px; border-radius: 6px; font-size: 12px; align-content: center; cursor: default; }
+.sl .n { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--label); }
+.sl .n .sig { color: var(--tertiary); }
+.sl .h { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--tertiary); font-size: 11.5px; }
+.sl .d { color: var(--secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sl.on { background: var(--sel); }
+
+/* MARK: - The sheet around it */
+
+.lv-scen { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+.lv-scen .seg { flex-wrap: wrap; }
+.lv-scen .seg button.on { background: var(--window); color: var(--label); box-shadow: 0 0 0 0.5px var(--separator), 0 1px 2px rgba(0,0,0,.08); }
+.lv-specs { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+#lv-composers, #lv-newview { grid-template-columns: repeat(auto-fit, minmax(min(500px, 100%), 1fr)); }
+.lv-acc .chip span { overflow: hidden; text-overflow: ellipsis; }
+.lv-card { background: var(--window); border-radius: 12px; box-shadow: 0 0 0 0.5px var(--separator); padding: 14px 16px 18px; min-width: 0; }
+.lv-card > .cap { font-size: 12px; color: var(--secondary); margin-bottom: 12px; }
+.lv-card > .cap b { display: block; color: var(--label); font-weight: 600; }
+.lv-card .stage { background: var(--page); border-radius: 10px; padding: 18px 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.lv-card .stage.plain { background: none; padding: 0; }
+.lv-menus { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+.lv-menus figure { margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.lv-menus figcaption { font-size: 12px; color: var(--secondary); max-width: 300px; }
+.lv-menus figcaption b { color: var(--label); font-weight: 600; display: block; }
+
+.tabbar.spec-bar { border-radius: 10px 10px 0 0; border: 0.5px solid var(--separator); height: 34px; align-items: center; }
+.tabbar.spec-bar .tab { height: 26px; }
+
+.matrix-wrap { overflow-x: auto; background: var(--window); border-radius: 12px; box-shadow: 0 0 0 0.5px var(--separator); margin-top: 16px; }
+table.matrix { border-collapse: collapse; font-size: 12px; min-width: 980px; width: 100%; }
+.matrix th, .matrix td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 0.5px solid var(--separator); }
+.matrix thead th { font-weight: 600; color: var(--label); background: var(--chrome); position: sticky; top: 0; }
+.matrix thead th .sub { display: block; font-weight: 400; color: var(--tertiary); font-size: 11px; }
+.matrix thead th.half { box-shadow: inset 1.5px 0 0 var(--separator); }
+.matrix td.half { box-shadow: inset 1.5px 0 0 var(--separator); }
+.matrix tbody th { font-weight: 600; white-space: nowrap; }
+.matrix td { color: var(--secondary); }
+.matrix td .y { color: var(--label); }
+.matrix td .no { color: var(--tertiary); }
+.matrix td .when { display: inline-flex; align-items: center; gap: 3px; color: var(--label); }
+.matrix td code { font-size: 11px; color: var(--fn); }
+.matrix tr:last-child th, .matrix tr:last-child td { border-bottom: 0; }
+.matrix .grp th { background: var(--page); color: var(--tertiary); font-size: 11px; font-weight: 600; padding: 5px 10px; }

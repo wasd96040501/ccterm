@@ -2,7 +2,7 @@
 
 How a transcript shows what isn't plain conversation: tool calls, the documents
 they open beside the transcript, and the markup the CLI writes into user
-messages. Open `index.html` for the sheet — every state of every view, both
+messages — and how a session is started and steered live (08-live.md). Open `index.html` for the sheet — every state of every view, both
 appearances, and a playground window that replays a live turn.
 
 Every number below comes from [research/findings.md](research/findings.md).
@@ -111,6 +111,7 @@ appear as text or 10–16 % washes, never as filled buttons.
 | 5 | Local commands, interruptions, compaction | 15 % of prompts | [05-local.md](05-local.md) |
 | 6 | Messages from other agents — a subagent's report (a line; the report beside), sessions, coordinator, plugins | — | [06-agent-messages.md](06-agent-messages.md) |
 | 7 | Tools that talk to you — questions, plans, task lists | < 3 % | [07-talk.md](07-talk.md) |
+| 8 | Live sessions — the New tab, the + on every tab bar, the composer and what each control can change when | — | [08-live.md](08-live.md) |
 
 ## Opening a document beside the transcript
 
@@ -138,11 +139,13 @@ One rule for every view that opens something:
 ```
 design/transcript/
 ├── README.md          this file
-├── 01-run.md … 07-talk.md
+├── 01-run.md … 08-live.md
 ├── index.html         the sheet (open directly; no build)
 ├── preview.css        tokens for both appearances
 ├── preview.js         tiles, the run sentence, documents — the rules as code
 ├── preview-sheet.js   sample session, playground split, live replay, specimens
+├── preview-live.css   the New tab, the +, the composer, menus
+├── preview-live.js    the live window: sessions as state machines, menus, the matrix
 └── research/
     ├── corpus_stats.py
     └── findings.md

@@ -11,6 +11,12 @@ import Foundation
 /// Live sessions outlive their tabs: closing a tab ends nothing. A session
 /// stays until `end(at:)` or `endAll()`; one whose CLI exited on its own stays
 /// too, as `failed`, so the sidebar can say so, until it is ended.
+///
+/// Every verb returns at once and never throws: what it starts shows in the
+/// session's state — `.starting` with the prompt held, then `.idle` or
+/// `.failed` with the reason — so a tab only ever follows `states(at:)`.
+/// `start` and `send` to a session no CLI runs make its `LiveSession`
+/// synchronously, in `.starting`, before anything is awaited.
 @MainActor
 final class SessionStore {
     /// What ccterm sets in `CLAUDE_CODE_ENTRYPOINT`: the CLI records it in
@@ -32,6 +38,25 @@ final class SessionStore {
     /// Sessions being resumed, so that a second prompt while the CLI starts
     /// waits for it instead of launching another on the same session id.
     private var resuming: [URL: Task<LiveSession, Error>] = [:]
+
+    /// `launch`: how the CLI is launched for an account (its id), secrets
+    /// read. `directories`: where launches write sessions. `catalog`: what
+    /// each account offers — to map a transcript's last model onto an account
+    /// and to apply a change's cascades. `preferences`: General's (Allow
+    /// Bypass Permissions). The publishers deliver on the main actor; a new
+    /// launch takes the latest of each. `branches`: the git step of a launch.
+    /// `read` reads a transcript at rest, off the main actor.
+    convenience init(
+        launch: @escaping @MainActor (UUID) async throws -> CLIConfiguration,
+        directories: AnyPublisher<SessionDirectory, Never>,
+        catalog: AnyPublisher<ModelCatalog, Never>,
+        preferences: AnyPublisher<LaunchPreferences, Never>,
+        branches: BranchService,
+        read: @escaping @Sendable (URL) async throws -> Transcript
+    ) {
+        // TODO(fill B): the designated init; the one below goes with `start(in:)`.
+        self.init(configurations: Empty().eraseToAnyPublisher(), directories: directories, read: read)
+    }
 
     /// `configurations`: how the CLI is launched (General's); `directories`:
     /// where that launch writes sessions — both must deliver on the main
@@ -92,8 +117,63 @@ final class SessionStore {
 
     // MARK: - Talking
 
+    /// Starts a new session as `launch` says, with `prompt` as its first
+    /// message, and returns its transcript URL at once — the tab's identity
+    /// before the CLI has written anything. The session is `.starting` with
+    /// the prompt held from this moment; the git step, the account's launch
+    /// and `initialize` follow, and a failure in any is `.failed`. The URL is
+    /// known up front because ccterm mints the session id and names any
+    /// worktree (`BranchService.prepare`).
+    func start(_ launch: SessionLaunch, prompt: String) -> URL {
+        // TODO(fill B)
+        fatalError("SessionStore.start(_:prompt:) is not built yet")
+    }
+
+    /// Sends `prompt` to the session at `url`, as its phase says (design 08
+    /// *Settings × state*, Send row): idle, sent; working, queued; starting,
+    /// held; at rest or failed, the session is resumed — on the settings its
+    /// transcript last ran on — and the prompt held until it is up.
+    func send(_ prompt: String, to url: URL) {
+        // TODO(fill B): replaces `send(_:to:) async throws` below.
+        Task { try? await sendResuming(prompt, to: url) }
+    }
+
+    /// Applies a control's change to the session at `url` when its timing
+    /// says (`SessionState.timing(of:)`); another account while a process
+    /// runs restarts it, resuming as that account — the tab has confirmed.
+    func update(_ change: SessionSettings.Change, at url: URL) {
+        // TODO(fill B)
+    }
+
+    /// Stops a launch in progress at `url` (Stop while *Starting*): the
+    /// session goes back to what it was — at rest, or gone for one that had
+    /// never run — and the texts of the prompts it held come back, oldest
+    /// first, for the tab to put in its field.
+    func cancelLaunch(at url: URL) -> [String] {
+        // TODO(fill B)
+        []
+    }
+
+    /// Withdraws the queued prompt `uuid` at `url` (*Withdraw*).
+    func withdraw(prompt uuid: String, at url: URL) {
+        live[url]?.withdraw(prompt: uuid)
+    }
+
+    /// Forgets the returned prompt `uuid` at `url` once the tab has put its
+    /// words back in the field.
+    func dismiss(prompt uuid: String, at url: URL) {
+        live[url]?.dismiss(prompt: uuid)
+    }
+
+    /// Restarts a failed session at `url` with no prompt (the failure's
+    /// *Restart*): Send's resume without a prompt.
+    func restart(at url: URL) {
+        // TODO(fill B)
+    }
+
     /// Starts a new session in `workingDirectory` and returns its transcript
     /// URL — the tab's identity before the CLI has written anything.
+    // TODO(fill B): remove with its tests once `start(_:prompt:)` is built.
     func start(in workingDirectory: URL) async throws -> URL {
         guard let configuration, let directory else {
             throw AgentSDKError.launchFailed("the launch settings are not known yet")
@@ -113,7 +193,8 @@ final class SessionStore {
     /// Sends a prompt to the session at `url`, resuming it first when no CLI
     /// runs it — at rest (its history read, `resume` = its id, in its
     /// recorded cwd), or failed, which a new prompt leaves behind.
-    func send(_ text: String, to url: URL) async throws {
+    // TODO(fill B): remove with its tests once `send(_:to:)` is built (TranscriptViewController still calls it).
+    func sendResuming(_ text: String, to url: URL) async throws {
         if let live = live[url], live.state.isLive {
             try live.send(text)
             return

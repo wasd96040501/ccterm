@@ -81,6 +81,28 @@ final class LaunchStore {
         LaunchEnvironment.resolve(command: command, general: preferences)
     }
 
+    /// How a session on `account` is launched under the current General
+    /// settings: its command, and — for a provider — the base URL, the
+    /// credential and the model names as the environment the CLI reads
+    /// (`ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY`,
+    /// `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_<FAMILY>_MODEL`) plus its own
+    /// variables. The account is read from the CLI's environment at launch;
+    /// nothing in the control protocol changes it.
+    func configuration(for account: Account, secrets: AccountSecrets) -> CLIConfiguration {
+        // TODO(fill B): LaunchEnvironment.resolve(account:secrets:general:) + LaunchEnvironmentTests.
+        LaunchEnvironment.resolve(command: account.command, general: preferences)
+    }
+
+    /// Sets General's *Allow Bypass Permissions*. Sessions already running keep
+    /// how they were launched.
+    func setAllowsBypassPermissions(_ allows: Bool) {
+        // TODO(fill B): persist under its own defaults key, as `update(_:)` does the others.
+        var next = preferences
+        next.allowsBypassPermissions = allows
+        guard next != preferences else { return }
+        preferences = next
+    }
+
     /// Sets General's launch command; empty runs `claude`. Nothing is checked
     /// here — see ``LaunchCheckService``.
     func setCommand(_ command: String) {

@@ -177,6 +177,15 @@ final class ComposerView: NSView {
         updateButtons()
     }
 
+    /// The field's words.
+    var text: String {
+        get { textView.string }
+        set {
+            textView.string = newValue
+            contentDidChange()
+        }
+    }
+
     /// Gives the field the focus: a new session opens ready to type.
     func focus() {
         window?.makeFirstResponder(textView)

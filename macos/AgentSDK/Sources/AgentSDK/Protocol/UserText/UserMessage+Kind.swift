@@ -37,6 +37,10 @@ extension UserMessage {
         /// Text the CLI added for the model: reminders, skill bodies,
         /// scheduled prompts, notes on attached images.
         case synthetic
+        /// A turn the CLI started with its own words
+        /// (`origin.kind: "auto-continuation"`): a usage limit that reset, a
+        /// plan approved in the browser, a goal set with `/goal`.
+        case autoContinuation(text: String)
     }
 
     /// Who sent a ``Kind/message(from:text:)``.
@@ -48,7 +52,10 @@ extension UserMessage {
         case session(address: String, name: String?, mode: String?)
         /// The coordinator of the team this session works in.
         case coordinator
-        case plugin(name: String)
+        /// A plugin's prompt: `duringTurn` when it came while the model worked
+        /// (*…sent a message while you were working:*) rather than starting
+        /// a turn in the user's place.
+        case plugin(name: String, duringTurn: Bool)
     }
 
     public var kind: Kind { Kind(self) }
@@ -81,6 +88,7 @@ extension UserMessage.Kind {
         case "peer", "coordinator", "plugin":
             return relayedMessage(text) ?? .prompt
         case "auto-continuation":
+            // TODO(fill A): .autoContinuation(text:) — and the mid-turn plugin header + its note.
             return .synthetic
         default:
             break
@@ -133,7 +141,7 @@ extension UserMessage.Kind {
         }
         if sender.hasPrefix("The "), sender.hasSuffix(" plugin") {
             let name = String(sender.dropFirst("The ".count).dropLast(" plugin".count))
-            return .message(from: .plugin(name: name), text: body.removingSuffix(pluginNote))
+            return .message(from: .plugin(name: name, duringTurn: false), text: body.removingSuffix(pluginNote))
         }
         return nil
     }

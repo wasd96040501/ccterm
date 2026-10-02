@@ -45,8 +45,16 @@ nonisolated struct TranscriptPage: Sendable, Equatable {
 
     /// The page of `transcript`; and of a live session's state over it:
     /// `partial`, the response streaming in, and `requests`, the calls waiting
-    /// for the reader (`TranscriptPageBuilder`).
-    init(_ transcript: Transcript, partial: AssistantMessage? = nil, requests: [PermissionRequest] = []) {
+    /// for the reader (`TranscriptPageBuilder`); `prompts`, the prompts sent
+    /// from here that the transcript doesn't have yet — each a prompt entry
+    /// under its uuid, the id the transcript's own message takes when its
+    /// replay arrives, with its delivery under it; `restarts`, a divider each
+    /// after the message it follows.
+    init(
+        _ transcript: Transcript, partial: AssistantMessage? = nil, requests: [PermissionRequest] = [],
+        prompts: [LocalPrompt] = [], restarts: [SessionState.Restart] = []
+    ) {
+        // TODO(fill F): prompts and restarts; a transcript prompt's id becomes its uuid.
         var builder = TranscriptPageBuilder(
             messages: transcript.messages, workingDirectory: transcript.metadata.cwd, partial: partial,
             requests: requests)

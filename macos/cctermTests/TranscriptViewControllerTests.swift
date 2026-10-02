@@ -40,8 +40,10 @@ final class TranscriptViewControllerTests: XCTestCase {
     }
 
     private func mountTab(_ url: URL) throws -> TranscriptView {
-        let stage = AppKitStage.mount(
-            TranscriptViewController(fileURL: url, title: "t", sessions: .reading(), acceptsInput: false))
+        let sessions = SessionStore.reading()
+        let controller = TranscriptViewController(fileURL: url, title: "t", sessions: sessions)
+        controller.follow(sessions.states(at: url))
+        let stage = AppKitStage.mount(controller)
         self.stage = stage
         stage.rootViewController.viewDidAppear()
         return try XCTUnwrap(stage.find(TranscriptView.self))
@@ -63,8 +65,7 @@ final class TranscriptViewControllerTests: XCTestCase {
     /// none of its rows.
     func testASessionsOwnTabHasAComposerUnderTheTranscript() throws {
         let url = try writeConversation("-p/own.jsonl", turns: 5)
-        let stage = AppKitStage.mount(
-            TranscriptViewController(fileURL: url, title: "t", sessions: .reading(), acceptsInput: true))
+        let stage = AppKitStage.mount(SessionTabViewController(.session(url), title: "t", context: .reading()))
         self.stage = stage
         stage.rootViewController.viewDidAppear()
         let transcript = try XCTUnwrap(stage.find(TranscriptView.self))

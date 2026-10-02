@@ -253,7 +253,9 @@ final class UserMessageKindTests: XCTestCase {
 
             This is how Claude Code surfaces a prompt a plugin submits between turns — it starts this turn in the user's place. Address the message above.
             """
-        XCTAssertEqual(kind(text, origin: "plugin"), .message(from: .plugin(name: "taskcut"), text: "Continue."))
+        XCTAssertEqual(
+            kind(text, origin: "plugin"), .message(from: .plugin(name: "taskcut", duringTurn: false), text: "Continue.")
+        )
     }
 
     // MARK: - Falling back

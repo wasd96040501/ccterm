@@ -240,6 +240,9 @@ nonisolated struct TranscriptPageBuilder {
             attachSummary(user.content.compactMap(\.text).joined(separator: "\n\n"))
         case .toolResult, .synthetic:
             break
+        case .autoContinuation:
+            // TODO(fill F): the divider that says why, with its *Prompt* link (design 06).
+            break
         }
     }
 
@@ -433,7 +436,7 @@ nonisolated struct TranscriptPageBuilder {
             name ?? address
         case .coordinator:
             String(localized: "Coordinator")
-        case .plugin(let name):
+        case .plugin(let name, _):
             name
         }
     }

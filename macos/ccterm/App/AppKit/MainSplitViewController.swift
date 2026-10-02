@@ -19,7 +19,8 @@ final class MainSplitViewController: NSSplitViewController {
     weak var delegate: MainSplitViewControllerDelegate?
 
     private let library: LibraryStore
-    private let sessions: SessionStore
+    private let context: TranscriptTab.Context
+    private var sessions: SessionStore { context.sessions }
     private let sidebarViewController: SidebarViewController
 
     /// The tabs. It answers the window's tab commands itself — back, forward,
@@ -29,9 +30,10 @@ final class MainSplitViewController: NSSplitViewController {
     /// The transcript last reported to the delegate.
     private var shownTranscript: URL?
 
-    init(library: LibraryStore, sessions: SessionStore) {
+    init(library: LibraryStore, context: TranscriptTab.Context) {
         self.library = library
-        self.sessions = sessions
+        self.context = context
+        let sessions = context.sessions
         sidebarViewController = SidebarViewController(
             nodes: library.$isLoaded.combineLatest(library.$nodes) { isLoaded, nodes in isLoaded ? nodes : nil }
                 .eraseToAnyPublisher(),
@@ -86,6 +88,19 @@ final class MainSplitViewController: NSSplitViewController {
         #selector(EditorAreaViewController.closeTab(_:)),
     ]
 
+    // MARK: - New tabs
+
+    // TODO(fill E): the New tab (design 08 *Tabs and the +*):
+    // - `editorArea.showsNewTabButton = true`; `editorArea.emptyViewController`
+    //   = `TranscriptTab.makeNewSession(...)`, made again whenever the tabs run out;
+    // - ⌘T / + (`editorArea(_:didRequestNewTabIn:)`): the group's untouched New tab
+    //   if it has one (`TranscriptTab.isUntouchedDraft`), else a New tab after the
+    //   active one, in the active session tab's folder or the most recent project,
+    //   with the words of the last New tab closed (`TranscriptTab.draftText`, kept
+    //   in `willClose`);
+    // - tab marks: `editorArea(_:indicatorViewFor:)` from `sessions.$activities`,
+    //   one cached `ActivityMarkView` per transcript URL, `reloadIndicators()` on change.
+
     // MARK: - Sessions
 
     /// File › New Session…: asks for the folder to run it in, starts it, and
@@ -111,7 +126,7 @@ final class MainSplitViewController: NSSplitViewController {
                 let url = try await sessions.start(in: folder)
                 editorArea.open(
                     TranscriptTab.makeItem(
-                        .transcript(url), title: String(localized: "New Session"), sessions: sessions,
+                        .transcript(url), title: String(localized: "New Session"), context: context,
                         delegate: self),
                     pinned: true)
             } catch {
@@ -123,6 +138,15 @@ final class MainSplitViewController: NSSplitViewController {
 }
 
 extension MainSplitViewController: TranscriptTabDelegate {
+    func transcriptTab(_ source: NSViewController, didStartSessionAt url: URL) {
+        // TODO(fill E): re-identify the item (or move `source` from the empty
+        // area into the first tab), then what `editorArea(_:didActivate:)` does.
+    }
+
+    func transcriptTabDidReturnToDraft(_ source: NSViewController) {
+        // TODO(fill E): the item is a `.newSession` again.
+    }
+
     /// Opens a tab beside its source — in the *other* editor as its temporary
     /// tab, splitting the area on the first — so clicking down a list replaces
     /// one tab where it stands; `pinned` opens it in a tab that stays. A tab
@@ -156,7 +180,7 @@ extension MainSplitViewController: SidebarViewControllerDelegate {
             !editorArea.selectTabViewItem(withIdentifier: TranscriptTab.transcript(url))
         else { return }
         editorArea.open(
-            TranscriptTab.makeItem(.transcript(url), title: node.title, sessions: sessions, delegate: self),
+            TranscriptTab.makeItem(.transcript(url), title: node.title, context: context, delegate: self),
             pinned: false)
     }
 
@@ -172,7 +196,7 @@ extension MainSplitViewController: SidebarViewControllerDelegate {
             return
         }
         editorArea.open(
-            TranscriptTab.makeItem(.transcript(url), title: node.title, sessions: sessions, delegate: self),
+            TranscriptTab.makeItem(.transcript(url), title: node.title, context: context, delegate: self),
             pinned: true)
     }
 }
@@ -196,11 +220,12 @@ extension MainSplitViewController: EditorAreaViewControllerDelegate {
     ) -> NSTabViewItem? {
         switch TranscriptTab(identifier: identifier) {
         case .document(let reference)?:
-            return TranscriptTab.makeItem(.document(reference), title: "", sessions: sessions, delegate: self)
+            return TranscriptTab.makeItem(.document(reference), title: "", context: context, delegate: self)
         case .transcript(let url)?:
             guard let node = library.path(toTranscriptAt: url).last else { return nil }
-            return TranscriptTab.makeItem(.transcript(url), title: node.title, sessions: sessions, delegate: self)
-        case nil:
+            return TranscriptTab.makeItem(.transcript(url), title: node.title, context: context, delegate: self)
+        case .newSession?, nil:
+            // A New tab's draft is gone once it closed.
             return nil
         }
     }

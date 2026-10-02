@@ -56,3 +56,11 @@ extension SettingsKey where Value == Int {
     /// Days transcripts are kept before cleanup; at least 1.
     public static var cleanupPeriodDays: Self { Self("cleanupPeriodDays") }
 }
+
+extension SettingsKey where Value == JSONValue {
+    /// How `--worktree` makes its worktree: `{"baseRef": "head"}` branches from
+    /// the local HEAD, `"fresh"` (the default) from origin's default branch.
+    /// Read at launch (`--settings`).
+    // TODO(fill A): SettingsSmoke + SettingsTests catalog entries, or a typed value.
+    public static var worktree: Self { Self("worktree") }
+}

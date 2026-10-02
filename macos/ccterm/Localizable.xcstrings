@@ -415,6 +415,16 @@
         }
       }
     },
+    "Ask Claude to…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "让 Claude…"
+          }
+        }
+      }
+    },
     "Auth Token": {
       "localizations": {
         "zh-Hans": {
@@ -502,6 +512,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在检查…"
+          }
+        }
+      }
+    },
+    "Choose Folder…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择文件夹…"
           }
         }
       }

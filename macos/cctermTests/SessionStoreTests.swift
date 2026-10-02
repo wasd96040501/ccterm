@@ -139,7 +139,7 @@ final class SessionStoreTests: XCTestCase {
     func testAPromptRunsATurnAndItsReplyArrives() async throws {
         let store = try store()
         let url = try await store.start(in: folder)
-        try await store.send("echo", to: url)
+        try await store.sendResuming("echo", to: url)
         let state = try await state(of: store, at: url) { !$0.isResponding && $0.transcript.messages.count == 2 }
         XCTAssertEqual(state.activity, .idle)
         guard case .assistant(let reply) = state.transcript.messages.last else { return XCTFail("no reply") }
@@ -150,7 +150,7 @@ final class SessionStoreTests: XCTestCase {
     func testAPermissionRequestWaitsUntilAnswered() async throws {
         let store = try store()
         let url = try await store.start(in: folder)
-        try await store.send("permission", to: url)
+        try await store.sendResuming("permission", to: url)
         try await state(of: store, at: url) { $0.requests.count == 1 }
         XCTAssertEqual(store.activities[url], .needsInput)
 
@@ -166,7 +166,7 @@ final class SessionStoreTests: XCTestCase {
     func testARequestWithdrawnByTheCLILeaves() async throws {
         let store = try store()
         let url = try await store.start(in: folder)
-        try await store.send("withdraw", to: url)
+        try await store.sendResuming("withdraw", to: url)
         let state = try await state(of: store, at: url) { $0.requests.isEmpty && !$0.isResponding }
         XCTAssertEqual(state.activity, .idle)
         await store.endAll()
@@ -175,7 +175,7 @@ final class SessionStoreTests: XCTestCase {
     func testACrashedCLIStaysAsFailedUntilEnded() async throws {
         let store = try store()
         let url = try await store.start(in: folder)
-        try await store.send("crash", to: url)
+        try await store.sendResuming("crash", to: url)
         try await state(of: store, at: url) { $0.failure != nil }
         guard case .failed(let message)? = store.activities[url] else { return XCTFail("not failed") }
         XCTAssertTrue(message.contains("boom"), message)
@@ -226,7 +226,7 @@ final class SessionStoreTests: XCTestCase {
         var published: [[URL: SessionState.Activity]] = []
         store.$activities.sink { published.append($0) }.store(in: &cancellables)
         let url = try await store.start(in: folder)
-        try await store.send("echo", to: url)
+        try await store.sendResuming("echo", to: url)
         try await state(of: store, at: url) { !$0.isResponding && $0.transcript.messages.count == 2 }
         // Every message of the turn changed the state; only `idle` → `responding`
         // → `idle` changed what the sidebar draws.
@@ -243,8 +243,8 @@ final class SessionStoreTests: XCTestCase {
         let url = scratch.appendingPathComponent("projects/p/0a1b.jsonl")
 
         // A double Return: two prompts before the CLI is up.
-        async let first: Void = store.send("echo", to: url)
-        async let second: Void = store.send("echo", to: url)
+        async let first: Void = store.sendResuming("echo", to: url)
+        async let second: Void = store.sendResuming("echo", to: url)
         _ = try await (first, second)
 
         XCTAssertEqual(launchCount(), 1, "one CLI per session id")
@@ -259,10 +259,10 @@ final class SessionStoreTests: XCTestCase {
         history.metadata.cwd = scratch.path
         let store = try store(history: history)
         let url = try await store.start(in: folder)
-        try await store.send("crash", to: url)
+        try await store.sendResuming("crash", to: url)
         try await state(of: store, at: url) { $0.failure != nil }
 
-        try await store.send("echo", to: url)
+        try await store.sendResuming("echo", to: url)
         XCTAssertEqual(launchCount(), 2, "a new CLI, not the dead one")
         XCTAssertEqual(store.activities[url], .responding)
         try await state(of: store, at: url) { $0.isLive && !$0.isResponding }
@@ -272,7 +272,7 @@ final class SessionStoreTests: XCTestCase {
     func testResumingASessionWithoutAFolderFails() async throws {
         let store = try store()
         do {
-            try await store.send("echo", to: scratch.appendingPathComponent("projects/p/a.jsonl"))
+            try await store.sendResuming("echo", to: scratch.appendingPathComponent("projects/p/a.jsonl"))
             XCTFail("expected a throw")
         } catch {}
         XCTAssertTrue(store.activities.isEmpty)

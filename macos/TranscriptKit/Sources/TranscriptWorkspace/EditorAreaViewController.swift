@@ -40,6 +40,25 @@ public final class EditorAreaViewController: NSSplitViewController {
 
     public weak var delegate: EditorAreaViewControllerDelegate?
 
+    /// What the area shows when no editor has a tab — the whole area, no tab
+    /// bar — instead of *No Editor*; `nil` keeps *No Editor*. Opening this
+    /// controller as a tab (`open(_:pinned:beside:)` with an item holding it)
+    /// takes it out of the empty area first, so it moves into its tab as the
+    /// same object; the host sets a new one for the next time the tabs run out.
+    public var emptyViewController: NSViewController? {
+        didSet {
+            // TODO(fill E): mount in the empty area while there are no tabs; EditorAreaTests.
+        }
+    }
+
+    /// Whether each tab bar ends in a + (24-pt circle, *New Tab ⌘T* tooltip)
+    /// that sends `newTab(_:)` from its editor.
+    public var showsNewTabButton = false {
+        didSet {
+            // TODO(fill E)
+        }
+    }
+
     /// The editor the reader is working in. Never `nil`: there is always one.
     public private(set) var activeGroup: EditorGroupViewController {
         didSet {
@@ -279,6 +298,24 @@ public final class EditorAreaViewController: NSSplitViewController {
             return
         }
         activeGroup.removeTabViewItem(item)
+    }
+
+    /// A new tab in the active editor — or, sent from a tab bar's +, in that
+    /// bar's editor, which becomes the active one. What the tab is, and where
+    /// in the editor it goes, are the delegate's
+    /// (`editorArea(_:didRequestNewTabIn:)`). A standard responder action, so
+    /// a nil-targeted menu item (⌘T) finds it.
+    @objc public func newTab(_ sender: Any?) {
+        // TODO(fill E): the sender's group when it is a + inside one.
+        delegate?.editorArea(self, didRequestNewTabIn: activeGroup)
+    }
+
+    /// Asks the delegate again for every tab's indicator
+    /// (`editorArea(_:indicatorViewFor:)`), as `NSTableView.reloadData` asks for
+    /// its rows; a tab whose answer is the same view keeps it untouched, so an
+    /// animating indicator doesn't restart.
+    public func reloadIndicators() {
+        // TODO(fill E)
     }
 
     /// Back through the active editor's history — a toolbar's back button.

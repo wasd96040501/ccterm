@@ -41,6 +41,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The sessions ccterm runs, and every tab's way to its session.
     /// Process-wide: a session outlives its tabs and windows.
     private var sessions: SessionStore?
+    /// What each account's CLI offers, for the composer's menus. Process-wide:
+    /// one probe per account serves every window.
+    private var catalog: ModelCatalogStore?
 
     /// Lazy AppKit-rooted Settings window. Created on the first
     /// `showSettingsWindow()` call (⌘, or App > Settings… menu item)
@@ -140,17 +143,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             directories: launch.$sessionDirectory.removeDuplicates().eraseToAnyPublisher(), indexDirectory: caches)
         // Sessions launch as General says, so they are written where the
         // library reads.
+        // TODO(fill B): the account-aware init — `launch:` from `accounts` +
+        // `launch.configuration(for:secrets:)`, `catalog:`, `preferences:`, `branches:`.
         let sessions = SessionStore(
             configurations: launch.$general.eraseToAnyPublisher(),
             directories: launch.$sessionDirectory.eraseToAnyPublisher(),
             read: { [library] in try await library.transcript(at: $0) })
+        let catalog = ModelCatalogStore(
+            accounts: accounts.$accounts.eraseToAnyPublisher(),
+            configuration: { [accounts, launch] account in
+                launch.configuration(for: account, secrets: try await accounts.secrets(for: account.id))
+            },
+            probe: { configuration in
+                // TODO(fill B): a short-lived Session: start → initialize → close.
+                throw AgentSDKError.launchFailed("not built yet: \(configuration)")
+            },
+            cacheURL: caches.appendingPathComponent("ModelCatalog.json"))
+        let context = TranscriptTab.Context(
+            sessions: sessions,
+            catalog: catalog.$catalog.eraseToAnyPublisher(),
+            preferences: launch.$preferences.eraseToAnyPublisher(),
+            defaults: NewSessionDefaults(defaults: .standard),
+            branches: BranchService(),
+            recentFolders: library.$nodes.map { nodes in
+                nodes.filter { $0.kind == .project }.map { URL(fileURLWithPath: $0.id, isDirectory: true) }
+            }.eraseToAnyPublisher())
         self.accounts = accounts
         self.launch = launch
         self.launchCheck = launchCheck
         self.subscription = subscription
         self.library = library
         self.sessions = sessions
-        let controller = MainWindowController(library: library, sessions: sessions, git: GitService())
+        self.catalog = catalog
+        let controller = MainWindowController(library: library, context: context, git: GitService())
         // Where the frame persists is the app's configuration, not the window's:
         // a `MainWindowController` built anywhere else writes no defaults.
         controller.windowFrameAutosaveName = "MainWindow"

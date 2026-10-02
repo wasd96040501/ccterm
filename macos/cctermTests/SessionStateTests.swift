@@ -205,14 +205,14 @@ final class SessionStateTests: XCTestCase {
     }
 
     func testASentPromptRespondsUntilItStartsOrEndsWithoutStarting() {
-        state.didSend("u1")
+        state.didSend(LocalPrompt(id: "u1", text: "", delivery: .sent))
         XCTAssertTrue(state.isResponding, "responding from the send, before the CLI says so")
         state.apply(line(#"{"type":"command_lifecycle","command_uuid":"u1","state":"refused"}"#))
         XCTAssertFalse(state.isResponding, "a refused prompt never ran")
 
-        state.didSend("u2")
+        state.didSend(LocalPrompt(id: "u2", text: "", delivery: .sent))
         state.apply(line(#"{"type":"command_lifecycle","command_uuid":"u2","state":"started"}"#))
-        state.didSend("u3")
+        state.didSend(LocalPrompt(id: "u3", text: "", delivery: .sent))
         state.apply(line(#"{"type":"command_lifecycle","command_uuid":"u3","state":"cancelled"}"#))
         XCTAssertTrue(state.isResponding, "the running turn goes on")
     }
@@ -221,7 +221,7 @@ final class SessionStateTests: XCTestCase {
 
     func testAnActivityIsTheMostUrgentThing() {
         XCTAssertEqual(state.activity, .idle)
-        state.didSend("u1")
+        state.didSend(LocalPrompt(id: "u1", text: "", delivery: .sent))
         XCTAssertEqual(state.activity, .responding)
         state.apply(.permissionRequest(request("r1")))
         XCTAssertEqual(state.activity, .needsInput)
@@ -234,7 +234,7 @@ final class SessionStateTests: XCTestCase {
     // MARK: - Exit
 
     func testACleanExitIsAtRestNotFailed() {
-        state.didSend("u1")
+        state.didSend(LocalPrompt(id: "u1", text: "", delivery: .sent))
         state.apply(.exited(Termination(exitCode: 0, stderr: "")))
         XCTAssertFalse(state.isLive)
         XCTAssertFalse(state.isResponding)

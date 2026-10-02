@@ -192,7 +192,8 @@ final class MainWindowTests: XCTestCase {
         let title = try titleView(in: stage)
         sidebar.delegate?.sidebarViewController(sidebar, didOpen: try Self.node("Named", in: library))
         await expect(title, shows: "repo", "feature")
-        let transcript = try XCTUnwrap(split.editorArea.activeViewController as? TranscriptViewController)
+        let transcript = try XCTUnwrap(
+            split.editorArea.activeViewController?.children.lazy.compactMap { $0 as? TranscriptViewController }.first)
 
         let document = Document(
             reference: DocumentReference(transcriptURL: transcript.fileURL, id: "c1"),
@@ -200,7 +201,8 @@ final class MainWindowTests: XCTestCase {
         split.transcriptTab(
             transcript, didRequestOpen: .document(document.reference), pinned: false,
             makeItem: {
-                TranscriptTab.makeItem(document, sessions: .reading { _ in Transcript(data: Data()) }, delegate: split)
+                TranscriptTab.makeDocumentItem(
+                    document, sessions: .reading { _ in Transcript(data: Data()) }, delegate: split)
             })
         await stage.settle()
         XCTAssertTrue(
@@ -227,7 +229,8 @@ final class MainWindowTests: XCTestCase {
         let sidebar = try sidebar(of: split)
         sidebar.delegate?.sidebarViewController(sidebar, didOpen: try Self.node("Named", in: library))
         await stage.settle()
-        let transcript = try XCTUnwrap(split.editorArea.activeViewController as? TranscriptViewController)
+        let transcript = try XCTUnwrap(
+            split.editorArea.activeViewController?.children.lazy.compactMap { $0 as? TranscriptViewController }.first)
         let window = try XCTUnwrap(transcript.view.window)
         let list = try XCTUnwrap(stage.find(NSScrollView.self, in: transcript.view)?.documentView)
         XCTAssertTrue(window.makeFirstResponder(list), "premise: the reader is in the transcript")
@@ -238,7 +241,8 @@ final class MainWindowTests: XCTestCase {
         split.transcriptTab(
             transcript, didRequestOpen: .document(document.reference), pinned: false,
             makeItem: {
-                TranscriptTab.makeItem(document, sessions: .reading { _ in Transcript(data: Data()) }, delegate: split)
+                TranscriptTab.makeDocumentItem(
+                    document, sessions: .reading { _ in Transcript(data: Data()) }, delegate: split)
             })
         await stage.settle()
         let opened = try XCTUnwrap(split.editorArea.activeViewController as? DocumentViewController)
@@ -336,7 +340,7 @@ final class MainWindowTests: XCTestCase {
         defer { fixture.remove() }
         try LibraryStoreTests.writeLibrary(fixture)
         let library = LibraryStore(directories: Just(fixture.directory).eraseToAnyPublisher())
-        let controller = Self.parked(MainWindowController(library: library, sessions: .reading(), git: GitService()))
+        let controller = Self.parked(MainWindowController(library: library, context: .reading(), git: GitService()))
         let window = try XCTUnwrap(controller.window)
         defer {
             window.orderOut(nil)
@@ -357,7 +361,7 @@ final class MainWindowTests: XCTestCase {
     /// saying it is loading.
     func testTheWindowOpensAtTheDeadlineWhileTheLibraryLoads() async throws {
         let library = LibraryStore(directories: Empty().eraseToAnyPublisher())
-        let controller = Self.parked(MainWindowController(library: library, sessions: .reading(), git: GitService()))
+        let controller = Self.parked(MainWindowController(library: library, context: .reading(), git: GitService()))
         let window = try XCTUnwrap(controller.window)
         defer { window.orderOut(nil) }
 

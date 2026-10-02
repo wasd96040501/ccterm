@@ -153,13 +153,34 @@ public final class Session: @unchecked Sendable {
         _ = try await sendControlRequest("interrupt")
     }
 
-    /// Switches the model; `nil` restores the default.
-    func setModel(_ model: String?) async throws {
+    /// Switches the model; `nil` (or `"default"`) restores the default. The CLI
+    /// checks entitlement first (≈ 1.5 s), answers, then echoes a `/model`
+    /// local-command output. A refusal throws
+    /// ``AgentSDKError/controlRequestFailed(subtype:message:)``; its
+    /// ``AgentSDKError/refusalCode`` names why (`restricted_by_org`, …).
+    public func setModel(_ model: String?) async throws {
         _ = try await sendControlRequest("set_model", ["model": model.map(JSONValue.string) ?? .null])
     }
 
-    func setPermissionMode(_ mode: PermissionMode) async throws {
+    /// Switches the permission mode, in effect now; the CLI confirms with a
+    /// `system/status` carrying it. Refusals as for ``setModel(_:)``
+    /// (`bypass_not_launched`, `auto_mode_fast_mode`, …).
+    public func setPermissionMode(_ mode: PermissionMode) async throws {
         _ = try await sendControlRequest("set_permission_mode", ["mode": .string(mode.rawValue)])
+    }
+
+    /// Withdraws a prompt sent while a turn runs; `false` when it already left
+    /// the queue (`cancel_async_message`).
+    public func cancelAsyncMessage(uuid: String) async throws -> Bool {
+        // TODO(fill A): decode `{cancelled}`; test over fake_cli.
+        _ = try await sendControlRequest("cancel_async_message", ["message_uuid": .string(uuid)])
+        return false
+    }
+
+    /// The models this CLI offers now, disabled ones included (`list_models`).
+    public func listModels() async throws -> [InitializationResult.Model] {
+        // TODO(fill A): decode `{models}`.
+        []
     }
 
     /// Caps thinking tokens; `nil` removes the cap.
@@ -319,6 +340,9 @@ public final class Session: @unchecked Sendable {
             reply(id, success: .object([:]))
         case "elicitation":
             reply(id, success: ["action": "cancel"])
+        // TODO(fill A): "apply_flag_settings" (a typed /effort or /fast) — reply
+        // success and yield `.flagSettingsChanged(request["settings"])`; verify
+        // the wire shape against the bundle first.
         case let subtype:
             reply(id, error: "Unsupported control request subtype: \(subtype ?? "")")
         }

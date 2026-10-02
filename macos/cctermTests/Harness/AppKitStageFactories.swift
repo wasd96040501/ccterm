@@ -23,7 +23,7 @@ extension AppKitStage {
                     SessionDirectory(
                         url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
                 ).eraseToAnyPublisher())
-        return mount(MainSplitViewController(library: library, sessions: .reading()), size: size)
+        return mount(MainSplitViewController(library: library, context: .reading()), size: size)
     }
 
     // MARK: - Main-window factory
@@ -40,7 +40,7 @@ extension AppKitStage {
                     SessionDirectory(
                         url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
                 ).eraseToAnyPublisher())
-        return mount(MainWindowController(library: library, sessions: .reading(), git: GitService()), size: size)
+        return mount(MainWindowController(library: library, context: .reading(), git: GitService()), size: size)
     }
 
     // MARK: - Mounted-VC accessors

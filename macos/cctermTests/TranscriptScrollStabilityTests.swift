@@ -35,9 +35,10 @@ final class TranscriptScrollStabilityTests: XCTestCase {
         }
         page = script.page
         let file = Transcript(messages: script.messages)
-        controller = TranscriptViewController(
-            fileURL: URL(fileURLWithPath: "/nonexistent/s.jsonl"), title: "s", sessions: .reading { _ in file },
-            acceptsInput: false)
+        let url = URL(fileURLWithPath: "/nonexistent/s.jsonl")
+        let sessions = SessionStore.reading { _ in file }
+        controller = TranscriptViewController(fileURL: url, title: "s", sessions: sessions)
+        controller.follow(sessions.states(at: url))
         stage = AppKitStage.mount(controller, size: CGSize(width: 900, height: 700))
         transcript = try XCTUnwrap(stage.find(TranscriptView.self))
         let total = PageRow.rows(for: page).count

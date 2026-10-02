@@ -25,6 +25,14 @@ public enum AgentSDKError: Error, LocalizedError, Sendable, Equatable {
     /// `claude --version` ran but printed no version.
     case noVersion(output: String)
 
+    /// For a control request the CLI refused: its `error_code`
+    /// (`restricted_by_org`, `bypass_not_launched`, …), so a host can say why
+    /// in its own words. `nil` for any other error, or a refusal without one.
+    public var refusalCode: String? {
+        // TODO(fill A): carry `error_code` from the control_response.
+        nil
+    }
+
     public var errorDescription: String? {
         switch self {
         case .binaryNotFound:

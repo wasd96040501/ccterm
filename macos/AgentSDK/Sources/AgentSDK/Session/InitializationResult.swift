@@ -12,6 +12,10 @@ public struct InitializationResult: Sendable, Equatable {
         public var supportsAdaptiveThinking: Bool
         public var supportsFastMode: Bool
         public var supportsAutoMode: Bool
+        /// The model id an alias resolves to (`opus` → `claude-opus-5-5`).
+        public var resolvedModel: String?
+        /// Listed but not choosable; the reason is folded into ``description``.
+        public var isDisabled: Bool = false
 
         public init(
             value: String, displayName: String? = nil, description: String = "", supportsEffort: Bool = false,
@@ -48,6 +52,14 @@ public struct InitializationResult: Sendable, Equatable {
     public var account: Account?
     public var outputStyle: String
     public var availableOutputStyles: [String]
+    /// The model the session runs on now (`current_model`).
+    public var currentModel: String?
+    /// The permission mode in effect (`current_permission_mode`).
+    public var currentPermissionMode: PermissionMode?
+    /// Whether Fast Mode is on, off or unavailable (`fast_mode_state`).
+    public var fastModeState: String?
+    /// Why Fast Mode can't be used, when it can't (`fast_mode_disabled_reason`).
+    public var fastModeDisabledReason: String?
 }
 
 // MARK: - Decodable
@@ -61,6 +73,11 @@ extension InitializationResult: Decodable {
         self.account = c.lenient(Account.self, "account")
         self.outputStyle = c.lenient(String.self, "output_style") ?? ""
         self.availableOutputStyles = c.lenient([String].self, "available_output_styles") ?? []
+        // TODO(fill A): check these keys against the bundle (`unavailable_models: T(lr())`) and add fixtures.
+        self.currentModel = c.lenient(String.self, "current_model")
+        self.currentPermissionMode = c.lenient(String.self, "current_permission_mode").flatMap(PermissionMode.init)
+        self.fastModeState = c.lenient(String.self, "fast_mode_state")
+        self.fastModeDisabledReason = c.lenient(String.self, "fast_mode_disabled_reason")
     }
 }
 
@@ -75,6 +92,8 @@ extension InitializationResult.Model: Decodable {
         self.supportsAdaptiveThinking = c.lenient(Bool.self, "supportsAdaptiveThinking") ?? false
         self.supportsFastMode = c.lenient(Bool.self, "supportsFastMode") ?? false
         self.supportsAutoMode = c.lenient(Bool.self, "supportsAutoMode") ?? false
+        self.resolvedModel = c.lenient(String.self, "resolvedModel")
+        self.isDisabled = c.lenient(Bool.self, "disabled") ?? false
     }
 }
 

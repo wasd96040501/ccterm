@@ -42,9 +42,28 @@ public protocol EditorAreaViewControllerDelegate: AnyObject {
     func editorArea(
         _ editorArea: EditorAreaViewController, tabViewItemWithIdentifier identifier: Any
     ) -> NSTabViewItem?
+
+    /// `newTab(_:)` asked for a new tab in `group` (⌘T, or the + on its bar).
+    /// The host makes it and opens it there — or selects one it already has.
+    func editorArea(_ editorArea: EditorAreaViewController, didRequestNewTabIn group: EditorGroupViewController)
+
+    /// What a tab shows in its close button's slot while the pointer is
+    /// elsewhere (Safari's speaker): a live session's mark. `nil` for nothing;
+    /// hovering the tab swaps it for the close button. Asked when a tab is
+    /// added and on `reloadIndicators()`; return the same view for an unchanged
+    /// state, so it keeps animating.
+    func editorArea(_ editorArea: EditorAreaViewController, indicatorViewFor tabViewItem: NSTabViewItem) -> NSView?
 }
 
 extension EditorAreaViewControllerDelegate {
+
+    public func editorArea(
+        _ editorArea: EditorAreaViewController, didRequestNewTabIn group: EditorGroupViewController
+    ) {}
+
+    public func editorArea(
+        _ editorArea: EditorAreaViewController, indicatorViewFor tabViewItem: NSTabViewItem
+    ) -> NSView? { nil }
 
     public func editorArea(
         _ editorArea: EditorAreaViewController, tabViewItemWithIdentifier identifier: Any

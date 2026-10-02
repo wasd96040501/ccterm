@@ -33,6 +33,14 @@ public struct UserMessage: Sendable, Equatable {
     /// Who the wire says wrote it — `"human"`, `"task-notification"`,
     /// `"peer"`, … (`origin.kind`). Read through ``kind``.
     var origin: String?
+    /// The permission mode when the prompt was sent (on disk: `permissionMode`)
+    /// — what a resume passes again.
+    public var permissionMode: PermissionMode? = nil
+    /// The numbers of the images pasted into this prompt (`imagePasteIds`): the
+    /// text says `[Image #N]` where each was pasted, and the content holds an
+    /// `image` block per number, in order. A counter across the session, so a
+    /// prompt's only image can be `#2`.
+    public var imagePasteIDs: [Int] = []
 
     public init(
         uuid: String? = nil, sessionID: String? = nil, parentToolUseID: String? = nil, content: [ContentBlock],
@@ -79,5 +87,8 @@ extension UserMessage: Decodable {
         self.isReplay = c.lenient(Bool.self, "isReplay") ?? false
         self.origin = c.lenient(JSONValue.self, "origin")?["kind"]?.stringValue
         self.timestamp = c.timestamp("timestamp")
+        // TODO(fill A): fixtures for both.
+        self.permissionMode = c.lenient(String.self, "permissionMode").flatMap(PermissionMode.init)
+        self.imagePasteIDs = c.lenient([Int].self, "imagePasteIds") ?? []
     }
 }

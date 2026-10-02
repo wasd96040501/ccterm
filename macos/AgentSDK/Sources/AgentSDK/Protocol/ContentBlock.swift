@@ -12,6 +12,11 @@ public enum ContentBlock: Sendable, Equatable {
     case toolUse(ToolUseBlock)
     case toolResult(ToolResultBlock)
     case image(ImageBlock)
+    /// A call to a tool the API runs itself (`server_tool_use`) — the advisor.
+    case serverToolUse(ServerToolUseBlock)
+    /// The advisor's answer to a ``serverToolUse(_:)``, in the same assistant
+    /// message (`advisor_tool_result`).
+    case advisorToolResult(AdvisorToolResultBlock)
     case unknown(type: String, raw: JSONValue)
 }
 
@@ -49,6 +54,7 @@ extension ContentBlock: Codable {
                         toolUseID: try c.required(String.self, "tool_use_id"),
                         content: c.contentBlocks("content") ?? [],
                         isError: c.lenient(Bool.self, "is_error") ?? false))
+            // TODO(fill A): "server_tool_use", "advisor_tool_result" (protocol.md *The advisor*).
             case "image":
                 self = .image(ImageBlock(source: Self.imageSource(c.lenient(JSONValue.self, "source") ?? .null)))
             default:
@@ -104,6 +110,13 @@ extension ContentBlock: Codable {
                 source = raw
             }
             return ["type": "image", "source": source]
+        case .serverToolUse(let block):
+            return [
+                "type": "server_tool_use", "id": .string(block.id), "name": .string(block.name), "input": block.input,
+            ]
+        case .advisorToolResult(let block):
+            // TODO(fill A): the content's wire form.
+            return ["type": "advisor_tool_result", "tool_use_id": .string(block.toolUseID)]
         case .unknown(_, let raw):
             return raw
         }

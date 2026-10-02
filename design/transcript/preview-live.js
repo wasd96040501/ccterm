@@ -83,7 +83,34 @@ const LAST = { model: "default", effort: "high", mode: "auto", fast: false, draf
 
 // MARK: - Glyphs (16-pt grid, SF Symbol weight)
 
-const svg16 = (body, cls = "g", extra = "") => `<svg class="${cls}" viewBox="0 0 16 16" aria-hidden="true"${extra}><g fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">${body}</g></svg>`;
+/** Optical size, as SF Symbols has it: a glyph that stands alone (a chip, a
+ *  menu item — not on a tile) is scaled so its ink covers the same area as
+ *  every other's — √(w·h) = 11.5 of the 16 grid, the long side at most 14 —
+ *  and centred; the stroke is divided by the scale so every glyph keeps the
+ *  same 1.3 weight. Measured once per glyph. */
+const OPTICAL = new Map();
+function optical(body) {
+  if (OPTICAL.has(body)) return OPTICAL.get(body);
+  const ns = "http://www.w3.org/2000/svg";
+  const m = document.createElementNS(ns, "svg");
+  m.setAttribute("viewBox", "0 0 16 16");
+  m.style.cssText = "position:absolute;left:-99px;width:16px;height:16px;visibility:hidden";
+  m.innerHTML = `<g fill="none" stroke="currentColor" stroke-width="1.3">${body}</g>`;
+  document.body.appendChild(m);
+  const b = m.firstChild.getBBox();
+  m.remove();
+  // The ink includes the stroke — unless the glyph is filled and has none.
+  const pad = /stroke="none"/.test(body) && !/<(path|circle|rect)(?![^>]*stroke="none")/.test(body) ? 0 : 1.3;
+  const w = b.width + pad, h = b.height + pad;
+  const k = Math.min(11.5 / Math.sqrt(w * h), 14 / Math.max(w, h));
+  const out = { k, t: `translate(8 8) scale(${k.toFixed(3)}) translate(${(-(b.x + b.width / 2)).toFixed(2)} ${(-(b.y + b.height / 2)).toFixed(2)})` };
+  OPTICAL.set(body, out);
+  return out;
+}
+const svg16 = (body, cls = "g", extra = "") => {
+  const o = optical(body);
+  return `<svg class="${cls}" viewBox="0 0 16 16" aria-hidden="true"${extra}><g transform="${o.t}" fill="none" stroke="currentColor" stroke-width="${(1.3 / o.k).toFixed(2)}" stroke-linecap="round" stroke-linejoin="round">${body}</g></svg>`;
+};
 const SHIELD = "M8 2.8l-4.3 1.7v3.2c0 2.6 1.8 4.4 4.3 5.4 2.5-1 4.3-2.8 4.3-5.4V4.5z";
 const MODE_GLYPH = {
   default: `<path d="${SHIELD}"/>`,
@@ -165,7 +192,9 @@ function bars(level) {
     const h = 3 + i * 2.25;
     s += `<rect x="${1 + i * 2.9}" y="${13 - h}" width="2" height="${h}" rx=".8" fill="currentColor" opacity="${i < n ? 1 : 0.28}"/>`;
   }
-  return `<svg class="g" viewBox="0 0 16 16" aria-hidden="true">${s}</svg>`;
+  // A level meter is thin and wide: sized by area it shrinks, so it's sized by
+  // width (13 of 16), as SF Symbols' cellularbars is, and centred.
+  return `<svg class="g" viewBox="0 0 16 16" aria-hidden="true"><g transform="translate(8 8) scale(0.956) translate(-7.8 -7)">${s}</g></svg>`;
 }
 const arcMark = () => '<svg class="arcmark" viewBox="0 0 12 12"><circle class="bgc" cx="6" cy="6" r="4.6"/><circle class="fgc" cx="6" cy="6" r="4.6"/></svg>';
 function ringHTML(p) {
@@ -1338,7 +1367,7 @@ function buildLang() {
   document.getElementById("lv-lang").innerHTML = [
     card(`<b>Continuous corners — what the app draws</b>Every radius on this page is a continuous corner: the curve starts further along the edge and eases into it, so no corner shows where the straight edge stops (red, a circular corner of the same radius; blue, continuous). In AppKit it's one line: <code>layer.cornerCurve = .continuous</code> with the radii as listed — no scaling. <span class="cnote">${css ? "This browser draws the sheet's corners as squircles (CSS <code>corner-shape</code>), a near match." : "This browser has no CSS <code>corner-shape</code> (Safari, so far), so the controls on this sheet show circular corners; the drawings here are the real shape."}</span>`, `<div class="sw">${ic(zoom(18), "one corner · 4×")}${ic(cmp(120, 72, 18), "card · 18")}${ic(cmp(56, 24, 7), "control · 7")}</div>`),
     card("<b>Four radii, continuous</b>tag 5 · control 7 · popover 12 · card 18, drawn as AppKit draws them. The + and the action button stay circles; tiles stay Lamé curves.", `<div class="sw">${box("--r-tag", 28, 22, "token")}${box("--r-ctl", 64, 24, "chip · tab · row")}${box("--r-pop", 88, 56, "menu · panel")}${box("--r-card", 120, 72, "composer · alert")}</div>`),
-    card("<b>Three icon sizes</b>16 for anything that heads a row (sidebar, menu items, tiles); 14 inside a 12-pt control (chips, the action button, ring); 10 for a badge on a word (clock, bolt, check).", `<div class="sw">${ic(sessionIcon(16), "16 · row")}${ic(`<svg width="16" height="16" viewBox="0 0 16 16">${GLYPHS.change.replace("<path", '<path fill="none" stroke="currentColor" stroke-width="1.3"')}</svg>`, "16 · menu")}${ic(`<span style="color:var(--secondary)">${bars("high").replace('class="g"', 'width="14" height="14"')}</span>`, "14 · chip")}${ic(`<span style="color:var(--secondary)">${svg16(MODE_GLYPH.auto).replace('class="g"', 'width="14" height="14"')}</span>`, "14 · chip")}${ic(`<span style="color:var(--tertiary)">${LV.clock.replace('class="pend"', 'width="10" height="10"')}</span>`, "10 · badge")}</div>`),
+    card("<b>Three icon sizes, one optical size</b>16 for anything that heads a row (sidebar, menu items, tiles); 14 inside a 12-pt control (chips, the action button, ring); 10 for a badge on a word (clock, bolt, check). Within a size, every glyph covers the same area — √(w·h) = 11.5 of 16, long side ≤ 14 — at one stroke weight, so a pencil and a shield read the same size; a thin, wide meter is sized by its width instead.", `<div class="sw">${ic(sessionIcon(16), "16 · row")}${ic(`<span style="color:var(--secondary)">${svg16(GLYPHS.change).replace('class="g"', 'width="16" height="16"')}</span>`, "16 · menu")}${ic(`<span style="color:var(--secondary)">${bars("high").replace('class="g"', 'width="14" height="14"')}</span>`, "14 · chip")}${ic(`<span style="color:var(--secondary)">${svg16(MODE_GLYPH.auto).replace('class="g"', 'width="14" height="14"')}</span>`, "14 · chip")}${ic(`<span style="color:var(--tertiary)">${LV.clock.replace('class="pend"', 'width="10" height="10"')}</span>`, "10 · badge")}</div>`),
     card("<b>A 4-pt grid; words never cut</b>Padding and gaps are 4, 8, 12, 16 or 24. When the composer narrows, labels the glyph already says go first — the provider name, then Effort's and Mode's words (kept in their tooltips) — so the status line keeps its sentence. Only titles, which can be any length, truncate.", `<div style="display:grid;gap:12px">${staticComposer({ state: "rest", model: "relay:default", effort: "high", mode: "acceptEdits" })}<div style="width:min(330px,100%)">${staticComposer({ state: "rest", model: "relay:default", effort: "high", mode: "acceptEdits" })}</div></div>`),
   ].join("");
 }

@@ -508,6 +508,7 @@ Every view on this page draws from the same few numbers.
 | **Icon · row** | 16 | anything that heads a row: sidebar, menu items, tiles |
 | **Icon · control** | 14 | inside a 12-pt control: chips, the action button, the ring |
 | **Icon · badge** | 10 | a mark on a word: the clock, the bolt, the check |
+| **Optical size** | √(w·h) = 11.5 of 16, long side ≤ 14 | every glyph that stands alone, at one 1.3-pt stroke (meters by width: 13 of 16) |
 | **Spacing** | 4, 8, 12, 16, 24 | every padding and gap (the README's 4-pt grid) |
 
 - **Corners are continuous** (Apple's squircle): the curve starts about
@@ -525,6 +526,13 @@ Every view on this page draws from the same few numbers.
   `corner-shape: squircle` (a superellipse, radius ×1.45 to match), which
   Chrome 139+ draws and Safari doesn't yet; there they show circular corners.
   The app's shapes are what the specimens show, not what the browser draws.
+- **Glyphs match by eye, not by box.** A glyph drawn to sit on a tile (the
+  tool kinds, ink ≈ 6 of 16) is too small on its own, and a sparse one
+  reads smaller than a solid one. Wherever a glyph stands alone it is scaled
+  so its ink covers the same area as the others and centred, its stroke kept
+  at one weight — SF Symbols' optical sizing. In AppKit, use SF Symbols where
+  one exists (`NSImage(systemSymbolName:)` with a `SymbolConfiguration` at
+  the size above), and draw custom glyphs to the same keylines.
 - **Words aren't cut.** A control's words are dropped whole when its glyph
   already says the same — the provider name first, then Effort's and Mode's
   names, kept in their tooltips — and a status sentence moves to its own

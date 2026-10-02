@@ -152,8 +152,8 @@ function chooseModel(s, v) {
   if (!m.auto && s.mode === "auto") { s.mode = "default"; flashLater(s, "mode"); }
   s.err = "";
   if (isNew(s)) LAST.model = v;
-  LW.refresh(s);
   flashLater(s, "model");
+  LW.refresh(s);
 }
 function echoModel(s, v) {
   appendRow(s, { type: "slash", name: "/model", args: v, out: `Set model to ${MODEL(v).short || MODEL(v).label}` });
@@ -168,14 +168,14 @@ function setFast(s, on, quiet) {
 function chooseEffort(s, v) {
   s.effort = v; // apply_flag_settings: from the next request, mid-turn included
   if (isNew(s)) LAST.effort = v;
-  LW.refresh(s);
   flashLater(s, "effort");
+  LW.refresh(s);
 }
 function chooseMode(s, v) {
   s.mode = v; // set_permission_mode: now
   if (isNew(s)) LAST.mode = v;
-  LW.refresh(s);
   flashLater(s, "mode");
+  LW.refresh(s);
 }
 function modeAvailable(s, v) {
   const m = MODEL(shownModel(s));

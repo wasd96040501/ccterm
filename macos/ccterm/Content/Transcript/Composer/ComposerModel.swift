@@ -11,7 +11,8 @@ import Foundation
 /// One model for both tabs: a New tab is `.draft`, a session tab
 /// `.session(…)`. Every rule of what can be chosen when is asked of
 /// `SessionSettings` / `SessionState`, never decided here; this only words
-/// their answers.
+/// their answers. What a phase means for the words (a process runs; a turn
+/// runs) is read from the phase itself.
 nonisolated struct ComposerModel: Equatable, Sendable {
     /// Where the composer is.
     enum Context: Equatable, Sendable {
@@ -167,36 +168,384 @@ nonisolated struct ComposerModel: Equatable, Sendable {
     var error: String?
     var commands: [SlashCommand]
 
+    /// A New tab's composer: its pop-ups and completion open below it (the
+    /// view is centred, with room under); a session's open above.
+    var isDraft: Bool
+    /// Whether the status slot's words come with the running arc (starting,
+    /// compacting).
+    var statusIsBusy: Bool
+    /// *50 %* beside the ring.
+    var contextRingText: String?
+    var contextRingToolTip: String?
+    var sendToolTip: String
+    var stopToolTip: String
+
     init(_ input: Input) {
-        // TODO(fill C): word every part from `input` (design 08, preview-live.js
-        // `accHTML`, `menuItems`, `MENU`); ComposerModelTests.
+        let facts = Facts(input)
+        isDraft = input.context == .draft
+        statusIsBusy = facts.isBusy
+        let percent = input.contextUsage.flatMap { $0 >= 0.5 ? Int((min($0, 1) * 100).rounded()) : nil }
+        contextRingText = percent.map { "\($0) %" }
+        contextRingToolTip = contextRingText.map {
+            String(localized: "\($0) of the context is used — click for /context")
+        }
+        sendToolTip = facts.isWorking ? String(localized: "Queue ↩") : String(localized: "Send ↩")
+        stopToolTip = facts.phase == .starting ? String(localized: "Cancel ⌘.") : String(localized: "Stop ⌘.")
         placeholder =
             input.context == .draft ? String(localized: "Ask Claude to…") : String(localized: "Message Claude")
-        let empty = Chip(
-            title: "", detail: nil, leadingGlyphs: [], trailingGlyph: nil, isEnabled: true, isDanger: false,
-            toolTip: nil, titleIsDroppable: false)
-        model = empty
-        effort = empty
-        mode = empty
-        modelSections = []
-        modelPanelHeader = nil
-        fastMode = FastModeSwitch(isOn: input.settings?.fastMode ?? false, isEnabled: false, subtitle: nil)
-        effortMenu = Menu(sections: [])
-        modeMenu = Menu(sections: [])
-        cycledMode = nil
-        status = nil
-        contextRing = nil
-        switch input.context {
-        case .draft:
-            action = .send
-        case .session(let phase, _, _):
-            switch phase {
-            case .starting, .responding, .compacting: action = .stop
-            default: action = .send
-            }
-        }
-        failure = nil
+        model = facts.modelChip()
+        effort = facts.effortChip()
+        mode = facts.modeChip()
+        modelSections = facts.modelSections()
+        modelPanelHeader =
+            facts.timing(of: .fastMode(facts.shownFast)) == .afterTurn
+            ? String(localized: "Applies after this turn") : nil
+        fastMode = facts.fastModeSwitch()
+        effortMenu = facts.effortMenu()
+        modeMenu = facts.modeMenu()
+        cycledMode = facts.cycledMode()
+        status = facts.status()
+        contextRing = input.contextUsage.flatMap { $0 >= 0.5 ? min($0, 1) : nil }
+        action = facts.isStoppable ? .stop : .send
+        failure = facts.failure()
         error = input.refusal
         commands = input.commands
+    }
+}
+
+// MARK: - Wording
+
+extension ComposerModel {
+    /// The five levels, in the order the menu lists them, with their names.
+    static var effortLevels: [(effort: Effort, name: String)] {
+        [
+            (.low, String(localized: "Low")),
+            (.medium, String(localized: "Medium")),
+            (.high, String(localized: "High")),
+            (.xhigh, String(localized: "Extra High")),
+            (.max, String(localized: "Max")),
+        ]
+    }
+
+    /// 1…5: how many bars of the meter a level fills.
+    static func meterLevel(of effort: Effort) -> Int {
+        (effortLevels.firstIndex { $0.effort == effort } ?? 0) + 1
+    }
+
+    /// A mode's menu name, its chip's short name and the line under it.
+    static func words(of mode: PermissionMode) -> (name: String, short: String, subtitle: String) {
+        switch mode {
+        case .default:
+            return (
+                String(localized: "Ask Permissions"), String(localized: "Ask"),
+                String(localized: "Asks before edits and commands")
+            )
+        case .acceptEdits:
+            return (
+                String(localized: "Accept Edits"), String(localized: "Accept Edits"),
+                String(localized: "Edits files without asking; asks before commands")
+            )
+        case .plan:
+            return (
+                planName, planName, String(localized: "Reads and plans; changes nothing")
+            )
+        case .auto:
+            return (
+                String(localized: "Auto"), String(localized: "Auto"),
+                String(localized: "Approves safe actions, asks when unsure")
+            )
+        case .dontAsk:
+            return (
+                String(localized: "Don’t Ask"), String(localized: "Don’t Ask"),
+                String(localized: "Runs only what’s already allowed")
+            )
+        case .bypassPermissions:
+            return (
+                String(localized: "Bypass Permissions"), String(localized: "Bypass"),
+                String(localized: "Runs everything without asking")
+            )
+        }
+    }
+
+    /// *Plan*, the permission mode — not the subscription plan's word, which
+    /// Settings already translates.
+    private static var planName: String { String(localized: "Plan (permission mode)", defaultValue: "Plan") }
+
+    /// The modes the menu lists above its separator, in its order; Bypass is
+    /// set apart under it.
+    static let menuModes: [PermissionMode] = [.default, .acceptEdits, .plan, .auto, .dontAsk]
+
+    /// A model's short name, as the chip says it: the name the CLI gives it,
+    /// except where that names an alias — the CLI's own default, or any model
+    /// of a provider, whose aliases are the provider's to define — which says
+    /// what it resolves to (`claude-sonnet-4-6` → *Sonnet 4.6*).
+    static func shortName(of model: InitializationResult.Model, isSubscription: Bool) -> String {
+        if let resolved = model.resolvedModel, model.value == "default" || !isSubscription,
+            let name = prettyModelName(resolved)
+        {
+            return name
+        }
+        return model.displayName
+    }
+
+    /// `claude-opus-5-5` → *Opus 5.5*, `claude-haiku-4-5-20251001` → *Haiku 4.5*;
+    /// `nil` for an id that doesn't follow the pattern (`deepseek-v3.2`).
+    static func prettyModelName(_ id: String) -> String? {
+        var parts = id.split(separator: "-").map(String.init)
+        guard parts.first == "claude" else { return nil }
+        parts.removeFirst()
+        if let last = parts.last, last.count == 8, last.allSatisfy(\.isNumber) { parts.removeLast() }
+        guard let family = parts.first, family.allSatisfy(\.isLetter) else { return nil }
+        let digits = parts.dropFirst()
+        guard !digits.isEmpty, digits.allSatisfy({ $0.allSatisfy(\.isNumber) }) else { return nil }
+        return "\(family.capitalized) \(digits.joined(separator: "."))"
+    }
+
+    /// What the words are made from: the input, with the answers to the
+    /// questions every part asks (which model is shown, whether a process
+    /// runs, whether a turn does).
+    fileprivate struct Facts {
+        let input: Input
+        let settings: SessionSettings?
+        let shownModel: ModelChoice?
+        let shownFast: Bool
+        let account: AccountCatalog?
+        let model: InitializationResult.Model?
+
+        init(_ input: Input) {
+            self.input = input
+            settings = input.settings
+            shownModel = input.pendingModel ?? input.settings?.model
+            shownFast = input.pendingFastMode ?? input.settings?.fastMode ?? false
+            account = shownModel.flatMap { input.catalog.account($0.account) }
+            model = shownModel.flatMap { input.catalog.model($0) }
+        }
+
+        var phase: SessionState.Phase? {
+            if case .session(let phase, _, _) = input.context { return phase }
+            return nil
+        }
+
+        /// A turn runs (the phase's own rule).
+        var isWorking: Bool { phase?.isWorking == true }
+
+        /// When `change` lands from the shown settings (the phase's rule).
+        func timing(of change: SessionSettings.Change) -> SessionState.ChangeTiming? {
+            guard let phase, let settings else { return nil }
+            return phase.timing(of: change, from: settings)
+        }
+
+        /// Stop is what the action button does (and it cancels a launch).
+        var isStoppable: Bool {
+            switch phase {
+            case .starting, .responding, .compacting: true
+            default: false
+            }
+        }
+
+        /// The running arc goes with the status words.
+        var isBusy: Bool { phase == .starting || phase == .compacting }
+
+        var hasPendingChange: Bool { input.pendingModel != nil || input.pendingFastMode != nil }
+
+        var modelName: String {
+            guard let choice = shownModel else { return String(localized: "Loading…") }
+            if let model { return ComposerModel.shortName(of: model, isSubscription: account?.isSubscription ?? true) }
+            return choice.value == "default" ? String(localized: "Default") : choice.value
+        }
+
+        /// A model the catalog doesn't know yet is taken to offer every level.
+        var takesEffort: Bool { model?.supportedEffortLevels.isEmpty != true }
+
+        /// The level that will run; `nil` for a model that takes none.
+        var shownEffort: Effort? {
+            guard let settings, takesEffort else { return nil }
+            return settings.effectiveEffort(catalog: input.catalog)
+        }
+
+        // MARK: Chips
+
+        func modelChip() -> Chip {
+            guard settings != nil else {
+                return Chip(
+                    title: String(localized: "Loading…"), detail: nil, leadingGlyphs: [], trailingGlyph: nil,
+                    isEnabled: false, isDanger: false, toolTip: nil, titleIsDroppable: false)
+            }
+            let provider = account.flatMap { $0.isSubscription ? nil : $0.name }
+            var tip = [account?.name, model?.resolvedModel ?? modelName].compactMap { $0 }.joined(separator: " · ")
+            if hasPendingChange { tip += " — " + String(localized: "switches after this turn") }
+            return Chip(
+                title: modelName, detail: provider, leadingGlyphs: shownFast ? [.fast] : [],
+                trailingGlyph: hasPendingChange ? .later : nil, isEnabled: true, isDanger: false,
+                toolTip: tip, titleIsDroppable: false)
+        }
+
+        func effortChip() -> Chip {
+            guard settings != nil, let level = shownEffort else {
+                let tip = settings == nil ? nil : String(localized: "\(modelName) doesn’t take an effort level")
+                return Chip(
+                    title: "—", detail: nil, leadingGlyphs: [.effort(level: nil)], trailingGlyph: nil,
+                    isEnabled: false, isDanger: false, toolTip: tip, titleIsDroppable: true)
+            }
+            let name = ComposerModel.effortLevels.first { $0.effort == level }?.name ?? level.rawValue
+            return Chip(
+                title: name, detail: nil, leadingGlyphs: [.effort(level: ComposerModel.meterLevel(of: level))],
+                trailingGlyph: nil, isEnabled: true, isDanger: false,
+                toolTip: String(localized: "Effort: \(name)"), titleIsDroppable: true)
+        }
+
+        func modeChip() -> Chip {
+            let mode = settings?.permissionMode ?? .default
+            let words = ComposerModel.words(of: mode)
+            return Chip(
+                title: words.short, detail: nil, leadingGlyphs: [.permissionMode(mode)], trailingGlyph: nil,
+                isEnabled: settings != nil, isDanger: mode == .bypassPermissions, toolTip: words.name,
+                titleIsDroppable: true)
+        }
+
+        // MARK: Menus
+
+        func effortMenu() -> Menu {
+            guard settings != nil else { return Menu(sections: []) }
+            let supported = model.map { Set($0.supportedEffortLevels) }
+            let defaultEffort = shownModel.flatMap { SessionSettings.defaultEffort(for: $0, catalog: input.catalog) }
+            let items = ComposerModel.effortLevels.map { level, name -> Item in
+                let isOffered = supported?.contains(level.rawValue) ?? true
+                let subtitle: String?
+                if !isOffered {
+                    subtitle = String(localized: "Not on \(modelName)")
+                } else if level == defaultEffort {
+                    subtitle = String(localized: "Default")
+                } else if level == .max {
+                    subtitle = String(localized: "This session only")
+                } else {
+                    subtitle = nil
+                }
+                return Item(
+                    title: name, subtitle: subtitle, glyph: .effort(level: ComposerModel.meterLevel(of: level)),
+                    isChecked: shownEffort == level, isEnabled: isOffered, isDanger: false,
+                    change: .effort(level), restarts: false)
+            }
+            return Menu(sections: [
+                Menu.Section(header: String(localized: "Effort · \(modelName)"), headerHint: nil, items: items)
+            ])
+        }
+
+        func modeMenu() -> Menu {
+            guard let settings else { return Menu(sections: []) }
+            func item(_ mode: PermissionMode) -> Item {
+                let words = ComposerModel.words(of: mode)
+                let why = settings.unavailability(
+                    of: mode, catalog: input.catalog, allowsBypassPermissions: input.allowsBypassPermissions)
+                return Item(
+                    title: words.name, subtitle: why ?? words.subtitle, glyph: .permissionMode(mode),
+                    isChecked: settings.permissionMode == mode, isEnabled: why == nil,
+                    isDanger: mode == .bypassPermissions, change: .permissionMode(mode), restarts: false)
+            }
+            return Menu(sections: [
+                Menu.Section(
+                    header: String(localized: "Permission Mode"), headerHint: "⇧⇥",
+                    items: ComposerModel.menuModes.map(item)),
+                Menu.Section(header: nil, headerHint: nil, items: [item(.bypassPermissions)]),
+            ])
+        }
+
+        func cycledMode() -> SessionSettings.Change? {
+            guard let settings else { return nil }
+            let next = settings.nextCycledMode(
+                catalog: input.catalog, allowsBypassPermissions: input.allowsBypassPermissions)
+            return next == settings.permissionMode ? nil : .permissionMode(next)
+        }
+
+        // MARK: The model panel
+
+        func modelSections() -> [ModelSection] {
+            guard let settings else { return [] }
+            let current = shownModel
+            return input.catalog.accounts.map { account in
+                let restarts =
+                    timing(of: .model(ModelChoice(account: account.id, value: "default"))) == .restart
+                func item(_ model: InitializationResult.Model) -> Item {
+                    let short = ComposerModel.shortName(of: model, isSubscription: account.isSubscription)
+                    let subtitle: String?
+                    if !account.isSubscription {
+                        subtitle = model.resolvedModel.flatMap { $0 == model.displayName ? nil : $0 }
+                    } else if model.value == "default", short != model.displayName {
+                        subtitle = short
+                    } else {
+                        subtitle = nil
+                    }
+                    let choice = ModelChoice(account: account.id, value: model.value)
+                    return Item(
+                        title: model.displayName, subtitle: subtitle, glyph: nil, isChecked: choice == current,
+                        isEnabled: !model.isDisabled, isDanger: false, change: .model(choice), restarts: restarts)
+                }
+                let count = min(max(account.shownModelCount, 0), account.models.count)
+                var shown = Array(account.models[..<count])
+                var folded = Array(account.models[count...])
+                // The current model is never folded away.
+                if let current, current.account == account.id, folded.contains(where: { $0.value == current.value }) {
+                    shown += folded
+                    folded = []
+                }
+                let note: String?
+                if !account.isLoaded {
+                    note = String(localized: "Loading…")
+                } else if restarts {
+                    note = String(localized: "Restarts the session")
+                } else {
+                    note = nil
+                }
+                return ModelSection(
+                    id: account.id, name: account.name, detail: account.detail,
+                    glyph: account.isSubscription ? .subscription : .provider, note: note,
+                    items: shown.map(item), foldedItems: folded.map(item))
+            }
+        }
+
+        func fastModeSwitch() -> FastModeSwitch {
+            guard settings != nil else { return FastModeSwitch(isOn: false, isEnabled: false, subtitle: nil) }
+            let supports = model?.supportsFastMode ?? false
+            let reason = account?.fastModeUnavailableReason
+            let subtitle: String
+            if let reason {
+                subtitle = reason
+            } else if !supports {
+                if account?.isSubscription ?? true {
+                    let names =
+                        input.catalog.subscription?.models.filter { $0.supportsFastMode && $0.value != "default" }
+                        .map(\.displayName) ?? []
+                    subtitle =
+                        names.isEmpty
+                        ? String(localized: "Not on this model")
+                        : String(localized: "\(ListFormatter.localizedString(byJoining: names)) only")
+                } else {
+                    subtitle = String(localized: "Only with the subscription")
+                }
+            } else if input.pendingFastMode != nil, timing(of: .fastMode(shownFast)) == .afterTurn {
+                subtitle = String(localized: "After this turn")
+            } else {
+                subtitle = String(localized: "Faster output on Opus · billed as extra usage")
+            }
+            return FastModeSwitch(isOn: shownFast, isEnabled: supports && reason == nil, subtitle: subtitle)
+        }
+
+        // MARK: Status, failure
+
+        func status() -> Status? {
+            guard case .session(let phase, let isWaiting, let isVisible) = input.context else { return nil }
+            if isWaiting, !isVisible { return .waitingForYou(String(localized: "Waiting for you ↑")) }
+            switch phase {
+            case .starting: return .note(String(localized: "Starting Claude…"))
+            case .compacting: return .note(String(localized: "Compacting…"))
+            case .atRest: return .note(String(localized: "Will resume when you send"))
+            default: return nil
+            }
+        }
+
+        func failure() -> Failure? {
+            guard case .failed(let failure) = phase else { return nil }
+            return Failure(title: String(localized: "Claude quit unexpectedly"), detail: failure.message)
+        }
     }
 }

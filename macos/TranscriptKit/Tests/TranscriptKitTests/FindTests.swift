@@ -782,7 +782,7 @@ final class FindTests: XCTestCase {
     func testACappedBubblesHitsFollowTheWidth() async {
         let lines = (1...40).map { String(format: "item%02d alpha beta gamma", $0) }
         let host = mount(
-            FindHost(contents: [.userMessage(lines.joined(separator: "\n"))]), width: 800)
+            FindHost(contents: [.userMessage(.init(lines.joined(separator: "\n")))]), width: 800)
 
         mounted.transcript.find("item09")
         await mounted.settleFind()

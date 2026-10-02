@@ -25,8 +25,27 @@ final class QuestionRowViewSnapshotTests: XCTestCase {
     private static let several =
         #"[{"question":"Which platforms should the first release support, and is there anything about the split editor we should settle before then?","header":"Targets","options":[{"label":"macOS","description":"14 and later"},{"label":"iOS","description":""},{"label":"visionOS","description":"Later"}],"multiSelect":true},{"question":"Ship it?","header":"Release","options":[{"label":"Yes","description":""},{"label":"No","description":"Wait for the next build"}],"multiSelect":false}]"#
 
+    private static let previewed =
+        #"[{"question":"Which layout do you want?","header":"Layout","options":[{"label":"Split","description":"Two editors side by side","preview":"+------+------+\n| code | doc  |\n+------+------+"},{"label":"Tabs","description":"One editor, many tabs","preview":"[a][b][c]\n+---------+\n| editor  |\n+---------+"}],"multiSelect":false}]"#
+
+    private func failed(_ json: String, _ message: String) throws -> Question {
+        var model = try question(json, answers: [:])
+        let call = ToolCall(
+            use: model.call.use, result: nil, kind: .other, state: .failed(message: message), startedAt: nil,
+            finishedAt: nil)
+        model = Question(
+            call: call,
+            questions: try JSONDecoder().decode(
+                Tools.AskUserQuestion.Input.self, from: Data(#"{"questions":\#(json)}"#.utf8)
+            ).questions, answers: [:])
+        return model
+    }
+
     private func models() throws -> [Question] {
         [
+            try question(Self.one, answers: ["Which library should we use for date formatting?": "Day.js"]),
+            try failed(Self.one, "The user wants to clarify these questions. Start by asking."),
+            try question(Self.previewed, answers: [:], waiting: true),
             try question(Self.one, answers: ["Which library should we use for date formatting?": "date-fns"]),
             try question(
                 Self.several,

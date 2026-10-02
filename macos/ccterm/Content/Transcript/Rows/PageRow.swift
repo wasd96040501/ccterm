@@ -19,9 +19,13 @@ nonisolated struct PageRow: Sendable, Equatable, Identifiable {
     }
 
     enum Part: Hashable, Sendable {
-        /// The entry's own row: a run's or news's line, a prompt, a reply, a
-        /// capsule, a divider, a question.
+        /// The entry's own row: a run's or news's line, a prompt's or command's
+        /// bubble, a reply, a divider, a question.
         case main
+        /// The thumbnails of the pictures pasted into a prompt, over its bubble.
+        case attachments
+        /// The line under a bubble: a command's output, where a prompt has got to.
+        case note
         /// A message's or plan's caption, above its words.
         case caption
         /// A message's or plan's words, under its caption.
@@ -37,8 +41,13 @@ nonisolated struct PageRow: Sendable, Equatable, Identifiable {
     }
 
     enum Kind: Sendable, Equatable {
-        /// What the user typed — TranscriptKit's bubble.
-        case prompt(String)
+        /// What the user typed or ran — TranscriptKit's bubble, with a command
+        /// or a picture as a token.
+        case prompt(Bubble)
+        /// The pictures pasted into a prompt, as thumbnails.
+        case attachments([PromptImage])
+        /// The line under a bubble.
+        case note(Note)
         /// Markdown TranscriptKit renders: a reply, a message's or plan's words.
         case markdown(String)
         case runLine(ToolRun, RunDisclosure)
@@ -50,7 +59,6 @@ nonisolated struct PageRow: Sendable, Equatable, Identifiable {
         case newsItem(TaskNews)
         /// A subagent's report: its line, which opens the words beside.
         case agentReport(AgentMessage)
-        case command(LocalCommand)
         case divider(SessionDivider)
         case interruption
         case caption(Caption)
@@ -67,8 +75,8 @@ nonisolated struct PageRow: Sendable, Equatable, Identifiable {
     /// nothing. An item, or a line that is its only item.
     var opens: String? {
         switch kind {
-        case .runItem(let item): item.id
-        case .runLine(let run, _): run.isSingle ? run.items[0].id : nil
+        case .runItem(let item): item.opensBeside ? item.id : nil
+        case .runLine(let run, _): run.isSingle && run.items[0].opensBeside ? run.items[0].id : nil
         case .newsItem(let news): news.id
         case .newsLine(let news, _): news.isSingle ? news.news[0].id : nil
         case .agentReport(let message): message.id
@@ -88,8 +96,12 @@ nonisolated extension PageRow {
         let id = entry.id
         func row(_ part: Part, _ kind: Kind) -> PageRow { PageRow(id: ID(entry: id, part: part), kind: kind) }
         switch entry {
-        case .prompt(_, let text):
-            return [row(.main, .prompt(text))]
+        case .prompt(let prompt):
+            var rows: [PageRow] = []
+            if !prompt.images.isEmpty { rows.append(row(.attachments, .attachments(prompt.images))) }
+            if let bubble = prompt.bubble { rows.append(row(.main, .prompt(bubble))) }
+            if let note = prompt.note { rows.append(row(.note, .note(note))) }
+            return rows
         case .reply(_, let markdown):
             return [row(.main, .markdown(markdown))]
         case .run(let run):
@@ -115,7 +127,9 @@ nonisolated extension PageRow {
             }
             return rows
         case .command(let command):
-            return [row(.main, .command(command))]
+            var rows = [row(.main, .prompt(command.bubble))]
+            if let note = command.note { rows.append(row(.note, .note(note))) }
+            return rows
         case .divider(let divider):
             return [row(.main, .divider(divider))]
         case .interruption:

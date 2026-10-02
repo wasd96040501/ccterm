@@ -27,10 +27,19 @@ nonisolated enum DocumentContent: Sendable, Equatable {
     /// What a background agent, workflow or monitor reported. A command's
     /// news opens the command's own document instead.
     case news(TaskNews)
-    /// A slash command's output, too long for the line under its capsule.
+    /// A slash command's output, too long for the line under its bubble.
     case commandOutput(LocalCommand)
     /// The summary a compaction left for the model to continue from.
     case compactionSummary(String)
+    /// The advisor's advice, in the clear: its words, the advisor's model as the
+    /// status.
+    case advice(ToolCall)
+    /// What Claude sent another party with `SendMessage`.
+    case sentMessage(ToolCall)
+    /// The words the CLI wrote to start a turn nobody typed.
+    case continuationPrompt(String)
+    /// A picture pasted into a prompt, at its size.
+    case image(PromptImage)
     /// Any other tool: its input and its result, as they were recorded.
     case other(ToolCall)
 }

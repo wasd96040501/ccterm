@@ -285,7 +285,7 @@ private final class UserMessageHost: NSObject, TranscriptViewDataSource, Transcr
         switch messages[row] {
         case Self.hostRowMarker: content = .view
         case Self.markdownMarker: content = .markdown("# A document")
-        default: content = .userMessage(messages[row])
+        default: content = .userMessage(.init(messages[row]))
         }
         return TranscriptRow(id: ids[row], content: content)
     }

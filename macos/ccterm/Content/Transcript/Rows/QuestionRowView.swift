@@ -5,13 +5,19 @@ import AppKit
 /// answers (07-talk.md "AskUserQuestion").
 ///
 /// The tile heads the first question; each question is its header (13-pt
-/// secondary), the question (14-pt label) and its options — chosen ones with
-/// a filled mark in label colour, the others hollow and tertiary — 12 pt
-/// apart. While it waits the options are radio buttons or checkboxes and
-/// **Submit** (⌘↩) sits under them.
+/// secondary, *Choose any* after it when several may be picked), the question
+/// (14-pt label) and its options, 12 pt apart. An option is two lines — its
+/// label and, under it, its description, both wrapped and never cut — with the
+/// mark on the label's line: chosen ones filled and in label colour, the others
+/// hollow and tertiary. While it waits the marks are radio buttons or
+/// checkboxes, the last option of each question is *Other* (a text field), an
+/// option with a preview shows it beside the list with a *Notes* field, and
+/// **Submit** (⌘↩, enabled once every question has an answer) and *Chat About
+/// This* sit under them; ⎋ declines.
 ///
 /// Laid out by hand from `Metrics`, the one formula `height(for:width:)` also
-/// answers with: the row is exactly as tall as what it lays out.
+/// answers with: the row is exactly as tall as what it lays out, whatever is
+/// picked — the preview's room is reserved.
 @MainActor
 final class QuestionRowView: NSView, PageRowView {
     typealias Model = Question
@@ -24,93 +30,243 @@ final class QuestionRowView: NSView, PageRowView {
     private static let headerHeight: CGFloat = 16
     private static let headerGap: CGFloat = 2
     private static let textGap: CGFloat = 6
-    private static let optionHeight: CGFloat = 22
-    private static let optionGap: CGFloat = 6
+    private static let optionPad: CGFloat = 3
+    private static let lineGap: CGFloat = 1
     private static let markColumn: CGFloat = 22
     private static let itemGap: CGFloat = 12
-    private static let submitGap: CGFloat = 8
-    private static let submitHeight: CGFloat = 22
+    private static let buttonsGap: CGFloat = 8
+    private static let buttonsHeight: CGFloat = 22
+    private static let otherHeight: CGFloat = 28
+    private static let previewHeight: CGFloat = 96
+    private static let notesHeight: CGFloat = 24
+    private static let previewGap: CGFloat = 8
+    private static let columnGap: CGFloat = 16
+    /// Wide enough to set a preview beside the options.
+    private static let besideWidth: CGFloat = 480
+    private static let outcomeGap: CGFloat = 6
+    private static let outcomeHeight: CGFloat = 16
 
     private static let headerFont = NSFont.systemFont(ofSize: 13)
     private static let textFont = NSFont.systemFont(ofSize: 14)
     private static let optionFont = NSFont.systemFont(ofSize: 13)
     private static let detailFont = NSFont.systemFont(ofSize: 12)
+    private static let previewFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+
+    // MARK: - Metrics
 
     /// Where everything goes at one width — measured from the model alone.
     private struct Metrics {
-        struct Item {
+        struct Option {
             var top: CGFloat
-            var headerTop: CGFloat?
-            var textTop: CGFloat
-            var textHeight: CGFloat
-            var optionsTop: CGFloat
+            var labelHeight: CGFloat
+            var detailHeight: CGFloat
             var height: CGFloat
         }
 
-        var items: [Item]
-        var submitTop: CGFloat?
-        var height: CGFloat
+        struct Item {
+            var headerTop: CGFloat?
+            var textTop: CGFloat
+            var textHeight: CGFloat
+            var listTop: CGFloat
+            var listWidth: CGFloat
+            var options: [Option]
+            /// The *Other* row, while waiting.
+            var otherTop: CGFloat?
+            var listHeight: CGFloat
+            /// The preview and notes column, when the question has previews.
+            var previewOrigin: CGPoint?
+            var previewWidth: CGFloat
+            var top: CGFloat
+        }
+
+        var items: [Item] = []
+        var buttonsTop: CGFloat?
+        var outcomeTop: CGFloat?
+        var height: CGFloat = 0
 
         init(_ model: Question, width: CGFloat) {
             let available = max(0, width - QuestionRowView.tileColumn)
             var y: CGFloat = 0
-            items = []
             for (index, item) in model.items.enumerated() {
                 if index > 0 { y += QuestionRowView.itemGap }
                 var laid = Item(
-                    top: y, headerTop: nil, textTop: y, textHeight: 0, optionsTop: y, height: 0)
+                    headerTop: nil, textTop: y, textHeight: 0, listTop: y, listWidth: available, options: [],
+                    otherTop: nil, listHeight: 0, previewOrigin: nil, previewWidth: 0, top: y)
                 var cursor = y
-                if !item.header.isEmpty {
+                if !item.header.isEmpty || item.hint != nil {
                     laid.headerTop = cursor
                     cursor += QuestionRowView.headerHeight + QuestionRowView.headerGap
                 }
                 laid.textTop = cursor
                 laid.textHeight = QuestionRowView.wrappedHeight(
                     item.text, font: QuestionRowView.textFont, width: available)
-                cursor += laid.textHeight
-                if !item.options.isEmpty { cursor += QuestionRowView.textGap }
-                laid.optionsTop = cursor
-                cursor += QuestionRowView.optionHeight * CGFloat(item.options.count)
-                laid.height = cursor - y
+                cursor += laid.textHeight + QuestionRowView.textGap
+                laid.listTop = cursor
+
+                let previewing = model.isWaiting && item.hasPreviews
+                let beside = previewing && available >= QuestionRowView.besideWidth
+                laid.listWidth = beside ? (available * 0.55).rounded(.down) : available
+                let inner = max(0, laid.listWidth - QuestionRowView.markColumn)
+                var top: CGFloat = 0
+                for option in item.options {
+                    let label = QuestionRowView.wrappedHeight(
+                        option.label, font: QuestionRowView.optionFont, width: inner)
+                    let detail =
+                        option.detail.isEmpty
+                        ? 0
+                        : QuestionRowView.wrappedHeight(option.detail, font: QuestionRowView.detailFont, width: inner)
+                    let height =
+                        2 * QuestionRowView.optionPad + label + (detail > 0 ? QuestionRowView.lineGap + detail : 0)
+                    laid.options.append(Option(top: top, labelHeight: label, detailHeight: detail, height: height))
+                    top += height
+                }
+                if model.isWaiting {
+                    laid.otherTop = top
+                    top += QuestionRowView.otherHeight
+                }
+                laid.listHeight = top
+                let previewColumn =
+                    QuestionRowView.previewHeight + QuestionRowView.previewGap + QuestionRowView.notesHeight
+                if previewing {
+                    if beside {
+                        laid.previewOrigin = CGPoint(
+                            x: laid.listWidth + QuestionRowView.columnGap, y: laid.listTop)
+                        laid.previewWidth = available - laid.listWidth - QuestionRowView.columnGap
+                        cursor += max(top, previewColumn)
+                    } else {
+                        laid.previewOrigin = CGPoint(x: 0, y: laid.listTop + top + QuestionRowView.previewGap)
+                        laid.previewWidth = available
+                        cursor += top + QuestionRowView.previewGap + previewColumn
+                    }
+                } else {
+                    cursor += top
+                }
                 items.append(laid)
                 y = cursor
             }
             if model.isWaiting {
-                y += QuestionRowView.submitGap
-                submitTop = y
-                y += QuestionRowView.submitHeight
-            } else {
-                submitTop = nil
+                y += QuestionRowView.buttonsGap
+                buttonsTop = y
+                y += QuestionRowView.buttonsHeight
+            } else if model.outcome != nil {
+                y += QuestionRowView.outcomeGap
+                outcomeTop = y
+                y += QuestionRowView.outcomeHeight
             }
             height = max(y, QuestionRowView.tileSide)
         }
     }
 
-    /// A question's options: their own superview, so radio buttons group by
-    /// question, and top-down like the row.
-    private final class OptionsView: NSView {
-        override var isFlipped: Bool { true }
-    }
+    // MARK: - Views
 
-    private struct OptionViews {
-        /// Live: a radio button or checkbox with the label as its title.
-        var button: NSButton?
-        /// Answered: the mark.
-        var mark: NSImageView?
-        var label: NSTextField?
-        var detail: NSTextField
+    /// One option: a mark, its label and its description, hovered and pressed
+    /// while it waits. *Other* swaps its label for a text field.
+    private final class OptionView: NSView {
+        let mark = NSImageView()
+        let label: NSTextField
+        let detail: NSTextField
+        let field: NSTextField?
+        var onPress: (() -> Void)?
+        private let isLive: Bool
+        private var isHovered = false {
+            didSet { needsDisplay = true }
+        }
+
+        init(label: String, detail: String, live: Bool, typed placeholder: String? = nil) {
+            self.isLive = live
+            self.label = NSTextField(wrappingLabelWithString: label)
+            self.detail = NSTextField(wrappingLabelWithString: detail)
+            if let placeholder {
+                let field = NSTextField()
+                field.placeholderString = placeholder
+                field.font = QuestionRowView.optionFont
+                field.isBordered = false
+                field.drawsBackground = false
+                field.focusRingType = .none
+                field.lineBreakMode = .byTruncatingTail
+                self.field = field
+            } else {
+                field = nil
+            }
+            super.init(frame: .zero)
+            for text in [self.label, self.detail] {
+                text.isSelectable = false
+                text.maximumNumberOfLines = 0
+                text.lineBreakMode = .byWordWrapping
+            }
+            self.label.font = QuestionRowView.optionFont
+            self.detail.font = QuestionRowView.detailFont
+            self.detail.isHidden = detail.isEmpty
+            self.label.isHidden = placeholder != nil
+            mark.imageScaling = .scaleNone
+            for view in [mark, self.label, self.detail, field].compactMap({ $0 }) { addSubview(view) }
+            wantsLayer = true
+            layer?.cornerRadius = 6
+            layer?.cornerCurve = .continuous
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+        override var isFlipped: Bool { true }
+
+        override var wantsUpdateLayer: Bool { true }
+
+        override func updateLayer() {
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                layer?.backgroundColor = (isLive && isHovered ? NSColor.quaternarySystemFill : .clear).cgColor
+            }
+        }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            for area in trackingAreas { removeTrackingArea(area) }
+            if isLive {
+                addTrackingArea(
+                    NSTrackingArea(
+                        rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+                )
+            }
+        }
+
+        override func mouseEntered(with event: NSEvent) { isHovered = true }
+        override func mouseExited(with event: NSEvent) { isHovered = false }
+
+        override func mouseDown(with event: NSEvent) {
+            guard isLive else { return super.mouseDown(with: event) }
+            onPress?()
+        }
+
+        func layoutContent(_ metrics: Metrics.Option?) {
+            let inner = max(0, bounds.width - QuestionRowView.markColumn)
+            let pad = QuestionRowView.optionPad
+            mark.frame = NSRect(x: 0, y: pad, width: 16, height: 16)
+            if let field {
+                field.frame = NSRect(
+                    x: QuestionRowView.markColumn, y: (bounds.height - 18) / 2, width: inner, height: 18)
+                return
+            }
+            guard let metrics else { return }
+            label.frame = NSRect(x: QuestionRowView.markColumn, y: pad, width: inner, height: metrics.labelHeight)
+            detail.frame = NSRect(
+                x: QuestionRowView.markColumn, y: pad + metrics.labelHeight + QuestionRowView.lineGap, width: inner,
+                height: metrics.detailHeight)
+        }
     }
 
     private struct ItemViews {
         var header: NSTextField?
         var text: NSTextField
-        /// Radio buttons group by their superview, so each question has its own.
-        var options: NSView
-        var optionViews: [OptionViews]
+        var options: [OptionView]
+        var other: OptionView?
+        var previewBox: NSView?
+        var preview: NSTextField?
+        var notes: NSTextField?
     }
 
     private let tileView = TileView()
     private var itemViews: [ItemViews] = []
+    private let outcome = NSTextField(labelWithString: "")
     private lazy var submit: NSButton = {
         let button = PillButton(title: String(localized: "Submit"), keys: "⌘↩", isPrimary: true)
         button.target = self
@@ -119,11 +275,30 @@ final class QuestionRowView: NSView, PageRowView {
         button.keyEquivalentModifierMask = .command
         return button
     }()
+    private lazy var chat: NSButton = {
+        let button = NSButton()
+        button.isBordered = false
+        button.attributedTitle = NSAttributedString(
+            string: String(localized: "Chat About This"),
+            attributes: [.font: Self.optionFont, .foregroundColor: NSColor.secondaryLabelColor])
+        button.target = self
+        button.action = #selector(chatPressed(_:))
+        return button
+    }()
     private var model: Question?
+
+    /// What the reader has picked: per question, the options (the *Other* row is
+    /// one past the last), what they typed in *Other*, and their notes.
+    private var picks: [Set<Int>] = []
+    private var typed: [String] = []
+    private var notes: [String] = []
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         addSubview(tileView)
+        outcome.font = .systemFont(ofSize: 11)
+        outcome.textColor = .tertiaryLabelColor
+        addSubview(outcome)
     }
 
     convenience init() {
@@ -134,6 +309,8 @@ final class QuestionRowView: NSView, PageRowView {
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     override var isFlipped: Bool { true }
+
+    override var acceptsFirstResponder: Bool { model?.isWaiting == true }
 
     static func height(for model: Question, width: CGFloat) -> CGFloat {
         Metrics(model, width: width).height
@@ -146,13 +323,13 @@ final class QuestionRowView: NSView, PageRowView {
         cell.font = font
         cell.wraps = true
         cell.lineBreakMode = .byWordWrapping
-        return ceil(cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: width, height: 100_000)).height)
+        return ceil(cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: max(width, 1), height: 100_000)).height)
     }
 
     func configure(with model: Question) {
         tileView.tile = model.tile
-        // Answers ticked so far belong to this row's model; the same model
-        // again keeps them.
+        // What is picked so far belongs to this row's model; the same model
+        // again keeps it.
         guard model != self.model else { return }
         self.model = model
         rebuild(model)
@@ -160,61 +337,112 @@ final class QuestionRowView: NSView, PageRowView {
 
     private func rebuild(_ model: Question) {
         for views in itemViews {
-            views.header?.removeFromSuperview()
-            views.text.removeFromSuperview()
-            views.options.removeFromSuperview()
+            for view in [views.header, views.text, views.previewBox, views.notes] { view?.removeFromSuperview() }
+            for option in views.options + [views.other].compactMap({ $0 }) { option.removeFromSuperview() }
         }
         submit.removeFromSuperview()
-        itemViews = model.items.map { item in
-            let header =
-                item.header.isEmpty ? nil : label(item.header, font: Self.headerFont, color: .secondaryLabelColor)
+        chat.removeFromSuperview()
+        picks = model.items.map { _ in [] }
+        typed = model.items.map { _ in "" }
+        notes = model.items.map { _ in "" }
+        outcome.stringValue = model.outcome ?? ""
+        outcome.isHidden = model.outcome == nil || model.isWaiting
+
+        itemViews = model.items.enumerated().map { index, item in
+            let header = headerField(item)
             let text = label(item.text, font: Self.textFont, color: .labelColor)
             text.maximumNumberOfLines = 0
             text.lineBreakMode = .byWordWrapping
-            text.cell?.wraps = true
-            let container = OptionsView()
-            let optionViews = item.options.map { option in
-                makeOption(option, of: item, waiting: model.isWaiting, in: container)
+            let options = item.options.enumerated().map { position, option in
+                makeOption(option, of: item, item: index, position: position, waiting: model.isWaiting)
             }
-            for view in [header, text, container].compactMap({ $0 }) { addSubview(view) }
-            return ItemViews(header: header, text: text, options: container, optionViews: optionViews)
+            var other: OptionView?
+            var box: NSView?
+            var preview: NSTextField?
+            var notesField: NSTextField?
+            if model.isWaiting {
+                let view = OptionView(label: "", detail: "", live: true, typed: item.otherLabel)
+                view.field?.delegate = self
+                view.field?.tag = index
+                view.onPress = { [weak self, weak view] in
+                    self?.pickOther(item: index)
+                    view?.field.map { self?.window?.makeFirstResponder($0) }
+                }
+                view.mark.image = mark(for: item, picked: false)
+                view.mark.contentTintColor = .tertiaryLabelColor
+                other = view
+                if item.hasPreviews {
+                    box = PreviewBox()
+                    let words = NSTextField(wrappingLabelWithString: "")
+                    words.font = Self.previewFont
+                    words.textColor = .secondaryLabelColor
+                    words.isSelectable = false
+                    words.maximumNumberOfLines = 0
+                    box?.addSubview(words)
+                    preview = words
+                    let field = NSTextField()
+                    field.placeholderString = item.notesPlaceholder
+                    field.font = .systemFont(ofSize: 12)
+                    field.bezelStyle = .roundedBezel
+                    field.delegate = self
+                    field.tag = 1000 + index
+                    notesField = field
+                }
+            }
+            for view in [header, text, box, notesField, other].compactMap({ $0 }) { addSubview(view) }
+            for option in options { addSubview(option) }
+            return ItemViews(
+                header: header, text: text, options: options, other: other, previewBox: box, preview: preview,
+                notes: notesField)
         }
         if model.isWaiting {
             addSubview(submit)
-            updateSubmit()
+            addSubview(chat)
+            update()
         }
         needsLayout = true
     }
 
-    private func makeOption(
-        _ option: Question.Item.Option, of item: Question.Item, waiting: Bool, in container: NSView
-    ) -> OptionViews {
-        let detail = label(option.detail, font: Self.detailFont, color: .tertiaryLabelColor)
-        detail.isHidden = option.detail.isEmpty
-        container.addSubview(detail)
-        if waiting {
-            let button =
-                item.allowsSeveral
-                ? NSButton(checkboxWithTitle: option.label, target: self, action: #selector(optionPressed(_:)))
-                : NSButton(radioButtonWithTitle: option.label, target: self, action: #selector(optionPressed(_:)))
-            button.font = Self.optionFont
-            button.lineBreakMode = .byTruncatingTail
-            container.addSubview(button)
-            return OptionViews(button: button, mark: nil, label: nil, detail: detail)
+    private func headerField(_ item: Question.Item) -> NSTextField? {
+        guard !item.header.isEmpty || item.hint != nil else { return nil }
+        let words = NSMutableAttributedString(
+            string: item.header,
+            attributes: [.font: Self.headerFont, .foregroundColor: NSColor.secondaryLabelColor])
+        if let hint = item.hint {
+            words.append(
+                NSAttributedString(
+                    string: (item.header.isEmpty ? "" : "  ") + hint,
+                    attributes: [.font: Self.headerFont, .foregroundColor: NSColor.tertiaryLabelColor]))
         }
-        let mark = NSImageView()
+        let field = NSTextField(labelWithAttributedString: words)
+        field.lineBreakMode = .byTruncatingTail
+        return field
+    }
+
+    private func makeOption(
+        _ option: Question.Item.Option, of item: Question.Item, item index: Int, position: Int, waiting: Bool
+    ) -> OptionView {
+        let view = OptionView(label: option.label, detail: option.detail, live: waiting)
+        if waiting {
+            view.onPress = { [weak self] in self?.pick(item: index, option: position) }
+            view.mark.image = mark(for: item, picked: false)
+            view.mark.contentTintColor = .tertiaryLabelColor
+            view.label.textColor = .labelColor
+            view.detail.textColor = .secondaryLabelColor
+        } else {
+            view.mark.image = mark(for: item, picked: option.isChosen)
+            view.mark.contentTintColor = option.isChosen ? .controlAccentColor : .tertiaryLabelColor
+            view.label.textColor = option.isChosen ? .labelColor : .tertiaryLabelColor
+            view.detail.textColor = option.isChosen ? .secondaryLabelColor : .tertiaryLabelColor
+        }
+        return view
+    }
+
+    private func mark(for item: Question.Item, picked: Bool) -> NSImage? {
         let symbol =
             item.allowsSeveral
-            ? (option.isChosen ? "checkmark.square.fill" : "square")
-            : (option.isChosen ? "circle.inset.filled" : "circle")
-        mark.image = .symbol(symbol, pointSize: 11)
-        mark.contentTintColor = option.isChosen ? .controlAccentColor : .tertiaryLabelColor
-        let text = label(
-            option.label, font: Self.optionFont, color: option.isChosen ? .labelColor : .tertiaryLabelColor)
-        text.lineBreakMode = .byTruncatingTail
-        container.addSubview(mark)
-        container.addSubview(text)
-        return OptionViews(button: nil, mark: mark, label: text, detail: detail)
+            ? (picked ? "checkmark.square.fill" : "square") : (picked ? "circle.inset.filled" : "circle")
+        return .symbol(symbol, pointSize: 12)
     }
 
     private func label(_ string: String, font: NSFont, color: NSColor) -> NSTextField {
@@ -222,10 +450,10 @@ final class QuestionRowView: NSView, PageRowView {
         field.font = font
         field.textColor = color
         field.isSelectable = false
-        field.maximumNumberOfLines = 1
-        field.lineBreakMode = .byTruncatingTail
         return field
     }
+
+    // MARK: - Layout
 
     override func layout() {
         super.layout()
@@ -233,77 +461,192 @@ final class QuestionRowView: NSView, PageRowView {
         let plan = Metrics(model, width: bounds.width)
         let x = Self.tileColumn
         let available = max(0, bounds.width - x)
-        tileView.frame = NSRect(x: 0, y: 0, width: QuestionRowView.tileSide, height: QuestionRowView.tileSide)
-        for (views, laid) in zip(itemViews, plan.items) {
+        tileView.frame = NSRect(x: 0, y: 0, width: Self.tileSide, height: Self.tileSide)
+        for ((views, laid), item) in zip(zip(itemViews, plan.items), model.items) {
             if let header = views.header, let top = laid.headerTop {
                 header.frame = NSRect(x: x, y: top, width: available, height: Self.headerHeight)
             }
             views.text.frame = NSRect(x: x, y: laid.textTop, width: available, height: laid.textHeight)
-            views.options.frame = NSRect(
-                x: x, y: laid.optionsTop, width: available,
-                height: Self.optionHeight * CGFloat(views.optionViews.count))
-            for (index, option) in views.optionViews.enumerated() {
-                layoutOption(option, row: index, width: available)
+            for (option, metrics) in zip(views.options, laid.options) {
+                option.frame = NSRect(
+                    x: x, y: laid.listTop + metrics.top, width: laid.listWidth, height: metrics.height)
+                option.layoutContent(metrics)
             }
+            if let other = views.other, let top = laid.otherTop {
+                other.frame = NSRect(x: x, y: laid.listTop + top, width: laid.listWidth, height: Self.otherHeight)
+                other.layoutContent(nil)
+            }
+            if let origin = laid.previewOrigin, let box = views.previewBox, let notes = views.notes {
+                box.frame = NSRect(
+                    x: x + origin.x, y: origin.y, width: laid.previewWidth, height: Self.previewHeight)
+                views.preview?.frame = box.bounds.insetBy(dx: 8, dy: 6)
+                notes.frame = NSRect(
+                    x: x + origin.x, y: origin.y + Self.previewHeight + Self.previewGap, width: laid.previewWidth,
+                    height: Self.notesHeight)
+            }
+            _ = item
         }
-        if let top = plan.submitTop {
+        if let top = plan.buttonsTop {
             let size = submit.fittingSize
             submit.frame = NSRect(
-                x: x, y: top + (Self.submitHeight - size.height) / 2, width: size.width, height: size.height)
+                x: x, y: top + (Self.buttonsHeight - size.height) / 2, width: size.width, height: size.height)
+            let chatSize = chat.fittingSize
+            chat.frame = NSRect(
+                x: submit.frame.maxX + 12, y: top + (Self.buttonsHeight - chatSize.height) / 2, width: chatSize.width,
+                height: chatSize.height)
         }
-    }
-
-    private func layoutOption(_ option: OptionViews, row: Int, width: CGFloat) {
-        let top = CGFloat(row) * Self.optionHeight
-        func centered(_ view: NSView, x: CGFloat, width: CGFloat) {
-            let height = min(view.fittingSize.height, Self.optionHeight)
-            view.frame = NSRect(x: x, y: top + (Self.optionHeight - height) / 2, width: width, height: height)
+        if let top = plan.outcomeTop {
+            outcome.frame = NSRect(x: x, y: top, width: available, height: Self.outcomeHeight)
         }
-        var labelEnd: CGFloat
-        if let button = option.button {
-            let natural = button.fittingSize.width
-            let space = max(0, width - Self.optionGap)
-            let buttonWidth = min(natural, space)
-            centered(button, x: 0, width: buttonWidth)
-            labelEnd = buttonWidth
-        } else if let mark = option.mark, let label = option.label {
-            centered(mark, x: 0, width: 16)
-            let natural = label.fittingSize.width
-            let labelWidth = min(natural, max(0, width - Self.markColumn - Self.optionGap))
-            centered(label, x: Self.markColumn, width: labelWidth)
-            labelEnd = Self.markColumn + labelWidth
-        } else {
-            return
-        }
-        labelEnd += Self.optionGap
-        centered(option.detail, x: labelEnd, width: max(0, width - labelEnd))
     }
 
     // MARK: - Answering
 
-    @objc private func optionPressed(_ sender: NSButton) {
-        updateSubmit()
+    private func pick(item: Int, option: Int) {
+        window?.makeFirstResponder(self)
+        guard let model, model.items.indices.contains(item) else { return }
+        if model.items[item].allowsSeveral {
+            if picks[item].contains(option) { picks[item].remove(option) } else { picks[item].insert(option) }
+        } else {
+            picks[item] = [option]
+        }
+        update()
     }
 
-    /// Submit answers once every question has an answer.
-    private func updateSubmit() {
-        submit.isEnabled = itemViews.allSatisfy { views in
-            views.optionViews.contains { $0.button?.state == .on }
+    private func pickOther(item: Int) {
+        guard let model, model.items.indices.contains(item) else { return }
+        let other = model.items[item].options.count
+        if model.items[item].allowsSeveral {
+            picks[item].insert(other)
+        } else {
+            picks[item] = [other]
         }
+        update()
+    }
+
+    /// Marks, the preview, and whether Submit can answer.
+    private func update() {
+        guard let model, model.isWaiting else { return }
+        for (index, item) in model.items.enumerated() {
+            let views = itemViews[index]
+            for (position, view) in views.options.enumerated() {
+                let picked = picks[index].contains(position)
+                view.mark.image = mark(for: item, picked: picked)
+                view.mark.contentTintColor = picked ? .controlAccentColor : .tertiaryLabelColor
+            }
+            if let other = views.other {
+                let picked = picks[index].contains(item.options.count)
+                other.mark.image = mark(for: item, picked: picked)
+                other.mark.contentTintColor = picked ? .controlAccentColor : .tertiaryLabelColor
+            }
+            if item.hasPreviews {
+                let shown = picks[index].first.flatMap {
+                    item.options.indices.contains($0) ? item.options[$0].preview : nil
+                }
+                views.preview?.stringValue = shown ?? ""
+                views.previewBox?.isHidden = shown == nil
+                views.notes?.isHidden = shown == nil
+            }
+        }
+        submit.isEnabled = model.items.indices.allSatisfy(isAnswered)
+    }
+
+    private func isAnswered(_ index: Int) -> Bool {
+        guard let model else { return false }
+        let other = model.items[index].options.count
+        let typedWords = typed[index].trimmingCharacters(in: .whitespacesAndNewlines)
+        return picks[index].contains { $0 != other || !typedWords.isEmpty }
+    }
+
+    /// The answer of question `index` so far: the chosen labels, several
+    /// joined by `", "`, and what was typed in *Other*.
+    private func answer(_ index: Int) -> String? {
+        guard let model else { return nil }
+        let item = model.items[index]
+        var parts = picks[index].sorted().compactMap { position -> String? in
+            if position < item.options.count { return item.options[position].label }
+            let words = typed[index].trimmingCharacters(in: .whitespacesAndNewlines)
+            return words.isEmpty ? nil : words
+        }
+        if !item.allowsSeveral { parts = Array(parts.prefix(1)) }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
     }
 
     @objc private func submitPressed(_ sender: NSButton) {
-        guard let model else { return }
+        guard let model, submit.isEnabled else { return }
         var answers: [String: String] = [:]
-        for (item, views) in zip(model.items, itemViews) {
-            let chosen = zip(item.options, views.optionViews).filter { $1.button?.state == .on }.map(\.0.label)
-            answers[item.text] = chosen.joined(separator: ", ")
+        var written: [String: String] = [:]
+        for (index, item) in model.items.enumerated() {
+            answers[item.text] = answer(index)
+            let words = notes[index].trimmingCharacters(in: .whitespacesAndNewlines)
+            if item.hasPreviews, !words.isEmpty { written[item.text] = words }
         }
-        delegate?.pageRowView(self, didDecide: .answer(answers), forCall: model.id)
+        delegate?.pageRowView(self, didDecide: .answer(answers, notes: written), forCall: model.id)
     }
 
-    /// The table takes focus, so ↑ / ↓ stay with the transcript.
+    /// *Chat About This*: nothing is answered, and what was picked goes along.
+    @objc private func chatPressed(_ sender: NSButton) {
+        guard let model else { return }
+        var answers: [String: String] = [:]
+        for (index, item) in model.items.enumerated() {
+            if let given = answer(index) { answers[item.text] = given }
+        }
+        delegate?.pageRowView(self, didDecide: .chatAbout(answers: answers), forCall: model.id)
+    }
+
+    /// ⎋ declines the question.
+    override func cancelOperation(_ sender: Any?) {
+        guard let model, model.isWaiting else { return super.cancelOperation(sender) }
+        delegate?.pageRowView(self, didDecide: .deny, forCall: model.id)
+    }
+
+    /// Pressing the form takes focus for ⎋, and the table keeps ↑ / ↓.
     override func mouseDown(with event: NSEvent) {
+        if model?.isWaiting == true { window?.makeFirstResponder(self) }
         super.mouseDown(with: event)
+    }
+
+    /// The preview's panel: the inset wash a command's block has.
+    private final class PreviewBox: NSView {
+        override init(frame frameRect: NSRect) {
+            super.init(frame: frameRect)
+            wantsLayer = true
+            layer?.cornerRadius = 6
+            layer?.cornerCurve = .continuous
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+        override var isFlipped: Bool { true }
+        override var wantsUpdateLayer: Bool { true }
+
+        override func updateLayer() {
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                layer?.backgroundColor = NSColor.quaternarySystemFill.cgColor
+            }
+        }
+    }
+}
+
+extension QuestionRowView: NSTextFieldDelegate {
+    func controlTextDidChange(_ notification: Notification) {
+        guard let field = notification.object as? NSTextField, let model else { return }
+        if field.tag >= 1000 {
+            let index = field.tag - 1000
+            if notes.indices.contains(index) { notes[index] = field.stringValue }
+            return
+        }
+        guard typed.indices.contains(field.tag) else { return }
+        typed[field.tag] = field.stringValue
+        let other = model.items[field.tag].options.count
+        if field.stringValue.isEmpty {
+            picks[field.tag].remove(other)
+        } else if model.items[field.tag].allowsSeveral {
+            picks[field.tag].insert(other)
+        } else {
+            picks[field.tag] = [other]
+        }
+        update()
     }
 }

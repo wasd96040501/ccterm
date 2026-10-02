@@ -156,8 +156,30 @@ struct TypesetText: @unchecked Sendable {
         let hi = min(length, max(from, to))
         guard hi > lo else { return "" }
         let slice = attributed.attributedSubstring(from: NSRange(location: lo, length: hi - lo))
-        guard !symbols.isEmpty else { return slice.string }
+        // Symbols and a token's pads are both U+FFFC: neither is something that
+        // was typed.
+        guard slice.string.contains(InlineSymbol.placeholder) else { return slice.string }
         return slice.string.filter { $0 != InlineSymbol.placeholder }
+    }
+
+    /// The insets behind the characters in `range`, one per line it crosses:
+    /// `height` tall and centred on the middle of a face's ascent and descent
+    /// (so a smaller face sits on the line's baseline without changing its
+    /// height), as wide as the characters. A truncated text's last line has none:
+    /// its range covers the whole hidden tail, and past the ellipsis the pen
+    /// positions mean nothing (the same line a find leaves out).
+    func tokenRects(in range: Range<Int>, ascent: CGFloat, descent: CGFloat, height: CGFloat) -> [CGRect] {
+        (isTruncated ? lines.dropLast() : lines[...]).compactMap { line in
+            let start = max(range.lowerBound, line.range.location)
+            let end = min(range.upperBound, NSMaxRange(line.range))
+            guard end > start else { return nil }
+            let x1 = CTLineGetOffsetForStringIndex(line.ctLine, start, nil)
+            let x2 = CTLineGetOffsetForStringIndex(line.ctLine, end, nil)
+            guard abs(x2 - x1) > 0.5 else { return nil }
+            let middle = line.baseline - (ascent - descent) / 2
+            return CGRect(
+                x: line.origin.x + min(x1, x2), y: middle - height / 2, width: abs(x2 - x1), height: height)
+        }
     }
 
     // MARK: - Find

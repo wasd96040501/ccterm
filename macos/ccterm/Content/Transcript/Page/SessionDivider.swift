@@ -9,6 +9,40 @@ nonisolated struct SessionDivider: Sendable, Equatable, Identifiable {
     /// The compaction summary the model continued from — what *Summary*
     /// opens beside. Only a compaction has one.
     var summary: String?
+    /// The words the CLI wrote to start a turn nobody typed — what *Prompt*
+    /// opens beside (design/transcript/06-agent-messages.md).
+    var prompt: String?
+
+    init(id: String, kind: Kind, summary: String? = nil, prompt: String? = nil) {
+        self.id = id
+        self.kind = kind
+        self.summary = summary
+        self.prompt = prompt
+    }
+
+    /// Why the CLI started a turn on its own.
+    enum Continuation: Sendable, Equatable {
+        case usageLimitReset
+        /// A plan approved in the browser (ultraplan), handed back.
+        case planApproved
+        /// A goal the reader set with `/goal`: they started it, so it has its
+        /// own words.
+        case goal
+        case automatic
+
+        /// What the known texts say (`origin.kind: "auto-continuation"`).
+        init(text: String) {
+            if text.contains("usage limit has reset") {
+                self = .usageLimitReset
+            } else if text.contains("approved the ultraplan in the browser") {
+                self = .planApproved
+            } else if text.hasPrefix("Goal set:") {
+                self = .goal
+            } else {
+                self = .automatic
+            }
+        }
+    }
 
     enum Kind: Sendable, Equatable {
         /// `/compact`, or the CLI's own. Token counts when the boundary
@@ -20,6 +54,11 @@ nonisolated struct SessionDivider: Sendable, Equatable, Identifiable {
         case resumed(Date)
         /// Nothing happened for more than an hour; the time the next row came.
         case pause(Date)
+        /// The CLI started a turn with its own words.
+        case continued(Continuation)
+        /// The session was ended and resumed in another account, on a model
+        /// (design/transcript/08-live.md *Another account restarts the session*).
+        case restarted(account: String, model: String)
     }
 
     /// The words centred on the hairline (05-local.md): *Conversation
@@ -41,8 +80,28 @@ nonisolated struct SessionDivider: Sendable, Equatable, Identifiable {
             return String(localized: "Resumed · \(Self.time(date))")
         case .pause(let date):
             return Self.time(date)
+        case .continued(let why):
+            switch why {
+            case .usageLimitReset: return String(localized: "Continued after the usage limit reset")
+            case .planApproved: return String(localized: "Continued with the plan approved in the browser")
+            case .goal: return String(localized: "Goal set")
+            case .automatic: return String(localized: "Continued automatically")
+            }
+        case .restarted(let account, let model):
+            return String(localized: "Restarted as \(account) · \(model)")
         }
     }
+
+    /// The link after the label: *Summary* of a compaction, *Prompt* of a turn
+    /// the CLI started; `nil` when there is nothing to open.
+    var linkTitle: String? {
+        if summary != nil { return String(localized: "Summary") }
+        if prompt != nil { return String(localized: "Prompt") }
+        return nil
+    }
+
+    /// What the link opens beside.
+    var opensDocument: Bool { linkTitle != nil }
 
     /// `168k`, `900`.
     private static func tokens(_ count: Int) -> String {

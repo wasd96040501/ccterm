@@ -273,23 +273,38 @@ final class PageRowViewContractTests: XCTestCase {
         assertContract(ApprovalCardView.self, fixtures)
     }
 
-    func testCapsuleRowView() {
-        func slash(_ name: String, _ arguments: String = "", output: String = "", error: String = "") -> LocalCommand {
-            LocalCommand(
-                id: name, command: .slash(name: name, arguments: arguments), output: output, errorOutput: error)
-        }
-        func shell(_ line: String, output: String = "", error: String = "") -> LocalCommand {
-            LocalCommand(id: line, command: .shell(line), output: output, errorOutput: error)
-        }
+    func testNoteRowView() {
         let fixtures = [
-            slash("/model", "opus"), slash("/model", "opus", output: "Set model to opus"),
-            slash("/skill-creator:skill-creator", "write a skill for the whole team and then some more words"),
-            slash("/login", error: "Not logged in"),
-            slash("/usage", output: "Plan: Max\nWeek: 41%\nToday: 7%\nReset: Tue"),
-            shell("git status", output: "On branch main\nnothing to commit\nclean\n"),
-            shell("pwd", output: "/Users/me/repo\n"), shell("false", error: "exit 1"),
-        ].map { RowFixture(name: $0.id + ($0.output.isEmpty ? "" : " out"), model: $0) }
-        assertContract(CapsuleRowView.self, fixtures)
+            ("output", Note(text: "Set model to opus")),
+            ("error", Note(text: "Not logged in", style: .failure)),
+            ("four lines", Note(text: "Plan: Max\nWeek: 41%\nToday: 7%\nReset: Tue")),
+            (
+                "cut",
+                Note(
+                    text: "Plan: Max\nWeek: 41%", link: Note.Link(title: "Show all", intent: .open("x"), isBelow: true))
+            ),
+            ("count", Note(text: "", link: Note.Link(title: "12 lines ›", intent: .open("x")))),
+            ("held", Note(text: "Sent when Claude is ready")),
+            ("queued", Note(text: "Queued", link: Note.Link(title: "Withdraw", intent: .withdraw("u")))),
+            (
+                "not sent",
+                Note(
+                    text: "Not sent — the session ended", style: .failure,
+                    link: Note.Link(title: "Resend", intent: .resend("u")))
+            ),
+        ].map { RowFixture(name: $0.0, model: $0.1) }
+        assertContract(NoteRowView.self, fixtures)
+    }
+
+    @MainActor
+    func testAttachmentsRowView() {
+        let wide = PromptImage(ImageFixture.png(width: 400, height: 200), number: 1, entryID: "p")!
+        let tall = PromptImage(ImageFixture.png(width: 100, height: 300), number: 2, entryID: "p")!
+        let panorama = PromptImage(ImageFixture.png(width: 1200, height: 100), number: 3, entryID: "p")!
+        let fixtures = [
+            ("one", [wide]), ("two", [wide, tall]), ("four wrap", [wide, tall, wide, tall]), ("panorama", [panorama]),
+        ].map { RowFixture(name: $0.0, model: AttachmentsRowView.Model(images: $0.1, highlighted: nil)) }
+        assertContract(AttachmentsRowView.self, fixtures)
     }
 
     func testDividerRowView() {
@@ -302,6 +317,9 @@ final class PageRowViewContractTests: XCTestCase {
             SessionDivider(id: "c", kind: .compacting, summary: nil),
             SessionDivider(id: "d", kind: .resumed(date), summary: nil),
             SessionDivider(id: "e", kind: .pause(date), summary: nil),
+            SessionDivider(id: "f", kind: .continued(.usageLimitReset), prompt: "Your usage limit has reset."),
+            SessionDivider(id: "g", kind: .continued(.automatic), prompt: nil),
+            SessionDivider(id: "h", kind: .restarted(account: "Work", model: "Opus 4.5")),
         ].map { RowFixture(name: $0.id, model: $0) }
         assertContract(DividerRowView.self, fixtures)
     }
@@ -316,6 +334,8 @@ final class PageRowViewContractTests: XCTestCase {
             Caption(glyph: .session, text: "ccterm · refactor tabs"),
             Caption(glyph: .coordinator, text: "Coordinator"),
             Caption(glyph: .plugin, text: "A plugin with a name long enough to run out of room in a narrow column"),
+            Caption(glyph: .plugin, text: "Plugin “ralph-loop”", detail: "Started this turn"),
+            Caption(glyph: .plugin, text: "Plugin “ralph-loop”", detail: "While Claude worked"),
             Caption(glyph: .tile(Tile(glyph: .plan, state: .done)), text: "Plan"),
             Caption(glyph: .tile(Tile(glyph: .plan, state: .waiting)), text: "Plan · Waiting for your approval"),
         ].enumerated().map { RowFixture(name: "caption \($0.offset)", model: $0.element) }

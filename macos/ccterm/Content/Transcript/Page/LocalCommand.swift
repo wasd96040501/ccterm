@@ -2,7 +2,7 @@ import Foundation
 
 /// Something the reader did to the CLI rather than said to the model: a
 /// slash command or a `!` shell command, with what it printed
-/// (design/transcript/05-local.md). Drawn as a capsule on the reader's side.
+/// (design/transcript/05-local.md). Drawn as the reader's bubble with the command as a token, and what it printed under it.
 ///
 /// `/compact` and `/exit` never become one: they fold into the
 /// `SessionDivider` they mark.
@@ -22,7 +22,7 @@ nonisolated struct LocalCommand: Sendable, Equatable, Identifiable {
     }
 }
 
-/// The capsule's words (05-local.md): the command, its arguments, and what
+/// The words under the bubble (05-local.md): the command, its arguments, and what
 /// it printed — one or two lines under it, or, for a `!` command whose output
 /// runs longer, how long it was.
 nonisolated extension LocalCommand {
@@ -50,7 +50,7 @@ nonisolated extension LocalCommand {
     /// Output shows as its errors, in red, when it wrote only to stderr.
     var outputIsError: Bool { output.isEmpty && !errorOutput.isEmpty }
 
-    /// What shows under the capsule: at most two lines of a slash command's
+    /// What shows under the bubble: at most two lines of a slash command's
     /// output, one of a `!` command's. `nil` when there is none, or when a `!`
     /// command's output runs longer (then `lineCount` says how long).
     var inlineOutput: String? {
@@ -64,7 +64,7 @@ nonisolated extension LocalCommand {
         if case .slash = command { printedLines.count > Self.inlineLines } else { false }
     }
 
-    /// *12 lines*, in the capsule of a `!` command that printed more than
+    /// *12 lines*, under the bubble of a `!` command that printed more than
     /// one; it opens the command document beside.
     var lineCount: String? {
         guard case .shell = command, printedLines.count > 1 else { return nil }

@@ -21,4 +21,15 @@ protocol PageRowViewDelegate: AnyObject {
 
     /// The reader answered call `callID` — a permission, a plan, a question.
     func pageRowView(_ rowView: NSView, didDecide decision: Decision, forCall callID: String)
+
+    /// *Withdraw* under a queued prompt: take it back.
+    func pageRowView(_ rowView: NSView, didRequestWithdrawOfPrompt uuid: String)
+
+    /// *Resend* under a prompt that was not sent.
+    func pageRowView(_ rowView: NSView, didRequestResendOfPrompt uuid: String)
+}
+
+extension PageRowViewDelegate {
+    func pageRowView(_ rowView: NSView, didRequestWithdrawOfPrompt uuid: String) {}
+    func pageRowView(_ rowView: NSView, didRequestResendOfPrompt uuid: String) {}
 }

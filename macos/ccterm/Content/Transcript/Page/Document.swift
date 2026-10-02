@@ -23,10 +23,12 @@ nonisolated struct Document: Sendable, Equatable {
     private var call: ToolCall? {
         switch content {
         case .command(let call), .newFile(let call), .read(let call), .search(let call), .web(let call),
-            .agent(let call), .other(let call):
+            .agent(let call), .advice(let call), .sentMessage(let call), .other(let call):
             call
         case .change(let calls): calls.last
-        case .shellCommand, .agentMessage, .taskList, .news, .commandOutput, .compactionSummary: nil
+        case .shellCommand, .agentMessage, .taskList, .news, .commandOutput, .compactionSummary,
+            .continuationPrompt, .image:
+            nil
         }
     }
 }

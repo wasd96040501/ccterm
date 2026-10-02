@@ -357,7 +357,7 @@ final class LiveSession {
             guard let self, mine == generation else { return }
             guard let usage = try? await session.contextUsage() else { return }
             guard mine == generation else { return }
-            state.didReadContextUsage(Double(usage.percentage) / 100)
+            state.didReadContextUsage(usage)
         }
     }
 

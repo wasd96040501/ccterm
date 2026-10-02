@@ -83,6 +83,28 @@
         }
       }
     },
+    "%@ tokens of %@ (%lld%%)": {
+      "comment": "The context document's total: tokens used, the window, the percentage.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ / %2$@ 个 Token（%3$lld%%）"
+          }
+        }
+      }
+    },
+    "%@ · worktree": {
+      "comment": "The window's line under a worktree session's project: the worktree's name.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 工作树"
+          }
+        }
+      }
+    },
     "%@ → %@ tokens": {
       "comment": "Token counts before and after a compaction, e.g. 168k → 14k tokens.",
       "localizations": {
@@ -222,6 +244,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$lld/%2$lld 个代理"
+          }
+        }
+      }
+    },
+    "%lld of %lld commands · %@ tokens": {
+      "comment": "The context document's slash commands line.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld / %2$lld 个命令 · %3$@ 个 Token"
+          }
+        }
+      }
+    },
+    "%lld of %lld skills · %@ tokens": {
+      "comment": "The context document's skills line.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld / %2$lld 个技能 · %3$@ 个 Token"
           }
         }
       }
@@ -502,6 +546,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "代理"
+          }
+        }
+      }
+    },
+    "Agent Type": {
+      "comment": "A column of the context document.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能体类型"
+          }
+        }
+      }
+    },
+    "Agents": {
+      "comment": "A section of the context document.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能体"
           }
         }
       }
@@ -834,6 +900,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "取消 ⌘."
+          }
+        }
+      }
+    },
+    "Category": {
+      "comment": "A column of the context document: what fills the window.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "类别"
           }
         }
       }
@@ -1178,6 +1255,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "连接"
+          }
+        }
+      }
+    },
+    "Context Usage": {
+      "comment": "The title of the document the context ring opens.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上下文用量"
           }
         }
       }
@@ -1724,6 +1812,17 @@
         }
       }
     },
+    "File": {
+      "comment": "A column of the context document.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件"
+          }
+        }
+      }
+    },
     "Filled %@": {
       "localizations": {
         "zh-Hans": {
@@ -2044,6 +2143,17 @@
         }
       }
     },
+    "MCP Tools": {
+      "comment": "A section of the context document.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCP 工具"
+          }
+        }
+      }
+    },
     "Manage": {
       "localizations": {
         "zh-Hans": {
@@ -2070,6 +2180,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "中"
+          }
+        }
+      }
+    },
+    "Memory Files": {
+      "comment": "A section of the context document.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "记忆文件"
           }
         }
       }
@@ -3339,6 +3460,17 @@
         }
       }
     },
+    "Server": {
+      "comment": "A column of the context document.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器"
+          }
+        }
+      }
+    },
     "Session Log": {
       "comment": "The title of the document that opens from a failed session's Show Log.",
       "localizations": {
@@ -3470,6 +3602,28 @@
         }
       }
     },
+    "Skills": {
+      "comment": "A section of the context document.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "技能"
+          }
+        }
+      }
+    },
+    "Slash Commands": {
+      "comment": "A section of the context document.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "斜杠命令"
+          }
+        }
+      }
+    },
     "Some sessions are still working. Quitting ends them; their conversations stay.": {
       "localizations": {
         "zh-Hans": {
@@ -3486,6 +3640,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sonnet"
+          }
+        }
+      }
+    },
+    "Source": {
+      "comment": "A column of the context document.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来源"
           }
         }
       }
@@ -3821,12 +3986,34 @@
         }
       }
     },
+    "Tokens": {
+      "comment": "A column of the context document.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Token"
+          }
+        }
+      }
+    },
     "Too many requests — try again shortly": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "请求过多 — 请稍后再试"
+          }
+        }
+      }
+    },
+    "Tool": {
+      "comment": "A column of the context document.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工具"
           }
         }
       }
@@ -3847,6 +4034,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "已被环境变量关闭"
+          }
+        }
+      }
+    },
+    "Type": {
+      "comment": "A column of the context document.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "类型"
           }
         }
       }
@@ -4102,6 +4300,17 @@
         }
       }
     },
+    "Window": {
+      "comment": "A column of the context document: the share of the context window.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "占窗口"
+          }
+        }
+      }
+    },
     "Withdraw": {
       "localizations": {
         "zh-Hans": {
@@ -4200,6 +4409,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "默认模型"
+          }
+        }
+      }
+    },
+    "deferred": {
+      "comment": "Marks a part of the context that is not loaded until needed.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按需加载"
           }
         }
       }

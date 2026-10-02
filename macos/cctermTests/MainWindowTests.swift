@@ -275,6 +275,31 @@ final class MainWindowTests: XCTestCase {
         await expect(try titleView(in: stage), shows: "repo", nil)
     }
 
+    /// A worktree session says so under its project, in place of the branch
+    /// (design 08: *quiet-otter · worktree*).
+    func testAWorktreeSessionSaysSoUnderItsProject() async throws {
+        let fixture = try SessionDirectoryFixture()
+        defer { fixture.remove() }
+        try LibraryStoreTests.writeLibrary(fixture)
+        try fixture.write(
+            "-x-repo--claude-worktrees-quiet-otter/s1.jsonl",
+            [
+                Self.user(cwd: "/x/repo/.claude/worktrees/quiet-otter", branch: "worktree-quiet-otter"),
+                Rows.customTitle("Otter"),
+            ],
+            modified: 300)
+        let library = try await Self.startedLibrary(fixture)
+        defer { library.stop() }
+        let stage = AppKitStage.mainWindow(library: library)
+        defer { stage.teardown() }
+        await stage.settle()
+        let sidebar = try sidebar(of: try XCTUnwrap(stage.mainSplit))
+
+        sidebar.delegate?.sidebarViewController(sidebar, didOpen: try Self.node("Otter", in: library))
+
+        await expect(try titleView(in: stage), shows: "repo", String(localized: "\("quiet-otter") · worktree"))
+    }
+
     /// Alone, the name is centred; a branch coming raises it — moving, not
     /// jumping — and fades in under it, and one going does the reverse.
     func testTheNameRisesAsTheBranchFadesInUnderIt() async throws {

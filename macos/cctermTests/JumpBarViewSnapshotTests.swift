@@ -87,4 +87,15 @@ final class JumpBarViewSnapshotTests: XCTestCase {
         button?.performClick(nil)
         XCTAssertEqual(recorder.count, 1)
     }
+
+    func testTheButtonIsGoneWhereThereIsNoRowToGoBackTo() {
+        let bar = JumpBarView()
+        bar.frame = NSRect(x: 0, y: 0, width: 400, height: JumpBarView.height)
+        bar.configure(with: DocumentHeader.markdown(.log(SessionFailure(message: "Exit code 1", log: "x"))))
+        bar.layoutSubtreeIfNeeded()
+        let button = bar.subviews.compactMap { $0 as? NSButton }.first
+        XCTAssertEqual(button?.isHidden, true)
+        bar.configure(with: header(.command(ToolCallFixture.bash("ls"))))
+        XCTAssertEqual(button?.isHidden, false)
+    }
 }

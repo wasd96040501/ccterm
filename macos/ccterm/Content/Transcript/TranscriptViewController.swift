@@ -175,9 +175,8 @@ final class TranscriptViewController: NSViewController {
     /// out yet says nothing.
     ///
     /// Computed when the page changes, the inset or size changes, the transcript
-    /// reaches or leaves its end and on `revealWaitingRequest()` — TranscriptKit
-    /// has no per-scroll callback, so a scroll that leaves the request without
-    /// leaving the end is noticed at the next of those.
+    /// reaches or leaves its end, whenever it scrolls (`transcriptViewDidScroll`,
+    /// once per runloop pass) and on `revealWaitingRequest()`.
     private func updateWaitingRequestVisibility() {
         let visible: Bool
         if let row = waitingRow {
@@ -444,6 +443,10 @@ extension TranscriptViewController: TranscriptViewDelegate {
 
     func transcriptView(_ transcriptView: TranscriptView, didChangeTailFollowing isFollowingTail: Bool) {
         self.isFollowingTail = isFollowingTail
+        updateWaitingRequestVisibility()
+    }
+
+    func transcriptViewDidScroll(_ transcriptView: TranscriptView) {
         updateWaitingRequestVisibility()
     }
 

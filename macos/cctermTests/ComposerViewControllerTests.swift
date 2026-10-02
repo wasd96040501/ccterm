@@ -291,4 +291,29 @@ final class ComposerViewControllerTests: XCTestCase {
             panel.preferredHeight, ModelPanelViewController.maxScrollHeight + 60)
         XCTAssertGreaterThan(panel.preferredHeight, 200)
     }
+
+    // MARK: - Dimming the words
+
+    /// A sent prompt waiting for its session: the words and the token go to half
+    /// strength, the card, chips and buttons stay as they were.
+    func testDimmingTheFieldDimsOnlyItsWordsAndToken() throws {
+        (composer.view as? ComposerView)?.complete(command: "review")
+        try type("the diff")
+        let words = try XCTUnwrap(try textView().enclosingScrollView)
+        let token = try XCTUnwrap(
+            find(NSView.self) { String(describing: Swift.type(of: $0)).contains("CommandTokenView") })
+        let chip = try XCTUnwrap(find(ComposerChipButton.self))
+
+        composer.isFieldDimmed = true
+
+        XCTAssertEqual(words.alphaValue, 0.5)
+        XCTAssertEqual(token.alphaValue, 0.5)
+        XCTAssertEqual(composer.view.alphaValue, 1, "the card is not dimmed")
+        XCTAssertEqual(chip.alphaValue, 1, "a chip is not dimmed")
+        XCTAssertEqual(composer.text, "/review the diff", "the words are untouched")
+
+        composer.isFieldDimmed = false
+        XCTAssertEqual(words.alphaValue, 1)
+        XCTAssertEqual(token.alphaValue, 1)
+    }
 }

@@ -4,8 +4,8 @@ import Foundation
 /// jump bar draws them (design/transcript/README.md "Opening a document",
 /// 02-command.md, 03-file.md).
 ///
-/// Every document has the bar, so every document has *Show in Transcript*
-/// in the same place; the bar itself adds only that.
+/// Every document has the bar, and every one a transcript has a row for has
+/// *Show in Transcript* in the same place; the bar itself adds only that.
 nonisolated struct DocumentHeader: Sendable, Equatable {
     /// The kind's tile, in the call's state.
     var tile: Tile
@@ -18,12 +18,19 @@ nonisolated struct DocumentHeader: Sendable, Equatable {
     var stat: StyledText
     /// The tab's title.
     var title: String
+    /// Whether the bar offers *Show in Transcript*: a document the transcript
+    /// has no row for (a session's log, its context) has no way back to one.
+    var showsTranscriptJump: Bool
 
-    init(tile: Tile, crumbs: [String], stat: StyledText = StyledText(), title: String) {
+    init(
+        tile: Tile, crumbs: [String], stat: StyledText = StyledText(), title: String,
+        showsTranscriptJump: Bool = true
+    ) {
         self.tile = tile
         self.crumbs = crumbs
         self.stat = stat
         self.title = title
+        self.showsTranscriptJump = showsTranscriptJump
     }
 
     /// The header of `document`, worded by the kind of document it is.

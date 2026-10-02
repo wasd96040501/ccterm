@@ -24,6 +24,17 @@ nonisolated enum SessionTabTitle {
         return String(line.prefix(promptLength)) + "…"
     }
 
+    /// What the window says under a worktree session's project, in place of
+    /// the git branch: the worktree's name, then *worktree* — *quiet-otter ·
+    /// worktree*, *pr-327 · worktree*. The CLI's branch is `worktree-<name>`;
+    /// the prefix is its own and goes.
+    static func worktreeSubtitle(branch: String) -> String {
+        let prefix = "worktree-"
+        let name =
+            branch.hasPrefix(prefix) && branch.count > prefix.count ? String(branch.dropFirst(prefix.count)) : branch
+        return String(localized: "\(name) · worktree")
+    }
+
     /// The title to show: the CLI's name for the session when it has one, else
     /// the first prompt's line, else `fallback` (the sidebar's, for a session
     /// opened from disk).

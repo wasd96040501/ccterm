@@ -78,4 +78,19 @@ final class DocumentHeaderMarkdownTests: XCTestCase {
         s.result("m")
         XCTAssertEqual(header(s).title, "screenshot")
     }
+
+    func testALogAndTheContextHaveNoWayBackToARow() {
+        let log = DocumentHeader.markdown(.log(SessionFailure(message: "Exit code 1 · boom", log: "x")))
+        XCTAssertEqual(log.title, String(localized: "Session Log"))
+        XCTAssertEqual(log.stat.string, "Exit code 1 · boom")
+        XCTAssertEqual(log.tile.state, .failed)
+        XCTAssertFalse(log.showsTranscriptJump)
+
+        let context = DocumentHeader.markdown(.contextUsage(ContextUsageFixture.sample))
+        XCTAssertEqual(context.title, String(localized: "Context Usage"))
+        XCTAssertEqual(context.stat.string, "39%")
+        XCTAssertFalse(context.showsTranscriptJump)
+
+        XCTAssertTrue(DocumentHeader.markdown(.compactionSummary("x")).showsTranscriptJump)
+    }
 }

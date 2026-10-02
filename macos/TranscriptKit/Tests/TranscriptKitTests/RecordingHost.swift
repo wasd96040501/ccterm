@@ -48,6 +48,7 @@ final class RecordingHost: NSObject, TranscriptViewDataSource, TranscriptViewDel
 
     func resetRecordings() {
         heightWidths = []
+        scrollReports = 0
         viewCalls = 0
         builds = 0
         removals = []
@@ -103,6 +104,13 @@ final class RecordingHost: NSObject, TranscriptViewDataSource, TranscriptViewDel
         _ transcriptView: TranscriptView, didChangeTailFollowing isFollowingTail: Bool
     ) {
         tailFollowing.append(isFollowingTail)
+    }
+
+    /// How many `transcriptViewDidScroll` calls arrived.
+    private(set) var scrollReports = 0
+
+    func transcriptViewDidScroll(_ transcriptView: TranscriptView) {
+        scrollReports += 1
     }
 
     /// The key commands this host handles itself.

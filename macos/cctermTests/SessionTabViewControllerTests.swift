@@ -185,6 +185,17 @@ final class SessionTabViewControllerTests: XCTestCase {
         XCTAssertEqual(SessionTabTitle.resolved(cli: "Named", prompt: nil, fallback: "From the sidebar"), "Named")
     }
 
+    func testAWorktreeSessionIsNamedByItsWorktreeNotTheCLIsBranch() {
+        XCTAssertEqual(
+            SessionTabTitle.worktreeSubtitle(branch: "worktree-quiet-otter"),
+            String(localized: "\("quiet-otter") · worktree"))
+        XCTAssertEqual(
+            SessionTabTitle.worktreeSubtitle(branch: "pr-327"), String(localized: "\("pr-327") · worktree"))
+        XCTAssertEqual(
+            SessionTabTitle.worktreeSubtitle(branch: "worktree-"), String(localized: "\("worktree-") · worktree"),
+            "a branch that is only the prefix is kept")
+    }
+
     // MARK: - The restart sheet
 
     func testTheRestartSheetNamesTheAccountAndTheModel() {
@@ -211,39 +222,34 @@ final class SessionTabViewControllerTests: XCTestCase {
 
     // MARK: - Documents beside
 
-    func testTheLogOpensAsAMonospacedDocumentOfWhatTheCLIWrote() throws {
+    func testTheLogOpensAsADocumentOfTheFailureWithNoWayBackToARow() throws {
         let url = URL(fileURLWithPath: "/nonexistent/s.jsonl")
         let failure = SessionFailure(message: "Exit code 1 · boom", log: "line one\nline two\n")
 
         let document = SessionTabDocuments.log(failure, transcriptURL: url)
 
         XCTAssertEqual(document.reference, DocumentReference(transcriptURL: url, id: "log"))
-        guard case .commandOutput(let command) = document.content else { return XCTFail("not the output shape") }
-        XCTAssertEqual(command.output, "line one\nline two")
-        XCTAssertEqual(command.title, String(localized: "Session Log"))
+        XCTAssertEqual(document.content, .log(failure))
         XCTAssertFalse(document.isLive, "nothing in the transcript backs it, so it is never reloaded")
         XCTAssertNil(document.approval)
+        XCTAssertFalse(DocumentHeader(document).showsTranscriptJump)
     }
 
-    func testAnEmptyLogSaysSo() {
-        let document = SessionTabDocuments.log(
-            SessionFailure(message: "boom"), transcriptURL: URL(fileURLWithPath: "/nonexistent/s.jsonl"))
-        guard case .commandOutput(let command) = document.content else { return XCTFail("not the output shape") }
-        XCTAssertEqual(command.output, String(localized: "Claude wrote nothing to its log."))
-    }
-
-    func testTheContextRingOpensWhatItShows() {
+    func testTheContextRingOpensWhatTheCLIReported() throws {
         let url = URL(fileURLWithPath: "/nonexistent/s.jsonl")
+        let usage = ContextUsageFixture.sample
 
-        let document = SessionTabDocuments.context(usage: 0.624, transcriptURL: url)
+        let document = SessionTabDocuments.context(usage, transcriptURL: url)
 
-        XCTAssertEqual(document.reference, DocumentReference(transcriptURL: url, id: "context-62"))
-        guard case .commandOutput(let command) = document.content else { return XCTFail("not the output shape") }
-        XCTAssertEqual(command.title, "/context")
-        XCTAssertEqual(command.output, String(localized: "\(62)% of the context window is in use."))
+        XCTAssertEqual(
+            document.reference, DocumentReference(transcriptURL: url, id: "context-\(usage.totalTokens)"))
+        XCTAssertEqual(document.content, .contextUsage(usage))
+        XCTAssertFalse(DocumentHeader(document).showsTranscriptJump)
+        var fuller = usage
+        fuller.totalTokens += 1000
         XCTAssertNotEqual(
-            SessionTabDocuments.context(usage: 0.9, transcriptURL: url).reference, document.reference,
-            "a different usage opens a tab of its own")
+            SessionTabDocuments.context(fuller, transcriptURL: url).reference, document.reference,
+            "a different reading opens a tab of its own")
     }
 
     /// The pre-resolved document is a tab as any other: built through the same
@@ -257,6 +263,19 @@ final class SessionTabViewControllerTests: XCTestCase {
 
         XCTAssertEqual(TranscriptTab(identifier: item.identifier), .document(document.reference))
         XCTAssertEqual(item.viewController?.title, String(localized: "Session Log"))
+    }
+
+    /// A command token with nothing after it is something typed: the tab is
+    /// worth keeping.
+    func testADraftHoldingOnlyACommandTokenIsNotUntouched() throws {
+        let tab = mountDraft()
+        XCTAssertTrue(tab.isUntouchedDraft)
+
+        (try composer(of: tab).view as? ComposerView)?.complete(command: "review")
+
+        XCTAssertEqual(try composer(of: tab).text, "/review")
+        XCTAssertFalse(tab.isUntouchedDraft)
+        XCTAssertEqual(tab.draftText, "/review", "the token is kept for the next New tab")
     }
 }
 

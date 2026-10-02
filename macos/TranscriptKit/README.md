@@ -71,7 +71,8 @@ directly on `NSTableView`:
   the last row with it. `scrollToRow(at:scrollPosition:)` is the deliberate
   exception. The delegate hears when the viewport arrives at or leaves the tail
   (`transcriptView(_:didChangeTailFollowing:)`), which is what a "jump to
-  latest" button needs.
+  latest" button needs, and `transcriptViewDidScroll(_:)` hears every scroll,
+  coalesced to one call per runloop pass.
 
   `NSTableView` promises none of this: `insertRows(at:withAnimation:)`
   documents only that `numberOfRows` grows and says nothing about the scroll

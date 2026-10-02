@@ -188,4 +188,62 @@ final class SessionTabHandoverTests: XCTestCase {
         }
         XCTAssertLessThanOrEqual(try XCTUnwrap(samples.first), start + 0.5)
     }
+
+    /// Step 1: the words stay, dimmed — the words, not the composer — until the
+    /// session's tab takes over.
+    func testOnlyTheWordsAreDimmedWhileTheSendHands() throws {
+        let tab = mountDraft()
+        let composer = try composer(of: tab)
+
+        try send("Fix the gutter", in: tab)
+
+        XCTAssertTrue(composer.isFieldDimmed)
+        XCTAssertEqual(composer.view.alphaValue, 1, "the whole composer was dimmed")
+        XCTAssertTrue(stage!.drainUntil(timeout: 5) { tab.children.contains { $0 is TranscriptViewController } })
+        XCTAssertFalse(composer.isFieldDimmed, "the session's tab kept the field dimmed")
+    }
+
+    /// While the page rises the composer already says Starting, with Stop to
+    /// cancel — not a ready Send.
+    func testTheComposerSaysStartingDuringTheRise() throws {
+        let tab = mountDraft()
+        let composer = try composer(of: tab)
+
+        try send("Fix the gutter", in: tab)
+
+        let stop = try XCTUnwrap(
+            find(NSButton.self, in: composer.view) { $0.accessibilityLabel() == String(localized: "Stop") })
+        XCTAssertFalse(stop.isHidden, "the stop button is not offered while starting")
+    }
+
+    /// Stop during the rise cancels the launch: the rise's completion does
+    /// nothing, the words stay, the tab stays the draft and the window is told
+    /// nothing.
+    func testStopDuringTheRiseCancelsTheHandover() throws {
+        let tab = mountDraft()
+        let composer = try composer(of: tab)
+        try send("Fix the gutter", in: tab)
+        XCTAssertTrue(composer.isFieldDimmed, "premise: the handover is under way")
+
+        tab.composerViewControllerDidRequestStop(composer)
+        stage!.drain(seconds: 1.0)
+
+        XCTAssertTrue(recorder.started.isEmpty, "the window was told a session started")
+        XCTAssertEqual(recorder.returnedToDraft, 0)
+        XCTAssertNil(tab.transcriptURL)
+        XCTAssertTrue(tab.children.contains { $0 is NewSessionViewController }, "the New view went")
+        XCTAssertFalse(tab.children.contains { $0 is TranscriptViewController })
+        XCTAssertEqual(composer.text, "Fix the gutter")
+        XCTAssertFalse(composer.isFieldDimmed)
+        XCTAssertNotNil(tab.draftText)
+        // And the tab can send again.
+        try send("Again", in: tab)
+        XCTAssertTrue(stage!.drainUntil(timeout: 5) { self.recorder.started.count == 1 })
+    }
+
+    private func find<V: NSView>(_ type: V.Type, in root: NSView, where match: (V) -> Bool) -> V? {
+        if let found = root as? V, match(found) { return found }
+        for subview in root.subviews { if let found = find(type, in: subview, where: match) { return found } }
+        return nil
+    }
 }

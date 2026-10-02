@@ -275,8 +275,8 @@ final class DocumentViewController: NSViewController {
             return MarkdownDocumentViewController(markdown: DocumentMarkdown.markdown(for: document.content))
         case .image(let image):
             return ImageDocumentViewController(image)
-        case .agentMessage, .search, .web, .taskList, .news, .commandOutput, .compactionSummary, .advice,
-            .sentMessage, .continuationPrompt, .other:
+        case .agentMessage, .search, .web, .taskList, .news, .commandOutput, .log, .contextUsage, .compactionSummary,
+            .advice, .sentMessage, .continuationPrompt, .other:
             return MarkdownDocumentViewController(markdown: DocumentMarkdown.markdown(for: document.content))
         }
     }

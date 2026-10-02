@@ -603,6 +603,9 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
     /// passes follow the batch's edits so far: only the list can pair them.
     private var isInBatch = false
 
+    /// A `transcriptViewDidScroll` is queued: the list reports every offset change, the host hears one per runloop pass.
+    fileprivate var isScrollReportPending = false
+
     /// No row moves while a find is up: its overlay reads where the rows are
     /// when it lays out, and a row sliding under it would leave its highlights
     /// behind. A group of duration 0 is how AppKit says "no motion".
@@ -1048,6 +1051,13 @@ extension TranscriptView: ListAdapterDelegate {
 
     func listAdapterDidScroll(_ adapter: ListAdapter) {
         findSession.placeFindOverlay()
+        guard !isScrollReportPending else { return }
+        isScrollReportPending = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            isScrollReportPending = false
+            delegate?.transcriptViewDidScroll(self)
+        }
     }
 }
 

@@ -125,6 +125,14 @@ final class SessionStateLiveTests: XCTestCase {
         XCTAssertEqual(state.contextUsage, 1)
     }
 
+    /// The ring's fraction and the report behind it arrive together.
+    func testAContextReportKeepsItsWholeValueAndTheFractionOfIt() {
+        let report = ContextUsageFixture.sample
+        state.didReadContextUsage(report)
+        XCTAssertEqual(state.contextReport, report)
+        XCTAssertEqual(try XCTUnwrap(state.contextUsage), Double(report.percentage) / 100, accuracy: 0.0001)
+    }
+
     // MARK: - Prompts
 
     func testAPromptSentWhileStartingIsHeldAndTheSessionStaysStarting() {

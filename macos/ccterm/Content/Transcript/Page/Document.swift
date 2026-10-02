@@ -26,8 +26,8 @@ nonisolated struct Document: Sendable, Equatable {
             .agent(let call), .advice(let call), .sentMessage(let call), .other(let call):
             call
         case .change(let calls): calls.last
-        case .shellCommand, .agentMessage, .taskList, .news, .commandOutput, .compactionSummary,
-            .continuationPrompt, .image:
+        case .shellCommand, .agentMessage, .taskList, .news, .commandOutput, .log, .contextUsage,
+            .compactionSummary, .continuationPrompt, .image:
             nil
         }
     }

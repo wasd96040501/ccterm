@@ -38,6 +38,7 @@ final class JumpBarView: NSView {
     private lazy var statLabel: NSTextField = {
         let label = NSTextField(labelWithString: "")
         label.font = Self.statFont
+        label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
         label.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
         return label
@@ -62,6 +63,16 @@ final class JumpBarView: NSView {
     }()
 
     private let separator = CALayer()
+
+    /// Where the stat gives way: the button, or — a document with no way back
+    /// — the bar's own edge.
+    private lazy var statEndsAtBackButton = statLabel.trailingAnchor.constraint(
+        lessThanOrEqualTo: backButton.leadingAnchor, constant: -12)
+    private lazy var statEndsAtEdge: NSLayoutConstraint = {
+        let constraint = statLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -10)
+        constraint.isActive = false
+        return constraint
+    }()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -93,7 +104,7 @@ final class JumpBarView: NSView {
             crumbsLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
             statLabel.leadingAnchor.constraint(equalTo: crumbsLabel.trailingAnchor, constant: 6),
             statLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            statLabel.trailingAnchor.constraint(lessThanOrEqualTo: backButton.leadingAnchor, constant: -12),
+            statEndsAtBackButton,
             backButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
             backButton.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
@@ -118,6 +129,11 @@ final class JumpBarView: NSView {
         crumbs = header.crumbs
         statLabel.attributedStringValue = header.stat.attributedString(font: Self.statFont, color: .secondaryLabelColor)
         statLabel.isHidden = header.stat.isEmpty
+        backButton.isHidden = !header.showsTranscriptJump
+        statLabel.setContentCompressionResistancePriority(
+            header.showsTranscriptJump ? .defaultHigh : .defaultLow, for: .horizontal)
+        statEndsAtBackButton.isActive = header.showsTranscriptJump
+        statEndsAtEdge.isActive = !header.showsTranscriptJump
         setAccessibilityLabel(header.crumbs.joined(separator: " › "))
         shownFolders = nil
         showCrumbs(keeping: Array(crumbs.indices.dropLast()))
@@ -141,7 +157,8 @@ final class JumpBarView: NSView {
     private func fitCrumbs() {
         guard crumbs.count > 1 else { return }
         let statWidth = statLabel.isHidden ? 0 : statLabel.frame.width
-        let room = backButton.frame.minX - 12 - statWidth - 6 - crumbsLabel.frame.minX
+        let end = backButton.isHidden ? bounds.width - 10 : backButton.frame.minX - 12
+        let room = end - statWidth - 6 - crumbsLabel.frame.minX
         guard room > 0 else { return }
         var kept = Array(crumbs.indices.dropLast())
         while kept.count > 1, Self.attributed(crumbs, keeping: kept).size().width > room {

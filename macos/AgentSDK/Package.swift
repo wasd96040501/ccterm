@@ -45,6 +45,10 @@ let package = Package(
             dependencies: ["AgentSDK"]
         ),
         .executableTarget(
+            name: "LiveControlsSmoke",
+            dependencies: ["AgentSDK"]
+        ),
+        .executableTarget(
             name: "SideQuestionSmoke",
             dependencies: ["AgentSDK"]
         ),

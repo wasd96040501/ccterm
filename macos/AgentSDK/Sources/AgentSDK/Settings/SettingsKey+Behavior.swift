@@ -60,7 +60,8 @@ extension SettingsKey where Value == Int {
 extension SettingsKey where Value == JSONValue {
     /// How `--worktree` makes its worktree: `{"baseRef": "head"}` branches from
     /// the local HEAD, `"fresh"` (the default) from origin's default branch.
-    /// Read at launch (`--settings`).
-    // TODO(fill A): SettingsSmoke + SettingsTests catalog entries, or a typed value.
+    /// Read at launch (`--settings`). Also holds `symlinkDirectories`, `sparsePaths`
+    /// and `bgIsolation`; an applied object replaces the whole value, so a host that
+    /// reads the layer first keeps them.
     public static var worktree: Self { Self("worktree") }
 }

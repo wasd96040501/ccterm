@@ -77,7 +77,6 @@ extension AssistantMessage: Decodable {
         self.isAborted = c.lenient(Bool.self, "aborted", "isAbortedMidStream") ?? false
         self.supersedes = c.lenient([String].self, "supersedes") ?? []
         self.timestamp = c.timestamp("timestamp")
-        // TODO(fill A): fixtures for both.
         self.effort = c.lenient(String.self, "effort").flatMap(Effort.init)
         self.advisorModel = c.lenient(String.self, "advisorModel")
     }

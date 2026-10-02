@@ -244,7 +244,8 @@ extension SystemMessage: Decodable {
             case "commands_changed":
                 _ = try c.required([JSONValue].self, "commands")
                 self = .commandsChanged(c.lenientArray(SlashCommand.self, "commands") ?? [])
-            // TODO(fill A): "session_title_changed" → .sessionTitleChanged; fixture + test.
+            case "session_title_changed":
+                self = .sessionTitleChanged(title: try c.required(String.self, "title"))
             default:
                 self = .other(subtype: subtype, raw: decoder.rawValue())
             }

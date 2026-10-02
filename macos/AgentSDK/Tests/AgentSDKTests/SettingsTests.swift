@@ -100,7 +100,7 @@ final class SettingsTests: XCTestCase {
             SettingsKey<Bool>.respectGitignore.rawValue, SettingsKey<Int>.bashOutputMaxChars.rawValue,
             SettingsKey<Int>.cleanupPeriodDays.rawValue, SettingsKey<Bool>.enableAllProjectMCPServers.rawValue,
             SettingsKey<[String]>.enabledMCPJSONServers.rawValue,
-            SettingsKey<[String]>.disabledMCPJSONServers.rawValue,
+            SettingsKey<[String]>.disabledMCPJSONServers.rawValue, SettingsKey<JSONValue>.worktree.rawValue,
         ]
         XCTAssertEqual(
             names,
@@ -111,6 +111,7 @@ final class SettingsTests: XCTestCase {
                 "includeGitInstructions", "autoCompactEnabled", "autoMemoryEnabled", "fileCheckpointingEnabled",
                 "promptSuggestionEnabled", "todoFeatureEnabled", "respectGitignore", "bashOutputMaxChars",
                 "cleanupPeriodDays", "enableAllProjectMcpServers", "enabledMcpjsonServers", "disabledMcpjsonServers",
+                "worktree",
             ])
     }
 

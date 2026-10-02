@@ -258,12 +258,25 @@ final class TranscriptViewController: NSViewController {
         // view hold still. Selection and flashing are ids, so the rows that
         // keep them are reloaded under the same marks.
         rows = new
-        transcript.performBatchUpdates {
-            if !changes.removed.isEmpty { transcript.removeRows(at: changes.removed) }
-            for move in changes.moved { transcript.moveRow(at: move.from, to: move.to) }
-            if !changes.inserted.isEmpty { transcript.insertRows(at: changes.inserted) }
-            if !changes.reloaded.isEmpty { transcript.reloadRows(at: changes.reloaded) }
-            if !changes.regapped.isEmpty { transcript.noteHeightOfRows(withIndexesChanged: changes.regapped) }
+        let batch = { [transcript] in
+            transcript.performBatchUpdates {
+                if !changes.removed.isEmpty { transcript.removeRows(at: changes.removed) }
+                for move in changes.moved { transcript.moveRow(at: move.from, to: move.to) }
+                if !changes.inserted.isEmpty { transcript.insertRows(at: changes.inserted) }
+                if !changes.reloaded.isEmpty { transcript.reloadRows(at: changes.reloaded) }
+                if !changes.regapped.isEmpty { transcript.noteHeightOfRows(withIndexesChanged: changes.regapped) }
+            }
+        }
+        if changes.moved.isEmpty {
+            batch()
+        } else {
+            // A queued prompt the CLI folded into the turn moves in one 0.25-s
+            // slide; outside a group a move takes the table's 0.4 s.
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.25
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                batch()
+            }
         }
         updateWaitingRequestVisibility()
     }

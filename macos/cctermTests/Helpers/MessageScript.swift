@@ -29,8 +29,47 @@ struct MessageScript {
         messages.append(.user(UserMessage(content: [.text(text)], origin: origin, timestamp: tick())))
     }
 
+    /// A prompt with pictures pasted into it: the text says `[Image #N]` where
+    /// each went, `pasteIDs` are the CLI's numbers for them, `uuid` the id the
+    /// message was sent under.
+    mutating func prompt(_ text: String, uuid: String? = nil, images: [ImageBlock], pasteIDs: [Int]) {
+        var message = UserMessage(
+            uuid: uuid, content: [.text(text)] + images.map { .image($0) }, timestamp: tick())
+        message.imagePasteIDs = pasteIDs
+        messages.append(.user(message))
+    }
+
+    /// A message with `uuid`: what a prompt sent from here comes back as.
+    mutating func user(_ text: String, uuid: String) {
+        messages.append(.user(UserMessage(uuid: uuid, content: [.text(text)], timestamp: tick())))
+    }
+
     mutating func reply(_ text: String) {
         assistant([.text(text)])
+    }
+
+    /// One assistant message whose uuid is `uuid`, so a restart can follow it.
+    mutating func reply(_ text: String, uuid: String) {
+        count += 1
+        messages.append(
+            .assistant(
+                AssistantMessage(
+                    uuid: uuid, sessionID: "s", messageID: "m\(count)", model: "m", content: [.text(text)],
+                    timestamp: tick())))
+    }
+
+    /// The advisor, as the CLI records it: both halves in one assistant message.
+    mutating func advisor(
+        _ id: String, _ result: AdvisorToolResultBlock.Content?, model: String? = "claude-opus-4-5"
+    ) {
+        count += 1
+        var content: [ContentBlock] = [.serverToolUse(ServerToolUseBlock(id: id, name: "advisor"))]
+        if let result { content.append(.advisorToolResult(AdvisorToolResultBlock(toolUseID: id, content: result))) }
+        var message = AssistantMessage(
+            uuid: "a\(count)", sessionID: "s", messageID: "m\(count)", model: "m", content: content,
+            timestamp: tick())
+        message.advisorModel = model
+        messages.append(.assistant(message))
     }
 
     /// One assistant message calling `name` with `input`, a JSON object.

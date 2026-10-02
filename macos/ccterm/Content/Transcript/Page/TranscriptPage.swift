@@ -36,6 +36,8 @@ nonisolated struct TranscriptPage: Sendable, Equatable {
                 for (position, one) in news.news.enumerated() {
                     locations[one.id] = Location(entry: index, item: position)
                 }
+            case .prompt(let prompt):
+                for image in prompt.images { locations[image.id] = Location(entry: index, item: nil) }
             default:
                 break
             }
@@ -54,10 +56,9 @@ nonisolated struct TranscriptPage: Sendable, Equatable {
         _ transcript: Transcript, partial: AssistantMessage? = nil, requests: [PermissionRequest] = [],
         prompts: [LocalPrompt] = [], restarts: [SessionState.Restart] = []
     ) {
-        // TODO(fill F): prompts and restarts; a transcript prompt's id becomes its uuid.
         var builder = TranscriptPageBuilder(
             messages: transcript.messages, workingDirectory: transcript.metadata.cwd, partial: partial,
-            requests: requests)
+            requests: requests, prompts: prompts, restarts: restarts)
         self.init(entries: builder.build(), workingDirectory: transcript.metadata.cwd)
     }
 
@@ -103,7 +104,9 @@ nonisolated struct TranscriptPage: Sendable, Equatable {
             case .slash: return command.output.isEmpty && command.errorOutput.isEmpty ? nil : .commandOutput(command)
             }
         case .divider(let divider):
-            return divider.summary.map { .compactionSummary($0) }
+            return divider.summary.map { .compactionSummary($0) } ?? divider.prompt.map { .continuationPrompt($0) }
+        case .prompt(let prompt):
+            return prompt.images.first { $0.id == id }.map { .image($0) }
         case .agentMessage(let message) where message.opensBeside:
             return .agentMessage(message)
         default:
@@ -122,7 +125,9 @@ nonisolated struct TranscriptPage: Sendable, Equatable {
         case .web: return .web(call)
         case .agent: return .agent(call)
         case .tasks: return .taskList(taskList(through: call.id))
-        case .schedule, .message, .other: return .other(call)
+        case .advisor: return .advice(call)
+        case .message: return .sentMessage(call)
+        case .schedule, .skill, .worktree, .notify, .other: return .other(call)
         }
     }
 

@@ -273,7 +273,10 @@ final class DocumentViewController: NSViewController {
                 return makeConversation(url, DocumentHeader(document).title)
             }
             return MarkdownDocumentViewController(markdown: DocumentMarkdown.markdown(for: document.content))
-        case .agentMessage, .search, .web, .taskList, .news, .commandOutput, .compactionSummary, .other:
+        case .image(let image):
+            return ImageDocumentViewController(image)
+        case .agentMessage, .search, .web, .taskList, .news, .commandOutput, .compactionSummary, .advice,
+            .sentMessage, .continuationPrompt, .other:
             return MarkdownDocumentViewController(markdown: DocumentMarkdown.markdown(for: document.content))
         }
     }

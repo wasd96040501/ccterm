@@ -163,8 +163,8 @@ struct UserMessageBlock: Block, @unchecked Sendable {
     /// The padding either side of a token's words.
     static let tokenPadding: CGFloat = 4
     static let tokenRadius: CGFloat = 5
-    static let tokenFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .medium)
-    static let shellFont = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
+    static var tokenFont: NSFont { .monospacedSystemFont(ofSize: 13, weight: .medium) }
+    static var shellFont: NSFont { .monospacedSystemFont(ofSize: 12.5, weight: .regular) }
 
     /// The wash's height: the token's 13-pt face with a point above and below.
     static let washHeight: CGFloat = 15

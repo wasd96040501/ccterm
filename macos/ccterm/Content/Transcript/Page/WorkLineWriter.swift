@@ -166,11 +166,40 @@ nonisolated struct WorkLineWriter {
                     ? StyledText(String(localized: "Scheduled a task"))
                     : StyledText(String(localized: "Scheduled \(calls.count) tasks"))
             ]
-        case .message:
+        case .advisor:
             return [
                 calls.count == 1
-                    ? StyledText(String(localized: "Sent a message"))
-                    : StyledText(String(localized: "Sent \(calls.count) messages"))
+                    ? StyledText(String(localized: "Asked the advisor"))
+                    : StyledText(String(localized: "Asked the advisor \(calls.count) times"))
+            ]
+        case .skill:
+            let names = calls.compactMap(\.skillName)
+            if calls.count == 1, let name = names.first {
+                return [
+                    StyledText(
+                        localized: String(localized: "Used the \(StyledText.slot(0)) skill"),
+                        StyledText(name, style: .noun(opens: nil)))
+                ]
+            }
+            return [StyledText(String(localized: "Used \(calls.count) skills"))]
+        case .worktree:
+            let entered = calls.filter { $0.use.name == "EnterWorktree" }.count
+            var clauses: [StyledText] = []
+            if entered > 0 { clauses.append(StyledText(String(localized: "Moved into a worktree"))) }
+            if calls.count > entered { clauses.append(StyledText(String(localized: "Left the worktree"))) }
+            return clauses
+        case .message:
+            let sent = calls.compactMap(\.sentMessage)
+            if sent.count == calls.count, Set(sent.map(\.to)).count == 1, let first = sent.first {
+                if calls.count == 1, let action = first.action { return [StyledText(action)] }
+                return [messaged(first)]
+            }
+            return [StyledText(String(localized: "Sent \(calls.count) messages"))]
+        case .notify:
+            return [
+                calls.count == 1
+                    ? StyledText(String(localized: "Sent you a notification"))
+                    : StyledText(String(localized: "Sent you \(calls.count) notifications"))
             ]
         case .other:
             var servers: [(String, Int)] = []
@@ -188,6 +217,14 @@ nonisolated struct WorkLineWriter {
                     : StyledText(String(localized: "Used \(server) \(count) times"))
             }
         }
+    }
+
+    /// *Messaged **team-lead***, *Messaged the team*.
+    private func messaged(_ message: SentMessage) -> StyledText {
+        if message.isTeam { return StyledText(String(localized: "Messaged the team")) }
+        return StyledText(
+            localized: String(localized: "Messaged \(StyledText.slot(0))"),
+            StyledText(message.to, style: .noun(opens: nil)))
     }
 
     /// A clause about files: named when there are at most two (each a link
@@ -319,10 +356,35 @@ nonisolated struct WorkLineWriter {
         case .tasks:
             let subject = input["subject"]?.stringValue
             return (StyledText(String(localized: "Updated the task list")), subject)
-        case .schedule, .message, .other:
-            let name = call.toolName
-            return (StyledText(name.tool), name.tool == name.server ? nil : name.server)
+        case .advisor:
+            return (StyledText(String(localized: "Asked the advisor")), call.advisor?.detail)
+        case .skill:
+            guard let name = call.skillName else { break }
+            let skill = StyledText(name, style: .noun(opens: nil))
+            if standalone {
+                return (StyledText(localized: String(localized: "Used the \(StyledText.slot(0)) skill"), skill), nil)
+            }
+            return (skill, input["args"]?.stringValue?.firstLine)
+        case .worktree:
+            if call.use.name == "EnterWorktree" {
+                let place = input["name"]?.stringValue ?? input["path"]?.stringValue
+                return (StyledText(String(localized: "Moved into a worktree")), place)
+            }
+            return (StyledText(String(localized: "Left the worktree")), input["action"]?.stringValue)
+        case .message:
+            guard let message = call.sentMessage else { break }
+            if standalone {
+                return (message.action.map { StyledText($0) } ?? messaged(message), message.summary.nonEmpty)
+            }
+            return (StyledText(String(localized: "To \(message.party)")), message.summary.nonEmpty)
+        case .notify:
+            let words = (input["message"]?.stringValue ?? input["title"]?.stringValue ?? "").firstLine
+            return (StyledText(String(localized: "Sent you a notification")), words.nonEmpty)
+        case .schedule, .other:
+            break
         }
+        let name = call.toolName
+        return (StyledText(name.tool), name.tool == name.server ? nil : name.server)
     }
 
     /// What a live call says it is doing (01-run.md "Live labels").
@@ -350,7 +412,23 @@ nonisolated struct WorkLineWriter {
             return StyledText(
                 localized: String(localized: "Fetching \(StyledText.slot(0))"),
                 StyledText(host, style: .noun(opens: nil)))
-        case .agent, .tasks, .schedule, .message, .other:
+        case .advisor: return StyledText(String(localized: "Asking the advisor"))
+        case .skill:
+            guard let name = call.skillName else { return StyledText(call.toolName.tool) }
+            return StyledText(
+                localized: String(localized: "Using the \(StyledText.slot(0)) skill"),
+                StyledText(name, style: .noun(opens: nil)))
+        case .worktree:
+            return StyledText(
+                call.use.name == "EnterWorktree"
+                    ? String(localized: "Moving into a worktree") : String(localized: "Leaving the worktree"))
+        case .message:
+            guard let message = call.sentMessage else { return StyledText(call.toolName.tool) }
+            return StyledText(
+                localized: String(localized: "Messaging \(StyledText.slot(0))"),
+                StyledText(message.party, style: .noun(opens: nil)))
+        case .notify: return StyledText(String(localized: "Sending a notification"))
+        case .agent, .tasks, .schedule, .other:
             return label(call, standalone: true, opens: call.id).0
         }
     }
@@ -427,7 +505,7 @@ nonisolated struct WorkLineWriter {
                     ))
             }
             return StyledText()
-        case .command, .tasks, .schedule, .message, .other:
+        case .command, .tasks, .schedule, .advisor, .skill, .worktree, .message, .notify, .other:
             if let duration = call.duration, duration >= PageThresholds.shownDuration {
                 return StyledText(duration.durationText)
             }

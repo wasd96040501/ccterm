@@ -31,6 +31,15 @@ nonisolated enum DocumentContent: Sendable, Equatable {
     case commandOutput(LocalCommand)
     /// The summary a compaction left for the model to continue from.
     case compactionSummary(String)
+    /// The advisor's advice, in the clear: its words, the advisor's model as the
+    /// status.
+    case advice(ToolCall)
+    /// What Claude sent another party with `SendMessage`.
+    case sentMessage(ToolCall)
+    /// The words the CLI wrote to start a turn nobody typed.
+    case continuationPrompt(String)
+    /// A picture pasted into a prompt, at its size.
+    case image(PromptImage)
     /// Any other tool: its input and its result, as they were recorded.
     case other(ToolCall)
 }

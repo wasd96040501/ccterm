@@ -15,6 +15,8 @@ nonisolated struct Tile: Sendable, Equatable {
         case question
         /// A plan put to the reader for approval.
         case plan
+        /// A picture pasted into a prompt — `photo`.
+        case image
     }
 
     enum State: Sendable, Equatable {

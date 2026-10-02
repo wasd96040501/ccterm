@@ -18,8 +18,12 @@ extension PageRow {
         /// Indexes in the new list of rows in both lists whose value changed:
         /// one `reloadRows` call, after the other two.
         var reloaded = IndexSet()
+        /// Indexes in the new list of rows in both lists, not reloaded, with
+        /// another row above them now: their gap (`spacingAbove(after:)`)
+        /// depends on it — one `noteHeightOfRows`, last.
+        var regapped = IndexSet()
 
-        var isEmpty: Bool { removed.isEmpty && inserted.isEmpty && reloaded.isEmpty }
+        var isEmpty: Bool { removed.isEmpty && inserted.isEmpty && reloaded.isEmpty && regapped.isEmpty }
     }
 
     /// The changes from `old` to `new`. A live session's pages mostly append,
@@ -50,6 +54,13 @@ extension PageRow {
         }
         changes.removed = IndexSet(integersIn: 0..<old.count).subtracting(keptOld)
         changes.inserted = IndexSet(integersIn: 0..<new.count).subtracting(keptNew)
+        for position in kept {
+            let (was, now) = shared[position]
+            guard !changes.reloaded.contains(now) else { continue }
+            let above = now > 0 ? new[now - 1].id : nil
+            let wasAbove = was > 0 ? old[was - 1].id : nil
+            if above != wasAbove { changes.regapped.insert(now) }
+        }
         return changes
     }
 

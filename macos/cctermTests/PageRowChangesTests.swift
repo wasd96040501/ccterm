@@ -65,7 +65,14 @@ final class PageRowChangesTests: XCTestCase {
 
     func testRowsThatGoAreRemovedByTheirOldIndexes() {
         let changes = assertTurns(rows("a", "b", "c", "d"), into: rows("b", "d"))
-        XCTAssertEqual(changes, PageRow.Changes(removed: IndexSet([0, 2])))
+        XCTAssertEqual(changes, PageRow.Changes(removed: IndexSet([0, 2]), regapped: IndexSet([0, 1])))
+    }
+
+    /// A row's gap depends on the row above it (`spacingAbove(after:)`): a row
+    /// that stays under a new neighbour is noted, one under the same isn't.
+    func testARowUnderANewNeighbourIsRegapped() {
+        let changes = assertTurns(rows("a", "c", "d"), into: rows("a", "b", "c", "d"))
+        XCTAssertEqual(changes, PageRow.Changes(inserted: IndexSet(integer: 1), regapped: IndexSet(integer: 2)))
     }
 
     func testARowThatChangesKindIsReloaded() {

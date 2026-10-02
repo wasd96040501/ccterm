@@ -159,6 +159,7 @@ final class TranscriptViewController: NSViewController {
             if !changes.removed.isEmpty { transcript.removeRows(at: changes.removed) }
             if !changes.inserted.isEmpty { transcript.insertRows(at: changes.inserted) }
             if !changes.reloaded.isEmpty { transcript.reloadRows(at: changes.reloaded) }
+            if !changes.regapped.isEmpty { transcript.noteHeightOfRows(withIndexesChanged: changes.regapped) }
         }
     }
 

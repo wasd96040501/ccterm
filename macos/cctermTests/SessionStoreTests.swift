@@ -479,6 +479,22 @@ final class SessionStoreTests: XCTestCase {
         await store.endAll()
     }
 
+    func testAResumeOfASessionNoTabHasReadStillRunsOnTheModelItLastRanOn() async throws {
+        var history = Transcript(messages: [
+            .assistant(
+                AssistantMessage(
+                    uuid: "a", sessionID: "s", messageID: "m", model: "claude-sonnet-5-5", content: [.text("hi")]))
+        ])
+        history.metadata.cwd = folder.path
+        let store = try store(history: history)
+        let url = scratch.appendingPathComponent("projects/p/0a1b.jsonl")
+        store.send("echo", to: url)
+        try await state(of: store, at: url) { $0.phase == .idle && $0.prompts.isEmpty }
+        let line = try XCTUnwrap(launches().last)
+        XCTAssertTrue(line.contains("--model sonnet"), line)
+        await store.endAll()
+    }
+
     func testAPromptToACrashedSessionResumesIt() async throws {
         let store = try store()
         let url = store.start(newLaunch(), prompt: "crash")

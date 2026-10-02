@@ -240,8 +240,9 @@ final class SessionStore {
         if let failed { drop(failed) }
         let history = failed?.state.transcript ?? known[url]
         let settings =
-            rest[url] ?? failed?.state.settings ?? history.flatMap { lastSettings(of: $0) }
-            ?? fallbackSettings()
+            rest[url] ?? failed?.state.settings
+            // Unread history: the launch reads it and takes what it last ran on.
+            ?? history.flatMap { lastSettings(of: $0) ?? fallbackSettings() }
         rest[url] = nil
         let id = url.deletingPathExtension().lastPathComponent
         let session = LiveSession(transcriptURL: url, history: history ?? Transcript(messages: []), settings: settings)
@@ -254,7 +255,7 @@ final class SessionStore {
             var transcript = history
             if transcript == nil {
                 let read = try await read(url)
-                session.adopt(history: read, settings: lastSettings(of: read))
+                session.adopt(history: read, settings: lastSettings(of: read) ?? fallbackSettings())
                 transcript = read
             }
             guard let cwd = transcript?.metadata.cwd ?? workingDirectories[url]?.path else {

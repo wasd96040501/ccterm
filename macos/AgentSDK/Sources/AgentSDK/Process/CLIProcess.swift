@@ -17,6 +17,10 @@ final class CLIProcess: @unchecked Sendable {
     private let writeQueue = DispatchQueue(label: "AgentSDK.CLIProcess.stdin")
     private let stderrTail = OSAllocatedUnfairLock(initialState: Data())
     private let stdinOpen = OSAllocatedUnfairLock(initialState: true)
+    /// Read once: `fileDescriptor` raises on a closed handle, and a write can
+    /// be asked for after `closeStdin()` closed it. The write queue's
+    /// `stdinOpen` check keeps the number from being used once it is closed.
+    private let stdinFD: Int32
 
     private static let stderrTailLimit = 16 * 1024
 
@@ -25,6 +29,7 @@ final class CLIProcess: @unchecked Sendable {
         process.standardInput = stdin
         process.standardOutput = stdout
         process.standardError = stderr
+        stdinFD = stdin.fileHandleForWriting.fileDescriptor
     }
 
     var isRunning: Bool { process.isRunning }
@@ -41,7 +46,7 @@ final class CLIProcess: @unchecked Sendable {
         } catch {
             throw AgentSDKError.launchFailed(error.localizedDescription)
         }
-        _ = fcntl(stdin.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
+        _ = fcntl(stdinFD, F_SETNOSIGPIPE, 1)
 
         let stdoutFD = stdout.fileHandleForReading.fileDescriptor
         Thread.detachNewThread {
@@ -66,12 +71,11 @@ final class CLIProcess: @unchecked Sendable {
 
     /// Writes one line (a newline is appended). Dropped once stdin is closed.
     func writeLine(_ data: Data) {
-        let fd = stdin.fileHandleForWriting.fileDescriptor
-        writeQueue.async { [stdinOpen] in
+        writeQueue.async { [stdinOpen, stdinFD] in
             guard stdinOpen.withLock({ $0 }) else { return }
             var line = data
             line.append(UInt8(ascii: "\n"))
-            if !Self.writeAll(fd, line) { stdinOpen.withLock { $0 = false } }
+            if !Self.writeAll(stdinFD, line) { stdinOpen.withLock { $0 = false } }
         }
     }
 

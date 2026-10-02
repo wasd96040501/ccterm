@@ -121,10 +121,26 @@ badge, not a thing.
 - **The decoration is the app icon** (`design/icon`, the shipped pixels) at
   64 pt — the page is the app's own front door. Behind it, a glow made of the
   icon's cursor ramp (peach → coral → violet): a vertical gradient under a
-  radial mask, 20-pt blur, 42 % (36 % in Dark), rising and falling (60 → 100 %)
-  in time with the icon's cursor, which blinks in 1.1-s steps as a terminal's does. Both hold still while
-  the field has focus, so typing has nothing moving above it; Reduce Motion
-  holds them always. It is the only coloured thing on the page.
+  radial mask, 20-pt blur, at 60 % of its full strength (42 %, 36 % in Dark).
+  It is the only coloured thing on the page, and **it holds still**: nothing
+  on the page moves while you read or type.
+- **Send is the one moment it moves — once, like a level meter rising.** A
+  light passes up the icon's cursor, row by row from the bottom, and the glow
+  swells upward to full strength with it. Then the page hands over (the prompt
+  becomes the first bubble, the composer glides down). Until then the prompt
+  stays in the field, dimmed, so nothing vanishes while the light rises.
+  - **600 ms, decelerating.** Each row lights when an ease-out level reaches
+    it: onsets at 0, 70, 150, 240 and 340 ms (65k + 5k²), each a 240-ms flash
+    to 55 % white; the glow swells on `cubic-bezier(.2, .7, .2, 1)` over the
+    same 600 ms. The first row answers Return within a frame — the feedback
+    is immediate — and the top arrives slowly, so the end reads as arriving,
+    not stopping.
+  - **Why 600.** Under ~400 ms the five rows blur into one flash and nothing
+    reads as rising; past ~800 ms it reads as waiting, with your prompt held.
+    And it costs nothing: the CLI's launch starts at Send and takes longer
+    (the login-shell probe alone is ≥ 1 s), so the rise fills time the launch
+    takes anyway; the tab shows *Starting* for the rest.
+  - **Reduce Motion:** no rise; the page hands over at once.
 - **In Dark the icon is the system's Dark rendition**, not the Default one
   laid on a dark window. `ictool --rendition Dark` turns the plum plate a
   neutral near-black (≈ `#1F1F21` → `#0E0E0F`) and keeps the Liquid Glass
@@ -164,7 +180,7 @@ badge, not a thing.
 - **Send** (↩, or the arrow) launches. The page turns into the session tab in
   place: the prompt appears as the first bubble at once, the composer glides
   from its centre to the bottom (0.3 s, ease-out; Reduce Motion: a
-  cross-fade), and the tab enters *Starting*.
+  cross-fade), and the tab enters *Starting* — after the rise (above).
 
 **Where the menus get models before any session runs.** ccterm keeps a
 **catalog** — `initialize`'s `models` (with each one's `supportedEffortLevels`,

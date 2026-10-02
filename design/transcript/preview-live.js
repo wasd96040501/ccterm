@@ -134,8 +134,15 @@ function appIcon(size) {
     '<linearGradient id="lvicbg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--ic-top)"/><stop offset="1" style="stop-color:var(--ic-bot)"/></linearGradient>' +
     '<linearGradient id="lvicrim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:#fff;stop-opacity:var(--rim-top)"/><stop offset=".5" style="stop-color:#fff;stop-opacity:var(--rim-mid)"/><stop offset="1" style="stop-color:#fff;stop-opacity:var(--rim-bot)"/></linearGradient></defs>' +
     `<path d="${lame(512, 512, 512, 512, 5, 160)}" fill="url(#lvicbg)"/><path d="${lame(512, 512, 506, 506, 5, 160)}" fill="none" stroke="url(#lvicrim)" stroke-width="12"/>` +
-    `<g fill="#F4F2EE">${px}</g><g class="cur">${cur}</g></svg>`;
+    `<g fill="#F4F2EE">${px}</g><g class="cur">${cur}</g>` +
+    // The rise's light: one white row over each cursor row, lit bottom → top on Send.
+    `<g class="lvl" fill="#fff">${CURSOR5.map((_, r) => `<rect x="${x0 + 7 * c}" y="${y0 + (2 + r) * c}" width="${3 * c}" height="${c + 0.5}" style="--k:${4 - r}"/>`).join("")}</g></svg>`;
 }
+/** Send in the New view: one rise, then the page hands over (08-live.md
+ *  "The New view"). 600 ms, decelerating: the first row answers the key at
+ *  once, the top one arrives slowly. The launch runs underneath — it takes
+ *  longer than this — so the rise costs nothing. */
+const RISE_MS = 600;
 const RACK = '<rect x="3" y="3.2" width="10" height="4" rx="1.2"/><rect x="3" y="8.8" width="10" height="4" rx="1.2"/><path d="M5.2 5.2h.01M5.2 10.8h.01"/>';
 /** An account's mark, as Settings draws it: Claude's for the subscription,
  *  server.rack in secondary for every provider. */
@@ -798,16 +805,30 @@ const LW = {
     if (e.key === "Enter" && !e.shiftKey && !e.metaKey) { e.preventDefault(); return this.send(s); }
   },
   send(s) {
+    if (s.rising) return;
     const text = (s.token ? `/${s.token}${s.text ? " " + s.text : ""}` : s.text).trim();
     if (!text) return;
     const row = s.token ? { type: "slash", name: `/${s.token}`, args: s.text.trim() } : { type: "user", text };
     s.text = ""; s.token = null; s.err = "";
+    if (isNew(s)) return this.rise(s, row, text);
     for (const el of this.panes.values()) if (el.dataset.sid === s.id) el.querySelector("textarea").value = "";
     if (isNew(s)) return this.launch(s, row, text);
     if (WORKING.has(s.state) || s.state === "starting") return queue(s, row);
     if (s.state === "rest" || s.state === "failed") return resume(s, row);
     this.refresh(s);
     startTurn(s, row);
+  },
+  /** The New view's one animation: the cursor fills bottom → top and the glow
+   *  swells. The prompt stays in the field, dimmed, until the page hands over. */
+  rise(s, row, text) {
+    const t = this.tabsAll().find((x) => x.s === s);
+    const pane = this.panes.get(t ? t.id : "empty");
+    const icon = pane && pane.querySelector(".lv-appicon");
+    if (!icon || matchMedia("(prefers-reduced-motion: reduce)").matches) return this.launch(s, row, text);
+    s.rising = true;
+    (pane.matches(".lv-new") ? pane : pane.querySelector(".lv-new")).classList.add("rising");
+    pane.querySelector("textarea").readOnly = true;
+    setTimeout(() => { s.rising = false; this.launch(s, row, text); }, RISE_MS);
   },
   /** Send in a New tab: the page becomes the session in place; the composer glides down. */
   launch(s, row, text) {

@@ -116,22 +116,25 @@
 .lv-new::after { content: ""; flex: 1 1 0; }
 .lv-hero { display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 20px; }
 
-/* The app icon, and its cursor's light on the page. The cursor blinks as a
-   terminal's does and its light breathes with it; while you type, both hold. */
+/* The app icon, and its cursor's light on the page. Both hold still; on Send
+   they rise once (RISE_MS) and the page hands over. */
 .lv-appicon { position: relative; width: 64px; height: 64px; margin-bottom: 16px; }
 .lv-appicon::before {
   content: ""; position: absolute; left: 50%; top: 66%; width: 112px; height: 84px; transform: translate(-50%, -50%); z-index: 0;
   background: linear-gradient(180deg, #FFB46C, #FF6E7C 50%, #B95CF8);
   -webkit-mask: radial-gradient(closest-side, #000, transparent); mask: radial-gradient(closest-side, #000, transparent);
-  filter: blur(20px); opacity: var(--glow); animation: lvglow 1.1s ease-in-out infinite alternate;
+  filter: blur(20px); opacity: calc(var(--glow) * 0.6);
 }
 .lv-appicon .appicon { position: relative; z-index: 1; display: block; filter: drop-shadow(0 6px 14px rgba(20, 18, 24, 0.22)); }
-.appicon .cur { animation: lvblink 1.1s steps(1) infinite; }
-@keyframes lvblink { 50% { opacity: 0.22; } }
-@keyframes lvglow { from { opacity: calc(var(--glow) * 0.6); } to { opacity: var(--glow); } }
-.lv-new:has(textarea:focus) .appicon .cur, .lv-new.static .appicon .cur { animation: none; }
-.lv-new:has(textarea:focus) .lv-appicon::before { animation: none; opacity: var(--glow); }
-@media (prefers-reduced-motion: reduce) { .appicon .cur, .lv-appicon::before { animation: none; } }
+.appicon .lvl rect { opacity: 0; }
+/* The rise. Row k (0 = bottom) lights when a decelerating level reaches it:
+   onsets 65k + 5k² ms = 0, 70, 150, 240, 340, each a 240-ms flash; the glow
+   swells over the same 600 ms and stays up through the handover. */
+.lv-new.rising .appicon .lvl rect { animation: lvrow 240ms ease-out both; animation-delay: calc(var(--k) * 65ms + var(--k) * var(--k) * 5ms); }
+@keyframes lvrow { 30% { opacity: 0.55; } to { opacity: 0; } }
+.lv-new.rising .lv-appicon::before { animation: lvswell 600ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@keyframes lvswell { to { opacity: var(--glow); transform: translate(-50%, -54%) scale(1.08, 1.18); } }
+.lv-new.rising textarea { opacity: 0.5; }
 
 .lv-folder {
   font: inherit; font-size: 22px; font-weight: 650; letter-spacing: -0.01em; color: var(--label); background: none; border: 0;

@@ -68,7 +68,7 @@ final class LibraryStoreTests: XCTestCase {
                 id: "/x/repo", kind: .project, title: "repo", transcriptURL: nil,
                 children: [
                     session("-x-repo/s1.jsonl", "Named", children: [subagents, workflow]),
-                    session("-x-repo--claude-worktrees-wt-sub/s2.jsonl", "Auto"),
+                    session("-x-repo--claude-worktrees-wt-sub/s2.jsonl", "Auto", worktreeBranch: "worktree-wt"),
                 ]),
             LibraryNode(
                 id: "/y/other", kind: .project, title: "other", transcriptURL: nil,
@@ -76,9 +76,13 @@ final class LibraryStoreTests: XCTestCase {
         ]
     }
 
-    private func session(_ relative: String, _ title: String, children: [LibraryNode] = []) -> LibraryNode {
+    private func session(
+        _ relative: String, _ title: String, children: [LibraryNode] = [], worktreeBranch: String? = nil
+    ) -> LibraryNode {
         let url = fixture.url(relative)
-        return LibraryNode(id: url.path, kind: .session, title: title, transcriptURL: url, children: children)
+        return LibraryNode(
+            id: url.path, kind: .session, title: title, transcriptURL: url, children: children,
+            worktreeBranch: worktreeBranch)
     }
 
     private func agent(_ relative: String, _ title: String) -> LibraryNode {
@@ -103,6 +107,24 @@ final class LibraryStoreTests: XCTestCase {
     }
 
     // MARK: - Tests
+
+    func testAWorktreeSessionIsListedUnderItsRepositoryWithTheBranchItRecorded() async throws {
+        let recorded = Rows.row([
+            "type": "user", "uuid": "u", "parentUuid": NSNull(), "sessionId": "s",
+            "cwd": "/x/repo/.claude/worktrees/quiet-otter", "gitBranch": "worktree-quiet-otter",
+            "message": ["role": "user", "content": "hi"],
+        ])
+        try fixture.write("-x-repo--claude-worktrees-quiet-otter/w1.jsonl", [recorded, Rows.aiTitle("In a worktree")])
+        try fixture.write("-x-repo/w2.jsonl", [Rows.user("u"), Rows.aiTitle("In place")], modified: 50)
+        store.start()
+        await waitForNodes { !$0.isEmpty }
+        let repository = try XCTUnwrap(store.nodes.first)
+        XCTAssertEqual(repository.id, "/x/repo")
+        XCTAssertEqual(repository.children.map(\.title).sorted(), ["In a worktree", "In place"])
+        XCTAssertEqual(
+            repository.children.first { $0.title == "In a worktree" }?.worktreeBranch, "worktree-quiet-otter")
+        XCTAssertNil(repository.children.first { $0.title == "In place" }?.worktreeBranch)
+    }
 
     func testBuildsTheTreeFromTheDirectory() async throws {
         try Self.writeLibrary(fixture)

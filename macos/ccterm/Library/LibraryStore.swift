@@ -241,7 +241,9 @@ final class LibraryStore {
             .first { !$0.isEmpty }
         return Record(
             modificationDate: session.modificationDate,
-            summary: Record.Summary(project: project(ofDirectory: cwd), title: title, children: children(of: session)))
+            summary: Record.Summary(
+                project: project(ofDirectory: cwd), title: title, children: children(of: session),
+                worktreeBranch: worktreeBranch(ofDirectory: cwd, recorded: metadata.gitBranch)))
     }
 
     /// A shown session's entry; `nil` for one that isn't.
@@ -249,7 +251,8 @@ final class LibraryStore {
         guard let summary = record.summary else { return nil }
         let node = LibraryNode(
             id: session.url.path, kind: .session, title: summary.title ?? String(localized: "Untitled Session"),
-            transcriptURL: session.url, children: summary.children)
+            transcriptURL: session.url, children: summary.children,
+            worktreeBranch: summary.worktreeBranch)
         return Entry(modificationDate: session.modificationDate, project: summary.project, node: node)
     }
 
@@ -300,6 +303,16 @@ final class LibraryStore {
     private nonisolated static func project(ofDirectory path: String) -> String {
         guard let range = path.range(of: "/.claude/worktrees/") else { return path }
         return String(path[..<range.lowerBound])
+    }
+
+    /// The branch of the worktree a session ran in (`<repo>/.claude/worktrees/<name>`):
+    /// the one its transcript records, else the CLI's own naming for it; `nil`
+    /// for a session run anywhere else.
+    private nonisolated static func worktreeBranch(ofDirectory path: String, recorded: String?) -> String? {
+        guard let range = path.range(of: "/.claude/worktrees/") else { return nil }
+        let name = path[range.upperBound...].split(separator: "/").first.map(String.init) ?? ""
+        guard !name.isEmpty else { return nil }
+        return recorded.flatMap { $0.isEmpty ? nil : $0 } ?? "worktree-\(name)"
     }
 
     /// Whether a person ran the session — at the CLI's prompt, or in ccterm —

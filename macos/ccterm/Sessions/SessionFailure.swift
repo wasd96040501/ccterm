@@ -19,8 +19,20 @@ nonisolated struct SessionFailure: Sendable, Equatable {
 
     /// The CLI exited without being asked to.
     init(_ termination: Termination) {
-        // TODO(fill B): word it as the design's detail line (localized).
-        self.init(message: termination.stderr, log: termination.stderr)
+        let code = String(localized: "Exit code \(Int(termination.exitCode))")
+        let last = termination.stderr.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .last { !$0.isEmpty }
+        self.init(message: last.map { "\(code) · \($0)" } ?? code, log: termination.stderr)
+    }
+
+    /// The launch did not get as far as a process: the error in words.
+    init(launchError error: Error) {
+        if case AgentSDKError.launchFailed(let reason) = error {
+            self.init(message: reason)
+        } else {
+            self.init(message: error.localizedDescription)
+        }
     }
 }
 
@@ -31,9 +43,30 @@ extension SessionSettings {
     /// catalog has that model (the subscription when none does). A resume
     /// passes them, so it doesn't drift to the CLI's default model. A last mode
     /// of Bypass becomes Ask when `allowsBypassPermissions` is off. `nil` for a
-    /// transcript with no assistant entry.
+    /// transcript with no assistant entry, or while no account is known to put
+    /// the model on.
     nonisolated init?(lastOf transcript: Transcript, catalog: ModelCatalog, allowsBypassPermissions: Bool) {
-        // TODO(fill B)
-        return nil
+        var model: String?
+        var effort: Effort?
+        var mode: PermissionMode?
+        for message in transcript.messages.reversed() {
+            switch message {
+            case .assistant(let assistant) where model == nil:
+                // The CLI's own notices (an API error, a command's output) ran no model.
+                guard assistant.parentToolUseID == nil, assistant.model != "<synthetic>", !assistant.model.isEmpty
+                else { continue }
+                model = assistant.model
+                effort = assistant.effort
+            case .user(let user) where mode == nil:
+                if user.parentToolUseID == nil, let recorded = user.permissionMode { mode = recorded }
+            default:
+                break
+            }
+            if model != nil, mode != nil { break }
+        }
+        guard let model, let choice = catalog.choice(forModelNamed: model) else { return nil }
+        var permissionMode = mode ?? .default
+        if permissionMode == .bypassPermissions, !allowsBypassPermissions { permissionMode = .default }
+        self.init(model: choice, effort: effort, permissionMode: permissionMode, fastMode: false)
     }
 }

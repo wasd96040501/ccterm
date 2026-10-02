@@ -103,19 +103,20 @@ const LV = {
   folder: '<path d="M2.8 5.2V4.4c0-.6.4-1 1-1h2.6l1.2 1.4h4.6c.6 0 1 .4 1 1v5.8c0 .6-.4 1-1 1H3.8c-.6 0-1-.4-1-1z"/>',
   branch: '<svg width="9" height="10" viewBox="0 0 9 10"><circle cx="2.2" cy="2" r="1.2" fill="none" stroke="currentColor"/><circle cx="2.2" cy="8" r="1.2" fill="none" stroke="currentColor"/><circle cx="6.8" cy="3.4" r="1.2" fill="none" stroke="currentColor"/><path d="M2.2 3.2v3.6M6.8 4.6c0 1.6-4.6 1-4.6 2.2" fill="none" stroke="currentColor"/></svg>',
 };
-/** The conversation icon, redesigned (08-live.md "The conversation icon"):
- *  white, as a Mac document is, with the app's own prompt and cursor as its
- *  emblem — the way a Swift file is white paper with an orange bird. Full
- *  colour, not a template: it stays itself on a selected row, as Finder's do. */
+/** The conversation icon (08-live.md "The sidebar and the conversation icon"):
+ *  white, as a Mac document is, with one small mark in one colour — the
+ *  app's prompt in grey and its cursor in coral, the way a Swift file is white
+ *  paper with an orange bird. Full colour, not a template: it stays itself on
+ *  a selected row, as Finder's do. */
 const BUBBLE = lame(8, 7.2, 6.6, 5.1, 4, 96) + "M3.5 10.8L8.2 11.6L3.7 14.7Q3.2 15 3.2 14.4Z";
-const RAMP3 = ["#FFA96E", "#FF6E7C", "#B95CF8"];
+const SI_MARK = "#FF6E7C"; // the ramp's middle: the app's coral, one colour
 function sessionIcon(size = 16) {
   return `<svg class="sicon" width="${size}" height="${size}" viewBox="0 0 16 16" aria-hidden="true">` +
     // The edge is drawn twice as wide under the fill, so only its outer half
     // shows and the tail joins the body without a seam.
     `<path class="se" d="${BUBBLE}"/><path class="sb" d="${BUBBLE}"/>` +
     '<path d="M5.1 5.3l1.9 1.9-1.9 1.9" fill="none" stroke="var(--si-ink)" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"/>' +
-    RAMP3.map((c, i) => `<rect x="8.6" y="${5.3 + i * 1.27}" width="2.1" height="1.31" fill="${c}"/>`).join("") +
+    `<rect x="8.6" y="5.3" width="2.1" height="3.8" rx=".35" fill="${SI_MARK}"/>` +
     "</svg>";
 }
 /** The app icon (design/icon SHIP): 48-unit pixels on the 1024 canvas, a
@@ -1204,9 +1205,9 @@ function buildLiveSpecimens() {
   // The conversation icon
   const big = sessionIcon(128).replace('class="sicon"', 'class="sicon big"');
   const oldIcon = (sz) => `<svg width="${sz}" height="${sz}" viewBox="0 0 16 16" style="color:var(--coral)">${GLYPHS.session}</svg>`;
-  const mini = (dark) => `<div class="lv-side mini${dark ? " dk" : ""}">${sideRow(0, true, FOLDER_ICON, "ccterm")}${sideRow(1, null, sessionIcon(), "Smaller run-row summary", arcMark())}${sideRow(1, null, sessionIcon(), "Row gap and tool rows", "", true)}${sideRow(1, null, sessionIcon(), "Review the diff", '<span class="dotmark coral"></span>')}${sideRow(1, null, sessionIcon(), "Nightly build")}${sideRow(0, false, FOLDER_ICON, "ghostty")}</div>`;
+  const mini = (dark) => `<div class="lv-side mini${dark ? " dk" : " lt"}">${sideRow(0, true, FOLDER_ICON, "ccterm")}${sideRow(1, null, sessionIcon(), "Smaller run-row summary", arcMark())}${sideRow(1, null, sessionIcon(), "Row gap and tool rows", "", true)}${sideRow(1, null, sessionIcon(), "Review the diff", '<span class="dotmark coral"></span>')}${sideRow(1, null, sessionIcon(), "Nightly build")}${sideRow(0, false, FOLDER_ICON, "ghostty")}</div>`;
   document.getElementById("lv-icon").innerHTML = [
-    card("<b>White, as a Mac document is — the app's prompt for its emblem</b>A squircle bubble (n = 4) in white with a hairline edge, holding the app icon's chevron and its stepped cursor. Xcode's Swift file is white paper with an orange bird; this is white paper with our cursor. Full colour, not a template: it stays itself on a selected row.", `<div class="iconstage">${big}<div class="iconsizes">${sessionIcon(32)}${sessionIcon(16)}<span class="was">${oldIcon(32)}${oldIcon(16)}<i>today</i></span></div></div>`),
+    card("<b>White, as a Mac document is — one small mark in one colour</b>A squircle bubble (n = 4) in white with a hairline edge, holding the app's prompt: the chevron in grey, the cursor in coral. Xcode's Swift file is white paper with an orange bird; this is white paper with our cursor. Full colour, not a template: it stays itself on a selected row.", `<div class="iconstage">${big}<div class="iconsizes">${sessionIcon(32)}${sessionIcon(16)}<span class="was">${oldIcon(32)}${oldIcon(16)}<i>today</i></span></div></div>`),
     card("<b>In the sidebar</b>The app's own geometry: 22-pt rows, 14-pt indent, the system folder for a project. The white reads on both appearances; the selected row keeps it.", `<div class="sidepair">${mini(false)}${mini(true)}</div>`),
   ].join("");
 

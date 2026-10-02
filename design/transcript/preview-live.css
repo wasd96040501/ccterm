@@ -55,6 +55,7 @@
 .lv-side .wtb { color: var(--tertiary); margin-left: 5px; }
 .lv-side .mark { flex: none; width: 14px; display: flex; justify-content: center; }
 .lv-side.mini { border: 0.5px solid var(--separator); border-radius: var(--r-pop); width: 100%; }
+.lv-side.mini.lt { --side-bg: #e8e8ea; --side-sel: rgba(0, 0, 0, 0.1); --label: rgba(0, 0, 0, 0.85); --secondary: rgba(0, 0, 0, 0.5); --tertiary: rgba(0, 0, 0, 0.26); --separator: rgba(0, 0, 0, 0.1); --si-fill: #fff; --si-edge: rgba(0, 0, 0, 0.34); color-scheme: light; }
 .lv-side.mini.dk { --side-bg: #2b2b2e; --side-sel: rgba(255, 255, 255, 0.12); --label: rgba(255, 255, 255, 0.86); --secondary: rgba(255, 255, 255, 0.55); --tertiary: rgba(255, 255, 255, 0.25); --si-fill: #f5f5f7; --si-edge: rgba(0, 0, 0, 0.5); color-scheme: dark; }
 .lv-side.mini.dk .dotmark.idle { background: rgba(255, 255, 255, 0.3); }
 .sidepair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

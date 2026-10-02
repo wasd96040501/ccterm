@@ -95,8 +95,9 @@ badge, not a thing.
   (50 % in Dark) so it holds on a white or a selected row. The edge is
   drawn under the fill, so the tail joins the body without a seam.
 - **Emblem.** The app icon's prompt, small: a chevron in system grey
-  (`#6E6E73`) and a three-step cursor in the icon's ramp (peach, coral,
-  violet). It is the one bit of colour, and it is the app's own.
+  (`#6E6E73`) and the cursor as one solid block in coral (`#FF6E7C`, the
+  middle of the icon's ramp). One mark in one colour, as a Mac document wears
+  its kind: a ramp at 16 pt is three colours fighting for four pixels.
 - **Full colour, not a template**, so it stays itself on a selected row, as
   Finder's icons do. The build (`design/sidebar-icons/src/build.ts`) emits
   it as a colour asset, and the sidebar stops tinting it.

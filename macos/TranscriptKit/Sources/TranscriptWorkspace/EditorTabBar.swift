@@ -88,6 +88,18 @@ final class EditorTabBar: NSView, NSDraggingSource {
     private(set) var items: [Item] = []
     private(set) var selectedIndex: Int?
 
+    /// Whether this bar's editor is the active one. Only the active editor's
+    /// selected tab is raised in glass, so one tab in the window is the one in
+    /// use; another editor's shows the tab it holds without it.
+    var isActive = true {
+        didSet {
+            guard isActive != oldValue else { return }
+            for (index, item) in items.enumerated() {
+                tabs[item.id]?.view.configure(with: item, isSelected: index == selectedIndex, isActive: isActive)
+            }
+        }
+    }
+
     /// The tab under the pointer, which is the one the close button is over.
     private(set) var hoveredIndex: Int?
 
@@ -237,7 +249,7 @@ final class EditorTabBar: NSView, NSDraggingSource {
                 attach(EditorTabView(), as: item.id)
                 unplaced.insert(item.id)
             }
-            tabs[item.id]?.view.configure(with: item, isSelected: index == selectedIndex)
+            tabs[item.id]?.view.configure(with: item, isSelected: index == selectedIndex, isActive: isActive)
         }
         if let hovered = hoveredIndex, hovered >= items.count { hoveredIndex = nil }
         placeTabs(animated: draggedID != nil || gapIndex != nil)
@@ -852,10 +864,11 @@ private final class EditorTabView: NSView {
         }
     }
 
-    func configure(with item: EditorTabBar.Item, isSelected: Bool) {
+    func configure(with item: EditorTabBar.Item, isSelected: Bool, isActive: Bool) {
         self.isSelected = isSelected
-        background.isHidden = !isSelected
-        hoverFill.fillColor = isSelected ? .tabHoverOverGlass : .tabHover
+        let isRaised = isSelected && isActive
+        background.isHidden = !isRaised
+        hoverFill.fillColor = isRaised ? .tabHoverOverGlass : .tabHover
         label.stringValue = item.title
         label.font =
             item.isPreview ? NSFontManager.shared.convert(Self.font, toHaveTrait: .italicFontMask) : Self.font

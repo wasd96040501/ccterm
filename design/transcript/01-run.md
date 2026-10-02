@@ -107,7 +107,8 @@ beside, not below.
 
 ## Expanded
 
-A run's items, one 24-pt row each, indented 24 pt, in the order they ran.
+A run's items, one 28-pt row each — the run's own height — indented 24 pt,
+in the order they ran.
 
 ```
 ▢  Edited TranscriptView.swift, ran 3 commands · 1 failed        +12 −3  34s  ⌄
@@ -122,13 +123,13 @@ A run's items, one 24-pt row each, indented 24 pt, in the order they ran.
   Labels are those of a run of one.
 - **Items sit flush.** The list is the run's second level, so it is set
   tighter than the first: items follow the run's line and each other with no
-  gap — a 24-pt row is its own air, as in an outline view — and the entry
+  gap — a 28-pt row is its own air, as in an outline view — and the entry
   after the list keeps the transcript's 14-pt gap (README "Spacing").
 - **Consecutive edits to one file are one item** (Edit→Edit is the second most
   common pair): its document is the combined change.
 - **A failed item is its red tile**, and nothing more: no word, no error line.
   The tile already says it failed; why is the document's to say, one click
-  away. An item keeps its 24 pt whatever its state.
+  away. An item keeps its 28 pt whatever its state.
 - **Twelve items at most** (98.3 % of runs fit), then *Show 85 more* in link
   colour. A longer list is a log, and a log belongs beside, not in the page.
 - **⌥-click the chevron** expands or collapses every run in the transcript —

@@ -86,6 +86,45 @@ final class NumberedLinesViewTests: XCTestCase {
         XCTAssertEqual(pixels(of: view, in: gutter), before, "the numbers moved with the text")
     }
 
+    /// Scrolled down, the numbers stay inside the lines: the gutter is as
+    /// tall as the file and floats outside the clip view, and must not draw
+    /// over what stands above (an editor's tab bar).
+    func testTheNumbersNeverDrawAboveTheLines() throws {
+        let view = NumberedLinesView()
+        view.configure(with: .init(lines: Self.lines(200), style: .source))
+        let bar = NSView()
+        let container = NSView()
+        for subview in [bar, view] {
+            subview.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(subview)
+        }
+        NSLayoutConstraint.activate([
+            bar.topAnchor.constraint(equalTo: container.topAnchor),
+            bar.heightAnchor.constraint(equalToConstant: 40),
+            view.topAnchor.constraint(equalTo: bar.bottomAnchor),
+            view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            bar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        ])
+        let controller = NSViewController()
+        controller.view = container
+        let stage = AppKitStage.mount(controller, size: CGSize(width: 480, height: 300))
+        self.stage = stage
+        stage.drain()
+        let scroll = try XCTUnwrap(stage.find(NSScrollView.self))
+        let above = container.convert(bar.bounds, from: bar)
+        let before = pixels(of: container, in: above)
+
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: 400))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        stage.drain()
+
+        XCTAssertEqual(scroll.contentView.bounds.minY, 400, "premise: the lines scrolled down")
+        XCTAssertEqual(pixels(of: container, in: above), before, "the numbers drew above the lines")
+    }
+
     // MARK: - Helpers
 
     private static func lines(_ count: Int) -> [NumberedLinesView.Line] {

@@ -1,4 +1,5 @@
 import AgentSDK
+import TranscriptKit
 import XCTest
 
 @testable import ccterm
@@ -43,16 +44,36 @@ final class PageRowTests: XCTestCase {
     @MainActor
     func testWhatALineDisclosesSitsFlushAndTheApprovalCardSixUnder() {
         let rows = PageRow.rows(for: run(of: 14), disclosure: .expanded)
-        XCTAssertNil(rows[0].spacingAbove, "a run's line is an entry")
-        XCTAssertEqual(rows.dropFirst().map(\.spacingAbove), Array(repeating: 0, count: 13), "items and Show more")
+        XCTAssertEqual(
+            zip(rows.dropFirst(), rows).map { $0.spacingAbove(after: $1) }, Array(repeating: 0, count: 13),
+            "items and Show more")
 
         let use = ToolUseBlock(id: "c1", name: "Bash", input: MessageScript.json(#"{"command":"make"}"#))
         let approval = Approval(
             ToolCall(
                 use: use, result: nil, kind: ToolKind(use, result: nil), state: .waiting(reason: nil), startedAt: nil,
                 finishedAt: nil))
-        XCTAssertEqual(PageRow(id: .init(entry: "c1", part: .approval), kind: .approval(approval)).spacingAbove, 6)
-        XCTAssertNil(PageRow(id: .init(entry: "d", part: .main), kind: .interruption).spacingAbove)
+        XCTAssertEqual(
+            PageRow(id: .init(entry: "c1", part: .approval), kind: .approval(approval)).spacingAbove(after: rows[0]), 6)
+        XCTAssertNil(PageRow(id: .init(entry: "d", part: .main), kind: .interruption).spacingAbove(after: nil))
+    }
+
+    /// A line of work's box is its hover, the words 6 pt in from its top and
+    /// bottom: the gap between entries is measured from the words, so it is
+    /// the transcript's less that air on each side that has it — and the same
+    /// under a run whether it ends on its line, an item or *Show N more*.
+    @MainActor
+    func testTheGapBetweenEntriesIsMeasuredFromALineOfWorksWords() {
+        let interruption = PageRow(id: .init(entry: "d", part: .main), kind: .interruption)
+        let line = PageRow.rows(for: run(of: 14), disclosure: .collapsed)[0]
+        let gap = TranscriptView.rowSpacing
+        XCTAssertNil(interruption.spacingAbove(after: interruption), "premise: neither holds air")
+        XCTAssertEqual(line.spacingAbove(after: interruption), gap - 6)
+        XCTAssertEqual(line.spacingAbove(after: line), gap - 12)
+        for disclosure in [RunDisclosure.collapsed, .expanded, .showingAll] {
+            let last = PageRow.rows(for: run(of: 14), disclosure: disclosure).last
+            XCTAssertEqual(interruption.spacingAbove(after: last), gap - 6, "under a run \(disclosure)")
+        }
     }
 
     func testARunOfOneNeverExpandsAndOpensItsCall() {

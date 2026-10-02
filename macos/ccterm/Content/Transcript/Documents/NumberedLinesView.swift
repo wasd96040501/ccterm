@@ -93,6 +93,9 @@ final class NumberedLinesView: NSView {
         scroll.drawsBackground = true
         scroll.backgroundColor = .textBackgroundColor
         scroll.borderType = .noBorder
+        // The gutter floats outside the clip view and is as tall as the
+        // lines: unclipped, it scrolls up over whatever stands above.
+        scroll.clipsToBounds = true
         scroll.documentView = document
         scroll.addFloatingSubview(gutter, for: .horizontal)
         return scroll

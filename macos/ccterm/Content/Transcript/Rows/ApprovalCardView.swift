@@ -134,7 +134,7 @@ final class ApprovalCardView: NSView, PageRowView {
         let metrics = Self.metrics(for: model, width: bounds.width)
         let inset = Self.border + Self.padding.left
         let content = Self.contentWidth(bounds.width)
-        // The row is the card; its gap under the run is the transcript's (PageRow.spacingAbove).
+        // The row is the card; its gap under the run is the transcript's (PageRow.spacingAbove(after:)).
         outline.frame = NSRect(x: 0, y: 0, width: bounds.width, height: metrics.height)
 
         var y = Self.border + Self.padding.top

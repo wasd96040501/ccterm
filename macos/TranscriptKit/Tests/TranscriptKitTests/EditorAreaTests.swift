@@ -996,6 +996,36 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertIdentical(mounted.area.activeViewController, mounted.probes[0])
     }
 
+    /// One tab in the window is raised in glass: the active editor's selected
+    /// one. The other editor's selected tab loses it, and gets it back when its
+    /// editor becomes active again.
+    func testOnlyTheActiveEditorsSelectedTabIsRaised() throws {
+        guard #available(macOS 26.0, *) else { throw XCTSkip("the glass is macOS 26's") }
+        let mounted = mount(tabs: 2)
+        defer { mounted.window.close() }
+        let rightProbe = ProbeViewController(title: "Right")
+        mounted.area.addGroup(with: NSTabViewItem(viewController: rightProbe))
+        finishOpening(mounted)
+        let (left, right) = (mounted.area.groups[0].tabBar, mounted.area.groups[1].tabBar)
+        XCTAssertEqual(left.selectedIndex, 1, "premise: the left editor has a selected tab")
+
+        XCTAssertEqual(try raisedTabs(in: left), [], "the inactive editor's tab is raised too")
+        XCTAssertEqual(try raisedTabs(in: right), ["Right"])
+
+        mounted.window.makeFirstResponder(mounted.probes[1].field)
+
+        XCTAssertEqual(try raisedTabs(in: left), ["Tab 1"])
+        XCTAssertEqual(try raisedTabs(in: right), [], "the editor left behind keeps its glass")
+    }
+
+    /// The titles of the tabs drawn in glass.
+    @available(macOS 26.0, *)
+    private func raisedTabs(in bar: EditorTabBar) throws -> [String] {
+        try bar.items.map(\.title).filter { title in
+            try tabView(titled: title, in: bar).subviews.contains { $0 is NSGlassEffectView && !$0.isHidden }
+        }
+    }
+
     // MARK: - Harness
 
     private struct Mounted {

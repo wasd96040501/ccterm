@@ -214,8 +214,11 @@ html, body {
 .user { display: flex; justify-content: flex-end; }
 .bubble { max-width: 75%; background: var(--bubble); border-radius: 14px; padding: 10px 16px; }
 
-/* A run, a news line: 28-pt rows. */
+/* A run, a news line: 28-pt rows, items too. The hover's 6 pt above and
+   below the words is part of the 14-pt gap between entries. */
 .run { position: relative; }
+.row:has(> .run, > .line) { display: flow-root; }
+.row > .run, .row > .line { margin: -6px 0; }
 .line {
   position: relative; display: flex; align-items: center; gap: 8px; height: 28px; font-size: 13px;
   color: var(--secondary); cursor: default; user-select: none; border-radius: 6px;
@@ -247,8 +250,7 @@ html, body {
 .line:hover .go { opacity: 1; }
 
 .items { padding-left: 24px; overflow: hidden; }
-.items .line { height: 24px; }
-.items .more { height: 24px; display: flex; align-items: center; padding-left: 24px; font-size: 13px; color: var(--accent); cursor: default; }
+.items .more { height: 28px; display: flex; align-items: center; padding-left: 24px; font-size: 13px; color: var(--accent); cursor: default; }
 
 /* The approval card: the bubble's shape, outlined. */
 .approval {

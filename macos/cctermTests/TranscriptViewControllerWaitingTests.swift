@@ -112,6 +112,29 @@ final class TranscriptViewControllerWaitingTests: XCTestCase {
         XCTAssertEqual(recorder.reports.last, true, "revealing did not bring the request into view")
     }
 
+    /// The reader's own scrolling is noticed where it never reaches the end:
+    /// bringing the request back into view by hand, short of the tail.
+    func testScrollingByHandTheRequestIntoViewShortOfTheEndReportsIt() throws {
+        let (controller, transcript) = try mount(state(turns: 40, waiting: true))
+        controller.bottomInset = 300
+        stage!.drain(seconds: 0.3)
+        transcript.scrollToRow(at: 0, scrollPosition: .top)
+        stage!.drain(seconds: 0.3)
+        XCTAssertEqual(recorder.reports.last, false, "premise: scrolled away from the request")
+
+        let scrollView = try XCTUnwrap(stage!.find(NSScrollView.self))
+        let clip = scrollView.contentView
+        // The end sits a card's height (the inset) below the document's.
+        let end = (scrollView.documentView?.frame.height ?? 0) - clip.bounds.height + 300
+        // 40 points short of it: the card's row is above the composer's space,
+        // and the transcript has not reached its end.
+        clip.scroll(to: NSPoint(x: 0, y: end - 40))
+        scrollView.reflectScrolledClipView(clip)
+        stage!.drain(seconds: 0.3)
+
+        XCTAssertEqual(recorder.reports.last, true, "a hand scroll brought the request into view and nobody was told")
+    }
+
     func testNothingWaitingIsAlwaysInView() throws {
         let (_, transcript) = try mount(state(turns: 40, waiting: false))
         transcript.scrollToRow(at: 0, scrollPosition: .top)

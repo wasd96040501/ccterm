@@ -37,6 +37,9 @@ nonisolated struct SessionState: Sendable {
     var isResponding = false
     /// How the CLI ended, when it ended without being asked to.
     var failure: Termination?
+    /// Whether the response in `partial` has stopped streaming (its
+    /// `messageStop` came), so that dropping its last finished block ends it.
+    private var partialHasStopped = false
 
     init(transcript: Transcript) {
         self.transcript = transcript
@@ -55,6 +58,57 @@ nonisolated struct SessionState: Sendable {
     /// out, a turn's start (`commandLifecycle` started) and end (`result`),
     /// the process's exit.
     mutating func apply(_ event: SessionEvent) {
-        // TODO(live): the fold, tested event by event in SessionStateTests.
+        switch event {
+        case .message(let message):
+            apply(message)
+        case .permissionRequest(let request):
+            requests.append(request)
+        case .permissionRequestCancelled(let id):
+            requests.removeAll { $0.id == id }
+        case .exited(let termination):
+            isLive = false
+            isResponding = false
+            requests = []
+            partial = nil
+            // A clean exit nobody asked for is the reader's `/exit`: the
+            // session is at rest, not failed.
+            if termination.exitCode != 0 { failure = termination }
+        }
+    }
+
+    private mutating func apply(_ message: Message) {
+        switch message {
+        case .streamEvent(let event):
+            apply(event)
+        case .assistant(let assistant):
+            if assistant.parentToolUseID == nil, var streaming = partial, streaming.messageID == assistant.messageID {
+                streaming.content.removeFirst(min(assistant.content.count, streaming.content.count))
+                partial = streaming.content.isEmpty && partialHasStopped ? nil : streaming
+            }
+            transcript.append(message)
+        case .user, .system:
+            transcript.append(message)
+        case .result:
+            isResponding = false
+            partial = nil
+        case .commandLifecycle(let lifecycle):
+            if lifecycle.state == .started { isResponding = true }
+        default:
+            break
+        }
+    }
+
+    private mutating func apply(_ event: StreamEvent) {
+        guard event.parentToolUseID == nil else { return }
+        switch event.event {
+        case .messageStart:
+            partial = AssistantMessage(streamStart: event)
+            partialHasStopped = false
+        case .messageStop:
+            partialHasStopped = true
+            if partial?.content.isEmpty == true { partial = nil }
+        default:
+            partial?.apply(event)
+        }
     }
 }

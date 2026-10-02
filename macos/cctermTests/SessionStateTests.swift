@@ -154,7 +154,10 @@ final class SessionStateTests: XCTestCase {
             stream(
                 #"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"inside"}}"#,
                 parent: "toolu_agent"))
-        state.apply(start("m2"))
+        state.apply(
+            stream(
+                #"{"type":"message_start","message":{"id":"m2","model":"m","role":"assistant","content":[]}}"#,
+                parent: "toolu_agent"))
         XCTAssertEqual(state.partial?.messageID, "m1")
         XCTAssertEqual(texts(state.partial), [""])
     }

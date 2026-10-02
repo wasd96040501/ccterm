@@ -398,6 +398,7 @@ final class SessionTabViewController: NSViewController {
         let captured = composer.view.convert(composer.view.bounds, to: nil)
         // 4. The coordinator re-identifies the tab, before anything else changes.
         transcriptURL = url
+        isHandingOver = false
         title = SessionTabTitle.fromPrompt(firstPrompt ?? "")
         draft = nil
         tabDelegate?.transcriptTab(self, didStartSessionAt: url)
@@ -454,17 +455,12 @@ final class SessionTabViewController: NSViewController {
         let target = composer.view.convert(composer.view.bounds, to: nil)
         composer.isFieldDimmed = false
         composer.focus()
-        guard let bottom = composerBottom, let width = composerWidth, captured != .zero else {
-            isHandingOver = false
-            return
-        }
+        guard let bottom = composerBottom, let width = composerWidth, captured != .zero else { return }
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             composer.view.alphaValue = 0
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.25
                 composer.view.animator().alphaValue = 1
-            } completionHandler: { [weak self] in
-                self?.isHandingOver = false
             }
             return
         }
@@ -477,8 +473,6 @@ final class SessionTabViewController: NSViewController {
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             bottom.animator().constant = -Self.floatGap
             width.animator().constant = Self.composerWidth
-        } completionHandler: { [weak self] in
-            self?.isHandingOver = false
         }
     }
 
@@ -623,7 +617,8 @@ final class SessionTabViewController: NSViewController {
 extension SessionTabViewController: ComposerViewControllerDelegate {
     func composerViewController(_ composerViewController: ComposerViewController, didSubmit text: String) {
         if let transcriptURL {
-            guard !isHandingOver else { return }
+            // The glide is only motion: a prompt typed while it runs goes to
+            // the session like any other.
             context.sessions.send(text, to: transcriptURL)
         } else if let draft {
             send(text, from: draft)
@@ -636,7 +631,10 @@ extension SessionTabViewController: ComposerViewControllerDelegate {
             return
         }
         guard let transcriptURL else { return }
-        guard state?.phase == .starting else {
+        // Until its first state arrives, a session this tab just started is
+        // still *Starting*: the store made it so at `start`.
+        let phase = state?.phase ?? (startedDraft != nil ? .starting : nil)
+        guard phase == .starting else {
             context.sessions.interrupt(at: transcriptURL)
             return
         }

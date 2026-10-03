@@ -193,63 +193,34 @@ final class ComposerViewSnapshotTests: XCTestCase {
     // MARK: - Against the design
 
     /// Each specimen beside the sheet's own composer of that state, at its
-    /// width: `/tmp/ccterm-parity/<scheme>-part-<card>-comp0.png`.
-    func testTheComposerAgainstTheDesign() throws {
+    /// width, as the window server composites it (`CompositedCapture`: the
+    /// card's rings and shadows, and translucent ink at its true strength):
+    /// `/tmp/ccterm-parity/<scheme>-part-<card>-comp0.png`. Needs the display
+    /// awake; asleep, it skips.
+    func testTheComposerAgainstTheDesign() async throws {
         let cards = [
             "Idle": "07", "Responding": "08", "Waiting": "09", "Starting": "10", "AtRest": "11", "Failed": "12",
             "HaikuBypass": "13", "FastRing": "14", "Refused": "15", "Command": "16",
         ]
         for scheme in DesignParity.Scheme.allCases {
-            NSApp.appearance = scheme.appearance
-            defer { NSApp.appearance = nil }
             for specimen in specimens {
                 guard let card = cards[specimen.name] else { continue }
-                let id = "part-\(card)-comp0"
-                let part = try DesignParity.part(id, scheme)
-                let probe = host(specimen, width: part.width)
-                probe.view.frame = NSRect(x: 0, y: 0, width: part.width, height: 400)
-                probe.view.layoutSubtreeIfNeeded()
-                let height = max(part.height, ceil(probe.composer.cardHeight))
-                let image = try renderLayers(
-                    flush(specimen, page: scheme.page), size: CGSize(width: part.width, height: height))
-                attach(try DesignParity.write(id, scheme, ours: image))
+                try await pair("part-\(card)-comp0", specimen, scheme)
             }
         }
     }
 
-    /// The tree as its layers composite it. The card's rings, halo and
-    /// shadows are layers of its own that `cacheDisplay` (a redraw of the
-    /// views) leaves out; `CALayer.render(in:)` walks every layer.
-    private func renderLayers(_ controller: NSViewController, size: CGSize) throws -> NSImage {
-        let window = NSWindow(
-            contentRect: CGRect(origin: CGPoint(x: -30_000, y: -30_000), size: size), styleMask: [.borderless],
-            backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.alphaValue = 0.01
-        window.contentViewController = controller
-        window.setContentSize(size)
-        window.makeKeyAndOrderFront(nil)
-        defer {
-            window.contentViewController = nil
-            window.close()
-        }
-        let deadline = Date().addingTimeInterval(0.4)
-        while Date() < deadline { RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.02)) }
-        controller.view.layoutSubtreeIfNeeded()
-        controller.view.displayIfNeeded()
-        let layer = try XCTUnwrap(controller.view.layer)
-        let scale: CGFloat = 2
-        let rep = try XCTUnwrap(
-            NSBitmapImageRep(
-                bitmapDataPlanes: nil, pixelsWide: Int(size.width * scale), pixelsHigh: Int(size.height * scale),
-                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
-                bytesPerRow: 0, bitsPerPixel: 0))
-        let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: rep)).cgContext
-        context.scaleBy(x: scale, y: scale)
-        layer.render(in: context)
-        let image = NSImage(size: size)
-        image.addRepresentation(rep)
-        return image
+    /// Writes design | ours | difference for `specimen` at part `id`'s width.
+    private func pair(_ id: String, _ specimen: Specimen, _ scheme: DesignParity.Scheme) async throws {
+        let part = try DesignParity.part(id, scheme)
+        let probe = host(specimen, width: part.width)
+        probe.view.frame = NSRect(x: 0, y: 0, width: part.width, height: 400)
+        probe.view.layoutSubtreeIfNeeded()
+        let height = max(part.height, ceil(probe.composer.cardHeight))
+        let image = try await CompositedCapture.render(
+            flush(specimen, page: scheme.page), size: CGSize(width: part.width, height: height),
+            appearance: scheme.appearance)
+        attach(try DesignParity.write(id, scheme, ours: image))
     }
 
     /// The card alone, edge to edge, on the sheet's page — as the design's capture frames it.

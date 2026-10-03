@@ -137,7 +137,8 @@ final class ComposerFieldView: NSView {
         addSubview(scrollView)
         NSLayoutConstraint.activate([
             tokenView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            tokenView.topAnchor.constraint(equalTo: topAnchor, constant: 1),
+            // `.cmdtok { margin-top: 2px }` on the field's first line.
+            tokenView.topAnchor.constraint(equalTo: topAnchor, constant: 2),
             scrollView.topAnchor.constraint(equalTo: topAnchor),
             scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
             scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -321,9 +322,13 @@ private final class ComposerTextView: NSTextView {
     }
 }
 
-/// `/name` as the field draws a completed command: SF Mono 13, the slash in
-/// secondary, on a tertiary fill with 5-pt corners.
+/// `/name` as the field draws a completed command (preview-live.css
+/// `.lv-field .cmdtok`): SF Mono 13 medium, the slash in secondary, on a
+/// tertiary fill with 5-pt corners; 5 pt either side, and — the design's
+/// `line-height: 1` — 13 pt of type with 2 above and below, 17 in all.
 private final class CommandTokenView: NSView {
+    static let height: CGFloat = 17
+
     var name = "" {
         didSet { label.attributedStringValue = Self.attributed(name) }
     }
@@ -340,8 +345,8 @@ private final class CommandTokenView: NSView {
         NSLayoutConstraint.activate([
             label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 5),
             label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -5),
-            label.topAnchor.constraint(equalTo: topAnchor, constant: 2),
-            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -2),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            heightAnchor.constraint(equalToConstant: Self.height),
         ])
     }
 

@@ -45,6 +45,7 @@ async function shoot(name, selectorExpr) {
   const shot = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true, clip: { ...rect, scale: 1 } });
   writeFileSync(`${out}/${name}.png`, Buffer.from(shot.result.data, "base64"));
   console.log(name, Math.round(rect.width), "x", Math.round(rect.height));
+  return rect;
 }
 
 await send("Page.enable");
@@ -55,10 +56,12 @@ for (const scheme of ["light", "dark"]) {
   await send("Page.navigate", { url: `file://${root}/design/transcript/index.html` });
   await sleep(2500);
   const scenes = await evaluate(`[...document.querySelectorAll('[data-scene]')].map(b => b.dataset.scene)`);
+  const sceneParts = [];
   for (const scene of scenes) {
     await evaluate(`document.querySelector('[data-scene="${scene}"]').click()`);
     await sleep(1500);
-    await shoot(`${scheme}-scene-${scene}`, `document.getElementById('live')`);
+    const rect = await shoot(`${scheme}-scene-${scene}`, `document.getElementById('live')`);
+    if (rect) sceneParts.push({ name: `${scheme}-scene-${scene}`, card: -1, kind: "scene", n: 0, cap: scene, width: rect.width, height: rect.height, text: "" });
   }
   const cards = await evaluate(`[...document.querySelectorAll('.lv-card')].map((c, i) => {
     const t = (c.querySelector('.cap, .lv-cap, h4, figcaption, .ttl, b')?.textContent || c.textContent).trim().slice(0, 40);
@@ -88,7 +91,7 @@ for (const scheme of ["light", "dark"]) {
     });
     return out;
   })()`);
-  const manifest = [];
+  const manifest = [...sceneParts];
   for (const p of parts) {
     const name = `${scheme}-part-${String(p.card).padStart(2, "0")}-${p.kind}${p.n}`;
     await shoot(name, `document.querySelectorAll('.lv-card, #lv-menus figure')[${p.card}].querySelectorAll(${JSON.stringify(kinds[p.kind])})[${p.n}]`);

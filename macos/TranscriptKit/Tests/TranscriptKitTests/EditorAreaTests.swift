@@ -1213,6 +1213,55 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertNil(empty.parent, "the closed tab's controller came back as the empty area")
     }
 
+    /// Moved into its tab, the view fills the tab, as any tab's does: the
+    /// empty area pinned it with constraints, and takes them back with the
+    /// view — a view still out of the autoresizing system but with no
+    /// constraints left would shrink to its content at the top.
+    func testTheEmptyViewControllerMovedIntoATabFillsIt() throws {
+        let window = TestWindow.make(contentSize: Self.size)
+        defer { window.close() }
+        let area = EditorAreaViewController()
+        // A view its own constraints could size: a label pinned to every edge.
+        func labelled(_ words: String) -> NSViewController {
+            let controller = NSViewController()
+            controller.view = NSView()
+            let label = NSTextField(labelWithString: words)
+            label.translatesAutoresizingMaskIntoConstraints = false
+            // Content that takes any size it is given, as a tab's does.
+            label.setContentHuggingPriority(.defaultLow, for: .vertical)
+            controller.view.addSubview(label)
+            NSLayoutConstraint.activate([
+                label.topAnchor.constraint(equalTo: controller.view.topAnchor),
+                label.bottomAnchor.constraint(equalTo: controller.view.bottomAnchor),
+                label.leadingAnchor.constraint(equalTo: controller.view.leadingAnchor),
+                label.trailingAnchor.constraint(equalTo: controller.view.trailingAnchor),
+            ])
+            return controller
+        }
+        window.contentViewController = area
+        TestWindow.park(window, contentSize: Self.size)
+        settle(window)
+        let group = area.activeGroup
+        // The same kind of view opened as an ordinary tab: what a tab is.
+        let ordinary = labelled("Ordinary")
+        area.open(NSTabViewItem(viewController: ordinary), pinned: true)
+        settle(window)
+        let tabFrame = ordinary.view.frame
+        XCTAssertEqual(tabFrame.width, group.view.bounds.width, "premise: an ordinary tab fills the editor's width")
+        area.closeTab(nil)
+        let empty = labelled("Empty")
+        area.emptyViewController = empty
+        settle(window)
+        XCTAssertEqual(empty.view.frame, group.view.bounds, "premise: it fills the empty editor")
+
+        let item = NSTabViewItem(viewController: empty)
+        item.identifier = "first"
+        area.open(item, pinned: true)
+        settle(window)
+
+        XCTAssertEqual(empty.view.frame, tabFrame, "the moved view does not fill its tab as an ordinary tab does")
+    }
+
     /// The host hands over another one when the tabs have run out; the one
     /// showing goes.
     func testReplacingTheEmptyViewControllerWhileItShows() throws {

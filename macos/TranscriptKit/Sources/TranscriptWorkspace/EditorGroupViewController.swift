@@ -424,6 +424,9 @@ public final class EditorGroupViewController: NSViewController {
     private func unmountEmptyViewController() {
         guard let mounted = mountedEmptyViewController else { return }
         mounted.view.removeFromSuperview()
+        // Handed back as it came: the constraints that sized it went with the
+        // superview, and a tab places its view by frame.
+        mounted.view.translatesAutoresizingMaskIntoConstraints = true
         mounted.removeFromParent()
         mountedEmptyViewController = nil
     }

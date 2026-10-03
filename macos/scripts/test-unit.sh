@@ -33,9 +33,14 @@ FILTER="${1:-}"
 # in-workspace path to serialize.
 DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-}"
 
+# A run's logs and xcresult (~400 MB) live in this checkout's macos/build, so
+# they go when it goes. The five newest runs are kept.
 STAMP=$(date +%Y%m%d-%H%M%S)
-LOG_DIR="/tmp/ccterm-utest-$STAMP-$$"
+LOG_DIR="$(pwd)/build/logs/utest-$STAMP-$$"
 mkdir -p "$LOG_DIR"
+ls -1d "$(pwd)"/build/logs/utest-* 2>/dev/null | sort -r | tail -n +6 | while IFS= read -r old; do
+  rm -rf -- "$old"
+done
 RAW_LOG="$LOG_DIR/raw.log"
 SUMMARY_LOG="$LOG_DIR/summary.log"
 XCRESULT="$LOG_DIR/result.xcresult"

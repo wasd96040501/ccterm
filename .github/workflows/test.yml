@@ -59,8 +59,8 @@ jobs:
         with:
           name: xcresult
           path: |
-            /tmp/ccterm-utest-*/result.xcresult
-            /tmp/ccterm-utest-*/raw.log
+            macos/build/logs/utest-*/result.xcresult
+            macos/build/logs/utest-*/raw.log
           if-no-files-found: ignore
           retention-days: 7
 

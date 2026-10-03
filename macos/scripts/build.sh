@@ -24,8 +24,15 @@ done
 
 # --- Build ---
 
-BUILD_LOG="/tmp/ccterm-build-$$.log"
-BUILD_SUMMARY="/tmp/ccterm-build-$$-summary.log"
+# Logs live in this checkout's macos/build, so they go when it goes. The ten
+# newest builds' logs are kept.
+LOG_ROOT="$(pwd)/build/logs"
+mkdir -p "$LOG_ROOT"
+BUILD_LOG="$LOG_ROOT/build-$$.log"
+BUILD_SUMMARY="$LOG_ROOT/build-$$-summary.log"
+ls -1t "$LOG_ROOT"/build-*-summary.log 2>/dev/null | tail -n +10 | while IFS= read -r old; do
+  rm -f -- "$old" "${old%-summary.log}.log"
+done || true
 
 echo "Building $SCHEME ($CONFIGURATION)..."
 

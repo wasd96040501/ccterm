@@ -39,6 +39,12 @@ let package = Package(
         // the app's models build without importing AppKit.
         .library(name: "Components", targets: ["Components", "DisplayModels"])
     ],
+    dependencies: [
+        // The style page's alone, never the libraries': the main window's
+        // transcript and tabs are TranscriptKit's, and the page shows the
+        // window whole.
+        .package(path: "../TranscriptKit")
+    ],
     targets: [
         // What a component is shown, as values: Foundation only, no AppKit, so
         // a model or a view model can build them. Words of its own (a check's
@@ -51,7 +57,13 @@ let package = Package(
         // models — `make design`. What the design sheet shows, built from the
         // same components the app uses.
         .executableTarget(
-            name: "ComponentsDesign", dependencies: ["Components"], exclude: ["CLAUDE.md"],
+            name: "ComponentsDesign",
+            dependencies: [
+                "Components",
+                .product(name: "TranscriptKit", package: "TranscriptKit"),
+                .product(name: "TranscriptWorkspace", package: "TranscriptKit"),
+            ],
+            exclude: ["CLAUDE.md"],
             swiftSettings: appSettings),
         .testTarget(name: "ComponentsTests", dependencies: ["Components", "DisplayModels", "ComponentsDesign"], swiftSettings: appSettings),
     ]

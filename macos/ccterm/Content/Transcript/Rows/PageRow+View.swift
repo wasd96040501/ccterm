@@ -1,4 +1,5 @@
 import AppKit
+import DisplayModels
 import TranscriptKit
 
 /// Where a page row meets TranscriptKit: which content it is, the gap above

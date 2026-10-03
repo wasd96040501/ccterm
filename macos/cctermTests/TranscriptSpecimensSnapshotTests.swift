@@ -293,7 +293,7 @@ final class TranscriptSpecimensSnapshotTests: XCTestCase {
                         "The user wants to clarify these questions. This means they may have additional information, context or questions for you. Start by asking them what they would like to clarify."
                 ) : .done
         let call = ToolCall(use: use, result: nil, kind: .other, state: state, startedAt: nil, finishedAt: nil)
-        return .question(Question(call: call, questions: input.questions, answers: answers))
+        return .question(Question(call: call, questions: input.questions, answers: answers), call: call)
     }
 
     // MARK: - Capture

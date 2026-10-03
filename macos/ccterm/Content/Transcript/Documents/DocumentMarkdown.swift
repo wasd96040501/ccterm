@@ -37,8 +37,8 @@ nonisolated enum DocumentMarkdown {
             return (title, [], [message.text])
         case .taskList(let items):
             return (title, [], [checklist(items)])
-        case .news(let news):
-            return (title, newsStatus(news.report), newsBody(news))
+        case .news(_, let report):
+            return (title, newsStatus(report), newsBody(report))
         case .commandOutput(let command):
             let output = command.outputIsError ? command.errorOutput : command.output
             return (
@@ -172,13 +172,12 @@ nonisolated enum DocumentMarkdown {
 
     /// The list as it stood: done items struck through, the rest open.
     private static func checklist(_ items: [TaskListItem]) -> String {
-        items.compactMap { item -> String? in
+        items.map { item -> String in
             let subject = escaped(item.subject)
             switch item.status {
             case .completed: return "- [x] ~~\(subject)~~"
             case .inProgress: return "- [ ] **\(subject)**"
             case .pending: return "- [ ] \(subject)"
-            case .deleted: return nil
             }
         }.joined(separator: "\n")
     }
@@ -211,8 +210,7 @@ nonisolated enum DocumentMarkdown {
 
     /// The failures and the way to recover, when there are any, above the
     /// result; a monitor's event.
-    private static func newsBody(_ news: TaskNews) -> [String] {
-        let report = news.report
+    private static func newsBody(_ report: TaskReport) -> [String] {
         if let event = report.event { return [event] }
         var body: [String] = []
         if let failures = report.failures, !failures.isEmpty {

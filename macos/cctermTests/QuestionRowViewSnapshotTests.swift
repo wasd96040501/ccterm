@@ -32,7 +32,8 @@ final class QuestionRowViewSnapshotTests: XCTestCase {
     private func failed(_ json: String, _ message: String) throws -> Question {
         var model = try question(json, answers: [:])
         let call = ToolCall(
-            use: model.call.use, result: nil, kind: .other, state: .failed(message: message), startedAt: nil,
+            use: ToolUseBlock(id: "q", name: "AskUserQuestion", input: MessageScript.json("{}")), result: nil,
+            kind: .other, state: .failed(message: message), startedAt: nil,
             finishedAt: nil)
         model = Question(
             call: call,

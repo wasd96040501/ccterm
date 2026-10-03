@@ -105,7 +105,7 @@ extension SettingsSidebarViewController: NSTableViewDataSource, NSTableViewDeleg
             identifier = .settingsPaneCell
             title.lineBreakMode = .byTruncatingTail
             title.font = .systemFont(ofSize: 13)
-            glyph.imageScaling = .scaleProportionallyUpOrDown
+            glyph.imageScaling = .scaleProportionallyDown
             for view in [glyph, title] {
                 view.translatesAutoresizingMaskIntoConstraints = false
                 addSubview(view)
@@ -116,8 +116,6 @@ extension SettingsSidebarViewController: NSTableViewDataSource, NSTableViewDeleg
             NSLayoutConstraint.activate([
                 glyph.centerXAnchor.constraint(equalTo: leadingAnchor, constant: 13),
                 glyph.centerYAnchor.constraint(equalTo: centerYAnchor),
-                glyph.widthAnchor.constraint(equalToConstant: 17),
-                glyph.heightAnchor.constraint(equalToConstant: 17),
                 title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 30.5),
                 title.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -8),
                 title.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -129,7 +127,8 @@ extension SettingsSidebarViewController: NSTableViewDataSource, NSTableViewDeleg
 
         func configure(with pane: SettingsSplitViewController.Pane) {
             title.stringValue = pane.title
-            glyph.image = pane.glyph
+            glyph.image = NSImage(systemSymbolName: pane.symbolName, accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 15, weight: .regular))
             updateEmphasis()
         }
 

@@ -1,4 +1,5 @@
 import AppKit
+import DisplayModels
 
 @MainActor
 protocol ApprovalBarViewDelegate: AnyObject {

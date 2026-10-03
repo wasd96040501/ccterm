@@ -1,4 +1,5 @@
 import AppKit
+import DisplayModels
 
 /// What a row of the transcript reports: intent only, by id. The row never
 /// knows what opening, toggling or deciding does — its tab's controller does.

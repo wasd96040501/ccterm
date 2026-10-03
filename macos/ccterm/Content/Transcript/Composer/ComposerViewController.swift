@@ -1,5 +1,6 @@
 import AgentSDK
 import AppKit
+import Components
 
 /// The composer (design 08 *The composer*): one card — an optional failure
 /// section on top, the growing field, the accessory row of Model / Effort /

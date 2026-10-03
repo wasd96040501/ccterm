@@ -43,8 +43,8 @@ public final class TileView: NSView {
         ring.frame = bounds
         layer?.addSublayer(fill)
         layer?.addSublayer(ring)
-        glyph.imageScaling = .scaleNone
-        glyph.frame = bounds
+        glyph.imageScaling = .scaleProportionallyDown
+        glyph.frame = bounds.insetBy(dx: 3, dy: 3)
         addSubview(glyph)
         update()
     }
@@ -137,38 +137,37 @@ public final class TileView: NSView {
 
     // MARK: - Glyphs
 
-    /// The design's glyph for the tile (`GLYPHS` in design/transcript/preview.js,
-    /// built by design/transcript-icons): 16 × 16, drawn over the whole tile.
-    private static func image(for tile: Tile) -> NSImage {
+    private static func image(for tile: Tile) -> NSImage? {
+        func symbol(_ name: String) -> NSImage? { .symbol(name, pointSize: 9, weight: .semibold) }
         switch tile.state {
-        case .failed: return .transcriptTileFail
-        case .stopped: return .transcriptTileStop
+        case .failed: return symbol("exclamationmark")
+        case .stopped: return symbol("stop.fill")
         default: break
         }
         switch tile.glyph {
         case .tool(let kind):
             switch kind {
-            case .command: return .transcriptTileCommand
-            case .change: return .transcriptTileChange
-            case .create: return .transcriptTileCreate
-            case .read: return .transcriptTileRead
-            case .search: return .transcriptTileSearch
-            case .web: return .transcriptTileWeb
-            case .agent: return .transcriptTileAgent
-            case .tasks: return .transcriptTileTasks
-            case .schedule: return .transcriptTileSchedule
-            case .advisor: return .transcriptTileAdvisor
-            case .skill: return .transcriptTileSkill
-            case .worktree: return .transcriptTileWorktree
-            case .message: return .transcriptTileMessage
-            case .notify: return .transcriptTileNotify
-            case .other: return .transcriptTileOther
+            case .command: return symbol("terminal")
+            case .change: return symbol("pencil")
+            case .create: return symbol("doc.badge.plus")
+            case .read: return symbol("doc.text")
+            case .search: return symbol("magnifyingglass")
+            case .web: return symbol("globe")
+            case .agent: return NSImage.sidebarAgent
+            case .tasks: return symbol("checklist")
+            case .schedule: return symbol("clock")
+            case .advisor: return symbol("lightbulb")
+            case .skill: return symbol("book.closed")
+            case .worktree: return symbol("arrow.triangle.branch")
+            case .message: return symbol("paperplane")
+            case .notify: return symbol("bell")
+            case .other: return symbol("puzzlepiece.extension")
             }
-        case .workflow: return .transcriptTileWorkflow
-        case .monitor: return .transcriptTileMonitor
-        case .question: return .transcriptTileQuestion
-        case .plan: return .transcriptTilePlan
-        case .image: return .transcriptTileImage
+        case .workflow: return NSImage.sidebarWorkflow
+        case .monitor: return symbol("waveform.path.ecg")
+        case .question: return symbol("questionmark.bubble")
+        case .plan: return symbol("list.bullet.rectangle.portrait")
+        case .image: return symbol("photo")
         }
     }
 

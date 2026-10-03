@@ -7,10 +7,10 @@ import AppKit
 final class ListBarButton: NSButton {
     static let side: CGFloat = 20
 
-    init(glyph: NSImage, label: String, target: AnyObject, action: Selector) {
+    init(symbol: String, label: String, target: AnyObject, action: Selector) {
         super.init(frame: NSRect(x: 0, y: 0, width: Self.side, height: Self.side))
-        image = glyph
-        setAccessibilityLabel(label)
+        image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
+            .withSymbolConfiguration(.init(pointSize: 10, weight: .semibold))
         imagePosition = .imageOnly
         imageScaling = .scaleNone
         isBordered = false

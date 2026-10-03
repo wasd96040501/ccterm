@@ -38,6 +38,8 @@ nonisolated struct TranscriptPageBuilder {
     private var entries: [TranscriptEntry] = []
     private var runCalls: [ToolCall] = []
     private var newsRun: [TaskNews] = []
+    /// The reports of `newsRun`, in step.
+    private var newsReports: [TaskReport] = []
     private var lastVisible: Date?
     private var exited = false
     private var foldingCompact = false
@@ -348,13 +350,14 @@ nonisolated struct TranscriptPageBuilder {
                 answers = output.answers
             }
             appendEntry(
-                .question(Question(call: call, questions: input?.questions ?? [], answers: answers)), at: date)
+                .question(Question(call: call, questions: input?.questions ?? [], answers: answers), call: call),
+                at: date)
         } else if Tools.ExitPlanMode.matches(use.name) {
             var text = use.input(as: Tools.ExitPlanMode.self)?.plan
             if text == nil, case .success(let output)? = call.result?.toolOutcome(Tools.ExitPlanMode.self) {
                 text = output.plan
             }
-            appendEntry(.plan(Plan(call: call, text: text ?? "")), at: date)
+            appendEntry(.plan(Plan(call: call, text: text ?? ""), call: call), at: date)
         } else {
             flushNews()
             if runCalls.isEmpty { markVisible(at: date) }
@@ -392,6 +395,7 @@ nonisolated struct TranscriptPageBuilder {
             TaskNews(
                 id: id, report: report, kind: kind,
                 line: writer.line(for: report, kind: kind, duration: Self.interval(from: started, to: date))))
+        newsReports.append(report)
     }
 
     private static func interval(from start: Date?, to end: Date?) -> TimeInterval? {
@@ -493,8 +497,12 @@ nonisolated struct TranscriptPageBuilder {
 
     private mutating func flushNews() {
         guard !newsRun.isEmpty else { return }
-        entries.append(.news(NewsRun(id: newsRun[0].id, news: newsRun, line: writer.line(for: newsRun))))
+        entries.append(
+            .news(
+                NewsRun(
+                    id: newsRun[0].id, news: newsRun, reports: newsReports, line: writer.line(for: newsRun))))
         newsRun = []
+        newsReports = []
     }
 
     /// A run's calls as items: consecutive edits to one file are one.
@@ -533,10 +541,10 @@ nonisolated struct TranscriptPageBuilder {
             let index = entries.lastIndex(where: {
                 if case .divider(let d) = $0, case .compacted = d.kind { true } else { false }
             }),
-            case .divider(var divider) = entries[index]
+            case .divider(let divider) = entries[index]
         else { return }
-        divider.summary = summary
-        entries[index] = .divider(divider)
+        entries[index] = .divider(
+            SessionDivider(id: divider.id, kind: divider.kind, summary: summary, prompt: divider.prompt))
     }
 
     // MARK: - Names

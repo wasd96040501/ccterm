@@ -1,4 +1,5 @@
 import AppKit
+import DisplayModels
 import ImageIO
 
 /// The pictures pasted into a prompt, as thumbnails over its bubble

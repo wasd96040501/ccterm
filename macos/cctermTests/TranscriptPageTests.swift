@@ -49,7 +49,7 @@ final class TranscriptPageTests: XCTestCase {
 
         let entries = s.page.entries
         XCTAssertEqual(entries.map(\.id), ["c1", "q", "c2"])
-        guard case .question(let question) = entries[1] else { return XCTFail("\(entries[1])") }
+        guard case .question(let question, _) = entries[1] else { return XCTFail("\(entries[1])") }
         XCTAssertEqual(
             question.items,
             [

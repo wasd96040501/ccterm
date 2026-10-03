@@ -1,4 +1,5 @@
 import AgentSDK
+import DisplayModels
 import Foundation
 
 /// What opens beside the transcript for something on the page — the domain
@@ -27,7 +28,7 @@ nonisolated enum DocumentContent: Sendable, Equatable {
     case taskList([TaskListItem])
     /// What a background agent, workflow or monitor reported. A command's
     /// news opens the command's own document instead.
-    case news(TaskNews)
+    case news(TaskNews, report: TaskReport)
     /// A slash command's output, too long for the line under its bubble.
     case commandOutput(LocalCommand)
     /// What the CLI wrote to stderr before it quit, behind the failure's *Show

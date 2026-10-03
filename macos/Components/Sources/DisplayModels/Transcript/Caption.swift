@@ -1,19 +1,24 @@
-import DisplayModels
 import Foundation
 
 /// The 20-pt line above words someone other than Claude put on the page — a
 /// message from another agent or a plan — naming who, or what, it is.
-nonisolated struct Caption: Sendable, Equatable {
-    enum Glyph: Sendable, Equatable {
+public nonisolated struct Caption: Sendable, Equatable {
+    public enum Glyph: Sendable, Equatable {
         /// The sidebar's glyph for that party, in the sidebar's colour.
         case subagent, session, coordinator, plugin
         /// A tool tile — a plan's, coral while it waits for the reader.
         case tile(Tile)
     }
 
-    let glyph: Glyph
-    let text: String
+    public let glyph: Glyph
+    public let text: String
     /// After the name, in 11-pt tertiary: when a plugin spoke (*Started this
     /// turn*, *While Claude worked*).
-    var detail: String?
+    public var detail: String?
+
+    public init(glyph: Glyph, text: String, detail: String? = nil) {
+        self.glyph = glyph
+        self.text = text
+        self.detail = detail
+    }
 }

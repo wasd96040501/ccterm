@@ -1,3 +1,4 @@
+import DisplayModels
 import Foundation
 
 /// What the reader sent: a prompt in the transcript, or — until the CLI's
@@ -72,6 +73,12 @@ nonisolated extension LocalCommand {
         case .slash(let name, let arguments): .slash(name: name, arguments: arguments)
         case .shell(let line): .shell(line)
         }
+    }
+
+    /// *12 lines*, under the bubble of a `!` command that printed more than
+    /// one; it opens the command document beside.
+    var lineCount: String? {
+        outputLineCount.map { String(localized: "\($0) lines") }
     }
 
     /// The line under the bubble: a slash command's output, cut at two lines

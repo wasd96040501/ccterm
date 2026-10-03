@@ -1,4 +1,5 @@
 import AppKit
+import DisplayModels
 
 /// What a Bash call — or a `!` command the user ran — opens beside the
 /// transcript: a page, not a terminal. What was meant, what ran, what came

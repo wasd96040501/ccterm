@@ -1,5 +1,6 @@
 import AgentSDK
 import AppKit
+import DisplayModels
 
 /// A tab beside the transcript: one document — a command, a file, a
 /// subagent's conversation, words — under the jump bar every document has.

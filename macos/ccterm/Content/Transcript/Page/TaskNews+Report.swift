@@ -1,27 +1,13 @@
 import AgentSDK
+import DisplayModels
 import Foundation
 
-/// A background task's news — a `<task-notification>` — as one work line
-/// (design/transcript/04-background.md).
-nonisolated struct TaskNews: Sendable, Equatable, Identifiable {
-    let id: String
-    let report: TaskReport
-    /// What the task was. Read from the call that started it when the page
-    /// has that call, else from the report.
-    let kind: Kind
-    var line: WorkLine
-
-    enum Kind: Sendable, Equatable {
-        case command
-        case agent
-        case workflow
-        case monitor
-        case other
+nonisolated extension TaskNews {
+    /// The news of `report`: the page keeps the report itself beside it
+    /// (`NewsRun.reports`), for the document that opens it.
+    init(id: String, report: TaskReport, kind: Kind, line: WorkLine) {
+        self.init(id: id, kind: kind, line: line, origin: report.toolUseID)
     }
-
-    /// The call that started the task — what ↖ reveals, when it is on this
-    /// page.
-    var origin: String? { report.toolUseID }
 }
 
 nonisolated extension TaskNews.Kind {

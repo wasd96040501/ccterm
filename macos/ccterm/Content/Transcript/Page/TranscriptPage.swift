@@ -98,7 +98,7 @@ nonisolated struct TranscriptPage: Sendable, Equatable {
             if one.kind == .command, let origin = one.origin, let call = call(origin), call.kind == .command {
                 return .command(call)
             }
-            return .news(one)
+            return .news(one, report: news.reports[position])
         case .command(let command):
             switch command.command {
             case .shell: return .shellCommand(command)
@@ -138,10 +138,8 @@ nonisolated struct TranscriptPage: Sendable, Equatable {
         switch entries[location.entry] {
         case .run(let run):
             return run.items.lazy.flatMap(\.calls).first { $0.id == id }
-        case .question(let question):
-            return question.call
-        case .plan(let plan):
-            return plan.call
+        case .question(_, let call), .plan(_, let call):
+            return call
         default:
             return nil
         }
@@ -157,8 +155,8 @@ nonisolated struct TranscriptPage: Sendable, Equatable {
                 if let input = call.use.input(as: Tools.TodoWrite.self) {
                     order = input.todos.indices.map(String.init)
                     tasks = Dictionary(
-                        uniqueKeysWithValues: input.todos.enumerated().map {
-                            (String($0.offset), TaskListItem(subject: $0.element.content, status: $0.element.status))
+                        uniqueKeysWithValues: input.todos.enumerated().compactMap { offset, todo in
+                            TaskListItem(subject: todo.content, taskStatus: todo.status).map { (String(offset), $0) }
                         })
                 } else if let input = call.use.input(as: Tools.TaskCreate.self) {
                     let taskID: String
@@ -175,7 +173,8 @@ nonisolated struct TranscriptPage: Sendable, Equatable {
                         order.removeAll { $0 == input.taskID }
                     } else {
                         tasks[input.taskID] = TaskListItem(
-                            subject: input.subject ?? task.subject, status: input.status ?? task.status)
+                            subject: input.subject ?? task.subject,
+                            status: input.status.flatMap(TaskListItem.Status.init) ?? task.status)
                     }
                 }
                 if call.id == id { return order.compactMap { tasks[$0] } }

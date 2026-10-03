@@ -36,8 +36,8 @@ nonisolated extension DocumentHeader {
         case .taskList:
             let title = String(localized: "Task list")
             return DocumentHeader(tile: Tile(glyph: .tool(.tasks), state: .done), crumbs: [title], title: title)
-        case .news(let news):
-            let title = newsTitle(news)
+        case .news(let news, let report):
+            let title = newsTitle(report)
             return DocumentHeader(
                 tile: Tile(glyph: news.line.tile.glyph, state: news.line.tile.state), crumbs: [title], title: title)
         case .commandOutput(let command):
@@ -114,8 +114,8 @@ nonisolated extension DocumentHeader {
 
     /// The task's own name — what the CLI quoted in its summary — else the
     /// whole summary.
-    private static func newsTitle(_ news: TaskNews) -> String {
-        let summary = news.report.summary
+    private static func newsTitle(_ report: TaskReport) -> String {
+        let summary = report.summary
         for (open, close) in [("“", "”"), ("\"", "\"")] {
             guard let start = summary.range(of: open),
                 let end = summary.range(of: close, range: start.upperBound..<summary.endIndex)

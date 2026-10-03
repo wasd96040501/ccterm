@@ -1,5 +1,6 @@
 import AppKit
 import Components
+import DisplayModels
 
 /// Under the jump bar of a document whose call waits for the reader: *Claude
 /// wants to run this command* · the reason · **Deny** / **Allow** — the same

@@ -1,3 +1,4 @@
+import DisplayModels
 import Foundation
 
 /// One thing on the page, in reading order — the closed vocabulary of what a
@@ -20,8 +21,10 @@ nonisolated enum TranscriptEntry: Sendable, Equatable, Identifiable {
     /// reply before it.
     case interruption(id: String)
     case agentMessage(AgentMessage)
-    case question(Question)
-    case plan(Plan)
+    /// The call stays beside what the row shows of it: a decision answers the
+    /// call, and `TranscriptPage.call(_:)` finds it.
+    case question(Question, call: ToolCall)
+    case plan(Plan, call: ToolCall)
 
     var id: String {
         switch self {
@@ -32,8 +35,8 @@ nonisolated enum TranscriptEntry: Sendable, Equatable, Identifiable {
         case .command(let command): command.id
         case .divider(let divider): divider.id
         case .agentMessage(let message): message.id
-        case .question(let question): question.id
-        case .plan(let plan): plan.id
+        case .question(let question, _): question.id
+        case .plan(let plan, _): plan.id
         }
     }
 }

@@ -1,3 +1,29 @@
 /* The secret field's eye: what pressing it does to the value. */
 "Hide" = "隐藏";
 "Show" = "显示";
+
+/* Settings: accounts, providers, variables, sign-in, field checks. */
+"Details" = "详细信息";
+"Add Provider…" = "添加提供方…";
+"Import from Clipboard" = "从剪贴板导入";
+"Name" = "名称";
+"Value" = "值";
+"Warning" = "警告";
+"No API Providers" = "没有 API 提供方";
+"Run Claude Code through the Anthropic API, a gateway or a local proxy." = "通过 Anthropic API、网关或本地代理运行 Claude Code。";
+"Or press ⌘V to paste shell aliases or commands." = "也可以按 ⌘V 粘贴 shell 别名或命令。";
+"No Variables" = "没有变量";
+"Click + or paste to add." = "点按 + 或粘贴以添加。";
+"Add Variable" = "添加变量";
+"Remove Variable" = "移除变量";
+"Paste %@ lines or a command" = "粘贴 %@ 行或一条命令";
+"Checking…" = "正在检查…";
+"%@." = "%@。";
+"Still using %@." = "仍在使用 %@。";
+"Sign in to Claude" = "登录 Claude";
+"Waiting for your browser…" = "正在等待浏览器…";
+"Open Browser Again" = "重新打开浏览器";
+"Cancel" = "取消";
+
+/* Settings: the sign-in sheet. */
+"Continue in your browser. CCTerm finishes signing in when you approve access." = "请在浏览器中继续。你批准访问后，CCTerm 会完成登录。";

@@ -1,5 +1,6 @@
 import AgentSDK
 import AppKit
+import Components
 
 /// The images behind `ComposerModel.Glyph` (design 08 *Glyphs match by eye*):
 /// an SF Symbol wherever one has the sheet's shape, at the point size and
@@ -23,7 +24,7 @@ enum ComposerGlyph {
         case .later: return symbol(.clock, scale: size / 10, in: box)
         case .permissionMode(let mode): return modeImage(mode, size: size)
         case .effort(let level): return meter(level: level, size: size)
-        case .subscription: return asset(.claudeMark, box)
+        case .subscription: return sized(.claudeMark, box)
         case .provider: return symbol(.rack, scale: size / 16, in: box)
         case .restart: return symbol(.restart, scale: size / 16, in: box)
         // The panel passes its 14-pt slot for the sheet's 10-pt check.
@@ -112,7 +113,11 @@ enum ComposerGlyph {
 
     /// `resource` at `size`; the catalog's SVG scales without loss.
     private static func asset(_ resource: ImageResource, _ size: NSSize) -> NSImage {
-        let image = NSImage(resource: resource).copy() as? NSImage ?? NSImage(resource: resource)
+        sized(NSImage(resource: resource), size)
+    }
+
+    private static func sized(_ source: NSImage, _ size: NSSize) -> NSImage {
+        let image = source.copy() as? NSImage ?? source
         image.size = size
         return image
     }

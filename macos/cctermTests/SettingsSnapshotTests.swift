@@ -130,8 +130,9 @@ final class SettingsSnapshotTests: XCTestCase {
     func testProviderSheetPressingAdd() throws {
         for appearance in Appearance.allCases {
             let editor = try editorSheet(mode: .provider, account: Self.localProxy, secrets: Self.localProxySecrets)
+            // The bar's + is the variable list's own; its action names it.
             let add = try XCTUnwrap(
-                Self.descendants(of: editor.view, ofType: ListBarButton.self).first)
+                Self.descendants(of: editor.view, ofType: NSButton.self).first { $0.action == Selector(("add:")) })
             add.highlight(true)
             render(
                 editor, size: AccountEditorViewController.size, appearance: appearance,
@@ -192,15 +193,6 @@ final class SettingsSnapshotTests: XCTestCase {
             render(
                 editor, size: AccountEditorViewController.size, appearance: appearance,
                 name: "Settings-SubscriptionSheet")
-        }
-    }
-
-    func testSignInSheet() throws {
-        for appearance in Appearance.allCases {
-            let sheet = SignInViewController()
-            sheet.loadView()
-            sheet.viewDidLoad()
-            render(sheet, size: sheet.preferredContentSize, appearance: appearance, name: "Settings-SignIn")
         }
     }
 

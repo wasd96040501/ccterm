@@ -16,7 +16,7 @@ struct Design {
 
     /// The page's sections, in order: one per component family.
     static func sections() -> [DesignPageViewController.Section] {
-        [FormSpecimen.section()]
+        [FormSpecimen.section(), AccountsSpecimen.section()]
     }
 
     /// Quit, and an Edit menu: without it ⌘C, ⌘V and ⌘A never reach a field

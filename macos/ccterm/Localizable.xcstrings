@@ -116,17 +116,6 @@
         }
       }
     },
-    "%@.": {
-      "comment": "A check's failure reason as a sentence.",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@。"
-          }
-        }
-      }
-    },
     "%lld More Models": {
       "localizations": {
         "zh-Hans": {
@@ -486,26 +475,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "添加"
-          }
-        }
-      }
-    },
-    "Add Provider…": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "添加提供方…"
-          }
-        }
-      }
-    },
-    "Add Variable": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "添加变量"
           }
         }
       }
@@ -1169,16 +1138,6 @@
         }
       }
     },
-    "Click + or paste to add.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "点按 + 或粘贴以添加。"
-          }
-        }
-      }
-    },
     "Close Tab": {
       "localizations": {
         "zh-Hans": {
@@ -1276,16 +1235,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "上下文用量"
-          }
-        }
-      }
-    },
-    "Continue in your browser. CCTerm finishes signing in when you approve access.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请在浏览器中继续。你批准访问后，CCTerm 会完成登录。"
           }
         }
       }
@@ -1517,16 +1466,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "分离的 HEAD"
-          }
-        }
-      }
-    },
-    "Details": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "详细信息"
           }
         }
       }
@@ -1930,16 +1869,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "图片 %lld"
-          }
-        }
-      }
-    },
-    "Import from Clipboard": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "从剪贴板导入"
           }
         }
       }
@@ -2366,32 +2295,12 @@
         }
       }
     },
-    "No API Providers": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "没有 API 提供方"
-          }
-        }
-      }
-    },
     "No Matching Branches": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "没有匹配的分支"
-          }
-        }
-      }
-    },
-    "No Variables": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "没有变量"
           }
         }
       }
@@ -2606,32 +2515,12 @@
         }
       }
     },
-    "Open Browser Again": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重新打开浏览器"
-          }
-        }
-      }
-    },
     "Opus": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "Opus"
-          }
-        }
-      }
-    },
-    "Or press ⌘V to paste shell aliases or commands.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "也可以按 ⌘V 粘贴 shell 别名或命令。"
           }
         }
       }
@@ -2722,16 +2611,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "PDF"
-          }
-        }
-      }
-    },
-    "Paste %@ lines or a command": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "粘贴 %@ 行或一条命令"
           }
         }
       }
@@ -3018,16 +2897,6 @@
         }
       }
     },
-    "Remove Variable": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "移除变量"
-          }
-        }
-      }
-    },
     "Replace all": {
       "localizations": {
         "zh-Hans": {
@@ -3156,16 +3025,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "已审阅对话"
-          }
-        }
-      }
-    },
-    "Run Claude Code through the Anthropic API, a gateway or a local proxy.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "通过 Anthropic API、网关或本地代理运行 Claude Code。"
           }
         }
       }
@@ -3562,16 +3421,6 @@
         }
       }
     },
-    "Sign in to Claude": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "登录 Claude"
-          }
-        }
-      }
-    },
     "Sign out of %@?": {
       "localizations": {
         "zh-Hans": {
@@ -3661,16 +3510,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "仍在检查"
-          }
-        }
-      }
-    },
-    "Still using %@.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "仍在使用 %@。"
           }
         }
       }
@@ -4190,16 +4029,6 @@
         }
       }
     },
-    "Value": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "值"
-          }
-        }
-      }
-    },
     "Version %@ (%@)": {
       "localizations": {
         "zh-Hans": {
@@ -4226,26 +4055,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "等待你的批准"
-          }
-        }
-      }
-    },
-    "Waiting for your browser…": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在等待浏览器…"
-          }
-        }
-      }
-    },
-    "Warning": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "警告"
           }
         }
       }

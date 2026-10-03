@@ -1,4 +1,5 @@
 import AgentSDK
+import Components
 import XCTest
 
 @testable import ccterm
@@ -145,7 +146,7 @@ final class AccountEditorViewModelTests: XCTestCase {
         model.setCommand("missing")
         await waitFor(model.$presentation) { $0.commandDetail.isError }
         XCTAssertFalse(model.presentation.canSave)
-        XCTAssertEqual(model.presentation.commandDetail.text, String(localized: "\(String(localized: "Not found"))."))
+        XCTAssertEqual(model.presentation.commandDetail, .problem(String(localized: "Not found"), fallback: nil))
         model.setCommand("")
         XCTAssertEqual(
             model.presentation.commandDetail, .none, "General's launch is known, so its answer shows at once")

@@ -1,3 +1,29 @@
 /* The secret field's eye: what pressing it does to the value. */
 "Hide" = "Hide";
 "Show" = "Show";
+
+/* Settings: accounts, providers, variables, sign-in, field checks. */
+"Details" = "Details";
+"Add Provider…" = "Add Provider…";
+"Import from Clipboard" = "Import from Clipboard";
+"Name" = "Name";
+"Value" = "Value";
+"Warning" = "Warning";
+"No API Providers" = "No API Providers";
+"Run Claude Code through the Anthropic API, a gateway or a local proxy." = "Run Claude Code through the Anthropic API, a gateway or a local proxy.";
+"Or press ⌘V to paste shell aliases or commands." = "Or press ⌘V to paste shell aliases or commands.";
+"No Variables" = "No Variables";
+"Click + or paste to add." = "Click + or paste to add.";
+"Add Variable" = "Add Variable";
+"Remove Variable" = "Remove Variable";
+"Paste %@ lines or a command" = "Paste %@ lines or a command";
+"Checking…" = "Checking…";
+"%@." = "%@.";
+"Still using %@." = "Still using %@.";
+"Sign in to Claude" = "Sign in to Claude";
+"Waiting for your browser…" = "Waiting for your browser…";
+"Open Browser Again" = "Open Browser Again";
+"Cancel" = "Cancel";
+
+/* Settings: the sign-in sheet. */
+"Continue in your browser. CCTerm finishes signing in when you approve access." = "Continue in your browser. CCTerm finishes signing in when you approve access.";

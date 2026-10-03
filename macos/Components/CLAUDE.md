@@ -16,6 +16,25 @@ Tests/ComponentsTests/   component tests; *SnapshotTests render off screen, only
 - **Its words are the package's.** A component's own copy (an accessibility label, a fixed title) is `String(localized: "…", bundle: .module)` in `Resources/<lang>.lproj/Localizable.strings` — English and `zh-Hans`, landing in the same commit as the code. Words that come from the app arrive in the display model, already localized.
 - The component-boundary rules of `macos/CLAUDE.md` (B1–B4) apply here as in the app; `make arch` checks both.
 
+## Moving a component in
+
+The app's views come here one unit at a time — a family, or a component with the leaves only it uses — and each unit lands as one commit that leaves every gate green.
+
+- **Move, then refine:** `git mv` the files, then edit them in place — `public` on the surface, `bundle: .module` on every string. Never retype a file.
+- **Cut the domain out, don't carry it in.** A component that takes an app type (`Account`, `Subscription`, a store's state, an AgentSDK value) takes a display model instead, and its delegate reports an id or a display value. The mapping from the app's type to the display model is an `extension` on the display model in the app, next to the screen that uses it (`AccountRowContent+Account.swift`); the store subscription stays in the app's controller.
+- **Leaves a component alone uses move with it and stay `internal`** (`EnvironmentVariableCellView` with its list). A subview is never made `public` so the app can reach into it.
+- **Assets it draws come with it** into `Resources/Assets.xcassets`, published as a `public` accessor where the app also draws them (`NSImage.claudeMark`).
+- **Its tests come with it.** What the component does on its own — its controls, its states, its wording — is tested here; the app keeps only the tests of its mapping and its flow, asserting against the component's own values (`.problem(…)`, `.checking`), never against the component's words.
+
+## Verify — every unit, before its commit
+
+1. **Boundary:** `grep -rnE 'AccountStore|LaunchStore|LaunchCheckService|SubscriptionService|SessionStore|LibraryStore|GitService|SettingsContext|TranscriptTab|import (AgentSDK|TranscriptKit|ccterm)' macos/Components/Sources` finds nothing. Domain types the compiler refuses on its own: the package can't see them.
+2. **Words:** `grep -rn 'localized:' macos/Components/Sources/Components` shows `bundle: .module` on every hit (a wrapped call carries it on the next line); each key is in both `Resources/*.lproj/Localizable.strings` and gone from `ccterm/Localizable.xcstrings` unless the app still says it.
+3. **Gates:** `make build`, `make test-unit`, `make test-ui`, `make fmt-check` — all green.
+4. **Architecture:** `make arch`; `build/arch/coupling.md` has no more findings than before the unit, and none names a type in `Components`.
+5. **Look:** `make test-ui FILTER=DesignPageSnapshotTests`, then open `/tmp/ccterm-screenshots/Design-{1240,600}-{light,dark}.png` and read the new specimen against its design part: every state the design shows is there, nothing collapsed, clipped or overlapping, the dark render its own.
+6. **Commit and push.**
+
 ## The style page
 
 `ComponentsDesign` lays every component out as the design sheet does (`design/transcript/index.html`): one column, 1160 wide at most, centred; a section per family — heading, note, then each specimen as a heading over a card the column's width. It is all Auto Layout and follows the window's width; nothing on it has a width of its own. Each family adds a `<Family>Specimen` that builds real components from fixture models, interactive.

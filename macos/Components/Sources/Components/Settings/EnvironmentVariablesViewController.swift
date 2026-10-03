@@ -1,5 +1,4 @@
 import AppKit
-import Components
 
 /// An account's environment variables as a list inside its form group: a
 /// header, a checkbox, the name and the value per row, and + and −
@@ -11,8 +10,8 @@ import Components
 /// Shows the rows it is configured with; every edit goes to the delegate,
 /// and the next rows show its outcome.
 @MainActor
-final class EnvironmentVariablesViewController: NSViewController {
-    weak var delegate: EnvironmentVariablesViewControllerDelegate?
+public final class EnvironmentVariablesViewController: NSViewController {
+    public weak var delegate: EnvironmentVariablesViewControllerDelegate?
 
     private var rows: [EnvironmentRow] = []
     /// What to select, and which field to edit, once the rows it waits for
@@ -20,14 +19,14 @@ final class EnvironmentVariablesViewController: NSViewController {
     private var pending: (row: Int, edit: Bool)?
 
     /// The list's height: header 28, rows 128, bar 28.
-    static let height: CGFloat = 184
+    public static let height: CGFloat = 184
 
-    init() {
+    public init() {
         super.init(nibName: nil, bundle: nil)
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     private lazy var header = HeaderView()
 
@@ -60,11 +59,11 @@ final class EnvironmentVariablesViewController: NSViewController {
 
     private lazy var emptyLabel: NSTextField = {
         let text = NSMutableAttributedString(
-            string: String(localized: "No Variables") + "\n",
+            string: String(localized: "No Variables", bundle: .module) + "\n",
             attributes: [.font: NSFont.systemFont(ofSize: 13)])
         text.append(
             NSAttributedString(
-                string: String(localized: "Click + or paste to add."),
+                string: String(localized: "Click + or paste to add.", bundle: .module),
                 attributes: [.font: NSFont.systemFont(ofSize: 11)]))
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
@@ -81,16 +80,18 @@ final class EnvironmentVariablesViewController: NSViewController {
     private lazy var bar = BarView()
 
     private lazy var addButton = ListBarButton(
-        symbol: "plus", label: String(localized: "Add Variable"), target: self, action: #selector(add(_:)))
+        symbol: "plus", label: String(localized: "Add Variable", bundle: .module), target: self,
+        action: #selector(add(_:)))
     private lazy var removeButton = ListBarButton(
-        symbol: "minus", label: String(localized: "Remove Variable"), target: self, action: #selector(remove(_:)))
+        symbol: "minus", label: String(localized: "Remove Variable", bundle: .module), target: self,
+        action: #selector(remove(_:)))
     private let divider = ListBarDividerView()
 
     private lazy var hintLabel: NSTextField = {
         let base: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor,
         ]
-        let template = String(localized: "Paste %@ lines or a command")
+        let template = String(localized: "Paste %@ lines or a command", bundle: .module)
         let parts = template.components(separatedBy: "%@")
         let text = NSMutableAttributedString(string: parts.first ?? "", attributes: base)
         var code = base
@@ -100,13 +101,13 @@ final class EnvironmentVariablesViewController: NSViewController {
         return NSTextField(labelWithAttributedString: text)
     }()
 
-    override func loadView() {
+    public override func loadView() {
         view = NSView()
         configureHierarchy()
         configureConstraints()
     }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         tableView.dataSource = self
         tableView.delegate = self
@@ -159,12 +160,12 @@ final class EnvironmentVariablesViewController: NSViewController {
     }
 
     /// The list itself, for a sheet to open focused on without a field.
-    var initialFirstResponder: NSView { tableView }
+    public var initialFirstResponder: NSView { tableView }
 
     /// Shows `rows`. The same number of rows updates the rows in place, so
     /// a field being edited keeps its caret; otherwise the list reloads and
     /// selects what + or − left pending.
-    func configure(with rows: [EnvironmentRow]) {
+    public func configure(with rows: [EnvironmentRow]) {
         let reload = rows.count != self.rows.count
         self.rows = rows
         if reload {
@@ -246,11 +247,11 @@ final class EnvironmentVariablesViewController: NSViewController {
 }
 
 extension EnvironmentVariablesViewController: NSTableViewDataSource, NSTableViewDelegate {
-    func numberOfRows(in tableView: NSTableView) -> Int {
+    public func numberOfRows(in tableView: NSTableView) -> Int {
         rows.count
     }
 
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+    public func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let cell =
             tableView.makeView(withIdentifier: .environmentVariable, owner: nil) as? EnvironmentVariableCellView
             ?? makeCell()
@@ -258,11 +259,11 @@ extension EnvironmentVariablesViewController: NSTableViewDataSource, NSTableView
         return cell
     }
 
-    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+    public func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
         RowView()
     }
 
-    func tableViewSelectionDidChange(_ notification: Notification) {
+    public func tableViewSelectionDidChange(_ notification: Notification) {
         updateChrome()
     }
 
@@ -286,7 +287,7 @@ extension EnvironmentVariablesViewController: NSTableViewDataSource, NSTableView
 extension EnvironmentVariablesViewController: NSTextFieldDelegate {
     /// Return commits and hands focus back to the list; Tab from the name
     /// moves on to the value; Escape puts the field back as it was.
-    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+    public func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         guard let field = control as? EnvironmentVariableCellView.Field else { return false }
         let row = tableView.row(for: field)
         switch commandSelector {
@@ -314,7 +315,7 @@ extension EnvironmentVariablesViewController: NSTextFieldDelegate {
         }
     }
 
-    func controlTextDidEndEditing(_ notification: Notification) {
+    public func controlTextDidEndEditing(_ notification: Notification) {
         guard let field = notification.object as? EnvironmentVariableCellView.Field,
             let cell = field.superview as? EnvironmentVariableCellView
         else { return }
@@ -376,8 +377,8 @@ extension EnvironmentVariablesViewController {
 
     /// “Name” and “Value” over their columns, with a hairline under them.
     private final class HeaderView: NSView {
-        private let nameLabel = NSTextField(labelWithString: String(localized: "Name"))
-        private let valueLabel = NSTextField(labelWithString: String(localized: "Value"))
+        private let nameLabel = NSTextField(labelWithString: String(localized: "Name", bundle: .module))
+        private let valueLabel = NSTextField(labelWithString: String(localized: "Value", bundle: .module))
         private let hairline = FormHairlineView()
 
         override init(frame: NSRect) {

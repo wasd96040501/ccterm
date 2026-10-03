@@ -1,5 +1,4 @@
 import AppKit
-import Components
 
 /// One row of the variable list: a checkbox, the name and the value in the
 /// monospaced face, and a warning glyph when the row may not do what it
@@ -58,10 +57,11 @@ final class EnvironmentVariableCellView: NSTableCellView {
     }
 
     private func configureHierarchy() {
-        nameField.setPlaceholder(String(localized: "Name"))
-        valueField.setPlaceholder(String(localized: "Value"))
+        nameField.setPlaceholder(String(localized: "Name", bundle: .module))
+        valueField.setPlaceholder(String(localized: "Value", bundle: .module))
         warning.image = NSImage(
-            systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: String(localized: "Warning"))?
+            systemSymbolName: "exclamationmark.triangle.fill",
+            accessibilityDescription: String(localized: "Warning", bundle: .module))?
             .withSymbolConfiguration(.init(pointSize: 11, weight: .regular))
         for field in [nameField, valueField] {
             field.onEditingChange = { [weak self] in self?.editingDidChange() }

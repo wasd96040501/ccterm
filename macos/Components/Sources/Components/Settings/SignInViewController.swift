@@ -4,35 +4,35 @@ import AppKit
 /// Claude's mark, what to do, a spinner, then Open Browser Again (a link)
 /// and Cancel. The presenter dismisses it when the sign-in ends.
 @MainActor
-final class SignInViewController: NSViewController {
+public final class SignInViewController: NSViewController {
     /// Cancel, Escape or ⌘.
-    var onCancel: (() -> Void)?
+    public var onCancel: (() -> Void)?
 
     /// The page to open again; `nil` until the CLI has printed it.
     private var browserURL: URL?
 
     static let width: CGFloat = 380
 
-    init() {
+    public init() {
         super.init(nibName: nil, bundle: nil)
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    func configure(browserURL: URL?) {
+    public func configure(browserURL: URL?) {
         self.browserURL = browserURL
         openAgainButton.isEnabled = browserURL != nil
     }
 
     private lazy var mark: NSImageView = {
-        let view = NSImageView(image: NSImage(named: "ClaudeMark") ?? NSImage())
+        let view = NSImageView(image: NSImage.claudeMark)
         view.imageScaling = .scaleProportionallyUpOrDown
         return view
     }()
 
     private lazy var titleLabel: NSTextField = {
-        let label = NSTextField(labelWithString: String(localized: "Sign in to Claude"))
+        let label = NSTextField(labelWithString: String(localized: "Sign in to Claude", bundle: .module))
         label.font = .systemFont(ofSize: 15, weight: .semibold)
         return label
     }()
@@ -40,7 +40,8 @@ final class SignInViewController: NSViewController {
     private lazy var messageLabel: NSTextField = {
         let label = NSTextField(
             wrappingLabelWithString: String(
-                localized: "Continue in your browser. CCTerm finishes signing in when you approve access."))
+                localized: "Continue in your browser. CCTerm finishes signing in when you approve access.",
+                bundle: .module))
         label.font = .systemFont(ofSize: 12)
         label.textColor = .secondaryLabelColor
         label.alignment = .center
@@ -56,7 +57,7 @@ final class SignInViewController: NSViewController {
     }()
 
     private lazy var waitLabel: NSTextField = {
-        let label = NSTextField(labelWithString: String(localized: "Waiting for your browser…"))
+        let label = NSTextField(labelWithString: String(localized: "Waiting for your browser…", bundle: .module))
         label.font = .systemFont(ofSize: 12)
         label.textColor = .secondaryLabelColor
         return label
@@ -72,25 +73,26 @@ final class SignInViewController: NSViewController {
         let button = NSButton(title: "", target: self, action: #selector(openAgain(_:)))
         button.isBordered = false
         button.attributedTitle = NSAttributedString(
-            string: String(localized: "Open Browser Again"),
+            string: String(localized: "Open Browser Again", bundle: .module),
             attributes: [.foregroundColor: NSColor.linkColor, .font: NSFont.systemFont(ofSize: 13)])
         button.isEnabled = false
         return button
     }()
 
     private lazy var cancelButton: NSButton = {
-        let button = NSButton(title: String(localized: "Cancel"), target: self, action: #selector(cancel(_:)))
+        let button = NSButton(
+            title: String(localized: "Cancel", bundle: .module), target: self, action: #selector(cancel(_:)))
         button.keyEquivalent = "\u{1b}"
         return button
     }()
 
-    override func loadView() {
+    public override func loadView() {
         view = NSView()
         configureHierarchy()
         configureConstraints()
     }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         spinner.startAnimation(nil)
         preferredContentSize = view.fittingSize
@@ -134,7 +136,7 @@ final class SignInViewController: NSViewController {
         onCancel?()
     }
 
-    override func cancelOperation(_ sender: Any?) {
+    public override func cancelOperation(_ sender: Any?) {
         onCancel?()
     }
 }

@@ -8,11 +8,11 @@ import AppKit
 /// whatever its controller sets as `menu`; the row shows pressed while the
 /// menu is open.
 @MainActor
-final class AccountRowView: NSView {
+public final class AccountRowView: NSView {
     /// ⓘ was clicked or the row double-clicked.
-    var onOpen: (() -> Void)?
+    public var onOpen: (() -> Void)?
     /// The trailing push button was clicked.
-    var onAction: (() -> Void)?
+    public var onAction: (() -> Void)?
 
     private var content: AccountRowContent?
     private var isPressed = false {
@@ -27,7 +27,8 @@ final class AccountRowView: NSView {
     private var noMarkConstraints: [NSLayoutConstraint] = []
 
     private lazy var infoButton: NSButton = {
-        let image = NSImage(systemSymbolName: "info.circle", accessibilityDescription: String(localized: "Details"))?
+        let image = NSImage(
+            systemSymbolName: "info.circle", accessibilityDescription: String(localized: "Details", bundle: .module))?
             .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
         let button = NSButton(image: image ?? NSImage(), target: self, action: #selector(info(_:)))
         button.isBordered = false
@@ -48,16 +49,16 @@ final class AccountRowView: NSView {
         return spinner
     }()
 
-    init() {
+    public init() {
         super.init(frame: .zero)
         configureHierarchy()
         configureConstraints()
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    func configure(with content: AccountRowContent) {
+    public func configure(with content: AccountRowContent) {
         guard content != self.content else { return }
         self.content = content
         titleLabel.stringValue = content.title
@@ -68,7 +69,7 @@ final class AccountRowView: NSView {
                 .withSymbolConfiguration(.init(pointSize: 20, weight: .regular))
             mark.contentTintColor = .secondaryLabelColor
         } else {
-            mark.image = NSImage(named: "ClaudeMark")
+            mark.image = NSImage.claudeMark
             mark.contentTintColor = nil
         }
         mark.alphaValue = content.mark == .claudeDimmed ? 0.45 : 1
@@ -94,7 +95,7 @@ final class AccountRowView: NSView {
 
     private func configureHierarchy() {
         wantsLayer = true
-        mark.image = NSImage(named: "ClaudeMark")
+        mark.image = NSImage.claudeMark
         mark.imageScaling = .scaleProportionallyUpOrDown
         mark.wantsLayer = true
         mark.layerUsesCoreImageFilters = true
@@ -150,16 +151,16 @@ final class AccountRowView: NSView {
         onAction?()
     }
 
-    override func mouseDown(with event: NSEvent) {
+    public override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2, content?.accessory == .info { onOpen?() } else { super.mouseDown(with: event) }
     }
 
-    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+    public override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
         super.willOpenMenu(menu, with: event)
         isPressed = true
     }
 
-    override func didCloseMenu(_ menu: NSMenu, with event: NSEvent?) {
+    public override func didCloseMenu(_ menu: NSMenu, with event: NSEvent?) {
         super.didCloseMenu(menu, with: event)
         isPressed = false
     }
@@ -171,7 +172,7 @@ final class AccountRowView: NSView {
 
     /// Tints the row as one just imported: held for 0.72 s, then fading to the
     /// group's fill over 1.68 s.
-    func flash() {
+    public func flash() {
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
         if tintView.superview == nil {
             tintView.frame = bounds
@@ -206,9 +207,9 @@ final class AccountRowView: NSView {
         }
     }
 
-    override var wantsUpdateLayer: Bool { true }
+    public override var wantsUpdateLayer: Bool { true }
 
-    override func updateLayer() {
+    public override func updateLayer() {
         layer?.backgroundColor = isPressed ? NSColor.labelColor.withAlphaComponent(0.05).cgColor : nil
     }
 }

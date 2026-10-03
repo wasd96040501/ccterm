@@ -5,8 +5,8 @@ import AppKit
 /// provider is for, Add Provider…, and a hint that a pasted alias works too.
 /// Its owner wires the button.
 @MainActor
-final class ProvidersEmptyView: NSView {
-    let addButton = AddProviderButton()
+public final class ProvidersEmptyView: NSView {
+    public let addButton = AddProviderButton()
 
     private lazy var symbol: NSImageView = {
         let image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: nil)?
@@ -18,7 +18,7 @@ final class ProvidersEmptyView: NSView {
     }()
 
     private lazy var titleLabel: NSTextField = {
-        let label = NSTextField(labelWithString: String(localized: "No API Providers"))
+        let label = NSTextField(labelWithString: String(localized: "No API Providers", bundle: .module))
         label.font = .systemFont(ofSize: 13, weight: .semibold)
         return label
     }()
@@ -26,7 +26,7 @@ final class ProvidersEmptyView: NSView {
     private lazy var descriptionLabel: NSTextField = {
         let label = NSTextField(
             wrappingLabelWithString: String(
-                localized: "Run Claude Code through the Anthropic API, a gateway or a local proxy."))
+                localized: "Run Claude Code through the Anthropic API, a gateway or a local proxy.", bundle: .module))
         label.font = .systemFont(ofSize: 11)
         label.textColor = .secondaryLabelColor
         label.alignment = .center
@@ -35,20 +35,21 @@ final class ProvidersEmptyView: NSView {
     }()
 
     private lazy var hintLabel: NSTextField = {
-        let label = NSTextField(labelWithString: String(localized: "Or press ⌘V to paste shell aliases or commands."))
+        let label = NSTextField(
+            labelWithString: String(localized: "Or press ⌘V to paste shell aliases or commands.", bundle: .module))
         label.font = .systemFont(ofSize: 11)
         label.textColor = .tertiaryLabelColor
         return label
     }()
 
-    init() {
+    public init() {
         super.init(frame: .zero)
         configureHierarchy()
         configureConstraints()
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     private func configureHierarchy() {
         for view in [symbol, titleLabel, descriptionLabel, addButton, hintLabel] {

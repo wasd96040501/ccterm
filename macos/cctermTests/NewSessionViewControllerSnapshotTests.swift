@@ -98,6 +98,80 @@ final class NewSessionViewControllerSnapshotTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
     }
 
+    // MARK: - Against the design
+
+    /// The New view as the design sheet's specimens draw it (cards 02–04): the
+    /// real view with the real composer in its slot, beside the sheet's —
+    /// `/tmp/ccterm-parity/<scheme>-part-0N-new0.png`. A specimen is static:
+    /// 28 pt above the icon and 8 at the sides, where a tab centres the view
+    /// optically and keeps 24 at the sides. So ours is laid out 32 pt wider
+    /// (its composer then has the specimen's width) and as tall as puts 28 pt
+    /// above the icon, and cropped to the specimen. Needs the display awake.
+    func testTheNewViewAgainstTheDesign() async throws {
+        let relayDraft = draft {
+            $0.settings = ComposerFixtures.settings("default", on: ComposerFixtures.relay, mode: .acceptEdits)
+            $0.toggleWorktree(in: repository)
+        }
+        let notes = URL(fileURLWithPath: NSHomeDirectory() + "/notes/claude-notes")
+        let parts: [(id: String, model: NewSessionModel, composer: SessionSettings, hints: Bool)] = [
+            ("part-02-new0", model(draft()), ComposerFixtures.settings(), true),
+            ("part-03-new0", model(relayDraft), relayDraft.settings, false),
+            (
+                "part-04-new0",
+                NewSessionModel(
+                    draft: NewSessionDraft(folder: notes, settings: settings), repository: .notARepository,
+                    recentFolders: []),
+                ComposerFixtures.settings(), false
+            ),
+        ]
+        for scheme in DesignParity.Scheme.allCases {
+            NSApp.appearance = scheme.appearance
+            defer { NSApp.appearance = nil }
+            for part in parts {
+                let design = try DesignParity.part(part.id, scheme)
+                let make = {
+                    ParityHost(
+                        model: part.model, composer: ComposerFixtures.model(.draft, settings: part.composer),
+                        hints: part.hints, page: scheme.page)
+                }
+                let width = design.width + 32
+                let height = Self.height(placingIconAt: 28, width: width, make)
+                // Composited, as the screen shows it: `cacheDisplay` draws translucent words too dark.
+                let image = try await CompositedCapture.render(
+                    make(), size: CGSize(width: width, height: height), appearance: scheme.appearance)
+                let cropped = Self.crop(image, to: NSRect(x: 16, y: 0, width: design.width, height: design.height))
+                let url = try DesignParity.write(part.id, scheme, ours: cropped)
+                let attachment = XCTAttachment(contentsOfFile: url)
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
+    /// The height at which the optical centring leaves `top` above the icon:
+    /// the free space splits 0.62 : 1 above and below the content.
+    private static func height(placingIconAt top: CGFloat, width: CGFloat, _ make: () -> ParityHost) -> CGFloat {
+        let probe = make()
+        probe.view.frame = NSRect(x: 0, y: 0, width: width, height: 1000)
+        probe.view.layoutSubtreeIfNeeded()
+        let above = 1000 - probe.iconFrame.maxY
+        let content = 1000 - above - above / 0.62
+        return (content + top + top / 0.62).rounded()
+    }
+
+    /// `rect` of `image`, from its top-left.
+    private static func crop(_ image: NSImage, to rect: NSRect) -> NSImage {
+        let cropped = NSImage(size: rect.size)
+        cropped.lockFocus()
+        image.draw(
+            in: NSRect(origin: .zero, size: rect.size),
+            from: NSRect(
+                x: rect.minX, y: image.size.height - rect.maxY, width: rect.width, height: rect.height),
+            operation: .copy, fraction: 1)
+        cropped.unlockFocus()
+        return cropped
+    }
+
     func testBranchPopover() {
         let list: NewSessionModel.BranchList = {
             guard case .repository(_, _, let list) = model(draft()).branchRow else {
@@ -120,6 +194,68 @@ final class NewSessionViewControllerSnapshotTests: XCTestCase {
         }
         let url = ViewSnapshot.writeStack(sheets, name: "NewSessionBranchPicker")
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+}
+
+/// The New view with the real composer in its slot, as `SessionTabViewController`
+/// mounts a draft (`mountDraft`), on the sheet's page.
+@MainActor
+private final class ParityHost: NSViewController {
+    private let newSession = NewSessionViewController()
+    private let composer = ComposerViewController()
+    private let model: NewSessionModel
+    private let composerModel: ComposerModel
+    private let hints: Bool
+    private let page: NSColor
+
+    init(model: NewSessionModel, composer: ComposerModel, hints: Bool, page: NSColor) {
+        self.model = model
+        composerModel = composer
+        self.hints = hints
+        self.page = page
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    /// The icon's frame in this view (y up).
+    var iconFrame: NSRect {
+        let icon = newSession.view.subviews.first { $0 is NewSessionIconView } ?? newSession.view
+        return icon.convert(icon.bounds, to: view)
+    }
+
+    override func loadView() {
+        let root = NSView()
+        root.wantsLayer = true
+        root.layer?.backgroundColor = page.cgColor
+        view = root
+        addChild(newSession)
+        addChild(composer)
+        let content = newSession.view
+        content.translatesAutoresizingMaskIntoConstraints = false
+        composer.view.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(content)
+        root.addSubview(composer.view)
+        let guide = newSession.composerGuide
+        NSLayoutConstraint.activate([
+            content.topAnchor.constraint(equalTo: root.topAnchor),
+            content.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            content.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            composer.view.topAnchor.constraint(equalTo: guide.topAnchor),
+            composer.view.leadingAnchor.constraint(equalTo: guide.leadingAnchor),
+            composer.view.trailingAnchor.constraint(equalTo: guide.trailingAnchor),
+            guide.heightAnchor.constraint(equalTo: composer.view.heightAnchor),
+        ])
+        newSession.configure(with: model)
+        newSession.setHintsVisible(hints)
+        composer.configure(with: composerModel)
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        view.window?.makeFirstResponder(nil)
     }
 }
 

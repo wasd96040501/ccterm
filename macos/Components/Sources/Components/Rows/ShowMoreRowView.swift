@@ -47,7 +47,7 @@ public final class ShowMoreRowView: NSView, PageRowView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    public static func height(for model: Model, width: CGFloat) -> CGFloat { WorkLineRowView.rowHeight }
+    public static func height(for model: Model, width: CGFloat) -> CGFloat { WorkRowMetrics.height }
 
     public func configure(with model: Model) {
         runID = model.runID

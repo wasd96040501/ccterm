@@ -81,7 +81,7 @@ public final class WorkLineRowView: NSView, PageRowView {
     private static let accessorySide: CGFloat = 12
 
     /// The row's height, which is the wash's: a run's line and its items alike.
-    static let rowHeight: CGFloat = 28
+    static let rowHeight: CGFloat = WorkRowMetrics.height
     /// Between the wash's edge and the words' line, above and below them.
     public static let air: CGFloat = 6
 

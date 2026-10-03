@@ -150,9 +150,9 @@ enum RowsSpecimen {
 
     private static var live: [Row] {
         let reading = line(
-            .read, .running, text: StyledText("Reading ") + file("LibraryStore.swift"), meta: StyledText("12s"))
+            .read, .running, text: StyledText("Reading ") + file("PageBuilder.swift"), meta: StyledText("12s"))
         let preparing = line(
-            .change, .preparing, text: StyledText("Editing ") + file("SessionStore.swift"))
+            .change, .preparing, text: StyledText("Editing ") + file("TileView.swift"))
         let waiting = line(.command, .waiting, text: StyledText("Waiting for your approval"))
         let approval = Approval(
             id: "c1", tile: Tile(glyph: .tool(.command), state: .waiting), title: "Run the unit tests",

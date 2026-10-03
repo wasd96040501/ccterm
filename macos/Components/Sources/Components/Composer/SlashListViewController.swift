@@ -13,7 +13,6 @@ package final class SlashListViewController: NSViewController {
     var onChoose: ((ComposerPresentation.Command) -> Void)?
 
     static let inset: CGFloat = 5
-    static let rowPadding: CGFloat = 10
     static let minRowHeight: CGFloat = 28
     /// How many rows the list shows before it scrolls — at their own heights,
     /// so a wrapped description is never what pushes the last of them out.
@@ -190,6 +189,7 @@ private final class SlashRowView: NSTableCellView {
     private static let hintFont = NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular)
     private static let descriptionFont = NSFont.systemFont(ofSize: 12)
     private static let gap: CGFloat = 8
+    static let rowPadding: CGFloat = 10
     /// The sheet's line: 12 pt on the page's 1.45.
     static let lineHeight: CGFloat = 17.4
 
@@ -230,13 +230,13 @@ private final class SlashRowView: NSTableCellView {
             addSubview(view)
         }
         NSLayoutConstraint.activate([
-            nameLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: SlashListViewController.rowPadding),
+            nameLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: SlashRowView.rowPadding),
             nameLabel.firstBaselineAnchor.constraint(equalTo: descriptionLabel.firstBaselineAnchor),
             hintLabel.leadingAnchor.constraint(equalTo: nameLabel.trailingAnchor, constant: Self.gap),
             hintLabel.firstBaselineAnchor.constraint(equalTo: descriptionLabel.firstBaselineAnchor),
             descriptionLabel.leadingAnchor.constraint(equalTo: hintLabel.trailingAnchor, constant: Self.gap),
             descriptionLabel.trailingAnchor.constraint(
-                equalTo: trailingAnchor, constant: -SlashListViewController.rowPadding),
+                equalTo: trailingAnchor, constant: -SlashRowView.rowPadding),
             // `.sl { padding: 6px 10px }` — less the half of the line's extra
             // height CSS puts above the words, which TextKit puts there whole.
             descriptionLabel.topAnchor.constraint(equalTo: topAnchor, constant: 6 - Self.halfLeading),
@@ -275,7 +275,7 @@ private final class SlashRowView: NSTableCellView {
     /// The width the description has in its row: what the name and the hint leave.
     private static func descriptionWidth(of command: ComposerPresentation.Command, rowWidth: CGFloat) -> CGFloat {
         let name = ("/" + command.name as NSString).size(withAttributes: [.font: nameFont]).width
-        var taken = SlashListViewController.rowPadding * 2 + ceil(name) + gap + gap
+        var taken = SlashRowView.rowPadding * 2 + ceil(name) + gap + gap
         if !command.argumentHint.isEmpty {
             taken += ceil((command.argumentHint as NSString).size(withAttributes: [.font: hintFont]).width)
         }

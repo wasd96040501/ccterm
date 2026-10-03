@@ -1,7 +1,7 @@
 import AppKit
 
 /// The API Providers group with nothing in it, as `ContentUnavailableView`
-/// draws one: a quiet server rack, “No API Providers”, one line of what a
+/// draws one: a quiet `server.rack`, “No API Providers”, one line of what a
 /// provider is for, Add Provider…, and a hint that a pasted alias works too.
 /// Its owner wires the button.
 @MainActor
@@ -9,7 +9,9 @@ public final class ProvidersEmptyView: NSView {
     let addButton = AddProviderButton()
 
     private lazy var symbol: NSImageView = {
-        let view = NSImageView(image: .settingsServerRack)
+        let image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 32, weight: .regular))
+        let view = NSImageView(image: image ?? NSImage())
         view.imageScaling = .scaleProportionallyUpOrDown
         view.contentTintColor = .tertiaryLabelColor
         return view

@@ -22,13 +22,13 @@ private final class SplitHost: NSView {
     private let split = SettingsSplitViewController(
         panes: [
             .init(
-                title: "General", glyph: .settingsGear,
+                title: "General", symbolName: "gearshape",
                 viewController: PaneViewController(
                     LaunchHost(
                         command: GeneralSpecimen.found, folder: GeneralSpecimen.inEffect,
                         allowsBypassPermissions: false))),
             .init(
-                title: "Accounts", glyph: .settingsPerson,
+                title: "Accounts", symbolName: "person.crop.circle",
                 viewController: PaneViewController(
                     AccountsHost(
                         subscription: .signedIn(AccountsSpecimen.subscription),

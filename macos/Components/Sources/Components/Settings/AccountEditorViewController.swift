@@ -111,7 +111,8 @@ public final class AccountEditorViewController: NSViewController {
         button.attributedTitle = NSAttributedString(
             string: String(localized: "Manage", bundle: .module),
             attributes: [.foregroundColor: NSColor.linkColor, .font: NSFont.systemFont(ofSize: 13)])
-        button.image = .settingsArrowOut
+        button.image = NSImage(systemSymbolName: "arrow.up.right", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 8, weight: .semibold))
         button.imagePosition = .imageTrailing
         button.contentTintColor = .linkColor
         return button

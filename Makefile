@@ -1,4 +1,4 @@
-.PHONY: build release install dmg clean fmt fmt-check test-unit test-kit test-ui design test-sdk test-list bench-list record-list demo-kit demo-list logs icon sidebar-icons transcript-icons settings-icons window-chrome new-view-icons composer-icons design-shots appkit-doc arch help
+.PHONY: build release install dmg clean fmt fmt-check test-unit test-kit test-ui design test-sdk test-list bench-list record-list demo-kit demo-list logs icon sidebar-icons window-chrome new-view-icons composer-icons design-shots appkit-doc arch help
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
@@ -144,13 +144,7 @@ icon: ## Regenerate AppIcon.icon and the AppIconArt image set from design/icon (
 sidebar-icons: ## Regenerate the sidebar glyph assets (Components/Resources/Assets.xcassets/Sidebar) from design/sidebar-icons
 	cd design/sidebar-icons && bun run build
 
-transcript-icons: ## Regenerate the transcript glyph assets (Components/Resources/Assets.xcassets/Transcript) from design/transcript's own paths
-	cd design/transcript-icons && bun run build
-
-settings-icons: ## Regenerate the Settings glyph assets (Assets.xcassets/Settings) from design/settings's own paths
-	cd design/settings-icons && bun run build
-
-window-chrome: ## Regenerate the window chrome assets (Assets.xcassets/WindowChrome) from the design sheets' window mocks
+window-chrome: ## Regenerate the window chrome assets (Components/Resources/Assets.xcassets/WindowChrome) from the design sheets' window mocks
 	cd design/window-chrome && bun run build
 
 new-view-icons: ## Regenerate the New view's glyph assets (Assets.xcassets/NewView) from design/new-view-icons

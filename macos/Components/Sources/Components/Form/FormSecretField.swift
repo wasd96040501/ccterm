@@ -97,9 +97,12 @@ public final class FormSecretField: NSView {
         secureField.isHidden = isRevealed
         maskLabel.isHidden = isRevealed || isEditing
         secureField.textColor = isEditing ? .labelColor : .clear
-        eyeButton.image = isRevealed ? .settingsEyeOff : .settingsEye
-        eyeButton.setAccessibilityLabel(
-            isRevealed ? String(localized: "Hide", bundle: .module) : String(localized: "Show", bundle: .module))
+        let symbol = isRevealed ? "eye.slash" : "eye"
+        eyeButton.image = NSImage(
+            systemSymbolName: symbol,
+            accessibilityDescription: isRevealed
+                ? String(localized: "Hide", bundle: .module) : String(localized: "Show", bundle: .module))?
+            .withSymbolConfiguration(.init(pointSize: 12, weight: .regular))
     }
 
     @objc private func toggleReveal(_ sender: Any?) {

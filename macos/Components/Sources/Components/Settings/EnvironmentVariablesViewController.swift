@@ -81,10 +81,10 @@ public final class EnvironmentVariablesViewController: NSViewController {
     private lazy var bar = BarView()
 
     private lazy var addButton = ListBarButton(
-        glyph: .settingsPlus, label: String(localized: "Add Variable", bundle: .module), target: self,
+        symbol: "plus", label: String(localized: "Add Variable", bundle: .module), target: self,
         action: #selector(add(_:)))
     private lazy var removeButton = ListBarButton(
-        glyph: .settingsMinus, label: String(localized: "Remove Variable", bundle: .module), target: self,
+        symbol: "minus", label: String(localized: "Remove Variable", bundle: .module), target: self,
         action: #selector(remove(_:)))
     private let divider = ListBarDividerView()
 

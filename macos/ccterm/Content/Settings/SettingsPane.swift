@@ -11,4 +11,12 @@ enum SettingsPane: Int, CaseIterable {
         case .accounts: String(localized: "Accounts")
         }
     }
+
+    /// The sidebar's SF Symbol.
+    var symbolName: String {
+        switch self {
+        case .general: "gearshape"
+        case .accounts: "person.crop.circle"
+        }
+    }
 }

@@ -4,9 +4,9 @@ import AppKit
 /// `menuHTML` in preview-live.js), which every pop-up of the composer and the
 /// New view is — Model, Effort, Mode, the folder and the branch. Rows top to
 /// bottom; what goes under the scroll (Fast Mode) is `footer`.
-struct MenuContent {
+public struct MenuContent {
     /// A section's head (`.mh`).
-    enum Header {
+    public enum Header {
         /// 11-pt semibold tertiary words over the items, with a key hint at the
         /// trailing edge (⇧⇥).
         case title(String, hint: String? = nil)
@@ -17,7 +17,7 @@ struct MenuContent {
     }
 
     /// What sits at an item's trailing edge (`.mi .k`).
-    enum Trailing {
+    public enum Trailing {
         case none
         /// 12-pt tertiary words: a key equivalent (⌘O) or a folder's path.
         case key(String)
@@ -28,24 +28,24 @@ struct MenuContent {
     }
 
     /// A row that can be chosen (`.mi`).
-    struct Item {
+    public struct Item {
         /// Handed back when the item is chosen.
-        var id: AnyHashable
-        var title: String
+        public var id: AnyHashable
+        public var title: String
         /// 11-pt, under the title; for a disabled item, the reason.
-        var subtitle: String?
+        public var subtitle: String?
         /// A 16-pt glyph in the glyph column, secondary ink.
-        var glyph: NSImage?
-        var isChecked = false
-        var isEnabled = true
+        public var glyph: NSImage?
+        public var isChecked = false
+        public var isEnabled = true
         /// Bypass Permissions: title and glyph in red.
-        var isDanger = false
+        public var isDanger = false
         /// *N More Models*: accent words; choosing it keeps the menu open.
-        var isMore = false
-        var trailing = Trailing.none
-        var toolTip: String?
+        public var isMore = false
+        public var trailing = Trailing.none
+        public var toolTip: String?
 
-        init(
+        public init(
             id: AnyHashable, title: String, subtitle: String? = nil, glyph: NSImage? = nil,
             isChecked: Bool = false, isEnabled: Bool = true, isDanger: Bool = false, isMore: Bool = false,
             trailing: Trailing = .none, toolTip: String? = nil
@@ -63,14 +63,14 @@ struct MenuContent {
         }
 
         /// Choosing it leaves the menu open: a switch, or a fold that expands.
-        var keepsMenuOpen: Bool {
+        public var keepsMenuOpen: Bool {
             if isMore { return true }
             if case .toggle = trailing { return true }
             return false
         }
     }
 
-    enum Row {
+    public enum Row {
         case header(Header)
         case item(Item)
         /// A hairline (`.msep`).
@@ -78,20 +78,25 @@ struct MenuContent {
     }
 
     /// The filter field over the list (`.mfilter`), and what it holds.
-    struct Filter {
-        var placeholder: String
-        var text: String
+    public struct Filter {
+        public var placeholder: String
+        public var text: String
+
+        public init(placeholder: String, text: String) {
+            self.placeholder = placeholder
+            self.text = text
+        }
     }
 
-    var rows: [Row]
+    public var rows: [Row]
     /// Under the scroll, past a hairline (`.mfoot`), always in view.
-    var footer: [Row] = []
-    var filter: Filter?
+    public var footer: [Row] = []
+    public var filter: Filter?
     /// A panel (`.lv-menu.panel`) is 300 pt wide and its list scrolls past
     /// 360 pt; a menu is as wide as its widest row, 240 to 340.
-    var isPanel = false
+    public var isPanel = false
 
-    init(rows: [Row], footer: [Row] = [], filter: Filter? = nil, isPanel: Bool = false) {
+    public init(rows: [Row], footer: [Row] = [], filter: Filter? = nil, isPanel: Bool = false) {
         self.rows = rows
         self.footer = footer
         self.filter = filter
@@ -100,7 +105,7 @@ struct MenuContent {
 
     /// Whether any item has a glyph: then every item keeps the glyph column,
     /// so all words start together (`.mi` vs `.mi.nog`).
-    var hasGlyphColumn: Bool {
+    public var hasGlyphColumn: Bool {
         (rows + footer).contains { if case .item(let item) = $0 { item.glyph != nil } else { false } }
     }
 }

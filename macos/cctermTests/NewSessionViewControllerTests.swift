@@ -1,5 +1,6 @@
 import AgentSDK
 import AppKit
+import Components
 import XCTest
 
 @testable import ccterm

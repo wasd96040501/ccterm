@@ -6,6 +6,7 @@ Every view the app draws with: generic controls and the app's own components. A 
 Sources/DisplayModels/   what a component is shown, as values — Foundation only (Settings/, Transcript/ …)
 Sources/Components/      the views: one directory per family (Form/, Settings/ …), over DisplayModels
   Drawing/               what the families share: the tile, the pill button, the corner radii, the colours, StyledText's fonts
+  Menu/                  the one menu every pop-up opens: MenuPanel (MenuContent in, choices out), over MenuPanelViewController and MenuPopup
 Sources/ComponentsDesign/  the style page — every component in its real host, live (`make design`)
 Tests/ComponentsTests/   component tests; *SnapshotTests render off screen, only when named
 ```

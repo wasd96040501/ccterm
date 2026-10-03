@@ -1,5 +1,4 @@
 import AppKit
-import Components
 
 /// The one menu every pop-up of the composer and the New view is — Model,
 /// Effort, Mode, the folder and the branch — drawn to the design's `.lv-menu`
@@ -23,7 +22,7 @@ import Components
 /// screen; the owner hands it a `MenuContent` and hears choices through the
 /// delegate.
 @MainActor
-final class MenuPanelViewController: NSViewController {
+public final class MenuPanelViewController: NSViewController {
     weak var delegate: MenuPanelViewControllerDelegate?
 
     /// A panel's width (`.lv-menu.panel`).
@@ -38,8 +37,13 @@ final class MenuPanelViewController: NSViewController {
     private(set) var width: CGFloat = 240
     /// How tall the list may be; the presenter lowers it when the screen has
     /// less room (never under 120).
-    var listHeightLimit: CGFloat = .greatestFiniteMagnitude {
+    private(set) var listHeightLimit: CGFloat = .greatestFiniteMagnitude {
         didSet { resize() }
+    }
+
+    /// Cuts the list to `height` (the presenter's call when the screen has no room).
+    func limitList(to height: CGFloat) {
+        listHeightLimit = height
     }
 
     private let material = NSVisualEffectView()
@@ -57,11 +61,19 @@ final class MenuPanelViewController: NSViewController {
     private lazy var listHeight = scrollView.heightAnchor.constraint(equalToConstant: 0)
     private lazy var viewWidth = view.widthAnchor.constraint(equalToConstant: width)
 
+    public override init(nibName nibNameOrNil: NSNib.Name?, bundle nibBundleOrNil: Bundle?) {
+        super.init(nibName: nibNameOrNil, bundle: nibBundleOrNil)
+    }
+
+    public required init?(coder: NSCoder) {
+        super.init(coder: coder)
+    }
+
     nonisolated deinit {
         NotificationCenter.default.removeObserver(self)
     }
 
-    override func loadView() {
+    public override func loadView() {
         material.material = .menu
         material.blendingMode = .behindWindow
         material.state = .active
@@ -72,7 +84,7 @@ final class MenuPanelViewController: NSViewController {
         view = material
     }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         configureHierarchy()
         configureConstraints()
@@ -148,7 +160,7 @@ final class MenuPanelViewController: NSViewController {
 
     /// Shows `content`. What is selected (by item id) and where the list is
     /// scrolled stay.
-    func configure(with content: MenuContent) {
+    public func configure(with content: MenuContent) {
         self.content = content
         guard isViewLoaded else { return }
         apply()
@@ -203,7 +215,7 @@ final class MenuPanelViewController: NSViewController {
     }
 
     /// The size the menu wants: the filter, the list up to its limit, the footer.
-    var preferredSize: NSSize {
+    public var preferredSize: NSSize {
         loadViewIfNeeded()
         return NSSize(width: width, height: chromeHeight + shownListHeight)
     }
@@ -319,7 +331,7 @@ final class MenuPanelViewController: NSViewController {
 
     // MARK: - The sticky head
 
-    override func viewDidLayout() {
+    public override func viewDidLayout() {
         super.viewDidLayout()
         placeStickyHeader()
     }
@@ -364,26 +376,28 @@ extension NSUserInterfaceItemIdentifier {
 }
 
 extension MenuPanelViewController: NSTableViewDataSource, NSTableViewDelegate {
-    func numberOfRows(in tableView: NSTableView) -> Int { content.rows.count }
+    public func numberOfRows(in tableView: NSTableView) -> Int { content.rows.count }
 
-    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+    public func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
         MenuMetrics.height(of: content.rows[row], width: width, content: content)
     }
 
-    func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool { isSelectable(row: row) }
+    public func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool { isSelectable(row: row) }
 
-    func tableView(_ tableView: NSTableView, typeSelectStringFor tableColumn: NSTableColumn?, row: Int) -> String? {
+    public func tableView(
+        _ tableView: NSTableView, typeSelectStringFor tableColumn: NSTableColumn?, row: Int
+    ) -> String? {
         if case .item(let item) = content.rows[row], item.isEnabled { return item.title }
         return nil
     }
 
-    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+    public func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
         let rowView = MenuRowView()
         if case .item(let item) = content.rows[row], case .toggle = item.trailing { rowView.isQuiet = true }
         return rowView
     }
 
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+    public func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         switch content.rows[row] {
         case .item(let item):
             let cell =
@@ -419,22 +433,22 @@ extension MenuPanelViewController: NSTableViewDataSource, NSTableViewDelegate {
 }
 
 extension MenuPanelViewController: NSTextFieldDelegate {
-    func controlTextDidBeginEditing(_ obj: Notification) {
+    public func controlTextDidBeginEditing(_ obj: Notification) {
         filterField.isFocused = true
     }
 
-    func controlTextDidEndEditing(_ obj: Notification) {
+    public func controlTextDidEndEditing(_ obj: Notification) {
         filterField.isFocused = false
     }
 
-    func controlTextDidChange(_ obj: Notification) {
+    public func controlTextDidChange(_ obj: Notification) {
         filterField.isFocused = true
         delegate?.menuPanelViewController(self, didChangeFilter: filterField.text)
     }
 
     /// The field keeps the keyboard; ↑ ↓ move over the list under it, ↩ takes
     /// what is selected (the first match), ⎋ closes.
-    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+    public func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         switch commandSelector {
         case #selector(NSResponder.moveUp(_:)):
             moveSelection(by: -1)

@@ -10,14 +10,14 @@ import AppKit
 /// Why a panel and not a subview: they pop out of the composer's card and the
 /// New view, and a view outside its parent's bounds can't be clicked.
 @MainActor
-final class MenuPopup: NSObject {
-    enum Side {
+public final class MenuPopup: NSObject {
+    public enum Side {
         case above
         case below
     }
 
     /// The panel closed itself (it lost the key, or `close()`).
-    var onClose: (() -> Void)?
+    public var onClose: (() -> Void)?
 
     private(set) var side = Side.below
     private let panel: PopupPanel
@@ -29,7 +29,7 @@ final class MenuPopup: NSObject {
     /// How far the panel keeps from the screen's edges.
     static let screenMargin: CGFloat = 8
 
-    var isShown: Bool { panel.isVisible }
+    public var isShown: Bool { panel.isVisible }
 
     /// The panel's window, for asking where it is.
     var window: NSWindow { panel }
@@ -37,7 +37,7 @@ final class MenuPopup: NSObject {
     /// `gap` between the anchor and the panel; `leadingOffset` moves the
     /// panel's leading edge from the anchor's (a menu starts 4 pt before its
     /// control, so its words line up with the control's).
-    init(contentViewController: NSViewController, takesKey: Bool, gap: CGFloat, leadingOffset: CGFloat = 0) {
+    public init(contentViewController: NSViewController, takesKey: Bool, gap: CGFloat, leadingOffset: CGFloat = 0) {
         panel = PopupPanel(takesKey: takesKey)
         self.gap = gap
         self.leadingOffset = leadingOffset
@@ -87,14 +87,15 @@ final class MenuPopup: NSObject {
     }
 
     /// Shows the panel on `preferred` side if it fits, else as `side(for:…)` says.
-    func show(at anchor: NSRect, preferring preferred: Side, in parent: NSWindow, size: NSSize, makingKey: Bool) {
+    public func show(at anchor: NSRect, preferring preferred: Side, in parent: NSWindow, size: NSSize, makingKey: Bool)
+    {
         show(
             at: anchor, on: side(for: size.height, around: anchor, preferring: preferred, in: parent), in: parent,
             size: size, makingKey: makingKey)
     }
 
     /// Moves the panel to follow a moved or resized anchor.
-    func move(to anchor: NSRect, size: NSSize, in parent: NSWindow) {
+    public func move(to anchor: NSRect, size: NSSize, in parent: NSWindow) {
         self.anchor = anchor
         panel.setFrame(frame(for: size, in: Self.visibleFrame(of: parent)), display: true)
         panel.invalidateShadow()
@@ -110,7 +111,7 @@ final class MenuPopup: NSObject {
         panel.invalidateShadow()
     }
 
-    func close() {
+    public func close() {
         if let observer {
             NotificationCenter.default.removeObserver(observer)
             self.observer = nil

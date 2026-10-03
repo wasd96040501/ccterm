@@ -19,7 +19,7 @@ struct Design {
         [
             FormSpecimen.section(), AccountsSpecimen.section(), GeneralSpecimen.section(),
             SettingsWindowSpecimen.section(), SidebarSpecimen.section(),
-            DrawingSpecimen.section(),
+            MenuSpecimen.section(), DrawingSpecimen.section(),
         ]
     }
 

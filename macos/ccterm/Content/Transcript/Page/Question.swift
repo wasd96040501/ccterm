@@ -67,6 +67,13 @@ nonisolated struct Question: Sendable, Equatable, Identifiable {
         return nil
     }
 
+    /// *Chat About This* answered it: the card shows the questions without
+    /// their options (07-talk.md; preview.js `row.chat`).
+    var isTalkedOver: Bool {
+        guard case .failed(let message) = call.state else { return false }
+        return message.hasPrefix(Self.clarifying)
+    }
+
     private static let clarifying = "The user wants to clarify these questions"
     private static let declined = "User declined to answer questions"
 

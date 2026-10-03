@@ -30,21 +30,27 @@ final class QuestionRowView: NSView, PageRowView {
     private static let headerHeight: CGFloat = 16
     private static let headerGap: CGFloat = 2
     private static let textGap: CGFloat = 6
-    private static let optionPad: CGFloat = 3
-    private static let lineGap: CGFloat = 1
+    /// An option's padding above and below its words (`.qa .opt` 4).
+    private static let optionPad: CGFloat = 4
+    /// The label's 18-pt lines and the description's 16 (`.qa .opt .l`, `.d`).
+    private static let labelLine: CGFloat = 18
+    private static let detailLine: CGFloat = 16
     private static let markColumn: CGFloat = 22
     private static let itemGap: CGFloat = 12
     private static let buttonsGap: CGFloat = 8
     private static let buttonsHeight: CGFloat = 22
-    private static let otherHeight: CGFloat = 28
+    /// *Other*: an option whose one line is the field (4 + 18 + 4).
+    private static let otherHeight: CGFloat = 26
     private static let previewHeight: CGFloat = 96
     private static let notesHeight: CGFloat = 24
     private static let previewGap: CGFloat = 8
     private static let columnGap: CGFloat = 16
     /// Wide enough to set a preview beside the options.
     private static let besideWidth: CGFloat = 480
-    private static let outcomeGap: CGFloat = 6
-    private static let outcomeHeight: CGFloat = 16
+    /// The note under an answered card (`.qa .qnote`: 4 under the question's
+    /// own 6, 12-pt words on a 15-pt line).
+    private static let outcomeGap: CGFloat = 4
+    private static let outcomeHeight: CGFloat = 15
 
     private static let headerFont = NSFont.systemFont(ofSize: 13)
     private static let textFont = NSFont.systemFont(ofSize: 14)
@@ -108,15 +114,16 @@ final class QuestionRowView: NSView, PageRowView {
                 laid.listWidth = beside ? (available * 0.55).rounded(.down) : available
                 let inner = max(0, laid.listWidth - QuestionRowView.markColumn)
                 var top: CGFloat = 0
-                for option in item.options {
-                    let label = QuestionRowView.wrappedHeight(
-                        option.label, font: QuestionRowView.optionFont, width: inner)
+                for option in model.isTalkedOver ? [] : item.options {
+                    let label = QuestionRowView.linedHeight(
+                        option.label, font: QuestionRowView.optionFont, line: QuestionRowView.labelLine, width: inner)
                     let detail =
                         option.detail.isEmpty
                         ? 0
-                        : QuestionRowView.wrappedHeight(option.detail, font: QuestionRowView.detailFont, width: inner)
-                    let height =
-                        2 * QuestionRowView.optionPad + label + (detail > 0 ? QuestionRowView.lineGap + detail : 0)
+                        : QuestionRowView.linedHeight(
+                            option.detail, font: QuestionRowView.detailFont, line: QuestionRowView.detailLine,
+                            width: inner)
+                    let height = 2 * QuestionRowView.optionPad + label + detail
                     laid.options.append(Option(top: top, labelHeight: label, detailHeight: detail, height: height))
                     top += height
                 }
@@ -178,7 +185,9 @@ final class QuestionRowView: NSView, PageRowView {
             self.detail = NSTextField(wrappingLabelWithString: detail)
             if let placeholder {
                 let field = NSTextField()
-                field.placeholderString = placeholder
+                field.placeholderAttributedString = NSAttributedString(
+                    string: placeholder,
+                    attributes: [.font: QuestionRowView.optionFont, .foregroundColor: NSColor.tertiaryLabelColor])
                 field.font = QuestionRowView.optionFont
                 field.isBordered = false
                 field.drawsBackground = false
@@ -240,7 +249,8 @@ final class QuestionRowView: NSView, PageRowView {
         func layoutContent(_ metrics: Metrics.Option?) {
             let inner = max(0, bounds.width - QuestionRowView.markColumn)
             let pad = QuestionRowView.optionPad
-            mark.frame = NSRect(x: 0, y: pad, width: 16, height: 16)
+            // Centred on the label's first 18-pt line.
+            mark.frame = NSRect(x: 0, y: pad + (QuestionRowView.labelLine - 16) / 2, width: 16, height: 16)
             if let field {
                 field.frame = NSRect(
                     x: QuestionRowView.markColumn, y: (bounds.height - 18) / 2, width: inner, height: 18)
@@ -249,7 +259,7 @@ final class QuestionRowView: NSView, PageRowView {
             guard let metrics else { return }
             label.frame = NSRect(x: QuestionRowView.markColumn, y: pad, width: inner, height: metrics.labelHeight)
             detail.frame = NSRect(
-                x: QuestionRowView.markColumn, y: pad + metrics.labelHeight + QuestionRowView.lineGap, width: inner,
+                x: QuestionRowView.markColumn, y: pad + metrics.labelHeight, width: inner,
                 height: metrics.detailHeight)
         }
     }
@@ -296,7 +306,7 @@ final class QuestionRowView: NSView, PageRowView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         addSubview(tileView)
-        outcome.font = .systemFont(ofSize: 11)
+        outcome.font = .systemFont(ofSize: 12)
         outcome.textColor = .tertiaryLabelColor
         addSubview(outcome)
     }
@@ -314,6 +324,33 @@ final class QuestionRowView: NSView, PageRowView {
 
     static func height(for model: Question, width: CGFloat) -> CGFloat {
         Metrics(model, width: width).height
+    }
+
+    /// `text` on fixed `line`-high lines, its words centred in each (the
+    /// sheet's line-height), as an option's label and description are set.
+    static func lined(_ text: String, font: NSFont, line: CGFloat, color: NSColor) -> NSAttributedString {
+        let style = NSMutableParagraphStyle()
+        style.minimumLineHeight = line
+        style.maximumLineHeight = line
+        style.lineBreakMode = .byWordWrapping
+        // AppKit puts a fixed line's extra room above the words; half of it goes back under.
+        let natural = font.ascender - font.descender + font.leading
+        return NSAttributedString(
+            string: text,
+            attributes: [
+                .font: font, .foregroundColor: color, .paragraphStyle: style, .baselineOffset: (line - natural) / 2,
+            ])
+    }
+
+    /// The height `text` takes on `line`-high lines at `width`, measured by the
+    /// cell the label draws with.
+    private static func linedHeight(_ text: String, font: NSFont, line: CGFloat, width: CGFloat) -> CGFloat {
+        let cell = NSTextFieldCell(textCell: "")
+        cell.attributedStringValue = lined(text, font: font, line: line, color: .labelColor)
+        cell.wraps = true
+        cell.lineBreakMode = .byWordWrapping
+        let height = cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: max(width, 1), height: 100_000)).height
+        return max(line, (height / line).rounded() * line)
     }
 
     /// The height `text` wraps to at `width` — measured by the cell the label
@@ -353,7 +390,7 @@ final class QuestionRowView: NSView, PageRowView {
             let text = label(item.text, font: Self.textFont, color: .labelColor)
             text.maximumNumberOfLines = 0
             text.lineBreakMode = .byWordWrapping
-            let options = item.options.enumerated().map { position, option in
+            let options = (model.isTalkedOver ? [] : item.options).enumerated().map { position, option in
                 makeOption(option, of: item, item: index, position: position, waiting: model.isWaiting)
             }
             var other: OptionView?
@@ -423,18 +460,24 @@ final class QuestionRowView: NSView, PageRowView {
         _ option: Question.Item.Option, of item: Question.Item, item index: Int, position: Int, waiting: Bool
     ) -> OptionView {
         let view = OptionView(label: option.label, detail: option.detail, live: waiting)
+        let labelColor: NSColor
+        let detailColor: NSColor
         if waiting {
             view.onPress = { [weak self] in self?.pick(item: index, option: position) }
             view.mark.image = mark(for: item, picked: false)
             view.mark.contentTintColor = .tertiaryLabelColor
-            view.label.textColor = .labelColor
-            view.detail.textColor = .secondaryLabelColor
+            labelColor = .labelColor
+            detailColor = .secondaryLabelColor
         } else {
             view.mark.image = mark(for: item, picked: option.isChosen)
             view.mark.contentTintColor = option.isChosen ? .controlAccentColor : .tertiaryLabelColor
-            view.label.textColor = option.isChosen ? .labelColor : .tertiaryLabelColor
-            view.detail.textColor = option.isChosen ? .secondaryLabelColor : .tertiaryLabelColor
+            labelColor = option.isChosen ? .labelColor : .tertiaryLabelColor
+            detailColor = option.isChosen ? .secondaryLabelColor : .tertiaryLabelColor
         }
+        view.label.attributedStringValue = Self.lined(
+            option.label, font: Self.optionFont, line: Self.labelLine, color: labelColor)
+        view.detail.attributedStringValue = Self.lined(
+            option.detail, font: Self.detailFont, line: Self.detailLine, color: detailColor)
         return view
     }
 
@@ -490,10 +533,11 @@ final class QuestionRowView: NSView, PageRowView {
             let size = submit.fittingSize
             submit.frame = NSRect(
                 x: x, y: top + (Self.buttonsHeight - size.height) / 2, width: size.width, height: size.height)
+            // `.btn.plain`: a pill without its fill, 8 after Submit, its words 14 in.
             let chatSize = chat.fittingSize
             chat.frame = NSRect(
-                x: submit.frame.maxX + 12, y: top + (Self.buttonsHeight - chatSize.height) / 2, width: chatSize.width,
-                height: chatSize.height)
+                x: submit.frame.maxX + 8, y: top + (Self.buttonsHeight - chatSize.height) / 2,
+                width: ceil(chat.attributedTitle.size().width) + 2 * 14, height: chatSize.height)
         }
         if let top = plan.outcomeTop {
             outcome.frame = NSRect(x: x, y: top, width: available, height: Self.outcomeHeight)

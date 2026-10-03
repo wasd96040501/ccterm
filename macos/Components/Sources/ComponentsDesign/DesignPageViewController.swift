@@ -30,12 +30,15 @@ final class DesignPageViewController: NSViewController {
     }
 
     private let sections: [Section]
+    private let showsHeader: Bool
     private lazy var appearanceSwitch = NSSegmentedControl(
         labels: ["Auto", "Light", "Dark"], trackingMode: .selectOne, target: self,
         action: #selector(chooseAppearance(_:)))
 
-    init(sections: [Section]) {
+    /// `showsHeader` false: the sections alone, as a render of one section shows it.
+    init(sections: [Section], showsHeader: Bool = true) {
         self.sections = sections
+        self.showsHeader = showsHeader
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -58,7 +61,7 @@ final class DesignPageViewController: NSViewController {
         column.translatesAutoresizingMaskIntoConstraints = false
         column.setHuggingPriority(.defaultLow, for: .horizontal)
         document.addSubview(column)
-        add(header(), to: column, fullWidth: true, after: 28)
+        if showsHeader { add(header(), to: column, fullWidth: true, after: 28) }
         for section in sections { add(section, to: column) }
 
         // The column wants the window's width less 16 a side, and gives way to

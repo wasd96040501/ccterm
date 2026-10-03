@@ -7,7 +7,10 @@ import AppKit
 struct Design {
     static func main() {
         // `--render <dir> <width> <light|dark>`: an off-screen render, no window.
-        if let request = DesignRender.request(from: CommandLine.arguments) { DesignRender.run(request) }
+        if let request = DesignRender.request(from: CommandLine.arguments) {
+            if let section = request.section { DesignRender.run(request, section: section) }
+            DesignRender.runAll(request)
+        }
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         // `NSApplication.delegate` is weak; this scope outlives the app.
@@ -23,6 +26,11 @@ struct Design {
             SettingsWindowSpecimen.section(), SidebarSpecimen.section(),
             AboutSpecimen.section(), MainWindowSpecimen.section(), DrawingSpecimen.section(),
         ]
+    }
+
+    /// The name a section's render file carries: its title, lower-cased, words joined by `-`.
+    static func fileSlug(_ title: String) -> String {
+        title.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).joined(separator: "-")
     }
 
     /// Quit, and an Edit menu: without it ⌘C, ⌘V and ⌘A never reach a field

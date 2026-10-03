@@ -298,9 +298,15 @@ private final class ToolbarRow: NSView {
 
 /// `.history`: 73 × 36, fully rounded, a translucent fill, a hairline edge.
 private final class HistoryPill: NSView {
-    let back = ChevronButton(image: .settingsBack, label: "Back")
-    let forward = ChevronButton(image: .settingsForward, label: "Forward")
+    let back = ChevronButton(image: HistoryPill.chevron("chevron.left", "Back"), label: "Back")
+    let forward = ChevronButton(image: HistoryPill.chevron("chevron.right", "Forward"), label: "Forward")
     private let divider = NSView()
+
+    /// The toolbar's chevron: the system's symbol, as the real window's.
+    private static func chevron(_ name: String, _ label: String) -> NSImage {
+        NSImage(systemSymbolName: name, accessibilityDescription: label)?
+            .withSymbolConfiguration(.init(pointSize: 12, weight: .semibold)) ?? NSImage()
+    }
 
     init() {
         super.init(frame: .zero)

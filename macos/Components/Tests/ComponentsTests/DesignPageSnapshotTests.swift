@@ -1,24 +1,33 @@
 import AppKit
 import XCTest
 
-/// The style page rendered whole, for review: a wide window and a narrow one,
-/// light and dark, to `/tmp/ccterm-screenshots/Design-<width>-<scheme>.png`.
-/// Each is the built `ComponentsDesign` run as `--render`, in English
+@testable import ComponentsDesign
+
+/// The style page rendered for review: every section at a wide window and a
+/// narrow one, light and dark, to
+/// `/tmp/ccterm-screenshots/Design-<section>-<width>-<scheme>.png` — one PNG
+/// per section, since the whole page is taller than a capture can be. Each is
+/// the built `ComponentsDesign` run as `--render`, in English
 /// (`-AppleLanguages '(en)'` — a test process can't change its own language,
 /// Foundation fixes it at launch): the executable parks its window off the
 /// screen's corner, captures it as the window server composites it
-/// (`CompositedCapture`), writes the PNG and exits. No window is ever shown.
+/// (`CompositedCapture`), writes the PNGs and exits. No window is ever shown.
 /// Skipped unless named: `make test-ui FILTER=DesignPageSnapshotTests`.
 @MainActor
 final class DesignPageSnapshotTests: XCTestCase {
-    func testThePageFollowsTheWindowsWidth() throws {
+    func testEverySectionIsRenderedAtTheWindowsWidth() throws {
         let directory = "/tmp/ccterm-screenshots"
+        let slugs = Design.sections().map { Design.fileSlug($0.title) }
+        XCTAssertFalse(slugs.isEmpty)
         for width in [1240, 600] {
             for scheme in ["light", "dark"] {
                 try render(width: width, scheme: scheme, into: directory)
-                let url = URL(fileURLWithPath: directory).appendingPathComponent("Design-\(width)-\(scheme).png")
-                let rep = try XCTUnwrap(NSBitmapImageRep(data: try Data(contentsOf: url)))
-                XCTAssertEqual(rep.pixelsWide, width * 2, "the page is the window's width")
+                for slug in slugs {
+                    let url = URL(fileURLWithPath: directory)
+                        .appendingPathComponent("Design-\(slug)-\(width)-\(scheme).png")
+                    let rep = try XCTUnwrap(NSBitmapImageRep(data: try Data(contentsOf: url)), url.lastPathComponent)
+                    XCTAssertEqual(rep.pixelsWide, width * 2, "\(url.lastPathComponent) is the window's width")
+                }
             }
         }
     }

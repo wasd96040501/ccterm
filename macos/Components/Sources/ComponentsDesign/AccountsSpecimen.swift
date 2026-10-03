@@ -389,9 +389,10 @@ private final class SignInHost: NSView {
 
     init() {
         sheet.configure(browserURL: URL(string: "https://claude.ai/oauth/authorize"))
+        // Loading the view is what sizes the sheet (`preferredContentSize`).
+        let content = sheet.view
         size = sheet.preferredContentSize
         super.init(frame: .zero)
-        let content = sheet.view
         content.translatesAutoresizingMaskIntoConstraints = false
         addSubview(content)
         NSLayoutConstraint.activate([

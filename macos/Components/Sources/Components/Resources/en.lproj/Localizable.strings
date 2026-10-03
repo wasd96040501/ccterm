@@ -79,3 +79,7 @@
 /* SettingsWindowController */
 "Back" = "Back";
 "Forward" = "Forward";
+
+/* AboutView */
+"Version %@ (%@)" = "Version %@ (%@)";
+"Commit" = "Commit";

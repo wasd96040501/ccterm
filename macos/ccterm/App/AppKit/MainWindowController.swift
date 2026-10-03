@@ -1,6 +1,7 @@
 import AgentSDK
 import AppKit
 import Combine
+import Components
 import TranscriptWorkspace
 
 /// Window controller for the AppKit-rooted main window. The window is

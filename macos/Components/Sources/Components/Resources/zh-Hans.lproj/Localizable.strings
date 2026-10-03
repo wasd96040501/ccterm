@@ -79,3 +79,7 @@
 /* SettingsWindowController */
 "Back" = "后退";
 "Forward" = "前进";
+
+/* AboutView */
+"Version %@ (%@)" = "版本 %1$@（%2$@）";
+"Commit" = "提交";

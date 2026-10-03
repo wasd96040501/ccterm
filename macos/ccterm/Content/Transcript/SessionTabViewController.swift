@@ -1,6 +1,7 @@
 import AgentSDK
 import AppKit
 import Combine
+import Components
 
 /// A session's own tab — or a New tab, which becomes one at Send (design 08:
 /// *before the first prompt it's a form, after it's a conversation*).

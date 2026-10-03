@@ -4,15 +4,15 @@ import AppKit
 /// language*; `--r-tag` … `--r-card` in preview-live.css). Every shape a live
 /// session draws takes one of them, with `cornerCurve = .continuous` and no
 /// scaling. Circles (the +, the action button) and capsules stay what they are.
-enum CornerRadius {
+public enum CornerRadius {
     /// The command token, tooltips.
-    static let tag: CGFloat = 5
+    public static let tag: CGFloat = 5
     /// Chips, tabs, the filter field, a question's option.
-    static let control: CGFloat = 7
+    public static let control: CGFloat = 7
     /// A row inside a menu or a list: the control's less 2.
-    static let row: CGFloat = control - 2
+    public static let row: CGFloat = control - 2
     /// Menus, the model panel, the slash list.
-    static let popover: CGFloat = 12
+    public static let popover: CGFloat = 12
     /// The composer, the alert, cards.
-    static let card: CGFloat = 18
+    public static let card: CGFloat = 18
 }

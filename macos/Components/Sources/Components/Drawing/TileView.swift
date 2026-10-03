@@ -1,5 +1,4 @@
 import AppKit
-import Components
 import DisplayModels
 
 /// A kind of work as a 16-pt tile: a Lamé squircle |x|⁴ + |y|⁴ = 7.5⁴ — the
@@ -16,10 +15,10 @@ import DisplayModels
 /// Every row that shows work — a run, an item, news, a caption, a jump bar —
 /// draws its tile with this view.
 @MainActor
-final class TileView: NSView {
+public final class TileView: NSView {
     private static let side: CGFloat = 16
 
-    var tile = Tile(glyph: .tool(.other), state: .done) {
+    public var tile = Tile(glyph: .tool(.other), state: .done) {
         didSet {
             guard tile != oldValue else { return }
             update()
@@ -30,7 +29,7 @@ final class TileView: NSView {
     private let ring = CAShapeLayer()
     private let glyph = NSImageView()
 
-    override init(frame frameRect: NSRect) {
+    public override init(frame frameRect: NSRect) {
         super.init(frame: NSRect(x: 0, y: 0, width: Self.side, height: Self.side))
         wantsLayer = true
         layer?.masksToBounds = false
@@ -50,22 +49,22 @@ final class TileView: NSView {
         update()
     }
 
-    convenience init() {
+    public convenience init() {
         self.init(frame: .zero)
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    override var intrinsicContentSize: NSSize { NSSize(width: Self.side, height: Self.side) }
+    public override var intrinsicContentSize: NSSize { NSSize(width: Self.side, height: Self.side) }
 
-    override var wantsUpdateLayer: Bool { true }
+    public override var wantsUpdateLayer: Bool { true }
 
-    override func updateLayer() {
+    public override func updateLayer() {
         effectiveAppearance.performAsCurrentDrawingAppearance { paint() }
     }
 
-    override func viewDidMoveToWindow() {
+    public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         animate()
     }

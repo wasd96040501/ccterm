@@ -1,4 +1,5 @@
 import AppKit
+import Components
 
 /// One of the composer's pull-downs (design 08 *The accessory row*): borderless,
 /// 24 pt tall, 12-pt secondary words with their glyphs and a small chevron; a

@@ -6,7 +6,7 @@ A session's tab — a New tab before its first prompt, the transcript and the co
 
 ```
 Page/        model — messages → TranscriptPage (entries, runs, work lines, documents). No AppKit.
-Drawing/     what rows and documents both draw: the tile, StyledText's fonts and colours.
+Drawing/     in the Components package (`Components/Drawing/`), not here: what rows and documents both draw — the tile, StyledText's fonts and colours.
 Rows/        a page's entries → PageRow (pure), and the views that draw `.view` rows.
 Documents/   what opens beside: DocumentViewController (shell) + bodies.
 Menu/        MenuPanel: the one menu every pop-up of the composer and the New view opens (MenuContent in, choices out).

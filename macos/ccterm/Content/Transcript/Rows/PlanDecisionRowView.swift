@@ -1,4 +1,5 @@
 import AppKit
+import Components
 
 /// **Keep Planning** / **Approve** (⌘↩) under a plan waiting for the reader
 /// (07-talk.md "ExitPlanMode").

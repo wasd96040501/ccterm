@@ -1,4 +1,5 @@
 import AppKit
+import Components
 
 /// The question that stops a run: what the call will do, whole, and Allow /
 /// Deny (01-run.md "Waiting for you"). Level with the run's row, not

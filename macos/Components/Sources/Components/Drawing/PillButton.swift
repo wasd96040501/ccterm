@@ -6,7 +6,7 @@ import AppKit
 /// and a size smaller, as the design's `kbd`; it only shows the key, the
 /// owner still sets `keyEquivalent`.
 @MainActor
-final class PillButton: NSButton {
+public final class PillButton: NSButton {
     private static let height: CGFloat = 22
     private static let padding: CGFloat = 14
     /// The design's `kbd { margin-left: 6px }`.
@@ -14,7 +14,7 @@ final class PillButton: NSButton {
 
     private let isPrimary: Bool
 
-    init(title: String, keys: String? = nil, isPrimary: Bool = false) {
+    public init(title: String, keys: String? = nil, isPrimary: Bool = false) {
         self.isPrimary = isPrimary
         super.init(frame: .zero)
         isBordered = false
@@ -26,7 +26,7 @@ final class PillButton: NSButton {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     private static func label(_ title: String, keys: String?, ink: NSColor) -> NSAttributedString {
         let text = NSMutableAttributedString(
@@ -40,13 +40,13 @@ final class PillButton: NSButton {
         return text
     }
 
-    override var intrinsicContentSize: NSSize {
+    public override var intrinsicContentSize: NSSize {
         NSSize(width: ceil(attributedTitle.size().width) + 2 * Self.padding, height: Self.height)
     }
 
-    override var wantsUpdateLayer: Bool { true }
+    public override var wantsUpdateLayer: Bool { true }
 
-    override func updateLayer() {
+    public override func updateLayer() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             let fill: NSColor = isPrimary ? .controlAccentColor : .quaternarySystemFill
             let shade: NSColor = isPrimary ? .black : .labelColor
@@ -56,12 +56,12 @@ final class PillButton: NSButton {
         }
     }
 
-    override var isHighlighted: Bool {
+    public override var isHighlighted: Bool {
         didSet { needsDisplay = true }
     }
 
     /// Disabled, the whole pill fades, as a disabled `.btn` does.
-    override var isEnabled: Bool {
+    public override var isEnabled: Bool {
         didSet { alphaValue = isEnabled ? 1 : 0.5 }
     }
 }

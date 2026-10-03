@@ -1,4 +1,5 @@
 import AppKit
+import Components
 
 /// What an approval card shows the call will do, whole: a command in a
 /// monospaced block after a `$`, or an edit as a compact diff drawn as a

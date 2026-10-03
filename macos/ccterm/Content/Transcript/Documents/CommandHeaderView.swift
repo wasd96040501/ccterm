@@ -1,4 +1,5 @@
 import AppKit
+import Components
 import DisplayModels
 
 /// What stands above a command's output and scrolls with it

@@ -1,4 +1,5 @@
 import AppKit
+import Components
 
 /// What Edit, Write and Read open beside the transcript: Xcode's source
 /// editor, read-only, in three modes (design/transcript/03-file.md).

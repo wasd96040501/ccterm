@@ -2,7 +2,7 @@ import AppKit
 import DisplayModels
 import XCTest
 
-@testable import ccterm
+@testable import Components
 
 final class StyledTextDrawingTests: XCTestCase {
     func testEachStyleIsDrawnAsTheDesignSays() {

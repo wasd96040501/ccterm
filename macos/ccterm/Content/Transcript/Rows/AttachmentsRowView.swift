@@ -140,24 +140,31 @@ final class AttachmentsRowView: NSView, PageRowView {
             ring.isHidden = true
             layer?.addSublayer(ring)
 
-            // The badge: 11 pt on a dark plate, bottom left.
+            // The badge (`.shot .n`): 11 pt on a dark 16-pt pill, 6 pt in from the bottom left.
             plate.wantsLayer = true
-            plate.layer?.cornerRadius = 4
+            plate.layer?.cornerRadius = 8
             plate.layer?.cornerCurve = .continuous
             plate.layer?.backgroundColor = NSColor(white: 0, alpha: 0.55).cgColor
-            number.font = .monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+            number.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
             number.textColor = .white
             number.translatesAutoresizingMaskIntoConstraints = false
             plate.translatesAutoresizingMaskIntoConstraints = false
             plate.addSubview(number)
             addSubview(plate)
+            // As narrow as the digits allow, 16 at the least.
+            let snug = plate.widthAnchor.constraint(equalToConstant: 16)
+            snug.priority = .defaultLow
             NSLayoutConstraint.activate([
-                number.leadingAnchor.constraint(equalTo: plate.leadingAnchor, constant: 5),
-                number.trailingAnchor.constraint(equalTo: plate.trailingAnchor, constant: -5),
+                snug,
+                // 4 pt either side of the digits: the label's own 2 plus 2.
+                number.leadingAnchor.constraint(greaterThanOrEqualTo: plate.leadingAnchor, constant: 2),
+                number.centerXAnchor.constraint(equalTo: plate.centerXAnchor),
                 number.centerYAnchor.constraint(equalTo: plate.centerYAnchor),
+                plate.widthAnchor.constraint(greaterThanOrEqualToConstant: 16),
+                plate.widthAnchor.constraint(greaterThanOrEqualTo: number.widthAnchor, constant: 4),
                 plate.heightAnchor.constraint(equalToConstant: 16),
-                plate.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 5),
-                plate.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -5),
+                plate.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+                plate.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
             ])
         }
 

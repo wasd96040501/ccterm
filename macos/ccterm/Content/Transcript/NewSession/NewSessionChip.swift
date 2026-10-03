@@ -48,7 +48,7 @@ final class NewSessionChip: NSControl {
             height: 24, spacing: 4, chevronSize: 10)
     }
 
-    private static let radius: CGFloat = 7
+    private static let radius = CornerRadius.control
 
     private static let truncatingMiddle: NSParagraphStyle = {
         let style = NSMutableParagraphStyle()

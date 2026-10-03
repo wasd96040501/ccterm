@@ -338,7 +338,7 @@ private final class CommandTokenView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.cornerRadius = 5
+        layer?.cornerRadius = CornerRadius.tag
         layer?.cornerCurve = .continuous
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)

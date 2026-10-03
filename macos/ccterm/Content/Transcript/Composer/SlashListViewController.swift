@@ -148,7 +148,7 @@ private final class SlashContainerView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.cornerRadius = 12
+        layer?.cornerRadius = CornerRadius.popover
         layer?.cornerCurve = .continuous
         layer?.borderWidth = 0.5
         layer?.masksToBounds = true
@@ -213,7 +213,7 @@ private final class SlashRowView: NSTableCellView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.cornerRadius = 5
+        layer?.cornerRadius = CornerRadius.row
         layer?.cornerCurve = .continuous
         hintLabel.font = Self.hintFont
         hintLabel.textColor = .tertiaryLabelColor

@@ -30,7 +30,7 @@ final class ModelPanelViewController: NSViewController {
 
     static let width: CGFloat = 300
     static let maxScrollHeight: CGFloat = 360
-    static let cornerRadius: CGFloat = 12
+    static let cornerRadius = CornerRadius.popover
 
     /// What the list's rows are.
     enum Row: Equatable {

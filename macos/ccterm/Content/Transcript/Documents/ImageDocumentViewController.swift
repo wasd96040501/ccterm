@@ -52,20 +52,29 @@ final class ImageDocumentViewController: NSViewController {
         }
     }
 
-    /// The picture at its size, with a margin; centred in the clip when smaller.
+    /// The picture at its size, with a margin; centred in the clip when smaller
+    /// (`.imgdoc`: 24 pt around it, 6-pt corners, a hairline outside its edge).
     private final class ImageHostView: NSView {
-        private static let margin: CGFloat = 20
+        private static let margin: CGFloat = 24
+        private static let radius: CGFloat = 6
         private let imageView = NSImageView()
+        /// The hairline, outside the picture so it covers none of it.
+        private let ring = CALayer()
         private var size = CGSize.zero
 
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
             imageView.imageScaling = .scaleNone
             imageView.wantsLayer = true
-            imageView.layer?.cornerRadius = 4
+            imageView.layer?.cornerRadius = Self.radius
             imageView.layer?.cornerCurve = .continuous
             imageView.layer?.masksToBounds = true
             addSubview(imageView)
+            wantsLayer = true
+            ring.borderWidth = 0.5
+            ring.cornerRadius = Self.radius + 0.5
+            ring.cornerCurve = .continuous
+            layer?.addSublayer(ring)
             setAccessibilityElement(true)
             setAccessibilityRole(.image)
         }
@@ -74,6 +83,14 @@ final class ImageDocumentViewController: NSViewController {
         required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
         override var isFlipped: Bool { true }
+
+        override var wantsUpdateLayer: Bool { true }
+
+        override func updateLayer() {
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                ring.borderColor = NSColor.separatorColor.cgColor
+            }
+        }
 
         /// A screenshot's pixels at twice the points when the display does: the
         /// picture is drawn at its own point size, as Preview opens it.
@@ -94,6 +111,11 @@ final class ImageDocumentViewController: NSViewController {
             imageView.frame = CGRect(
                 x: ((width - size.width) / 2).rounded(), y: ((height - size.height) / 2).rounded(),
                 width: size.width, height: size.height)
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            ring.frame = imageView.frame.insetBy(dx: -0.5, dy: -0.5)
+            ring.isHidden = size == .zero
+            CATransaction.commit()
         }
     }
 }

@@ -27,7 +27,7 @@ final class ComposerView: NSView {
     weak var delegate: ComposerViewDelegate?
 
     static let maxWidth: CGFloat = 720
-    static let cornerRadius: CGFloat = 18
+    static let cornerRadius = CornerRadius.card
     /// The card's width below which the status takes its own line.
     static let narrowWidth: CGFloat = 380
 

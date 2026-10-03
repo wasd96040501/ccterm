@@ -201,7 +201,7 @@ final class QuestionRowView: NSView, PageRowView {
             mark.imageScaling = .scaleNone
             for view in [mark, self.label, self.detail, field].compactMap({ $0 }) { addSubview(view) }
             wantsLayer = true
-            layer?.cornerRadius = 6
+            layer?.cornerRadius = CornerRadius.control
             layer?.cornerCurve = .continuous
         }
 

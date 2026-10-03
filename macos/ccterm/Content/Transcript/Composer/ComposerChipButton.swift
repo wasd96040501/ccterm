@@ -54,7 +54,7 @@ final class ComposerChipButton: NSButton {
         setButtonType(.momentaryChange)
         sendAction(on: [.leftMouseDown])
         wantsLayer = true
-        layer?.cornerRadius = 7
+        layer?.cornerRadius = CornerRadius.control
         layer?.cornerCurve = .continuous
         configureHierarchy()
         configureConstraints()

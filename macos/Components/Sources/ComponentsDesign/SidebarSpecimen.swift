@@ -32,7 +32,7 @@ enum SidebarSpecimen {
         return .init(title: title, view: frame, width: frame.size.width, height: frame.size.height, isWindow: true)
     }
 
-    private static func url(_ name: String) -> URL { URL(fileURLWithPath: "/dev/\(name).jsonl") }
+    static func url(_ name: String) -> URL { URL(fileURLWithPath: "/dev/\(name).jsonl") }
 
     private static func session(
         _ title: String, worktree: String? = nil, children: [SidebarNode] = []
@@ -57,7 +57,7 @@ enum SidebarSpecimen {
 
     private static let selected = url("Row gap and tool rows/explore")
 
-    private static let library: [SidebarNode] = [
+    static let library: [SidebarNode] = [
         group(
             "ccterm", id: "/dev/ccterm", toolTip: "/dev/ccterm",
             [
@@ -85,7 +85,7 @@ enum SidebarSpecimen {
         group("notes", id: "/dev/notes", toolTip: "/dev/notes", [session("Weekly summary")]),
     ]
 
-    private static let activities: [URL: SidebarActivity] = [
+    static let activities: [URL: SidebarActivity] = [
         url("Smaller run-row summary"): .responding,
         url("Row gap and tool rows"): .idle,
         url("Review the diff"): .needsInput,

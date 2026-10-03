@@ -94,11 +94,11 @@ enum RowsSpecimen {
 
     // MARK: - Words
 
-    private static func tile(_ kind: ToolKind, _ state: Tile.State = .done) -> Tile {
+    static func tile(_ kind: ToolKind, _ state: Tile.State = .done) -> Tile {
         Tile(glyph: .tool(kind), state: state)
     }
 
-    private static func line(
+    static func line(
         _ kind: ToolKind, _ state: Tile.State = .done, text: StyledText, detail: String? = nil,
         words: Bool = false, exceptions: StyledText = StyledText(), meta: StyledText = StyledText()
     ) -> WorkLine {
@@ -107,7 +107,7 @@ enum RowsSpecimen {
             meta: meta)
     }
 
-    private static func file(_ name: String) -> StyledText { StyledText(name, style: .noun(opens: name)) }
+    static func file(_ name: String) -> StyledText { StyledText(name, style: .noun(opens: name)) }
 
     private static var stat: StyledText {
         StyledText("+12", style: .added) + StyledText(" ") + StyledText("−3", style: .removed) + StyledText("  34s")

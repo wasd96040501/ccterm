@@ -37,4 +37,18 @@ enum Host {
     /// item runs 290 to 350 (`MainSplitViewController`), 22 % of the window
     /// between.
     static let sidebarWidth: CGFloat = 290
+
+    /// The widest the sidebar is let be (`MainSplitViewController`).
+    static let sidebarMaximumWidth: CGFloat = 350
+
+    /// The editors' narrowest (`MainSplitViewController`'s detail item; the
+    /// window's 970 minimum is the sidebar's 290 beside it).
+    static let editorsMinimumWidth: CGFloat = 680
+
+    /// The main window's content in the design's Playground: as wide as the
+    /// sheet's column (1160 less its 16 a side), 720 high less its 44-pt title
+    /// bar (design/transcript `.lv-win`) — 1128 × 676. The app opens at
+    /// 1200 × 860 and is resizable down to 970 × 540 (`MainWindowController`),
+    /// so this is a size it can have.
+    static let mainWindow = NSSize(width: 1128, height: 720 - WindowFrame.titleBarHeight)
 }

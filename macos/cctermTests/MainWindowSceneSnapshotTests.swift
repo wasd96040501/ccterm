@@ -16,9 +16,14 @@ import XCTest
 final class MainWindowSceneSnapshotTests: XCTestCase {
     private typealias Rows = SessionDirectoryFixture
     private var fixture: SessionDirectoryFixture!
+    private var repository: GitRepoFixture!
 
     override func setUpWithError() throws {
         fixture = try SessionDirectoryFixture()
+        repository = try GitRepoFixture(name: "ccterm")
+        // Not the repository's path: the library hides sessions run in a temporary folder, so the
+        // New tab beside this session says *Not a git repository* where the scene shows `main`
+        // (`NewSessionViewControllerSnapshotTests` pairs that row against a real repository).
         try fixture.write(
             "-dev-ccterm/rows.jsonl",
             [
@@ -41,6 +46,18 @@ final class MainWindowSceneSnapshotTests: XCTestCase {
 
     override func tearDown() {
         fixture.remove()
+        repository.remove()
+    }
+
+    /// The scenes' choices: the fixture's catalog, the repository as the recent folder.
+    private func context() -> TranscriptTab.Context {
+        TranscriptTab.Context(
+            sessions: .reading(),
+            catalog: Just(SessionCatalogFixture.catalog).eraseToAnyPublisher(),
+            preferences: Just(LaunchPreferences()).eraseToAnyPublisher(),
+            defaults: NewSessionDefaults(defaults: UserDefaults(suiteName: "ccterm-tests-\(UUID().uuidString)")!),
+            branches: BranchService(),
+            recentFolders: Just([repository.url]).eraseToAnyPublisher())
     }
 
     func testTheScenes() async throws {
@@ -51,7 +68,7 @@ final class MainWindowSceneSnapshotTests: XCTestCase {
                 let library = LibraryStore(directories: Just(fixture.directory).eraseToAnyPublisher())
                 library.start()
                 defer { library.stop() }
-                let controller = MainWindowController(library: library, context: .reading(), git: GitService())
+                let controller = MainWindowController(library: library, context: context(), git: GitService())
                 let window = try XCTUnwrap(controller.window)
                 window.appearance = scheme.appearance
                 window.setFrame(NSRect(x: 0, y: 0, width: part.width, height: part.height), display: false)
@@ -59,17 +76,16 @@ final class MainWindowSceneSnapshotTests: XCTestCase {
                 window.orderFrontRegardless()
                 try await settle(until: { !library.nodes.isEmpty })
                 let split = try XCTUnwrap(window.contentViewController as? MainSplitViewController)
-                switch scene {
-                case "new":
-                    split.newTab()
-                case "rest":
+                // At rest and New tab both have the session open; the New tab adds itself after it.
+                if scene != "empty" {
                     let node = try XCTUnwrap(
-                        library.nodes.flatMap(\.children).first { $0.title == "Row gap and tool rows" })
+                        Self.find("Row gap and tool rows", in: library.nodes),
+                        "no session in \(library.nodes.map(\.title))")
                     let sidebar = try XCTUnwrap(split.splitViewItems[0].viewController as? SidebarViewController)
                     split.sidebarViewController(sidebar, didOpen: node)
-                default:
-                    break
+                    try await settle(seconds: 0.5)
                 }
+                if scene == "new" { split.newTab() }
                 try await settle(seconds: 1)
                 let image = try await CompositedCapture.pointImage(of: window)
                 let url = try DesignParity.write(id, scheme, ours: image)
@@ -78,6 +94,14 @@ final class MainWindowSceneSnapshotTests: XCTestCase {
                 add(attachment)
             }
         }
+    }
+
+    private static func find(_ title: String, in nodes: [LibraryNode]) -> LibraryNode? {
+        for node in nodes {
+            if node.kind == .session, node.title == title { return node }
+            if let found = find(title, in: node.children) { return found }
+        }
+        return nil
     }
 
     private func settle(seconds: TimeInterval) async throws {

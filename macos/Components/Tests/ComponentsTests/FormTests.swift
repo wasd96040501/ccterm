@@ -49,6 +49,6 @@ final class FormTests: XCTestCase {
             shown(NSTextField.self, in: field) { !($0 is NSSecureTextField) && $0.stringValue == "sk-ant-api03-abcdef" }
                 .isEmpty, "the eye did not reveal the value")
         // From the package's own catalogue, in whichever language runs the test.
-        XCTAssertTrue(["Hide", "隐藏"].contains(eye.image?.accessibilityDescription ?? ""))
+        XCTAssertTrue(["Hide", "隐藏"].contains(eye.accessibilityLabel() ?? ""))
     }
 }

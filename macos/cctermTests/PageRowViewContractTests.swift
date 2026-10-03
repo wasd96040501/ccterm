@@ -289,8 +289,14 @@ final class PageRowViewContractTests: XCTestCase {
             (
                 "not sent",
                 Note(
-                    text: "Not sent — the session ended", style: .failure,
+                    text: "Not sent — the session ended", style: .notSent,
                     link: Note.Link(title: "Resend", intent: .resend("u")))
+            ),
+            (
+                "not sent, wrapping beside the mark",
+                Note(
+                    text: "Not sent — Claude Code refused the prompt because the organization’s policy forbids it",
+                    style: .notSent, link: Note.Link(title: "Resend", intent: .resend("u")))
             ),
         ].map { RowFixture(name: $0.0, model: $0.1) }
         assertContract(NoteRowView.self, fixtures)

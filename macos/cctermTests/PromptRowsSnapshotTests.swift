@@ -50,6 +50,73 @@ final class PromptRowsSnapshotTests: XCTestCase {
         PageSnapshot.render(page, widths: [560, 340], height: 620, name: "PromptRows-delivery", test: self)
     }
 
+    // MARK: - Against the design
+
+    /// Each state of a prompt from Send (08-live.md *A prompt, from Send to the
+    /// transcript*) beside the sheet's own, at its 301-pt column:
+    /// `/tmp/ccterm-parity/<scheme>-part-<card>-pst0.png`.
+    func testDeliveryAgainstTheDesign() throws {
+        let summary = "Make the summary 12 pt and rebuild."
+        let states: [(card: String, page: TranscriptPage)] = [
+            ("18", local("Tidy the tab bar", .held)),
+            ("19", local("Also update the docs", .queued)),
+            ("20", local(summary, .sent)),
+            ("21", confirmed(summary)),
+            ("22", local(summary, .notSent(reason: "the session ended"))),
+        ]
+        for scheme in DesignParity.Scheme.allCases {
+            for state in states {
+                let id = "part-\(state.card)-pst0"
+                let part = try DesignParity.part(id, scheme)
+                attach(try DesignParity.write(id, scheme, ours: column(state.page, part: part, scheme: scheme)))
+            }
+        }
+    }
+
+    private func local(_ text: String, _ delivery: LocalPrompt.Delivery) -> TranscriptPage {
+        TranscriptPage(
+            Transcript(messages: []), prompts: [LocalPrompt(id: "p", text: text, delivery: delivery)], restarts: [])
+    }
+
+    private func confirmed(_ text: String) -> TranscriptPage {
+        var s = MessageScript()
+        s.prompt(text)
+        return s.page
+    }
+
+    /// The page's rows in a column `part.width` wide, on the sheet's page, from
+    /// the top of the first row down to the last's foot (or the part's height,
+    /// whichever is more).
+    private func column(_ page: TranscriptPage, part: DesignParity.Part, scheme: DesignParity.Scheme) -> NSImage {
+        let margin: CGFloat = 20
+        let host = PageSnapshot.Host(page: page, disclosure: .collapsed)
+        host.loadView()
+        host.view.appearance = scheme.appearance
+        host.view.layer?.backgroundColor = scheme.page.cgColor
+        var rows = NSRect.zero
+        let image = ViewSnapshot.renderViewController(host, size: CGSize(width: part.width + 2 * margin, height: 240)) {
+            let count = host.transcript.numberOfRows
+            rows = (0..<count).map { host.transcript.rect(ofRow: $0) }.reduce(NSRect.null) { $0.union($1) }
+        }
+        let height = max(part.height, ceil(rows.height))
+        let crop = NSRect(x: margin, y: rows.minY, width: part.width, height: height)
+        let out = NSImage(size: crop.size)
+        out.lockFocus()
+        // `rect(ofRow:)` measures y down; the image's y goes up.
+        image.draw(
+            in: NSRect(origin: .zero, size: crop.size),
+            from: NSRect(x: crop.minX, y: image.size.height - crop.maxY, width: crop.width, height: crop.height),
+            operation: .copy, fraction: 1)
+        out.unlockFocus()
+        return out
+    }
+
+    private func attach(_ url: URL) {
+        let attachment = XCTAttachment(contentsOfFile: url)
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testPictures() {
         var s = MessageScript()
         s.prompt(

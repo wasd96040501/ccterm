@@ -4,8 +4,8 @@ import Foundation
 /// colour — as the pure highlighters and the ANSI reader report it. The view
 /// that draws a line picks the colour and weight for each style
 /// (`NumberedLinesView`, `CommandHeaderView`); nothing here knows AppKit.
-nonisolated struct LineSpan: Sendable, Equatable {
-    enum Style: Sendable, Equatable {
+public nonisolated struct LineSpan: Sendable, Equatable {
+    public enum Style: Sendable, Equatable {
         // Source and shell, in the transcript code card's palette.
         case keyword
         case string
@@ -21,6 +21,11 @@ nonisolated struct LineSpan: Sendable, Equatable {
     }
 
     /// UTF-16 offsets within the line, as `NSRange` counts them.
-    var range: Range<Int>
-    var style: Style
+    public var range: Range<Int>
+    public var style: Style
+
+    public init(range: Range<Int>, style: Style) {
+        self.range = range
+        self.style = style
+    }
 }

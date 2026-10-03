@@ -91,3 +91,10 @@
 "Work in a new git worktree (--worktree), leaving this folder as it is" = "在新的 git 工作树 (--worktree) 中工作，保持此文件夹不变";
 "Choose the folder Claude will work in." = "选择 Claude 工作的文件夹。";
 "Recent" = "最近";
+/* Documents */
+"Deny" = "拒绝";
+"Allow" = "允许";
+"Show in Transcript" = "在对话中显示";
+"Open" = "打开";
+"Copy" = "复制";
+"Show all %lld lines" = "显示全部 %lld 行";

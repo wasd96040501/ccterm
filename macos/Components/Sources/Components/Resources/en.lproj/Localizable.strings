@@ -91,3 +91,10 @@
 "Work in a new git worktree (--worktree), leaving this folder as it is" = "Work in a new git worktree (--worktree), leaving this folder as it is";
 "Choose the folder Claude will work in." = "Choose the folder Claude will work in.";
 "Recent" = "Recent";
+/* Documents */
+"Deny" = "Deny";
+"Allow" = "Allow";
+"Show in Transcript" = "Show in Transcript";
+"Open" = "Open";
+"Copy" = "Copy";
+"Show all %lld lines" = "Show all %lld lines";

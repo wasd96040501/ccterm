@@ -1,4 +1,6 @@
 import AppKit
+import Components
+import DisplayModels
 import XCTest
 
 @testable import ccterm
@@ -24,9 +26,21 @@ final class SourceDocumentViewControllerSnapshotTests: XCTestCase {
         }
         """
 
-    private func snapshot(_ name: String, _ mode: SourceDocumentViewController.Mode) {
+    private enum Mode {
+        case change([ToolCall])
+        case newFile(ToolCall)
+        case read(ToolCall)
+    }
+
+    private func snapshot(_ name: String, _ mode: Mode) {
+        let (source, kind, path): (SourceLines, SourceDocumentViewController.Mode, String?) =
+            switch mode {
+            case .change(let calls): (SourceLines.change(calls), .change, calls.first?.filePath)
+            case .newFile(let call): (SourceLines.newFile(call), .newFile, call.filePath)
+            case .read(let call): (SourceLines.read(call), .read, call.filePath)
+            }
         let sheet = ViewSnapshot.renderLightAndDark(
-            { SourceDocumentViewController(mode) }, size: size, name: name)
+            { SourceDocumentViewController(source, mode: kind, path: path) }, size: size, name: name)
         let url = ViewSnapshot.writePNG(sheet, name: "SourceDocumentViewController-\(name)")
         let attachment = XCTAttachment(contentsOfFile: url)
         attachment.lifetime = .keepAlways

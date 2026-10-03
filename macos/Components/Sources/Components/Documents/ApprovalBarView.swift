@@ -1,5 +1,4 @@
 import AppKit
-import Components
 import DisplayModels
 
 /// Under the jump bar of a document whose call waits for the reader: *Claude
@@ -7,8 +6,8 @@ import DisplayModels
 /// buttons and keys as the card in the transcript; answering either answers
 /// both (02-command.md "Live").
 @MainActor
-final class ApprovalBarView: NSView {
-    weak var delegate: ApprovalBarViewDelegate?
+public final class ApprovalBarView: NSView {
+    public weak var delegate: ApprovalBarViewDelegate?
 
     private var callID: String?
 
@@ -40,13 +39,13 @@ final class ApprovalBarView: NSView {
     }()
 
     private lazy var row: NSStackView = {
-        let denyButton = PillButton(title: String(localized: "Deny"))
+        let denyButton = PillButton(title: String(localized: "Deny", bundle: .module))
         denyButton.target = self
         denyButton.action = #selector(deny)
         denyButton.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         // ⌘↩ answers it, as the card's does.
-        let allowButton = PillButton(title: String(localized: "Allow"), isPrimary: true)
+        let allowButton = PillButton(title: String(localized: "Allow", bundle: .module), isPrimary: true)
         allowButton.target = self
         allowButton.action = #selector(allow)
         allowButton.keyEquivalent = "\r"
@@ -64,7 +63,7 @@ final class ApprovalBarView: NSView {
 
     private let separator = CALayer()
 
-    override init(frame frameRect: NSRect) {
+    public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.addSublayer(separator)
@@ -77,16 +76,16 @@ final class ApprovalBarView: NSView {
         ])
     }
 
-    convenience init() {
+    public convenience init() {
         self.init(frame: .zero)
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    override var wantsUpdateLayer: Bool { true }
+    public override var wantsUpdateLayer: Bool { true }
 
-    override func updateLayer() {
+    public override func updateLayer() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             layer?.backgroundColor =
                 NSColor.textBackgroundColor.blended(withFraction: 0.09, of: NSColor.sidebarCoral)?.cgColor
@@ -94,13 +93,13 @@ final class ApprovalBarView: NSView {
         }
     }
 
-    override func layout() {
+    public override func layout() {
         super.layout()
         separator.frame = NSRect(x: 0, y: 0, width: bounds.width, height: 0.5)
     }
 
     /// The tile, `request`, `reason`; the buttons answer `approval.id`.
-    func configure(with approval: Approval) {
+    public func configure(with approval: Approval) {
         callID = approval.id
         tileView.tile = approval.tile
         requestLabel.stringValue = approval.request

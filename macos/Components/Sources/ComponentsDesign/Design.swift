@@ -21,7 +21,7 @@ struct Design {
             SettingsWindowSpecimen.section(), SidebarSpecimen.section(),
             AboutSpecimen.section(), MainWindowSpecimen.section(), NewSessionSpecimen.section(),
             MenuSpecimen.section(),
-            DrawingSpecimen.section(),
+            DrawingSpecimen.section(), DocumentsSpecimen.section(),
         ]
     }
 

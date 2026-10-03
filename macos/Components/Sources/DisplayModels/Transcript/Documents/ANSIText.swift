@@ -3,16 +3,16 @@ import Foundation
 /// A command's output with its ANSI escape sequences read: the plain lines,
 /// and where SGR asked for bold, green or red (02-command.md "Output").
 /// Every other sequence — other colours, cursor moves, titles — is dropped.
-nonisolated struct ANSIText: Sendable, Equatable {
-    struct Line: Sendable, Equatable {
-        var text: String
-        var spans: [LineSpan]
+public nonisolated struct ANSIText: Sendable, Equatable {
+    public struct Line: Sendable, Equatable {
+        public var text: String
+        public var spans: [LineSpan]
     }
 
     /// A trailing newline does not make a line of its own.
-    private(set) var lines: [Line]
+    public private(set) var lines: [Line]
 
-    init(_ output: String) {
+    public init(_ output: String) {
         var lines: [Line] = []
         var text: [UInt16] = []
         var spans: [LineSpan] = []

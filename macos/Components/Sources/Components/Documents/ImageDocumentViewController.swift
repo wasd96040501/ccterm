@@ -8,21 +8,22 @@ import DisplayModels
 ///
 /// Shown in its own colours in both appearances — a picture, not chrome.
 @MainActor
-final class ImageDocumentViewController: NSViewController {
+public final class ImageDocumentViewController: NSViewController {
     private let image: PromptImage
     private let scroll = OverlayScrollView()
     private let host = ImageHostView()
 
-    init(_ image: PromptImage) {
+    /// `title` is the image's name (*Image 2*), worded by the app.
+    public init(_ image: PromptImage, title: String) {
         self.image = image
         super.init(nibName: nil, bundle: nil)
-        title = image.title
+        self.title = title
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    override func loadView() {
+    public override func loadView() {
         view = NSView()
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.drawsBackground = false
@@ -42,7 +43,7 @@ final class ImageDocumentViewController: NSViewController {
     }
 
     private func setAccessibilityLabel() {
-        host.setAccessibilityLabel("\(image.title), \(image.dimensions)")
+        host.setAccessibilityLabel("\(title ?? ""), \(image.dimensions)")
     }
 
     /// Overlay scrollers whatever *Show scroll bars* says, like every document.
@@ -81,7 +82,7 @@ final class ImageDocumentViewController: NSViewController {
         }
 
         @available(*, unavailable)
-        required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+        public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
         override var isFlipped: Bool { true }
 

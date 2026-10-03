@@ -1,5 +1,4 @@
 import AppKit
-import Components
 import DisplayModels
 
 /// The 28-pt bar on top of every document beside the transcript: the tile,
@@ -9,10 +8,10 @@ import DisplayModels
 /// A file's path is Xcode's jump bar: when the bar is narrow its folders
 /// collapse to `…` from the middle, and the file's name never does.
 @MainActor
-final class JumpBarView: NSView {
-    static let height: CGFloat = 28
+public final class JumpBarView: NSView {
+    public static let height: CGFloat = 28
 
-    weak var delegate: JumpBarViewDelegate?
+    public weak var delegate: JumpBarViewDelegate?
 
     private static let font = NSFont.systemFont(ofSize: 12)
     private static let statFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
@@ -49,7 +48,7 @@ final class JumpBarView: NSView {
     private lazy var backButton: NSButton = {
         let button = NSButton()
         button.isBordered = false
-        button.title = String(localized: "Show in Transcript")
+        button.title = String(localized: "Show in Transcript", bundle: .module)
         button.font = Self.font
         button.contentTintColor = .controlAccentColor
         button.image = NSImage(systemSymbolName: "arrow.turn.up.left", accessibilityDescription: nil)?
@@ -76,7 +75,7 @@ final class JumpBarView: NSView {
         return constraint
     }()
 
-    override init(frame frameRect: NSRect) {
+    public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.addSublayer(separator)
@@ -84,12 +83,12 @@ final class JumpBarView: NSView {
         configureConstraints()
     }
 
-    convenience init() {
+    public convenience init() {
         self.init(frame: .zero)
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     private func configureHierarchy() {
         addSubview(tileView)
@@ -112,11 +111,11 @@ final class JumpBarView: NSView {
         ])
     }
 
-    override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: Self.height) }
+    public override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: Self.height) }
 
-    override var wantsUpdateLayer: Bool { true }
+    public override var wantsUpdateLayer: Bool { true }
 
-    override func updateLayer() {
+    public override func updateLayer() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
             separator.backgroundColor = NSColor.separatorColor.cgColor
@@ -126,7 +125,7 @@ final class JumpBarView: NSView {
     // MARK: - Content
 
     /// The tile in the call's state, the path, the stat.
-    func configure(with header: DocumentHeader) {
+    public func configure(with header: DocumentHeader) {
         tileView.tile = header.tile
         crumbs = header.crumbs
         statLabel.attributedStringValue = header.stat.attributedString(font: Self.statFont, color: .secondaryLabelColor)
@@ -148,7 +147,7 @@ final class JumpBarView: NSView {
 
     // MARK: - Crumbs
 
-    override func layout() {
+    public override func layout() {
         super.layout()
         separator.frame = NSRect(x: 0, y: 0, width: bounds.width, height: 0.5)
         fitCrumbs()

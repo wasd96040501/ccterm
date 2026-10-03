@@ -4,10 +4,10 @@ import Foundation
 /// (02-command.md "Command card"): the command word like inline code, strings
 /// in the code card's string colour, variables and comments set apart, flags
 /// and arguments left in label colour.
-nonisolated enum ShellHighlighter {
+public nonisolated enum ShellHighlighter {
     /// A leading `cd <dir> &&`, set in tertiary on its own line: there, but
     /// quiet. `rest` is what remains of the command.
-    static func splitDirectoryChange(_ command: String) -> (prefix: String?, rest: String) {
+    public static func splitDirectoryChange(_ command: String) -> (prefix: String?, rest: String) {
         guard command.hasPrefix("cd "), let range = command.range(of: " && ") else { return (nil, command) }
         let directory = command[command.index(command.startIndex, offsetBy: 3)..<range.lowerBound]
         guard !directory.contains(where: \.isNewline) else { return (nil, command) }
@@ -15,7 +15,7 @@ nonisolated enum ShellHighlighter {
         return (String(command[..<range.upperBound]).trimmingCharacters(in: .whitespaces), rest)
     }
 
-    static func spans(in text: String) -> [LineSpan] {
+    public static func spans(in text: String) -> [LineSpan] {
         let units = Array(text.utf16)
         var spans: [LineSpan] = []
         var index = 0

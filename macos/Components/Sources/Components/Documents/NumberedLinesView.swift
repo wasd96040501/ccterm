@@ -1,5 +1,5 @@
 import AppKit
-import Components
+import DisplayModels
 
 /// Lines of monospaced text with a tertiary line-number gutter — the body
 /// of a command's output and of a file, read, created or changed

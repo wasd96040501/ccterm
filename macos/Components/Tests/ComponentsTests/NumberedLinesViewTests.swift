@@ -1,14 +1,14 @@
 import AppKit
 import XCTest
 
-@testable import ccterm
+@testable import Components
 
 /// Numbered lines mounted in a window, measured: how they scroll
 /// (design/transcript/README.md "Scrollers") and what is text in them — the
 /// lines, and not the gutter (02-command.md, 03-file.md).
 @MainActor
 final class NumberedLinesViewTests: XCTestCase {
-    private var stage: AppKitStage?
+    private var stage: DocumentStage?
 
     override func tearDown() {
         stage?.teardown()
@@ -110,7 +110,7 @@ final class NumberedLinesViewTests: XCTestCase {
         ])
         let controller = NSViewController()
         controller.view = container
-        let stage = AppKitStage.mount(controller, size: CGSize(width: 480, height: 300))
+        let stage = DocumentStage.mount(controller, size: CGSize(width: 480, height: 300))
         self.stage = stage
         stage.drain()
         let scroll = try XCTUnwrap(stage.find(NSScrollView.self))
@@ -137,7 +137,7 @@ final class NumberedLinesViewTests: XCTestCase {
         view.configure(with: content)
         let controller = NSViewController()
         controller.view = view
-        let stage = AppKitStage.mount(controller, size: CGSize(width: width, height: 300))
+        let stage = DocumentStage.mount(controller, size: CGSize(width: width, height: 300))
         self.stage = stage
         stage.drain()
         return view

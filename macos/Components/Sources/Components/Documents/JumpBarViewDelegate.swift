@@ -1,7 +1,7 @@
 import AppKit
 
 @MainActor
-protocol JumpBarViewDelegate: AnyObject {
+public protocol JumpBarViewDelegate: AnyObject {
     /// *Show in Transcript* was pressed.
     func jumpBarViewDidRequestShowInTranscript(_ jumpBar: JumpBarView)
 }

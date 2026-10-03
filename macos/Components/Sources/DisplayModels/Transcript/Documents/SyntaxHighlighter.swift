@@ -4,8 +4,8 @@ import Foundation
 /// numbers, types, calls — enough that a file reads as code in a document
 /// without a language server. Swift's keywords for `.swift`; a C-family set
 /// for everything else; `#` comments for the scripting languages.
-nonisolated enum SyntaxHighlighter {
-    static func spans(in line: String, path: String?) -> [LineSpan] {
+public nonisolated enum SyntaxHighlighter {
+    public static func spans(in line: String, path: String?) -> [LineSpan] {
         let ext = ((path ?? "") as NSString).pathExtension.lowercased()
         let hashComments = ["py", "sh", "bash", "zsh", "rb", "yml", "yaml", "toml", "mk", "pl"].contains(ext)
         let keywords = ext == "swift" ? swiftKeywords : commonKeywords

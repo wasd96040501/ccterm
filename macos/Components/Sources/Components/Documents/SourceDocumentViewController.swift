@@ -1,43 +1,48 @@
 import AppKit
-import Components
+import DisplayModels
 
 /// What Edit, Write and Read open beside the transcript: Xcode's source
 /// editor, read-only, in three modes (design/transcript/03-file.md).
 ///
 /// The lines are `SourceLines`'; this draws them in a `NumberedLinesView` —
 /// washes for a change, the green bar of a new file, the file map of a read.
+/// `path` picks the highlighter by its extension.
 @MainActor
-final class SourceDocumentViewController: NSViewController {
-    enum Mode {
+public final class SourceDocumentViewController: NSViewController {
+    public enum Mode {
         /// One file's edits in one run, as one unified change.
-        case change([ToolCall])
-        case newFile(ToolCall)
-        case read(ToolCall)
+        case change
+        case newFile
+        case read
     }
 
+    private let source: SourceLines
     private let mode: Mode
+    private let path: String?
 
     private lazy var linesView = NumberedLinesView()
 
-    init(_ mode: Mode) {
+    public init(_ source: SourceLines, mode: Mode, path: String?) {
+        self.source = source
         self.mode = mode
+        self.path = path
         super.init(nibName: nil, bundle: nil)
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    override func loadView() {
+    public override func loadView() {
         view = linesView
     }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
-        let (source, path, bar): (SourceLines, String?, ChangeBar?) =
+        let bar: ChangeBar? =
             switch mode {
-            case .change(let calls): (SourceLines.change(calls), calls.first?.filePath, .hunks)
-            case .newFile(let call): (SourceLines.newFile(call), call.filePath, .wholeFile)
-            case .read(let call): (SourceLines.read(call), call.filePath, nil)
+            case .change: .hunks
+            case .newFile: .wholeFile
+            case .read: nil
             }
         var content = NumberedLinesView.Content(
             lines: source.lines.map { Self.line($0, path: path) }, style: .source, bar: bar)

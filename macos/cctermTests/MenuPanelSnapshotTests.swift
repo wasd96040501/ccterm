@@ -5,11 +5,12 @@ import XCTest
 
 @testable import ccterm
 
-/// Every pop-up of the composer and the New view — one `MenuPanelViewController`
+/// Every pop-up of the composer and the New view's branch menu — one `MenuPanelViewController`
 /// — beside the design's playground opening the same menu from its New tab
 /// (`<scheme>-live-<menu>` in `make design-shots`), in the same state: the
-/// model on *Default (recommended)*, High effort, Auto mode, four recent
-/// folders with ccterm chosen, and the branches the playground's ccterm has.
+/// model on *Default (recommended)*, High effort, Auto mode,
+/// and the branches the playground's ccterm has (the folder menu is the New
+/// view's own: `NewSessionSpecimen`).
 /// Review only — `TEST_LANGUAGE=en make test-unit FILTER=MenuPanelSnapshotTests`
 /// after `make design-shots`, then `/tmp/ccterm-parity/<scheme>-live-<menu>.png`.
 /// Needs the display awake.
@@ -17,19 +18,8 @@ import XCTest
 final class MenuPanelSnapshotTests: XCTestCase {
     private typealias F = ComposerFixtures
 
-    private static let home = URL(fileURLWithPath: NSHomeDirectory())
-
     private func composer() -> ComposerModel {
         F.model(.draft, settings: F.settings("default", effort: .high, mode: .auto))
-    }
-
-    private func newSession() -> NewSessionModel {
-        let folders = ["dev/ccterm", "dev/ghostty", "notes/claude-notes", "dotfiles"].map {
-            Self.home.appendingPathComponent($0)
-        }
-        return NewSessionModel(
-            draft: NewSessionDraft(folder: folders[0], settings: F.settings()), repository: .loading,
-            recentFolders: folders)
     }
 
     private func branches() -> NewSessionModel.BranchList {
@@ -54,7 +44,6 @@ final class MenuPanelSnapshotTests: XCTestCase {
         case "model": ComposerMenu.modelContent(of: composer(), expanded: [])
         case "effort": ComposerMenu.content(of: composer().effortMenu)
         case "mode": ComposerMenu.content(of: composer().modeMenu)
-        case "folder": NewSessionMenu.folderContent(of: newSession())
         default: NewSessionMenu.branchContent(of: branches(), query: "")
         }
     }
@@ -62,7 +51,7 @@ final class MenuPanelSnapshotTests: XCTestCase {
     func testEveryMenuAgainstTheDesign() async throws {
         var report: [String] = []
         for scheme in DesignParity.Scheme.allCases {
-            for menu in ["model", "effort", "mode", "folder", "branch"] {
+            for menu in ["model", "effort", "mode", "branch"] {
                 let id = "live-\(menu)"
                 let part = try DesignParity.part(id, scheme)
                 let controller = MenuPanelViewController()

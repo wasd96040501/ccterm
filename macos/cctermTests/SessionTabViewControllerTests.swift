@@ -1,6 +1,7 @@
 import AgentSDK
 import AppKit
 import Combine
+import Components
 import XCTest
 
 @testable import ccterm
@@ -108,6 +109,18 @@ final class SessionTabViewControllerTests: XCTestCase {
 
         XCTAssertFalse(tab.isUntouchedDraft)
         XCTAssertEqual(tab.folder, URL(fileURLWithPath: "/tmp/other"))
+    }
+
+    /// The branch menu is the tab's to word: none for a folder that is no
+    /// repository, and a branch item that is no branch changes nothing.
+    func testTheBranchMenuNeedsARepository() throws {
+        let tab = mountDraft()
+        let newSession = try XCTUnwrap(newSession(of: tab))
+
+        XCTAssertNil(tab.newSessionViewController(newSession, branchMenuMatching: ""))
+        tab.newSessionViewController(newSession, didChooseBranchItem: "not a branch")
+
+        XCTAssertTrue(tab.isUntouchedDraft)
     }
 
     func testANewTabStartsInTheFolderItIsGiven() {

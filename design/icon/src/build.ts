@@ -68,7 +68,7 @@ console.log(`review → ${join(OUT, "review.png")}`)
 // one the Dock shows). Rendered by ictool, full bleed, so the hero is the
 // pixels the Dock shows and its cursor rows sit at `x / 1024` of the width.
 function writeArtSet() {
-  const dir = join(ROOT, "macos/ccterm/Assets.xcassets/AppIconArt.imageset")
+  const dir = join(ROOT, "macos/Components/Sources/Components/Resources/Assets.xcassets/AppIconArt.imageset")
   rmSync(dir, { recursive: true, force: true })
   mkdirSync(dir, { recursive: true })
   const images: object[] = []

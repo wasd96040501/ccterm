@@ -2,6 +2,7 @@ import AgentSDK
 import AppKit
 import Combine
 import Components
+import DisplayModels
 
 /// A session's own tab — or a New tab, which becomes one at Send (design 08:
 /// *before the first prompt it's a form, after it's a conversation*).
@@ -339,6 +340,11 @@ final class SessionTabViewController: NSViewController {
         }
     }
 
+    /// What the draft's New view says, before it is worded for the view.
+    private func newSessionModel(of draft: NewSessionDraft) -> NewSessionModel {
+        NewSessionModel(draft: draft, repository: repository, recentFolders: recentFolders)
+    }
+
     private var repositoryState: RepositoryState? {
         if case .repository(let state) = repository { state } else { nil }
     }
@@ -348,8 +354,7 @@ final class SessionTabViewController: NSViewController {
     private func refresh() {
         guard isViewLoaded else { return }
         if let draft {
-            newSession?.configure(
-                with: NewSessionModel(draft: draft, repository: repository, recentFolders: recentFolders))
+            newSession?.configure(with: NewSessionContent(newSessionModel(of: draft)))
             composer.configure(
                 with: ComposerModel(
                     launchInput(of: draft, context: handoverURL == nil ? .draft : Self.starting, placement: .page)))
@@ -754,9 +759,20 @@ extension SessionTabViewController: NewSessionViewControllerDelegate {
     }
 
     func newSessionViewController(
-        _ newSessionViewController: NewSessionViewController, didChooseBranch branch: NewSessionDraft.Branch
+        _ newSessionViewController: NewSessionViewController, branchMenuMatching query: String
+    ) -> MenuContent? {
+        guard let draft, case .repository(_, _, let branches) = newSessionModel(of: draft).branchRow else {
+            return nil
+        }
+        return NewSessionMenu.branchContent(of: branches, query: query)
+    }
+
+    func newSessionViewController(
+        _ newSessionViewController: NewSessionViewController, didChooseBranchItem id: AnyHashable
     ) {
-        guard var draft, let repository = repositoryState else { return }
+        guard let branch = id.base as? NewSessionDraft.Branch, var draft, let repository = repositoryState else {
+            return
+        }
         draft.choose(branch: branch, in: repository)
         self.draft = draft
         hasChosen = true

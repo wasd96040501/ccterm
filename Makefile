@@ -137,7 +137,7 @@ dmg: ## Create DMG installer (usage: make dmg APP=/path/to/ccterm.app)
 # App icon: design/icon/src/design.ts is the source of truth. This regenerates
 # macos/ccterm/AppIcon.icon (Icon Composer document, SVG layers) from it and,
 # with Xcode 26+, renders every system appearance to design/icon/out/review.png
-# and the in-app icon (Assets.xcassets/AppIconArt, Any + Dark) the New tab shows.
+# and the in-app icon (Components/Resources/Assets.xcassets/AppIconArt, Any + Dark) the New tab shows.
 icon: ## Regenerate AppIcon.icon and the AppIconArt image set from design/icon (+ review renders in design/icon/out)
 	cd design/icon && bun install --frozen-lockfile && bun run build
 
@@ -147,7 +147,7 @@ sidebar-icons: ## Regenerate the sidebar glyph assets (Components/Resources/Asse
 window-chrome: ## Regenerate the window chrome assets (Components/Resources/Assets.xcassets/WindowChrome) from the design sheets' window mocks
 	cd design/window-chrome && bun run build
 
-new-view-icons: ## Regenerate the New view's glyph assets (Assets.xcassets/NewView) from design/new-view-icons
+new-view-icons: ## Regenerate the New view's glyph assets (Components/Resources/Assets.xcassets/NewView) from design/new-view-icons
 	cd design/new-view-icons && bun run build
 
 composer-icons: ## Regenerate the composer glyph assets (Assets.xcassets/Composer) from design/composer-icons

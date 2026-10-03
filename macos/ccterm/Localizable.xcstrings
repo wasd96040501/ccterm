@@ -752,16 +752,6 @@
         }
       }
     },
-    "Branch": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "分支"
-          }
-        }
-      }
-    },
     "Bypass": {
       "localizations": {
         "zh-Hans": {
@@ -889,16 +879,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "可多选"
-          }
-        }
-      }
-    },
-    "Choose the folder Claude will work in.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选择 Claude 工作的文件夹。"
           }
         }
       }
@@ -2575,16 +2555,6 @@
         }
       }
     },
-    "Recent": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "最近"
-          }
-        }
-      }
-    },
     "Recovery": {
       "localizations": {
         "zh-Hans": {
@@ -3734,26 +3704,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "撤回"
-          }
-        }
-      }
-    },
-    "Work in a new git worktree (--worktree), leaving this folder as it is": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在新的 git 工作树 (--worktree) 中工作，保持此文件夹不变"
-          }
-        }
-      }
-    },
-    "Worktree": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "工作树"
           }
         }
       }

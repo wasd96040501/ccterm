@@ -21,7 +21,7 @@ public final class SettingsSplitViewController: NSSplitViewController {
         }
     }
 
-    weak var delegate: SettingsSplitViewControllerDelegate?
+    public weak var delegate: SettingsSplitViewControllerDelegate?
 
     private let items: [Pane]
     private var history: SettingsHistory
@@ -75,15 +75,19 @@ public final class SettingsSplitViewController: NSSplitViewController {
 
     // MARK: - Navigation
 
-    @objc func goBack(_ sender: Any?) {
+    @objc public func goBack(_ sender: Any?) {
         history.goBack()
         show(history.current)
     }
 
-    @objc func goForward(_ sender: Any?) {
+    @objc public func goForward(_ sender: Any?) {
         history.goForward()
         show(history.current)
     }
+
+    /// Whether there is a pane before or after the one shown in the history.
+    public var canGoBack: Bool { history.canGoBack }
+    public var canGoForward: Bool { history.canGoForward }
 
     private func show(_ index: Int) {
         panes.selectedTabViewItemIndex = index

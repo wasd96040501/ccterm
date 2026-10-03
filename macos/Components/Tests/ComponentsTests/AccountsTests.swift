@@ -170,6 +170,36 @@ final class AccountsTests: XCTestCase {
         XCTAssertEqual(cell.checkbox.state, .off)
     }
 
+    /// design/settings' `.env .tr`: `30px 1.6fr 1fr 22px`. The rows span the
+    /// whole scroll view — no scroller beside them, whatever the Mac's setting —
+    /// and the name takes 1.6 of every 2.6 of what the checkbox and the
+    /// warning leave.
+    func testTheNameColumnTakesOneAndSixTenthsToTheValuesOne() throws {
+        for width: CGFloat in [500, 650] {
+            let list = EnvironmentVariablesViewController()
+            list.delegate = Recorder()
+            list.view.frame = NSRect(x: 0, y: 0, width: width, height: EnvironmentVariablesViewController.height)
+            // More rows than the list holds, so a legacy scroller would show.
+            list.configure(
+                with: (0..<12).map { EnvironmentRow(isEnabled: true, name: "N\($0)", displayValue: "v", warning: nil) })
+            list.view.layoutSubtreeIfNeeded()
+            let scroll = try XCTUnwrap(shown(NSScrollView.self, in: list.view).first)
+            scroll.scrollerStyle = .legacy
+            list.view.layoutSubtreeIfNeeded()
+            let table = try XCTUnwrap(scroll.documentView as? NSTableView)
+            XCTAssertEqual(scroll.scrollerStyle, .overlay)
+            XCTAssertEqual(table.frame.width, scroll.contentView.bounds.width, accuracy: 0.5)
+            XCTAssertEqual(
+                scroll.contentView.bounds.width, scroll.frame.width, accuracy: 0.5, "no scroller takes width")
+            let cell = try XCTUnwrap(
+                table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? EnvironmentVariableCellView)
+            cell.layoutSubtreeIfNeeded()
+            // Each field spans its column less 2 a side: (name + 4) = 1.6 × (value + 4).
+            XCTAssertEqual(
+                cell.nameField.frame.width + 4, 1.6 * (cell.valueField.frame.width + 4), accuracy: 3)
+        }
+    }
+
     func testPlusAsksTheDelegateAndTheCheckboxReportsItsRow() throws {
         let recorder = Recorder()
         let list = list([Self.proxy], delegate: recorder)

@@ -31,19 +31,15 @@ enum ComposerSpecimen {
             ("Nothing known yet", F.loading, ""),
         ]
         var specimens = states.map { title, state, text in
-            DesignPageViewController.Specimen(
-                title: title, view: composer(state, text: text), height: nil)
+            composer(title, state, text: text)
         }
         specimens.append(
-            .init(
-                title: "Menus — Effort, Permission mode, and the Model panel with Fast Mode under the scroll",
-                view: MenuRow([
-                    ComposerMenu.content(of: ComposerFixtures.idle.effortMenu),
-                    ComposerMenu.content(of: ComposerFixtures.idle.modeMenu),
-                    ComposerMenu.modelContent(of: ComposerFixtures.responding, expanded: []),
-                ]), height: nil))
-        specimens.append(
-            .init(title: "Slash commands — the list a `/` opens", view: slashList(), height: nil))
+            MenuRow([
+                ComposerMenu.content(of: ComposerFixtures.idle.effortMenu),
+                ComposerMenu.content(of: ComposerFixtures.idle.modeMenu),
+                ComposerMenu.modelContent(of: ComposerFixtures.responding, expanded: []),
+            ]).specimen("Menus — Effort, Permission mode, and the Model panel with Fast Mode under the scroll"))
+        specimens.append(slashList("Slash commands — the list a `/` opens"))
         return DesignPageViewController.Section(
             title: "Composer",
             note:
@@ -55,8 +51,10 @@ enum ComposerSpecimen {
     }
 
     /// `state` as the controller draws it at the column's width, its height
-    /// the card's own, centred in a plain card.
-    private static func composer(_ state: ComposerPresentation, text: String) -> NSView {
+    /// the card's own, scaled down whole in a narrower column.
+    private static func composer(
+        _ title: String, _ state: ComposerPresentation, text: String
+    ) -> DesignPageViewController.Specimen {
         let controller = ComposerViewController()
         controller.configure(with: state)
         controller.text = text
@@ -64,14 +62,18 @@ enum ComposerSpecimen {
         view.frame = NSRect(x: 0, y: 0, width: columnWidth, height: 400)
         view.layoutSubtreeIfNeeded()
         let height = ceil(view.fittingSize.height)
-        return AccountsSpecimen.inset(
-            CentredHost(view, size: NSSize(width: columnWidth, height: height), owner: controller))
+        return .init(
+            title: title, view: CentredHost(view, size: NSSize(width: columnWidth, height: height), owner: controller),
+            width: columnWidth, height: height)
     }
 
-    private static func slashList() -> NSView {
+    private static func slashList(_ title: String) -> DesignPageViewController.Specimen {
         let list = SlashListViewController()
         list.loadViewIfNeeded()
         list.configure(commands: ComposerFixtures.commands, width: columnWidth)
-        return AccountsSpecimen.inset(CentredHost(list.view, size: list.preferredSize, owner: list))
+        let size = list.preferredSize
+        return .init(
+            title: title, view: CentredHost(list.view, size: size, owner: list), width: size.width,
+            height: size.height)
     }
 }

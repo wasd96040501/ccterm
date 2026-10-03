@@ -17,7 +17,8 @@ enum GeneralSpecimen {
                 .init(
                     title: "Found on this Mac — type a command, Return to check it",
                     view: LaunchHost(
-                        command: found, folder: inEffect, allowsBypassPermissions: false), height: nil),
+                        command: found, folder: inEffect, allowsBypassPermissions: false, inset: 0),
+                    width: Host.paneForm),
                 .init(
                     title: "A command that doesn't run, a folder that isn't there",
                     view: LaunchHost(
@@ -31,14 +32,16 @@ enum GeneralSpecimen {
                             detail: .problem("Folder doesn’t exist", fallback: "~/.claude"),
                             reason: .problem("Folder doesn’t exist", fallback: nil),
                             fallback: "~/.claude"),
-                        allowsBypassPermissions: true), height: nil),
+                        allowsBypassPermissions: true, inset: 0),
+                    width: Host.paneForm),
                 .init(
                     title: "Checking",
                     view: LaunchHost(
                         command: .init(
                             text: "~/bin/claude-relay", placeholder: "claude", detail: .checking, reason: .checking,
                             fallback: nil),
-                        folder: inEffect, allowsBypassPermissions: false), height: nil),
+                        folder: inEffect, allowsBypassPermissions: false, inset: 0),
+                    width: Host.paneForm),
             ])
     }
 
@@ -62,14 +65,14 @@ final class LaunchHost: NSView, LaunchSectionViewControllerDelegate {
 
     init(
         command: LaunchSectionViewController.FieldState, folder: LaunchSectionViewController.FieldState,
-        allowsBypassPermissions: Bool
+        allowsBypassPermissions: Bool, inset amount: CGFloat = Host.formInset
     ) {
         state = .init(
             command: command, folder: folder, allowsBypassPermissions: allowsBypassPermissions, textsRevision: 0)
         super.init(frame: .zero)
         section.delegate = self
         section.show(state)
-        let content = AccountsSpecimen.inset(section.view)
+        let content = AccountsSpecimen.inset(section.view, by: amount)
         content.translatesAutoresizingMaskIntoConstraints = false
         addSubview(content)
         NSLayoutConstraint.activate([

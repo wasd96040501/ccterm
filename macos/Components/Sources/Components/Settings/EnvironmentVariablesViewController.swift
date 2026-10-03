@@ -49,7 +49,7 @@ public final class EnvironmentVariablesViewController: NSViewController {
     }()
 
     private lazy var scrollView: NSScrollView = {
-        let scroll = NSScrollView()
+        let scroll = OverlayScrollView()
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
@@ -407,6 +407,23 @@ extension EnvironmentVariablesViewController {
                 hairline.trailingAnchor.constraint(equalTo: trailingAnchor),
                 hairline.bottomAnchor.constraint(equalTo: bottomAnchor),
             ])
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    }
+
+    /// The rows' scroll view with overlay scrollers whatever the Mac's setting:
+    /// a legacy scroller beside the form's own would take width from the rows
+    /// and stand next to another.
+    private final class OverlayScrollView: NSScrollView {
+        override var scrollerStyle: NSScroller.Style {
+            didSet { if scrollerStyle != .overlay { scrollerStyle = .overlay } }
+        }
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            scrollerStyle = .overlay
         }
 
         @available(*, unavailable)

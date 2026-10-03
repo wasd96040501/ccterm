@@ -3,83 +3,71 @@ import XCTest
 
 @testable import ComponentsDesign
 
-/// The style page rendered whole, for review: a wide window and a narrow one,
-/// light and dark, to `/tmp/ccterm-screenshots/Design-<width>-<scheme>.png`.
-/// As the window server composites it (`CompositedCapture`), so selections and
-/// materials look as they do on screen; the window hangs off the screen's
-/// corner with one point showing and never takes the key. Skipped unless
-/// named: `make test-ui FILTER=DesignPageSnapshotTests`.
+/// The style page rendered for review: every section at a wide window and a
+/// narrow one, light and dark, to
+/// `<package>/.build/design/Design-<section>-<width>-<scheme>.png` — in the
+/// checkout's own build directory, so worktrees never overwrite each other's — one PNG
+/// per section, since the whole page is taller than a capture can be. Each is
+/// the built `ComponentsDesign` run as `--render`, in English
+/// (`-AppleLanguages '(en)'` — a test process can't change its own language,
+/// Foundation fixes it at launch): the executable parks its window off the
+/// screen's corner, captures it as the window server composites it
+/// (`CompositedCapture`), writes the PNGs and exits. No window is ever shown.
+/// Skipped unless named: `make test-ui FILTER=DesignPageSnapshotTests`.
 @MainActor
 final class DesignPageSnapshotTests: XCTestCase {
-    func testThePageFollowsTheWindowsWidth() async throws {
-        for width in [1240, 600] as [CGFloat] {
-            for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
-                let image = try await render(width: width, appearance: appearance)
-                let url = URL(fileURLWithPath: "/tmp/ccterm-screenshots/Design-\(Int(width))-\(name).png")
-                try FileManager.default.createDirectory(
-                    at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-                let rep = NSBitmapImageRep(cgImage: image)
-                try XCTUnwrap(rep.representation(using: .png, properties: [:])).write(to: url)
-                XCTAssertEqual(CGFloat(image.width), width * 2, accuracy: 1, "the page is the window's width")
+    func testEverySectionIsRenderedAtTheWindowsWidth() throws {
+        let directory = Self.buildDirectory.appendingPathComponent("design").path
+        let slugs = Design.sections().map { Design.fileSlug($0.title) }
+        XCTAssertFalse(slugs.isEmpty)
+        for width in [1240, 600] {
+            for scheme in ["light", "dark"] {
+                try render(width: width, scheme: scheme, into: directory)
+                for slug in slugs {
+                    let url = URL(fileURLWithPath: directory)
+                        .appendingPathComponent("Design-\(slug)-\(width)-\(scheme).png")
+                    let rep = try XCTUnwrap(NSBitmapImageRep(data: try Data(contentsOf: url)), url.lastPathComponent)
+                    XCTAssertEqual(rep.pixelsWide, width * 2, "\(url.lastPathComponent) is the window's width")
+                }
             }
         }
     }
 
-    /// The most a capture holds: the window server's images stop at 16 384 px,
-    /// 8 192 pt at 2×, and the page is taller; so a long page is captured in
-    /// bands of this height, scrolled under a window of it, and joined.
-    private static let band: CGFloat = 4000
+    /// `.build`: two above the products' directory, which holds the test
+    /// bundle and the page's executable.
+    private static var buildDirectory: URL {
+        productsDirectory.deletingLastPathComponent().deletingLastPathComponent()
+    }
 
-    /// The page at `width`, as tall as it is: laid out once at a window's
-    /// height, then the window grown to the page's — or, past one band, held at
-    /// a band's height and scrolled.
-    private func render(width: CGFloat, appearance: NSAppearance.Name) async throws -> CGImage {
-        let page = DesignPageViewController(sections: Design.sections())
-        let window = CompositedCapture.mount(
-            page, size: NSSize(width: width, height: 800), appearance: NSAppearance(named: appearance))
-        defer {
-            window.contentViewController = nil
-            window.close()
+    private static var productsDirectory: URL {
+        Bundle(for: DesignPageSnapshotTests.self).bundleURL.deletingLastPathComponent()
+    }
+
+    /// Runs the page's executable, which sits beside the test bundle.
+    private func render(width: Int, scheme: String, into directory: String) throws {
+        let executable = Self.productsDirectory.appendingPathComponent("ComponentsDesign")
+        // `make test-ui` builds the page's executable before the tests run.
+        try XCTSkipUnless(
+            FileManager.default.isExecutableFile(atPath: executable.path),
+            "\(executable.path) is not built — run `make test-ui`")
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = ["-AppleLanguages", "(en)", "--render", directory, "\(width)", scheme]
+        let errors = Pipe()
+        process.standardError = errors
+        process.standardOutput = FileHandle.nullDevice
+        try process.run()
+        // Every wait has a deadline: the executable stops its own sections at
+        // 120 s each; this stops it all.
+        let deadline = Date(timeIntervalSinceNow: 1800)
+        while process.isRunning, Date() < deadline { Thread.sleep(forTimeInterval: 0.2) }
+        if process.isRunning {
+            process.terminate()
+            XCTFail("ComponentsDesign --render took over 30 minutes")
+            return
         }
-        window.layoutIfNeeded()
-        let scroll = try XCTUnwrap(page.view as? NSScrollView)
-        var height = max(try XCTUnwrap(scroll.documentView).fittingSize.height, 200)
-        guard height > Self.band else {
-            window.setContentSize(NSSize(width: width, height: height))
-            window.layoutIfNeeded()
-            // Past the scrollers' flash on first showing.
-            RunLoop.current.run(until: Date(timeIntervalSinceNow: 2))
-            return try await CompositedCapture.image(of: window)
-        }
-        // A scroller would show in every band.
-        scroll.hasVerticalScroller = false
-        window.setContentSize(NSSize(width: width, height: Self.band))
-        window.layoutIfNeeded()
-        // The page as laid out, which a specimen sized by its frame makes
-        // taller than the fitting size says: the bands run to its end.
-        height = max(height, try XCTUnwrap(scroll.documentView).frame.height)
-        var bands: [(origin: CGFloat, image: CGImage)] = []
-        var origin: CGFloat = 0
-        while origin < height {
-            // The last band ends where the page does, overlapping the one before.
-            let top = min(origin, height - Self.band)
-            scroll.contentView.scroll(to: NSPoint(x: 0, y: top))
-            scroll.reflectScrolledClipView(scroll.contentView)
-            window.layoutIfNeeded()
-            RunLoop.current.run(until: Date(timeIntervalSinceNow: 1))
-            bands.append((top, try await CompositedCapture.image(of: window)))
-            origin += Self.band
-        }
-        let scale = CGFloat(bands[0].image.width) / width
-        let context = try XCTUnwrap(
-            CGContext(
-                data: nil, width: bands[0].image.width, height: Int((height * scale).rounded()), bitsPerComponent: 8,
-                bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
-        for (top, image) in bands {
-            let y = (height - top - Self.band) * scale
-            context.draw(image, in: CGRect(x: 0, y: y, width: CGFloat(image.width), height: CGFloat(image.height)))
-        }
-        return try XCTUnwrap(context.makeImage())
+        let message = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        if process.terminationStatus == 75 { throw XCTSkip("no capture could be had: \(message)") }
+        XCTAssertEqual(process.terminationStatus, 0, "ComponentsDesign --render failed: \(message)")
     }
 }

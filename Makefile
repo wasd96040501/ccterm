@@ -36,7 +36,7 @@ test-kit: ## Run TranscriptKit's package tests (FILTER=SomeTests; snapshots only
 # Components' own tests: every view the app draws with, built from its init, a
 # display model and a delegate — no app, no store. Same split as test-kit.
 test-ui: ## Run Components' package tests (FILTER=SomeTests; snapshots only when named)
-	@cd macos/Components && \
+	@cd macos/Components && swift build --product ComponentsDesign && \
 		if [ -n "$(FILTER)" ]; then swift test --filter "$(FILTER)"; \
 		else swift test --skip SnapshotTests; fi
 

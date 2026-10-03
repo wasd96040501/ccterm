@@ -106,7 +106,7 @@ public final class SettingsWindowController: NSWindowController, NSToolbarDelega
 }
 
 extension SettingsWindowController: SettingsSplitViewControllerDelegate {
-    func settingsSplitViewController(
+    public func settingsSplitViewController(
         _ split: SettingsSplitViewController, didShow pane: SettingsSplitViewController.Pane
     ) {
         show(pane)

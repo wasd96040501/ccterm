@@ -18,20 +18,40 @@ enum AccountsSpecimen {
             specimens: [
                 .init(
                     title: "Signed in, three providers — ⓘ, a row's menu, Add Provider…",
-                    view: AccountsHost(subscription: .signedIn(subscription), providers: providers), height: nil),
+                    view: AccountsHost(subscription: .signedIn(subscription), providers: providers, inset: 0),
+                    width: Host.paneForm),
                 .init(
                     title: "Signed out, no providers — Sign In… waits on the browser",
-                    view: AccountsHost(subscription: .signedOut, providers: []), height: nil),
-                .init(title: "The login not read yet", view: AccountsHost(subscription: .checking), height: nil),
+                    view: AccountsHost(subscription: .signedOut, providers: [], inset: 0), width: Host.paneForm),
+                .init(
+                    title: "The login not read yet", view: AccountsHost(subscription: .checking, inset: 0),
+                    width: Host.paneForm),
                 .init(
                     title: "Environment variables — click a row, then Space, Return, Delete or +",
-                    view: VariablesHost(), height: nil),
-                .init(
-                    title: "Local Proxy's sheet — type, choose, ⌘V; the bar's hairline once the form runs under it",
-                    view: EditorHost(kind: .provider), height: nil),
-                .init(title: "The subscription's sheet", view: EditorHost(kind: .subscription), height: nil),
-                .init(title: "Signing in", view: SignInHost(), height: nil),
+                    view: VariablesHost(), width: Host.paneForm),
+                sheet(
+                    "Local Proxy's sheet on the Settings window — type, choose, ⌘V; the bar's hairline once the form runs under it",
+                    kind: .provider),
+                sheet("The subscription's sheet on the Settings window", kind: .subscription),
+                signIn(),
             ])
+    }
+
+    /// An account's sheet as the design shows one on its window: the Settings
+    /// window with the Accounts pane, a faint scrim over it, and the sheet 14
+    /// below the top, centred.
+    private static func sheet(
+        _ title: String, kind: AccountEditorViewController.Kind
+    ) -> DesignPageViewController.Specimen {
+        let frame = SettingsWindowSpecimen.window(
+            initial: 1, overlay: SheetOverlay(sheet: EditorHost(kind: kind), size: Host.accountSheet))
+        return .init(title: title, view: frame, width: frame.size.width, height: frame.size.height, isWindow: true)
+    }
+
+    /// The sign-in sheet at its own size, in a plain card.
+    private static func signIn() -> DesignPageViewController.Specimen {
+        let sheet = SignInHost()
+        return .init(title: "Signing in", view: sheet, width: sheet.size.width, height: sheet.size.height)
     }
 
     /// The design's subscription and providers, worded as the app words them.
@@ -47,16 +67,17 @@ enum AccountsSpecimen {
             id: UUID(), content: AccountRowContent(title: title, subtitle: subtitle, mark: .provider, accessory: .info))
     }
 
-    /// `view` 20 in from every edge, as a form insets its sections.
-    static func inset(_ view: NSView) -> NSView {
+    /// `view` `amount` in from every edge — `Host.formInset` as a pane's form
+    /// insets its sections; none in a plain card, whose width is the form's.
+    static func inset(_ view: NSView, by amount: CGFloat = Host.formInset) -> NSView {
         let container = NSView()
         view.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(view)
         NSLayoutConstraint.activate([
-            view.topAnchor.constraint(equalTo: container.topAnchor, constant: 20),
-            view.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
-            view.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
-            view.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -20),
+            view.topAnchor.constraint(equalTo: container.topAnchor, constant: amount),
+            view.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: amount),
+            view.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -amount),
+            view.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -amount),
         ])
         return container
     }
@@ -73,9 +94,12 @@ final class AccountsHost: NSView, SubscriptionSectionViewControllerDelegate,
     private let providersSection = ProvidersSectionViewController()
     private var providers: [ProvidersSectionViewController.Row]
 
-    /// `providers` nil leaves the providers section out.
-    init(subscription: SubscriptionSectionViewController.State, providers: [ProvidersSectionViewController.Row]? = nil)
-    {
+    /// `providers` nil leaves the providers section out; `inset` is the form's
+    /// inset around the sections.
+    init(
+        subscription: SubscriptionSectionViewController.State, providers: [ProvidersSectionViewController.Row]? = nil,
+        inset amount: CGFloat = Host.formInset
+    ) {
         self.providers = providers ?? []
         super.init(frame: .zero)
         subscriptionSection.delegate = self
@@ -90,7 +114,7 @@ final class AccountsHost: NSView, SubscriptionSectionViewControllerDelegate,
         stack.orientation = .vertical
         stack.alignment = .width
         stack.spacing = 30
-        let inset = AccountsSpecimen.inset(stack)
+        let inset = AccountsSpecimen.inset(stack, by: amount)
         inset.translatesAutoresizingMaskIntoConstraints = false
         addSubview(inset)
         NSLayoutConstraint.activate([
@@ -176,10 +200,10 @@ private final class VariablesHost: NSView, EnvironmentVariablesViewControllerDel
         form.translatesAutoresizingMaskIntoConstraints = false
         addSubview(form)
         NSLayoutConstraint.activate([
-            form.topAnchor.constraint(equalTo: topAnchor, constant: 20),
-            form.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
-            form.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
-            form.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -20),
+            form.topAnchor.constraint(equalTo: topAnchor),
+            form.leadingAnchor.constraint(equalTo: leadingAnchor),
+            form.trailingAnchor.constraint(equalTo: trailingAnchor),
+            form.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
         show()
     }
@@ -232,8 +256,8 @@ private final class VariablesHost: NSView, EnvironmentVariablesViewControllerDel
     }
 }
 
-/// An account's sheet at its own size, centred in its card, with the design's
-/// Local Proxy or subscription, driven by a stand-in for the app: every edit
+/// An account's sheet's content at its own size, with the design's Local
+/// Proxy or subscription, driven by a stand-in for the app: every edit
 /// comes back as the next presentation, as the app's view model sends it; ⌘V
 /// says what it read. Its buttons have no presenter to answer them.
 private final class EditorHost: NSView, AccountEditorViewControllerDelegate {
@@ -271,11 +295,10 @@ private final class EditorHost: NSView, AccountEditorViewControllerDelegate {
         content.translatesAutoresizingMaskIntoConstraints = false
         addSubview(content)
         NSLayoutConstraint.activate([
-            content.centerXAnchor.constraint(equalTo: centerXAnchor),
             content.topAnchor.constraint(equalTo: topAnchor),
             content.bottomAnchor.constraint(equalTo: bottomAnchor),
-            content.widthAnchor.constraint(equalToConstant: AccountEditorViewController.size.width),
-            content.heightAnchor.constraint(equalToConstant: AccountEditorViewController.size.height),
+            content.leadingAnchor.constraint(equalTo: leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: trailingAnchor),
         ])
         show()
     }
@@ -360,22 +383,25 @@ private final class EditorHost: NSView, AccountEditorViewControllerDelegate {
     func accountEditorDidRequestRemoval(_ editor: AccountEditorViewController) {}
 }
 
-/// The sign-in sheet's content, as the sheet shows it, centred in its card.
+/// The sign-in sheet's content, as the sheet shows it: its own size.
 private final class SignInHost: NSView {
     private let sheet = SignInViewController()
+    /// The sheet's size, from its content (`preferredContentSize`).
+    let size: NSSize
 
     init() {
-        super.init(frame: .zero)
         sheet.configure(browserURL: URL(string: "https://claude.ai/oauth/authorize"))
+        // Loading the view is what sizes the sheet (`preferredContentSize`).
         let content = sheet.view
+        size = sheet.preferredContentSize
+        super.init(frame: .zero)
         content.translatesAutoresizingMaskIntoConstraints = false
         addSubview(content)
         NSLayoutConstraint.activate([
-            content.centerXAnchor.constraint(equalTo: centerXAnchor),
-            content.centerYAnchor.constraint(equalTo: centerYAnchor),
-            content.topAnchor.constraint(equalTo: topAnchor, constant: 16),
-            content.widthAnchor.constraint(equalToConstant: sheet.preferredContentSize.width),
-            content.heightAnchor.constraint(equalToConstant: sheet.preferredContentSize.height),
+            content.topAnchor.constraint(equalTo: topAnchor),
+            content.bottomAnchor.constraint(equalTo: bottomAnchor),
+            content.leadingAnchor.constraint(equalTo: leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: trailingAnchor),
         ])
     }
 

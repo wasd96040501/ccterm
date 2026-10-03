@@ -27,9 +27,9 @@ final class ComposerActionButton: NSButton {
         // preview-live.css `.act-btn svg`: the arrow 14 pt, the stop square 10.
         switch kind {
         case .send:
-            image = ComposerGlyph.asset(.composerSend, NSSize(width: 14, height: 14))
+            image = ComposerGlyph.send
         case .stop:
-            image = ComposerGlyph.asset(.composerStop, NSSize(width: 10, height: 10))
+            image = ComposerGlyph.stop
         }
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([

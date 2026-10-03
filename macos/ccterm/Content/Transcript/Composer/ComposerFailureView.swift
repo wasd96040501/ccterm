@@ -61,7 +61,7 @@ final class ComposerFailureView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     private func configureHierarchy() {
-        icon.image = ComposerGlyph.asset(.composerFailure, NSSize(width: 16, height: 16))
+        icon.image = ComposerGlyph.failure
         icon.imageScaling = .scaleNone
         titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         titleLabel.textColor = .labelColor

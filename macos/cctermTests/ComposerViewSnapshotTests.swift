@@ -210,6 +210,65 @@ final class ComposerViewSnapshotTests: XCTestCase {
         }
     }
 
+    /// *A 4-pt grid; words never cut*: a provider's model at rest at 492 pt,
+    /// where the provider's name and the controls' words are gone, and at
+    /// 330, where the status takes its own line under the controls.
+    func testTheNarrowComposersAgainstTheDesign() async throws {
+        let specimen = Specimen(
+            name: "Narrow",
+            model: F.model(
+                F.session(.atRest), settings: F.settings("default", on: F.relay, effort: .high, mode: .acceptEdits)))
+        for scheme in DesignParity.Scheme.allCases {
+            try await pair("part-35-comp0", specimen, scheme)
+            try await pair("part-35-comp1", specimen, scheme)
+        }
+    }
+
+    /// The command list as the sheet's *Commands* specimen shows it, 420 pt
+    /// wide, the first row under the keyboard.
+    func testTheSlashListAgainstTheDesign() async throws {
+        for scheme in DesignParity.Scheme.allCases {
+            let id = "part-31-slash0"
+            let part = try DesignParity.part(id, scheme)
+            let list = SlashListViewController()
+            list.configure(commands: F.commands, width: part.width)
+            let host = PageHost(page: scheme.page, content: list)
+            let image = try await CompositedCapture.render(
+                host, size: CGSize(width: part.width, height: max(part.height, list.preferredSize.height)),
+                appearance: scheme.appearance)
+            attach(try DesignParity.write(id, scheme, ours: image))
+        }
+    }
+
+    /// `content` at its own size, top-left, on the sheet's page.
+    private final class PageHost: NSViewController {
+        let page: NSColor
+        let content: NSViewController
+
+        init(page: NSColor, content: NSViewController) {
+            self.page = page
+            self.content = content
+            super.init(nibName: nil, bundle: nil)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError() }
+
+        override func loadView() {
+            let view = NSView()
+            view.wantsLayer = true
+            view.layer?.backgroundColor = page.cgColor
+            self.view = view
+            addChild(content)
+            content.view.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(content.view)
+            NSLayoutConstraint.activate([
+                content.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                content.view.topAnchor.constraint(equalTo: view.topAnchor),
+            ])
+        }
+    }
+
     /// Writes design | ours | difference for `specimen` at part `id`'s width.
     private func pair(_ id: String, _ specimen: Specimen, _ scheme: DesignParity.Scheme) async throws {
         let part = try DesignParity.part(id, scheme)

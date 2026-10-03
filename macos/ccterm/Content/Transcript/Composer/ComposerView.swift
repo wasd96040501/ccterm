@@ -45,7 +45,11 @@ final class ComposerView: NSView {
     private let stopButton = ComposerActionButton(kind: .stop)
     private let sendButton = ComposerActionButton(kind: .send)
     private let controlsRow = NSStackView()
-    private let statusRow = NSStackView()
+    /// The status's own line, narrow: the sheet's 11 × 1.45 line straight
+    /// under the controls (its narrow `margin: 4px 8px 0` loses to the base
+    /// `.lv-status { margin: 0 8px }` that follows it in the stylesheet).
+    private let statusLine = NSView()
+    private static let statusLineHeight: CGFloat = 11 * 1.45
     private let contentStack = NSStackView()
     private let body = NSView()
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
@@ -84,9 +88,7 @@ final class ComposerView: NSView {
         controlsRow.setCustomSpacing(12, after: ringView)
         controlsRow.setCustomSpacing(4, after: stopButton)
 
-        statusRow.orientation = .horizontal
-        statusRow.alignment = .centerY
-        statusRow.isHidden = true
+        statusLine.isHidden = true
 
         errorLabel.font = .systemFont(ofSize: 12)
         errorLabel.textColor = .failureText
@@ -100,7 +102,7 @@ final class ComposerView: NSView {
         contentStack.setViews([failureView, body], in: .leading)
         failureView.isHidden = true
 
-        for view in [field, controlsRow, statusRow] {
+        for view in [field, controlsRow, statusLine] {
             view.translatesAutoresizingMaskIntoConstraints = false
             body.addSubview(view)
         }
@@ -143,16 +145,17 @@ final class ComposerView: NSView {
             controlsRow.leadingAnchor.constraint(equalTo: body.leadingAnchor, constant: 8),
             controlsRow.trailingAnchor.constraint(equalTo: body.trailingAnchor, constant: -8),
             controlsRow.heightAnchor.constraint(greaterThanOrEqualToConstant: 28),
-            statusRow.topAnchor.constraint(equalTo: controlsRow.bottomAnchor, constant: 4),
-            statusRow.leadingAnchor.constraint(equalTo: body.leadingAnchor, constant: 8),
-            statusRow.trailingAnchor.constraint(lessThanOrEqualTo: body.trailingAnchor, constant: -8),
+            statusLine.topAnchor.constraint(equalTo: controlsRow.bottomAnchor),
+            statusLine.leadingAnchor.constraint(equalTo: body.leadingAnchor, constant: 8),
+            statusLine.trailingAnchor.constraint(equalTo: body.trailingAnchor, constant: -8),
+            statusLine.heightAnchor.constraint(equalToConstant: Self.statusLineHeight),
         ])
         bodyBottomPlain.isActive = true
     }
 
     /// The card's bottom padding, under the chips or under the status line.
     private lazy var bodyBottomPlain = controlsRow.bottomAnchor.constraint(equalTo: body.bottomAnchor, constant: -8)
-    private lazy var bodyBottomWithStatus = statusRow.bottomAnchor.constraint(equalTo: body.bottomAnchor, constant: -8)
+    private lazy var bodyBottomWithStatus = statusLine.bottomAnchor.constraint(equalTo: body.bottomAnchor, constant: -8)
 
     private func configureActions() {
         for (control, chip) in [(Control.model, modelChip), (.effort, effortChip), (.mode, modeChip)] {
@@ -230,12 +233,23 @@ final class ComposerView: NSView {
     private func updateStatusPlacement() {
         let wantsOwnLine = isNarrow && !statusView.isEmpty
         if wantsOwnLine {
-            if statusView.superview !== statusRow { statusRow.setViews([statusView], in: .leading) }
+            if statusView.superview !== statusLine {
+                controlsRow.removeArrangedSubview(statusView)
+                statusView.removeFromSuperview()
+                statusLine.addSubview(statusView)
+                NSLayoutConstraint.activate([
+                    statusView.leadingAnchor.constraint(equalTo: statusLine.leadingAnchor),
+                    statusView.trailingAnchor.constraint(lessThanOrEqualTo: statusLine.trailingAnchor),
+                    statusView.centerYAnchor.constraint(equalTo: statusLine.centerYAnchor),
+                ])
+            }
         } else if statusView.superview !== controlsRow {
+            statusView.removeFromSuperview()
             controlsRow.insertArrangedSubview(
                 statusView, at: controlsRow.arrangedSubviews.firstIndex(of: ringView) ?? 0)
+            controlsRow.setCustomSpacing(4, after: statusView)
         }
-        statusRow.isHidden = !wantsOwnLine
+        statusLine.isHidden = !wantsOwnLine
         bodyBottomPlain.isActive = !wantsOwnLine
         bodyBottomWithStatus.isActive = wantsOwnLine
     }
@@ -288,13 +302,29 @@ final class ComposerView: NSView {
         // (The room the card is given, not the width its contents ask for.)
         let width = min(bounds.width, Self.maxWidth)
         let nextTier: ComposerChipButton.Tier = width > 600 ? .full : width > 500 ? .withoutDetail : .glyphsOnly
-        let nextNarrow = width > 0 && width < Self.narrowWidth
-        guard nextTier != tier || nextNarrow != isNarrow else { return }
-        tier = nextTier
-        isNarrow = nextNarrow
-        for chip in [modelChip, effortChip, modeChip] { chip.tier = nextTier }
-        updateStatusPlacement()
+        let tierChanged = nextTier != tier
+        if tierChanged {
+            tier = nextTier
+            for chip in [modelChip, effortChip, modeChip] { chip.tier = nextTier }
+        }
+        // The status takes its own line below 380, and wherever its words
+        // wouldn't fit beside the controls — never cut, never widening the card.
+        let nextNarrow = width > 0 && (width < Self.narrowWidth || !statusFitsInline(at: width))
+        let narrowChanged = nextNarrow != isNarrow
+        if narrowChanged {
+            isNarrow = nextNarrow
+            updateStatusPlacement()
+        }
+        guard tierChanged || narrowChanged else { return }
         super.layout()
+    }
+
+    /// Whether the controls' line holds the status at `width`.
+    private func statusFitsInline(at width: CGFloat) -> Bool {
+        guard !statusView.isEmpty else { return true }
+        var needed = controlsRow.fittingSize.width + 16
+        if statusView.superview !== controlsRow { needed += statusView.fittingSize.width + 4 }
+        return needed <= width
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -497,6 +527,10 @@ private final class ComposerStatusView: NSView {
         super.init(frame: frameRect)
         label.font = .systemFont(ofSize: 11)
         label.lineBreakMode = .byClipping
+        // Its words never set the card's width — the card moves them to their
+        // own line instead (`ComposerView.layout`); a resistance above the
+        // window's would widen the window.
+        label.setContentCompressionResistancePriority(.dragThatCannotResizeWindow, for: .horizontal)
         tileHost.translatesAutoresizingMaskIntoConstraints = false
         // The design draws the tile at three quarters (12 pt) with a −3 margin,
         // so it takes 10 pt of the line and overhangs it by 1 on each side.

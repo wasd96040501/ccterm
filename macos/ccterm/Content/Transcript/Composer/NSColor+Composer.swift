@@ -9,6 +9,12 @@ extension NSColor {
     /// The disabled action button and the context ring's track (`--tile`).
     static let composerTile = NSColor(lightAlpha: 0.07, darkAlpha: 0.1)
 
+    /// The row the keyboard is on (`--sel`): the accent at 13 % in light, 24 % in dark.
+    static let composerSelection = NSColor(name: nil) { appearance in
+        let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return NSColor.controlAccentColor.withAlphaComponent(isDark ? 0.24 : 0.13)
+    }
+
     /// Black at `lightAlpha` in light, white at `darkAlpha` in dark.
     private convenience init(lightAlpha: CGFloat, darkAlpha: CGFloat) {
         self.init(name: nil) { appearance in

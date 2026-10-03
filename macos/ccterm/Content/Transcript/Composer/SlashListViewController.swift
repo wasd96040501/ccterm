@@ -15,8 +15,9 @@ final class SlashListViewController: NSViewController {
     static let inset: CGFloat = 5
     static let rowPadding: CGFloat = 10
     static let minRowHeight: CGFloat = 28
-    /// How tall the list grows before it scrolls.
-    static let maxHeight: CGFloat = 5 * 2 + 8 * minRowHeight
+    /// How many rows the list shows before it scrolls — at their own heights,
+    /// so a wrapped description is never what pushes the last of them out.
+    static let visibleRows = 8
 
     private(set) var commands: [SlashCommand] = []
     private var width: CGFloat = 640
@@ -76,7 +77,7 @@ final class SlashListViewController: NSViewController {
         self.width = width
         widthConstraint.constant = width
         table.reloadData()
-        heightConstraint.constant = min(listHeight + 2 * Self.inset, Self.maxHeight)
+        heightConstraint.constant = shownHeight
         let row = selected.flatMap { name in commands.firstIndex { $0.name == name.name } } ?? 0
         if !commands.isEmpty { select(row: row) }
     }
@@ -84,11 +85,12 @@ final class SlashListViewController: NSViewController {
     /// The size the list wants.
     var preferredSize: NSSize {
         loadViewIfNeeded()
-        return NSSize(width: width, height: min(listHeight + 2 * Self.inset, Self.maxHeight))
+        return NSSize(width: width, height: shownHeight)
     }
 
-    private var listHeight: CGFloat {
-        commands.indices.map { rowHeight(of: $0) }.reduce(0, +)
+    /// The first `visibleRows` rows and the inset around them.
+    private var shownHeight: CGFloat {
+        commands.indices.prefix(Self.visibleRows).map { rowHeight(of: $0) }.reduce(0, +) + 2 * Self.inset
     }
 
     // MARK: - Selection
@@ -188,6 +190,20 @@ private final class SlashRowView: NSTableCellView {
     private static let hintFont = NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular)
     private static let descriptionFont = NSFont.systemFont(ofSize: 12)
     private static let gap: CGFloat = 8
+    /// The sheet's line: 12 pt on the page's 1.45.
+    static let lineHeight: CGFloat = 17.4
+
+    /// Half the line's height beyond the font's own.
+    private static var halfLeading: CGFloat {
+        (lineHeight - (descriptionFont.ascender - descriptionFont.descender + descriptionFont.leading)) / 2
+    }
+
+    private static var descriptionAttributes: [NSAttributedString.Key: Any] {
+        let line = NSMutableParagraphStyle()
+        line.minimumLineHeight = lineHeight
+        line.maximumLineHeight = lineHeight
+        return [.font: descriptionFont, .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: line]
+    }
 
     private let nameLabel = NSTextField(labelWithString: "")
     private let hintLabel = NSTextField(labelWithString: "")
@@ -221,7 +237,9 @@ private final class SlashRowView: NSTableCellView {
             descriptionLabel.leadingAnchor.constraint(equalTo: hintLabel.trailingAnchor, constant: Self.gap),
             descriptionLabel.trailingAnchor.constraint(
                 equalTo: trailingAnchor, constant: -SlashListViewController.rowPadding),
-            descriptionLabel.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            // `.sl { padding: 6px 10px }` — less the half of the line's extra
+            // height CSS puts above the words, which TextKit puts there whole.
+            descriptionLabel.topAnchor.constraint(equalTo: topAnchor, constant: 6 - Self.halfLeading),
         ])
     }
 
@@ -238,7 +256,8 @@ private final class SlashRowView: NSTableCellView {
         nameLabel.attributedStringValue = name
         hintLabel.stringValue = command.argumentHint
         hintLabel.isHidden = command.argumentHint.isEmpty
-        descriptionLabel.stringValue = command.description
+        descriptionLabel.attributedStringValue = NSAttributedString(
+            string: command.description, attributes: Self.descriptionAttributes)
         descriptionLabel.preferredMaxLayoutWidth = Self.descriptionWidth(of: command, rowWidth: rowWidth)
         needsDisplay = true
         setAccessibilityLabel("/\(command.name) \(command.argumentHint) \(command.description)")
@@ -249,8 +268,7 @@ private final class SlashRowView: NSTableCellView {
 
     override func updateLayer() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor =
-                (isSelected ? NSColor.controlAccentColor.withAlphaComponent(0.16) : .clear).cgColor
+            layer?.backgroundColor = (isSelected ? NSColor.composerSelection : .clear).cgColor
         }
     }
 
@@ -269,7 +287,7 @@ private final class SlashRowView: NSTableCellView {
         let width = descriptionWidth(of: command, rowWidth: rowWidth)
         let rect = (command.description as NSString).boundingRect(
             with: NSSize(width: width, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: descriptionFont])
+            options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: descriptionAttributes)
         return ceil(rect.height)
     }
 }

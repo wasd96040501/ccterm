@@ -294,6 +294,54 @@ final class ComposerViewControllerTests: XCTestCase {
         XCTAssertGreaterThan(panel.preferredHeight, 200)
     }
 
+    // MARK: - Narrow
+
+    /// The status's words never set the card's width: in a window sized to
+    /// 330 pt the card stays 330 wide and its status moves under the controls.
+    func testANarrowCardIsTheWidthItIsGivenWithTheStatusUnderTheControls() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: -30_000, y: -30_000, width: 330, height: 200), styleMask: [.borderless],
+            backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        // Shown, then pinned edge to edge in a view, as a tab holds its composer.
+        let narrow = ComposerViewController()
+        narrow.configure(
+            with: F.model(
+                F.session(.atRest), settings: F.settings("default", on: F.relay, effort: .high, mode: .acceptEdits)))
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 330, height: 200))
+        window.contentView = root
+        narrow.view.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(narrow.view)
+        NSLayoutConstraint.activate([
+            narrow.view.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            narrow.view.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            narrow.view.topAnchor.constraint(equalTo: root.topAnchor),
+        ])
+        window.setContentSize(NSSize(width: 330, height: 200))
+        // Ordered in (off screen) and displayed: the window's own pass, where
+        // content above `.windowSizeStayPut` would grow it.
+        window.orderFrontRegardless()
+        window.displayIfNeeded()
+
+        XCTAssertEqual(window.frame.width, 330, "the composer widened its window")
+        XCTAssertEqual(narrow.view.frame.width, 330)
+        func find<V: NSView>(_ type: V.Type, in view: NSView, where match: (V) -> Bool) -> V? {
+            if let found = view as? V, match(found) { return found }
+            for subview in view.subviews { if let found = find(type, in: subview, where: match) { return found } }
+            return nil
+        }
+        let status = try XCTUnwrap(
+            find(NSTextField.self, in: narrow.view) { $0.stringValue == String(localized: "Will resume when you send") }
+        )
+        let send = try XCTUnwrap(
+            find(NSButton.self, in: narrow.view) { $0.accessibilityLabel() == String(localized: "Send") })
+        let statusFrame = status.convert(status.bounds, to: nil)
+        let sendFrame = send.convert(send.bounds, to: nil)
+        XCTAssertLessThan(statusFrame.maxY, sendFrame.minY + 0.5, "the status is not under the controls")
+        XCTAssertLessThanOrEqual(statusFrame.maxX, 330, "the status runs out of the card")
+    }
+
     // MARK: - Dimming the words
 
     /// A sent prompt waiting for its session: the words and the token go to half

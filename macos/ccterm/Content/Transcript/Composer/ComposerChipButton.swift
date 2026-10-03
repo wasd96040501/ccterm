@@ -70,7 +70,10 @@ final class ComposerChipButton: NSButton {
         for label in [titleLabel, detailLabel] {
             label.font = .systemFont(ofSize: 12)
             label.lineBreakMode = .byClipping
-            label.setContentCompressionResistancePriority(.required, for: .horizontal)
+            // The words keep their width over everything but the window's: the
+            // composer drops them by tier when it narrows (`ComposerView.layout`),
+            // so they are never cut — and never what widens the window.
+            label.setContentCompressionResistancePriority(.dragThatCannotResizeWindow, for: .horizontal)
         }
         trailingGlyph.imageScaling = .scaleNone
         chevron.image = ComposerGlyph.chevron

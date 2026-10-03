@@ -1,11 +1,11 @@
-# CCTermUI
+# Components
 
 Every view the app draws with: generic controls and the app's own components. A sibling of `TranscriptKit`, and like it a package so the compiler holds the boundary: **it depends on nothing** — not the app, not AgentSDK, not TranscriptKit — so a component can't reach a store, a session or a sibling. The app depends on it; it never depends back.
 
 ```
-Sources/CCTermUI/      the library: one directory per family (Form/ …)
-Sources/CCTermDesign/  the style page — every component tiled, live (`make design`)
-Tests/CCTermUITests/   component tests; *SnapshotTests render off screen, only when named
+Sources/Components/      the library: one directory per family (Form/ …)
+Sources/ComponentsDesign/  the style page — every component tiled, live (`make design`)
+Tests/ComponentsTests/   component tests; *SnapshotTests render off screen, only when named
 ```
 
 ## A component
@@ -18,7 +18,7 @@ Tests/CCTermUITests/   component tests; *SnapshotTests render off screen, only w
 
 ## The style page
 
-`CCTermDesign` lays every component out as the design sheet does (`design/transcript/index.html`): one column, 1160 wide at most, centred; a section per family — heading, note, then each specimen as a heading over a card the column's width. It is all Auto Layout and follows the window's width; nothing on it has a width of its own. Each family adds a `<Family>Specimen` that builds real components from fixture models, interactive.
+`ComponentsDesign` lays every component out as the design sheet does (`design/transcript/index.html`): one column, 1160 wide at most, centred; a section per family — heading, note, then each specimen as a heading over a card the column's width. It is all Auto Layout and follows the window's width; nothing on it has a width of its own. Each family adds a `<Family>Specimen` that builds real components from fixture models, interactive.
 
 - **A new component lands with its specimen.** Moving a component here without one leaves the page behind the app.
 - **Look at it off screen**, never by opening a window on the reader's display: `make test-ui FILTER=DesignPageSnapshotTests` renders the page wide and narrow, light and dark, to `/tmp/ccterm-screenshots/Design-<width>-<scheme>.png`. `make design` opens it for hands — scrolling, typing, resizing.

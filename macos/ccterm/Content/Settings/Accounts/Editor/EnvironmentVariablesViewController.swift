@@ -1,5 +1,5 @@
 import AppKit
-import CCTermUI
+import Components
 
 /// An account's environment variables as a list inside its form group: a
 /// header, a checkbox, the name and the value per row, and + and −

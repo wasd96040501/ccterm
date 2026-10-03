@@ -1,6 +1,6 @@
 import AppKit
-import CCTermUI
 import Combine
+import Components
 
 /// An account's sheet, 540 × 600 for either kind: a header, a scrolling form
 /// — the subscription's account or the provider's connection, the

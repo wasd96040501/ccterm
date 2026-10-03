@@ -1,7 +1,7 @@
 import AppKit
 import XCTest
 
-@testable import CCTermUI
+@testable import Components
 
 /// The Settings form's components, driven as their controls are and read off
 /// what they show.

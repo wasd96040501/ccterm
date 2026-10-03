@@ -1,5 +1,5 @@
 import AppKit
-import CCTermUI
+import Components
 
 /// One row of the variable list: a checkbox, the name and the value in the
 /// monospaced face, and a warning glyph when the row may not do what it

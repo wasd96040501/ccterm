@@ -1,5 +1,5 @@
 import AppKit
-import CCTermUI
+import Components
 
 /// The grouped form of Settings: sections of rows with their controls, a row
 /// whose description is an error, and the toast a sheet shows.

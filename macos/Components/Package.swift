@@ -14,7 +14,7 @@ let appSettings: [SwiftSetting] = [
 ]
 
 let package = Package(
-    name: "CCTermUI",
+    name: "Components",
     // A component puts words on screen of its own (an accessibility label, a
     // fixed control title), so the package carries its own catalogue, as
     // TranscriptKit does and for its reason: `.lproj/Localizable.strings`,
@@ -26,17 +26,17 @@ let package = Package(
         // components, each built from its init, a display model and a delegate.
         // It depends on nothing — not the app, not AgentSDK — so a component
         // can't reach a store, a session or a sibling, and the compiler says so.
-        .library(name: "CCTermUI", targets: ["CCTermUI"])
+        .library(name: "Components", targets: ["Components"])
     ],
     targets: [
         .target(
-            name: "CCTermUI", resources: [.process("Resources")], swiftSettings: appSettings),
+            name: "Components", resources: [.process("Resources")], swiftSettings: appSettings),
         // The style page: every component tiled on one page, live, with fixture
         // models — `make design`. What the design sheet shows, built from the
         // same components the app uses.
         .executableTarget(
-            name: "CCTermDesign", dependencies: ["CCTermUI"], exclude: ["CLAUDE.md"],
+            name: "ComponentsDesign", dependencies: ["Components"], exclude: ["CLAUDE.md"],
             swiftSettings: appSettings),
-        .testTarget(name: "CCTermUITests", dependencies: ["CCTermUI", "CCTermDesign"], swiftSettings: appSettings),
+        .testTarget(name: "ComponentsTests", dependencies: ["Components", "ComponentsDesign"], swiftSettings: appSettings),
     ]
 )

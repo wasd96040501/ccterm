@@ -136,7 +136,7 @@ jobs:
       - name: Run package tests
         run: make test-list
 
-  # CCTermUI: the app's components, testable without the app. Same shape.
+  # Components: the app's components, testable without the app. Same shape.
   test-ui:
     runs-on: macos-26
     timeout-minutes: 10
@@ -151,10 +151,10 @@ jobs:
       - name: Cache SwiftPM build
         uses: actions/cache@v4
         with:
-          path: macos/CCTermUI/.build
-          key: ui-${{ runner.os }}-${{ runner.arch }}-pkg${{ hashFiles('macos/CCTermUI/Package.swift') }}-src${{ hashFiles('macos/CCTermUI/Sources/**/*.swift', 'macos/CCTermUI/Tests/**/*.swift') }}
+          path: macos/Components/.build
+          key: ui-${{ runner.os }}-${{ runner.arch }}-pkg${{ hashFiles('macos/Components/Package.swift') }}-src${{ hashFiles('macos/Components/Sources/**/*.swift', 'macos/Components/Tests/**/*.swift') }}
           restore-keys: |
-            ui-${{ runner.os }}-${{ runner.arch }}-pkg${{ hashFiles('macos/CCTermUI/Package.swift') }}-
+            ui-${{ runner.os }}-${{ runner.arch }}-pkg${{ hashFiles('macos/Components/Package.swift') }}-
 
       - name: Run package tests
         run: make test-ui

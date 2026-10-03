@@ -80,7 +80,7 @@ final class DesignPageViewController: NSViewController {
         let title = Self.label("CCTerm components", size: 28, weight: .bold)
         let lede = WrappingLabel(
             wrappingLabelWithString:
-                "Every view the app draws with, from CCTermUI — live, at the window's width. Each section builds a "
+                "Every view the app draws with, from Components — live, at the window's width. Each section builds a "
                 + "part of the design sheet with the component the app uses.")
         lede.font = .systemFont(ofSize: 13)
         lede.textColor = .secondaryLabelColor

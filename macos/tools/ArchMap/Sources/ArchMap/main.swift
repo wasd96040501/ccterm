@@ -187,9 +187,9 @@ if detail == "members" {
 }
 // The app's component boundaries, whatever the scope: a scope picks what the
 // map describes, while a coupling is a fact about the app's tree.
-let coupling = Coupling(index: index, modules: ["ccterm", "CCTermUI"])
+let coupling = Coupling(index: index, modules: ["ccterm", "Components"])
 let couplingCount = coupling.findings().count
-try coupling.render(header: "# Component boundaries — ccterm and CCTermUI").write(
+try coupling.render(header: "# Component boundaries — ccterm and Components").write(
     to: outDir.appendingPathComponent("coupling.md"), atomically: true, encoding: .utf8)
 indexText += "\n## Component boundaries\n\n- [coupling.md](coupling.md) — \(couplingCount) findings "
 indexText += "against `macos/CLAUDE.md` § Component boundaries, each with its fix\n"

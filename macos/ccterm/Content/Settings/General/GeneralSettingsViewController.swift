@@ -1,7 +1,7 @@
 import AgentSDK
 import AppKit
-import CCTermUI
 import Combine
+import Components
 
 /// General: where Claude Code comes from — the command that starts it and the
 /// folder it keeps its settings, sign-in and sessions in — and whether its

@@ -1,6 +1,6 @@
 import AppKit
 
-/// The style page: every component of `CCTermUI` tiled on one page, live, with
+/// The style page: every component of `Components` tiled on one page, live, with
 /// fixture models — the design sheet's parts, built from the components the
 /// app uses. Run with `make design`.
 @main

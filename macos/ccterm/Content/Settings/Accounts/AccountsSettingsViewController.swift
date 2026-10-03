@@ -1,6 +1,6 @@
 import AppKit
-import CCTermUI
 import Combine
+import Components
 
 /// Accounts: the Subscription section above the API Providers section. The
 /// sections show their own data and report what the person asks for; this

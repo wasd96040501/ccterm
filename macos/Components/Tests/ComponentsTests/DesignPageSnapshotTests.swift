@@ -1,7 +1,7 @@
 import AppKit
 import XCTest
 
-@testable import CCTermDesign
+@testable import ComponentsDesign
 
 /// The style page rendered off screen, whole, for review: a wide window and a
 /// narrow one, light and dark, to `/tmp/ccterm-screenshots/Design-<width>-<scheme>.png`.

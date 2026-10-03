@@ -1,6 +1,6 @@
 import AppKit
-import CCTermUI
 import Combine
+import Components
 
 /// Accounts' API Providers section: a row per provider — or an empty state —
 /// and Add Provider… (with Import from Clipboard in its menu) under the group. Shows the list and reports what the

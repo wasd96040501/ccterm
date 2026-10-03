@@ -3,7 +3,7 @@
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
 SWIFT_FORMAT := swift-format
-SWIFT_SRC := macos/ccterm macos/cctermTests macos/CCTermUI/Sources macos/CCTermUI/Tests macos/AgentSDK/Sources macos/AgentSDK/Tests macos/TranscriptKit/Sources macos/TranscriptKit/Tests macos/ExactList/Sources macos/ExactList/Tests macos/tools
+SWIFT_SRC := macos/ccterm macos/cctermTests macos/Components/Sources macos/Components/Tests macos/AgentSDK/Sources macos/AgentSDK/Tests macos/TranscriptKit/Sources macos/TranscriptKit/Tests macos/ExactList/Sources macos/ExactList/Tests macos/tools
 PREFIX ?= /Applications
 
 help: ## Show available commands
@@ -33,21 +33,21 @@ test-kit: ## Run TranscriptKit's package tests (FILTER=SomeTests; snapshots only
 		if [ -n "$(FILTER)" ]; then swift test --filter "$(FILTER)"; \
 		else swift test --skip SnapshotTests; fi
 
-# CCTermUI's own tests: every view the app draws with, built from its init, a
+# Components' own tests: every view the app draws with, built from its init, a
 # display model and a delegate — no app, no store. Same split as test-kit.
-test-ui: ## Run CCTermUI's package tests (FILTER=SomeTests; snapshots only when named)
-	@cd macos/CCTermUI && \
+test-ui: ## Run Components' package tests (FILTER=SomeTests; snapshots only when named)
+	@cd macos/Components && \
 		if [ -n "$(FILTER)" ]; then swift test --filter "$(FILTER)"; \
 		else swift test --skip SnapshotTests; fi
 
-# The style page: every CCTermUI component tiled on one page, live, with
+# The style page: every Components component tiled on one page, live, with
 # fixture models. Foreground; close the window to stop. The -isysroot is
 # demo-kit's, for the same reason (see there).
-design: ## Run the style page (CCTermUI's components, tiled)
-	@cd macos/CCTermUI && swift run \
+design: ## Run the style page (Components' components, tiled)
+	@cd macos/Components && swift run \
 		-Xswiftc -Xclang-linker -Xswiftc -isysroot \
 		-Xswiftc -Xclang-linker -Xswiftc "$$(xcrun --sdk macosx --show-sdk-path)" \
-		CCTermDesign
+		ComponentsDesign
 
 # AgentSDK's own tests: protocol decoding, transcript reconstruction, and
 # `Session` driven over stdio by a scripted fake CLI — no real `claude` needed.

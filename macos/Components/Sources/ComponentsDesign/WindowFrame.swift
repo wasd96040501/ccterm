@@ -19,8 +19,9 @@ final class WindowFrame: NSView {
         /// detail, a 52-high toolbar row.
         case settings(detailLeading: CGFloat)
         /// design/transcript's `.window`: 14-pt corners, a 44-high title bar
-        /// of its own colour with a hairline under it.
-        case titled(title: String, subtitle: String)
+        /// of its own colour with a hairline under it, the project's title in
+        /// it (`MainWindowTitleView`): its name over its branch, if any.
+        case titled(title: String?, subtitle: String?)
     }
 
     /// The title bar's height in `.titled`.
@@ -72,8 +73,11 @@ final class WindowFrame: NSView {
                     ]))
         case .titled:
             barHeight = Self.titleBarHeight
+            // Behind the content is the real window's colour, the system's,
+            // which the dock under a session's composer fades to; the design
+            // draws its window #fff and #1e1e1e.
             elevated = ElevatedView(
-                radius: 14, fill: .design(light: .design(hex: 0xffffff), dark: .design(hex: 0x1e1e1e)),
+                radius: 14, fill: .windowBackgroundColor,
                 shadow: .init(
                     ring: (.design(white: 0, alpha: 0.12), .design(white: 1, alpha: 0.14)),
                     innerRing: nil,
@@ -172,22 +176,23 @@ final class WindowFrame: NSView {
 // MARK: - Title bar
 
 /// `.titlebar` (design/transcript): the chrome colour, a hairline under it;
-/// the lights 14 in, then 12 on, the title (13 semibold) over the subtitle
-/// (11, secondary).
+/// the lights 14 in, then 12 on, the title over the subtitle — the app's own
+/// `MainWindowTitleView`, as its toolbar shows it (the folder's icon, the
+/// name over the branch).
 private final class TitleBar: NSView {
-    init(title: String, subtitle: String) {
+    init(title: String?, subtitle: String?) {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true
-        let name = NSTextField(labelWithString: title)
-        name.font = .systemFont(ofSize: 13, weight: .semibold)
-        let detail = NSTextField(labelWithString: subtitle)
-        detail.font = .systemFont(ofSize: 11)
-        detail.textColor = .secondaryLabelColor
-        let words = NSStackView(views: [name, detail])
-        words.orientation = .vertical
-        words.alignment = .leading
-        words.spacing = 0
+        let words = MainWindowTitleView()
+        // The branch first: set while the view is hidden it lands without its
+        // fade, as a window opening on a project shows it.
+        words.subtitle = subtitle
+        words.title = title
+        // Its fitting width, as a toolbar item takes it: no wider than its words.
+        let snug = words.widthAnchor.constraint(equalToConstant: 0)
+        snug.priority = .fittingSizeCompression
+        snug.isActive = true
         let hairline = NSView()
         hairline.wantsLayer = true
         hairline.identifier = NSUserInterfaceItemIdentifier("hairline")
@@ -204,6 +209,7 @@ private final class TitleBar: NSView {
             lights.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             lights.centerYAnchor.constraint(equalTo: centerYAnchor),
             words.leadingAnchor.constraint(equalTo: lights.trailingAnchor, constant: 12),
+            words.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -14),
             words.centerYAnchor.constraint(equalTo: centerYAnchor),
             hairline.leadingAnchor.constraint(equalTo: leadingAnchor),
             hairline.trailingAnchor.constraint(equalTo: trailingAnchor),

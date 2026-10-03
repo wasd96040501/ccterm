@@ -123,6 +123,15 @@ The controller tree is a responsibility tree: `NSWindowController` at the root o
 - **SOP — when a VC must be split into a container + children.** Split when **any** of: (a) it implements more than one dataSource/delegate pair (two tables, etc.); (b) it holds several unrelated selection/scroll states; (c) `viewDidLoad` binds multiple subscriptions from different data domains; (d) a sub-region has its own appear/disappear lifecycle. The criterion is "how many independently-existing regions are inside", not line count.
 - **Deterministic teardown of per-attach resources.** `removeFromParent()` severs the parent-child relationship, not the last strong reference — a removed child may be held briefly (swap animation, cache) and keep running timers/subscriptions against an off-screen view. So give detachable children an explicit hook (`prepareForRemoval()`), called by the container **before** removal, that releases per-attach resources (Combine subscriptions, in-flight `Task`s, timers, `dataSource`/`delegate` = nil, scroll view). Don't rely on `deinit` for this — its timing is unpredictable.
 
+### Component boundaries
+
+A component (an `NSView`, `NSViewController`, `NSWindowController` or `NSControl` subclass) depends on nothing beside it. Start from "these two must not know each other" and keep a dependency only when it can't be removed. Each component must be buildable alone from its init, its model and a stub delegate. `make arch` checks the rules below and writes what breaks them to `build/arch/coupling.md`, with the rule and its fix.
+
+- **B1 — No geometry crosses a boundary.** A component exposes no size, inset, frame or guide for another to read, and takes none that describes something else ("the space the composer covers"). Overlap is the container's business. It sets the child's safe area (`additionalSafeAreaInsets`), and the child honours its own safe area like any scroll view. A child that must publish a region gives a layout guide named for its own role, never for what fills it.
+- **B2 — Siblings never meet, not even through the container.** A container never feeds one child from another (`a.x = b.y`, `a.set(b.z)`). A child reports the event up; the container updates the one source of truth; both children are configured from it. If the data is really one child's own concern (the hints for its own keys), it belongs inside that child.
+- **B3 — No reaching through a child.** Nothing touches a grandchild (`split.editorArea.…`, `composer.card.chip(…)`). Ask the child with a command of its own, or send the action to `nil` and let the responder chain find it.
+- **B4 — A component names only what it builds or holds.** It never names its parent's type or a sibling's. A value two siblings share (a row height, a colour) moves down into a shared type (`Drawing/`, the model); an event goes up through its delegate.
+
 ### Dependency injection & composition root
 
 "Who needs what" is written on the type signature; "which concrete thing" is decided only at the composition root; nobody in between reaches for a global.

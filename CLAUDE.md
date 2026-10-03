@@ -70,7 +70,7 @@ make record-list [FILTER=<name>]     # ExactList demo scenarios captured off scr
 make logs [CONFIG=release] [CATEGORY=X] [LEVEL=debug]   # tail unified log of THIS worktree's build
 make appkit-doc SYMBOL=NSTableView   # Apple's DocC for an AppKit symbol
 make icon / make sidebar-icons / make new-view-icons   # regenerate the app icon / the app's glyph assets from design/ (see "Icons" in macos/CLAUDE.md)
-make arch [SCOPE=core|app|kit|sdk|<dir>|<unit>] [DETAIL=members]   # architecture map → build/arch/ (what /arch-review reads); DETAIL=members adds each type's calls and state writers
+make arch [SCOPE=core|app|kit|sdk|<dir>|<unit>] [DETAIL=members]   # architecture map → build/arch/ (what /arch-review reads); DETAIL=members adds each type's calls and state writers; build/arch/coupling.md lists every break of the component boundaries (macos/CLAUDE.md), each with its fix
 ```
 
 `make build` prints success/failure plus two log paths. On failure read the summary log first; open the full log only if the summary isn't enough — don't `tail`/`cat` it blindly.

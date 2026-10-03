@@ -185,9 +185,18 @@ if detail == "members" {
         indexText += "- [\(unit)](\(name))\n"
     }
 }
+// The app's component boundaries, whatever the scope: a scope picks what the
+// map describes, while a coupling is a fact about the app's tree.
+let coupling = Coupling(index: index, module: "ccterm")
+let couplingCount = coupling.findings().count
+try coupling.render(header: "# Component boundaries — ccterm").write(
+    to: outDir.appendingPathComponent("coupling.md"), atomically: true, encoding: .utf8)
+indexText += "\n## Component boundaries\n\n- [coupling.md](coupling.md) — \(couplingCount) findings "
+indexText += "against `macos/CLAUDE.md` § Component boundaries, each with its fix\n"
 try indexText.write(to: outDir.appendingPathComponent("index.md"), atomically: true, encoding: .utf8)
 for unit in units {
     try renderer.renderUnit(unit).write(
         to: outDir.appendingPathComponent(Renderer.fileName(ofUnit: unit)), atomically: true, encoding: .utf8)
 }
 print("arch map (\(scopeArg)): \(units.count) units → \(outDir.path)/index.md")
+print("component boundaries: \(couplingCount) findings → \(outDir.path)/coupling.md")

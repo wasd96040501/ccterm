@@ -57,6 +57,8 @@ struct Member {
     /// Declared in an `extension X: SomeProtocol` — there to satisfy that
     /// conformance, not chosen as the type's own surface.
     var isWitness = false
+    /// `static` / `class`: a function of its arguments, not of an instance.
+    var isStatic = false
 }
 
 /// An expression some data-flow construct reads from or writes to, with the
@@ -89,6 +91,11 @@ struct Access {
     let base: ExprSyntax
     let name: String
     let scope: Scope
+    /// Where it is, for the coupling report.
+    var line = 0
+    /// The statement it is part of: two children's members met in one
+    /// statement is a container feeding one from the other.
+    var statement: SyntaxIdentifier? = nil
 }
 
 /// A declared type, or `extension Foo` of a type outside the map (framework

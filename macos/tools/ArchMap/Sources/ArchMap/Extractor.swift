@@ -136,7 +136,8 @@ final class Extractor: SyntaxVisitor {
                         $0.trimmedDescription.hasPrefix("@objc") || $0.trimmedDescription.hasPrefix("@IBAction")
                     },
                     returnType: node.signature.returnClause?.type.trimmedDescription,
-                    isWitness: owner.kind == "extension" && !owner.inherits.isEmpty))
+                    isWitness: owner.kind == "extension" && !owner.inherits.isEmpty,
+                    isStatic: node.modifiers.contains { ["static", "class"].contains($0.name.text) }))
         }
         enterBody(params: node.signature.parameterClause)
         return .visitChildren
@@ -246,7 +247,16 @@ final class Extractor: SyntaxVisitor {
 
     override func visit(_ node: MemberAccessExprSyntax) -> SyntaxVisitorContinueKind {
         if let base = node.base, !["self", "Self", "super"].contains(base.trimmedDescription) {
-            owner.accesses.append(Access(base: base, name: node.declName.baseName.text, scope: scope))
+            var statement: Syntax? = Syntax(node)
+            while let current = statement, !current.is(CodeBlockItemSyntax.self),
+                !current.is(MemberBlockItemSyntax.self)
+            {
+                statement = current.parent
+            }
+            owner.accesses.append(
+                Access(
+                    base: base, name: node.declName.baseName.text, scope: scope, line: line(node),
+                    statement: statement?.id))
         }
         return .visitChildren
     }

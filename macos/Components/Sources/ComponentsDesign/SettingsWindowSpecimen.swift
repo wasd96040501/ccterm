@@ -59,6 +59,10 @@ private final class SettingsContent: NSView, SettingsSplitViewControllerDelegate
         super.init(frame: .zero)
         split.delegate = self
         let content = split.view
+        // The source list starts under the traffic lights, 52 down: the room a
+        // real title bar gives it as a safe area.
+        split.splitViewItems.first?.viewController.view.additionalSafeAreaInsets =
+            NSEdgeInsets(top: Host.settingsToolbarHeight, left: 0, bottom: 0, right: 0)
         content.translatesAutoresizingMaskIntoConstraints = false
         addSubview(content)
         NSLayoutConstraint.activate([

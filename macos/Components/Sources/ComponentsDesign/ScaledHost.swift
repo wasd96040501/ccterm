@@ -38,6 +38,10 @@ final class ScaledHost: NSView {
             content.widthAnchor.constraint(equalToConstant: width),
             widthAnchor.constraint(lessThanOrEqualToConstant: width),
         ])
+        // Its real width, or what the room allows below it.
+        let wide = widthAnchor.constraint(equalToConstant: width)
+        wide.priority = NSLayoutConstraint.Priority(740)
+        wide.isActive = true
         if let height {
             content.heightAnchor.constraint(equalToConstant: height).isActive = true
             heightAnchor.constraint(equalTo: widthAnchor, multiplier: height / width).isActive = true

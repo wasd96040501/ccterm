@@ -194,10 +194,9 @@ final class AccountsTests: XCTestCase {
             // Each field spans its column less 2 a side: (name + 4) = 1.6 × (value + 4).
             XCTAssertEqual(
                 cell.nameField.frame.width + 4, 1.6 * (cell.valueField.frame.width + 4), accuracy: 1)
-            // The columns share what is left of the row after the checkbox and the glyph.
-            XCTAssertEqual(
-                (cell.nameField.frame.width + 4) + (cell.valueField.frame.width + 4) + 30 + 22 + 5 + 4 - 4,
-                cell.frame.width, accuracy: 6)
+            // The columns span the row between the checkbox's 30 and the glyph's 22 + 5.
+            XCTAssertEqual(cell.nameField.frame.minX, 32, accuracy: 0.5)
+            XCTAssertEqual(cell.valueField.frame.maxX, cell.frame.width - 29, accuracy: 0.5)
         }
     }
 

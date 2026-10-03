@@ -68,7 +68,7 @@ final class ElevatedView: NSView {
                 roundedRect: layer.bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
             // CSS blur is the Gaussian's diameter; a layer's radius is half.
             layer.shadowRadius = drop.blur / 2
-            layer.shadowOffset = CGSize(width: 0, height: -drop.dy)
+            layer.shadowOffset = CGSize(width: 0, height: drop.dy)
             layer.shadowOpacity = 1
         }
         CATransaction.commit()

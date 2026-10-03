@@ -191,6 +191,8 @@ private final class CardView: NSView {
         wantsLayer = true
         layer?.cornerRadius = 12
         layer?.cornerCurve = .continuous
+        // A window's shadow falls outside the card it is.
+        layer?.masksToBounds = false
         content.translatesAutoresizingMaskIntoConstraints = false
         addSubview(content)
         let padding: CGFloat = isWindow ? 0 : 12
@@ -204,12 +206,13 @@ private final class CardView: NSView {
                 content.trailingAnchor.constraint(equalTo: trailingAnchor),
             ])
         } else {
-            let fill = content.widthAnchor.constraint(equalTo: widthAnchor, constant: -2 * (isWindow ? 0 : inset))
-            fill.priority = NSLayoutConstraint.Priority(740)
+            // As wide as the room, from `inset` each side; the host's own
+            // width (`ScaledHost`, a given width at most) is what it is below that.
+            let side = isWindow ? 0 : inset
             NSLayoutConstraint.activate([
                 content.centerXAnchor.constraint(equalTo: centerXAnchor),
-                content.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: isWindow ? 0 : inset),
-                fill,
+                content.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: side),
+                content.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -side),
             ])
         }
         if let height { content.heightAnchor.constraint(equalToConstant: height).isActive = true }

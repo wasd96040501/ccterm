@@ -16,12 +16,10 @@ enum MenuSpecimen {
                 + "between groups. A panel is 300 wide and its list scrolls past 360 under each account's sticky "
                 + "head, with what follows (Fast Mode) always in view; the branch picker adds a filter field.",
             specimens: [
-                .init(
-                    title: "Menus — Effort, Permission mode, Folder",
-                    view: MenuRow([MenuFixtures.effort, MenuFixtures.mode, MenuFixtures.folder]), height: nil),
-                .init(
-                    title: "Panels — Branch with its filter, Model with Fast Mode under the scroll",
-                    view: MenuRow([MenuFixtures.branch(), MenuFixtures.model]), height: nil),
+                MenuRow([MenuFixtures.effort, MenuFixtures.mode, MenuFixtures.folder]).specimen(
+                    "Menus — Effort, Permission mode, Folder"),
+                MenuRow([MenuFixtures.branch(), MenuFixtures.model]).specimen(
+                    "Panels — Branch with its filter, Model with Fast Mode under the scroll"),
             ])
     }
 }
@@ -29,6 +27,8 @@ enum MenuSpecimen {
 /// Menus side by side, each at its own size, top-aligned in a plain card.
 final class MenuRow: NSView {
     private let controllers: [MenuPanelViewController]
+    /// The row's size: its menus at their own sizes, 24 apart and from the edges.
+    let size: NSSize
 
     init(_ contents: [MenuContent]) {
         controllers = contents.map {
@@ -36,6 +36,13 @@ final class MenuRow: NSView {
             controller.configure(with: $0)
             return controller
         }
+        var width: CGFloat = 24
+        var height: CGFloat = 0
+        for controller in controllers {
+            width += controller.preferredSize.width + 24
+            height = max(height, controller.preferredSize.height)
+        }
+        size = NSSize(width: width, height: height + 40)
         super.init(frame: .zero)
         // Placed by frame, as a window places its content view.
         var x: CGFloat = 24
@@ -48,6 +55,11 @@ final class MenuRow: NSView {
             tallest = max(tallest, size.height)
         }
         heightAnchor.constraint(equalToConstant: tallest + 40).isActive = true
+    }
+
+    /// This row as a specimen at its own size, scaled down whole in a narrow column.
+    func specimen(_ title: String) -> DesignPageViewController.Specimen {
+        .init(title: title, view: self, width: size.width, height: size.height)
     }
 
     override var isFlipped: Bool { true }

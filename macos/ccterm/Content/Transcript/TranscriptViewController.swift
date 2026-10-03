@@ -99,8 +99,7 @@ final class TranscriptViewController: NSViewController {
             transcript.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             transcript.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
-        // The design's column: 640 at most with 24 either side (`.pane .transcript`).
-        transcript.maxContentWidth = 592
+        transcript.maxContentWidth = 720
         transcript.contentInsets = NSEdgeInsets(top: 12, left: 0, bottom: 24 + bottomInset, right: 0)
         transcript.dataSource = self
         transcript.delegate = self

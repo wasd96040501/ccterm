@@ -76,6 +76,17 @@ for (const scheme of ["light", "dark"]) {
     await evaluate(`document.body.click()`);
     await sleep(200);
   }
+  // The transcript views b39b044 added or changed: each specimen's column
+  // (its caption left out), at the width the sheet gives it.
+  for (const section of ["local", "prompts", "voices", "talkout", "talk"]) {
+    const count = await evaluate(`document.querySelectorAll('#${section} .spec').length`);
+    for (let i = 0; i < count; i++) {
+      const name = `${scheme}-spec-${section}-${i}`;
+      const rect = await shoot(name, `document.querySelectorAll('#${section} .spec')[${i}].querySelector('.col')`);
+      const cap = await evaluate(`document.querySelectorAll('#${section} .spec')[${i}].querySelector('.cap').innerText.replace(/\\s+/g, ' ').trim().slice(0, 120)`);
+      if (rect) sceneParts.push({ name, card: -1, kind: "spec", n: i, cap, width: rect.width, height: rect.height, text: "" });
+    }
+  }
   const cards = await evaluate(`[...document.querySelectorAll('.lv-card')].map((c, i) => {
     const t = (c.querySelector('.cap, .lv-cap, h4, figcaption, .ttl, b')?.textContent || c.textContent).trim().slice(0, 40);
     return {i, t};

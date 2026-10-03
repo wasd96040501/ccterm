@@ -83,3 +83,17 @@
 /* AboutView */
 "Version %@ (%@)" = "Version %@ (%@)";
 "Commit" = "Commit";
+
+/* Rows */
+"Interrupted" = "Interrupted";
+"Keep Planning" = "Keep Planning";
+"Approve" = "Approve";
+"Deny" = "Deny";
+"Allow" = "Allow";
+"Show all" = "Show all";
+"Show %lld more" = "Show %lld more";
+"Submit" = "Submit";
+"Chat About This" = "Chat About This";
+"Choose any" = "Choose any";
+"Other — type something" = "Other — type something";
+"Notes" = "Notes";

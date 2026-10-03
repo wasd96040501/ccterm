@@ -1,18 +1,17 @@
 import AppKit
-import Components
 import DisplayModels
 
 /// **Keep Planning** / **Approve** (⌘↩) under a plan waiting for the reader
 /// (07-talk.md "ExitPlanMode").
 @MainActor
-final class PlanDecisionRowView: NSView, PageRowView {
+public final class PlanDecisionRowView: NSView, PageRowView {
     /// The plan's call id — what a decision answers.
-    typealias Model = String
+    public typealias Model = String
 
-    weak var delegate: PageRowViewDelegate?
+    public weak var delegate: PageRowViewDelegate?
 
-    private let keepPlanning = PillButton(title: String(localized: "Keep Planning"))
-    private let approve = PillButton(title: String(localized: "Approve"), keys: "⌘↩", isPrimary: true)
+    private let keepPlanning = PillButton(title: String(localized: "Keep Planning", bundle: .module))
+    private let approve = PillButton(title: String(localized: "Approve", bundle: .module), keys: "⌘↩", isPrimary: true)
     private var callID: String?
 
     override init(frame frameRect: NSRect) {
@@ -38,16 +37,16 @@ final class PlanDecisionRowView: NSView, PageRowView {
         ])
     }
 
-    convenience init() {
+    public convenience init() {
         self.init(frame: .zero)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    static func height(for model: String, width: CGFloat) -> CGFloat { 32 }
+    public static func height(for model: String, width: CGFloat) -> CGFloat { 32 }
 
-    func configure(with model: String) {
+    public func configure(with model: String) {
         callID = model
     }
 

@@ -1,5 +1,4 @@
 import AppKit
-import Components
 import DisplayModels
 
 /// The 11-pt line under a bubble, right-aligned (05-local.md, 08-live.md): a
@@ -13,10 +12,10 @@ import DisplayModels
 /// (`.cap-out` with its *Show all*). Wrapped words never grow past four lines;
 /// the mark and the link sit centred on them.
 @MainActor
-final class NoteRowView: NSView, PageRowView {
-    typealias Model = Note
+public final class NoteRowView: NSView, PageRowView {
+    public typealias Model = Note
 
-    weak var delegate: PageRowViewDelegate?
+    public weak var delegate: PageRowViewDelegate?
 
     /// The words' room to the trailing edge (the design's `padding-right`). A
     /// link's button carries `linkPadding` of it inside itself.
@@ -81,7 +80,7 @@ final class NoteRowView: NSView, PageRowView {
         ])
     }
 
-    convenience init() {
+    public convenience init() {
         self.init(frame: .zero)
     }
 
@@ -90,7 +89,7 @@ final class NoteRowView: NSView, PageRowView {
 
     // MARK: - Model
 
-    static func height(for model: Note, width: CGFloat) -> CGFloat {
+    public static func height(for model: Note, width: CGFloat) -> CGFloat {
         var height: CGFloat = 0
         if !model.text.isEmpty {
             let reserved = reservedWidth(link: model.link, marked: model.style == .notSent)
@@ -109,7 +108,7 @@ final class NoteRowView: NSView, PageRowView {
         link.isAfterDot ? space + dotWidth + space : linkGap
     }
 
-    func configure(with model: Note) {
+    public func configure(with model: Note) {
         intent = model.link?.intent
 
         mark.isHidden = model.style != .notSent
@@ -137,7 +136,7 @@ final class NoteRowView: NSView, PageRowView {
         needsLayout = true
     }
 
-    override func layout() {
+    public override func layout() {
         // The words wrap at what the row leaves them, as `height(for:width:)` measured.
         let lead = dot.isHidden ? Self.linkGap : Self.space + Self.dotWidth + Self.space
         let link = inlineLink.isHidden ? 0 : Self.linkWidth(of: inlineLink) + lead - Self.linkPadding

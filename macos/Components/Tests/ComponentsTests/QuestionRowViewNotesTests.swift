@@ -1,9 +1,8 @@
-import AgentSDK
 import AppKit
 import DisplayModels
 import XCTest
 
-@testable import ccterm
+@testable import Components
 
 /// The *Notes* a reader writes beside a previewed option travel with both
 /// of the card's answers: Submit, and *Chat About This*.
@@ -20,31 +19,16 @@ final class QuestionRowViewNotesTests: XCTestCase {
         }
     }
 
-    private static let json =
-        #"[{"question":"Which layout?","header":"Layout","options":[{"label":"Split","description":"Two","preview":"+--+"},{"label":"Tabs","description":"One","preview":"[a]"}],"multiSelect":false}]"#
-
     private func descendants(of view: NSView) -> [NSView] {
         view.subviews + view.subviews.flatMap { descendants(of: $0) }
     }
 
-    private func mount() throws -> (QuestionRowView, Spy, AppKitStage) {
-        let input = try JSONDecoder().decode(
-            Tools.AskUserQuestion.Input.self, from: Data(#"{"questions":\#(Self.json)}"#.utf8))
-        let use = ToolUseBlock(id: "q", name: "AskUserQuestion", input: MessageScript.json("{}"))
-        let call = ToolCall(
-            use: use, result: nil, kind: .other, state: .waiting(reason: nil), startedAt: nil, finishedAt: nil)
+    private func mount() -> (QuestionRowView, Spy, RowStage) {
         let view = QuestionRowView()
         let spy = Spy()
         view.delegate = spy
-        view.configure(with: Question(call: call, questions: input.questions, answers: [:]))
-        let host = NSViewController()
-        host.view = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 400))
-        view.frame = host.view.bounds
-        host.view.addSubview(view)
-        let stage = AppKitStage.mount(host, size: CGSize(width: 520, height: 400))
-        view.frame = host.view.bounds
-        view.layoutSubtreeIfNeeded()
-        return (view, spy, stage)
+        view.configure(with: RowModels.layout(previews: true))
+        return (view, spy, RowStage(view, size: CGSize(width: 520, height: 400)))
     }
 
     /// Pick *Split*, write notes, and press the button titled `title`.
@@ -70,18 +54,18 @@ final class QuestionRowViewNotesTests: XCTestCase {
     }
 
     func testChatAboutThisCarriesTheAnswerAndTheNotes() throws {
-        let (view, spy, stage) = try mount()
+        let (view, spy, stage) = mount()
         defer { stage.teardown() }
-        try pickNoteAndPress(view, String(localized: "Chat About This"))
+        try pickNoteAndPress(view, String(localized: "Chat About This", bundle: .module))
         XCTAssertEqual(
             spy.decisions,
             [.chatAbout(answers: ["Which layout?": "Split"], notes: ["Which layout?": "keep the doc beside"])])
     }
 
     func testSubmitCarriesTheNotes() throws {
-        let (view, spy, stage) = try mount()
+        let (view, spy, stage) = mount()
         defer { stage.teardown() }
-        try pickNoteAndPress(view, String(localized: "Submit"))
+        try pickNoteAndPress(view, String(localized: "Submit", bundle: .module))
         XCTAssertEqual(
             spy.decisions,
             [.answer(["Which layout?": "Split"], notes: ["Which layout?": "keep the doc beside"])])

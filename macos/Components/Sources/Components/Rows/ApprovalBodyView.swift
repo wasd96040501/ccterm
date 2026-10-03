@@ -1,5 +1,4 @@
 import AppKit
-import Components
 import DisplayModels
 
 /// What an approval card shows the call will do, whole: a command in a
@@ -12,7 +11,7 @@ import DisplayModels
 /// Drawn, not laid out from labels: a body's height is its lines' count, so
 /// `measure` and `draw` share the same line metrics and cannot disagree.
 @MainActor
-final class ApprovalBodyView: NSView {
+public final class ApprovalBodyView: NSView {
     static let maxLines = 12
 
     private static let commandFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
@@ -32,16 +31,16 @@ final class ApprovalBodyView: NSView {
         super.init(frame: frameRect)
     }
 
-    convenience init() {
+    public convenience init() {
         self.init(frame: .zero)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    override var isFlipped: Bool { true }
+    public override var isFlipped: Bool { true }
 
-    func configure(body: Approval.Body) {
+    public func configure(body: Approval.Body) {
         self.body = body
         switch body {
         case .command(let text): setAccessibilityLabel(text)
@@ -108,7 +107,7 @@ final class ApprovalBodyView: NSView {
 
     // MARK: - Draw
 
-    override func draw(_ dirtyRect: NSRect) {
+    public override func draw(_ dirtyRect: NSRect) {
         guard let body else { return }
         let block = NSBezierPath(roundedRect: bounds, xRadius: Self.radius, yRadius: Self.radius)
         NSColor.tertiarySystemFill.setFill()

@@ -1,5 +1,4 @@
 import AppKit
-import Components
 import DisplayModels
 
 /// A hairline where the session's shape changed — compacted, resumed, an
@@ -9,10 +8,10 @@ import DisplayModels
 /// for a turn the CLI started — is a link after it. A compaction in progress puts a small running tile before the
 /// label.
 @MainActor
-final class DividerRowView: NSView, PageRowView {
-    typealias Model = SessionDivider
+public final class DividerRowView: NSView, PageRowView {
+    public typealias Model = SessionDivider
 
-    weak var delegate: PageRowViewDelegate?
+    public weak var delegate: PageRowViewDelegate?
 
     private static let font = NSFont.systemFont(ofSize: 11)
 
@@ -62,16 +61,16 @@ final class DividerRowView: NSView, PageRowView {
         ])
     }
 
-    convenience init() {
+    public convenience init() {
         self.init(frame: .zero)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    static func height(for model: SessionDivider, width: CGFloat) -> CGFloat { 28 }
+    public static func height(for model: SessionDivider, width: CGFloat) -> CGFloat { 28 }
 
-    func configure(with model: SessionDivider) {
+    public func configure(with model: SessionDivider) {
         label.stringValue = model.label
         if case .compacting = model.kind { tile.isHidden = false } else { tile.isHidden = true }
         summaryID = model.opensDocument ? model.id : nil

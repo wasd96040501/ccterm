@@ -10,14 +10,22 @@ import ImageIO
 /// several. Hovering a picture's token in the bubble outlines its thumbnail in
 /// the accent; a click opens the picture beside.
 @MainActor
-final class AttachmentsRowView: NSView, PageRowView {
-    struct Model: Equatable {
-        var images: [PromptImage]
+public final class AttachmentsRowView: NSView, PageRowView {
+    public struct Model: Equatable {
+        public var images: [PromptImage]
+        /// *Image N* for each of `images`, worded by the app: the thumbnail's accessibility label.
+        public var titles: [String]
         /// The picture number hovered in the bubble, outlined in the accent.
-        var highlighted: Int?
+        public var highlighted: Int?
+
+        public init(images: [PromptImage], titles: [String], highlighted: Int?) {
+            self.images = images
+            self.titles = titles
+            self.highlighted = highlighted
+        }
     }
 
-    weak var delegate: PageRowViewDelegate?
+    public weak var delegate: PageRowViewDelegate?
 
     static let thumbnailHeight: CGFloat = 96
     private static let gap: CGFloat = 4
@@ -26,14 +34,15 @@ final class AttachmentsRowView: NSView, PageRowView {
 
     private var thumbnails: [Thumbnail] = []
     private var images: [PromptImage] = []
+    private var titles: [String] = []
 
-    override var isFlipped: Bool { true }
+    public override var isFlipped: Bool { true }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
     }
 
-    convenience init() {
+    public convenience init() {
         self.init(frame: .zero)
     }
 
@@ -74,13 +83,14 @@ final class AttachmentsRowView: NSView, PageRowView {
         return frames
     }
 
-    static func height(for model: Model, width: CGFloat) -> CGFloat {
+    public static func height(for model: Model, width: CGFloat) -> CGFloat {
         guard let bottom = frames(for: model.images, width: width).map(\.maxY).max() else { return 0 }
         return bottom
     }
 
-    func configure(with model: Model) {
+    public func configure(with model: Model) {
         images = model.images
+        titles = model.titles
         while thumbnails.count < images.count {
             let thumbnail = Thumbnail()
             thumbnail.onClick = { [weak self] index, pinned in
@@ -97,13 +107,14 @@ final class AttachmentsRowView: NSView, PageRowView {
             }
             thumbnail.isHidden = false
             thumbnail.configure(
-                images[index], index: index, numbered: images.count > 1,
+                images[index], title: titles.indices.contains(index) ? titles[index] : "", index: index,
+                numbered: images.count > 1,
                 isHighlighted: model.highlighted == images[index].number)
         }
         needsLayout = true
     }
 
-    override func layout() {
+    public override func layout() {
         super.layout()
         let frames = Self.frames(for: images, width: bounds.width)
         for (index, frame) in frames.enumerated() where index < thumbnails.count {
@@ -174,7 +185,7 @@ final class AttachmentsRowView: NSView, PageRowView {
 
         override var isFlipped: Bool { true }
 
-        func configure(_ image: PromptImage, index: Int, numbered: Bool, isHighlighted: Bool) {
+        func configure(_ image: PromptImage, title: String, index: Int, numbered: Bool, isHighlighted: Bool) {
             self.index = index
             if imageID != image.id {
                 imageID = image.id
@@ -183,7 +194,7 @@ final class AttachmentsRowView: NSView, PageRowView {
             plate.isHidden = !numbered
             number.stringValue = "\(image.number)"
             ring.isHidden = !isHighlighted
-            setAccessibilityLabel(image.title)
+            setAccessibilityLabel(title)
             needsLayout = true
             refreshColors()
         }

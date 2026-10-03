@@ -1,7 +1,5 @@
 import Foundation
 
-@testable import ccterm
-
 /// One model a `PageRowView` must draw within the height it declares for
 /// it, and models that must lay out exactly as it does — the same row
 /// selected, flashing, hovered: state that is paint, not geometry.

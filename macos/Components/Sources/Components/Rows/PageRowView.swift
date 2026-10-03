@@ -10,7 +10,7 @@ import AppKit
 ///   carrying nothing over from the row it showed before.
 /// - Events go up through `delegate`, by id; a row view never acts itself.
 @MainActor
-protocol PageRowView: NSView {
+public protocol PageRowView: NSView {
     associatedtype Model
 
     init()
@@ -24,7 +24,7 @@ protocol PageRowView: NSView {
 
 extension PageRowView {
     /// One pool per view type (`TranscriptView.makeView(withIdentifier:make:)`).
-    static var reuseIdentifier: NSUserInterfaceItemIdentifier {
+    public static var reuseIdentifier: NSUserInterfaceItemIdentifier {
         NSUserInterfaceItemIdentifier(String(describing: Self.self))
     }
 }

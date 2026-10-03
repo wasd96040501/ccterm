@@ -1,4 +1,5 @@
 import AppKit
+import Components
 import DisplayModels
 import TranscriptKit
 
@@ -67,7 +68,8 @@ extension PageRow {
         case .approval(let approval):
             ApprovalCardView.height(for: approval, width: width)
         case .attachments(let images):
-            AttachmentsRowView.height(for: .init(images: images, highlighted: nil), width: width)
+            AttachmentsRowView.height(
+                for: .init(images: images, titles: images.map(\.title), highlighted: nil), width: width)
         case .note(let note):
             NoteRowView.height(for: note, width: width)
         case .divider(let divider):
@@ -106,7 +108,9 @@ extension PageRow {
         case .approval(let approval):
             return view(ApprovalCardView.self, approval)
         case .attachments(let images):
-            return view(AttachmentsRowView.self, .init(images: images, highlighted: highlightedImage))
+            return view(
+                AttachmentsRowView.self,
+                .init(images: images, titles: images.map(\.title), highlighted: highlightedImage))
         case .note(let note):
             return view(NoteRowView.self, note)
         case .divider(let divider):

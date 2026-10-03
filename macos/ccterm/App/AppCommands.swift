@@ -25,8 +25,7 @@ struct AppCommands: Commands {
         // A nil-targeted `newTab:`, so the key window's editor area answers —
         // with the focus in a tab or in the sidebar; with no main window, or
         // another window key, it falls to `AppDelegate`, which shows the main
-        // window first. ⌘N is a second key for the same command
-        // (`AppDelegate.installNewTabKey`): a SwiftUI item takes one.
+        // window first.
         CommandGroup(replacing: .newItem) {
             Button("New Tab") {
                 if !NSApp.sendAction(Selector(("newTab:")), to: nil, from: nil) {

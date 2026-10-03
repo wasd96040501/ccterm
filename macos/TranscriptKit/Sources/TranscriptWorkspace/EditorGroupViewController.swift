@@ -130,15 +130,15 @@ public final class EditorGroupViewController: NSViewController {
     /// take clicks in — for moving and zooming the window, not for dragging tabs.
     private func configureConstraints() {
         let end = tabBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8)
-        // The + sits 6 points from the track, 2 from the group's edge — the
-        // sheet's `.lv-plus` margins — centred on the bar.
+        // The + sits 6 points from the track and 8 from the group's edge — the
+        // sheet's `.lv-plus` margins (6 · 2) inside the bar's 6 — centred on the bar.
         let beforeButton = tabBar.trailingAnchor.constraint(equalTo: newTabButton.leadingAnchor, constant: -6)
         barEnd = end
         barBeforeButton = beforeButton
         NSLayoutConstraint.activate([
             tabBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
             tabBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
-            newTabButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
+            newTabButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
             newTabButton.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
             newTabButton.widthAnchor.constraint(equalToConstant: NewTabButton.side),
             newTabButton.heightAnchor.constraint(equalToConstant: NewTabButton.side),

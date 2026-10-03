@@ -102,9 +102,9 @@ struct UserMessageBlock: Block, @unchecked Sendable {
     /// structural one. Rounder reads as personal; tighter reads as data.
     var cornerRadius: CGFloat = 14
 
-    /// The accent at 15%, so the bubble follows both the reader's chosen accent
-    /// and the light/dark flip without a second colour being stated for either.
-    var backgroundColor: NSColor = .controlAccentColor.withAlphaComponent(0.15)
+    /// The accent at 15 % (20 % in Dark, where 15 % sinks into the page), so the
+    /// bubble follows the reader's chosen accent without a colour of its own.
+    var backgroundColor: NSColor = UserMessageBlock.wash
 
     /// How many lines survive the cut.
     var collapseAfterLines: Int = 12
@@ -150,6 +150,12 @@ struct UserMessageBlock: Block, @unchecked Sendable {
                 source,
                 attributes: [.font: style.bodyFont, .foregroundColor: style.textColor]),
             style: style)
+    }
+
+    /// The bubble: the accent at 15 %, 20 % in Dark.
+    static let wash = NSColor(name: nil) { appearance in
+        let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return NSColor.controlAccentColor.withAlphaComponent(dark ? 0.2 : 0.15)
     }
 
     // MARK: - Tokens

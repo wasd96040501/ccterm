@@ -1,4 +1,4 @@
-.PHONY: build release install dmg clean fmt fmt-check test-unit test-kit test-sdk test-list bench-list record-list demo-kit demo-list logs icon sidebar-icons composer-icons design-shots appkit-doc arch help
+.PHONY: build release install dmg clean fmt fmt-check test-unit test-kit test-sdk test-list bench-list record-list demo-kit demo-list logs icon sidebar-icons new-view-icons composer-icons design-shots appkit-doc arch help
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
@@ -127,6 +127,9 @@ icon: ## Regenerate AppIcon.icon and the AppIconArt image set from design/icon (
 
 sidebar-icons: ## Regenerate the sidebar glyph assets (Assets.xcassets/Sidebar) from design/sidebar-icons
 	cd design/sidebar-icons && bun run build
+
+new-view-icons: ## Regenerate the New view's glyph assets (Assets.xcassets/NewView) from design/new-view-icons
+	cd design/new-view-icons && bun run build
 
 composer-icons: ## Regenerate the composer glyph assets (Assets.xcassets/Composer) from design/composer-icons
 	cd design/composer-icons && bun run build

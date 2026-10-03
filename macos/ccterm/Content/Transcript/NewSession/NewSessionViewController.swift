@@ -18,8 +18,8 @@ import AppKit
 final class NewSessionViewController: NSViewController {
     weak var delegate: NewSessionViewControllerDelegate?
 
-    /// Where the composer goes: 640 pt wide at most, centred, under the
-    /// explanation line. The container sets its height to the composer's.
+    /// Where the composer goes: 640 pt wide at most and 24 in from each side,
+    /// centred, under the explanation line. The container sets its height to the composer's.
     let composerGuide = NSLayoutGuide()
 
     private var model: NewSessionModel?
@@ -30,6 +30,9 @@ final class NewSessionViewController: NSViewController {
     private var riseGeneration = 0
     private var branchPopover: NSPopover?
 
+    /// The page's side margin (the design's `.lv-new` padding).
+    private static let margin: CGFloat = 24
+
     private let iconView = NewSessionIconView()
 
     private lazy var folderChip: NewSessionChip = {
@@ -39,7 +42,11 @@ final class NewSessionViewController: NSViewController {
         return chip
     }()
 
-    private lazy var pathLabel = Self.label(size: 11, color: .tertiaryLabelColor)
+    private lazy var pathLabel: NSTextField = {
+        let label = Self.label(size: 11, color: .tertiaryLabelColor)
+        label.lineBreakMode = .byTruncatingMiddle
+        return label
+    }()
 
     private lazy var branchChip: NewSessionChip = {
         let chip = NewSessionChip(title: "", look: .row)
@@ -57,7 +64,10 @@ final class NewSessionViewController: NSViewController {
 
     private lazy var worktreeChip: NewSessionChip = {
         let chip = NewSessionChip(title: String(localized: "Worktree"), look: .row, showsChevron: false)
-        chip.glyph = NSImage(systemSymbolName: "square.on.square", accessibilityDescription: nil)
+        // The design's worktree mark, at a control's 14 pt.
+        let glyph = NSImage(resource: .newViewWorktree).copy() as? NSImage ?? NSImage(resource: .newViewWorktree)
+        glyph.size = NSSize(width: 14, height: 14)
+        chip.glyph = glyph
         chip.toolTip = String(
             localized: "Work in a new git worktree (--worktree), leaving this folder as it is")
         chip.target = self
@@ -123,38 +133,45 @@ final class NewSessionViewController: NSViewController {
         // content is 0.62 of the space below it (the optical centre).
         let above = NSLayoutGuide()
         let below = NSLayoutGuide()
-        view.addLayoutGuide(above)
-        view.addLayoutGuide(below)
+        // Each line of words is the design's line box (its size × 1.45, the
+        // note's 15), the words centred in it.
+        let pathLine = NSLayoutGuide()
+        let noteLine = NSLayoutGuide()
+        let hintsLine = NSLayoutGuide()
+        for guide in [above, below, pathLine, noteLine, hintsLine] { view.addLayoutGuide(guide) }
 
         // Until a composer is in the slot, a composer's worth — weaker than any
         // view's hugging, so the composer in it keeps its own height.
         let slotHeight = composerGuide.heightAnchor.constraint(equalToConstant: 100)
         slotHeight.priority = .fittingSizeCompression
-        let slotWidth = composerGuide.widthAnchor.constraint(equalTo: view.widthAnchor, constant: -32)
+        let slotWidth = composerGuide.widthAnchor.constraint(equalTo: view.widthAnchor, constant: -2 * Self.margin)
         slotWidth.priority = .wishUnderWindowSize
 
         NSLayoutConstraint.activate([
             above.topAnchor.constraint(equalTo: view.topAnchor),
             above.heightAnchor.constraint(equalTo: below.heightAnchor, multiplier: 0.62),
             iconView.topAnchor.constraint(equalTo: above.bottomAnchor),
-            hintsLabel.bottomAnchor.constraint(equalTo: below.topAnchor),
+            hintsLine.bottomAnchor.constraint(equalTo: below.topAnchor),
             below.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
             iconView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             folderChip.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: 16),
             folderChip.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            folderChip.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -48),
-            pathLabel.topAnchor.constraint(equalTo: folderChip.bottomAnchor, constant: 2),
+            folderChip.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -2 * Self.margin),
+            pathLine.topAnchor.constraint(equalTo: folderChip.bottomAnchor, constant: 2),
+            pathLine.heightAnchor.constraint(equalToConstant: 16),
+            pathLabel.centerYAnchor.constraint(equalTo: pathLine.centerYAnchor),
             pathLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            pathLabel.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -48),
-            whereRow.topAnchor.constraint(equalTo: pathLabel.bottomAnchor, constant: 8),
+            pathLabel.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -2 * Self.margin),
+            whereRow.topAnchor.constraint(equalTo: pathLine.bottomAnchor, constant: 8),
             whereRow.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             whereRow.heightAnchor.constraint(equalToConstant: 24),
-            whereRow.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -48),
-            explanationLabel.topAnchor.constraint(equalTo: whereRow.bottomAnchor, constant: 2),
+            whereRow.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -2 * Self.margin),
+            noteLine.topAnchor.constraint(equalTo: whereRow.bottomAnchor, constant: 2),
+            noteLine.heightAnchor.constraint(equalToConstant: 15),
+            explanationLabel.centerYAnchor.constraint(equalTo: noteLine.centerYAnchor),
             explanationLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            explanationLabel.heightAnchor.constraint(equalToConstant: 15),
-            explanationLabel.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -48),
+            explanationLabel.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -2 * Self.margin),
 
             branchChip.leadingAnchor.constraint(equalTo: whereRow.leadingAnchor),
             branchChip.centerYAnchor.constraint(equalTo: whereRow.centerYAnchor),
@@ -167,16 +184,17 @@ final class NewSessionViewController: NSViewController {
             notRepositoryLabel.leadingAnchor.constraint(equalTo: whereRow.leadingAnchor),
             notRepositoryLabel.trailingAnchor.constraint(equalTo: whereRow.trailingAnchor),
 
-            composerGuide.topAnchor.constraint(equalTo: explanationLabel.bottomAnchor, constant: 20),
+            composerGuide.topAnchor.constraint(equalTo: noteLine.bottomAnchor, constant: 20),
             composerGuide.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             composerGuide.widthAnchor.constraint(lessThanOrEqualToConstant: 640),
-            composerGuide.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -32),
+            composerGuide.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -2 * Self.margin),
             slotWidth,
             slotHeight,
-            hintsLabel.topAnchor.constraint(equalTo: composerGuide.bottomAnchor, constant: 12),
-            hintsLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 16),
+            hintsLine.topAnchor.constraint(equalTo: composerGuide.bottomAnchor, constant: 12),
+            hintsLine.heightAnchor.constraint(equalToConstant: 16),
+            hintsLabel.centerYAnchor.constraint(equalTo: hintsLine.centerYAnchor),
             hintsLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            hintsLabel.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -32),
+            hintsLabel.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -2 * Self.margin),
         ])
     }
 
@@ -266,18 +284,34 @@ final class NewSessionViewController: NSViewController {
         let menu = NSMenu()
         if !model.recentFolders.isEmpty {
             menu.addItem(NSMenuItem.sectionHeader(title: String(localized: "Recent")))
-            for folder in model.recentFolders {
+            // Each folder's path in the key column, 12-pt tertiary, right-aligned
+            // to the longest name, 16 pt on, plus the longest path.
+            let titleFont = NSFont.menuFont(ofSize: 0)
+            let pathFont = NSFont.menuFont(ofSize: 12)
+            let rows = model.recentFolders.map { ($0, ($0.url.path as NSString).abbreviatingWithTildeInPath) }
+            let widest = { (strings: [String], font: NSFont) in
+                strings.map { ($0 as NSString).size(withAttributes: [.font: font]).width }.max() ?? 0
+            }
+            let column =
+                widest(rows.map(\.0.title), titleFont) + 16 + widest(rows.map(\.1), pathFont)
+            let style = NSMutableParagraphStyle()
+            style.tabStops = [NSTextTab(textAlignment: .right, location: ceil(column))]
+            for (folder, path) in rows {
                 let item = NSMenuItem(title: folder.title, action: #selector(chooseRecent(_:)), keyEquivalent: "")
                 item.target = self
                 item.representedObject = folder.url
                 item.state = folder.isChosen ? .on : .off
                 item.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
-                item.toolTip = (folder.url.path as NSString).abbreviatingWithTildeInPath
-                if #available(macOS 14.4, *) {
-                    item.subtitle =
-                        (folder.url.deletingLastPathComponent().path as NSString)
-                        .abbreviatingWithTildeInPath
-                }
+                let title = NSMutableAttributedString(
+                    string: folder.title + "\t", attributes: [.font: titleFont, .paragraphStyle: style])
+                title.append(
+                    NSAttributedString(
+                        string: path,
+                        attributes: [
+                            .font: pathFont, .foregroundColor: NSColor.tertiaryLabelColor, .paragraphStyle: style,
+                        ]))
+                item.attributedTitle = title
+                item.toolTip = path
                 menu.addItem(item)
             }
             menu.addItem(.separator())
@@ -351,7 +385,8 @@ final class NewSessionViewController: NSViewController {
         return label
     }
 
-    /// `↩ Send   ⇧↩ New Line   ⇧⇥ Mode   / Commands`: the keys in secondary ink.
+    /// `↩ Send   ⇧↩ New Line   ⇧⇥ Mode   / Commands`: the keys in secondary
+    /// ink, 3 pt before their words; 14 pt between the hints.
     private static func hints() -> NSAttributedString {
         let font = NSFont.systemFont(ofSize: 11)
         let pairs = [
@@ -360,12 +395,15 @@ final class NewSessionViewController: NSViewController {
             ("⇧⇥", String(localized: "Mode")),
             ("/", String(localized: "Commands")),
         ]
+        // A zero-width joiner carries each gap as its kerning, so the gap is exact.
+        let joiner = "\u{200D}"
         let text = NSMutableAttributedString()
         for (index, (key, words)) in pairs.enumerated() {
-            if index > 0 { text.append(NSAttributedString(string: "\u{2003}\u{2002}", attributes: [.font: font])) }
+            if index > 0 { text.append(NSAttributedString(string: joiner, attributes: [.font: font, .kern: 14])) }
             text.append(
                 NSAttributedString(
-                    string: key + " ", attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor]))
+                    string: key, attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor]))
+            text.append(NSAttributedString(string: joiner, attributes: [.font: font, .kern: 3]))
             text.append(
                 NSAttributedString(
                     string: words, attributes: [.font: font, .foregroundColor: NSColor.tertiaryLabelColor]))

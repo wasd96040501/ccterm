@@ -7,8 +7,11 @@ import Foundation
 nonisolated struct Note: Sendable, Equatable {
     enum Style: Sendable, Equatable {
         case tertiary
-        /// stderr, or a prompt that was not sent.
+        /// stderr: red words.
         case failure
+        /// A prompt that was not sent: secondary words after a red mark — the
+        /// bubble stays, and the mark says it went nowhere.
+        case notSent
     }
 
     /// What a link in the line asks for.

@@ -14,30 +14,51 @@ final class NewSessionChip: NSControl {
     /// A chip's metrics.
     struct Look {
         var font: NSFont
+        /// Letter spacing, points.
+        var tracking: CGFloat = 0
         var insets: NSEdgeInsets
-        /// The control's height; `nil` fits the content.
-        var height: CGFloat?
+        /// The control's height; the words are centred in it.
+        var height: CGFloat
         var spacing: CGFloat
+        /// The chevron's box, points.
         var chevronSize: CGFloat
-        var glyphSize: CGFloat
+        /// The page's title: label ink whatever its state.
+        var isTitle = false
 
-        /// The folder: the page's title.
+        /// The folder: the page's title, 22 pt at weight 650 and −0.01 em, in
+        /// the design's line (22 × 1.45) plus 1 pt above and below.
         static let folder = Look(
-            font: .systemFont(ofSize: 22, weight: .semibold),
+            font: titleFont, tracking: -0.22,
             insets: NSEdgeInsets(top: 1, left: 10, bottom: 1, right: 8),
-            height: nil, spacing: 6, chevronSize: 11, glyphSize: 0)
+            height: 34, spacing: 6, chevronSize: 11, isTitle: true)
+        /// SF at weight 650, between Semibold and Bold, on the font's weight
+        /// axis — `systemFont(ofSize:weight:)` snaps to a named weight.
+        private static let titleFont: NSFont = {
+            let wght = 0x7767_6874
+            let descriptor = NSFont.systemFont(ofSize: 22).fontDescriptor.addingAttributes([
+                NSFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String): [wght: 650]
+            ])
+            return NSFont(descriptor: descriptor, size: 22) ?? .systemFont(ofSize: 22, weight: .semibold)
+        }()
+
         /// Branch and Worktree: 24-pt controls.
         static let row = Look(
             font: .systemFont(ofSize: 12),
             insets: NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 8),
-            height: 24, spacing: 4, chevronSize: 10, glyphSize: 11)
+            height: 24, spacing: 4, chevronSize: 10)
     }
 
     private static let radius: CGFloat = 7
 
+    private static let truncatingMiddle: NSParagraphStyle = {
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = .byTruncatingMiddle
+        return style
+    }()
+
     var title: String {
         didSet {
-            titleField.stringValue = title
+            refresh()
             setAccessibilityLabel(title)
             invalidateIntrinsicContentSize()
         }
@@ -80,19 +101,21 @@ final class NewSessionChip: NSControl {
         return field
     }()
 
+    /// The glyph at the size its image carries.
     private lazy var glyphView: NSImageView = {
         let view = NSImageView()
-        view.imageScaling = .scaleProportionallyDown
-        view.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: look.glyphSize, weight: .regular)
+        view.imageScaling = .scaleNone
         view.isHidden = true
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
 
+    /// The design's `chev2`, in its CSS box.
     private lazy var chevronView: NSImageView = {
-        let view = NSImageView()
-        view.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)
-        view.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: look.chevronSize, weight: .bold)
+        let image = NSImage(resource: .newViewChevron).copy() as? NSImage ?? NSImage(resource: .newViewChevron)
+        image.size = NSSize(width: look.chevronSize, height: look.chevronSize)
+        let view = NSImageView(image: image)
+        view.imageScaling = .scaleNone
         view.contentTintColor = .tertiaryLabelColor
         view.isHidden = !showsChevron
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -126,9 +149,7 @@ final class NewSessionChip: NSControl {
             content.topAnchor.constraint(equalTo: topAnchor),
             content.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
-        if let height = look.height {
-            heightAnchor.constraint(equalToConstant: height).isActive = true
-        }
+        heightAnchor.constraint(equalToConstant: look.height).isActive = true
         refresh()
     }
 
@@ -162,7 +183,12 @@ final class NewSessionChip: NSControl {
     private func refresh() {
         let ink: NSColor = isOn ? .controlAccentColor : (isActive ? .labelColor : .secondaryLabelColor)
         // The folder is the page's title: always label ink.
-        titleField.textColor = look.height == nil ? .labelColor : ink
+        titleField.attributedStringValue = NSAttributedString(
+            string: title,
+            attributes: [
+                .font: look.font, .kern: look.tracking, .foregroundColor: look.isTitle ? .labelColor : ink,
+                .paragraphStyle: Self.truncatingMiddle,
+            ])
         glyphView.contentTintColor = ink
         needsDisplay = true
     }

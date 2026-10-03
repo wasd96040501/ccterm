@@ -72,4 +72,24 @@ final class SessionTabSnapshotTests: XCTestCase {
             SessionTabViewController(.session(url), title: "Build", context: context())
         }
     }
+
+    /// A conversation longer than the tab, at its end: the rows fade out over
+    /// the 24 pt above the card and are gone beside and under it.
+    func testALongConversationUnderTheComposer() throws {
+        var lines: [String] = []
+        var parent: String?
+        for turn in 0..<8 {
+            lines.append(SessionDirectoryFixture.user("u\(turn)", parent: parent, "What does step \(turn) do?"))
+            lines.append(
+                SessionDirectoryFixture.assistant(
+                    "a\(turn)", parent: "u\(turn)",
+                    "Step \(turn) reads the **session directory**, builds the tree and hands each project its rows."))
+            parent = "a\(turn)"
+        }
+        try fixture.write("-p/long.jsonl", lines)
+        let url = fixture.url("-p/long.jsonl")
+        snapshot("long", sizes: [CGSize(width: 900, height: 480)]) {
+            SessionTabViewController(.session(url), title: "Steps", context: context())
+        }
+    }
 }

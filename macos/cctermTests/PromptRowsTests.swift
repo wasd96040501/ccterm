@@ -117,7 +117,7 @@ final class PromptRowsTests: XCTestCase {
         XCTAssertEqual(
             unsent.note,
             Note(
-                text: String(localized: "Not sent — \("the session ended")"), style: .failure,
+                text: String(localized: "Not sent — \("the session ended")"), style: .notSent,
                 link: Note.Link(title: String(localized: "Resend"), intent: .resend("u1"))))
         XCTAssertEqual(prompt("x", .notSent(reason: "")).note?.text, String(localized: "Not sent"))
     }

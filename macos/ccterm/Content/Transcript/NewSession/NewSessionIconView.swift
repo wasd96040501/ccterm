@@ -1,5 +1,5 @@
+import Accelerate
 import AppKit
-import CoreImage
 import QuartzCore
 
 /// The New view's decoration (design 08 *The New view*): the app icon at 64 pt
@@ -45,13 +45,14 @@ final class NewSessionIconView: NSView {
     private func configureHierarchy() {
         artView.image = NSImage(resource: .appIconArt)
         artView.imageScaling = .scaleProportionallyUpOrDown
-        artView.wantsLayer = true
-        // `drop-shadow(0 6px 14px rgba(20, 18, 24, 0.22))`, from the icon's own alpha.
-        artView.layer?.shadowColor = NSColor(srgbRed: 20 / 255, green: 18 / 255, blue: 24 / 255, alpha: 1).cgColor
-        artView.layer?.shadowOpacity = 0.22
-        artView.layer?.shadowRadius = 7
-        artView.layer?.shadowOffset = CGSize(width: 0, height: -6)
-        artView.layer?.masksToBounds = false
+        // `drop-shadow(0 6px 14px rgba(20, 18, 24, 0.22))`, from the icon's own
+        // alpha. Through the view's `shadow`: AppKit owns a backed view's layer
+        // shadow and resets one set on the layer.
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor(srgbRed: 20 / 255, green: 18 / 255, blue: 24 / 255, alpha: 0.22)
+        shadow.shadowOffset = NSSize(width: 0, height: -6)
+        shadow.shadowBlurRadius = 14
+        artView.shadow = shadow
         for subview in [glowView, artView, lightView] {
             subview.translatesAutoresizingMaskIntoConstraints = false
             addSubview(subview)
@@ -194,15 +195,19 @@ private final class GlowView: NSView {
         applyStrength()
     }
 
-    /// The glow, blurred, drawn once: `margin` of room on every side.
+    /// The glow, blurred, drawn once: `margin` of room on every side. In
+    /// float: at the glow's strength an 8-bit tail rounds in steps that show
+    /// as a faint contour.
     private static let image: CGImage? = {
         let scale: CGFloat = 2
-        let pixels = CGSize(
-            width: (size.width + 2 * margin) * scale, height: (size.height + 2 * margin) * scale)
-        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+        let width = Int((size.width + 2 * margin) * scale)
+        let height = Int((size.height + 2 * margin) * scale)
+        guard let space = CGColorSpace(name: CGColorSpace.extendedSRGB),
             let context = CGContext(
-                data: nil, width: Int(pixels.width), height: Int(pixels.height), bitsPerComponent: 8,
-                bytesPerRow: 0, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+                data: nil, width: width, height: height, bitsPerComponent: 32, bytesPerRow: width * 16,
+                space: space,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.floatComponents.rawValue
+                    | CGBitmapInfo.byteOrder32Little.rawValue)
         else { return nil }
         context.scaleBy(x: scale, y: scale)
         let rect = CGRect(x: margin, y: margin, width: size.width, height: size.height)
@@ -214,7 +219,6 @@ private final class GlowView: NSView {
         let maskColors = [CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: 0)] as CFArray
         guard let mask = CGGradient(colorsSpace: CGColorSpaceCreateDeviceGray(), colors: maskColors, locations: [0, 1])
         else { return nil }
-        // The mask as an alpha image: draw it, then keep only where it is opaque.
         context.drawRadialGradient(
             mask, startCenter: .zero, startRadius: 0, endCenter: .zero, endRadius: 1, options: [])
         context.restoreGState()
@@ -230,15 +234,44 @@ private final class GlowView: NSView {
         guard let gradient = CGGradient(colorsSpace: space, colors: ramp, locations: [0, 0.5, 1]) else { return nil }
         context.drawLinearGradient(
             gradient, start: CGPoint(x: 0, y: rect.maxY), end: CGPoint(x: 0, y: rect.minY), options: [])
-        guard let sharp = context.makeImage() else { return nil }
-
-        // 20 pt of blur (a standard deviation of 20 points).
-        let blurred = CIImage(cgImage: sharp)
-            .clampedToExtent()
-            .applyingGaussianBlur(sigma: Double(blur * scale))
-            .cropped(to: CGRect(origin: .zero, size: pixels))
-        return CIContext().createCGImage(blurred, from: blurred.extent, format: .RGBA8, colorSpace: space)
+        guard let data = context.data else { return nil }
+        guard blurInPlace(data, width: width, height: height, sigma: Float(blur * scale)) else { return nil }
+        return context.makeImage()
     }()
+
+    /// CSS `blur()`: a Gaussian of standard deviation `sigma` pixels over the
+    /// premultiplied RGBA floats at `data`, channel by channel, transparent
+    /// beyond the edges.
+    private static func blurInPlace(_ data: UnsafeMutableRawPointer, width: Int, height: Int, sigma: Float) -> Bool {
+        let radius = Int((3 * sigma).rounded(.up))
+        var kernel = (-radius...radius).map { exp(-Float($0 * $0) / (2 * sigma * sigma)) }
+        let sum = kernel.reduce(0, +)
+        kernel = kernel.map { $0 / sum }
+        let planeBytes = width * MemoryLayout<Float>.size
+        var interleaved = vImage_Buffer(
+            data: data, height: vImagePixelCount(height), width: vImagePixelCount(width), rowBytes: width * 16)
+        var planes: [vImage_Buffer] = []
+        defer { for plane in planes { free(plane.data) } }
+        for _ in 0..<5 {
+            guard let memory = malloc(planeBytes * height) else { return false }
+            planes.append(
+                vImage_Buffer(
+                    data: memory, height: vImagePixelCount(height), width: vImagePixelCount(width),
+                    rowBytes: planeBytes))
+        }
+        // The context's floats are R, G, B, A; vImage's names don't matter to a blur.
+        var (r, g, b, a, scratch) = (planes[0], planes[1], planes[2], planes[3], planes[4])
+        guard vImageConvert_ARGBFFFFtoPlanarF(&interleaved, &r, &g, &b, &a, 0) == kvImageNoError else { return false }
+        for index in 0..<4 {
+            var plane = [r, g, b, a][index]
+            let status = vImageSepConvolve_PlanarF(
+                &plane, &scratch, nil, 0, 0, kernel, UInt32(kernel.count), kernel, UInt32(kernel.count), 0, 0,
+                vImage_Flags(kvImageBackgroundColorFill))
+            guard status == kvImageNoError else { return false }
+            memcpy(plane.data, scratch.data, planeBytes * height)
+        }
+        return vImageConvert_PlanarFtoARGBFFFF(&r, &g, &b, &a, &interleaved, 0) == kvImageNoError
+    }
 }
 
 // MARK: - Light

@@ -1,6 +1,8 @@
 import AgentSDK
 import AppKit
 import Combine
+import Components
+import DisplayModels
 import XCTest
 
 @testable import ccterm
@@ -46,13 +48,6 @@ final class SessionTabViewControllerTests: XCTestCase {
 
     private func composer(of tab: SessionTabViewController) throws -> ComposerViewController {
         try XCTUnwrap(tab.children.compactMap { $0 as? ComposerViewController }.first)
-    }
-
-    private func card(of composer: ComposerViewController) -> ComposerView? {
-        func walk(_ view: NSView) -> ComposerView? {
-            (view as? ComposerView) ?? view.subviews.lazy.compactMap(walk).first
-        }
-        return walk(composer.view)
     }
 
     private func newSession(of tab: SessionTabViewController) -> NewSessionViewController? {
@@ -110,6 +105,18 @@ final class SessionTabViewControllerTests: XCTestCase {
         XCTAssertEqual(tab.folder, URL(fileURLWithPath: "/tmp/other"))
     }
 
+    /// The branch menu is the tab's to word: none for a folder that is no
+    /// repository, and a branch item that is no branch changes nothing.
+    func testTheBranchMenuNeedsARepository() throws {
+        let tab = mountDraft()
+        let newSession = try XCTUnwrap(newSession(of: tab))
+
+        XCTAssertNil(tab.newSessionViewController(newSession, branchMenuMatching: ""))
+        tab.newSessionViewController(newSession, didChooseBranchItem: "not a branch")
+
+        XCTAssertTrue(tab.isUntouchedDraft)
+    }
+
     func testANewTabStartsInTheFolderItIsGiven() {
         XCTAssertEqual(
             mountDraft(folder: URL(fileURLWithPath: "/tmp/given")).folder, URL(fileURLWithPath: "/tmp/given"))
@@ -153,7 +160,7 @@ final class SessionTabViewControllerTests: XCTestCase {
         let context = context(catalog: catalog)
         let tab = mountDraft(context: context)
 
-        tab.composerViewController(try composer(of: tab), didChoose: .permissionMode(.plan))
+        tab.composerViewController(try composer(of: tab), didChoose: ComposerModel.id(of: .permissionMode(.plan)))
 
         XCTAssertEqual(context.defaults.settings(catalog: catalog)?.permissionMode, .plan)
     }
@@ -278,7 +285,7 @@ final class SessionTabViewControllerTests: XCTestCase {
         let tab = mountDraft()
         XCTAssertTrue(tab.isUntouchedDraft)
 
-        try XCTUnwrap(card(of: try composer(of: tab))).complete(command: "review")
+        try composer(of: tab).text = "/review"
 
         XCTAssertEqual(try composer(of: tab).text, "/review")
         XCTAssertFalse(tab.isUntouchedDraft)

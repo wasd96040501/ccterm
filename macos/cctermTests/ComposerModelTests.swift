@@ -1,4 +1,5 @@
 import AgentSDK
+import DisplayModels
 import XCTest
 
 @testable import ccterm
@@ -70,9 +71,9 @@ final class ComposerModelTests: XCTestCase {
         _ context: ComposerModel.Context = .draft, settings: SessionSettings? = nil, pendingModel: ModelChoice? = nil,
         pendingFast: Bool? = nil, catalog: ModelCatalog = ComposerModelTests.catalog, allowsBypass: Bool = false,
         usage: Double? = nil, refusal: String? = nil
-    ) -> ComposerModel {
-        ComposerModel(
-            ComposerModel.Input(
+    ) -> ComposerPresentation {
+        ComposerModel.presentation(
+            of: ComposerModel.Input(
                 context: context, placement: context == .draft ? .page : .floating,
                 settings: settings ?? self.settings(), pendingModel: pendingModel,
                 pendingFastMode: pendingFast, catalog: catalog, allowsBypassPermissions: allowsBypass,
@@ -88,8 +89,8 @@ final class ComposerModelTests: XCTestCase {
     // MARK: Loading, placeholder
 
     func testWithNothingKnownTheChipsSayLoadingAndNothingCanBeChosen() {
-        let model = ComposerModel(
-            ComposerModel.Input(
+        let model = ComposerModel.presentation(
+            of: ComposerModel.Input(
                 context: .draft, placement: .page, settings: nil, pendingModel: nil, pendingFastMode: nil,
                 catalog: ModelCatalog(),
                 allowsBypassPermissions: false, contextUsage: nil, refusal: nil, commands: []))
@@ -169,7 +170,7 @@ final class ComposerModelTests: XCTestCase {
     func testTheModeChipShowsTheGlyphAndTheShortNameAndBypassIsDanger() {
         let ask = model(settings: settings(mode: .default)).mode
         XCTAssertEqual(ask.title, L("Ask"))
-        XCTAssertEqual(ask.leadingGlyphs, [.permissionMode(.default)])
+        XCTAssertEqual(ask.leadingGlyphs, [.ask])
         XCTAssertEqual(ask.toolTip, L("Ask Permissions"))
         XCTAssertFalse(ask.isDanger)
         XCTAssertTrue(ask.titleIsDroppable)
@@ -190,7 +191,8 @@ final class ComposerModelTests: XCTestCase {
         XCTAssertEqual(section.items.map(\.isEnabled), [true, true, true, true, true])
         XCTAssertEqual(section.items.map(\.subtitle), [nil, nil, L("Default"), nil, L("This session only")])
         XCTAssertEqual(section.items.map(\.glyph), (1...5).map { .effort(level: $0) })
-        XCTAssertEqual(section.items.map(\.change), [.low, .medium, .high, .xhigh, .max].map { .effort($0) })
+        XCTAssertEqual(
+            section.items.map(\.id), [.low, .medium, .high, .xhigh, .max].map { ComposerModel.id(of: .effort($0)) })
     }
 
     func testALevelTheModelLacksIsListedGreyedWithTheReason() throws {
@@ -217,8 +219,10 @@ final class ComposerModelTests: XCTestCase {
         XCTAssertEqual(menu.sections[1].items.map(\.title), [L("Bypass Permissions")])
         XCTAssertTrue(menu.sections[1].items[0].isDanger)
         XCTAssertEqual(
-            menu.sections[0].items.map(\.change),
-            [PermissionMode.default, .acceptEdits, .plan, .auto, .dontAsk].map { .permissionMode($0) })
+            menu.sections[0].items.map(\.id),
+            [PermissionMode.default, .acceptEdits, .plan, .auto, .dontAsk].map {
+                ComposerModel.id(of: .permissionMode($0))
+            })
     }
 
     /// Needs `SessionSettings.unavailability` (workstream B).
@@ -247,10 +251,14 @@ final class ComposerModelTests: XCTestCase {
 
     /// Needs `SessionSettings.nextCycledMode` (workstream B).
     func testShiftTabChoosesTheNextModeInTheCycle() {
-        XCTAssertEqual(model(settings: settings(mode: .default)).cycledMode, .permissionMode(.acceptEdits))
-        XCTAssertEqual(model(settings: settings(mode: .acceptEdits)).cycledMode, .permissionMode(.plan))
-        XCTAssertEqual(model(settings: settings(mode: .plan)).cycledMode, .permissionMode(.auto))
-        XCTAssertEqual(model(settings: settings(mode: .auto)).cycledMode, .permissionMode(.default))
+        XCTAssertEqual(
+            model(settings: settings(mode: .default)).cycledModeID, ComposerModel.id(of: .permissionMode(.acceptEdits)))
+        XCTAssertEqual(
+            model(settings: settings(mode: .acceptEdits)).cycledModeID, ComposerModel.id(of: .permissionMode(.plan)))
+        XCTAssertEqual(
+            model(settings: settings(mode: .plan)).cycledModeID, ComposerModel.id(of: .permissionMode(.auto)))
+        XCTAssertEqual(
+            model(settings: settings(mode: .auto)).cycledModeID, ComposerModel.id(of: .permissionMode(.default)))
     }
 
     // MARK: Model panel
@@ -292,7 +300,7 @@ final class ComposerModelTests: XCTestCase {
 
     func testChoosingAModelAnnouncesItsAccountAndValue() {
         let item = model(settings: settings("opus")).modelSections[1].items[1]
-        XCTAssertEqual(item.change, .model(ModelChoice(account: Self.relay, value: "opus")))
+        XCTAssertEqual(item.id, ComposerModel.id(of: .model(ModelChoice(account: Self.relay, value: "opus"))))
     }
 
     func testAnAccountWhoseCliHasNotAnsweredSaysLoading() {
@@ -435,5 +443,20 @@ final class ComposerModelTests: XCTestCase {
         XCTAssertEqual(ComposerModel.prettyModelName("claude-haiku-4-5-20251001"), "Haiku 4.5")
         XCTAssertEqual(ComposerModel.prettyModelName("claude-sonnet-4-6"), "Sonnet 4.6")
         XCTAssertNil(ComposerModel.prettyModelName("deepseek-v3.2"))
+    }
+
+    // MARK: Choices
+
+    /// An id leaves the view with the item and comes back as its change.
+    func testAnIdStandsForItsChange() {
+        let changes: [SessionSettings.Change] = [
+            .model(ModelChoice(account: Self.relay, value: "opus:4")), .effort(.xhigh), .effort(nil),
+            .permissionMode(.bypassPermissions), .fastMode(true), .fastMode(false),
+        ]
+        for change in changes {
+            XCTAssertEqual(ComposerModel.change(forID: ComposerModel.id(of: change)), change)
+        }
+        XCTAssertNil(ComposerModel.change(forID: "nonsense"))
+        XCTAssertNil(ComposerModel.change(forID: "mode:nope"))
     }
 }

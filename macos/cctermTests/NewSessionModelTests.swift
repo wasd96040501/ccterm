@@ -1,4 +1,5 @@
 import AgentSDK
+import DisplayModels
 import XCTest
 
 @testable import ccterm
@@ -230,5 +231,32 @@ final class NewSessionModelTests: XCTestCase {
         let picker = BranchPickerModel(try list(of: model(draft())))
         XCTAssertEqual(picker.rows(matching: "zzz"), [.empty(String(localized: "No Matching Branches"))])
         XCTAssertNil(picker.firstChoice(matching: "zzz"))
+    }
+
+    // MARK: What the view is shown
+
+    /// The view gets the folder, its row and its line as the model worded them;
+    /// the branch list stays here, behind the menu.
+    func testTheViewIsShownTheModelsWords() {
+        let recents = [folder, URL(fileURLWithPath: "/Users/me/dev/ghostty")]
+        let model = NewSessionModel(
+            draft: draft { $0.toggleWorktree(in: repository()) }, repository: .repository(repository()),
+            recentFolders: recents)
+        let content = NewSessionContent(model)
+
+        XCTAssertEqual(content.folderTitle, model.folderTitle)
+        XCTAssertEqual(content.folderPath, model.folderPath)
+        XCTAssertEqual(content.explanation, model.explanation)
+        XCTAssertEqual(content.branchRow, .repository(branchTitle: "main", usesWorktree: true))
+        XCTAssertEqual(content.recentFolders.map(\.url), recents)
+        XCTAssertEqual(content.recentFolders.map(\.isChosen), [true, false])
+    }
+
+    func testTheViewIsShownARowThatSaysNothingWhileLoadingAndWhyWhenNotARepository() {
+        let loading = NewSessionModel(draft: draft(), repository: .loading, recentFolders: [])
+        XCTAssertEqual(NewSessionContent(loading).branchRow, .loading)
+        let notARepository = NewSessionModel(draft: draft(), repository: .notARepository, recentFolders: [])
+        guard case .notARepository(let words) = notARepository.branchRow else { return XCTFail("\(notARepository)") }
+        XCTAssertEqual(NewSessionContent(notARepository).branchRow, .notARepository(words))
     }
 }

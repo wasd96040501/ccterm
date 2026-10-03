@@ -1,4 +1,5 @@
 import AppKit
+import Components
 import DisplayModels
 import XCTest
 
@@ -20,9 +21,19 @@ final class CommandDocumentViewControllerSnapshotTests: XCTestCase {
         ** TEST FAILED **
         """
 
-    private func snapshot(_ name: String, _ command: CommandDocumentViewController.Command) {
+    private enum Command {
+        case call(ToolCall)
+        case local(LocalCommand)
+    }
+
+    private func snapshot(_ name: String, _ command: Command) {
+        let summary: CommandSummary =
+            switch command {
+            case .call(let call): CommandSummary(call)
+            case .local(let local): CommandSummary(local)
+            }
         let sheet = ViewSnapshot.renderLightAndDark(
-            { CommandDocumentViewController(command) }, size: size, name: name)
+            { CommandDocumentViewController(summary) }, size: size, name: name)
         let url = ViewSnapshot.writePNG(sheet, name: "CommandDocumentViewController-\(name)")
         let attachment = XCTAttachment(contentsOfFile: url)
         attachment.lifetime = .keepAlways

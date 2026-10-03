@@ -116,16 +116,6 @@
         }
       }
     },
-    "%lld More Models": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "另外 %lld 个模型"
-          }
-        }
-      }
-    },
     "%lld agents": {
       "localizations": {
         "zh-Hans": {
@@ -551,16 +541,6 @@
         }
       }
     },
-    "Approve": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "批准"
-          }
-        }
-      }
-    },
     "Approved %@’s plan": {
       "localizations": {
         "zh-Hans": {
@@ -752,16 +732,6 @@
         }
       }
     },
-    "Branch": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "分支"
-          }
-        }
-      }
-    },
     "Bypass": {
       "localizations": {
         "zh-Hans": {
@@ -823,16 +793,6 @@
         }
       }
     },
-    "Chat About This": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "聊聊这个"
-          }
-        }
-      }
-    },
     "Checked out here": {
       "localizations": {
         "zh-Hans": {
@@ -879,26 +839,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择文件夹…"
-          }
-        }
-      }
-    },
-    "Choose any": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "可多选"
-          }
-        }
-      }
-    },
-    "Choose the folder Claude will work in.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选择 Claude 工作的文件夹。"
           }
         }
       }
@@ -1087,16 +1027,6 @@
         }
       }
     },
-    "Commands": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "命令"
-          }
-        }
-      }
-    },
     "Compacted automatically": {
       "localizations": {
         "zh-Hans": {
@@ -1174,16 +1104,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "协调者"
-          }
-        }
-      }
-    },
-    "Copy": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "复制"
           }
         }
       }
@@ -1520,16 +1440,6 @@
         }
       }
     },
-    "Fast Mode": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "快速模式"
-          }
-        }
-      }
-    },
     "Faster output on Opus · billed as extra usage": {
       "localizations": {
         "zh-Hans": {
@@ -1750,16 +1660,6 @@
         }
       }
     },
-    "Keep Planning": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "继续规划"
-          }
-        }
-      }
-    },
     "Leaving the worktree": {
       "localizations": {
         "zh-Hans": {
@@ -1932,16 +1832,6 @@
         }
       }
     },
-    "Mode": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "模式"
-          }
-        }
-      }
-    },
     "Monitor event": {
       "localizations": {
         "zh-Hans": {
@@ -1988,16 +1878,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "需要批准"
-          }
-        }
-      }
-    },
-    "New Line": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "换行"
           }
         }
       }
@@ -2203,16 +2083,6 @@
         }
       }
     },
-    "Notes": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "备注"
-          }
-        }
-      }
-    },
     "Nothing to paste — expected KEY=value": {
       "localizations": {
         "zh-Hans": {
@@ -2233,16 +2103,6 @@
         }
       }
     },
-    "Open": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "打开"
-          }
-        }
-      }
-    },
     "Opus": {
       "localizations": {
         "zh-Hans": {
@@ -2259,16 +2119,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "其他"
-          }
-        }
-      }
-    },
-    "Other — type something": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "其他 — 请输入"
           }
         }
       }
@@ -2571,16 +2421,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "只阅读和规划，不做任何更改"
-          }
-        }
-      }
-    },
-    "Recent": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "最近"
           }
         }
       }
@@ -2907,16 +2747,6 @@
         }
       }
     },
-    "Send": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "发送"
-          }
-        }
-      }
-    },
     "Send ↩": {
       "localizations": {
         "zh-Hans": {
@@ -3019,52 +2849,12 @@
         }
       }
     },
-    "Show %lld more": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "显示其余 %lld 项"
-          }
-        }
-      }
-    },
-    "Show Log": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "显示日志"
-          }
-        }
-      }
-    },
     "Show all": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "显示全部"
-          }
-        }
-      }
-    },
-    "Show all %lld lines": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "显示全部 %lld 行"
-          }
-        }
-      }
-    },
-    "Show in Transcript": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在对话中显示"
           }
         }
       }
@@ -3172,16 +2962,6 @@
         }
       }
     },
-    "Stop": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "停止"
-          }
-        }
-      }
-    },
     "Stop and Restart": {
       "comment": "The restart sheet's confirming button while Claude is working.",
       "localizations": {
@@ -3219,16 +2999,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "子代理"
-          }
-        }
-      }
-    },
-    "Submit": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "提交"
           }
         }
       }
@@ -3516,26 +3286,6 @@
         }
       }
     },
-    "Type something": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请输入"
-          }
-        }
-      }
-    },
-    "Type something.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请输入。"
-          }
-        }
-      }
-    },
     "Unavailable while Fast Mode is on": {
       "localizations": {
         "zh-Hans": {
@@ -3734,26 +3484,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "撤回"
-          }
-        }
-      }
-    },
-    "Work in a new git worktree (--worktree), leaving this folder as it is": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在新的 git 工作树 (--worktree) 中工作，保持此文件夹不变"
-          }
-        }
-      }
-    },
-    "Worktree": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "工作树"
           }
         }
       }

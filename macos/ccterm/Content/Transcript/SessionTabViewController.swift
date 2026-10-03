@@ -2,6 +2,7 @@ import AgentSDK
 import AppKit
 import Combine
 import Components
+import DisplayModels
 
 /// A session's own tab — or a New tab, which becomes one at Send (design 08:
 /// *before the first prompt it's a form, after it's a conversation*).
@@ -18,7 +19,7 @@ import Components
 ///
 /// It is the only one in the tab that talks to the stores: it follows the
 /// session once (`SessionStore.states(at:)`) and hands each state to the
-/// transcript and, worded as a `ComposerModel`, to the composer; it turns the
+/// transcript and, worded by `ComposerModel` as a `ComposerPresentation`, to the composer; it turns the
 /// composer's intents into the draft's changes or the store's verbs.
 ///
 /// **Send in a New tab** hands over in this order, so nothing jumps:
@@ -339,6 +340,11 @@ final class SessionTabViewController: NSViewController {
         }
     }
 
+    /// What the draft's New view says, before it is worded for the view.
+    private func newSessionModel(of draft: NewSessionDraft) -> NewSessionModel {
+        NewSessionModel(draft: draft, repository: repository, recentFolders: recentFolders)
+    }
+
     private var repositoryState: RepositoryState? {
         if case .repository(let state) = repository { state } else { nil }
     }
@@ -348,11 +354,10 @@ final class SessionTabViewController: NSViewController {
     private func refresh() {
         guard isViewLoaded else { return }
         if let draft {
-            newSession?.configure(
-                with: NewSessionModel(draft: draft, repository: repository, recentFolders: recentFolders))
+            newSession?.configure(with: NewSessionContent(newSessionModel(of: draft)))
             composer.configure(
-                with: ComposerModel(
-                    launchInput(of: draft, context: handoverURL == nil ? .draft : Self.starting, placement: .page)))
+                with: ComposerModel.presentation(
+                    of: launchInput(of: draft, context: handoverURL == nil ? .draft : Self.starting, placement: .page)))
         } else {
             configureComposer()
         }
@@ -562,14 +567,15 @@ final class SessionTabViewController: NSViewController {
             // Started here, before its first state: still starting.
             if let startedDraft {
                 composer.configure(
-                    with: ComposerModel(launchInput(of: startedDraft, context: Self.starting, placement: .floating)))
+                    with: ComposerModel.presentation(
+                        of: launchInput(of: startedDraft, context: Self.starting, placement: .floating)))
             }
             return
         }
         let settings = state.settings ?? context.defaults.settings(catalog: catalog)
         composer.configure(
-            with: ComposerModel(
-                ComposerModel.Input(
+            with: ComposerModel.presentation(
+                of: ComposerModel.Input(
                     context: .session(
                         phase: state.phase, isWaitingForYou: !state.requests.isEmpty,
                         isWaitingRequestVisible: isWaitingRequestVisible),
@@ -693,9 +699,17 @@ extension SessionTabViewController: ComposerViewControllerDelegate {
         }
     }
 
-    func composerViewController(
-        _ composerViewController: ComposerViewController, didChoose change: SessionSettings.Change
-    ) {
+    func composerViewController(_ composerViewController: ComposerViewController, didChoose id: String) {
+        guard let change = ComposerModel.change(forID: id) else { return }
+        choose(change)
+    }
+
+    func composerViewController(_ composerViewController: ComposerViewController, didSetFastMode isOn: Bool) {
+        choose(.fastMode(isOn))
+    }
+
+    /// A choice of the composer's controls: the draft's change, or the session's.
+    private func choose(_ change: SessionSettings.Change) {
         if let draft {
             choose(change, inDraft: draft)
             return
@@ -754,9 +768,20 @@ extension SessionTabViewController: NewSessionViewControllerDelegate {
     }
 
     func newSessionViewController(
-        _ newSessionViewController: NewSessionViewController, didChooseBranch branch: NewSessionDraft.Branch
+        _ newSessionViewController: NewSessionViewController, branchMenuMatching query: String
+    ) -> MenuContent? {
+        guard let draft, case .repository(_, _, let branches) = newSessionModel(of: draft).branchRow else {
+            return nil
+        }
+        return NewSessionMenu.branchContent(of: branches, query: query)
+    }
+
+    func newSessionViewController(
+        _ newSessionViewController: NewSessionViewController, didChooseBranchItem id: AnyHashable
     ) {
-        guard var draft, let repository = repositoryState else { return }
+        guard let branch = id.base as? NewSessionDraft.Branch, var draft, let repository = repositoryState else {
+            return
+        }
         draft.choose(branch: branch, in: repository)
         self.draft = draft
         hasChosen = true

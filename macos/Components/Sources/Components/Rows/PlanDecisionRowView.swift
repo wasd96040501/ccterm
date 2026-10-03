@@ -1,0 +1,62 @@
+import AppKit
+import DisplayModels
+
+/// **Keep Planning** / **Approve** (⌘↩) under a plan waiting for the reader
+/// (07-talk.md "ExitPlanMode").
+@MainActor
+public final class PlanDecisionRowView: NSView, PageRowView {
+    /// The plan's call id — what a decision answers.
+    public typealias Model = String
+
+    public weak var delegate: PageRowViewDelegate?
+
+    private let keepPlanning = PillButton(title: String(localized: "Keep Planning", bundle: .module))
+    private let approve = PillButton(title: String(localized: "Approve", bundle: .module), keys: "⌘↩", isPrimary: true)
+    private var callID: String?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        approve.keyEquivalent = "\r"
+        approve.keyEquivalentModifierMask = .command
+        for button in [keepPlanning, approve] {
+            button.target = self
+        }
+        keepPlanning.action = #selector(keepPlanningClicked)
+        approve.action = #selector(approveClicked)
+
+        let stack = NSStackView(views: [keepPlanning, approve])
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 8
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    public convenience init() {
+        self.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+    public static func height(for model: String, width: CGFloat) -> CGFloat { 32 }
+
+    public func configure(with model: String) {
+        callID = model
+    }
+
+    @objc private func keepPlanningClicked() {
+        guard let callID else { return }
+        delegate?.pageRowView(self, didDecide: .keepPlanning, forCall: callID)
+    }
+
+    @objc private func approveClicked() {
+        guard let callID else { return }
+        delegate?.pageRowView(self, didDecide: .approvePlan, forCall: callID)
+    }
+}

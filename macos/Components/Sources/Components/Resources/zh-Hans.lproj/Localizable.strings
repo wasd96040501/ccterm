@@ -83,3 +83,40 @@
 /* AboutView */
 "Version %@ (%@)" = "版本 %1$@（%2$@）";
 "Commit" = "提交";
+
+/* The New view */
+"Choose Folder…" = "选择文件夹…";
+"Branch" = "分支";
+"Worktree" = "工作树";
+"Work in a new git worktree (--worktree), leaving this folder as it is" = "在新的 git 工作树 (--worktree) 中工作，保持此文件夹不变";
+"Choose the folder Claude will work in." = "选择 Claude 工作的文件夹。";
+"Recent" = "最近";
+/* Documents */
+"Deny" = "拒绝";
+"Allow" = "允许";
+"Show in Transcript" = "在对话中显示";
+"Open" = "打开";
+"Copy" = "复制";
+"Show all %lld lines" = "显示全部 %lld 行";
+/* Composer */
+"Send" = "发送";
+"New Line" = "换行";
+"Mode" = "模式";
+"Commands" = "命令";
+"Stop" = "停止";
+"Show Log" = "显示日志";
+"Restart" = "重新启动";
+"Claude quit unexpectedly" = "Claude 意外退出";
+"%lld More Models" = "另外 %lld 个模型";
+"Fast Mode" = "快速模式";
+/* Rows */
+"Interrupted" = "已中断";
+"Keep Planning" = "继续规划";
+"Approve" = "批准";
+"Show all" = "显示全部";
+"Show %lld more" = "显示其余 %lld 项";
+"Submit" = "提交";
+"Chat About This" = "聊聊这个";
+"Choose any" = "可多选";
+"Other — type something" = "其他 — 请输入";
+"Notes" = "备注";

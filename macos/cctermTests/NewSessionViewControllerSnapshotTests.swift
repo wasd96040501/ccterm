@@ -2,6 +2,7 @@ import AgentSDK
 import AppKit
 import Combine
 import Components
+import DisplayModels
 import XCTest
 
 @testable import ccterm
@@ -48,7 +49,7 @@ final class NewSessionViewControllerSnapshotTests: XCTestCase {
     private func makeController(_ model: NewSessionModel) -> NewSessionViewController {
         let controller = NewSessionViewController()
         controller.loadViewIfNeeded()
-        controller.configure(with: model)
+        controller.configure(with: NewSessionContent(model))
         // Stands in for the composer: a card in the slot.
         let card = NSView()
         card.wantsLayer = true
@@ -233,10 +234,10 @@ private final class ParityHost: NSViewController {
     private let newSession = NewSessionViewController()
     private let composer = ComposerViewController()
     private let model: NewSessionModel
-    private let composerModel: ComposerModel
+    private let composerModel: ComposerPresentation
     private let page: NSColor
 
-    init(model: NewSessionModel, composer: ComposerModel, page: NSColor) {
+    init(model: NewSessionModel, composer: ComposerPresentation, page: NSColor) {
         self.model = model
         composerModel = composer
         self.page = page
@@ -248,7 +249,7 @@ private final class ParityHost: NSViewController {
 
     /// The icon's frame in this view (y up).
     var iconFrame: NSRect {
-        let icon = newSession.view.subviews.first { $0 is NewSessionIconView } ?? newSession.view
+        let icon = newSession.view.subviews.first ?? newSession.view
         return icon.convert(icon.bounds, to: view)
     }
 
@@ -275,7 +276,7 @@ private final class ParityHost: NSViewController {
             composer.view.trailingAnchor.constraint(equalTo: guide.trailingAnchor),
             guide.heightAnchor.constraint(equalTo: composer.view.heightAnchor),
         ])
-        newSession.configure(with: model)
+        newSession.configure(with: NewSessionContent(model))
         composer.configure(with: composerModel)
     }
 

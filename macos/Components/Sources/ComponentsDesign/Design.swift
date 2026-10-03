@@ -24,8 +24,9 @@ struct Design {
         [
             FormSpecimen.section(), AccountsSpecimen.section(), GeneralSpecimen.section(),
             SettingsWindowSpecimen.section(), SidebarSpecimen.section(),
-            AboutSpecimen.section(), MainWindowSpecimen.section(), MenuSpecimen.section(),
-            DrawingSpecimen.section(),
+            AboutSpecimen.section(), MainWindowSpecimen.section(), NewSessionSpecimen.section(),
+            MenuSpecimen.section(), ComposerSpecimen.section(),
+            DrawingSpecimen.section(), RowsSpecimen.section(), DocumentsSpecimen.section(),
         ]
     }
 

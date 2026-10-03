@@ -1,19 +1,31 @@
 import AgentSDK
+import DisplayModels
 import Foundation
 
-/// Everything the composer shows, worded (design 08 *The composer*): the
-/// three chips and their menus, the status slot, the action button's kind,
-/// the failure section and the red line. Pure — built from the session's
-/// facts and the catalog, tested without AppKit; the views only draw it and
-/// keep what is theirs alone (the field's text, which decides whether the
-/// arrow is enabled; the slash list's filter).
+/// What the composer is shown, worded (design 08 *The composer*), made from the
+/// session's facts and the catalog: `presentation(of:)` returns the display
+/// value (`ComposerPresentation`) the view draws. Pure — tested without
+/// AppKit.
 ///
-/// One model for both tabs: a New tab is `.draft`, a session tab
-/// `.session(…)`. Every rule of what can be chosen when is asked of
-/// `SessionSettings` / `SessionState`, never decided here; this only words
-/// their answers. What a phase means for the words (a process runs; a turn
-/// runs) is read from the phase itself.
-nonisolated struct ComposerModel: Equatable, Sendable {
+/// One for both tabs: a New tab is `.draft`, a session tab `.session(…)`. Every
+/// rule of what can be chosen when is asked of `SessionSettings` /
+/// `SessionState`, never decided here; this only words their answers. What a
+/// phase means for the words (a process runs; a turn runs) is read from the
+/// phase itself.
+///
+/// A choice leaves the view as the `id` of the item chosen; `change(forID:)`
+/// turns it back into the `SessionSettings.Change` it stands for.
+nonisolated enum ComposerModel {
+    typealias Placement = ComposerPresentation.Placement
+    typealias Glyph = ComposerPresentation.Glyph
+    typealias Chip = ComposerPresentation.Chip
+    typealias Item = ComposerPresentation.Item
+    typealias Menu = ComposerPresentation.Menu
+    typealias ModelSection = ComposerPresentation.ModelSection
+    typealias FastModeSwitch = ComposerPresentation.FastModeSwitch
+    typealias Status = ComposerPresentation.Status
+    typealias Failure = ComposerPresentation.Failure
+
     /// Where the composer is.
     enum Context: Equatable, Sendable {
         /// A New tab: nothing runs, every choice applies at launch.
@@ -23,17 +35,7 @@ nonisolated struct ComposerModel: Equatable, Sendable {
         case session(phase: SessionState.Phase, isWaitingForYou: Bool, isWaitingRequestVisible: Bool)
     }
 
-    /// Where the container stands the card.
-    enum Placement: Equatable, Sendable {
-        /// In a page (a New tab's): the key hints under it, and room below for
-        /// its menus and completion.
-        case page
-        /// Over a session's bottom edge: nothing under it; its menus and
-        /// completion open above.
-        case floating
-    }
-
-    /// The facts the model is built from.
+    /// The facts the presentation is built from.
     struct Input: Equatable, Sendable {
         var context: Context
         var placement: Placement
@@ -52,176 +54,61 @@ nonisolated struct ComposerModel: Equatable, Sendable {
         var commands: [SlashCommand]
     }
 
-    /// A glyph a view draws — an SF Symbol or a generated asset, chosen by the
-    /// view; the model names only what it means.
-    enum Glyph: Equatable, Sendable {
-        case fast
-        /// *After this turn* (the 10-pt clock).
-        case later
-        case permissionMode(PermissionMode)
-        /// The effort meter filled to `level` of 5; `nil` empty.
-        case effort(level: Int?)
-        case subscription
-        case provider
-        /// ↻ — choosing it restarts the session.
-        case restart
-        case check
-    }
-
-    /// One pull-down's face.
-    struct Chip: Equatable, Sendable {
-        var title: String
-        /// Tertiary words after the title (a provider's name); dropped first
-        /// when the composer narrows.
-        var detail: String?
-        var leadingGlyphs: [Glyph]
-        /// After the title: the clock while a change waits for the turn.
-        var trailingGlyph: Glyph?
-        var isEnabled: Bool
-        /// Bypass Permissions: red glyph and text.
-        var isDanger: Bool
-        var toolTip: String?
-        /// Whether the title may be dropped (leaving the glyphs) when the
-        /// composer narrows — Effort's and Mode's; the model's never.
-        var titleIsDroppable: Bool
-    }
-
-    /// An item of the Effort or Mode menu, or of the model panel.
-    struct Item: Equatable, Sendable {
-        var title: String
-        var subtitle: String?
-        var glyph: Glyph?
-        var isChecked: Bool
-        var isEnabled: Bool
-        var isDanger: Bool
-        /// What choosing it does.
-        var change: SessionSettings.Change
-        /// ↻ at the trailing edge: another account, while a process runs.
-        var restarts: Bool
-    }
-
-    /// A menu: sections, each with an optional header (and its trailing key
-    /// hint, ⇧⇥ for Mode), separated.
-    struct Menu: Equatable, Sendable {
-        struct Section: Equatable, Sendable {
-            var header: String?
-            var headerHint: String?
-            var items: [Item]
-        }
-        var sections: [Section]
-    }
-
-    /// One account's section of the model panel (design 08 *Model*).
-    struct ModelSection: Equatable, Sendable, Identifiable {
-        var id: UUID
-        var name: String
-        /// *Subscription*, or the provider's host.
-        var detail: String
-        var glyph: Glyph
-        /// *Restarts the session* / *Applies after this turn* / *Loading…*.
-        var note: String?
-        var items: [Item]
-        /// Models folded into *N More Models* (expands in place).
-        var foldedItems: [Item]
-    }
-
-    /// The Fast Mode switch under the panel's scroll.
-    struct FastModeSwitch: Equatable, Sendable {
-        var isOn: Bool
-        var isEnabled: Bool
-        /// Why it is off-limits (*Opus 5.5, Opus 5 and Opus 4.8 only*, *Only
-        /// with the subscription*, *Requires extra usage*), or *after this turn*.
-        var subtitle: String?
-    }
-
-    /// The status slot before the action button.
-    enum Status: Equatable, Sendable {
-        /// Plain tertiary words: *Starting Claude…*, *Compacting…*, *Will
-        /// resume when you send*.
-        case note(String)
-        /// Coral *Waiting for you ↑*; a click scrolls to the request.
-        case waitingForYou(String)
-    }
-
-    /// The action button. `.send`: the arrow, accent with text in the field,
-    /// grey and disabled without (the field's text is the view's own fact).
-    /// `.stop`: the stop square while Claude works or starts — and, with text
-    /// in the field, the arrow beside it, stop to the left.
-    enum Action: Equatable, Sendable {
-        case send
-        case stop
-    }
-
-    /// The failure section at the card's top (design 08 *Failed*).
-    struct Failure: Equatable, Sendable {
-        var title: String
-        /// The reason in words: *Exit code 1*, or the launch error.
-        var detail: String
-        /// stderr's last line after it, set as the CLI's output (monospaced).
-        var output: String? = nil
-    }
-
-    var placeholder: String
-    var model: Chip
-    var effort: Chip
-    var mode: Chip
-    var modelSections: [ModelSection]
-    /// *Applies after this turn* over every section while Claude works.
-    var modelPanelHeader: String?
-    var fastMode: FastModeSwitch
-    var effortMenu: Menu
-    var modeMenu: Menu
-    /// What ⇧⇥ chooses: the next available mode in the CLI's cycle.
-    var cycledMode: SessionSettings.Change?
-    var status: Status?
-    /// The ring's fraction, from half full; `nil` hides it.
-    var contextRing: Double?
-    var action: Action
-    var failure: Failure?
-    /// The red line under the card.
-    var error: String?
-    var commands: [SlashCommand]
-
-    var placement: Placement
-    /// Whether the status slot's words come with the running arc (starting,
-    /// compacting).
-    var statusIsBusy: Bool
-    /// *50 %* beside the ring.
-    var contextRingText: String?
-    var contextRingToolTip: String?
-    var sendToolTip: String
-    var stopToolTip: String
-
-    init(_ input: Input) {
+    static func presentation(of input: Input) -> ComposerPresentation {
         let facts = Facts(input)
-        placement = input.placement
-        statusIsBusy = facts.isBusy
         let percent = input.contextUsage.flatMap { $0 >= 0.5 ? Int((min($0, 1) * 100).rounded()) : nil }
-        contextRingText = percent.map { "\($0) %" }
-        contextRingToolTip = contextRingText.map {
-            String(localized: "\($0) of the context is used — click for /context")
+        let ringText = percent.map { "\($0) %" }
+        return ComposerPresentation(
+            placeholder: input.context == .draft
+                ? String(localized: "Ask Claude to…") : String(localized: "Message Claude"),
+            model: facts.modelChip(), effort: facts.effortChip(), mode: facts.modeChip(),
+            modelSections: facts.modelSections(),
+            modelPanelHeader: facts.timing(of: .fastMode(facts.shownFast)) == .afterTurn
+                ? String(localized: "Applies after this turn") : nil,
+            fastMode: facts.fastModeSwitch(), effortMenu: facts.effortMenu(), modeMenu: facts.modeMenu(),
+            cycledModeID: facts.cycledMode().map(id(of:)), status: facts.status(),
+            contextRing: input.contextUsage.flatMap { $0 >= 0.5 ? min($0, 1) : nil },
+            action: facts.isStoppable ? .stop : .send, failure: facts.failure(), error: input.refusal,
+            commands: input.commands.map {
+                ComposerPresentation.Command(name: $0.name, argumentHint: $0.argumentHint, description: $0.description)
+            },
+            placement: input.placement, statusIsBusy: facts.isBusy, contextRingText: ringText,
+            contextRingToolTip: ringText.map { String(localized: "\($0) of the context is used — click for /context") },
+            sendToolTip: facts.isWorking ? String(localized: "Queue ↩") : String(localized: "Send ↩"),
+            stopToolTip: facts.phase == .starting ? String(localized: "Cancel ⌘.") : String(localized: "Stop ⌘."))
+    }
+
+    // MARK: - Choices
+
+    /// The id an item carries for `change`: `model:<account>:<value>`,
+    /// `effort:<level>` (`effort:default` for the model's own), `mode:<raw
+    /// value>`, `fast:<bool>`.
+    static func id(of change: SessionSettings.Change) -> String {
+        switch change {
+        case .model(let choice): "model:\(choice.account.uuidString):\(choice.value)"
+        case .effort(let effort): "effort:\(effort?.rawValue ?? "default")"
+        case .permissionMode(let mode): "mode:\(mode.rawValue)"
+        case .fastMode(let isOn): "fast:\(isOn)"
         }
-        sendToolTip = facts.isWorking ? String(localized: "Queue ↩") : String(localized: "Send ↩")
-        stopToolTip = facts.phase == .starting ? String(localized: "Cancel ⌘.") : String(localized: "Stop ⌘.")
-        placeholder =
-            input.context == .draft ? String(localized: "Ask Claude to…") : String(localized: "Message Claude")
-        model = facts.modelChip()
-        effort = facts.effortChip()
-        mode = facts.modeChip()
-        modelSections = facts.modelSections()
-        modelPanelHeader =
-            facts.timing(of: .fastMode(facts.shownFast)) == .afterTurn
-            ? String(localized: "Applies after this turn") : nil
-        fastMode = facts.fastModeSwitch()
-        effortMenu = facts.effortMenu()
-        modeMenu = facts.modeMenu()
-        cycledMode = facts.cycledMode()
-        status = facts.status()
-        contextRing = input.contextUsage.flatMap { $0 >= 0.5 ? min($0, 1) : nil }
-        action = facts.isStoppable ? .stop : .send
-        failure = facts.failure()
-        error = input.refusal
-        commands = input.commands
+    }
+
+    /// The change an id stands for; `nil` for one that isn't any item's.
+    static func change(forID id: String) -> SessionSettings.Change? {
+        let parts = id.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false).map(String.init)
+        switch (parts.first, parts.count) {
+        case ("model", 3):
+            guard let account = UUID(uuidString: parts[1]) else { return nil }
+            return .model(ModelChoice(account: account, value: parts[2]))
+        case ("effort", 2):
+            if parts[1] == "default" { return .effort(nil) }
+            return Effort(rawValue: parts[1]).map { .effort($0) }
+        case ("mode", 2):
+            return PermissionMode(rawValue: parts[1]).map { .permissionMode($0) }
+        case ("fast", 2):
+            return Bool(parts[1]).map { .fastMode($0) }
+        default:
+            return nil
+        }
     }
 }
 
@@ -283,6 +170,18 @@ extension ComposerModel {
     /// Settings already translates.
     private static var planName: String { String(localized: "Plan (permission mode)", defaultValue: "Plan") }
 
+    /// The glyph a mode's chip and menu row draw.
+    static func glyph(of mode: PermissionMode) -> Glyph {
+        switch mode {
+        case .default: .ask
+        case .acceptEdits: .acceptEdits
+        case .plan: .plan
+        case .auto: .auto
+        case .dontAsk: .dontAsk
+        case .bypassPermissions: .bypassPermissions
+        }
+    }
+
     /// The modes the menu lists above its separator, in its order; Bypass is
     /// set apart under it.
     static let menuModes: [PermissionMode] = [.default, .acceptEdits, .plan, .auto, .dontAsk]
@@ -316,7 +215,7 @@ extension ComposerModel {
     /// What the words are made from: the input, with the answers to the
     /// questions every part asks (which model is shown, whether a process
     /// runs, whether a turn does).
-    fileprivate struct Facts {
+    fileprivate nonisolated struct Facts {
         let input: Input
         let settings: SessionSettings?
         let shownModel: ModelChoice?
@@ -410,7 +309,7 @@ extension ComposerModel {
             let mode = settings?.permissionMode ?? .default
             let words = ComposerModel.words(of: mode)
             return Chip(
-                title: words.short, detail: nil, leadingGlyphs: [.permissionMode(mode)], trailingGlyph: nil,
+                title: words.short, detail: nil, leadingGlyphs: [ComposerModel.glyph(of: mode)], trailingGlyph: nil,
                 isEnabled: settings != nil, isDanger: mode == .bypassPermissions, toolTip: words.name,
                 titleIsDroppable: true)
         }
@@ -434,9 +333,9 @@ extension ComposerModel {
                     subtitle = nil
                 }
                 return Item(
-                    title: name, subtitle: subtitle, glyph: .effort(level: ComposerModel.meterLevel(of: level)),
-                    isChecked: shownEffort == level, isEnabled: isOffered, isDanger: false,
-                    change: .effort(level), restarts: false)
+                    id: ComposerModel.id(of: .effort(level)), title: name, subtitle: subtitle,
+                    glyph: .effort(level: ComposerModel.meterLevel(of: level)),
+                    isChecked: shownEffort == level, isEnabled: isOffered)
             }
             return Menu(sections: [
                 Menu.Section(header: String(localized: "Effort · \(modelName)"), headerHint: nil, items: items)
@@ -450,9 +349,10 @@ extension ComposerModel {
                 let why = settings.unavailability(
                     of: mode, catalog: input.catalog, allowsBypassPermissions: input.allowsBypassPermissions)
                 return Item(
-                    title: words.name, subtitle: why ?? words.subtitle, glyph: .permissionMode(mode),
+                    id: ComposerModel.id(of: .permissionMode(mode)), title: words.name,
+                    subtitle: why ?? words.subtitle, glyph: ComposerModel.glyph(of: mode),
                     isChecked: settings.permissionMode == mode, isEnabled: why == nil,
-                    isDanger: mode == .bypassPermissions, change: .permissionMode(mode), restarts: false)
+                    isDanger: mode == .bypassPermissions)
             }
             return Menu(sections: [
                 Menu.Section(
@@ -489,8 +389,8 @@ extension ComposerModel {
                     }
                     let choice = ModelChoice(account: account.id, value: model.value)
                     return Item(
-                        title: model.displayName, subtitle: subtitle, glyph: nil, isChecked: choice == current,
-                        isEnabled: !model.isDisabled, isDanger: false, change: .model(choice), restarts: restarts)
+                        id: ComposerModel.id(of: .model(choice)), title: model.displayName, subtitle: subtitle,
+                        isChecked: choice == current, isEnabled: !model.isDisabled, restarts: restarts)
                 }
                 let count = min(max(account.shownModelCount, 0), account.models.count)
                 var shown = Array(account.models[..<count])

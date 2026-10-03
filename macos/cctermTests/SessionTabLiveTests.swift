@@ -1,6 +1,7 @@
 import AgentSDK
 import AppKit
 import Combine
+import Components
 import TranscriptKit
 import XCTest
 
@@ -213,7 +214,8 @@ final class SessionTabLiveTests: XCTestCase {
 
     func testAnotherAccountsModelAsksFirstThenRestarts() throws {
         let (tab, url) = try idleSession()
-        tab.composerViewController(try composer(of: tab), didChoose: .model(Fixture.choice("haiku", on: Fixture.relay)))
+        tab.composerViewController(
+            try composer(of: tab), didChoose: ComposerModel.id(of: .model(Fixture.choice("haiku", on: Fixture.relay))))
 
         let window = try XCTUnwrap(tab.view.window)
         XCTAssertTrue(stage!.drainUntil(timeout: 2) { window.attachedSheet != nil }, "no confirmation sheet")
@@ -230,7 +232,8 @@ final class SessionTabLiveTests: XCTestCase {
 
     func testCancellingTheRestartSheetChangesNothing() throws {
         let (tab, url) = try idleSession()
-        tab.composerViewController(try composer(of: tab), didChoose: .model(Fixture.choice("haiku", on: Fixture.relay)))
+        tab.composerViewController(
+            try composer(of: tab), didChoose: ComposerModel.id(of: .model(Fixture.choice("haiku", on: Fixture.relay))))
         let window = try XCTUnwrap(tab.view.window)
         XCTAssertTrue(stage!.drainUntil(timeout: 2) { window.attachedSheet != nil }, "no confirmation sheet")
 

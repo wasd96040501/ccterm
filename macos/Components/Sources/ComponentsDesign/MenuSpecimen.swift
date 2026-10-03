@@ -27,7 +27,7 @@ enum MenuSpecimen {
 }
 
 /// Menus side by side, each at its own size, top-aligned in a plain card.
-private final class MenuRow: NSView {
+final class MenuRow: NSView {
     private let controllers: [MenuPanelViewController]
 
     init(_ contents: [MenuContent]) {

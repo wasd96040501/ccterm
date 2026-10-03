@@ -6,7 +6,7 @@ Every view the app draws with: generic controls and the app's own components. A 
 Sources/DisplayModels/   what a component is shown, as values — Foundation only (Settings/, Transcript/ …)
 Sources/Components/      the views: one directory per family (Form/, Settings/ …), over DisplayModels
   Drawing/               what the families share: the tile, the pill button, the corner radii, the colours, StyledText's fonts
-Sources/ComponentsDesign/  the style page — every component tiled, live (`make design`)
+Sources/ComponentsDesign/  the style page — every component in its real host, live (`make design`)
 Tests/ComponentsTests/   component tests; *SnapshotTests render off screen, only when named
 ```
 
@@ -36,12 +36,14 @@ The app's views come here one unit at a time — a family, or a component with t
 2. **Words:** `grep -rn 'localized:' macos/Components/Sources/Components` shows `bundle: .module` on every hit (a wrapped call carries it on the next line); each key is in both `Resources/*.lproj/Localizable.strings` and gone from `ccterm/Localizable.xcstrings` unless the app still says it.
 3. **Gates:** `make build`, `make test-unit`, `make test-ui`, `make fmt-check` — all green.
 4. **Architecture:** `make arch`; `build/arch/coupling.md` has no more findings than before the unit, and none names a type in `Components`.
-5. **Look:** `make test-ui FILTER=DesignPageSnapshotTests`, then open `/tmp/ccterm-screenshots/Design-{1240,600}-{light,dark}.png` and read the new specimen against its design part: every state the design shows is there, nothing collapsed, clipped or overlapping, the dark render its own.
+5. **Look:** `make test-ui FILTER=DesignPageSnapshotTests`, then open `/tmp/ccterm-screenshots/Design-{1240,600}-{light,dark}.png` and read the new specimen against its design part, at the same size: every state the design shows is there; nothing collapsed, clipped, truncated or overlapping; edges that line up in the design line up here (a form's content and its button bar); the dark render its own. Whatever looks wrong is wrong — a legacy scroller, a non-key window, a mouse attached are a real Mac, not the environment.
 6. **Commit and push.**
 
 ## The style page
 
-`ComponentsDesign` lays every component out as the design sheet does (`design/transcript/index.html`): one column, 1160 wide at most, centred; a section per family — heading, note, then each specimen as a heading over a card the column's width. It is all Auto Layout and follows the window's width; nothing on it has a width of its own. Each family adds a `<Family>Specimen` that builds real components from fixture models, interactive.
+`ComponentsDesign` lays the components out as the design sheets do (`design/transcript/index.html`, `design/settings/index.html`): one column, 1160 wide at most, centred; a section per family — heading, note, then each specimen as a heading over a card. Each family adds a `<Family>Specimen` that builds real components from fixture models, interactive. The page follows the window's width; a component never does.
 
+- **A specimen is the component in its real host, at the host's real size.** Every component lives where the app gives it a size: a Settings pane 700 × 628 (the window's 880 × 680 less its 180 sidebar and 52 toolbar), the account sheet 540 × 600, the main window's sidebar 260 wide, a transcript row at the transcript's column. The specimen builds that host — the window's content, a sheet drawn as the design draws one (corners, edge, shadow) — at that size, and the card holds it centred. Nothing is stretched to the card: a size the app can't give a component shows problems the app doesn't have and hides the ones it does. The size is named once in the specimen, with where it comes from.
+- **A host wider than the column is scaled down whole**, never laid out narrower: the narrow render shows the same layout smaller.
 - **A new component lands with its specimen.** Moving a component here without one leaves the page behind the app.
 - **Look at it off screen**, never by opening a window on the reader's display: `make test-ui FILTER=DesignPageSnapshotTests` renders the page wide and narrow, light and dark, to `/tmp/ccterm-screenshots/Design-<width>-<scheme>.png`. `make design` opens it for hands — scrolling, typing, resizing.

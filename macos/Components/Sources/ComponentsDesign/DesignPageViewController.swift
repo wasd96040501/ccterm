@@ -4,8 +4,9 @@ import AppKit
 /// `.sheet`): one column, 1160 wide at most, centred, at least 16 from the
 /// window's edges; the header (title, lede, the appearance switch), then each
 /// section — its heading, its note, and its specimens, each a heading over a
-/// card as wide as the column. Everything follows the window's width; nothing
-/// has a width of its own.
+/// card as wide as the column. The page follows the window's width; each
+/// specimen keeps the size of the host it shows (`macos/Components/CLAUDE.md`,
+/// *The style page*).
 final class DesignPageViewController: NSViewController {
     struct Section {
         var title: String

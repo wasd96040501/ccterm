@@ -64,7 +64,7 @@ make test-unit                       # app logic tests (snapshots skipped)
 make test-unit FILTER=<Class>[/testMethod]   # one class/method; naming a *SnapshotTests class runs it
 make test-kit [FILTER=<Class>]       # TranscriptKit package tests
 make test-ui [FILTER=<Class>]        # Components package tests (DesignPageSnapshotTests renders the style page off screen)
-make design                          # the style page: every Components component tiled, live (foreground)
+make design                          # the style page: every Components component in its real host, live (foreground)
 make test-sdk [FILTER=<Class>]       # AgentSDK package tests
 make demo-kit                        # TranscriptKit demo app (foreground; close window to stop)
 make test-list [FILTER=<Class>]      # ExactList package tests

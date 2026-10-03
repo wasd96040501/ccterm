@@ -1,5 +1,4 @@
 import AppKit
-import Components
 import DisplayModels
 
 /// The 20-pt line naming who speaks in the `.markdown` row under it — a
@@ -9,10 +8,10 @@ import DisplayModels
 /// A party is drawn with the sidebar's glyph for it, in the sidebar's colour;
 /// a plan with its tool tile. The words are 13-pt secondary.
 @MainActor
-final class CaptionRowView: NSView, PageRowView {
-    typealias Model = Caption
+public final class CaptionRowView: NSView, PageRowView {
+    public typealias Model = Caption
 
-    weak var delegate: PageRowViewDelegate?
+    public weak var delegate: PageRowViewDelegate?
 
     private static let side: CGFloat = 16
 
@@ -50,16 +49,16 @@ final class CaptionRowView: NSView, PageRowView {
         ])
     }
 
-    convenience init() {
+    public convenience init() {
         self.init(frame: .zero)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    static func height(for model: Caption, width: CGFloat) -> CGFloat { 20 }
+    public static func height(for model: Caption, width: CGFloat) -> CGFloat { 20 }
 
-    func configure(with model: Caption) {
+    public func configure(with model: Caption) {
         label.stringValue = model.text
         detail.stringValue = model.detail ?? ""
         detail.isHidden = model.detail == nil

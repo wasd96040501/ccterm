@@ -1,9 +1,9 @@
-import AgentSDK
 import AppKit
 import DisplayModels
 import XCTest
 
-@testable import ccterm
+@testable import Components
+@testable import ComponentsDesign
 
 /// The contract every `.view` row keeps with TranscriptKit, so scrolling
 /// never jitters (Content/Transcript/CLAUDE.md "Row views keep
@@ -174,16 +174,25 @@ final class PageRowViewContractTests: XCTestCase {
     // MARK: - Rows
 
     func testWorkLineRowView() {
-        var s = MessageScript()
-        s.call("b1", "Bash", #"{"command":"cd /r && make","description":"Build the package"}"#)
-        s.result("b1", "Exit code 2\nerror: 'rowSpacing' is inaccessible", error: true)
-        s.call("e1", "Edit", #"{"file_path":"/r/A.swift","old_string":"a","new_string":"b"}"#)
-        s.result("e1")
-        guard case .run(let run) = s.page.entries.first else { return XCTFail("no run") }
-        func line(_ level: WorkLineRowView.Model.Level, _ item: RunItem?) -> WorkLineRowView.Model {
+        // A run of two calls — a failed command and an edit — as the page words it.
+        let run = WorkLine(
+            tile: Tile(glyph: .tool(.change), state: .done),
+            text: StyledText("Edited ") + StyledText("A.swift", style: .noun(opens: "e1"))
+                + StyledText(", ran a command"),
+            detail: nil, exceptions: StyledText("· ") + StyledText("1 failed", style: .failure),
+            meta: StyledText.diffStat(added: 1, removed: 1))
+        let failedItem = WorkLine(
+            tile: Tile(glyph: .tool(.command), state: .failed), text: StyledText("Build the package"), detail: "make",
+            exceptions: StyledText(), meta: StyledText())
+        let editedItem = WorkLine(
+            tile: Tile(glyph: .tool(.change), state: .done),
+            text: StyledText("A.swift", style: .noun(opens: nil)), detail: ".", exceptions: StyledText(),
+            meta: StyledText.diffStat(added: 1, removed: 1))
+        func line(_ level: WorkLineRowView.Model.Level, _ item: (id: String, line: WorkLine)?) -> WorkLineRowView.Model
+        {
             WorkLineRowView.Model(
-                line: item?.line ?? run.line, level: level,
-                action: item.map { .open($0.id) } ?? .toggle(run.id, expanded: false), origin: nil,
+                line: item?.line ?? run, level: level,
+                action: item.map { .open($0.id) } ?? .toggle("b1", expanded: false), origin: nil,
                 isSelected: false, flashes: false)
         }
         func painted(_ model: WorkLineRowView.Model) -> [WorkLineRowView.Model] {
@@ -199,7 +208,7 @@ final class PageRowViewContractTests: XCTestCase {
                 + StyledText(", ran 3 commands and searched for ") + StyledText("rowSpacing", style: .code)
                 + StyledText(" across the whole package"),
             detail: "macos/TranscriptKit/Sources/TranscriptKit/Internal/TranscriptView+Layout.swift",
-            exceptions: StyledText(" · ") + StyledText("1 failed", style: .failure),
+            exceptions: StyledText("· ") + StyledText("1 failed", style: .failure),
             meta: StyledText("+12", style: .added) + StyledText(" ") + StyledText("−3", style: .removed)
                 + StyledText("  34s"))
         func custom(
@@ -217,8 +226,8 @@ final class PageRowViewContractTests: XCTestCase {
             tile: Tile(glyph: .tool(.read), state: .running), text: StyledText("Reading A.swift"), detail: nil,
             exceptions: StyledText(), meta: StyledText())
         let fixtures = [
-            ("a run", line(.line, nil)), ("a failed item", line(.item, run.items[0])),
-            ("an item", line(.item, run.items[1])),
+            ("a run", line(.line, nil)), ("a failed item", line(.item, ("b1", failedItem))),
+            ("an item", line(.item, ("e1", editedItem))),
             ("a long run, collapsed", custom(long, .line, .toggle("r1", expanded: false))),
             ("a long run, expanded", custom(long, .line, .toggle("r1", expanded: true))),
             ("a long item", custom(long, .item, .open("e1"))),
@@ -236,40 +245,56 @@ final class PageRowViewContractTests: XCTestCase {
     }
 
     func testApprovalCardView() {
-        func waiting(_ name: String, _ input: String, reason: String?) -> Approval {
-            let use = ToolUseBlock(id: "c1", name: name, input: MessageScript.json(input))
-            return Approval(
-                ToolCall(
-                    use: use, result: nil, kind: ToolKind(use, result: nil), state: .waiting(reason: reason),
-                    startedAt: nil, finishedAt: nil))
+        func approval(
+            _ tile: ToolKind, title: String, body: Approval.Body?, reason: String?, request: String
+        ) -> Approval {
+            Approval(
+                id: "c1", tile: Tile(glyph: .tool(tile), state: .waiting), title: title, body: body, reason: reason,
+                request: request)
         }
-        let many = (1...30).map { "let line\($0) = \($0)" }.joined(separator: "\n")
-        let escaped = many.replacingOccurrences(of: "\n", with: "\\n")
+        let run = "Claude wants to run this command"
+        let lines = (1...30).map { "let line\($0) = \($0)" }
         let wide = String(repeating: "swift build -c debug --product ccterm && ", count: 6) + "true"
         let fixtures = [
             (
                 "a short command",
-                waiting("Bash", #"{"command":"make test-unit","description":"Run the unit tests"}"#, reason: nil)
+                approval(
+                    .command, title: "Run the unit tests", body: .command("make test-unit"), reason: nil, request: run)
             ),
             (
                 "a command with a reason",
-                waiting(
-                    "Bash", #"{"command":"make test-unit FILTER=TranscriptViewTests"}"#,
-                    reason: "Needs approval: writes outside the project (build/test-dd)")
+                approval(
+                    .command, title: "Run a command", body: .command("make test-unit FILTER=TranscriptViewTests"),
+                    reason: "Needs approval: writes outside the project (build/test-dd)", request: run)
             ),
-            ("a command that wraps", waiting("Bash", #"{"command":"\#(wide)"}"#, reason: "Needs approval")),
-            ("a command of thirty lines", waiting("Bash", #"{"command":"\#(escaped)"}"#, reason: nil)),
+            (
+                "a command that wraps",
+                approval(
+                    .command, title: "Run a command", body: .command(wide), reason: "Needs approval", request: run)
+            ),
+            (
+                "a command of thirty lines",
+                approval(
+                    .command, title: "Run a command", body: .command(lines.joined(separator: "\n")), reason: nil,
+                    request: run)
+            ),
             (
                 "an edit",
-                waiting("Edit", #"{"file_path":"/r/A.swift","old_string":"a\nb","new_string":"c\nd\ne"}"#, reason: nil)
+                approval(
+                    .change, title: "Edit A.swift", body: .change(removed: ["a", "b"], added: ["c", "d", "e"]),
+                    reason: nil, request: "Claude wants to make this edit")
             ),
             (
                 "a long edit",
-                waiting(
-                    "Write", #"{"file_path":"/r/B.swift","content":"\#(escaped)"}"#,
-                    reason: "Needs approval: a new file")
+                approval(
+                    .create, title: "Create B.swift", body: .newFile(lines), reason: "Needs approval: a new file",
+                    request: "Claude wants to create this file")
             ),
-            ("a tool without a body", waiting("WebFetch", #"{"url":"https://example.com"}"#, reason: nil)),
+            (
+                "a tool without a body",
+                approval(
+                    .web, title: "Use WebFetch", body: nil, reason: nil, request: "Claude wants to use WebFetch")
+            ),
         ].map { RowFixture(name: $0.0, model: $0.1) }
         assertContract(ApprovalCardView.self, fixtures)
     }
@@ -306,28 +331,41 @@ final class PageRowViewContractTests: XCTestCase {
 
     @MainActor
     func testAttachmentsRowView() {
-        let wide = PromptImage(ImageFixture.png(width: 400, height: 200), number: 1, entryID: "p")!
-        let tall = PromptImage(ImageFixture.png(width: 100, height: 300), number: 2, entryID: "p")!
-        let panorama = PromptImage(ImageFixture.png(width: 1200, height: 100), number: 3, entryID: "p")!
+        let wide = RowsSpecimen.image(number: 1, width: 400, height: 200)
+        let tall = RowsSpecimen.image(number: 2, width: 100, height: 300)
+        let panorama = RowsSpecimen.image(number: 3, width: 1200, height: 100)
         let fixtures = [
             ("one", [wide]), ("two", [wide, tall]), ("four wrap", [wide, tall, wide, tall]), ("panorama", [panorama]),
-        ].map { RowFixture(name: $0.0, model: AttachmentsRowView.Model(images: $0.1, highlighted: nil)) }
+        ].map {
+            RowFixture(
+                name: $0.0,
+                model: AttachmentsRowView.Model(
+                    images: $0.1, titles: $0.1.map { "Image \($0.number)" }, highlighted: nil))
+        }
         assertContract(AttachmentsRowView.self, fixtures)
     }
 
     func testDividerRowView() {
+        func divider(
+            _ id: String, _ kind: SessionDivider.Kind, _ label: String, summary: String? = nil, prompt: String? = nil,
+            link: String? = nil
+        ) -> SessionDivider {
+            SessionDivider(id: id, kind: kind, summary: summary, prompt: prompt, label: label, linkTitle: link)
+        }
         let date = Date(timeIntervalSince1970: 1_750_000_000)
         let fixtures = [
-            SessionDivider(
-                id: "a", kind: .compacted(automatically: false, preTokens: 168_000, postTokens: 14_000), summary: "s"),
-            SessionDivider(
-                id: "b", kind: .compacted(automatically: true, preTokens: nil, postTokens: nil), summary: nil),
-            SessionDivider(id: "c", kind: .compacting, summary: nil),
-            SessionDivider(id: "d", kind: .resumed(date), summary: nil),
-            SessionDivider(id: "e", kind: .pause(date), summary: nil),
-            SessionDivider(id: "f", kind: .continued(.usageLimitReset), prompt: "Your usage limit has reset."),
-            SessionDivider(id: "g", kind: .continued(.automatic), prompt: nil),
-            SessionDivider(id: "h", kind: .restarted(account: "Work", model: "Opus 4.5")),
+            divider(
+                "a", .compacted(automatically: false, preTokens: 168_000, postTokens: 14_000),
+                "Conversation compacted · 168k → 14k tokens", summary: "s", link: "Summary"),
+            divider("b", .compacted(automatically: true, preTokens: nil, postTokens: nil), "Compacted automatically"),
+            divider("c", .compacting, "Compacting…"),
+            divider("d", .resumed(date), "Resumed · Sun 23:06"),
+            divider("e", .pause(date), "Sun 23:06"),
+            divider(
+                "f", .continued(.usageLimitReset), "Continued after the usage limit reset",
+                prompt: "Your usage limit has reset.", link: "Prompt"),
+            divider("g", .continued(.automatic), "Continued automatically"),
+            divider("h", .restarted(account: "Work", model: "Opus 4.5"), "Restarted as Work · Opus 4.5"),
         ].map { RowFixture(name: $0.id, model: $0) }
         assertContract(DividerRowView.self, fixtures)
     }
@@ -354,37 +392,18 @@ final class PageRowViewContractTests: XCTestCase {
         assertContract(PlanDecisionRowView.self, [RowFixture(name: "waiting", model: "plan-1")])
     }
 
-    func testQuestionRowView() throws {
-        func questions(_ json: String) throws -> [Tools.AskUserQuestion.Question] {
-            try JSONDecoder().decode(Tools.AskUserQuestion.Input.self, from: Data(#"{"questions":\#(json)}"#.utf8))
-                .questions
-        }
-        func question(_ json: String, answers: [String: String], waiting: Bool = false) throws -> Question {
-            let use = ToolUseBlock(id: "q", name: "AskUserQuestion", input: MessageScript.json("{}"))
-            let call = ToolCall(
-                use: use, result: nil, kind: .other, state: waiting ? .waiting(reason: nil) : .done, startedAt: nil,
-                finishedAt: nil)
-            return Question(call: call, questions: try questions(json), answers: answers)
-        }
-        let one =
-            #"[{"question":"Which library should we use for date formatting?","header":"Auth method","options":[{"label":"date-fns","description":"Small, tree-shakeable"},{"label":"Moment","description":""}],"multiSelect":false}]"#
-        let long =
-            #"[{"question":"Which of these approaches to reworking the tab bar do you want me to take, given that the split editor keeps its own tab strip and both must keep working when a document opens beside the transcript?","header":"","options":[{"label":"A very long option label that will not fit a narrow split editor at all","description":"and a description that is just as long as the label is, so both must truncate"},{"label":"Short","description":"x"}],"multiSelect":false}]"#
-        let several =
-            #"[{"question":"Which platforms?","header":"Targets","options":[{"label":"macOS","description":"14+"},{"label":"iOS","description":""},{"label":"visionOS","description":"Later"}],"multiSelect":true},{"question":"Ship it?","header":"Release","options":[{"label":"Yes","description":""},{"label":"No","description":""}],"multiSelect":false}]"#
-        let answered = try question(one, answers: ["Which library should we use for date formatting?": "date-fns"])
-        let otherAnswer = try question(one, answers: ["Which library should we use for date formatting?": "Moment"])
-        let unanswered = try question(one, answers: [:])
-        let severalAnswered = try question(several, answers: ["Which platforms?": "macOS, iOS", "Ship it?": "Yes"])
-        let severalOther = try question(several, answers: ["Which platforms?": "visionOS", "Ship it?": "No"])
+    func testQuestionRowView() {
         let fixtures = [
-            RowFixture(name: "answered", model: answered, sameGeometry: [otherAnswer, unanswered]),
-            RowFixture(name: "long text and options", model: try question(long, answers: [:])),
-            RowFixture(name: "several questions", model: severalAnswered, sameGeometry: [severalOther]),
-            RowFixture(name: "waiting", model: try question(one, answers: [:], waiting: true)),
-            RowFixture(name: "waiting, long", model: try question(long, answers: [:], waiting: true)),
             RowFixture(
-                name: "waiting, several", model: try question(several, answers: [:], waiting: true)),
+                name: "answered", model: RowModels.one(chosen: "date-fns"),
+                sameGeometry: [RowModels.one(chosen: "Moment"), RowModels.one()]),
+            RowFixture(name: "long text and options", model: RowModels.long()),
+            RowFixture(
+                name: "several questions", model: RowModels.several(chosen: ["macOS", "iOS", "Yes"]),
+                sameGeometry: [RowModels.several(chosen: ["visionOS", "No"])]),
+            RowFixture(name: "waiting", model: RowModels.one(waiting: true)),
+            RowFixture(name: "waiting, long", model: RowModels.long(waiting: true)),
+            RowFixture(name: "waiting, several", model: RowModels.several(waiting: true)),
         ]
         assertContract(QuestionRowView.self, fixtures)
     }

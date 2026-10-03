@@ -109,3 +109,14 @@
 "Claude quit unexpectedly" = "Claude 意外退出";
 "%lld More Models" = "另外 %lld 个模型";
 "Fast Mode" = "快速模式";
+/* Rows */
+"Interrupted" = "已中断";
+"Keep Planning" = "继续规划";
+"Approve" = "批准";
+"Show all" = "显示全部";
+"Show %lld more" = "显示其余 %lld 项";
+"Submit" = "提交";
+"Chat About This" = "聊聊这个";
+"Choose any" = "可多选";
+"Other — type something" = "其他 — 请输入";
+"Notes" = "备注";

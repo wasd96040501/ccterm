@@ -4,7 +4,7 @@ import DisplayModels
 /// What a row of the transcript reports: intent only, by id. The row never
 /// knows what opening, toggling or deciding does — its tab's controller does.
 @MainActor
-protocol PageRowViewDelegate: AnyObject {
+public protocol PageRowViewDelegate: AnyObject {
     /// Open what `id` names beside the transcript (`TranscriptPage.document(for:)`):
     /// a click shows it in the other editor's temporary tab, a double-click
     /// (`pinned`) in a tab that stays.
@@ -31,6 +31,6 @@ protocol PageRowViewDelegate: AnyObject {
 }
 
 extension PageRowViewDelegate {
-    func pageRowView(_ rowView: NSView, didRequestWithdrawOfPrompt uuid: String) {}
-    func pageRowView(_ rowView: NSView, didRequestResendOfPrompt uuid: String) {}
+    public func pageRowView(_ rowView: NSView, didRequestWithdrawOfPrompt uuid: String) {}
+    public func pageRowView(_ rowView: NSView, didRequestResendOfPrompt uuid: String) {}
 }

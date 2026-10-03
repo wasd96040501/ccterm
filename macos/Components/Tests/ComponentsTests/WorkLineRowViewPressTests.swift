@@ -2,7 +2,7 @@ import AppKit
 import DisplayModels
 import XCTest
 
-@testable import ccterm
+@testable import Components
 
 /// A press on a work line: on a named file that is a link it opens that
 /// file's document; anywhere else it does what the line does — a run's
@@ -34,14 +34,8 @@ final class WorkLineRowViewPressTests: XCTestCase {
             with: WorkLineRowView.Model(
                 line: line, level: .line, action: .toggle("r1", expanded: false), origin: nil,
                 isSelected: false, flashes: false))
-        let host = NSViewController()
-        host.view = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 28))
-        view.frame = host.view.bounds
-        host.view.addSubview(view)
-        let stage = AppKitStage.mount(host, size: CGSize(width: 520, height: 28))
+        let stage = RowStage(view, size: CGSize(width: 520, height: 28))
         defer { stage.teardown() }
-        view.frame = host.view.bounds
-        view.layoutSubtreeIfNeeded()
 
         // Press every 2 pt along the middle of the line.
         var byX: [(CGFloat, String)] = []

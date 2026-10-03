@@ -1,5 +1,4 @@
 import AppKit
-import Components
 import DisplayModels
 
 /// The question that stops a run: what the call will do, whole, and Allow /
@@ -11,10 +10,10 @@ import DisplayModels
 /// Laid out by hand from `metrics`, which `height(for:width:)` reads too, so
 /// the height a row declares and the card drawn in it are one computation.
 @MainActor
-final class ApprovalCardView: NSView, PageRowView {
-    typealias Model = Approval
+public final class ApprovalCardView: NSView, PageRowView {
+    public typealias Model = Approval
 
-    weak var delegate: PageRowViewDelegate?
+    public weak var delegate: PageRowViewDelegate?
 
     private static let titleFont = NSFont.systemFont(ofSize: 13, weight: .medium)
     private static let reasonFont = NSFont.systemFont(ofSize: 12)
@@ -32,8 +31,8 @@ final class ApprovalCardView: NSView, PageRowView {
     private let body = ApprovalBodyView()
     private let showAll = NSButton()
     private let reason = NSTextField(wrappingLabelWithString: "")
-    private let deny = PillButton(title: String(localized: "Deny"), keys: "⎋")
-    private let allow = PillButton(title: String(localized: "Allow"), keys: "⌘↩", isPrimary: true)
+    private let deny = PillButton(title: String(localized: "Deny", bundle: .module), keys: "⎋")
+    private let allow = PillButton(title: String(localized: "Allow", bundle: .module), keys: "⌘↩", isPrimary: true)
 
     private var model: Approval?
 
@@ -54,7 +53,7 @@ final class ApprovalCardView: NSView, PageRowView {
 
         showAll.isBordered = false
         showAll.attributedTitle = NSAttributedString(
-            string: String(localized: "Show all"),
+            string: String(localized: "Show all", bundle: .module),
             attributes: [.font: Self.reasonFont, .foregroundColor: NSColor.linkColor])
         showAll.target = self
         showAll.action = #selector(showAllPressed)
@@ -70,14 +69,14 @@ final class ApprovalCardView: NSView, PageRowView {
         for view in [tile, title, body, showAll, reason, deny, allow] { addSubview(view) }
     }
 
-    convenience init() {
+    public convenience init() {
         self.init(frame: .zero)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    override var isFlipped: Bool { true }
+    public override var isFlipped: Bool { true }
 
     // MARK: - Metrics
 
@@ -111,13 +110,13 @@ final class ApprovalCardView: NSView, PageRowView {
         return Metrics(bodyHeight: bodyHeight, isCut: isCut, reasonHeight: reasonHeight, height: height)
     }
 
-    static func height(for model: Approval, width: CGFloat) -> CGFloat {
+    public static func height(for model: Approval, width: CGFloat) -> CGFloat {
         metrics(for: model, width: width).height
     }
 
     // MARK: - Model
 
-    func configure(with model: Approval) {
+    public func configure(with model: Approval) {
         self.model = model
         tile.tile = model.tile
         title.stringValue = model.title
@@ -130,7 +129,7 @@ final class ApprovalCardView: NSView, PageRowView {
 
     // MARK: - Layout
 
-    override func layout() {
+    public override func layout() {
         super.layout()
         guard let model else { return }
         let metrics = Self.metrics(for: model, width: bounds.width)
@@ -181,15 +180,15 @@ final class ApprovalCardView: NSView, PageRowView {
 
     // MARK: - Paint
 
-    override var wantsUpdateLayer: Bool { true }
+    public override var wantsUpdateLayer: Bool { true }
 
-    override func updateLayer() {
+    public override func updateLayer() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             outline.borderColor = NSColor.separatorColor.cgColor
         }
     }
 
-    override func viewDidChangeEffectiveAppearance() {
+    public override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         needsDisplay = true
     }

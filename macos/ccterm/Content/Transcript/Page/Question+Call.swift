@@ -62,17 +62,3 @@ nonisolated extension Question {
         return unknown.count == parts.count ? [answer] : unknown
     }
 }
-
-nonisolated extension Question.Item {
-    /// After the header of a multi-select question.
-    var hint: String? { allowsSeveral ? String(localized: "Choose any") : nil }
-
-    /// The row the reader types an answer in, always last while it waits:
-    /// *Other — type something*.
-    var otherLabel: String { String(localized: "Other — type something") }
-    var otherPlaceholder: String {
-        allowsSeveral ? String(localized: "Type something") : String(localized: "Type something.")
-    }
-    /// Under a previewed option, where the reader's words go back as *User notes*.
-    var notesPlaceholder: String { String(localized: "Notes") }
-}

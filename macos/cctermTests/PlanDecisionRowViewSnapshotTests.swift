@@ -1,3 +1,4 @@
+import Components
 import XCTest
 
 @testable import ccterm

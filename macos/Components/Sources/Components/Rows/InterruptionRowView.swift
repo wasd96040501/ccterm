@@ -1,16 +1,15 @@
 import AppKit
-import Components
 
 /// `stop.circle` *Interrupted*: the reader stopped Claude while it was
 /// writing — the reply's last word (05-local.md "Interruption").
 @MainActor
-final class InterruptionRowView: NSView, PageRowView {
-    typealias Model = Void
+public final class InterruptionRowView: NSView, PageRowView {
+    public typealias Model = Void
 
-    weak var delegate: PageRowViewDelegate?
+    public weak var delegate: PageRowViewDelegate?
 
     private let icon = NSImageView()
-    private let label = NSTextField(labelWithString: String(localized: "Interrupted"))
+    private let label = NSTextField(labelWithString: String(localized: "Interrupted", bundle: .module))
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -33,14 +32,14 @@ final class InterruptionRowView: NSView, PageRowView {
         ])
     }
 
-    convenience init() {
+    public convenience init() {
         self.init(frame: .zero)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    static func height(for model: Void, width: CGFloat) -> CGFloat { 20 }
+    public static func height(for model: Void, width: CGFloat) -> CGFloat { 20 }
 
-    func configure(with model: Void) {}
+    public func configure(with model: Void) {}
 }

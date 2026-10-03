@@ -1,5 +1,4 @@
 import AppKit
-import Components
 import DisplayModels
 
 /// One line of work: a run's row, one of its items, a row of news or one
@@ -27,16 +26,16 @@ import DisplayModels
 /// on cut text doesn't reach drawn words, so the snapshots at 320 and 520 are
 /// what show them.
 @MainActor
-final class WorkLineRowView: NSView, PageRowView {
-    struct Model: Equatable {
-        enum Level: Equatable {
+public final class WorkLineRowView: NSView, PageRowView {
+    public struct Model: Equatable {
+        public enum Level: Equatable {
             /// A run's or news's own row.
             case line
             /// One item under an expanded row, indented 24.
             case item
         }
 
-        enum Action: Equatable {
+        public enum Action: Equatable {
             /// A click opens `id` beside (a double-click pins it).
             case open(String)
             /// A click expands or collapses run `id`; the chevron shows which.
@@ -46,19 +45,28 @@ final class WorkLineRowView: NSView, PageRowView {
             case none
         }
 
-        var line: WorkLine
-        var level: Level
-        var action: Action
+        public var line: WorkLine
+        public var level: Level
+        public var action: Action
         /// The call that started a background task: ↖ on hover reveals it.
-        var origin: String?
+        public var origin: String?
         /// Its document is the one showing beside: the selection highlight.
-        var isSelected: Bool
+        public var isSelected: Bool
         /// Just brought into view by *Show in Transcript* or ↖: flash once
         /// as configured, then settle to `isSelected`.
-        var flashes: Bool
+        public var flashes: Bool
+
+        public init(line: WorkLine, level: Level, action: Action, origin: String?, isSelected: Bool, flashes: Bool) {
+            self.line = line
+            self.level = level
+            self.action = action
+            self.origin = origin
+            self.isSelected = isSelected
+            self.flashes = flashes
+        }
     }
 
-    weak var delegate: PageRowViewDelegate?
+    public weak var delegate: PageRowViewDelegate?
 
     private static let textFont = NSFont.systemFont(ofSize: 13)
     private static let detailFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
@@ -75,7 +83,7 @@ final class WorkLineRowView: NSView, PageRowView {
     /// The row's height, which is the wash's: a run's line and its items alike.
     static let rowHeight: CGFloat = 28
     /// Between the wash's edge and the words' line, above and below them.
-    static let air: CGFloat = 6
+    public static let air: CGFloat = 6
 
     private let tile = TileView()
     private let wordsView = WordsView()
@@ -109,24 +117,24 @@ final class WorkLineRowView: NSView, PageRowView {
         setAccessibilityRole(.button)
     }
 
-    convenience init() {
+    public convenience init() {
         self.init(frame: .zero)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    override var isFlipped: Bool { true }
+    public override var isFlipped: Bool { true }
 
     // MARK: - Height
 
-    static func height(for model: Model, width: CGFloat) -> CGFloat {
+    public static func height(for model: Model, width: CGFloat) -> CGFloat {
         rowHeight
     }
 
     // MARK: - Model
 
-    func configure(with model: Model) {
+    public func configure(with model: Model) {
         let previous = self.model
         self.model = model
 
@@ -218,7 +226,7 @@ final class WorkLineRowView: NSView, PageRowView {
     /// The tile and accessory centred on the line, meta against the
     /// accessory, the words after the tile with the exceptions straight after
     /// them — and the words give way first when the line is short.
-    override func layout() {
+    public override func layout() {
         super.layout()
         updateWashFrame()
         guard let model else { return }
@@ -276,14 +284,14 @@ final class WorkLineRowView: NSView, PageRowView {
 
     // MARK: - Wash
 
-    override var wantsUpdateLayer: Bool { true }
+    public override var wantsUpdateLayer: Bool { true }
 
     private func updateWashFrame() {
         wash.frame = NSRect(
             x: -Self.washOutset, y: 0, width: bounds.width + 2 * Self.washOutset, height: Self.rowHeight)
     }
 
-    override func updateLayer() {
+    public override func updateLayer() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             wash.backgroundColor = baseWash().cgColor
         }
@@ -324,7 +332,7 @@ final class WorkLineRowView: NSView, PageRowView {
 
     // MARK: - Hover
 
-    override func updateTrackingAreas() {
+    public override func updateTrackingAreas() {
         super.updateTrackingAreas()
         for area in trackingAreas { removeTrackingArea(area) }
         addTrackingArea(
@@ -333,11 +341,11 @@ final class WorkLineRowView: NSView, PageRowView {
         refreshHover()
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = true }
+    public override func mouseEntered(with event: NSEvent) { isHovered = true }
 
-    override func mouseExited(with event: NSEvent) { isHovered = false }
+    public override func mouseExited(with event: NSEvent) { isHovered = false }
 
-    override func viewDidMoveToWindow() {
+    public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window == nil { isHovered = false }
     }
@@ -354,18 +362,18 @@ final class WorkLineRowView: NSView, PageRowView {
         isHovered = bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
     }
 
-    override func viewDidChangeEffectiveAppearance() {
+    public override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         needsDisplay = true
     }
 
     // MARK: - Clicks
 
-    override func hitTest(_ point: NSPoint) -> NSView? {
+    public override func hitTest(_ point: NSPoint) -> NSView? {
         bounds.contains(convert(point, from: superview)) ? self : nil
     }
 
-    override func mouseDown(with event: NSEvent) {
+    public override func mouseDown(with event: NSEvent) {
         guard let model, let delegate else { return super.mouseDown(with: event) }
         let point = convert(event.locationInWindow, from: nil)
         var opened: String?

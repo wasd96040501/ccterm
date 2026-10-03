@@ -541,16 +541,6 @@
         }
       }
     },
-    "Approve": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "批准"
-          }
-        }
-      }
-    },
     "Approved %@’s plan": {
       "localizations": {
         "zh-Hans": {
@@ -803,16 +793,6 @@
         }
       }
     },
-    "Chat About This": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "聊聊这个"
-          }
-        }
-      }
-    },
     "Checked out here": {
       "localizations": {
         "zh-Hans": {
@@ -859,16 +839,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择文件夹…"
-          }
-        }
-      }
-    },
-    "Choose any": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "可多选"
           }
         }
       }
@@ -1690,16 +1660,6 @@
         }
       }
     },
-    "Keep Planning": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "继续规划"
-          }
-        }
-      }
-    },
     "Leaving the worktree": {
       "localizations": {
         "zh-Hans": {
@@ -2123,16 +2083,6 @@
         }
       }
     },
-    "Notes": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "备注"
-          }
-        }
-      }
-    },
     "Nothing to paste — expected KEY=value": {
       "localizations": {
         "zh-Hans": {
@@ -2169,16 +2119,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "其他"
-          }
-        }
-      }
-    },
-    "Other — type something": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "其他 — 请输入"
           }
         }
       }
@@ -2909,16 +2849,6 @@
         }
       }
     },
-    "Show %lld more": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "显示其余 %lld 项"
-          }
-        }
-      }
-    },
     "Show all": {
       "localizations": {
         "zh-Hans": {
@@ -3069,16 +2999,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "子代理"
-          }
-        }
-      }
-    },
-    "Submit": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "提交"
           }
         }
       }
@@ -3362,26 +3282,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "类型"
-          }
-        }
-      }
-    },
-    "Type something": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请输入"
-          }
-        }
-      }
-    },
-    "Type something.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请输入。"
           }
         }
       }

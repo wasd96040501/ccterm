@@ -1,5 +1,4 @@
 import AppKit
-import Components
 import DisplayModels
 
 /// What Claude asked the reader and what they chose, kept together like a
@@ -21,10 +20,10 @@ import DisplayModels
 /// answers with: the row is exactly as tall as what it lays out, whatever is
 /// picked — the preview's room is reserved.
 @MainActor
-final class QuestionRowView: NSView, PageRowView {
-    typealias Model = Question
+public final class QuestionRowView: NSView, PageRowView {
+    public typealias Model = Question
 
-    weak var delegate: PageRowViewDelegate?
+    public weak var delegate: PageRowViewDelegate?
 
     /// `TileView`'s side, which a row is at least as tall as.
     private static let tileSide: CGFloat = 16
@@ -280,7 +279,7 @@ final class QuestionRowView: NSView, PageRowView {
     private var itemViews: [ItemViews] = []
     private let outcome = NSTextField(labelWithString: "")
     private lazy var submit: NSButton = {
-        let button = PillButton(title: String(localized: "Submit"), keys: "⌘↩", isPrimary: true)
+        let button = PillButton(title: String(localized: "Submit", bundle: .module), keys: "⌘↩", isPrimary: true)
         button.target = self
         button.action = #selector(submitPressed(_:))
         button.keyEquivalent = "\r"
@@ -291,7 +290,7 @@ final class QuestionRowView: NSView, PageRowView {
         let button = NSButton()
         button.isBordered = false
         button.attributedTitle = NSAttributedString(
-            string: String(localized: "Chat About This"),
+            string: String(localized: "Chat About This", bundle: .module),
             attributes: [.font: Self.optionFont, .foregroundColor: NSColor.secondaryLabelColor])
         button.target = self
         button.action = #selector(chatPressed(_:))
@@ -313,18 +312,18 @@ final class QuestionRowView: NSView, PageRowView {
         addSubview(outcome)
     }
 
-    convenience init() {
+    public convenience init() {
         self.init(frame: .zero)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    override var isFlipped: Bool { true }
+    public override var isFlipped: Bool { true }
 
-    override var acceptsFirstResponder: Bool { model?.isWaiting == true }
+    public override var acceptsFirstResponder: Bool { model?.isWaiting == true }
 
-    static func height(for model: Question, width: CGFloat) -> CGFloat {
+    public static func height(for model: Question, width: CGFloat) -> CGFloat {
         Metrics(model, width: width).height
     }
 
@@ -365,7 +364,7 @@ final class QuestionRowView: NSView, PageRowView {
         return ceil(cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: max(width, 1), height: 100_000)).height)
     }
 
-    func configure(with model: Question) {
+    public func configure(with model: Question) {
         tileView.tile = model.tile
         // What is picked so far belongs to this row's model; the same model
         // again keeps it.
@@ -500,7 +499,7 @@ final class QuestionRowView: NSView, PageRowView {
 
     // MARK: - Layout
 
-    override func layout() {
+    public override func layout() {
         super.layout()
         guard let model else { return }
         let plan = Metrics(model, width: bounds.width)
@@ -644,13 +643,13 @@ final class QuestionRowView: NSView, PageRowView {
     }
 
     /// ⎋ declines the question.
-    override func cancelOperation(_ sender: Any?) {
+    public override func cancelOperation(_ sender: Any?) {
         guard let model, model.isWaiting else { return super.cancelOperation(sender) }
         delegate?.pageRowView(self, didDecide: .deny, forCall: model.id)
     }
 
     /// Pressing the form takes focus for ⎋, and the table keeps ↑ / ↓.
-    override func mouseDown(with event: NSEvent) {
+    public override func mouseDown(with event: NSEvent) {
         if model?.isWaiting == true { window?.makeFirstResponder(self) }
         super.mouseDown(with: event)
     }
@@ -679,7 +678,7 @@ final class QuestionRowView: NSView, PageRowView {
 }
 
 extension QuestionRowView: NSTextFieldDelegate {
-    func controlTextDidChange(_ notification: Notification) {
+    public func controlTextDidChange(_ notification: Notification) {
         guard let field = notification.object as? NSTextField, let model else { return }
         if field.tag >= 1000 {
             let index = field.tag - 1000
@@ -698,4 +697,16 @@ extension QuestionRowView: NSTextFieldDelegate {
         }
         update()
     }
+}
+
+/// The question's fixed control copy: the view's, not the page's.
+extension Question.Item {
+    /// After the header of a multi-select question.
+    fileprivate var hint: String? { allowsSeveral ? String(localized: "Choose any", bundle: .module) : nil }
+
+    /// The row the reader types an answer in, always last while it waits.
+    fileprivate var otherLabel: String { String(localized: "Other — type something", bundle: .module) }
+
+    /// Under a previewed option, where the reader's words go back as *User notes*.
+    fileprivate var notesPlaceholder: String { String(localized: "Notes", bundle: .module) }
 }

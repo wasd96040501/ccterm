@@ -4,12 +4,12 @@ import AppKit
 /// that rises in, stays about two seconds and fades. Its owner pins it;
 /// it is hidden between notes.
 @MainActor
-final class ToastView: NSView {
+public final class ToastView: NSView {
     private let label = NSTextField(labelWithString: "")
     /// The note's run; a new note replaces it.
     private var run: Task<Void, Never>?
 
-    init() {
+    public init() {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 14
@@ -27,17 +27,17 @@ final class ToastView: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    override var wantsUpdateLayer: Bool { true }
+    public override var wantsUpdateLayer: Bool { true }
 
-    override func updateLayer() {
+    public override func updateLayer() {
         layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.88).cgColor
         label.textColor = .windowBackgroundColor
     }
 
     /// Shows `text` for 2.8 seconds: in over 0.22, out over the last 0.42.
-    func show(_ text: String) {
+    public func show(_ text: String) {
         run?.cancel()
         label.stringValue = text
         isHidden = false

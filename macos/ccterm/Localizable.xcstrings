@@ -1894,16 +1894,6 @@
         }
       }
     },
-    "Hide": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "隐藏"
-          }
-        }
-      }
-    },
     "High": {
       "localizations": {
         "zh-Hans": {
@@ -3488,16 +3478,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "设置…"
-          }
-        }
-      }
-    },
-    "Show": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "显示"
           }
         }
       }

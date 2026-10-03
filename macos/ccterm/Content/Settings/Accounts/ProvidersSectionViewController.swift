@@ -1,4 +1,5 @@
 import AppKit
+import CCTermUI
 import Combine
 
 /// Accounts' API Providers section: a row per provider — or an empty state —

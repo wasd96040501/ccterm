@@ -16,7 +16,8 @@ struct Coupling {
     }
 
     let index: Index
-    let module: String
+    /// The app and the packages its components live in.
+    let modules: Set<String>
 
     private static let rules: [String: (title: String, fix: String)] = [
         "B1": (
@@ -137,9 +138,9 @@ struct Coupling {
 
     func findings() -> [Finding] {
         var found: [Finding] = []
-        let components = index.types.filter { $0.module == module && isComponent($0) }
+        let components = index.types.filter { modules.contains($0.module) && isComponent($0) }
         let componentIDs = Set(components.map(ObjectIdentifier.init))
-        for user in index.types where user.module == module && user.kind != "file" {
+        for user in index.types where modules.contains(user.module) && user.kind != "file" {
             let userChildren = children(of: user)
             var byStatement: [SyntaxIdentifier: [(base: String, target: TypeInfo, access: Access)]] = [:]
             for access in user.accesses {

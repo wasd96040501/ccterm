@@ -5,8 +5,8 @@ import AppKit
 /// up-down chevrons. The menu is `NSPopUpButton`'s own — it opens with the
 /// chosen item over the title.
 @MainActor
-final class FormPopUpButton: NSPopUpButton {
-    init() {
+public final class FormPopUpButton: NSPopUpButton {
+    public init() {
         super.init(frame: .zero, pullsDown: false)
         cell = Cell(textCell: "", pullsDown: false)
         isBordered = false
@@ -14,11 +14,11 @@ final class FormPopUpButton: NSPopUpButton {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     /// Adds an item titled `title`; `detail` follows it in the menu only,
     /// in secondary ink — “Auth Token  Authorization: Bearer”.
-    func addItem(title: String, detail: String?, representedObject: Any?) {
+    public func addItem(title: String, detail: String?, representedObject: Any?) {
         let item = Item(title: title, action: nil, keyEquivalent: "")
         item.plainTitle = title
         if let detail {

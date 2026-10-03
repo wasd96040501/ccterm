@@ -1,4 +1,5 @@
 import AppKit
+import CCTermUI
 import Combine
 
 /// Accounts' Subscription section: the signed-in account's row, or a row to

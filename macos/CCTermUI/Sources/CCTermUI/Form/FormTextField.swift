@@ -4,9 +4,9 @@ import AppKit
 /// as a grouped `Form`'s `TextField` is. Paths, commands and model names
 /// take the monospaced face.
 @MainActor
-final class FormTextField: NSTextField {
+public final class FormTextField: NSTextField {
     /// `width`: the field's fixed width — 260 for most rows.
-    init(placeholder: String, width: CGFloat = 260, monospaced: Bool = false) {
+    public init(placeholder: String, width: CGFloat = 260, monospaced: Bool = false) {
         super.init(frame: .zero)
         isBordered = false
         drawsBackground = false
@@ -22,5 +22,5 @@ final class FormTextField: NSTextField {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 }

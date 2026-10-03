@@ -1,5 +1,6 @@
 import AgentSDK
 import AppKit
+import CCTermUI
 import Combine
 import XCTest
 

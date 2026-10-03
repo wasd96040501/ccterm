@@ -3,10 +3,10 @@ import AppKit
 /// A form's rounded group: rows stacked on a faint fill, a hairline between
 /// each pair inset 10 from both edges.
 @MainActor
-final class FormGroupView: NSView {
+public final class FormGroupView: NSView {
     private let stack = NSStackView()
 
-    init(rows: [NSView] = []) {
+    public init(rows: [NSView] = []) {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 12
@@ -28,16 +28,16 @@ final class FormGroupView: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    override var wantsUpdateLayer: Bool { true }
+    public override var wantsUpdateLayer: Bool { true }
 
-    override func updateLayer() {
+    public override func updateLayer() {
         layer?.backgroundColor = NSColor.formGroupFill.cgColor
     }
 
     /// Replaces the rows, each spanning the group's width.
-    func setRows(_ rows: [NSView]) {
+    public func setRows(_ rows: [NSView]) {
         for view in stack.arrangedSubviews {
             stack.removeArrangedSubview(view)
             view.removeFromSuperview()

@@ -7,9 +7,9 @@ import AppKit
 /// The secure field is always there, for clicks and Tab to land in; at
 /// rest its bullets are drawn clear and the mask is shown over it.
 @MainActor
-final class FormSecretField: NSView {
+public final class FormSecretField: NSView {
     /// Each edit, with the whole secret.
-    var onChange: ((String) -> Void)?
+    public var onChange: ((String) -> Void)?
 
     private var value = ""
     private var isRevealed = false
@@ -26,7 +26,7 @@ final class FormSecretField: NSView {
         return button
     }()
 
-    init(placeholder: String) {
+    public init(placeholder: String) {
         super.init(frame: .zero)
         for field in [secureField, plainField] {
             field.placeholderString = placeholder
@@ -40,11 +40,11 @@ final class FormSecretField: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     /// Shows `value`, masked as `masked` at rest. Leaves a field being typed
     /// in alone.
-    func configure(value: String, masked: String) {
+    public func configure(value: String, masked: String) {
         self.value = value
         maskLabel.stringValue = masked
         if !isEditing, secureField.stringValue != value { secureField.stringValue = value }
@@ -100,7 +100,8 @@ final class FormSecretField: NSView {
         let symbol = isRevealed ? "eye.slash" : "eye"
         eyeButton.image = NSImage(
             systemSymbolName: symbol,
-            accessibilityDescription: isRevealed ? String(localized: "Hide") : String(localized: "Show"))?
+            accessibilityDescription: isRevealed
+                ? String(localized: "Hide", bundle: .module) : String(localized: "Show", bundle: .module))?
             .withSymbolConfiguration(.init(pointSize: 12, weight: .regular))
     }
 
@@ -138,12 +139,12 @@ final class FormSecretField: NSView {
 extension FormSecretField: NSTextFieldDelegate {
     /// Escape goes to whatever encloses the field — a sheet cancels; a
     /// field editor binds it to `complete:`.
-    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+    public func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         guard commandSelector == #selector(NSResponder.complete(_:)) else { return false }
         return nextResponder?.tryToPerform(#selector(NSResponder.cancelOperation(_:)), with: control) ?? false
     }
 
-    func controlTextDidChange(_ notification: Notification) {
+    public func controlTextDidChange(_ notification: Notification) {
         guard let field = notification.object as? NSTextField else { return }
         value = field.stringValue
         onChange?(value)

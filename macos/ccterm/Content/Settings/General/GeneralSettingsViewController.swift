@@ -1,5 +1,6 @@
 import AgentSDK
 import AppKit
+import CCTermUI
 import Combine
 
 /// General: where Claude Code comes from — the command that starts it and the

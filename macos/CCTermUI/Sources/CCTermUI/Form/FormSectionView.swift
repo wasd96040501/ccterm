@@ -3,9 +3,9 @@ import AppKit
 /// A form section: a semibold header 10 above its group, and optionally
 /// buttons under the group at its trailing edge (“Add Provider…”).
 @MainActor
-final class FormSectionView: NSView {
+public final class FormSectionView: NSView {
     /// Hides the buttons under the group; the section then ends with it.
-    var areTrailingButtonsHidden = false {
+    public var areTrailingButtonsHidden = false {
         didSet { updateButtons() }
     }
 
@@ -13,7 +13,7 @@ final class FormSectionView: NSView {
     private var buttonConstraints: [NSLayoutConstraint] = []
     private var noButtonConstraints: [NSLayoutConstraint] = []
 
-    init(title: String, content: NSView, trailingButtons: [NSView] = []) {
+    public init(title: String, content: NSView, trailingButtons: [NSView] = []) {
         buttons = NSStackView(views: trailingButtons)
         super.init(frame: .zero)
         let header = NSTextField(labelWithString: title)
@@ -42,7 +42,7 @@ final class FormSectionView: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     private func updateButtons() {
         buttons.isHidden = areTrailingButtonsHidden

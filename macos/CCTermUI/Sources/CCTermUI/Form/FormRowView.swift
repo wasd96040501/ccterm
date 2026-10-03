@@ -5,32 +5,32 @@ import AppKit
 /// stops 62 short of the row's end — the grouped `Form` row of System
 /// Settings.
 @MainActor
-final class FormRowView: NSView {
+public final class FormRowView: NSView {
     /// The line under the title; `nil` hides it.
-    var detail: String? {
+    public var detail: String? {
         get { attributedDetail?.string }
         set { attributedDetail = newValue.map { NSAttributedString(string: $0) } }
     }
 
     /// The line under the title with styling of its own — code in the
     /// monospaced face. Runs without a font take the row's.
-    var attributedDetail: NSAttributedString? {
+    public var attributedDetail: NSAttributedString? {
         didSet { updateDetail() }
     }
 
     /// Shows the description as an error.
-    var isDetailError = false {
+    public var isDetailError = false {
         didSet { updateDetail() }
     }
 
     /// With ``isDetailError``: how many characters from the start are the
     /// problem, in red; the rest — what still applies — keeps the secondary
     /// ink. `nil` colours the whole line.
-    var detailErrorLength: Int? {
+    public var detailErrorLength: Int? {
         didSet { updateDetail() }
     }
 
-    var title: String {
+    public var title: String {
         get { titleLabel.stringValue }
         set { titleLabel.stringValue = newValue }
     }
@@ -41,7 +41,7 @@ final class FormRowView: NSView {
     private var detailConstraints: [NSLayoutConstraint] = []
     private var noDetailConstraints: [NSLayoutConstraint] = []
 
-    init(title: String, accessory: NSView? = nil) {
+    public init(title: String, accessory: NSView? = nil) {
         titleLabel = NSTextField(labelWithString: title)
         self.accessory = accessory
         super.init(frame: .zero)
@@ -51,7 +51,7 @@ final class FormRowView: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     private func configureHierarchy() {
         // Not selectable, as System Settings' aren't: a click hands a

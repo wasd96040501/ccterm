@@ -5,10 +5,10 @@ import Combine
 /// under the toolbar. The scroll view insets itself below the titlebar, as
 /// any content under a full-size-content toolbar does.
 @MainActor
-final class FormView: NSScrollView {
+public final class FormView: NSScrollView {
     /// Whether some of the form is scrolled out below — for a bar under it
     /// to draw its hairline. Called as it changes.
-    var onContentBelowChange: ((Bool) -> Void)?
+    public var onContentBelowChange: ((Bool) -> Void)?
     private(set) var hasContentBelow = false
 
     private let stack = NSStackView()
@@ -16,7 +16,7 @@ final class FormView: NSScrollView {
     private var cancellables = Set<AnyCancellable>()
 
     /// `topInset`: space above the first section.
-    init(sections: [NSView] = [], topInset: CGFloat = 20, sectionSpacing: CGFloat = 30) {
+    public init(sections: [NSView] = [], topInset: CGFloat = 20, sectionSpacing: CGFloat = 30) {
         super.init(frame: .zero)
         drawsBackground = false
         hasVerticalScroller = true
@@ -43,10 +43,10 @@ final class FormView: NSScrollView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     /// Replaces the sections, each spanning the form's width.
-    func setSections(_ sections: [NSView]) {
+    public func setSections(_ sections: [NSView]) {
         for view in stack.arrangedSubviews {
             stack.removeArrangedSubview(view)
             view.removeFromSuperview()
@@ -79,7 +79,7 @@ final class FormView: NSScrollView {
         onContentBelowChange?(below)
     }
 
-    override func tile() {
+    public override func tile() {
         super.tile()
         updateContentBelow()
     }

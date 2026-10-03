@@ -10,6 +10,7 @@
 		EA5A16ED2F5B000000AA1A46 /* AgentSDK in Frameworks */ = {isa = PBXBuildFile; productRef = EA5A16EE2F5B000000AA1A46 /* AgentSDK */; };
 		EA5A17042F5B000000AA1A46 /* TranscriptKit in Frameworks */ = {isa = PBXBuildFile; productRef = EA5A17022F5B000000AA1A46 /* TranscriptKit */; };
 		EA5A17052F5B000000AA1A46 /* TranscriptWorkspace in Frameworks */ = {isa = PBXBuildFile; productRef = EA5A17032F5B000000AA1A46 /* TranscriptWorkspace */; };
+		EA5A17062F5B000000AA1A46 /* CCTermUI in Frameworks */ = {isa = PBXBuildFile; productRef = EA5A17082F5B000000AA1A46 /* CCTermUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -49,6 +50,7 @@
 				EA5A16ED2F5B000000AA1A46 /* AgentSDK in Frameworks */,
 				EA5A17042F5B000000AA1A46 /* TranscriptKit in Frameworks */,
 				EA5A17052F5B000000AA1A46 /* TranscriptWorkspace in Frameworks */,
+				EA5A17062F5B000000AA1A46 /* CCTermUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -105,6 +107,7 @@
 				EA5A16EE2F5B000000AA1A46 /* AgentSDK */,
 				EA5A17022F5B000000AA1A46 /* TranscriptKit */,
 				EA5A17032F5B000000AA1A46 /* TranscriptWorkspace */,
+				EA5A17082F5B000000AA1A46 /* CCTermUI */,
 			);
 			productName = ccterm;
 			productReference = 2B3DA4E42F5701A1000987D3 /* ccterm.app */;
@@ -165,6 +168,7 @@
 			packageReferences = (
 				EA5A16EF2F5B000000AA1A46 /* XCLocalSwiftPackageReference "AgentSDK" */,
 				EA5A17012F5B000000AA1A46 /* XCLocalSwiftPackageReference "TranscriptKit" */,
+				EA5A17072F5B000000AA1A46 /* XCLocalSwiftPackageReference "CCTermUI" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2B3DA4E52F5701A1000987D3 /* Products */;
@@ -507,6 +511,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = TranscriptKit;
 		};
+		EA5A17072F5B000000AA1A46 /* XCLocalSwiftPackageReference "CCTermUI" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = CCTermUI;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -523,6 +531,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = EA5A17012F5B000000AA1A46 /* XCLocalSwiftPackageReference "TranscriptKit" */;
 			productName = TranscriptWorkspace;
+		};
+		EA5A17082F5B000000AA1A46 /* CCTermUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EA5A17072F5B000000AA1A46 /* XCLocalSwiftPackageReference "CCTermUI" */;
+			productName = CCTermUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -1,4 +1,5 @@
 import AppKit
+import CCTermUI
 import Combine
 
 /// Accounts: the Subscription section above the API Providers section. The

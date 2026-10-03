@@ -287,8 +287,10 @@ final class ComposerViewControllerTests: XCTestCase {
     func testThePanelFollowsTheModelAndOpensWithinItsHeightLimit() {
         let panel = ModelPanelViewController()
         panel.configure(with: F.model(.draft, settings: F.settings("opus")))
+        // The list stops at 360; under it the hairline and the Fast Mode row —
+        // the design's 5 + a two-line row of 54 + 5.
         XCTAssertLessThanOrEqual(
-            panel.preferredHeight, ModelPanelViewController.maxScrollHeight + 60)
+            panel.preferredHeight, ModelPanelViewController.maxScrollHeight + 0.5 + 64)
         XCTAssertGreaterThan(panel.preferredHeight, 200)
     }
 

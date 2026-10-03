@@ -14,8 +14,8 @@ final class SettingsWindowTests: XCTestCase {
     override func setUp() {
         split = SettingsSplitViewController(
             panes: [
-                .init(title: "General", symbolName: "gearshape", viewController: first),
-                .init(title: "Accounts", symbolName: "person.crop.circle", viewController: second),
+                .init(title: "General", glyph: .settingsGear, viewController: first),
+                .init(title: "Accounts", glyph: .settingsPerson, viewController: second),
             ], initial: 1)
         split.delegate = self
         split.view.frame = NSRect(x: 0, y: 0, width: 880, height: 680)

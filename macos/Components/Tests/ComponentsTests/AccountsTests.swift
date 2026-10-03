@@ -191,4 +191,125 @@ final class AccountsTests: XCTestCase {
         table.selectRowIndexes([0], byExtendingSelection: false)
         XCTAssertTrue(remove.isEnabled)
     }
+
+    // MARK: - The sections
+
+    private final class SectionRecorder: SubscriptionSectionViewControllerDelegate,
+        ProvidersSectionViewControllerDelegate
+    {
+        var events: [String] = []
+
+        func subscriptionSectionDidRequestOpen(_ section: SubscriptionSectionViewController) {
+            events.append("open subscription")
+        }
+        func subscriptionSectionDidRequestSignIn(_ section: SubscriptionSectionViewController) {
+            events.append("sign in")
+        }
+        func subscriptionSectionDidCancelSignIn(_ section: SubscriptionSectionViewController) {
+            events.append("cancel sign in")
+        }
+        func subscriptionSectionDidRequestSignOut(_ section: SubscriptionSectionViewController) {
+            events.append("sign out")
+        }
+        func providersSectionDidRequestAdd(_ section: ProvidersSectionViewController) {
+            events.append("add")
+        }
+        func providersSectionDidRequestImport(_ section: ProvidersSectionViewController) {
+            events.append("import")
+        }
+        func providersSectionCanImport(_ section: ProvidersSectionViewController) -> Bool { false }
+        func providersSection(_ section: ProvidersSectionViewController, didOpen id: UUID) {
+            events.append("open \(id)")
+        }
+        func providersSection(_ section: ProvidersSectionViewController, didRequestDuplicate id: UUID) {
+            events.append("duplicate \(id)")
+        }
+        func providersSection(_ section: ProvidersSectionViewController, didRequestDelete id: UUID) {
+            events.append("delete \(id)")
+        }
+    }
+
+    private func laidOut(_ controller: NSViewController) -> NSView {
+        controller.view.frame = NSRect(x: 0, y: 0, width: 520, height: 400)
+        controller.view.layoutSubtreeIfNeeded()
+        return controller.view
+    }
+
+    /// Sends a menu item's action as choosing it does.
+    private func choose(_ title: String, in menu: NSMenu?) throws {
+        let item = try XCTUnwrap(menu?.items.first { $0.title == title })
+        _ = (item.target as? NSObject)?.perform(item.action, with: item)
+    }
+
+    private static let signedIn = AccountRowContent(
+        title: "name@example.com", subtitle: "Claude Max · Personal", mark: .claude, accessory: .info)
+
+    func testSignedOutTheRowAsksToSignIn() throws {
+        let recorder = SectionRecorder()
+        let section = SubscriptionSectionViewController()
+        section.delegate = recorder
+        section.show(.signedOut)
+        let view = laidOut(section)
+        let button = try XCTUnwrap(shown(NSButton.self, in: view).first)
+        XCTAssertEqual(button.title, String(localized: "Sign In…", bundle: .module))
+        button.performClick(nil)
+        XCTAssertEqual(recorder.events, ["sign in"])
+        XCTAssertNil(try XCTUnwrap(shown(AccountRowView.self, in: view).first).menu)
+    }
+
+    func testSignedInTheRowOpensAndItsMenuSignsOut() throws {
+        let recorder = SectionRecorder()
+        let section = SubscriptionSectionViewController()
+        section.delegate = recorder
+        section.show(.signedIn(Self.signedIn))
+        let view = laidOut(section)
+        XCTAssertTrue(shown(NSTextField.self, in: view).contains { $0.stringValue == "name@example.com" })
+        try XCTUnwrap(shown(NSButton.self, in: view).first).performClick(nil)
+        let row = try XCTUnwrap(shown(AccountRowView.self, in: view).first)
+        try choose(String(localized: "Details…", bundle: .module), in: row.menu)
+        try choose(String(localized: "Sign Out…", bundle: .module), in: row.menu)
+        XCTAssertEqual(recorder.events, ["open subscription", "open subscription", "sign out"])
+    }
+
+    func testCheckingShowsASpinnerAndOffersNothing() throws {
+        let section = SubscriptionSectionViewController()
+        section.show(.checking)
+        let view = laidOut(section)
+        XCTAssertEqual(shown(NSProgressIndicator.self, in: view).count, 1)
+        XCTAssertTrue(shown(NSButton.self, in: view).isEmpty)
+    }
+
+    func testNoProvidersIsTheEmptyStateWithItsOwnAddButton() throws {
+        let recorder = SectionRecorder()
+        let section = ProvidersSectionViewController()
+        section.delegate = recorder
+        section.show([])
+        let view = laidOut(section)
+        XCTAssertEqual(shown(ProvidersEmptyView.self, in: view).count, 1)
+        let adds = shown(AddProviderButton.self, in: view)
+        XCTAssertEqual(adds.count, 1, "the button under the group hides while the empty state carries one")
+        adds.first?.performClick(nil)
+        XCTAssertEqual(recorder.events, ["add"])
+    }
+
+    func testEachProviderIsARowThatReportsItsID() throws {
+        let recorder = SectionRecorder()
+        let section = ProvidersSectionViewController()
+        section.delegate = recorder
+        let ids = [UUID(), UUID()]
+        section.show(
+            zip(ids, ["Local Proxy", "Team Relay"]).map { id, title in
+                .init(id: id, content: AccountRowContent(title: title, subtitle: "", mark: .provider, accessory: .info))
+            })
+        let view = laidOut(section)
+        let rows = shown(AccountRowView.self, in: view)
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertTrue(shown(ProvidersEmptyView.self, in: view).isEmpty)
+        XCTAssertEqual(shown(AddProviderButton.self, in: view).count, 1)
+
+        try choose(String(localized: "Details…", bundle: .module), in: rows[1].menu)
+        try choose(String(localized: "Duplicate", bundle: .module), in: rows[1].menu)
+        try choose(String(localized: "Delete…", bundle: .module), in: rows[0].menu)
+        XCTAssertEqual(recorder.events, ["open \(ids[1])", "duplicate \(ids[1])", "delete \(ids[0])"])
+    }
 }

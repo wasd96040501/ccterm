@@ -15,9 +15,13 @@ enum AccountsSpecimen {
                 + "out, the subscription's row asks to sign in instead. With no providers the group is an empty state, "
                 + "as ContentUnavailableView draws one.",
             specimens: [
-                .init(title: "Rows — signed in, two providers", view: rows(), height: nil),
-                .init(title: "Rows — signed out, and still checking", view: signedOut(), height: nil),
-                .init(title: "No API providers", view: empty(), height: nil),
+                .init(
+                    title: "Signed in, three providers — ⓘ, a row's menu, Add Provider…",
+                    view: AccountsHost(subscription: .signedIn(subscription), providers: providers), height: nil),
+                .init(
+                    title: "Signed out, no providers — Sign In… waits on the browser",
+                    view: AccountsHost(subscription: .signedOut, providers: []), height: nil),
+                .init(title: "The login not read yet", view: AccountsHost(subscription: .checking), height: nil),
                 .init(
                     title: "Environment variables — click a row, then Space, Return, Delete or +",
                     view: VariablesHost(), height: nil),
@@ -25,51 +29,17 @@ enum AccountsSpecimen {
             ])
     }
 
-    private static func rows() -> NSView {
-        let rows = [
-            AccountRowContent(
-                title: "name@example.com", subtitle: "Claude Max · Personal", mark: .claude, accessory: .info),
-            AccountRowContent(
-                title: "Local Proxy", subtitle: "127.0.0.1:8788 · claude-opus-5-5[1m]", mark: .provider,
-                accessory: .info),
-            AccountRowContent(
-                title: "Team Relay", subtitle: "relay.example.com · claude-opus-5-5[1m]", mark: .provider,
-                accessory: .info),
-        ]
-        .map(row)
-        rows.last?.menu = NSMenu.sample(["Details…", "Duplicate", "Delete…"])
-        return form(title: "Subscription · API Providers", rows: rows)
-    }
+    /// The design's subscription and providers, worded as the app words them.
+    static let subscription = AccountRowContent(
+        title: "name@example.com", subtitle: "Claude Max · Personal", mark: .claude, accessory: .info)
 
-    private static func signedOut() -> NSView {
-        form(
-            title: "Subscription",
-            rows: [
-                row(
-                    AccountRowContent(
-                        title: "Not signed in", subtitle: "Use your Claude Pro or Max plan.", mark: .claudeDimmed,
-                        accessory: .button("Sign In…"))),
-                row(
-                    AccountRowContent(
-                        title: "Subscription", subtitle: "Checking…", mark: .claudeDimmed, accessory: .progress)),
-            ])
-    }
-
-    private static func empty() -> NSView {
-        let empty = ProvidersEmptyView()
-        empty.addButton.isImportEnabled = { true }
-        return form(title: "API Providers", rows: [empty])
-    }
-
-    private static func row(_ content: AccountRowContent) -> AccountRowView {
-        let row = AccountRowView()
-        row.configure(with: content)
-        row.onOpen = { [weak row] in row?.flash() }
-        return row
-    }
-
-    private static func form(title: String, rows: [NSView]) -> NSView {
-        inset(FormSectionView(title: title, content: FormGroupView(rows: rows)))
+    static let providers = [
+        ("Local Proxy", "127.0.0.1:8788 · claude-opus-5-5[1m]"),
+        ("Team Relay", "relay.example.com · claude-opus-5-5[1m]"),
+        ("GLM", "127.0.0.1:8788 · glm-5.2[1m]"),
+    ].map { title, subtitle in
+        ProvidersSectionViewController.Row(
+            id: UUID(), content: AccountRowContent(title: title, subtitle: subtitle, mark: .provider, accessory: .info))
     }
 
     /// `view` 20 in from every edge, as a form insets its sections.
@@ -87,24 +57,98 @@ enum AccountsSpecimen {
     }
 }
 
-extension NSMenu {
-    /// A context menu of these titles, each enabled and doing nothing.
-    fileprivate static func sample(_ titles: [String]) -> NSMenu {
-        let menu = NSMenu()
-        for title in titles {
-            let item = NSMenuItem(title: title, action: #selector(SampleMenuTarget.choose(_:)), keyEquivalent: "")
-            item.target = SampleMenuTarget.shared
-            menu.addItem(item)
+/// The Accounts pane's two sections, as the pane stacks them, driven by a
+/// stand-in for the app: Sign In… waits on the browser until Cancel, Sign
+/// Out… signs out, Add Provider… and Duplicate add a row and flash it,
+/// Delete… removes one, ⓘ flashes it.
+private final class AccountsHost: NSView, SubscriptionSectionViewControllerDelegate,
+    ProvidersSectionViewControllerDelegate
+{
+    private let subscriptionSection = SubscriptionSectionViewController()
+    private let providersSection = ProvidersSectionViewController()
+    private var providers: [ProvidersSectionViewController.Row]
+
+    /// `providers` nil leaves the providers section out.
+    init(subscription: SubscriptionSectionViewController.State, providers: [ProvidersSectionViewController.Row]? = nil)
+    {
+        self.providers = providers ?? []
+        super.init(frame: .zero)
+        subscriptionSection.delegate = self
+        providersSection.delegate = self
+        subscriptionSection.show(subscription)
+        var sections = [subscriptionSection.view]
+        if let providers {
+            providersSection.show(providers)
+            sections.append(providersSection.view)
         }
-        return menu
+        let stack = NSStackView(views: sections)
+        stack.orientation = .vertical
+        stack.alignment = .width
+        stack.spacing = 30
+        let inset = AccountsSpecimen.inset(stack)
+        inset.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(inset)
+        NSLayoutConstraint.activate([
+            inset.topAnchor.constraint(equalTo: topAnchor),
+            inset.leadingAnchor.constraint(equalTo: leadingAnchor),
+            inset.trailingAnchor.constraint(equalTo: trailingAnchor),
+            inset.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
     }
-}
 
-/// What a sample menu's items are sent to: nothing happens.
-private final class SampleMenuTarget: NSObject {
-    static let shared = SampleMenuTarget()
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    @objc func choose(_ sender: Any?) {}
+    func subscriptionSectionDidRequestOpen(_ section: SubscriptionSectionViewController) {}
+
+    func subscriptionSectionDidRequestSignIn(_ section: SubscriptionSectionViewController) {
+        section.show(.signingIn(browserURL: URL(string: "https://claude.ai/oauth/authorize")))
+    }
+
+    func subscriptionSectionDidCancelSignIn(_ section: SubscriptionSectionViewController) {
+        section.show(.signedOut)
+    }
+
+    func subscriptionSectionDidRequestSignOut(_ section: SubscriptionSectionViewController) {
+        section.show(.signedOut)
+    }
+
+    func providersSectionDidRequestAdd(_ section: ProvidersSectionViewController) {
+        add(
+            AccountRowContent(
+                title: "New Provider", subtitle: "No base URL · Default model", mark: .provider, accessory: .info))
+    }
+
+    func providersSectionDidRequestImport(_ section: ProvidersSectionViewController) {
+        add(
+            AccountRowContent(
+                title: "relay", subtitle: "relay.example.com · Default model", mark: .provider, accessory: .info))
+    }
+
+    func providersSectionCanImport(_ section: ProvidersSectionViewController) -> Bool { true }
+
+    func providersSection(_ section: ProvidersSectionViewController, didOpen id: UUID) {
+        section.flash([id])
+    }
+
+    func providersSection(_ section: ProvidersSectionViewController, didRequestDuplicate id: UUID) {
+        guard let row = providers.first(where: { $0.id == id }) else { return }
+        var copy = row.content
+        copy.title += " Copy"
+        add(copy)
+    }
+
+    func providersSection(_ section: ProvidersSectionViewController, didRequestDelete id: UUID) {
+        providers.removeAll { $0.id == id }
+        section.show(providers)
+    }
+
+    private func add(_ content: AccountRowContent) {
+        let row = ProvidersSectionViewController.Row(id: UUID(), content: content)
+        providers.append(row)
+        providersSection.show(providers)
+        providersSection.flash([row.id])
+    }
 }
 
 /// The design's Local Proxy variables in the real list, which edits them

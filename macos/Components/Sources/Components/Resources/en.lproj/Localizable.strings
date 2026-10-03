@@ -27,3 +27,14 @@
 
 /* Settings: the sign-in sheet. */
 "Continue in your browser. CCTerm finishes signing in when you approve access." = "Continue in your browser. CCTerm finishes signing in when you approve access.";
+
+/* Settings: the Subscription and API Providers sections. */
+"Not signed in" = "Not signed in";
+"Use your Claude Pro or Max plan." = "Use your Claude Pro or Max plan.";
+"Sign In…" = "Sign In…";
+"Subscription" = "Subscription";
+"Details…" = "Details…";
+"Duplicate" = "Duplicate";
+"Delete…" = "Delete…";
+"Sign Out…" = "Sign Out…";
+"API Providers" = "API Providers";

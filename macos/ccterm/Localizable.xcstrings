@@ -409,16 +409,6 @@
         }
       }
     },
-    "API Providers": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "API 提供方"
-          }
-        }
-      }
-    },
     "API key": {
       "localizations": {
         "zh-Hans": {
@@ -1470,16 +1460,6 @@
         }
       }
     },
-    "Details…": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "详细信息…"
-          }
-        }
-      }
-    },
     "Didn’t print a version": {
       "localizations": {
         "zh-Hans": {
@@ -1496,16 +1476,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "不再询问"
-          }
-        }
-      }
-    },
-    "Duplicate": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "复制"
           }
         }
       }
@@ -2465,16 +2435,6 @@
         }
       }
     },
-    "Not signed in": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未登录"
-          }
-        }
-      }
-    },
     "Notes": {
       "localizations": {
         "zh-Hans": {
@@ -3391,16 +3351,6 @@
         }
       }
     },
-    "Sign In…": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "登录…"
-          }
-        }
-      }
-    },
     "Sign Out": {
       "localizations": {
         "zh-Hans": {
@@ -3965,16 +3915,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "使用 %@"
-          }
-        }
-      }
-    },
-    "Use your Claude Pro or Max plan.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "使用你的 Claude Pro 或 Max 套餐。"
           }
         }
       }

@@ -6,7 +6,7 @@ import AppKit
 /// Its owner wires the button.
 @MainActor
 public final class ProvidersEmptyView: NSView {
-    public let addButton = AddProviderButton()
+    let addButton = AddProviderButton()
 
     private lazy var symbol: NSImageView = {
         let image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: nil)?

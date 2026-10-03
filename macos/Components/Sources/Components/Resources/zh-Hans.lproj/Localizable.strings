@@ -27,3 +27,14 @@
 
 /* Settings: the sign-in sheet. */
 "Continue in your browser. CCTerm finishes signing in when you approve access." = "请在浏览器中继续。你批准访问后，CCTerm 会完成登录。";
+
+/* Settings: the Subscription and API Providers sections. */
+"Not signed in" = "未登录";
+"Use your Claude Pro or Max plan." = "使用你的 Claude Pro 或 Max 套餐。";
+"Sign In…" = "登录…";
+"Subscription" = "订阅";
+"Details…" = "详细信息…";
+"Duplicate" = "复制";
+"Delete…" = "删除…";
+"Sign Out…" = "退出登录…";
+"API Providers" = "API 提供方";

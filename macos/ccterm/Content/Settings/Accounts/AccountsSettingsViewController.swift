@@ -2,18 +2,20 @@ import AppKit
 import Combine
 import Components
 
-/// Accounts: the Subscription section above the API Providers section. The
-/// sections show their own data and report what the person asks for; this
-/// container presents the account sheet and the alerts that confirm a
-/// removal, and turns their outcome into store and service calls.
+/// Accounts: the Subscription section above the API Providers section. This
+/// container follows the login and the accounts, shows them to the sections
+/// as rows, presents the account sheet and the alerts that confirm a removal,
+/// and turns what the sections report — by provider id — into store and
+/// service calls.
 @MainActor
 final class AccountsSettingsViewController: NSViewController {
     private let accounts: AccountStore
     private let launch: LaunchStore
     private let launchCheck: LaunchCheckService
     private let subscription: SubscriptionService
-    private let subscriptionSection: SubscriptionSectionViewController
-    private let providersSection: ProvidersSectionViewController
+    private let subscriptionSection = SubscriptionSectionViewController()
+    private let providersSection = ProvidersSectionViewController()
+    private var cancellables = Set<AnyCancellable>()
 
     /// The open account sheet, if any.
     private var editor: AccountEditorViewController?
@@ -29,9 +31,6 @@ final class AccountsSettingsViewController: NSViewController {
         self.launch = launch
         self.launchCheck = launchCheck
         self.subscription = subscription
-        subscriptionSection = SubscriptionSectionViewController(states: subscription.$state.eraseToAnyPublisher())
-        providersSection = ProvidersSectionViewController(
-            providers: accounts.$accounts.map { $0.filter { $0.provider != nil } }.eraseToAnyPublisher())
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -66,6 +65,19 @@ final class AccountsSettingsViewController: NSViewController {
         addChild(providersSection)
         subscriptionSection.delegate = self
         providersSection.delegate = self
+        // Both stores are main-actor and publish their current value on
+        // subscribing, so the first frame is already right.
+        subscription.$state
+            .sink { [weak self] state in self?.subscriptionSection.show(.init(state)) }
+            .store(in: &cancellables)
+        accounts.$accounts
+            .sink { [weak self] accounts in
+                self?.providersSection.show(
+                    accounts.compactMap { account in
+                        account.provider.map { .init(id: account.id, content: AccountRowContent(provider: $0)) }
+                    })
+            }
+            .store(in: &cancellables)
     }
 
     override func viewWillAppear() {
@@ -250,8 +262,9 @@ final class AccountsSettingsViewController: NSViewController {
 }
 
 extension AccountsSettingsViewController: SubscriptionSectionViewControllerDelegate {
-    func subscriptionSection(_ section: SubscriptionSectionViewController, didOpen subscription: Subscription) {
-        open(accounts.subscriptionSettings, mode: .subscription(subscription))
+    func subscriptionSectionDidRequestOpen(_ section: SubscriptionSectionViewController) {
+        guard case .signedIn(let signedIn) = subscription.state else { return }
+        open(accounts.subscriptionSettings, mode: .subscription(signedIn))
     }
 
     func subscriptionSectionDidRequestSignIn(_ section: SubscriptionSectionViewController) {
@@ -262,10 +275,9 @@ extension AccountsSettingsViewController: SubscriptionSectionViewControllerDeleg
         subscription.cancelSignIn()
     }
 
-    func subscriptionSection(
-        _ section: SubscriptionSectionViewController, didRequestSignOut subscription: Subscription
-    ) {
-        confirmSignOut(subscription, on: view.window)
+    func subscriptionSectionDidRequestSignOut(_ section: SubscriptionSectionViewController) {
+        guard case .signedIn(let signedIn) = subscription.state else { return }
+        confirmSignOut(signedIn, on: view.window)
     }
 }
 
@@ -282,22 +294,27 @@ extension AccountsSettingsViewController: ProvidersSectionViewControllerDelegate
         canImport
     }
 
-    func providersSection(_ section: ProvidersSectionViewController, didOpen account: Account) {
-        open(account, mode: .provider)
+    func providersSection(_ section: ProvidersSectionViewController, didOpen id: UUID) {
+        provider(id).map { open($0, mode: .provider) }
     }
 
-    func providersSection(_ section: ProvidersSectionViewController, didRequestDuplicate account: Account) {
+    func providersSection(_ section: ProvidersSectionViewController, didRequestDuplicate id: UUID) {
         Task {
             do {
-                try await accounts.duplicate(account.id)
+                try await accounts.duplicate(id)
             } catch {
                 view.window.map { report(error, on: $0, while: "duplicating an account") }
             }
         }
     }
 
-    func providersSection(_ section: ProvidersSectionViewController, didRequestDelete account: Account) {
-        confirmDelete(account, on: view.window)
+    func providersSection(_ section: ProvidersSectionViewController, didRequestDelete id: UUID) {
+        provider(id).map { confirmDelete($0, on: view.window) }
+    }
+
+    /// The provider a row stands for, as the store holds it now.
+    private func provider(_ id: UUID) -> Account? {
+        accounts.providers.first { $0.id == id }
     }
 }
 

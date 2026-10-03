@@ -1,5 +1,6 @@
 import AgentSDK
 import AppKit
+import Combine
 import XCTest
 
 @testable import ccterm
@@ -145,6 +146,35 @@ final class NewSessionViewControllerSnapshotTests: XCTestCase {
                 attachment.lifetime = .keepAlways
                 add(attachment)
             }
+        }
+    }
+
+    /// A real New tab — the session tab in its draft, with its composer — at
+    /// the pane the sheet's *New tab* scene gives it (900 × 642, under the
+    /// title bar and the tab bar), composited: `/tmp/ccterm-parity/<scheme>-
+    /// scene-new-pane.png`, to measure against `<scheme>-scene-new.png`'s pane
+    /// (x 228, y 78 pt).
+    func testTheNewTabAtTheScenesPane() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("ccterm")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder.deletingLastPathComponent()) }
+        let suite = "ccterm-tests-\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let context = TranscriptTab.Context(
+            sessions: .reading(), catalog: Just(ComposerFixtures.catalog).eraseToAnyPublisher(),
+            preferences: Just(LaunchPreferences()).eraseToAnyPublisher(),
+            defaults: NewSessionDefaults(defaults: UserDefaults(suiteName: suite)!), branches: BranchService(),
+            recentFolders: Just([]).eraseToAnyPublisher())
+        for scheme in DesignParity.Scheme.allCases {
+            let tab = SessionTabViewController(
+                .draft(folder: folder, text: ""), title: SessionTabTitle.draft, context: context)
+            let image = try await CompositedCapture.render(
+                tab, size: CGSize(width: 900, height: 642), appearance: scheme.appearance, settle: 1)
+            let url = DesignParity.directory.appendingPathComponent("\(scheme.rawValue)-scene-new-pane.png")
+            try FileManager.default.createDirectory(at: DesignParity.directory, withIntermediateDirectories: true)
+            let rep = try XCTUnwrap(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+            try XCTUnwrap(NSBitmapImageRep(cgImage: rep).representation(using: .png, properties: [:])).write(to: url)
         }
     }
 

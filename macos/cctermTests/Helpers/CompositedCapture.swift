@@ -61,6 +61,24 @@ enum CompositedCapture {
         return NSImage(cgImage: image, size: window.frame.size)
     }
 
+    /// `controller` at `size` as the screen shows it, in points: mounted,
+    /// settled for `settle` seconds, captured, and closed again.
+    static func render(
+        _ controller: NSViewController, size: CGSize, appearance: NSAppearance? = nil, settle: TimeInterval = 0.4
+    ) async throws -> NSImage {
+        let window = mount(controller, size: size, appearance: appearance)
+        defer {
+            window.contentViewController = nil
+            window.close()
+        }
+        controller.view.layoutSubtreeIfNeeded()
+        let deadline = Date().addingTimeInterval(settle)
+        while Date() < deadline { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02)) }
+        controller.view.layoutSubtreeIfNeeded()
+        controller.view.displayIfNeeded()
+        return try await pointImage(of: window)
+    }
+
     private static func park(_ window: NSWindow) {
         let screen = (window.screen ?? NSScreen.main)?.frame ?? .zero
         var frame = window.frame

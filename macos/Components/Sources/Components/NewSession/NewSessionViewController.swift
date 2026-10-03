@@ -40,6 +40,8 @@ public final class NewSessionViewController: NSViewController {
 
     /// The page's side margin (the design's `.lv-new` padding).
     private static let margin: CGFloat = 24
+    /// The composer's slot at its widest.
+    private static let slotWidth: CGFloat = 640
 
     private let iconView = NewSessionIconView()
 
@@ -159,7 +161,11 @@ public final class NewSessionViewController: NSViewController {
         // view's hugging, so the composer in it keeps its own height.
         let slotHeight = composerGuide.heightAnchor.constraint(equalToConstant: 100)
         slotHeight.priority = .fittingSizeCompression
-        let slotWidth = composerGuide.widthAnchor.constraint(equalTo: view.widthAnchor, constant: -2 * Self.margin)
+        // 640 unless the view is narrower: a wish for the slot's own width,
+        // which any width of the view can grant. A wish to be the view's width
+        // less the margins would pull the view down to 688 — and, in a split,
+        // the divider over (its holding priority is weaker).
+        let slotWidth = composerGuide.widthAnchor.constraint(equalToConstant: Self.slotWidth)
         slotWidth.priority = .wishUnderWindowSize
 
         NSLayoutConstraint.activate([
@@ -201,7 +207,7 @@ public final class NewSessionViewController: NSViewController {
 
             composerGuide.topAnchor.constraint(equalTo: noteLine.bottomAnchor, constant: 20),
             composerGuide.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            composerGuide.widthAnchor.constraint(lessThanOrEqualToConstant: 640),
+            composerGuide.widthAnchor.constraint(lessThanOrEqualToConstant: Self.slotWidth),
             composerGuide.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -2 * Self.margin),
             slotWidth,
             slotHeight,

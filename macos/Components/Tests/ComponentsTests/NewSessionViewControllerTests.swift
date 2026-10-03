@@ -54,6 +54,31 @@ final class NewSessionViewControllerTests: XCTestCase {
         XCTAssertEqual(controller(width: 600).composerGuide.frame.minX, 24)
     }
 
+    /// The slot's width is a wish of its own, never one on the view's: held
+    /// at a split item's holding priority, the view keeps its width.
+    func testTheSlotNeverPullsItsHostNarrower() {
+        let controller = NewSessionViewController()
+        controller.loadViewIfNeeded()
+        controller.configure(with: content)
+        controller.composerGuide.heightAnchor.constraint(equalToConstant: 78).isActive = true
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: 1200, height: 720))
+        let view = controller.view
+        view.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(view)
+        let held = view.widthAnchor.constraint(equalToConstant: 900)
+        held.priority = .defaultLow
+        NSLayoutConstraint.activate([
+            view.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            view.topAnchor.constraint(equalTo: host.topAnchor),
+            view.bottomAnchor.constraint(equalTo: host.bottomAnchor),
+            view.widthAnchor.constraint(lessThanOrEqualTo: host.widthAnchor),
+            held,
+        ])
+        host.layoutSubtreeIfNeeded()
+        XCTAssertEqual(view.frame.width, 900)
+        XCTAssertEqual(controller.composerGuide.frame.width, 640)
+    }
+
     // MARK: - The stack
 
     /// Icon, 16, the folder's 34-pt line, 2, the path's 16, 8, the 24-pt row,

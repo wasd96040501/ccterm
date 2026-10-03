@@ -1,16 +1,24 @@
 import AppKit
 
-/// A live session's state, one small mark at the row's trailing edge
-/// (design/sidebar-icons): idle a quiet dot, needs-input a coral dot, failed
-/// a red one, and responding a ring with an arc travelling it — the
-/// tile's motion, since a running thing moves and isn't coloured. On a
-/// selected, focused row every mark is white, as the icon is. Reduce Motion
-/// stills the arc.
+/// A live session's state, one small mark at the row's trailing edge or in a
+/// tab's close-button slot (design 08 `.dotmark`, `.arcmark`): idle a quiet
+/// 6-pt dot, needs-input a 7-pt coral dot, failed a 7-pt red one, and
+/// responding an 11-pt ring with an arc travelling it — the tile's motion,
+/// since a running thing moves and isn't coloured. On a selected, focused row
+/// every mark is white, as the icon is. Reduce Motion stills the arc.
 final class ActivityMarkView: NSView {
     /// The width and height of the mark's slot.
     static let slot: CGFloat = 14
 
     private let shape = CAShapeLayer()
+    /// Under the arc, the whole ring it travels.
+    private let track = CAShapeLayer()
+
+    /// The arc mark is the sheet's 12-unit circle (r 4.6, stroke 1.5) drawn 11 pt big.
+    private static let arcRadius: CGFloat = 4.6 * 11 / 12
+    private static let arcWidth: CGFloat = 1.5 * 11 / 12
+    /// The arc's share of the ring: a dash of 9 on a circumference of 2π · 4.6.
+    private static let arcLength: CGFloat = 9 / (2 * .pi * 4.6)
 
     var activity: SessionState.Activity? {
         didSet {
@@ -30,6 +38,7 @@ final class ActivityMarkView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
+        layer?.addSublayer(track)
         layer?.addSublayer(shape)
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
@@ -51,8 +60,10 @@ final class ActivityMarkView: NSView {
         super.layout()
         // The shape is its own centred square, so the arc turns about its middle.
         let side = Self.slot
-        shape.bounds = CGRect(x: 0, y: 0, width: side, height: side)
-        shape.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        for layer in [track, shape] {
+            layer.bounds = CGRect(x: 0, y: 0, width: side, height: side)
+            layer.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        }
     }
 
     override func viewDidMoveToWindow() {
@@ -63,13 +74,17 @@ final class ActivityMarkView: NSView {
     private func update() {
         isHidden = activity == nil
         let side = Self.slot
-        let path = CGMutablePath()
-        if case .responding = activity {
-            path.addEllipse(in: CGRect(x: 2, y: 2, width: side - 4, height: side - 4))
-        } else {
-            path.addEllipse(in: CGRect(x: (side - 6) / 2, y: (side - 6) / 2, width: 6, height: 6))
-        }
+        let diameter: CGFloat =
+            switch activity {
+            case .responding: Self.arcRadius * 2
+            case .idle: 6
+            default: 7
+            }
+        let path = CGPath(
+            ellipseIn: CGRect(x: (side - diameter) / 2, y: (side - diameter) / 2, width: diameter, height: diameter),
+            transform: nil)
         shape.path = path
+        track.path = path
         needsDisplay = true
         animate()
     }
@@ -79,7 +94,9 @@ final class ActivityMarkView: NSView {
     private func paint() {
         let colour: NSColor? =
             switch activity {
-            case .idle: NSColor.secondaryLabelColor.withAlphaComponent(0.55)
+            // `withAlphaComponent` replaces the colour's alpha; the dot is
+            // secondary ink at 55 % of its own.
+            case .idle: NSColor.secondaryLabelColor.scalingAlpha(by: 0.55)
             case .responding: .secondaryLabelColor
             case .needsInput: NSColor(resource: .sidebarCoral)
             case .failed: .systemRed
@@ -90,14 +107,19 @@ final class ActivityMarkView: NSView {
         if case .responding = activity {
             shape.fillColor = nil
             shape.strokeColor = ink?.cgColor
-            shape.lineWidth = 1.5
+            shape.lineWidth = Self.arcWidth
             shape.lineCap = .round
             shape.strokeStart = 0
-            shape.strokeEnd = 1.0 / 3
+            shape.strokeEnd = Self.arcLength
+            track.isHidden = false
+            track.fillColor = nil
+            track.lineWidth = Self.arcWidth
+            track.strokeColor = (isEmphasized ? NSColor.white.withAlphaComponent(0.3) : .secondarySystemFill).cgColor
         } else {
             shape.fillColor = ink?.cgColor
             shape.strokeColor = nil
             shape.strokeEnd = 1
+            track.isHidden = true
         }
     }
 
@@ -112,6 +134,14 @@ final class ActivityMarkView: NSView {
         turn.duration = 1
         turn.repeatCount = .infinity
         shape.add(turn, forKey: "turn")
+    }
+}
+
+extension NSColor {
+    /// This colour with its alpha scaled, resolved in the current appearance.
+    fileprivate func scalingAlpha(by factor: CGFloat) -> NSColor {
+        let resolved = usingColorSpace(.sRGB) ?? self
+        return resolved.withAlphaComponent(resolved.alphaComponent * factor)
     }
 }
 

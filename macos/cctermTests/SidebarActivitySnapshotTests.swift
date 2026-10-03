@@ -61,6 +61,65 @@ final class SidebarActivitySnapshotTests: XCTestCase {
         XCTAssertEqual(image.size, size)
     }
 
+    // MARK: - Against the design
+
+    /// The sheet's sidebar specimen (*The sidebar and the conversation icon*):
+    /// a project open on four sessions — one working, one selected, one waiting
+    /// for the reader — and a closed one, 240 pt wide, light (`side0`) and dark
+    /// (`side1`). The selection is the unfocused one, grey, as the sheet draws it.
+    func testTheSidebarAgainstTheDesign() throws {
+        let titles = ["Smaller run-row summary", "Row gap and tool rows", "Review the diff", "Nightly build"]
+        var activities: [URL: Activity] = [:]
+        let sessions = titles.map { title -> LibraryNode in
+            let url = URL(fileURLWithPath: "/dev/ccterm/\(title).jsonl")
+            return LibraryNode(id: url.path, kind: .session, title: title, transcriptURL: url, children: [])
+        }
+        activities[sessions[0].transcriptURL!] = .responding
+        activities[sessions[2].transcriptURL!] = .needsInput
+        let ghosttyURL = URL(fileURLWithPath: "/dev/ghostty/s.jsonl")
+        let nodes = [
+            LibraryNode(id: "/dev/ccterm", kind: .project, title: "ccterm", transcriptURL: nil, children: sessions),
+            LibraryNode(
+                id: "/dev/ghostty", kind: .project, title: "ghostty", transcriptURL: nil,
+                children: [
+                    LibraryNode(
+                        id: ghosttyURL.path, kind: .session, title: "Tab bar accessory", transcriptURL: ghosttyURL,
+                        children: [])
+                ]),
+        ]
+        for (id, appearance) in [("part-06-side0", NSAppearance.Name.aqua), ("part-06-side1", .darkAqua)] {
+            let part = try DesignParity.part(id, .light)
+            NSApp.appearance = NSAppearance(named: appearance)
+            defer { NSApp.appearance = nil }
+            let sidebar = SidebarViewController(
+                nodes: Just(nodes).eraseToAnyPublisher(), activities: Just(activities).eraseToAnyPublisher())
+            sidebar.loadViewIfNeeded()
+            let window = CompositedCapture.mount(
+                sidebar, size: NSSize(width: part.width, height: part.height),
+                appearance: NSAppearance(named: appearance))
+            defer { window.close() }
+            let outline = try XCTUnwrap(Self.find(NSOutlineView.self, in: sidebar.view))
+            outline.expandItem(outline.item(atRow: 0))
+            outline.selectRowIndexes(IndexSet(integer: 2), byExtendingSelection: false)
+            window.makeFirstResponder(nil)
+            // Composited, so the source list's selection and its images are as on screen.
+            var captured: Result<NSImage, Error>?
+            let done = expectation(description: "captured")
+            Task {
+                do { captured = .success(try await CompositedCapture.pointImage(of: window)) } catch {
+                    captured = .failure(error)
+                }
+                done.fulfill()
+            }
+            wait(for: [done], timeout: 120)
+            let image = try XCTUnwrap(captured).get()
+            let url = try DesignParity.write(id, .light, ours: image)
+            let attachment = XCTAttachment(contentsOfFile: url)
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
     func testEveryMarkInLight() throws { try render(.aqua, name: "SidebarActivity-Light") }
 
     func testEveryMarkInDark() throws { try render(.darkAqua, name: "SidebarActivity-Dark") }

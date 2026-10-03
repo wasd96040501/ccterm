@@ -19,9 +19,14 @@ final class DesignPageViewController: NSViewController {
         /// What state it shows, over its card.
         var title: String
         var view: NSView
-        /// The card's content height for a view with none of its own (a scroll
-        /// view); `nil`: the view's fitting height.
+        /// The host's width, from `Host`; the card centres the view at it and
+        /// scales it down whole when the column is narrower. `nil`: the
+        /// design's fluid parts, as wide as the card.
+        var width: CGFloat? = nil
+        /// The host's height; `nil`: the view's own.
         var height: CGFloat? = nil
+        /// The view is a `WindowFrame`: its own card, nothing around it.
+        var isWindow = false
     }
 
     private let sections: [Section]
@@ -132,8 +137,22 @@ final class DesignPageViewController: NSViewController {
             let title = Self.label(specimen.title, size: 13, weight: .semibold)
             title.textColor = .secondaryLabelColor
             add(title, to: column, fullWidth: false, after: 10)
-            add(CardView(content: specimen.view, height: specimen.height), to: column, fullWidth: true, after: 32)
+            // A window's shadow reaches 50 below it.
+            add(
+                card(for: specimen), to: column, fullWidth: true,
+                after: specimen.isWindow ? 64 : 32)
         }
+    }
+
+    /// The specimen's card: a plain one around its host, centred; none around a
+    /// window, which is its own.
+    private func card(for specimen: Specimen) -> NSView {
+        guard let width = specimen.width else {
+            let height = specimen.height
+            return CardView(content: specimen.view, height: height, inset: 0, isWindow: false)
+        }
+        let host = ScaledHost(content: specimen.view, width: width, height: specimen.height)
+        return CardView(content: host, height: nil, inset: 12, isWindow: specimen.isWindow)
     }
 
     private func add(_ view: NSView, to column: NSStackView, fullWidth: Bool, after spacing: CGFloat) {
@@ -157,21 +176,39 @@ final class DesignPageViewController: NSViewController {
 }
 
 /// `.specimens`: the window's colour, 12-pt corners, a hairline edge, 12 above
-/// and below what it holds.
+/// and below what it holds. Content with a width of its own is centred, at
+/// least `inset` from the sides; a window is the card itself, drawn without
+/// one.
 private final class CardView: NSView {
-    init(content: NSView, height: CGFloat?) {
+    private let isWindow: Bool
+
+    init(content: NSView, height: CGFloat?, inset: CGFloat, isWindow: Bool) {
+        self.isWindow = isWindow
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 12
         layer?.cornerCurve = .continuous
         content.translatesAutoresizingMaskIntoConstraints = false
         addSubview(content)
+        let padding: CGFloat = isWindow ? 0 : 12
         NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: topAnchor, constant: 12),
-            content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12),
-            content.leadingAnchor.constraint(equalTo: leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: trailingAnchor),
+            content.topAnchor.constraint(equalTo: topAnchor, constant: padding),
+            content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -padding),
         ])
+        if inset == 0 {
+            NSLayoutConstraint.activate([
+                content.leadingAnchor.constraint(equalTo: leadingAnchor),
+                content.trailingAnchor.constraint(equalTo: trailingAnchor),
+            ])
+        } else {
+            let fill = content.widthAnchor.constraint(equalTo: widthAnchor, constant: -2 * (isWindow ? 0 : inset))
+            fill.priority = .defaultHigh
+            NSLayoutConstraint.activate([
+                content.centerXAnchor.constraint(equalTo: centerXAnchor),
+                content.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: isWindow ? 0 : inset),
+                fill,
+            ])
+        }
         if let height { content.heightAnchor.constraint(equalToConstant: height).isActive = true }
     }
 
@@ -181,9 +218,9 @@ private final class CardView: NSView {
     override var wantsUpdateLayer: Bool { true }
 
     override func updateLayer() {
-        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        layer?.borderColor = NSColor.separatorColor.cgColor
-        layer?.borderWidth = 0.5
+        layer?.backgroundColor = isWindow ? nil : NSColor.windowBackgroundColor.cgColor
+        layer?.borderColor = isWindow ? nil : NSColor.separatorColor.cgColor
+        layer?.borderWidth = isWindow ? 0 : 0.5
     }
 }
 

@@ -6,6 +6,15 @@ import Combine
 /// any content under a full-size-content toolbar does.
 @MainActor
 public final class FormView: NSScrollView {
+    /// Always overlay scrollers, whatever the Mac's setting (a mouse attached
+    /// means legacy ones): a legacy scroller takes its width from the form, so
+    /// the form's content and the bar under it would no longer share their
+    /// edges.
+    public override var scrollerStyle: NSScroller.Style {
+        get { .overlay }
+        set { super.scrollerStyle = .overlay }
+    }
+
     /// Whether some of the form is scrolled out below — for a bar under it
     /// to draw its hairline. Called as it changes.
     public var onContentBelowChange: ((Bool) -> Void)?

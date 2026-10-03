@@ -16,10 +16,9 @@ enum DrawingSpecimen {
                 + "square when it was denied — never elsewhere on the row. A pill button is 22 tall, a quaternary fill "
                 + "under a hairline ring, or the accent under white ink; its key follows, dimmed.",
             specimens: [
-                .init(
-                    title: "Tiles, shown at 2× — states change the tile, never the row", view: TileGrid(),
-                    height: nil),
-                .init(title: "Pill buttons — plain, primary, with a key, off", view: buttons(), height: nil),
+                // The design's fluid parts: as wide as the sheet's card.
+                .init(title: "Tiles, shown at 2× — states change the tile, never the row", view: TileGrid()),
+                .init(title: "Pill buttons — plain, primary, with a key, off", view: buttons()),
             ])
     }
 
@@ -35,7 +34,8 @@ enum DrawingSpecimen {
             PillButton(title: "Deny", keys: "⎋"), PillButton(title: "Open"), off, rest,
         ])
         row.spacing = 8
-        return AccountsSpecimen.inset(row)
+        // The sheet's `padding: 16px 24px`, as the tile grid has it.
+        return AccountsSpecimen.inset(row, by: 24)
     }
 }
 

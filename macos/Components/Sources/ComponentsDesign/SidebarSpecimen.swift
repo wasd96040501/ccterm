@@ -11,16 +11,25 @@ enum SidebarSpecimen {
         DesignPageViewController.Section(
             title: "Sidebar",
             note:
-                "The library as an Xcode-style source list, 260 wide: projects, their sessions, and under each "
+                "The library as an Xcode-style source list, 290 wide at the least: projects, their sessions, and under each "
                 + "session its subagents and workflow runs, every row an icon and a title. A live session ends in "
                 + "a mark — a quiet dot while idle, a turning arc while responding, coral when it needs the reader, "
                 + "red when it failed — and a collapsed group shows its most urgent session's. A worktree "
                 + "session's branch glyph follows its title. Click selects, double-click opens, a live session's "
                 + "context menu ends it.",
             specimens: [
-                .init(title: "The library", view: SidebarHost(library: true), height: 440),
-                .init(title: "Loading", view: SidebarHost(library: false), height: 120),
+                window("The library", library: true, height: 440),
+                window("Loading", library: false, height: 120),
             ])
+    }
+
+    /// The sidebar in the window the design shows it in — the Playground's,
+    /// its title bar over the source list — at the sidebar's width.
+    private static func window(_ title: String, library: Bool, height: CGFloat) -> DesignPageViewController.Specimen {
+        let frame = WindowFrame(
+            content: SidebarHost(library: library), contentSize: NSSize(width: Host.sidebarWidth, height: height),
+            chrome: .titled(title: "ccterm", subtitle: "transcript-views-design"))
+        return .init(title: title, view: frame, width: frame.size.width, height: frame.size.height, isWindow: true)
     }
 
     private static func url(_ name: String) -> URL { URL(fileURLWithPath: "/dev/\(name).jsonl") }
@@ -85,8 +94,7 @@ enum SidebarSpecimen {
         url("Tab bar accessory"): .needsInput,
     ]
 
-    /// A sidebar 260 wide at the card's leading edge, the way a window's
-    /// source list is.
+    /// The source list filling its window's content.
     private final class SidebarHost: NSView {
         private let sidebar = SidebarViewController()
 
@@ -99,7 +107,7 @@ enum SidebarSpecimen {
                 content.topAnchor.constraint(equalTo: topAnchor),
                 content.bottomAnchor.constraint(equalTo: bottomAnchor),
                 content.leadingAnchor.constraint(equalTo: leadingAnchor),
-                content.widthAnchor.constraint(equalToConstant: 260),
+                content.trailingAnchor.constraint(equalTo: trailingAnchor),
             ])
             guard library else { return }
             sidebar.show(SidebarSpecimen.library)

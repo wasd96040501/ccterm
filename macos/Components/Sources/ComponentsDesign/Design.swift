@@ -6,6 +6,8 @@ import AppKit
 @main
 struct Design {
     static func main() {
+        // `--render <dir> <width> <light|dark>`: an off-screen render, no window.
+        if let request = DesignRender.request(from: CommandLine.arguments) { DesignRender.run(request) }
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         // `NSApplication.delegate` is weak; this scope outlives the app.

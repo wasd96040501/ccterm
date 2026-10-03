@@ -1,11 +1,11 @@
 import AppKit
 import ScreenCaptureKit
-import XCTest
 
 /// A window as the window server composited it — materials, vibrancy and
 /// selection highlights included, which `cacheDisplay` draws flat or black.
 /// Components' copy of the app's (`cctermTests/Helpers/CompositedCapture.swift`)
-/// — a package's tests run without the app's — and like it the twin of
+/// — it lives in the style page's executable, which renders itself off screen
+/// (`--render`) — and like it the twin of
 /// TranscriptKit's `WindowCapture`
 /// (`Tests/TranscriptKitTests/WindowCapture.swift` explains each step):
 /// `SCShareableContent.currentProcess` lists this process's own windows without
@@ -16,6 +16,16 @@ import XCTest
 /// Needs an awake display: with none presenting frames the capture skips.
 @MainActor
 enum CompositedCapture {
+    /// No image can be had on this machine right now (an asleep display,
+    /// another process holding the lock) — not a bug.
+    struct Unavailable: Error, CustomStringConvertible {
+        var description: String
+    }
+
+    struct Failed: Error, CustomStringConvertible {
+        var description: String
+    }
+
 
     /// A borderless window holding `controller` at `size`, ordered in where a
     /// capture can reach it.
@@ -36,7 +46,7 @@ enum CompositedCapture {
     /// `window` as composited, its content one pixel per backing pixel.
     static func image(of window: NSWindow) async throws -> CGImage {
         guard #available(macOS 14.4, *) else {
-            throw XCTSkip("capturing an own window without consent needs macOS 14.4")
+            throw Unavailable(description: "capturing an own window without consent needs macOS 14.4")
         }
         try await Lease.take()
         park(window)
@@ -57,30 +67,6 @@ enum CompositedCapture {
         }
     }
 
-    /// As an `NSImage` sized in points, for `DesignParity`.
-    static func pointImage(of window: NSWindow) async throws -> NSImage {
-        let image = try await image(of: window)
-        return NSImage(cgImage: image, size: window.frame.size)
-    }
-
-    /// `controller` at `size` as the screen shows it, in points: mounted,
-    /// settled for `settle` seconds, captured, and closed again.
-    static func render(
-        _ controller: NSViewController, size: CGSize, appearance: NSAppearance? = nil, settle: TimeInterval = 0.4
-    ) async throws -> NSImage {
-        let window = mount(controller, size: size, appearance: appearance)
-        defer {
-            window.contentViewController = nil
-            window.close()
-        }
-        controller.view.layoutSubtreeIfNeeded()
-        let deadline = Date().addingTimeInterval(settle)
-        while Date() < deadline { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02)) }
-        controller.view.layoutSubtreeIfNeeded()
-        controller.view.displayIfNeeded()
-        return try await pointImage(of: window)
-    }
-
     private static func park(_ window: NSWindow) {
         let screen = (window.screen ?? NSScreen.main)?.frame ?? .zero
         var frame = window.frame
@@ -92,9 +78,9 @@ enum CompositedCapture {
     @available(macOS 14.4, *)
     private static func captureOnce(_ window: NSWindow) async throws -> CGImage {
         let content = try await SCShareableContent.currentProcess
-        let listed = try XCTUnwrap(
-            content.windows.first { $0.windowID == CGWindowID(window.windowNumber) },
-            "the window server does not list the window as this process's")
+        guard let listed = content.windows.first(where: { $0.windowID == CGWindowID(window.windowNumber) }) else {
+            throw Failed(description: "the window server does not list the window as this process's")
+        }
         let filter = SCContentFilter(desktopIndependentWindow: listed)
         let configuration = SCStreamConfiguration()
         configuration.width = Int(filter.contentRect.width * CGFloat(filter.pointPixelScale))
@@ -119,7 +105,7 @@ enum CompositedCapture {
         }
         link.invalidate()
         deadline.invalidate()
-        guard presented else { throw XCTSkip("the display presented no frames in 5 s — asleep, or absent") }
+        guard presented else { throw Unavailable(description: "the display presented no frames in 5 s — asleep, or absent") }
     }
 
     @MainActor
@@ -154,7 +140,7 @@ enum CompositedCapture {
             while flock(file, LOCK_EX | LOCK_NB) != 0 {
                 guard Date() < until else {
                     close(file)
-                    throw XCTSkip("another test process held the capture lock for 300 s")
+                    throw Unavailable(description: "another process held the capture lock for 300 s")
                 }
                 try await Task.sleep(nanoseconds: 100_000_000)
             }

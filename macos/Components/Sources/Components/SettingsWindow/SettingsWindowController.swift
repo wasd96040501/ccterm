@@ -4,17 +4,17 @@ import AppKit
 /// beside the shown one, and a toolbar with back and forward and the pane's
 /// title, as System Settings and Xcode's Settings have.
 ///
-/// Lazy-created by `AppDelegate` on the first ⌘, and never restored at launch
-/// (`isRestorable = false`), so the OS cannot bring it back on its own.
-@MainActor
-final class SettingsWindowController: NSWindowController, NSToolbarDelegate {
+/// Never restored at launch (`isRestorable = false`), so the OS cannot bring
+/// it back on its own; its owner creates it when it is first asked for.
+public final class SettingsWindowController: NSWindowController, NSToolbarDelegate {
     private let splitController: SettingsSplitViewController
 
     /// The content size, fixed.
     static let contentSize = NSSize(width: 880, height: 680)
 
-    init(context: SettingsContext) {
-        splitController = SettingsSplitViewController(context: context)
+    /// `initial`: the index of the pane shown first.
+    public init(panes: [SettingsSplitViewController.Pane], initial: Int) {
+        splitController = SettingsSplitViewController(panes: panes, initial: initial)
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: Self.contentSize),
             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
@@ -36,7 +36,7 @@ final class SettingsWindowController: NSWindowController, NSToolbarDelegate {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     private func installToolbar() {
         let toolbar = NSToolbar(identifier: "ccterm.settings")
@@ -48,28 +48,28 @@ final class SettingsWindowController: NSWindowController, NSToolbarDelegate {
 
     /// With nothing focused the chain ends at the window and this controller;
     /// hand menu actions on to the content, which hands them to its pane.
-    override func supplementalTarget(forAction action: Selector, sender: Any?) -> Any? {
+    public override func supplementalTarget(forAction action: Selector, sender: Any?) -> Any? {
         splitController.supplementalTarget(forAction: action, sender: sender)
             ?? super.supplementalTarget(forAction: action, sender: sender)
     }
 
     /// The window's title is the pane's; the toolbar shows it past back and
     /// forward.
-    private func show(_ pane: SettingsPane) {
+    private func show(_ pane: SettingsSplitViewController.Pane) {
         window?.title = pane.title
     }
 
     // MARK: - NSToolbarDelegate
 
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+    public func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [.sidebarTrackingSeparator, .settingsNavigation, .flexibleSpace]
     }
 
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+    public func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         toolbarDefaultItemIdentifiers(toolbar)
     }
 
-    func toolbar(
+    public func toolbar(
         _ toolbar: NSToolbar,
         itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
         willBeInsertedIntoToolbar flag: Bool
@@ -81,8 +81,8 @@ final class SettingsWindowController: NSWindowController, NSToolbarDelegate {
     /// segmented group whose segments aim at the split controller, which
     /// validates them against its history.
     private func navigationItem() -> NSToolbarItem {
-        let back = String(localized: "Back")
-        let forward = String(localized: "Forward")
+        let back = String(localized: "Back", bundle: .module)
+        let forward = String(localized: "Forward", bundle: .module)
         let group = NSToolbarItemGroup(
             itemIdentifier: .settingsNavigation,
             images: [
@@ -106,7 +106,9 @@ final class SettingsWindowController: NSWindowController, NSToolbarDelegate {
 }
 
 extension SettingsWindowController: SettingsSplitViewControllerDelegate {
-    func settingsSplitViewController(_ split: SettingsSplitViewController, didShow pane: SettingsPane) {
+    func settingsSplitViewController(
+        _ split: SettingsSplitViewController, didShow pane: SettingsSplitViewController.Pane
+    ) {
         show(pane)
     }
 }

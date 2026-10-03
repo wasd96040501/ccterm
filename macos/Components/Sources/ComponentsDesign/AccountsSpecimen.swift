@@ -66,7 +66,7 @@ enum AccountsSpecimen {
 /// stand-in for the app: Sign In… waits on the browser until Cancel, Sign
 /// Out… signs out, Add Provider… and Duplicate add a row and flash it,
 /// Delete… removes one, ⓘ flashes it.
-private final class AccountsHost: NSView, SubscriptionSectionViewControllerDelegate,
+final class AccountsHost: NSView, SubscriptionSectionViewControllerDelegate,
     ProvidersSectionViewControllerDelegate
 {
     private let subscriptionSection = SubscriptionSectionViewController()

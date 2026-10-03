@@ -6,33 +6,49 @@ import AppKit
 /// The sidebar is 180 wide and stays so — it neither collapses nor resizes,
 /// as in System Settings. The panes are children of an `NSTabViewController`
 /// with no tabs of its own, which shows one at a time.
-@MainActor
-final class SettingsSplitViewController: NSSplitViewController {
+public final class SettingsSplitViewController: NSSplitViewController {
+    /// A page of the window: its row in the sidebar, and what it shows.
+    public struct Pane {
+        public var title: String
+        /// The sidebar's SF Symbol.
+        public var symbolName: String
+        public var viewController: NSViewController
+
+        public init(title: String, symbolName: String, viewController: NSViewController) {
+            self.title = title
+            self.symbolName = symbolName
+            self.viewController = viewController
+        }
+    }
+
     weak var delegate: SettingsSplitViewControllerDelegate?
 
-    private var history = SettingsHistory(.accounts)
+    private let items: [Pane]
+    private var history: SettingsHistory
 
-    private let sidebar = SettingsSidebarViewController()
+    private let sidebar: SettingsSidebarViewController
     private let panes = NSTabViewController()
-    private let context: SettingsContext
 
-    init(context: SettingsContext) {
-        self.context = context
+    /// `initial`: the index of the pane shown first.
+    public init(panes: [Pane], initial: Int) {
+        items = panes
+        history = SettingsHistory(initial)
+        sidebar = SettingsSidebarViewController(panes: panes)
         super.init(nibName: nil, bundle: nil)
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     /// The sidebar's width, fixed.
     static let sidebarWidth: CGFloat = 180
 
-    override func loadView() {
+    public override func loadView() {
         super.loadView()
         panes.tabStyle = .unspecified
         panes.transitionOptions = []
-        for pane in SettingsPane.allCases {
-            let item = NSTabViewItem(viewController: viewController(for: pane))
+        for pane in items {
+            let item = NSTabViewItem(viewController: pane.viewController)
             item.label = pane.title
             panes.addTabViewItem(item)
         }
@@ -51,21 +67,10 @@ final class SettingsSplitViewController: NSSplitViewController {
         splitView.dividerStyle = .thin
     }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         sidebar.delegate = self
         show(history.current)
-    }
-
-    private func viewController(for pane: SettingsPane) -> NSViewController {
-        switch pane {
-        case .general:
-            GeneralSettingsViewController(launch: context.launch, launchCheck: context.launchCheck)
-        case .accounts:
-            AccountsSettingsViewController(
-                accounts: context.accounts, launch: context.launch, launchCheck: context.launchCheck,
-                subscription: context.subscription)
-        }
     }
 
     // MARK: - Navigation
@@ -80,13 +85,13 @@ final class SettingsSplitViewController: NSSplitViewController {
         show(history.current)
     }
 
-    private func show(_ pane: SettingsPane) {
-        panes.selectedTabViewItemIndex = pane.rawValue
-        sidebar.select(pane)
-        delegate?.settingsSplitViewController(self, didShow: pane)
+    private func show(_ index: Int) {
+        panes.selectedTabViewItemIndex = index
+        sidebar.select(index)
+        delegate?.settingsSplitViewController(self, didShow: items[index])
     }
 
-    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+    public override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
         switch item.action {
         case #selector(goBack(_:)): history.canGoBack
         case #selector(goForward(_:)): history.canGoForward
@@ -96,7 +101,7 @@ final class SettingsSplitViewController: NSSplitViewController {
 
     /// Menu actions the responder chain doesn't take — ⌘V with the sidebar
     /// focused — go to the shown pane when it handles them.
-    override func supplementalTarget(forAction action: Selector, sender: Any?) -> Any? {
+    public override func supplementalTarget(forAction action: Selector, sender: Any?) -> Any? {
         let pane = panes.tabViewItems[panes.selectedTabViewItemIndex].viewController
         if let pane, pane.responds(to: action) { return pane }
         return super.supplementalTarget(forAction: action, sender: sender)
@@ -105,7 +110,7 @@ final class SettingsSplitViewController: NSSplitViewController {
     // MARK: - NSSplitViewDelegate
 
     /// No divider to drag: the sidebar's width is fixed.
-    override func splitView(
+    public override func splitView(
         _ splitView: NSSplitView, effectiveRect proposedEffectiveRect: NSRect, forDrawnRect drawnRect: NSRect,
         ofDividerAt dividerIndex: Int
     ) -> NSRect {
@@ -114,7 +119,7 @@ final class SettingsSplitViewController: NSSplitViewController {
 }
 
 extension SettingsSplitViewController: SettingsSidebarViewControllerDelegate {
-    func settingsSidebar(_ sidebar: SettingsSidebarViewController, didSelect pane: SettingsPane) {
+    func settingsSidebar(_ sidebar: SettingsSidebarViewController, didSelect pane: Int) {
         history.go(to: pane)
         show(history.current)
     }

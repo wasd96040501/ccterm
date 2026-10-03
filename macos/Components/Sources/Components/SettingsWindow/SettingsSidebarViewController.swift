@@ -1,15 +1,17 @@
 import AppKit
 
-/// The Settings window's pane list: a source list, one row per
-/// ``SettingsPane`` — an icon and a title.
+/// The Settings window's pane list: a source list, one row per pane — an
+/// icon and a title.
 @MainActor
 final class SettingsSidebarViewController: NSViewController {
     weak var delegate: SettingsSidebarViewControllerDelegate?
 
+    private let panes: [SettingsSplitViewController.Pane]
     /// Set while the selection follows the history, so it isn't reported back.
     private var isSelectingProgrammatically = false
 
-    init() {
+    init(panes: [SettingsSplitViewController.Pane]) {
+        self.panes = panes
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -64,31 +66,31 @@ final class SettingsSidebarViewController: NSViewController {
         ])
     }
 
-    /// Selects `pane`'s row without reporting it.
-    func select(_ pane: SettingsPane) {
+    /// Selects the row of the pane at `index` without reporting it.
+    func select(_ index: Int) {
         loadViewIfNeeded()
         isSelectingProgrammatically = true
-        tableView.selectRowIndexes([pane.rawValue], byExtendingSelection: false)
+        tableView.selectRowIndexes([index], byExtendingSelection: false)
         isSelectingProgrammatically = false
     }
 }
 
 extension SettingsSidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
     func numberOfRows(in tableView: NSTableView) -> Int {
-        SettingsPane.allCases.count
+        panes.count
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let cell =
             tableView.makeView(withIdentifier: .settingsPaneCell, owner: nil) as? Cell
             ?? Cell()
-        cell.configure(with: SettingsPane.allCases[row])
+        cell.configure(with: panes[row])
         return cell
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
-        guard !isSelectingProgrammatically, let pane = SettingsPane(rawValue: tableView.selectedRow) else { return }
-        delegate?.settingsSidebar(self, didSelect: pane)
+        guard !isSelectingProgrammatically, panes.indices.contains(tableView.selectedRow) else { return }
+        delegate?.settingsSidebar(self, didSelect: tableView.selectedRow)
     }
 
     /// A pane's row as Xcode's Settings draws it: a 17-point glyph in the
@@ -123,7 +125,7 @@ extension SettingsSidebarViewController: NSTableViewDataSource, NSTableViewDeleg
         @available(*, unavailable)
         required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-        func configure(with pane: SettingsPane) {
+        func configure(with pane: SettingsSplitViewController.Pane) {
             title.stringValue = pane.title
             glyph.image = NSImage(systemSymbolName: pane.symbolName, accessibilityDescription: nil)?
                 .withSymbolConfiguration(.init(pointSize: 15, weight: .regular))

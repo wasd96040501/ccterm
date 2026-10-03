@@ -1,6 +1,7 @@
 import AgentSDK
 import AppKit
 import Combine
+import Components
 import SwiftUI
 
 /// AppKit-side application delegate and the app's composition root. Owns
@@ -63,7 +64,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller =
             settingsWindowController
             ?? {
-                let c = SettingsWindowController(context: context)
+                let c = SettingsWindowController(
+                    panes: SettingsPane.allCases.map { .init($0, context: context) },
+                    initial: SettingsPane.accounts.rawValue)
                 c.windowFrameAutosaveName = "SettingsWindow"
                 settingsWindowController = c
                 return c

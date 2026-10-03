@@ -17,7 +17,8 @@ struct Design {
     /// The page's sections, in order: one per component family.
     static func sections() -> [DesignPageViewController.Section] {
         [
-            FormSpecimen.section(), AccountsSpecimen.section(), GeneralSpecimen.section(), SidebarSpecimen.section(),
+            FormSpecimen.section(), AccountsSpecimen.section(), GeneralSpecimen.section(),
+            SettingsWindowSpecimen.section(), SidebarSpecimen.section(),
             DrawingSpecimen.section(),
         ]
     }

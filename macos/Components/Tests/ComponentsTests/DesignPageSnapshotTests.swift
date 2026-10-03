@@ -43,7 +43,7 @@ final class DesignPageSnapshotTests: XCTestCase {
         }
         window.layoutIfNeeded()
         let scroll = try XCTUnwrap(page.view as? NSScrollView)
-        let height = max(try XCTUnwrap(scroll.documentView).fittingSize.height, 200)
+        var height = max(try XCTUnwrap(scroll.documentView).fittingSize.height, 200)
         guard height > Self.band else {
             window.setContentSize(NSSize(width: width, height: height))
             window.layoutIfNeeded()
@@ -55,6 +55,9 @@ final class DesignPageSnapshotTests: XCTestCase {
         scroll.hasVerticalScroller = false
         window.setContentSize(NSSize(width: width, height: Self.band))
         window.layoutIfNeeded()
+        // The page as laid out, which a specimen sized by its frame makes
+        // taller than the fitting size says: the bands run to its end.
+        height = max(height, try XCTUnwrap(scroll.documentView).frame.height)
         var bands: [(origin: CGFloat, image: CGImage)] = []
         var origin: CGFloat = 0
         while origin < height {

@@ -1,4 +1,5 @@
 import AppKit
+import Components
 
 /// The composer's three pop-ups as the one menu (`MenuContent`, design 08
 /// *Model*, *Effort*, *Permission mode*): Effort and Mode a section head with

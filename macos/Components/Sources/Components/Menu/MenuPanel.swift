@@ -10,13 +10,13 @@ import AppKit
 /// the menu open (a switch, *N More Models*): then the owner calls `update`
 /// with what changed.
 @MainActor
-final class MenuPanel: NSObject {
+public final class MenuPanel: NSObject {
     /// An item was chosen.
-    var onChoose: ((MenuContent.Item) -> Void)?
+    public var onChoose: ((MenuContent.Item) -> Void)?
     /// The filter field's words changed; the owner answers with `update`.
-    var onFilter: ((String) -> Void)?
+    public var onFilter: ((String) -> Void)?
     /// The menu closed, however it closed.
-    var onClose: (() -> Void)?
+    public var onClose: (() -> Void)?
 
     /// The shortest a list is cut to when the screen has no room.
     static let minimumListHeight: CGFloat = 120
@@ -28,20 +28,17 @@ final class MenuPanel: NSObject {
         return popup
     }()
 
-    override init() {
+    public override init() {
         super.init()
         controller.delegate = self
     }
 
-    var isShown: Bool { popup.isShown }
-
-    /// The menu's content view, for a test to find what it shows.
-    var contentView: NSView { controller.view }
+    public var isShown: Bool { popup.isShown }
 
     /// Opens `content` against `control`, on `preferred` side if it fits.
-    func show(_ content: MenuContent, from control: NSView, preferring preferred: MenuPopup.Side) {
+    public func show(_ content: MenuContent, from control: NSView, preferring preferred: MenuPopup.Side) {
         guard let window = control.window else { return }
-        controller.listHeightLimit = .greatestFiniteMagnitude
+        controller.limitList(to: .greatestFiniteMagnitude)
         controller.configure(with: content)
         let anchor = window.convertToScreen(control.convert(control.bounds, to: nil))
         var size = controller.preferredSize
@@ -49,7 +46,7 @@ final class MenuPanel: NSObject {
         let room = popup.room(around: anchor, in: window)
         let available = side == .above ? room.above : room.below
         if size.height > available {
-            controller.listHeightLimit = max(Self.minimumListHeight, available - controller.chromeHeight)
+            controller.limitList(to: max(Self.minimumListHeight, available - controller.chromeHeight))
             size = controller.preferredSize
         }
         popup.show(at: anchor, on: side, in: window, size: size, makingKey: true)
@@ -58,13 +55,13 @@ final class MenuPanel: NSObject {
     }
 
     /// Shows new content in the open menu, keeping its edge on the control.
-    func update(_ content: MenuContent) {
+    public func update(_ content: MenuContent) {
         controller.configure(with: content)
         guard popup.isShown else { return }
         popup.resize(to: controller.preferredSize)
     }
 
-    func close() {
+    public func close() {
         popup.close()
     }
 }

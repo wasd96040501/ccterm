@@ -1,5 +1,4 @@
 import AppKit
-import Components
 
 /// The filter over a menu's list (`.mfilter`): 26 pt tall, the control radius,
 /// the hover fill with a hairline inside its edge, a 12-pt magnifier in

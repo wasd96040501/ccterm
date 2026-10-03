@@ -46,6 +46,10 @@ final class DesignPageSnapshotTests: XCTestCase {
     /// Runs the page's executable, which sits beside the test bundle.
     private func render(width: Int, scheme: String, into directory: String) throws {
         let executable = Self.productsDirectory.appendingPathComponent("ComponentsDesign")
+        // `make test-ui` builds the page's executable before the tests run.
+        try XCTSkipUnless(
+            FileManager.default.isExecutableFile(atPath: executable.path),
+            "\(executable.path) is not built — run `make test-ui`")
         let process = Process()
         process.executableURL = executable
         process.arguments = ["-AppleLanguages", "(en)", "--render", directory, "\(width)", scheme]

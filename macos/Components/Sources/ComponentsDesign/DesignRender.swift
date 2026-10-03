@@ -83,7 +83,8 @@ enum DesignRender {
                     NSViewController(), size: NSSize(width: request.width, height: 800),
                     appearance: NSAppearance(named: request.isDark ? .darkAqua : .aqua))
                 let image = try await render(section, request, in: window)
-                let url = URL(fileURLWithPath: request.directory).appendingPathComponent(request.fileName(for: section.title))
+                let url = URL(fileURLWithPath: request.directory).appendingPathComponent(
+                    request.fileName(for: section.title))
                 guard let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
                 else { throw CompositedCapture.Failed(description: "the image has no PNG form") }
                 try png.write(to: url)

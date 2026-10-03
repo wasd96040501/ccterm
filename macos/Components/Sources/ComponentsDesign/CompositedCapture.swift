@@ -26,7 +26,6 @@ enum CompositedCapture {
         var description: String
     }
 
-
     /// A borderless window holding `controller` at `size`, ordered in where a
     /// capture can reach it.
     static func mount(_ controller: NSViewController, size: NSSize, appearance: NSAppearance?) -> NSWindow {
@@ -105,7 +104,9 @@ enum CompositedCapture {
         }
         link.invalidate()
         deadline.invalidate()
-        guard presented else { throw Unavailable(description: "the display presented no frames in 5 s — asleep, or absent") }
+        guard presented else {
+            throw Unavailable(description: "the display presented no frames in 5 s — asleep, or absent")
+        }
     }
 
     @MainActor

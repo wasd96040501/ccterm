@@ -346,7 +346,8 @@ private final class HistoryPill: NSView {
         // `--glass` and `--glass-edge`.
         let edge = isDark ? NSColor(white: 1, alpha: 0.12) : NSColor(white: 0, alpha: 0.1)
         layer?.backgroundColor =
-            (isDark ? NSColor(srgbRed: 60 / 255, green: 60 / 255, blue: 62 / 255, alpha: 0.72) : NSColor(white: 1, alpha: 0.78))
+            (isDark
+            ? NSColor(srgbRed: 60 / 255, green: 60 / 255, blue: 62 / 255, alpha: 0.72) : NSColor(white: 1, alpha: 0.78))
             .cgColor
         layer?.borderColor = edge.cgColor
         layer?.borderWidth = 0.5

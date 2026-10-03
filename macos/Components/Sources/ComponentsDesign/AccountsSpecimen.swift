@@ -40,7 +40,9 @@ enum AccountsSpecimen {
     /// An account's sheet as the design shows one on its window: the Settings
     /// window with the Accounts pane, a faint scrim over it, and the sheet 14
     /// below the top, centred.
-    private static func sheet(_ title: String, kind: AccountEditorViewController.Kind) -> DesignPageViewController.Specimen {
+    private static func sheet(
+        _ title: String, kind: AccountEditorViewController.Kind
+    ) -> DesignPageViewController.Specimen {
         let frame = SettingsWindowSpecimen.window(
             initial: 1, overlay: SheetOverlay(sheet: EditorHost(kind: kind), size: Host.accountSheet))
         return .init(title: title, view: frame, width: frame.size.width, height: frame.size.height, isWindow: true)

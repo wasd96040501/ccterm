@@ -13,7 +13,8 @@ enum FormSpecimen {
                 + "notes what a paste filled with a toast.",
             specimens: [
                 .init(title: "Rows — a field, a pop-up, a secret", view: rows(), width: Host.paneForm, height: 168),
-                .init(title: "A description as an error, and a toast", view: notes(), width: Host.paneForm, height: 150),
+                .init(
+                    title: "A description as an error, and a toast", view: notes(), width: Host.paneForm, height: 150),
             ])
     }
 

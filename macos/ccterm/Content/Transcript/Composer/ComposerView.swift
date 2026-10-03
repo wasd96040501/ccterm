@@ -1,5 +1,6 @@
 import AgentSDK
 import AppKit
+import DisplayModels
 
 /// The composer's card (design 08 *The composer*): an optional failure section
 /// on top, the growing field, the accessory row — Model / Effort / Mode

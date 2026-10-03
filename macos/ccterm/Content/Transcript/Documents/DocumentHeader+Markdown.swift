@@ -1,4 +1,5 @@
 import AgentSDK
+import DisplayModels
 import Foundation
 
 /// The header of a document set as markdown — a search, a page fetched, an

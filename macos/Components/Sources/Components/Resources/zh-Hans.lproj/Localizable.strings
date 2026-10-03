@@ -18,8 +18,6 @@
 "Remove Variable" = "移除变量";
 "Paste %@ lines or a command" = "粘贴 %@ 行或一条命令";
 "Checking…" = "正在检查…";
-"%@." = "%@。";
-"Still using %@." = "仍在使用 %@。";
 "Sign in to Claude" = "登录 Claude";
 "Waiting for your browser…" = "正在等待浏览器…";
 "Open Browser Again" = "重新打开浏览器";

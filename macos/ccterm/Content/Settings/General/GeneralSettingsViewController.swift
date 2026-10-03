@@ -2,6 +2,7 @@ import AgentSDK
 import AppKit
 import Combine
 import Components
+import DisplayModels
 
 /// General: where Claude Code comes from — the command that starts it and the
 /// folder it keeps its settings, sign-in and sessions in — and whether its

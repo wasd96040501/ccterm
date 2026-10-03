@@ -1,4 +1,5 @@
 import AppKit
+import DisplayModels
 
 /// The 28-pt bar on top of every document beside the transcript: the tile,
 /// the path, the stat, and *Show in Transcript* — the way back, always in

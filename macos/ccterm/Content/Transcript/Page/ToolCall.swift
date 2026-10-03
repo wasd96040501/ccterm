@@ -1,4 +1,5 @@
 import AgentSDK
+import DisplayModels
 import Foundation
 
 /// One tool call as the page knows it: what was asked, what came back, and

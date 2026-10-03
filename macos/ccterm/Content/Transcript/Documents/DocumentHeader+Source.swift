@@ -1,3 +1,4 @@
+import DisplayModels
 import Foundation
 
 /// A file document's header (03-file.md "The frame"): the path as Xcode's

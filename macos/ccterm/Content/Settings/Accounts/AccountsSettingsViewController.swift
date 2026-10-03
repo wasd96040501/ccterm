@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Components
+import DisplayModels
 
 /// Accounts: the Subscription section above the API Providers section. This
 /// container follows the login and the accounts, shows them to the sections

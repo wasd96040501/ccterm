@@ -1,4 +1,5 @@
 import AgentSDK
+import DisplayModels
 import Foundation
 
 /// The markdown of a document that is words rather than code — a search, a

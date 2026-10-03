@@ -1,5 +1,6 @@
 import AppKit
 import Components
+import DisplayModels
 
 /// Accounts' parts (design/settings, *Accounts*): an account's row in each of
 /// its states, the API Providers group with nothing in it, an account's

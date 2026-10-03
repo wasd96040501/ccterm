@@ -18,8 +18,6 @@
 "Remove Variable" = "Remove Variable";
 "Paste %@ lines or a command" = "Paste %@ lines or a command";
 "Checking…" = "Checking…";
-"%@." = "%@.";
-"Still using %@." = "Still using %@.";
 "Sign in to Claude" = "Sign in to Claude";
 "Waiting for your browser…" = "Waiting for your browser…";
 "Open Browser Again" = "Open Browser Again";

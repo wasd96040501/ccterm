@@ -13,6 +13,15 @@ let appSettings: [SwiftSetting] = [
     .enableUpcomingFeature("MemberImportVisibility"),
 ]
 
+/// The display models' settings: the app's, less `MainActor` by default —
+/// they are values, built off the main actor too (the transcript's pages).
+let valueSettings: [SwiftSetting] = [
+    .swiftLanguageMode(.v5),
+    .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+    .enableUpcomingFeature("InferIsolatedConformances"),
+    .enableUpcomingFeature("MemberImportVisibility"),
+]
+
 let package = Package(
     name: "Components",
     // A component puts words on screen of its own (an accessibility label, a
@@ -26,17 +35,24 @@ let package = Package(
         // components, each built from its init, a display model and a delegate.
         // It depends on nothing — not the app, not AgentSDK — so a component
         // can't reach a store, a session or a sibling, and the compiler says so.
-        .library(name: "Components", targets: ["Components"])
+        // DisplayModels rides along: the values those components draw, which
+        // the app's models build without importing AppKit.
+        .library(name: "Components", targets: ["Components", "DisplayModels"])
     ],
     targets: [
+        // What a component is shown, as values: Foundation only, no AppKit, so
+        // a model or a view model can build them. Words of its own (a check's
+        // sentence) are in its own catalogue.
+        .target(name: "DisplayModels", resources: [.process("Resources")], swiftSettings: valueSettings),
         .target(
-            name: "Components", resources: [.process("Resources")], swiftSettings: appSettings),
+            name: "Components", dependencies: ["DisplayModels"], resources: [.process("Resources")],
+            swiftSettings: appSettings),
         // The style page: every component tiled on one page, live, with fixture
         // models — `make design`. What the design sheet shows, built from the
         // same components the app uses.
         .executableTarget(
             name: "ComponentsDesign", dependencies: ["Components"], exclude: ["CLAUDE.md"],
             swiftSettings: appSettings),
-        .testTarget(name: "ComponentsTests", dependencies: ["Components", "ComponentsDesign"], swiftSettings: appSettings),
+        .testTarget(name: "ComponentsTests", dependencies: ["Components", "DisplayModels", "ComponentsDesign"], swiftSettings: appSettings),
     ]
 )

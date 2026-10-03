@@ -6,13 +6,18 @@ import Foundation
 /// The words are decided here, localized, from the model; the fonts and
 /// colours are the row view's. So a sentence like *Edited **A.swift**, ran 3
 /// commands* is testable without AppKit, and a view never composes wording.
-nonisolated struct StyledText: Sendable, Equatable {
-    struct Run: Sendable, Equatable {
-        var text: String
-        var style: Style
+public nonisolated struct StyledText: Sendable, Equatable {
+    public struct Run: Sendable, Equatable {
+        public var text: String
+        public var style: Style
+
+        public init(text: String, style: Style) {
+            self.text = text
+            self.style = style
+        }
     }
 
-    enum Style: Sendable, Equatable {
+    public enum Style: Sendable, Equatable {
         /// The line's own colour: secondary in a work line.
         case plain
         /// A thing the reader scans for — a file, a host — in label colour.
@@ -29,18 +34,18 @@ nonisolated struct StyledText: Sendable, Equatable {
         case failure
     }
 
-    private(set) var runs: [Run]
+    public private(set) var runs: [Run]
 
-    init() {
+    public init() {
         runs = []
     }
 
-    init(_ text: String, style: Style = .plain) {
+    public init(_ text: String, style: Style = .plain) {
         runs = text.isEmpty ? [] : [Run(text: text, style: style)]
     }
 
     /// `+12 −3`, green and red — a change's stat wherever it shows.
-    static func diffStat(added: Int, removed: Int) -> StyledText {
+    public static func diffStat(added: Int, removed: Int) -> StyledText {
         StyledText("+\(added)", style: .added) + StyledText(" ") + StyledText("−\(removed)", style: .removed)
     }
 
@@ -54,11 +59,11 @@ nonisolated struct StyledText: Sendable, Equatable {
     ///
     /// Slots rather than `%@` parsed out of a localized string: a literal with
     /// no arguments is not a format, and `String(localized:)` escapes its `%`.
-    init(localized: String, _ arguments: StyledText...) {
+    public init(localized: String, _ arguments: StyledText...) {
         self.init(localized: localized, arguments: arguments)
     }
 
-    init(localized: String, arguments: [StyledText]) {
+    public init(localized: String, arguments: [StyledText]) {
         runs = []
         var pending = ""
         for character in localized {
@@ -75,7 +80,7 @@ nonisolated struct StyledText: Sendable, Equatable {
 
     /// Where argument `index` goes in a localized string: one private-use
     /// character, which no translation contains otherwise.
-    static func slot(_ index: Int) -> String {
+    public static func slot(_ index: Int) -> String {
         String(Character(UnicodeScalar(slotBase + UInt32(index))!))
     }
 
@@ -88,12 +93,12 @@ nonisolated struct StyledText: Sendable, Equatable {
         return Int(scalar.value - slotBase)
     }
 
-    var isEmpty: Bool { runs.isEmpty }
+    public var isEmpty: Bool { runs.isEmpty }
 
     /// The words alone — for accessibility, tooltips and tests.
-    var string: String { runs.map(\.text).joined() }
+    public var string: String { runs.map(\.text).joined() }
 
-    mutating func append(_ other: StyledText) {
+    public mutating func append(_ other: StyledText) {
         for run in other.runs {
             if let last = runs.last, last.style == run.style {
                 runs[runs.count - 1].text += run.text
@@ -103,14 +108,14 @@ nonisolated struct StyledText: Sendable, Equatable {
         }
     }
 
-    static func + (lhs: StyledText, rhs: StyledText) -> StyledText {
+    public static func + (lhs: StyledText, rhs: StyledText) -> StyledText {
         var result = lhs
         result.append(rhs)
         return result
     }
 
     /// `parts` joined by `separator`, empty parts skipped.
-    static func joined(_ parts: [StyledText], separator: String) -> StyledText {
+    public static func joined(_ parts: [StyledText], separator: String) -> StyledText {
         var result = StyledText()
         for part in parts where !part.isEmpty {
             if !result.isEmpty { result.append(StyledText(separator)) }

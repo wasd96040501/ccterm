@@ -1,4 +1,5 @@
 import AppKit
+import DisplayModels
 
 /// Accounts' Subscription section: the signed-in account's row, or a row to
 /// sign in with, and the sheet that waits on the browser while signing in.

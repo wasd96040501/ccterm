@@ -3,7 +3,8 @@
 Every view the app draws with: generic controls and the app's own components. A sibling of `TranscriptKit`, and like it a package so the compiler holds the boundary: **it depends on nothing** — not the app, not AgentSDK, not TranscriptKit — so a component can't reach a store, a session or a sibling. The app depends on it; it never depends back.
 
 ```
-Sources/Components/      the library: one directory per family (Form/ …)
+Sources/DisplayModels/   what a component is shown, as values — Foundation only (Settings/, Transcript/ …)
+Sources/Components/      the views: one directory per family (Form/, Settings/ …), over DisplayModels
 Sources/ComponentsDesign/  the style page — every component tiled, live (`make design`)
 Tests/ComponentsTests/   component tests; *SnapshotTests render off screen, only when named
 ```
@@ -11,6 +12,7 @@ Tests/ComponentsTests/   component tests; *SnapshotTests render off screen, only
 ## A component
 
 - **Built from its init, a display model and a delegate (or closures) — nothing else.** It draws values already worded for it and reports intents up; it never formats a domain value, holds a domain type or calls a service. Turning the app's state into a display model is the app's job, in the app.
+- **Display models live in `DisplayModels`; views in `Components`.** A value a component is shown (`AccountRowContent`, `ValidationDetail`, `StyledText`, `Tile`) is a public type in `DisplayModels`, which imports Foundation and nothing else — no AppKit, no default actor — so the app's models and view models (`Page/`, `AccountEditorViewModel`, a field's validation) build them while importing `DisplayModels` alone, never `Components`. A value only one component takes as its input (`SubscriptionSectionViewController.State`) may nest in it. A display model's own words are in `DisplayModels`' catalogue (`bundle: .module` there).
 - **`public` is its surface, and only that:** the type, its `init`, `configure(with:)` / its settable display properties, its delegate or callbacks. Everything else stays `internal` or `private`. A public class also makes public every `override` and `required init` and every method that answers a public protocol — Swift requires it.
 - **The app's compiler settings:** Swift 5 mode, `MainActor` by default, approachable concurrency, member import visibility (`appSettings` in `Package.swift`). A component compiles here exactly as it did in the app.
 - **Its words are the package's.** A component's own copy (an accessibility label, a fixed title) is `String(localized: "…", bundle: .module)` in `Resources/<lang>.lproj/Localizable.strings` — English and `zh-Hans`, landing in the same commit as the code. Words that come from the app arrive in the display model, already localized.

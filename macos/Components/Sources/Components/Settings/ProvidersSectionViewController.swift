@@ -1,4 +1,5 @@
 import AppKit
+import DisplayModels
 
 /// Accounts' API Providers section: a row per provider — or an empty state —
 /// and Add Provider… (with Import from Clipboard in its menu) under the group.

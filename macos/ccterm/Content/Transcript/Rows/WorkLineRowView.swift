@@ -1,4 +1,5 @@
 import AppKit
+import DisplayModels
 
 /// One line of work: a run's row, one of its items, a row of news or one
 /// piece of it (design/transcript/01-run.md, 04-background.md).

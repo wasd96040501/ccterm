@@ -1,4 +1,5 @@
 import AgentSDK
+import DisplayModels
 import XCTest
 
 @testable import ccterm

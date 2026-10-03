@@ -1,4 +1,5 @@
 import AppKit
+import DisplayModels
 
 /// A hairline where the session's shape changed — compacted, resumed, an
 /// hour of silence — with its label centred on it (05-local.md).

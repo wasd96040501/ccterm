@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import Components
+@testable import DisplayModels
 
 /// How a check's problem reads under its field: the reason as a sentence,
 /// then what stays in use.

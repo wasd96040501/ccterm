@@ -1,4 +1,5 @@
 import AgentSDK
+import DisplayModels
 import Foundation
 
 /// What a command document says, worded (02-command.md): what was meant, what

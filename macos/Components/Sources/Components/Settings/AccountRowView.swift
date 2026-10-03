@@ -1,4 +1,5 @@
 import AppKit
+import DisplayModels
 
 /// An account in the Accounts list, 52 tall like a titled row with a
 /// description: a 28-point mark (Claude's, or server.rack for a provider), the title over a

@@ -1,4 +1,5 @@
 import AppKit
+import DisplayModels
 
 /// A kind of work as a 16-pt tile: a Lamé squircle |x|⁴ + |y|⁴ = 7.5⁴ — the
 /// sidebar glyphs' family — in a quaternary fill, the kind's glyph in

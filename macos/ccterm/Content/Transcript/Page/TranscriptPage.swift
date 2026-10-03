@@ -1,4 +1,5 @@
 import AgentSDK
+import DisplayModels
 import Foundation
 
 /// A transcript as its tab shows it: the entries in reading order, and what

@@ -1,4 +1,5 @@
 import AppKit
+import DisplayModels
 
 /// What stands above a command's output and scrolls with it
 /// (02-command.md "Layout"): what was meant, the status line, the command

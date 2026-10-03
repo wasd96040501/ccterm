@@ -1,4 +1,5 @@
 import AppKit
+import DisplayModels
 
 /// How every view draws the work voice's distinctions
 /// (design/transcript/preview.css `.line`, `.jump .jstat`): the line keeps

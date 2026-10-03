@@ -1,4 +1,4 @@
-import Components
+import DisplayModels
 import Foundation
 
 /// An account's row, worded from the account.

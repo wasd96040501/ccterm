@@ -1,4 +1,5 @@
 import AgentSDK
+import DisplayModels
 import Foundation
 
 /// Reads a transcript's messages into the page's entries — the one place the

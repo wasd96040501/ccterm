@@ -9,38 +9,25 @@ import DisplayModels
 /// header holds what was meant and what ran, so everything scrolls as one and
 /// the output is findable and selectable.
 @MainActor
-final class CommandDocumentViewController: NSViewController {
-    enum Command {
-        case call(ToolCall)
-        case local(LocalCommand)
-    }
+public final class CommandDocumentViewController: NSViewController {
+    private let summary: CommandSummary
 
-    private let command: Command
+    private lazy var linesView = NumberedLinesView()
 
-    private lazy var linesView: NumberedLinesView = {
-        let view = NumberedLinesView()
-        return view
-    }()
-
-    init(_ command: Command) {
-        self.command = command
+    public init(_ summary: CommandSummary) {
+        self.summary = summary
         super.init(nibName: nil, bundle: nil)
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    override func loadView() {
+    public override func loadView() {
         view = linesView
     }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
-        let summary: CommandSummary =
-            switch command {
-            case .call(let call): CommandSummary(call)
-            case .local(let local): CommandSummary(local)
-            }
         linesView.header = CommandHeaderView(summary: summary)
         linesView.configure(with: NumberedLinesView.Content(lines: Self.lines(of: summary), style: .output))
     }

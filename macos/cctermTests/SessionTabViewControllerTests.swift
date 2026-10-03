@@ -1,6 +1,7 @@
 import AgentSDK
 import AppKit
 import Combine
+import DisplayModels
 import XCTest
 
 @testable import ccterm

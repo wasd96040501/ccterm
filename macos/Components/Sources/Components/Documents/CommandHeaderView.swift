@@ -1,5 +1,4 @@
 import AppKit
-import Components
 import DisplayModels
 
 /// What stands above a command's output and scrolls with it
@@ -170,7 +169,7 @@ final class CommandHeaderView: NSView {
         label.isSelectable = true
         // A click hands the text to the field editor, which keeps these fonts only then.
         label.allowsEditingTextAttributes = true
-        let open = PillButton(title: String(localized: "Open"))
+        let open = PillButton(title: String(localized: "Open", bundle: .module))
         open.target = self
         open.action = #selector(openPersisted)
         let row = NSStackView(views: [Self.icon("info.circle"), label, open])
@@ -263,12 +262,13 @@ private final class CommandCardView: NSView {
 
     private lazy var copyButton: NSButton = {
         let button = NSButton(
-            image: NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: String(localized: "Copy"))
+            image: NSImage(
+                systemSymbolName: "doc.on.doc", accessibilityDescription: String(localized: "Copy", bundle: .module))
                 ?? NSImage(), target: self, action: #selector(copyCommand))
         button.isBordered = false
         button.imageScaling = .scaleProportionallyDown
         button.contentTintColor = .tertiaryLabelColor
-        button.toolTip = String(localized: "Copy")
+        button.toolTip = String(localized: "Copy", bundle: .module)
         button.alphaValue = 0
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
@@ -325,7 +325,7 @@ private final class CommandCardView: NSView {
         self.command = command
         text.attributedStringValue = attributed
         moreButton.isHidden = hiddenTotal == 0
-        moreButton.title = hiddenTotal == 0 ? "" : String(localized: "Show all \(hiddenTotal) lines")
+        moreButton.title = hiddenTotal == 0 ? "" : String(localized: "Show all \(hiddenTotal) lines", bundle: .module)
         // With nothing folded the button takes no room, and neither does its gap.
         moreHeight?.constant = hiddenTotal == 0 ? 0 : 14
         moreGap?.constant = hiddenTotal == 0 ? 0 : 4

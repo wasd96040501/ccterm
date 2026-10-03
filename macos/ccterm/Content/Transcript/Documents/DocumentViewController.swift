@@ -1,5 +1,6 @@
 import AgentSDK
 import AppKit
+import Components
 import DisplayModels
 
 /// A tab beside the transcript: one document — a command, a file, a
@@ -260,22 +261,22 @@ final class DocumentViewController: NSViewController {
     private func makeBody(for document: Document) -> NSViewController {
         switch document.content {
         case .command(let call):
-            return CommandDocumentViewController(.call(call))
+            return CommandDocumentViewController(CommandSummary(call))
         case .shellCommand(let command):
-            return CommandDocumentViewController(.local(command))
+            return CommandDocumentViewController(CommandSummary(command))
         case .change(let calls):
-            return SourceDocumentViewController(.change(calls))
+            return SourceDocumentViewController(SourceLines.change(calls), mode: .change, path: calls.first?.filePath)
         case .newFile(let call):
-            return SourceDocumentViewController(.newFile(call))
+            return SourceDocumentViewController(SourceLines.newFile(call), mode: .newFile, path: call.filePath)
         case .read(let call):
-            return SourceDocumentViewController(.read(call))
+            return SourceDocumentViewController(SourceLines.read(call), mode: .read, path: call.filePath)
         case .agent:
             if let url = conversationURL(of: document) {
                 return makeConversation(url, DocumentHeader(document).title)
             }
             return MarkdownDocumentViewController(markdown: DocumentMarkdown.markdown(for: document.content))
         case .image(let image):
-            return ImageDocumentViewController(image)
+            return ImageDocumentViewController(image, title: image.title)
         case .agentMessage, .search, .web, .taskList, .news, .commandOutput, .log, .contextUsage, .compactionSummary,
             .advice, .sentMessage, .continuationPrompt, .other:
             return MarkdownDocumentViewController(markdown: DocumentMarkdown.markdown(for: document.content))

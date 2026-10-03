@@ -1,7 +1,8 @@
 import AppKit
+import DisplayModels
 import XCTest
 
-@testable import ccterm
+@testable import Components
 
 /// Clicking into a command's header to select text keeps its look: a
 /// selectable field hands its text to the window's field editor on a click,
@@ -9,7 +10,7 @@ import XCTest
 /// keeps its attributes.
 @MainActor
 final class CommandCardSelectionTests: XCTestCase {
-    private var stage: AppKitStage?
+    private var stage: DocumentStage?
 
     override func tearDown() {
         stage?.teardown()
@@ -19,7 +20,7 @@ final class CommandCardSelectionTests: XCTestCase {
 
     func testSelectingTheCommandKeepsItsFonts() throws {
         let field = try mount(
-            ToolCallFixture.bash("cd ~/dev/ccterm && make test-unit", description: "Run the unit tests", stdout: "ok"),
+            CommandSummary(heading: "Run the unit tests", command: "cd ~/dev/ccterm && make test-unit", stdout: "ok"),
             fieldContaining: "make test-unit")
         let fonts = Self.fonts(in: field.attributedStringValue)
         XCTAssertTrue(fonts.allSatisfy(\.isFixedPitch), "premise: the command is monospaced: \(fonts)")
@@ -28,7 +29,9 @@ final class CommandCardSelectionTests: XCTestCase {
 
     func testSelectingThePersistedOutputsPathKeepsItsFonts() throws {
         let field = try mount(
-            ToolCallFixture.bash("make logs", stdout: "…", persisted: "/tmp/ccterm/output.txt"),
+            CommandSummary(
+                heading: "Command", command: "make logs", stdout: "…", persistedPath: "/tmp/ccterm/output.txt",
+                persistedNote: "Output was too long to keep here. The full output is in"),
             fieldContaining: "/tmp/ccterm/output.txt")
         let fonts = Self.fonts(in: field.attributedStringValue)
         XCTAssertTrue(fonts.contains(where: \.isFixedPitch), "premise: the path is monospaced: \(fonts)")
@@ -38,12 +41,12 @@ final class CommandCardSelectionTests: XCTestCase {
     /// The page above the output is views, not text: a double-click on the
     /// status line selects nothing of the page.
     func testADoubleClickOnTheStatusLineSelectsNothingOfThePage() throws {
-        let call = ToolCallFixture.bash("make", description: "Build", stdout: "one\ntwo", duration: 2)
-        let stage = AppKitStage.mount(CommandDocumentViewController(.call(call)), size: CGSize(width: 640, height: 420))
+        let summary = CommandSummary(heading: "Build", status: StyledText("2s"), command: "make", stdout: "one\ntwo")
+        let stage = DocumentStage.mount(CommandDocumentViewController(summary), size: CGSize(width: 640, height: 420))
         self.stage = stage
         stage.drain()
         let status = try XCTUnwrap(
-            stage.findAll(NSTextField.self).first { $0.stringValue == TimeInterval(2).durationText },
+            stage.findAll(NSTextField.self).first { $0.stringValue == "2s" },
             "premise: the status line shows the time")
         let text = try XCTUnwrap(stage.find(NSTextView.self), "premise: the output is text")
 
@@ -53,8 +56,8 @@ final class CommandCardSelectionTests: XCTestCase {
         XCTAssertEqual(text.selectedRange().length, 0, "the double-click selected part of the page")
     }
 
-    private func mount(_ call: ToolCall, fieldContaining text: String) throws -> NSTextField {
-        let stage = AppKitStage.mount(CommandDocumentViewController(.call(call)), size: CGSize(width: 640, height: 420))
+    private func mount(_ summary: CommandSummary, fieldContaining text: String) throws -> NSTextField {
+        let stage = DocumentStage.mount(CommandDocumentViewController(summary), size: CGSize(width: 640, height: 420))
         self.stage = stage
         stage.drain()
         let fields = stage.findAll(NSTextField.self)

@@ -2,41 +2,13 @@ import AgentSDK
 import DisplayModels
 import Foundation
 
-/// What a command document says, worded (02-command.md): what was meant, what
-/// ran, the status line's facts, and what came out. Pure — the command view
-/// controller draws it.
-nonisolated struct CommandSummary: Sendable, Equatable {
-    /// What was meant: the description, *Command* without one, *You ran* for
-    /// a `!` command.
-    var heading: String
-    /// Only facts that are true: *Failed · exit 65 · 48s*.
-    var status: StyledText
-    /// The one warning the page has: *Sandbox off*.
-    var warning: String?
-    /// What ran, whole.
-    var command: String
-    /// The CLI's note on a meaningful exit code, above the output.
-    var note: String?
-    /// What stands where the output would be when there is none.
-    var emptyNote: String?
-    /// The call is going, so `emptyNote` is drawn with the running tile.
-    var isRunning = false
-    /// What the command printed: the CLI runs it with stderr into stdout, so
-    /// this is both streams, in the order they were printed.
-    var stdout = ""
-    /// Whatever else the CLI recorded as stderr — not its own note.
-    var stderr = ""
-    /// Where the CLI put the whole output when it was too long to keep.
-    var persistedPath: String?
-    /// The sentence that leads to `persistedPath`, which follows it.
-    var persistedNote: String?
-    /// Whether the document has an output area at all: a command that is
-    /// waiting, denied or still preparing has none.
-    var hasOutputArea = true
-
+/// A command's document, worded from its call or its `!` command: the
+/// summary's values are `DisplayModels`', the SDK's tool types are read here.
+nonisolated extension CommandSummary {
     // MARK: - A call
 
     init(_ call: ToolCall) {
+        self.init()
         let input = call.use.input(as: Tools.Bash.self)
         let description = input?.description ?? call.use.input["description"]?.stringValue
         heading = description.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "Command")
@@ -118,6 +90,7 @@ nonisolated struct CommandSummary: Sendable, Equatable {
     // MARK: - A `!` command
 
     init(_ local: LocalCommand) {
+        self.init()
         heading = String(localized: "You ran")
         switch local.command {
         case .shell(let line): command = line
@@ -136,15 +109,6 @@ nonisolated struct CommandSummary: Sendable, Equatable {
         } else if emptyNote == nil, stdout.isEmpty, stderr.isEmpty {
             emptyNote = String(localized: "No output")
         }
-    }
-
-    // MARK: - Reading
-
-    /// Whether a line of stdout is one that says what went wrong; its number
-    /// turns red. Every line of stderr does.
-    static func isErrorLine(_ line: String) -> Bool {
-        line.contains("error:") || line.contains("fatal:") || line.contains("FAILED")
-            || line.range(of: #"Error \d"#, options: .regularExpression) != nil
     }
 
     /// The CLI's note that it moved the shell back after a command left the

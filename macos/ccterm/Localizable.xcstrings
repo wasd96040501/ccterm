@@ -1178,16 +1178,6 @@
         }
       }
     },
-    "Copy": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "复制"
-          }
-        }
-      }
-    },
     "Couldn’t start": {
       "localizations": {
         "zh-Hans": {
@@ -2233,16 +2223,6 @@
         }
       }
     },
-    "Open": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "打开"
-          }
-        }
-      }
-    },
     "Opus": {
       "localizations": {
         "zh-Hans": {
@@ -3045,26 +3025,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示全部"
-          }
-        }
-      }
-    },
-    "Show all %lld lines": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "显示全部 %lld 行"
-          }
-        }
-      }
-    },
-    "Show in Transcript": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在对话中显示"
           }
         }
       }

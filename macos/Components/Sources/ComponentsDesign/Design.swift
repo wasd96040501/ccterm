@@ -20,7 +20,7 @@ struct Design {
             FormSpecimen.section(), AccountsSpecimen.section(), GeneralSpecimen.section(),
             SettingsWindowSpecimen.section(), SidebarSpecimen.section(),
             AboutSpecimen.section(), MainWindowSpecimen.section(), MenuSpecimen.section(),
-            DrawingSpecimen.section(),
+            DrawingSpecimen.section(), DocumentsSpecimen.section(),
         ]
     }
 

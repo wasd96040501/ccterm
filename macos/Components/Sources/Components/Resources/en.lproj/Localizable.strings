@@ -83,3 +83,11 @@
 /* AboutView */
 "Version %@ (%@)" = "Version %@ (%@)";
 "Commit" = "Commit";
+
+/* Documents */
+"Deny" = "Deny";
+"Allow" = "Allow";
+"Show in Transcript" = "Show in Transcript";
+"Open" = "Open";
+"Copy" = "Copy";
+"Show all %lld lines" = "Show all %lld lines";

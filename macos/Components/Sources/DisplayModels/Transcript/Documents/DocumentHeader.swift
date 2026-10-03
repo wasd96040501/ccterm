@@ -7,23 +7,24 @@ import Foundation
 ///
 /// Every document has the bar, and every one a transcript has a row for has
 /// *Show in Transcript* in the same place; the bar itself adds only that.
-nonisolated struct DocumentHeader: Sendable, Equatable {
+/// The app words one from a `Document` (`DocumentHeader(_:)`).
+public nonisolated struct DocumentHeader: Sendable, Equatable {
     /// The kind's tile, in the call's state.
-    var tile: Tile
+    public var tile: Tile
     /// The jump bar's path, outermost first: a file's folders then its name
     /// (folders collapse from the middle when narrow, the name never does);
     /// otherwise one crumb, the title.
-    var crumbs: [String]
+    public var crumbs: [String]
     /// Trailing facts: a change's `+12 −3`, `New · 55 lines`,
     /// `Lines 40–120 of 880`.
-    var stat: StyledText
+    public var stat: StyledText
     /// The tab's title.
-    var title: String
+    public var title: String
     /// Whether the bar offers *Show in Transcript*: a document the transcript
     /// has no row for (a session's log, its context) has no way back to one.
-    var showsTranscriptJump: Bool
+    public var showsTranscriptJump: Bool
 
-    init(
+    public init(
         tile: Tile, crumbs: [String], stat: StyledText = StyledText(), title: String,
         showsTranscriptJump: Bool = true
     ) {
@@ -32,19 +33,5 @@ nonisolated struct DocumentHeader: Sendable, Equatable {
         self.stat = stat
         self.title = title
         self.showsTranscriptJump = showsTranscriptJump
-    }
-
-    /// The header of `document`, worded by the kind of document it is.
-    init(_ document: Document) {
-        switch document.content {
-        case .command(let call):
-            self = Self.command(call)
-        case .shellCommand(let command):
-            self = Self.shellCommand(command)
-        case .change, .newFile, .read:
-            self = Self.source(document.content, workingDirectory: document.workingDirectory)
-        default:
-            self = Self.markdown(document.content)
-        }
     }
 }

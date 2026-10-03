@@ -68,3 +68,10 @@
 "API Key" = "API Key";
 "Token" = "Token";
 "API key" = "API key";
+
+/* LaunchSectionViewController */
+"Launch Command" = "Launch Command";
+"Configuration Folder" = "Configuration Folder";
+"Allow Bypass Permissions" = "Allow Bypass Permissions";
+"Lets a session switch to Bypass Permissions, which skips every permission check. Applies to sessions started after this." = "Lets a session switch to Bypass Permissions, which skips every permission check. Applies to sessions started after this.";
+"Claude Code" = "Claude Code";

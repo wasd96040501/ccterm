@@ -68,3 +68,10 @@
 "API Key" = "API 密钥";
 "Token" = "令牌";
 "API key" = "API 密钥";
+
+/* LaunchSectionViewController */
+"Launch Command" = "启动命令";
+"Configuration Folder" = "配置文件夹";
+"Allow Bypass Permissions" = "允许绕过权限";
+"Lets a session switch to Bypass Permissions, which skips every permission check. Applies to sessions started after this." = "允许会话切换到“绕过权限”模式，该模式会跳过所有权限检查。对此后启动的会话生效。";
+"Claude Code" = "Claude Code";

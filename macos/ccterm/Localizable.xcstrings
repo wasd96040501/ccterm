@@ -531,17 +531,6 @@
         }
       }
     },
-    "Allow Bypass Permissions": {
-      "comment": "General: the checkbox that lets a session enter Bypass Permissions mode.",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "允许绕过权限"
-          }
-        }
-      }
-    },
     "Allow it in Settings › General": {
       "localizations": {
         "zh-Hans": {
@@ -934,16 +923,6 @@
         }
       }
     },
-    "Claude Code": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Claude Code"
-          }
-        }
-      }
-    },
     "Claude Code %@": {
       "localizations": {
         "zh-Hans": {
@@ -1144,16 +1123,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在压缩…"
-          }
-        }
-      }
-    },
-    "Configuration Folder": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "配置文件夹"
           }
         }
       }
@@ -1801,16 +1770,6 @@
         }
       }
     },
-    "Launch Command": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "启动命令"
-          }
-        }
-      }
-    },
     "Leaving the worktree": {
       "localizations": {
         "zh-Hans": {
@@ -1827,17 +1786,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "离开了工作树"
-          }
-        }
-      }
-    },
-    "Lets a session switch to Bypass Permissions, which skips every permission check. Applies to sessions started after this.": {
-      "comment": "General: the description under Allow Bypass Permissions.",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "允许会话切换到“绕过权限”模式，该模式会跳过所有权限检查。对此后启动的会话生效。"
           }
         }
       }

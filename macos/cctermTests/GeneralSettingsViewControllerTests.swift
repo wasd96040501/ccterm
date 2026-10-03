@@ -107,13 +107,10 @@ final class GeneralSettingsViewControllerTests: XCTestCase {
 
     // MARK: - Allow Bypass Permissions
 
+    /// General's one button: the Allow Bypass Permissions checkbox.
     private func bypassCheckbox() throws -> NSButton {
         func find(_ view: NSView) -> NSButton? {
-            if let button = view as? NSButton,
-                button.accessibilityLabel() == String(localized: "Allow Bypass Permissions")
-            {
-                return button
-            }
+            if let button = view as? NSButton { return button }
             return view.subviews.lazy.compactMap(find).first
         }
         return try XCTUnwrap(find(pane.view), "no Allow Bypass Permissions checkbox in General")

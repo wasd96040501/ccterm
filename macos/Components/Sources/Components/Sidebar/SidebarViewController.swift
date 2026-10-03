@@ -1,4 +1,5 @@
 import AppKit
+import DisplayModels
 import UniformTypeIdentifiers
 
 /// The main window's sidebar: the session library as an Xcode-style source

@@ -1,4 +1,5 @@
 import AppKit
+import DisplayModels
 
 /// A live session's state, one small mark at the row's trailing edge
 /// (design/sidebar-icons): idle a quiet dot, needs-input a coral dot, failed

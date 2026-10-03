@@ -1,5 +1,6 @@
 import AppKit
 import Components
+import DisplayModels
 import XCTest
 
 @testable import ccterm

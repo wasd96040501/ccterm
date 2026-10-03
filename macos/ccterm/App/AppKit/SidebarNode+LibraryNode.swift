@@ -1,4 +1,4 @@
-import Components
+import DisplayModels
 import Foundation
 
 /// A library node, worded for the sidebar's row.

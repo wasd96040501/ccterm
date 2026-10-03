@@ -1,3 +1,4 @@
+import DisplayModels
 import Foundation
 
 /// What the sidebar reports. Only nodes with a transcript are reported.

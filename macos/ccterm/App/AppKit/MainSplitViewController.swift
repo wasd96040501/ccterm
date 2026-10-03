@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Components
+import DisplayModels
 import TranscriptWorkspace
 
 /// The main window's sidebar/detail split: the session library on the left,

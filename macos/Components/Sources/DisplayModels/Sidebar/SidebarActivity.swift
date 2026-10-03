@@ -23,25 +23,15 @@ public enum SidebarActivity: Equatable {
     }
 
     /// The most urgent of `activities`, `nil` when there are none.
-    static func mostUrgent(of activities: some Sequence<SidebarActivity>) -> SidebarActivity? {
+    public static func mostUrgent(of activities: some Sequence<SidebarActivity>) -> SidebarActivity? {
         activities.max { $0.urgency < $1.urgency }
-    }
-
-    /// What VoiceOver says of a mark.
-    var accessibilityLabel: String {
-        switch self {
-        case .idle: String(localized: "Idle", bundle: .module)
-        case .responding: String(localized: "Responding", bundle: .module)
-        case .needsInput: String(localized: "Needs Your Input", bundle: .module)
-        case .failed: String(localized: "Failed", bundle: .module)
-        }
     }
 }
 
 extension SidebarNode {
     /// The most urgent activity of this node's own session and of every
     /// session under it, `nil` when none is live.
-    func mostUrgentActivity(in activities: [URL: SidebarActivity]) -> SidebarActivity? {
+    public func mostUrgentActivity(in activities: [URL: SidebarActivity]) -> SidebarActivity? {
         var found: [SidebarActivity] = []
         func visit(_ node: SidebarNode) {
             if let url = node.transcriptURL, let activity = activities[url] { found.append(activity) }

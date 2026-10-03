@@ -1,5 +1,6 @@
 import AppKit
 import Components
+import DisplayModels
 
 /// The main window's sidebar (design 08, *The sidebar*): the session library
 /// as a source list, and the state it shows until the library is first read.

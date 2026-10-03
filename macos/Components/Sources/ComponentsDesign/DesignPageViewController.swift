@@ -56,9 +56,11 @@ final class DesignPageViewController: NSViewController {
         for section in sections { add(section, to: column) }
 
         // The column wants the window's width less 16 a side, and gives way to
-        // its 1160 limit; centred in whatever is left.
+        // its 1160 limit; centred in whatever is left. It wants it less than
+        // the window wants to keep its size, or a wide window would be pulled
+        // in to the column's.
         let fill = column.widthAnchor.constraint(equalTo: document.widthAnchor, constant: -32)
-        fill.priority = .defaultHigh
+        fill.priority = NSLayoutConstraint.Priority(NSLayoutConstraint.Priority.windowSizeStayPut.rawValue - 1)
         NSLayoutConstraint.activate([
             document.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
             document.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),

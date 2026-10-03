@@ -55,7 +55,14 @@ enum DesignRender {
                 FileHandle.standardError.write(Data("failed: \(error)\n".utf8))
                 exit(1)
             }
-            process.waitUntilExit()
+            // A child that hangs is stopped: every wait has a deadline.
+            let deadline = Date(timeIntervalSinceNow: 120)
+            while process.isRunning, Date() < deadline { Thread.sleep(forTimeInterval: 0.1) }
+            if process.isRunning {
+                process.terminate()
+                FileHandle.standardError.write(Data("failed: section \(index) took over 120 s\n".utf8))
+                exit(1)
+            }
             if process.terminationStatus != 0 { exit(process.terminationStatus) }
         }
         exit(0)

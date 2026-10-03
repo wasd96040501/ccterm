@@ -418,9 +418,16 @@ extension EnvironmentVariablesViewController {
     /// and stand next to another.
     private final class OverlayScrollView: NSScrollView {
         override var scrollerStyle: NSScroller.Style {
-            get { .overlay }
-            set { super.scrollerStyle = .overlay }
+            didSet { if scrollerStyle != .overlay { scrollerStyle = .overlay } }
         }
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            scrollerStyle = .overlay
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
     }
 
     /// The bar under the rows, with a hairline over it.

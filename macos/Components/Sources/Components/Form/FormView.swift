@@ -11,8 +11,7 @@ public final class FormView: NSScrollView {
     /// the form's content and the bar under it would no longer share their
     /// edges.
     public override var scrollerStyle: NSScroller.Style {
-        get { .overlay }
-        set { super.scrollerStyle = .overlay }
+        didSet { if scrollerStyle != .overlay { scrollerStyle = .overlay } }
     }
 
     /// Whether some of the form is scrolled out below — for a bar under it
@@ -27,6 +26,7 @@ public final class FormView: NSScrollView {
     /// `topInset`: space above the first section.
     public init(sections: [NSView] = [], topInset: CGFloat = 20, sectionSpacing: CGFloat = 30) {
         super.init(frame: .zero)
+        scrollerStyle = .overlay
         drawsBackground = false
         hasVerticalScroller = true
         autohidesScrollers = true

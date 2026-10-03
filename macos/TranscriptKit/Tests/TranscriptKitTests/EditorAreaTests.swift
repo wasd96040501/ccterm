@@ -492,9 +492,13 @@ final class EditorAreaTests: XCTestCase {
 
         let group = try XCTUnwrap(area.addGroup(with: NSTabViewItem(viewController: right)))
         var widths: Set<CGFloat> = []
+        // The holds are stronger than the window's own size: what they hold
+        // must always fit it, or the window grows while the editor opens.
+        var windowWidths: Set<CGFloat> = [window.contentLayoutRect.width]
         let deadline = Date().addingTimeInterval(2)
         while Date() < deadline, !opened(area) {
             if right.isViewLoaded { widths.insert(right.view.frame.width) }
+            windowWidths.insert(window.contentLayoutRect.width)
             RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
         }
         finishOpening(mounted)
@@ -507,6 +511,8 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertEqual(frame(of: group).width, half, accuracy: 0.5, "the new editor is not at half")
         XCTAssertEqual(right.view.frame.width, half, accuracy: 0.5, "premise: the tab fills its editor")
         XCTAssertEqual(widths, [half], "the tab was laid out at another width on the way")
+        windowWidths.insert(window.contentLayoutRect.width)
+        XCTAssertEqual(windowWidths, [size.width], "the window changed its width while the editor opened")
 
         area.splitView.setPosition(300, ofDividerAt: 0)
         settle(window)

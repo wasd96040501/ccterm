@@ -36,7 +36,7 @@ ccterm/
 │   │   └── Resources/
 │   ├── cctermTests/          # The app's only test target
 │   ├── TranscriptKit/        # Standalone SwiftPM package (own tests, own demo)
-│   ├── Components/             # Standalone SwiftPM package: the app's components, depending on nothing (own tests, the style page)
+│   ├── Components/             # Standalone SwiftPM package: the app's components and the DisplayModels they draw, depending on nothing (own tests, the style page)
 │   ├── ExactList/            # Standalone SwiftPM package: the list engine (SPEC.md, own tests, own demo)
 │   ├── AgentSDK/             # Swift SDK package over the claude CLI
 │   ├── Config.xcconfig

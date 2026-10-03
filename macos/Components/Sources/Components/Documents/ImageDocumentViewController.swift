@@ -46,14 +46,6 @@ public final class ImageDocumentViewController: NSViewController {
         host.setAccessibilityLabel("\(title ?? ""), \(image.dimensions)")
     }
 
-    /// Overlay scrollers whatever *Show scroll bars* says, like every document.
-    private final class OverlayScrollView: NSScrollView {
-        override var scrollerStyle: NSScroller.Style {
-            get { .overlay }
-            set { super.scrollerStyle = .overlay }
-        }
-    }
-
     /// The picture at its size, with a margin; centred in the clip when smaller
     /// (`.imgdoc`: 24 pt around it, 6-pt corners, a hairline outside its edge).
     private final class ImageHostView: NSView {

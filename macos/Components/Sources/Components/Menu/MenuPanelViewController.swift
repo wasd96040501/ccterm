@@ -48,7 +48,7 @@ public final class MenuPanelViewController: NSViewController {
 
     private let material = NSVisualEffectView()
     private let filterField = MenuFilterField()
-    private let scrollView = MenuScrollView()
+    private let scrollView = OverlayScrollView()
     private let table = MenuTableView()
     /// The head of the account section the list's top is in, over the list.
     private let stickyHeader = MenuAccountCell()
@@ -618,15 +618,6 @@ enum MenuSwitchMetrics {
 }
 
 // MARK: - The list
-
-/// Overlay scrollers always, as a menu's: a legacy scroller would take 17 pt
-/// from every row.
-private final class MenuScrollView: NSScrollView {
-    override var scrollerStyle: NSScroller.Style {
-        get { .overlay }
-        set { super.scrollerStyle = .overlay }
-    }
-}
 
 /// The list: the pointer selects what can be chosen, a release over the row
 /// it was pressed on chooses it, ↩ chooses, ⎋ cancels.

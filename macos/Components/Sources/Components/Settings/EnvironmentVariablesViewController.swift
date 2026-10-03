@@ -413,23 +413,6 @@ extension EnvironmentVariablesViewController {
         required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
     }
 
-    /// The rows' scroll view with overlay scrollers whatever the Mac's setting:
-    /// a legacy scroller beside the form's own would take width from the rows
-    /// and stand next to another.
-    private final class OverlayScrollView: NSScrollView {
-        override var scrollerStyle: NSScroller.Style {
-            didSet { if scrollerStyle != .overlay { scrollerStyle = .overlay } }
-        }
-
-        override init(frame: NSRect) {
-            super.init(frame: frame)
-            scrollerStyle = .overlay
-        }
-
-        @available(*, unavailable)
-        required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
-    }
-
     /// The bar under the rows, with a hairline over it.
     private final class BarView: NSView {
         override init(frame: NSRect) {

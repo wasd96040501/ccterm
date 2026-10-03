@@ -661,19 +661,6 @@ private final class GutterView: NSView {
 
 // MARK: - The scroll view
 
-/// Overlay scrollers, hidden until scrolling, whatever the system setting —
-/// as the transcript's (design/transcript/README.md "Scrollers"): a scroller
-/// never takes width, so lines never rewrap when one appears. Overridden both
-/// ways, the AppKit recipe for pinning it: AppKit writes the system's style
-/// here whenever the setting changes, and reads it back to decide whether the
-/// scroller takes room from the clip view.
-private final class OverlayScrollView: NSScrollView {
-    override var scrollerStyle: NSScroller.Style {
-        get { .overlay }
-        set { super.scrollerStyle = .overlay }
-    }
-}
-
 // MARK: - The file map
 
 /// The read slice of a file, as a track down the right edge.

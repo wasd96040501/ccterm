@@ -10,13 +10,13 @@ public final class SettingsSplitViewController: NSSplitViewController {
     /// A page of the window: its row in the sidebar, and what it shows.
     public struct Pane {
         public var title: String
-        /// The sidebar's SF Symbol.
-        public var symbolName: String
+        /// The sidebar's glyph: the design's, a template image (`NSImage.settingsGear`).
+        public var glyph: NSImage
         public var viewController: NSViewController
 
-        public init(title: String, symbolName: String, viewController: NSViewController) {
+        public init(title: String, glyph: NSImage, viewController: NSViewController) {
             self.title = title
-            self.symbolName = symbolName
+            self.glyph = glyph
             self.viewController = viewController
         }
     }

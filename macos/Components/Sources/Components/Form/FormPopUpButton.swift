@@ -63,14 +63,9 @@ public final class FormPopUpButton: NSPopUpButton {
                 width: Self.indicator, height: Self.indicator)
             NSColor.labelColor.withAlphaComponent(isHighlighted ? 0.12 : 0.06).setFill()
             NSBezierPath(ovalIn: circle).fill()
-            let configuration = NSImage.SymbolConfiguration(pointSize: 9, weight: .bold)
-                .applying(.init(hierarchicalColor: .labelColor))
-            guard
-                let chevrons = NSImage(systemSymbolName: "chevron.up.chevron.down", accessibilityDescription: nil)?
-                    .withSymbolConfiguration(configuration)
-            else { return }
+            let chevrons = NSImage.settingsUpdown
             let size = chevrons.size
-            chevrons.draw(
+            chevrons.tinted(.labelColor).draw(
                 in: NSRect(
                     x: circle.midX - size.width / 2, y: circle.midY - size.height / 2, width: size.width,
                     height: size.height))
@@ -84,6 +79,19 @@ public final class FormPopUpButton: NSPopUpButton {
                     .font: font ?? .systemFont(ofSize: 13),
                     .foregroundColor: isEnabled ? NSColor.labelColor : .tertiaryLabelColor,
                 ])
+        }
+    }
+}
+
+extension NSImage {
+    /// A template image in `colour`, resolved in the appearance it is drawn in:
+    /// a cell draws by hand, with no image view to tint it.
+    fileprivate func tinted(_ colour: NSColor) -> NSImage {
+        NSImage(size: size, flipped: false) { rect in
+            self.draw(in: rect)
+            colour.set()
+            rect.fill(using: .sourceIn)
+            return true
         }
     }
 }

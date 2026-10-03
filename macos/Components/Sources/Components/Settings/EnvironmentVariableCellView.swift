@@ -60,10 +60,8 @@ final class EnvironmentVariableCellView: NSTableCellView {
     private func configureHierarchy() {
         nameField.setPlaceholder(String(localized: "Name", bundle: .module))
         valueField.setPlaceholder(String(localized: "Value", bundle: .module))
-        warning.image = NSImage(
-            systemSymbolName: "exclamationmark.triangle.fill",
-            accessibilityDescription: String(localized: "Warning", bundle: .module))?
-            .withSymbolConfiguration(.init(pointSize: 11, weight: .regular))
+        warning.image = .settingsWarn
+        warning.setAccessibilityLabel(String(localized: "Warning", bundle: .module))
         for field in [nameField, valueField] {
             field.onEditingChange = { [weak self] in self?.editingDidChange() }
         }

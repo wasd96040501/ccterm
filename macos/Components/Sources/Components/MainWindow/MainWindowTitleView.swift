@@ -11,11 +11,10 @@ import UniformTypeIdentifiers
 /// Here the lines are in the fonts AppKit uses for a title with a subtitle, and
 /// the change animates: the name, centred alone, rises as the branch fades in
 /// under it, one constraint and one alpha through their animators.
-@MainActor
-final class MainWindowTitleView: NSView {
+public final class MainWindowTitleView: NSView {
 
     /// The project's name, or `nil` to show nothing.
-    var title: String? {
+    public var title: String? {
         didSet {
             titleField.stringValue = title ?? ""
             isHidden = title == nil
@@ -25,7 +24,7 @@ final class MainWindowTitleView: NSView {
     /// The project's branch. Without one the name is centred; one arriving
     /// raises the name and fades in under it, and one leaving does the reverse.
     /// A branch replacing another is just written.
-    var subtitle: String? {
+    public var subtitle: String? {
         didSet {
             guard subtitle != oldValue else { return }
             // One leaving keeps its text while it fades.
@@ -76,7 +75,7 @@ final class MainWindowTitleView: NSView {
         return field
     }()
 
-    init() {
+    public init() {
         super.init(frame: .zero)
         isHidden = true
         configureHierarchy()
@@ -84,7 +83,7 @@ final class MainWindowTitleView: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     private func configureHierarchy() {
         for subview in [iconView, titleField, subtitleField] {

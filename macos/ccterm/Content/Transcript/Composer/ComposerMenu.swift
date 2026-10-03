@@ -17,37 +17,46 @@ enum ComposerMenu {
     static func make(_ menu: ComposerModel.Menu, target: AnyObject, action: Selector) -> NSMenu {
         let result = NSMenu()
         result.autoenablesItems = false
+        var hinted: [(item: NSMenuItem, title: String, hint: String)] = []
         for (index, section) in menu.sections.enumerated() {
             if index > 0 { result.addItem(.separator()) }
             if let header = section.header {
-                result.addItem(headerItem(header, hint: section.headerHint))
+                let item = NSMenuItem.sectionHeader(title: header)
+                if let hint = section.headerHint { hinted.append((item, header, hint)) }
+                result.addItem(item)
             }
             for item in section.items {
                 result.addItem(makeItem(item, target: target, action: action))
             }
         }
+        // The key hint at the header's trailing edge, where a key equivalent
+        // ends (the design's `.mh` with its `kbd`): right-aligned at the width
+        // the items already give the menu, so it never widens it.
+        let width = result.size.width
+        for (item, title, hint) in hinted {
+            // What the header adds around its line in this menu — its indent
+            // and the trailing margin: made the widest line at a known width.
+            let probe: CGFloat = 2000
+            item.attributedTitle = header(title, hint: hint, endingAt: probe)
+            let chrome = result.size.width - probe
+            item.attributedTitle = header(title, hint: hint, endingAt: width - chrome)
+        }
         return result
     }
 
-    private static func headerItem(_ title: String, hint: String?) -> NSMenuItem {
-        let item = NSMenuItem.sectionHeader(title: title)
-        if let hint {
-            // The key hint at the trailing edge, as the design's header has it.
-            let style = NSMutableParagraphStyle()
-            style.tabStops = [NSTextTab(textAlignment: .right, location: 250)]
-            let font = NSFont.systemFont(ofSize: 11, weight: .semibold)
-            let text = NSMutableAttributedString(
-                string: title, attributes: [.font: font, .foregroundColor: NSColor.tertiaryLabelColor])
-            text.append(
-                NSAttributedString(
-                    string: "\t\(hint)",
-                    attributes: [
-                        .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.tertiaryLabelColor,
-                    ]))
-            text.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: text.length))
-            item.attributedTitle = text
-        }
-        return item
+    private static let headerFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
+
+    private static func header(_ title: String, hint: String, endingAt location: CGFloat) -> NSAttributedString {
+        let style = NSMutableParagraphStyle()
+        style.tabStops = [NSTextTab(textAlignment: .right, location: location)]
+        let text = NSMutableAttributedString(
+            string: title, attributes: [.font: headerFont, .foregroundColor: NSColor.tertiaryLabelColor])
+        text.append(
+            NSAttributedString(
+                string: "\t\(hint)",
+                attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.tertiaryLabelColor]))
+        text.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: text.length))
+        return text
     }
 
     private static func makeItem(_ item: ComposerModel.Item, target: AnyObject, action: Selector) -> NSMenuItem {
@@ -56,7 +65,7 @@ enum ComposerMenu {
         menuItem.representedObject = Choice(item.change)
         menuItem.isEnabled = item.isEnabled
         menuItem.state = item.isChecked ? .on : .off
-        menuItem.image = item.glyph.flatMap { ComposerGlyph.image($0, size: 16) }
+        menuItem.image = item.glyph.flatMap { ComposerGlyph.image($0, size: 16) }.map(rowSized)
         if let subtitle = item.subtitle {
             if #available(macOS 14.4, *) {
                 menuItem.subtitle = subtitle
@@ -84,6 +93,24 @@ enum ComposerMenu {
                 string: "\n" + subtitle,
                 attributes: [.font: NSFont.menuFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]))
         return text
+    }
+
+    /// `image` in a row glyph's 16-pt box (the design's `.mi .g`), scaled down
+    /// to fit if it is larger, centred — so every item's words start at the
+    /// same column and no glyph stands taller than its row's.
+    private static func rowSized(_ image: NSImage) -> NSImage {
+        let box = NSSize(width: 16, height: 16)
+        let scale = min(1, box.width / image.size.width, box.height / image.size.height)
+        let size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
+        let fitted = NSImage(size: box, flipped: false) { rect in
+            image.draw(
+                in: NSRect(
+                    x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width,
+                    height: size.height))
+            return true
+        }
+        fitted.isTemplate = image.isTemplate
+        return fitted
     }
 
     private static func tinted(_ image: NSImage, _ color: NSColor) -> NSImage {

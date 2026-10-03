@@ -6,8 +6,14 @@ import AppKit
 /// session* and ↻ on the accounts another launch environment would restart;
 /// and the Fast Mode switch under the scroll, always in view.
 ///
-/// It is an `NSMenu`'s look — the menu material, 22-pt rows with 5-pt insets,
-/// 12-pt corners, accent highlight under the pointer — and an `NSMenu`'s
+/// The account headers stick as a menu's section headers would — one header
+/// over the list's top, pushed up by the next — drawn by the panel itself, not
+/// as floating group rows, whose scroll pocket underlines them.
+///
+/// It is an `NSMenu`'s look — the menu material, the system menu's 24-pt rows
+/// (36 with a subtitle) inside a 5-pt inset, 12-pt corners, accent highlight
+/// under the pointer, and the design's columns: a check (14), a glyph (20),
+/// then the words at 53 — and an `NSMenu`'s
 /// manners: arrows move over the choosable rows, ↩ chooses, ⎋ closes, typing
 /// selects by name. It is a panel's content, not a menu, because it has a
 /// height limit (360 pt, then the list scrolls). `ModelPanelController` puts it
@@ -41,11 +47,17 @@ final class ModelPanelViewController: NSViewController {
     private var expanded: Set<UUID> = []
 
     private let material = NSVisualEffectView()
-    private let scrollView = NSScrollView()
+    private let scrollView = PanelScrollView()
     private let table = PanelTableView()
+    /// The header of the section at the list's top, over the list.
+    private let stickyHeader = PanelHeaderCell()
     private let footer = FastModeRow()
     private let separator = HairlineView()
     private lazy var scrollHeight = scrollView.heightAnchor.constraint(equalToConstant: Self.maxScrollHeight)
+
+    nonisolated deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
 
     override func loadView() {
         material.material = .menu
@@ -73,7 +85,7 @@ final class ModelPanelViewController: NSViewController {
         table.backgroundColor = .clear
         table.intercellSpacing = .zero
         table.selectionHighlightStyle = .regular
-        table.floatsGroupRows = true
+        table.floatsGroupRows = false
         table.allowsTypeSelect = true
         table.allowsEmptySelection = true
         table.style = .plain
@@ -90,11 +102,19 @@ final class ModelPanelViewController: NSViewController {
         scrollView.borderType = .noBorder
         scrollView.automaticallyAdjustsContentInsets = false
         scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 5, right: 0)
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(listDidScroll), name: NSView.boundsDidChangeNotification,
+            object: scrollView.contentView)
+        stickyHeader.setAccessibilityElement(false)
+        stickyHeader.isHidden = true
         footer.onToggle = { [weak self] isOn in self?.onSetFast?(isOn) }
         for subview in [scrollView, separator, footer] {
             subview.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(subview)
         }
+        // Placed by frame on every scroll, above the list.
+        view.addSubview(stickyHeader, positioned: .above, relativeTo: scrollView)
     }
 
     private func configureConstraints() {
@@ -127,6 +147,7 @@ final class ModelPanelViewController: NSViewController {
         table.reloadData()
         footer.configure(with: model.fastMode)
         resize()
+        placeStickyHeader()
         if let selected, let row = rows.firstIndex(where: { $0.change == selected }) {
             table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
         }
@@ -163,6 +184,39 @@ final class ModelPanelViewController: NSViewController {
         let before = scrollHeight.constant
         scrollHeight.constant = listHeight
         if before != scrollHeight.constant { onHeightChange?() }
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        placeStickyHeader()
+    }
+
+    @objc private func listDidScroll() {
+        placeStickyHeader()
+    }
+
+    /// The header of the section the list's top is in, at the top — unless
+    /// the section's own header is still in view there; the next header,
+    /// arriving, pushes it up.
+    private func placeStickyHeader() {
+        let top = scrollView.contentView.bounds.minY
+        let headers = rows.indices.filter { if case .header = rows[$0] { true } else { false } }
+        guard let current = headers.last(where: { table.rect(ofRow: $0).minY < top }),
+            case .header(let section) = rows[current]
+        else {
+            stickyHeader.isHidden = true
+            return
+        }
+        let height = table.rect(ofRow: current).height
+        var push: CGFloat = 0
+        if let next = headers.first(where: { $0 > current }) {
+            push = max(0, height - (table.rect(ofRow: next).minY - top))
+        }
+        stickyHeader.configure(section)
+        stickyHeader.isHidden = false
+        stickyHeader.frame = NSRect(
+            x: scrollView.frame.minX, y: scrollView.frame.maxY - height + push, width: scrollView.frame.width,
+            height: height)
     }
 
     /// Puts the selection on the checked model, if any — a panel opens on it.
@@ -207,6 +261,7 @@ final class ModelPanelViewController: NSViewController {
             table.reloadData()
             resize()
             scrollView.contentView.scroll(to: offset)
+            placeStickyHeader()
             // The first model that came out of the fold takes the row's place.
             table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
         default:
@@ -218,10 +273,11 @@ final class ModelPanelViewController: NSViewController {
 
     private func height(of row: Int) -> CGFloat {
         switch rows[row] {
-        case .note: 24
-        case .header(let section): section.note == nil ? 28 : 42
-        case .item(let item): item.subtitle == nil ? 22 : 36
-        case .more: 22
+        case .note: 22
+        // 8 above, a 16-pt line (two with the note), 4 below.
+        case .header(let section): section.note == nil ? 28 : 44
+        case .item(let item): item.subtitle == nil ? 24 : 36
+        case .more: 24
         }
     }
 }
@@ -245,11 +301,6 @@ extension ModelPanelViewController: NSTableViewDataSource, NSTableViewDelegate {
     func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat { height(of: row) }
-
-    func tableView(_ tableView: NSTableView, isGroupRow row: Int) -> Bool {
-        if case .header = rows[row] { return true }
-        return false
-    }
 
     func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
         switch rows[row] {
@@ -300,6 +351,27 @@ extension ModelPanelViewController: NSTableViewDataSource, NSTableViewDelegate {
 }
 
 // MARK: - The list
+
+/// The design's menu columns (`.mi`: 5-pt menu inset, 6-pt row inset, a 14-pt
+/// check, 4, a 20-pt glyph, 4, the words), as x in the panel.
+private enum PanelColumns {
+    static let check: CGFloat = 11
+    static let glyph: CGFloat = 29
+    /// A 16-pt glyph at the start of its 20-pt column.
+    static let glyphWidth: CGFloat = 16
+    static let words: CGFloat = 53
+    /// From the panel's trailing edge to a row's trailing glyph or switch.
+    static let trailing: CGFloat = 15
+}
+
+/// The list's scroll view: overlay scrollers always, as a menu's — a legacy
+/// scroller would take 17 pt from every row.
+private final class PanelScrollView: NSScrollView {
+    override var scrollerStyle: NSScroller.Style {
+        get { .overlay }
+        set { super.scrollerStyle = .overlay }
+    }
+}
 
 /// The list: hover selects, ↩ chooses, ⎋ closes, and a release over a row
 /// chooses it, as a menu does.
@@ -369,6 +441,10 @@ private final class PanelRowView: NSTableRowView {
     }
 
     override func drawBackground(in dirtyRect: NSRect) {}
+
+    /// A floating account header is not underlined: the material under it is
+    /// all that separates it from the models passing beneath.
+    override func drawSeparator(in dirtyRect: NSRect) {}
 
     override var interiorBackgroundStyle: NSView.BackgroundStyle {
         isSelected ? .emphasized : .normal
@@ -470,6 +546,9 @@ private final class PanelItemCell: NSTableCellView {
     private var isEnabled = true
     private var isMore = false
     private var hasTrailing = false
+    /// A single line sits in the middle of its 24 pt; a title with a subtitle
+    /// under it starts 3 pt down.
+    private lazy var titleTop = titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 4)
 
     override var backgroundStyle: NSView.BackgroundStyle {
         didSet { updateColors() }
@@ -478,6 +557,8 @@ private final class PanelItemCell: NSTableCellView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         check.imageScaling = .scaleNone
+        // The check starts its column, as the sheet's 10-pt check does.
+        check.imageAlignment = .alignLeft
         check.image = ComposerGlyph.image(.check)
         trailing.imageScaling = .scaleNone
         trailing.image = ComposerGlyph.image(.restart)
@@ -491,16 +572,16 @@ private final class PanelItemCell: NSTableCellView {
         }
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         NSLayoutConstraint.activate([
-            check.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 11),
+            check.leadingAnchor.constraint(equalTo: leadingAnchor, constant: PanelColumns.check),
             check.widthAnchor.constraint(equalToConstant: 14),
             check.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 29),
-            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 2),
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: PanelColumns.words),
+            titleTop,
             titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailing.leadingAnchor, constant: -8),
             subtitleLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
             subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 0),
             subtitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailing.leadingAnchor, constant: -8),
-            trailing.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -15),
+            trailing.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -PanelColumns.trailing),
             trailing.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
             trailing.widthAnchor.constraint(equalToConstant: 14),
         ])
@@ -515,6 +596,7 @@ private final class PanelItemCell: NSTableCellView {
         titleLabel.stringValue = item.title
         subtitleLabel.stringValue = item.subtitle ?? ""
         subtitleLabel.isHidden = item.subtitle == nil
+        titleTop.constant = item.subtitle == nil ? 4 : 3
         check.isHidden = !item.isChecked
         hasTrailing = item.restarts
         trailing.isHidden = !item.restarts
@@ -528,6 +610,7 @@ private final class PanelItemCell: NSTableCellView {
         isEnabled = true
         titleLabel.stringValue = String(localized: "\(moreCount) More Models")
         subtitleLabel.isHidden = true
+        titleTop.constant = 4
         check.isHidden = true
         trailing.isHidden = true
         hasTrailing = false
@@ -544,7 +627,7 @@ private final class PanelItemCell: NSTableCellView {
         titleLabel.textColor = primary
         subtitleLabel.textColor = secondary
         check.contentTintColor = primary
-        trailing.contentTintColor = selected ? NSColor.white.withAlphaComponent(0.85) : .secondaryLabelColor
+        trailing.contentTintColor = selected ? NSColor.white.withAlphaComponent(0.85) : .tertiaryLabelColor
     }
 }
 
@@ -563,16 +646,20 @@ private final class FastModeRow: NSView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        glyph.image = ComposerGlyph.image(.fast, size: 16)
+        // The chip's bolt, at the chip's size (the sheet's 10 × 12), in the glyph column.
+        glyph.image = ComposerGlyph.image(.fast)
         glyph.contentTintColor = .secondaryLabelColor
         glyph.imageScaling = .scaleNone
+        glyph.imageAlignment = .alignCenter
         titleLabel.font = .systemFont(ofSize: 13)
         subtitleLabel.font = .systemFont(ofSize: 11)
-        subtitleLabel.textColor = .secondaryLabelColor
         subtitleLabel.lineBreakMode = .byWordWrapping
         subtitleLabel.maximumNumberOfLines = 2
-        subtitleLabel.preferredMaxLayoutWidth = 212
-        toggle.controlSize = .small
+        toggle.controlSize = .mini
+        // The words' column: from 53 to 12 pt before the switch, as wide as the system draws it.
+        subtitleLabel.preferredMaxLayoutWidth =
+            ModelPanelViewController.width - PanelColumns.words - 12 - toggle.intrinsicContentSize.width
+            - PanelColumns.trailing
         toggle.target = self
         toggle.action = #selector(toggled)
         for view in [glyph, titleLabel, subtitleLabel, toggle] {
@@ -581,16 +668,18 @@ private final class FastModeRow: NSView {
         }
         subtitleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         NSLayoutConstraint.activate([
-            subtitleLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -7),
-            glyph.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 11),
-            glyph.widthAnchor.constraint(equalToConstant: 16),
+            // The footer's 5-pt inset and the row's 3 — 4 under the subtitle's last line.
+            subtitleLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -9),
+            glyph.leadingAnchor.constraint(equalTo: leadingAnchor, constant: PanelColumns.glyph),
+            glyph.widthAnchor.constraint(equalToConstant: PanelColumns.glyphWidth),
             glyph.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 36),
-            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 7),
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: PanelColumns.words),
+            // 8, and the sheet's 19-pt line around the title's 16.
+            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 9.5),
             subtitleLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor),
-            subtitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: toggle.leadingAnchor, constant: -8),
-            toggle.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -15),
+            subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 1),
+            subtitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: toggle.leadingAnchor, constant: -12),
+            toggle.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -PanelColumns.trailing),
             toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }
@@ -602,7 +691,17 @@ private final class FastModeRow: NSView {
         toggle.state = fast.isOn ? .on : .off
         toggle.isEnabled = fast.isEnabled
         titleLabel.textColor = fast.isEnabled ? .labelColor : .tertiaryLabelColor
-        subtitleLabel.stringValue = fast.subtitle ?? ""
+        // The sheet's `.s`: 14-pt lines.
+        let lines = NSMutableParagraphStyle()
+        lines.minimumLineHeight = 14
+        lines.maximumLineHeight = 14
+        subtitleLabel.attributedStringValue = NSAttributedString(
+            string: fast.subtitle ?? "",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: fast.isEnabled ? NSColor.secondaryLabelColor : .tertiaryLabelColor,
+                .paragraphStyle: lines,
+            ])
         toolTip = fast.subtitle
         setAccessibilityLabel(titleLabel.stringValue)
     }

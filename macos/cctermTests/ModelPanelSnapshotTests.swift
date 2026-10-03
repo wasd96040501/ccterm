@@ -51,6 +51,45 @@ final class ModelPanelSnapshotTests: XCTestCase {
             }, size: CGSize(width: 324, height: height), name: name)
     }
 
+    // MARK: - Against the design
+
+    /// The panel beside the sheet's two model menus (a New tab's; a live
+    /// session's while Claude works), at their 300 pt:
+    /// `/tmp/ccterm-parity/<scheme>-part-2{4,5}-menu0.png`.
+    func testThePanelAgainstTheDesign() throws {
+        let sonnet = ModelChoice(account: F.subscription, value: "sonnet")
+        // The sheet's two accounts: the subscription and the relay.
+        let catalog = ModelCatalog(accounts: Array(F.catalog.accounts.prefix(2)))
+        let cases = [
+            ("part-24-menu0", F.model(.draft, settings: F.settings("opus"), catalog: catalog)),
+            (
+                "part-25-menu0",
+                F.model(
+                    F.session(.responding), settings: F.settings("opus"), pendingModel: sonnet, catalog: catalog)
+            ),
+        ]
+        for scheme in DesignParity.Scheme.allCases {
+            NSApp.appearance = scheme.appearance
+            defer { NSApp.appearance = nil }
+            for (id, model) in cases {
+                let part = try DesignParity.part(id, scheme)
+                let probe = ModelPanelViewController()
+                probe.configure(with: model)
+                let height = max(part.height, probe.preferredHeight)
+                let image = ViewSnapshot.renderViewController(
+                    {
+                        // The sheet draws it at rest: no row under the pointer.
+                        let panel = ModelPanelViewController()
+                        panel.configure(with: model)
+                        return panel
+                    }(), size: CGSize(width: part.width, height: height))
+                let attachment = XCTAttachment(contentsOfFile: try DesignParity.write(id, scheme, ours: image))
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
     func testThePanelInEachCase() {
         let sonnet = ModelChoice(account: F.subscription, value: "sonnet")
         let new = F.model(.draft, settings: F.settings("opus"))

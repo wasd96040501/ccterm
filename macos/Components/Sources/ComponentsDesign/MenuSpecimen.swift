@@ -57,7 +57,7 @@ final class MenuRow: NSView {
         heightAnchor.constraint(equalToConstant: tallest + 40).isActive = true
     }
 
-    /// This row as a specimen at its own size, scaled down whole in a narrow column.
+    /// This row as a specimen at its own size.
     func specimen(_ title: String) -> DesignPageViewController.Specimen {
         .init(title: title, view: self, width: size.width, height: size.height)
     }

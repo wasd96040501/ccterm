@@ -3,7 +3,7 @@ import Components
 
 /// The sizes of the hosts the app gives its components, each named once with
 /// where it comes from. A specimen builds its host at the size here and the
-/// page shows it at it, scaled down whole when the column is narrower
+/// page shows it at it, never scaled
 /// (`macos/Components/CLAUDE.md`, *The style page*).
 enum Host {
     /// The Settings window's content: 880 × 680, not resizable

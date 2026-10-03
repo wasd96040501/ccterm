@@ -19,9 +19,9 @@ final class DesignPageViewController: NSViewController {
         /// What state it shows, over its card.
         var title: String
         var view: NSView
-        /// The host's width, from `Host`; the card centres the view at it and
-        /// scales it down whole when the column is narrower. `nil`: the
-        /// design's fluid parts, as wide as the card.
+        /// The host's width, from `Host`; the card centres the view at it,
+        /// and the window is never narrower than it. `nil`: the design's fluid
+        /// parts, as wide as the card.
         var width: CGFloat? = nil
         /// The host's height; `nil`: the view's own.
         var height: CGFloat? = nil
@@ -30,6 +30,9 @@ final class DesignPageViewController: NSViewController {
     }
 
     private let sections: [Section]
+    /// Every wrapping label, wrapped at the column's width after each layout.
+    private var labels: [WrappingLabel] = []
+    private weak var column: NSStackView?
     private let showsHeader: Bool
     private lazy var appearanceSwitch = NSSegmentedControl(
         labels: ["Auto", "Light", "Dark"], trackingMode: .selectOne, target: self,
@@ -61,6 +64,7 @@ final class DesignPageViewController: NSViewController {
         column.translatesAutoresizingMaskIntoConstraints = false
         column.setHuggingPriority(.defaultLow, for: .horizontal)
         document.addSubview(column)
+        self.column = column
         if showsHeader { add(header(), to: column, fullWidth: true, after: 28) }
         for section in sections { add(section, to: column) }
 
@@ -84,22 +88,36 @@ final class DesignPageViewController: NSViewController {
         view = scroll
     }
 
+    /// The narrowest the page can be: its widest host at its real size, in
+    /// its card, in the column's 16-pt margins. The window never goes below
+    /// it, as the design never narrows a window.
+    var minimumWidth: CGFloat {
+        let widest = sections.flatMap(\.specimens).compactMap { specimen in
+            specimen.width.map { $0 + (specimen.isWindow ? 0 : 2 * 12) }
+        }
+        return (widest.max() ?? 0) + 32
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        guard let width = column?.frame.width, width > 0 else { return }
+        for label in labels { label.wrap(at: width) }
+    }
+
     // MARK: - The sheet's parts
 
     /// `h1`, the lede under it, and the appearance switch at the trailing edge.
     private func header() -> NSView {
-        let title = Self.label("CCTerm components", size: 28, weight: .bold)
-        let lede = WrappingLabel(
-            wrappingLabelWithString:
-                "Every view the app draws with, from Components — live, at the window's width. Each section builds a "
-                + "part of the design sheet with the component the app uses.")
+        let title = label("CCTerm components", size: 28, weight: .bold)
+        let lede = wrapping(
+            "Every view the app draws with, from Components — live, at the window's width. Each section builds a "
+                + "part of the design sheet with the component the app uses.", limit: 720)
         lede.font = .systemFont(ofSize: 13)
         lede.textColor = .secondaryLabelColor
         let words = NSStackView(views: [title, lede])
         words.orientation = .vertical
         words.alignment = .leading
         words.spacing = 6
-        lede.widthAnchor.constraint(lessThanOrEqualToConstant: 720).isActive = true
         appearanceSwitch.selectedSegment = 0
         // The words from the leading edge, the switch at the trailing one, 24
         // apart at least; the header as tall as the taller.
@@ -128,16 +146,14 @@ final class DesignPageViewController: NSViewController {
     /// specimen: `h3` 32 above and 10 over its card.
     private func add(_ section: Section, to column: NSStackView) {
         if let last = column.arrangedSubviews.last { column.setCustomSpacing(72, after: last) }
-        let heading = Self.label(section.title, size: 20, weight: .semibold)
+        let heading = label(section.title, size: 20, weight: .semibold)
         add(heading, to: column, fullWidth: false, after: 4)
-        let note = WrappingLabel(wrappingLabelWithString: section.note)
+        let note = wrapping(section.note, limit: 760)
         note.font = .systemFont(ofSize: 13)
         note.textColor = .secondaryLabelColor
         add(note, to: column, fullWidth: false, after: 32)
-        note.widthAnchor.constraint(lessThanOrEqualToConstant: 760).isActive = true
-        note.widthAnchor.constraint(lessThanOrEqualTo: column.widthAnchor).isActive = true
         for specimen in section.specimens {
-            let title = Self.label(specimen.title, size: 13, weight: .semibold)
+            let title = label(specimen.title, size: 13, weight: .semibold)
             title.textColor = .secondaryLabelColor
             add(title, to: column, fullWidth: false, after: 10)
             // A window's shadow reaches 50 below it.
@@ -154,8 +170,10 @@ final class DesignPageViewController: NSViewController {
             let height = specimen.height
             return CardView(content: specimen.view, height: height, inset: 0, isWindow: false)
         }
-        let host = ScaledHost(content: specimen.view, width: width, height: specimen.height)
-        return CardView(content: host, height: nil, inset: 12, isWindow: specimen.isWindow)
+        // The host at its real size, never another.
+        specimen.view.translatesAutoresizingMaskIntoConstraints = false
+        specimen.view.widthAnchor.constraint(equalToConstant: width).isActive = true
+        return CardView(content: specimen.view, height: specimen.height, inset: 12, isWindow: specimen.isWindow)
     }
 
     private func add(_ view: NSView, to column: NSStackView, fullWidth: Bool, after spacing: CGFloat) {
@@ -164,8 +182,14 @@ final class DesignPageViewController: NSViewController {
         if fullWidth { view.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true }
     }
 
-    private static func label(_ text: String, size: CGFloat, weight: NSFont.Weight) -> NSTextField {
-        let label = NSTextField(labelWithString: text)
+    private func wrapping(_ text: String, limit: CGFloat = .greatestFiniteMagnitude) -> WrappingLabel {
+        let label = WrappingLabel.make(text, limit: limit)
+        labels.append(label)
+        return label
+    }
+
+    private func label(_ text: String, size: CGFloat, weight: NSFont.Weight) -> NSTextField {
+        let label = wrapping(text)
         label.font = .systemFont(ofSize: size, weight: weight)
         return label
     }
@@ -206,8 +230,8 @@ private final class CardView: NSView {
                 content.trailingAnchor.constraint(equalTo: trailingAnchor),
             ])
         } else {
-            // As wide as the room, from `inset` each side; the host's own
-            // width (`ScaledHost`, a given width at most) is what it is below that.
+            // The host at its own width, centred, `inset` from each side at
+            // the least.
             let side = isWindow ? 0 : inset
             NSLayoutConstraint.activate([
                 content.centerXAnchor.constraint(equalTo: centerXAnchor),
@@ -230,13 +254,30 @@ private final class CardView: NSView {
     }
 }
 
-/// A label that wraps at whatever width the layout gives it: its height is
-/// asked for at the width it was last laid out at.
+/// A label that wraps at the column's width (`limit` at most), which the page
+/// hands it after each layout — never at its own width, which its wrapping
+/// would narrow again, pass after pass. It gives way to the window's width
+/// (below `windowSizeStayPut`), so a long line never widens the page past it.
 private final class WrappingLabel: NSTextField {
-    override func layout() {
-        super.layout()
-        guard preferredMaxLayoutWidth != bounds.width else { return }
-        preferredMaxLayoutWidth = bounds.width
+    /// The widest it wraps at, whatever the column's width.
+    var limit: CGFloat = .greatestFiniteMagnitude
+
+    /// `NSTextField(wrappingLabelWithString:)` builds through `-init`, which a
+    /// subclass overriding `init(frame:)` would no longer answer.
+    static func make(_ text: String, limit: CGFloat = .greatestFiniteMagnitude) -> WrappingLabel {
+        let label = WrappingLabel(wrappingLabelWithString: text)
+        label.limit = limit
+        label.setContentCompressionResistancePriority(
+            NSLayoutConstraint.Priority(NSLayoutConstraint.Priority.windowSizeStayPut.rawValue - 10),
+            for: .horizontal)
+        return label
+    }
+
+    /// Wraps at `width`, or at its limit if that is less.
+    func wrap(at width: CGFloat) {
+        let width = min(width, limit)
+        guard abs(preferredMaxLayoutWidth - width) > 0.5 else { return }
+        preferredMaxLayoutWidth = width
         invalidateIntrinsicContentSize()
     }
 }

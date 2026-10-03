@@ -3,8 +3,8 @@ import XCTest
 
 @testable import ComponentsDesign
 
-/// The style page rendered for review: every section at a wide window and a
-/// narrow one, light and dark, to
+/// The style page rendered for review: every section at a 1240-wide window,
+/// light and dark, to
 /// `<package>/.build/design/Design-<section>-<width>-<scheme>.png` — in the
 /// checkout's own build directory, so worktrees never overwrite each other's — one PNG
 /// per section, since the whole page is taller than a capture can be. Each is
@@ -20,7 +20,9 @@ final class DesignPageSnapshotTests: XCTestCase {
         let directory = Self.buildDirectory.appendingPathComponent("design").path
         let slugs = Design.sections().map { Design.fileSlug($0.title) }
         XCTAssertFalse(slugs.isEmpty)
-        for width in [1240, 600] {
+        // One width: the page is never narrower than its widest host, which it
+        // shows at its real size.
+        for width in [1240] {
             for scheme in ["light", "dark"] {
                 try render(width: width, scheme: scheme, into: directory)
                 for slug in slugs {
@@ -33,10 +35,12 @@ final class DesignPageSnapshotTests: XCTestCase {
         }
     }
 
-    /// `.build`: two above the products' directory, which holds the test
-    /// bundle and the page's executable.
+    /// `.build`: the products' directory's ancestor of that name, however deep
+    /// the toolchain puts the products (`.build/out/<triple>/debug` here).
     private static var buildDirectory: URL {
-        productsDirectory.deletingLastPathComponent().deletingLastPathComponent()
+        var url = productsDirectory
+        while url.lastPathComponent != ".build", url.pathComponents.count > 1 { url.deleteLastPathComponent() }
+        return url
     }
 
     private static var productsDirectory: URL {

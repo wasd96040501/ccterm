@@ -104,11 +104,10 @@ final class ComposerFieldView: NSView {
     }()
 
     private lazy var scrollView: NSScrollView = {
-        let scroll = NSScrollView()
+        let scroll = OverlayScrollView()
         scroll.documentView = textView
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
-        scroll.scrollerStyle = .overlay
         scroll.autohidesScrollers = true
         scroll.borderType = .noBorder
         scroll.translatesAutoresizingMaskIntoConstraints = false

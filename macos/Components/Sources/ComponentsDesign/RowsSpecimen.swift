@@ -413,9 +413,7 @@ private final class RowColumn: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 }
 
-/// A host wider than the page's column, scaled down whole: the content keeps
-/// its own coordinates (`bounds`), and the holder it sits in is as wide as the
-/// card allows, up to the content's own width, centred.
+/// The transcript's column at its real size, centred, 24 above and below.
 private final class RowColumnHost: NSView {
     private let holder = Holder()
 
@@ -424,24 +422,20 @@ private final class RowColumnHost: NSView {
         holder.setContent(content, size: size)
         holder.translatesAutoresizingMaskIntoConstraints = false
         addSubview(holder)
-        let wide = holder.widthAnchor.constraint(equalToConstant: size.width)
-        wide.priority = NSLayoutConstraint.Priority(10)
         NSLayoutConstraint.activate([
             holder.topAnchor.constraint(equalTo: topAnchor),
             holder.bottomAnchor.constraint(equalTo: bottomAnchor),
             holder.centerXAnchor.constraint(equalTo: centerXAnchor),
             holder.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 16),
-            holder.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -16),
-            wide, holder.widthAnchor.constraint(lessThanOrEqualToConstant: size.width),
-            // 24 above and below, at the scale the width gives.
-            holder.heightAnchor.constraint(
-                equalTo: holder.widthAnchor, multiplier: (size.height + 48) / size.width),
+            holder.widthAnchor.constraint(equalToConstant: size.width),
+            holder.heightAnchor.constraint(equalToConstant: size.height + 48),
         ])
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
+    /// Lays the column, which places its rows by frame, out by frame.
     private final class Holder: NSView {
         private var content: NSView?
         private var size = NSSize.zero
@@ -456,10 +450,7 @@ private final class RowColumnHost: NSView {
 
         override func layout() {
             super.layout()
-            guard let content, size.width > 0 else { return }
-            let scale = min(1, bounds.width / size.width)
-            content.frame = NSRect(x: 0, y: 24 * scale, width: size.width * scale, height: size.height * scale)
-            content.bounds = NSRect(origin: .zero, size: size)
+            content?.frame = NSRect(x: 0, y: 24, width: size.width, height: size.height)
         }
     }
 }

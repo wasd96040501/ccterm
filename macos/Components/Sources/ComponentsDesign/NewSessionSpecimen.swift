@@ -76,8 +76,8 @@ enum NewSessionSpecimen {
     enum Menu { case folder, branch }
 }
 
-/// The view in its pane, scaled down whole when the card is narrower than the
-/// pane, with a menu drawn open under its chip when asked for. It answers the
+/// The view in its pane at the pane's real size, centred, with a menu drawn
+/// open under its chip when asked for. It answers the
 /// view's delegate from the fixture, so the page stays live.
 @MainActor
 private final class NewSessionHost: NSView, NewSessionViewControllerDelegate {
@@ -86,7 +86,6 @@ private final class NewSessionHost: NSView, NewSessionViewControllerDelegate {
     private let openMenu: NewSessionSpecimen.Menu?
     private var content: NewSessionContent
     private var menuController: MenuPanelViewController?
-    private var scale: CGFloat = 1
 
     init(state: NewSessionSpecimen.State, menu: NewSessionSpecimen.Menu?) {
         content = state.content
@@ -97,8 +96,7 @@ private final class NewSessionHost: NSView, NewSessionViewControllerDelegate {
         controller.configure(with: content)
 
         stage.wantsLayer = true
-        // The view is the pane's size always: Auto Layout reads a frame, and
-        // the stage's own is the pane scaled.
+        // The view is the pane's size always.
         controller.view.frame = NSRect(origin: .zero, size: NewSessionSpecimen.pane)
         stage.addSubview(controller.view)
         addSubview(stage)
@@ -131,24 +129,16 @@ private final class NewSessionHost: NSView, NewSessionViewControllerDelegate {
     override var isFlipped: Bool { true }
 
     override var intrinsicContentSize: NSSize {
-        NSSize(width: NSView.noIntrinsicMetric, height: (NewSessionSpecimen.pane.height * scale).rounded(.up))
+        NSSize(width: NewSessionSpecimen.pane.width, height: NewSessionSpecimen.pane.height)
     }
 
     override func layout() {
         super.layout()
         let pane = NewSessionSpecimen.pane
-        let fitted = min(1, bounds.width / pane.width)
-        // The stage keeps the pane's own coordinates; its frame is the pane
-        // scaled, so the whole layout is drawn smaller, never laid out narrower.
-        stage.setFrameSize(NSSize(width: pane.width * fitted, height: pane.height * fitted))
-        stage.setBoundsSize(pane)
-        stage.setFrameOrigin(NSPoint(x: ((bounds.width - pane.width * fitted) / 2).rounded(), y: 0))
+        stage.frame = NSRect(
+            origin: NSPoint(x: ((bounds.width - pane.width) / 2).rounded(), y: 0), size: pane)
         stage.layoutSubtreeIfNeeded()
         placeMenu()
-        if scale != fitted {
-            scale = fitted
-            invalidateIntrinsicContentSize()
-        }
     }
 
     /// The menu under the chip that opens it, as the pop-up shows it.

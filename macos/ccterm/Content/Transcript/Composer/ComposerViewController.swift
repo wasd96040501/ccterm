@@ -139,8 +139,14 @@ final class ComposerViewController: NSViewController {
     /// The hints under the card in a page; the card alone floating.
     private func place(_ placement: ComposerModel.Placement) {
         let inPage = placement == .page
-        cardAtBottom?.isActive = !inPage
-        if inPage { NSLayoutConstraint.activate(hintsUnderCard) } else { NSLayoutConstraint.deactivate(hintsUnderCard) }
+        // One bottom at a time: the old one goes before the new one comes.
+        if inPage {
+            cardAtBottom?.isActive = false
+            NSLayoutConstraint.activate(hintsUnderCard)
+        } else {
+            NSLayoutConstraint.deactivate(hintsUnderCard)
+            cardAtBottom?.isActive = true
+        }
         keyHints.isHidden = !inPage
         keyHints.alphaValue = card.text.isEmpty ? 1 : 0
     }

@@ -1,4 +1,4 @@
-.PHONY: build release install dmg clean fmt fmt-check test-unit test-kit test-sdk test-list bench-list record-list demo-kit demo-list logs icon sidebar-icons appkit-doc arch help
+.PHONY: build release install dmg clean prune test-clean fmt fmt-check test-unit test-kit test-sdk test-list bench-list record-list demo-kit demo-list logs icon sidebar-icons appkit-doc arch help
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
@@ -139,5 +139,18 @@ fmt-check: ## Check formatting (CI)
 		exit 1; \
 	fi
 
-clean: ## Remove all build artifacts
-	rm -rf ~/Library/Developer/Xcode/DerivedData/ccterm-*
+# Only this checkout: its DerivedData (found by the project path Xcode records
+# in it), macos/build (build + test logs), build/ and each package's .build.
+# Other worktrees' caches stay. DRY_RUN=1 lists without deleting.
+clean: ## Remove THIS checkout's build products, DerivedData and logs (DRY_RUN=1 to list)
+	@DRY_RUN="$(DRY_RUN)" ./macos/scripts/clean.sh clean
+
+# What no checkout owns any more: DerivedData whose project is gone, and the
+# day-old logs earlier scripts left in /tmp. The SessionStart hook in
+# .claude/settings.json runs this in the background, so a removed worktree's
+# DerivedData goes on the next session.
+prune: ## Remove DerivedData of deleted worktrees and stale /tmp logs (DRY_RUN=1 to list)
+	@DRY_RUN="$(DRY_RUN)" ./macos/scripts/clean.sh prune
+
+test-clean: ## Test clean.sh against throwaway directories
+	@./macos/scripts/clean-test.sh

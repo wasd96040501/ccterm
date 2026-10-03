@@ -38,7 +38,7 @@ Then build:
 make build        # Debug build
 make release      # Release build
 make install      # build Release and copy it to /Applications
-make clean        # wipe build artifacts
+make clean        # wipe this checkout's build artifacts (DerivedData included)
 ```
 
 Always go through `make` — don't call the scripts under `macos/scripts/` directly.

@@ -1046,6 +1046,9 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertLessThanOrEqual(
             group.tabBar.frame.maxX, button.frame.minX, "the + takes room from the bar, not from over it")
         XCTAssertEqual(
+            group.view.bounds.maxX - button.frame.maxX, 8, accuracy: 0.5,
+            "the + ends 8 from the group's edge: the sheet's 2-pt margin inside the bar's 6")
+        XCTAssertEqual(
             group.tabBar.convert(NSPoint(x: 0, y: group.tabBar.bounds.midY), to: group.view).y,
             button.frame.midY, accuracy: 0.5, "the + is centred on the bar")
 

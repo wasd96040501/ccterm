@@ -41,10 +41,11 @@ final class NewTabButton: NSButton {
     override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsetsZero }
 
     /// A plus whose symbol alignment rect is its ink, so centring the image
-    /// centres the plus.
+    /// centres the plus. The sheet's plus is 10 pt from tip to tip at a 1.4-pt
+    /// stroke; the symbol's ink is about 0.83 of its point size.
     private static let plus: NSImage? = {
         let image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 10, weight: .semibold))
+            .withSymbolConfiguration(.init(pointSize: 12, weight: .medium))
         image?.alignmentRect = NSRect(origin: .zero, size: image?.size ?? .zero)
         return image
     }()
@@ -84,7 +85,10 @@ final class NewTabButton: NSButton {
         fill.setFill()
         let circle = NSBezierPath(ovalIn: bounds)
         circle.fill()
-        NSColor.separatorColor.withAlphaComponent(0.5).setStroke()
+        // A hairline of separator just inside the circle (the sheet's inset
+        // 0.5-pt ring). `withAlphaComponent` would replace the separator's own
+        // alpha, not scale it.
+        NSColor.separatorColor.setStroke()
         let edge = NSBezierPath(ovalIn: bounds.insetBy(dx: 0.25, dy: 0.25))
         edge.lineWidth = 0.5
         edge.stroke()

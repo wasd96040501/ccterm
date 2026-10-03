@@ -1,4 +1,5 @@
 import AppKit
+import Components
 import DisplayModels
 
 /// A hairline where the session's shape changed — compacted, resumed, an

@@ -5,7 +5,7 @@ extension NSImage {
     /// ask for the same few on every configure, and building one is most of
     /// what configuring a work line costs. The image view tints it.
     @MainActor
-    static func symbol(_ name: String, pointSize: CGFloat, weight: NSFont.Weight = .regular) -> NSImage? {
+    public static func symbol(_ name: String, pointSize: CGFloat, weight: NSFont.Weight = .regular) -> NSImage? {
         let key = SymbolKey(name: name, pointSize: pointSize, weight: weight.rawValue)
         if let image = symbols[key] { return image }
         let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?

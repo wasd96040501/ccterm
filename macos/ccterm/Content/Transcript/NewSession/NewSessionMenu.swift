@@ -1,4 +1,5 @@
 import AppKit
+import Components
 
 /// The New view's two pop-ups as the one menu (`MenuContent`, design 08 *The
 /// New view*): the folder's — *Recent*, each folder with its glyph and its

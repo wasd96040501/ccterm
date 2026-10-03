@@ -1,4 +1,5 @@
 import AppKit
+import Components
 
 /// `stop.circle` *Interrupted*: the reader stopped Claude while it was
 /// writing — the reply's last word (05-local.md "Interruption").

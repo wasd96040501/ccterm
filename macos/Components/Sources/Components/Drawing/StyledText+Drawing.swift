@@ -9,9 +9,9 @@ import DisplayModels
 extension StyledText {
     /// A noun that opens something carries its id under this key, so a view
     /// can find what a click on it opens (`characterIndex` → attribute).
-    static let opensKey = NSAttributedString.Key("ccterm.StyledText.opens")
+    public static let opensKey = NSAttributedString.Key("ccterm.StyledText.opens")
 
-    func attributedString(font: NSFont, color: NSColor) -> NSAttributedString {
+    public func attributedString(font: NSFont, color: NSColor) -> NSAttributedString {
         let result = NSMutableAttributedString()
         for run in runs {
             var attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]

@@ -1,4 +1,5 @@
 import AppKit
+import Components
 
 /// The 11-pt line under a bubble, right-aligned (05-local.md, 08-live.md): a
 /// command's output, *4 lines ›*, where a prompt written here has got to —

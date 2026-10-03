@@ -1,4 +1,5 @@
 import AppKit
+import Components
 
 /// How the documents draw a `LineSpan`: the transcript code card's palette for
 /// source and shell (design/transcript/preview.css `.k` `.s` `.c` `.num` `.ty`

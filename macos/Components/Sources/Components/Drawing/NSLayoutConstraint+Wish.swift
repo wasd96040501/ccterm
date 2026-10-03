@@ -6,6 +6,6 @@ extension NSLayoutConstraint.Priority {
     /// over it, while it still beats hugging and compression resistance. A
     /// "this wide, unless the tab is narrower" constraint at `.defaultHigh`
     /// would instead pin the window to it.
-    static let wishUnderWindowSize = NSLayoutConstraint.Priority(
+    public static let wishUnderWindowSize = NSLayoutConstraint.Priority(
         NSLayoutConstraint.Priority.windowSizeStayPut.rawValue - 1)
 }

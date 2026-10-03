@@ -1,4 +1,5 @@
 import AppKit
+import Components
 
 /// A borderless control of the New view (design 08 *The New view*): a title
 /// with an optional glyph and chevron that gets a quiet fill under the pointer —

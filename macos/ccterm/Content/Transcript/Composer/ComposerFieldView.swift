@@ -1,4 +1,5 @@
 import AppKit
+import Components
 
 /// What the field reports to the composer: its words changed, the focus moved,
 /// or a key the composer decides.

@@ -1,5 +1,6 @@
 import AgentSDK
 import AppKit
+import Components
 
 /// The command completion list (design 08 *Slash commands*): over the card — or
 /// under it, in a New tab — one row per command, 28 pt at least: the name in

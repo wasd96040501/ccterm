@@ -1,4 +1,5 @@
 import AppKit
+import Components
 
 /// The one menu every pop-up of the composer and the New view is — Model,
 /// Effort, Mode, the folder and the branch — drawn to the design's `.lv-menu`

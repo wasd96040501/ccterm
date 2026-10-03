@@ -1,3 +1,4 @@
+import DisplayModels
 import Foundation
 
 /// A document as a tab beside the transcript receives it: what it is, where

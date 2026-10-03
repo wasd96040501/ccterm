@@ -1,5 +1,6 @@
 import AgentSDK
 import AppKit
+import DisplayModels
 import TranscriptKit
 
 /// A session's transcript in a `TranscriptView`: a session tab's, or a

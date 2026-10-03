@@ -1,4 +1,5 @@
 import AppKit
+import DisplayModels
 import TranscriptKit
 import XCTest
 

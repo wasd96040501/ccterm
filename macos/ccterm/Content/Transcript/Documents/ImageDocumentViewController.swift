@@ -1,4 +1,5 @@
 import AppKit
+import DisplayModels
 
 /// A picture pasted into a prompt, beside the transcript at its size
 /// (05-local.md): in a scroll view with overlay scrollers, centred when it is

@@ -4,8 +4,8 @@ import Foundation
 /// *Delivered* (design/transcript/05-local.md, 08-live.md): it reports on the
 /// message above it and is no message of its own — a command's output, or
 /// where a prompt written here has got to.
-nonisolated struct Note: Sendable, Equatable {
-    enum Style: Sendable, Equatable {
+public nonisolated struct Note: Sendable, Equatable {
+    public enum Style: Sendable, Equatable {
         case tertiary
         /// stderr: red words.
         case failure
@@ -15,7 +15,7 @@ nonisolated struct Note: Sendable, Equatable {
     }
 
     /// What a link in the line asks for.
-    enum Intent: Sendable, Equatable {
+    public enum Intent: Sendable, Equatable {
         /// Open what `id` names beside (`TranscriptPage.document(for:)`).
         case open(String)
         /// Take back the queued prompt `uuid`.
@@ -24,16 +24,28 @@ nonisolated struct Note: Sendable, Equatable {
         case resend(String)
     }
 
-    struct Link: Sendable, Equatable {
-        var title: String
-        var intent: Intent
+    public struct Link: Sendable, Equatable {
+        public var title: String
+        public var intent: Intent
         /// After the words and a ` · ` (*61k / 200k tokens (31%) · Show all*),
         /// rather than 8 pt after them (*Queued  Withdraw*).
-        var isAfterDot = false
+        public var isAfterDot = false
+
+        public init(title: String, intent: Intent, isAfterDot: Bool = false) {
+            self.title = title
+            self.intent = intent
+            self.isAfterDot = isAfterDot
+        }
     }
 
     /// May be empty when only the link says anything (*4 lines ›*).
-    var text: String
-    var style: Style = .tertiary
-    var link: Link?
+    public var text: String
+    public var style: Style = .tertiary
+    public var link: Link?
+
+    public init(text: String, style: Style = .tertiary, link: Link? = nil) {
+        self.text = text
+        self.style = style
+        self.link = link
+    }
 }

@@ -1,3 +1,4 @@
+import DisplayModels
 import Foundation
 
 /// One row of a transcript tab's `TranscriptView`: what a page entry becomes
@@ -137,9 +138,9 @@ nonisolated extension PageRow {
         case .agentMessage(let message):
             if message.opensBeside { return [row(.main, .agentReport(message))] }
             return [row(.caption, .caption(message.caption)), row(.body, .markdown(Self.quoted(message.text)))]
-        case .question(let question):
+        case .question(let question, _):
             return [row(.main, .question(question))]
-        case .plan(let plan):
+        case .plan(let plan, _):
             var rows = [
                 row(.caption, .caption(plan.caption)),
                 row(.body, .markdown(plan.text)),

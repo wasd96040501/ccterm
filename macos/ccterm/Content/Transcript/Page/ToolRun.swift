@@ -1,3 +1,4 @@
+import DisplayModels
 import Foundation
 
 /// Consecutive tool calls with nothing visible between them: one row

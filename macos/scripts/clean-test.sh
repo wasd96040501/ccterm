@@ -110,6 +110,8 @@ for p in "$old_utest" "$old_build" "$old_summary" "$old_screens" "$old_cache" "$
   "$old_file_like_dir" "$old_dir_like_log"; do
   touch -t 202601010000 "$p"
 done
+# Just inside the day: kept until it is a day old.
+touch -t "$(date -v-23H +%Y%m%d%H%M)" "$new_utest" "$new_build"
 "$CLEAN" prune >/dev/null
 gone "$old_utest"; gone "$old_build"; gone "$old_summary"
 kept "$new_utest"; kept "$new_build"; kept "$old_screens"; kept "$old_cache"; kept "$old_named"

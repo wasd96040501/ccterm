@@ -113,7 +113,7 @@ prune() {
 
   echo "Pruning old logs under $TMP_ROOT"
   # A day old: no build or test run lasts that long, so none is still writing.
-  find -H "$TMP_ROOT" -mindepth 1 -maxdepth 1 -user "$(id -u)" -mtime +0 \
+  find -H "$TMP_ROOT" -mindepth 1 -maxdepth 1 -user "$(id -u)" -mmin +1440 \
     \( \( -type d -name 'ccterm-utest-[0-9]*-[0-9]*-[0-9]*' \) \
     -o \( -type f -name 'ccterm-build-[0-9]*.log' \) \) 2>/dev/null \
     | while IFS= read -r stale; do remove "$stale"; done

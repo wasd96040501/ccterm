@@ -144,7 +144,10 @@ nonisolated struct ComposerModel: Equatable, Sendable {
     /// The failure section at the card's top (design 08 *Failed*).
     struct Failure: Equatable, Sendable {
         var title: String
+        /// The reason in words: *Exit code 1*, or the launch error.
         var detail: String
+        /// stderr's last line after it, set as the CLI's output (monospaced).
+        var output: String? = nil
     }
 
     var placeholder: String
@@ -545,7 +548,8 @@ extension ComposerModel {
 
         func failure() -> Failure? {
             guard case .failed(let failure) = phase else { return nil }
-            return Failure(title: String(localized: "Claude quit unexpectedly"), detail: failure.message)
+            return Failure(
+                title: String(localized: "Claude quit unexpectedly"), detail: failure.reason, output: failure.output)
         }
     }
 }

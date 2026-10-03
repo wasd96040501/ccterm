@@ -87,7 +87,8 @@ final class ComposerViewSnapshotTests: XCTestCase {
                 model: F.model(
                     F.session(
                         .failed(
-                            SessionFailure(message: "Exit code 1 · API Error: 529 overloaded_error · retries exhausted")
+                            SessionFailure(
+                                reason: "Exit code 1", output: "API Error: 529 overloaded_error · retries exhausted")
                         )),
                     settings: F.settings("opus", effort: .high, mode: .auto))),
             Specimen(
@@ -209,11 +210,46 @@ final class ComposerViewSnapshotTests: XCTestCase {
                 probe.view.frame = NSRect(x: 0, y: 0, width: part.width, height: 400)
                 probe.view.layoutSubtreeIfNeeded()
                 let height = max(part.height, ceil(probe.composer.cardHeight))
-                let image = ViewSnapshot.renderViewController(
+                let image = try renderLayers(
                     flush(specimen, page: scheme.page), size: CGSize(width: part.width, height: height))
                 attach(try DesignParity.write(id, scheme, ours: image))
             }
         }
+    }
+
+    /// The tree as its layers composite it. The card's rings, halo and
+    /// shadows are layers of its own that `cacheDisplay` (a redraw of the
+    /// views) leaves out; `CALayer.render(in:)` walks every layer.
+    private func renderLayers(_ controller: NSViewController, size: CGSize) throws -> NSImage {
+        let window = NSWindow(
+            contentRect: CGRect(origin: CGPoint(x: -30_000, y: -30_000), size: size), styleMask: [.borderless],
+            backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.alphaValue = 0.01
+        window.contentViewController = controller
+        window.setContentSize(size)
+        window.makeKeyAndOrderFront(nil)
+        defer {
+            window.contentViewController = nil
+            window.close()
+        }
+        let deadline = Date().addingTimeInterval(0.4)
+        while Date() < deadline { RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.02)) }
+        controller.view.layoutSubtreeIfNeeded()
+        controller.view.displayIfNeeded()
+        let layer = try XCTUnwrap(controller.view.layer)
+        let scale: CGFloat = 2
+        let rep = try XCTUnwrap(
+            NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: Int(size.width * scale), pixelsHigh: Int(size.height * scale),
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                bytesPerRow: 0, bitsPerPixel: 0))
+        let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: rep)).cgContext
+        context.scaleBy(x: scale, y: scale)
+        layer.render(in: context)
+        let image = NSImage(size: size)
+        image.addRepresentation(rep)
+        return image
     }
 
     /// The card alone, edge to edge, on the sheet's page — as the design's capture frames it.

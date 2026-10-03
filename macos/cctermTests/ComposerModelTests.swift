@@ -409,6 +409,16 @@ final class ComposerModelTests: XCTestCase {
         XCTAssertNil(model(session(.idle)).failure)
     }
 
+    /// The exit code is words; stderr's last line is the CLI's own output,
+    /// apart, for the monospaced face.
+    func testAnExitKeepsStderrsLineApartFromTheReason() throws {
+        let exited = SessionFailure(Termination(exitCode: 1, stderr: "retrying\nAPI Error: 529\n"))
+        let failure = try XCTUnwrap(model(session(.failed(exited))).failure)
+        XCTAssertEqual(failure.detail, String(localized: "Exit code \(1)"))
+        XCTAssertEqual(failure.output, "API Error: 529")
+        XCTAssertEqual(exited.message, "\(String(localized: "Exit code \(1)")) · API Error: 529")
+    }
+
     func testARefusalIsTheRedLine() {
         XCTAssertEqual(
             model(refusal: "Opus 4.8 isn’t available to your organization.").error,

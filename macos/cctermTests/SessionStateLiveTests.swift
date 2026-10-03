@@ -263,7 +263,8 @@ final class SessionStateLiveTests: XCTestCase {
             state.phase,
             .failed(
                 SessionFailure(
-                    message: "\(String(localized: "Exit code \(1)")) · Error: boom", log: "warming up\nError: boom\n\n")
+                    reason: String(localized: "Exit code \(1)"), output: "Error: boom",
+                    log: "warming up\nError: boom\n\n")
             ))
     }
 

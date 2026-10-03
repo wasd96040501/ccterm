@@ -77,7 +77,11 @@ final class ComposerView: NSView {
         controlsRow.spacing = 0
         controlsRow.setViews(
             [modelChip, effortChip, modeChip, spacer, statusView, ringView, stopButton, sendButton], in: .leading)
-        controlsRow.setCustomSpacing(4, after: ringView)
+        // preview-live.css: the status keeps 8 on either side (its own insets),
+        // the ring 8 after it, and every action button 4 before it.
+        controlsRow.setCustomSpacing(4, after: spacer)
+        controlsRow.setCustomSpacing(4, after: statusView)
+        controlsRow.setCustomSpacing(12, after: ringView)
         controlsRow.setCustomSpacing(4, after: stopButton)
 
         statusRow.orientation = .horizontal
@@ -285,7 +289,6 @@ final class ComposerView: NSView {
         let width = min(bounds.width, Self.maxWidth)
         let nextTier: ComposerChipButton.Tier = width > 600 ? .full : width > 500 ? .withoutDetail : .glyphsOnly
         let nextNarrow = width > 0 && width < Self.narrowWidth
-        failureView.isNarrow = width > 0 && width < ComposerFailureView.narrowWidth
         guard nextTier != tier || nextNarrow != isNarrow else { return }
         tier = nextTier
         isNarrow = nextNarrow
@@ -367,10 +370,13 @@ extension ComposerView: ComposerFieldViewDelegate {
 
 // MARK: - The card's surface
 
-/// The card: the window's background with continuous corners, a hairline, a
-/// soft shadow and, in focus, the accent ring and halo. The content is clipped
-/// to the corners (the failure section's wash runs to the edge) while the
-/// shadow and the halo are not.
+/// The card: the window's background with continuous corners, and around it
+/// what the design draws as box-shadows (preview-live.css `.lv-comp`) — all
+/// outside the edge, so the card is its full width: a 0.5-pt separator ring,
+/// a 1-pt contact shadow and a soft one; in focus, a 1-pt accent ring at 45 %
+/// over a 4-pt halo at 12 %, and no contact shadow. The content is clipped to
+/// the corners (the failure section's wash runs to the edge); the rings and
+/// shadows are not.
 private final class CardSurfaceView: NSView {
     /// Where the content goes; clips to the card's shape.
     let clip = NSView()
@@ -379,22 +385,34 @@ private final class CardSurfaceView: NSView {
         didSet {
             guard isFocused != oldValue else { return }
             needsDisplay = true
+            needsLayout = true
         }
     }
 
+    /// The card's shape under its content, casting the soft shadow. The
+    /// view's own layer has no corner radius — AppKit would mask it, and the
+    /// rings and shadows are outside its bounds.
+    private let body = CALayer()
+    private let contact = CALayer()
     private let halo = CALayer()
+    private let ring = CALayer()
+
+    private var ringWidth: CGFloat { isFocused ? 1 : 0.5 }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.cornerRadius = ComposerView.cornerRadius
-        layer?.cornerCurve = .continuous
-        layer?.shadowOffset = CGSize(width: 0, height: -6)
-        layer?.shadowRadius = 10
-        halo.cornerRadius = ComposerView.cornerRadius + 4
-        halo.cornerCurve = .continuous
+        clipsToBounds = false
+        // 0 6 20: a 20-pt blur is a 10-pt shadow radius.
+        body.shadowOffset = CGSize(width: 0, height: -6)
+        body.shadowRadius = 10
+        contact.shadowOffset = CGSize(width: 0, height: -1)
+        contact.shadowRadius = 1
         halo.borderWidth = 4
-        layer?.insertSublayer(halo, at: 0)
+        for edge in [contact, body, halo, ring] {
+            edge.cornerCurve = .continuous
+            layer?.addSublayer(edge)
+        }
         clip.wantsLayer = true
         clip.layer?.cornerRadius = ComposerView.cornerRadius
         clip.layer?.cornerCurve = .continuous
@@ -417,21 +435,39 @@ private final class CardSurfaceView: NSView {
     override func updateLayer() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             let accent = NSColor.controlAccentColor
-            layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+            body.backgroundColor = NSColor.windowBackgroundColor.cgColor
             clip.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-            layer?.borderWidth = isFocused ? 1 : 0.5
-            layer?.borderColor = (isFocused ? accent.withAlphaComponent(0.45) : NSColor.separatorColor).cgColor
-            layer?.shadowColor = NSColor.black.cgColor
-            layer?.shadowOpacity = isFocused ? 0.06 : 0.07
+            body.shadowColor = NSColor.black.cgColor
+            body.shadowOpacity = 0.06
+            contact.shadowColor = NSColor.black.cgColor
+            contact.shadowOpacity = isFocused ? 0 : 0.04
+            ring.borderColor = (isFocused ? accent.withAlphaComponent(0.45) : NSColor.separatorColor).cgColor
             halo.borderColor = accent.withAlphaComponent(0.12).cgColor
             halo.isHidden = !isFocused
         }
+        placeEdges()
     }
 
     override func layout() {
         super.layout()
-        // The halo sits 4 pt outside the card.
+        placeEdges()
+    }
+
+    /// The rings sit outside the edge, their corners grown by their width.
+    private func placeEdges() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let radius = ComposerView.cornerRadius
+        body.frame = bounds
+        body.cornerRadius = radius
+        ring.borderWidth = ringWidth
+        ring.frame = bounds.insetBy(dx: -ringWidth, dy: -ringWidth)
+        ring.cornerRadius = radius + ringWidth
         halo.frame = bounds.insetBy(dx: -4, dy: -4)
+        halo.cornerRadius = radius + 4
+        contact.frame = bounds
+        contact.shadowPath = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        CATransaction.commit()
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -462,9 +498,10 @@ private final class ComposerStatusView: NSView {
         label.font = .systemFont(ofSize: 11)
         label.lineBreakMode = .byClipping
         tileHost.translatesAutoresizingMaskIntoConstraints = false
-        // The design draws the tile at three quarters.
+        // The design draws the tile at three quarters (12 pt) with a −3 margin,
+        // so it takes 10 pt of the line and overhangs it by 1 on each side.
         tile.tile = Tile(glyph: .tool(.other), state: .running)
-        tile.frame = NSRect(x: 0, y: 0, width: 12, height: 12)
+        tile.frame = NSRect(x: -1, y: -1, width: 12, height: 12)
         tile.setBoundsSize(NSSize(width: 16, height: 16))
         tileHost.addSubview(tile)
         stack.orientation = .horizontal
@@ -475,8 +512,8 @@ private final class ComposerStatusView: NSView {
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
         NSLayoutConstraint.activate([
-            tileHost.widthAnchor.constraint(equalToConstant: 12),
-            tileHost.heightAnchor.constraint(equalToConstant: 12),
+            tileHost.widthAnchor.constraint(equalToConstant: 10),
+            tileHost.heightAnchor.constraint(equalToConstant: 10),
             stack.leadingAnchor.constraint(equalTo: leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor),
             stack.topAnchor.constraint(equalTo: topAnchor),

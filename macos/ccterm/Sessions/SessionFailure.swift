@@ -6,15 +6,25 @@ import Foundation
 /// *Failed*): *Claude quit unexpectedly* over the detail, with Show Log and
 /// Restart.
 nonisolated struct SessionFailure: Sendable, Equatable {
-    /// The detail line: *Exit code 1 · <stderr's last line>*, or the launch
-    /// error in words.
-    var message: String
+    /// The words: *Exit code 1*, or the launch error.
+    var reason: String
+    /// stderr's last line, when the CLI wrote one — the composer sets it in
+    /// the monospaced face, as the CLI's own output.
+    var output: String?
     /// Everything the CLI wrote to stderr, for Show Log; empty when it never ran.
     var log: String
 
-    init(message: String, log: String = "") {
-        self.message = message
+    /// The detail line: *Exit code 1 · <stderr's last line>*, or the reason alone.
+    var message: String { output.map { "\(reason) · \($0)" } ?? reason }
+
+    init(reason: String, output: String? = nil, log: String = "") {
+        self.reason = reason
+        self.output = output
         self.log = log
+    }
+
+    init(message: String, log: String = "") {
+        self.init(reason: message, log: log)
     }
 
     /// The CLI exited without being asked to.
@@ -23,7 +33,7 @@ nonisolated struct SessionFailure: Sendable, Equatable {
         let last = termination.stderr.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .last { !$0.isEmpty }
-        self.init(message: last.map { "\(code) · \($0)" } ?? code, log: termination.stderr)
+        self.init(reason: code, output: last, log: termination.stderr)
     }
 
     /// The launch did not get as far as a process: the error in words.

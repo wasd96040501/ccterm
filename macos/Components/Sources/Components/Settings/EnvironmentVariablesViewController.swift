@@ -288,7 +288,7 @@ extension EnvironmentVariablesViewController: NSTextFieldDelegate {
     /// Return commits and hands focus back to the list; Tab from the name
     /// moves on to the value; Escape puts the field back as it was.
     public func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-        guard let field = control as? EnvironmentVariableCellView.Field else { return false }
+        guard let field = control as? NSTextField else { return false }
         let row = tableView.row(for: field)
         switch commandSelector {
         // A field editor binds Escape to `complete:`.
@@ -316,7 +316,7 @@ extension EnvironmentVariablesViewController: NSTextFieldDelegate {
     }
 
     public func controlTextDidEndEditing(_ notification: Notification) {
-        guard let field = notification.object as? EnvironmentVariableCellView.Field,
+        guard let field = notification.object as? NSTextField,
             let cell = field.superview as? EnvironmentVariableCellView
         else { return }
         let row = tableView.row(for: cell)

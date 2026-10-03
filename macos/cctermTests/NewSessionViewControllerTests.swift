@@ -18,15 +18,18 @@ final class NewSessionViewControllerTests: XCTestCase {
             branchesCheckedOutElsewhere: [], hasUncommittedChanges: false, defaultBranch: "main")
     }
 
-    private func controller(width: CGFloat, height: CGFloat = 720) -> NewSessionViewController {
+    private var model: NewSessionModel {
         let settings = SessionSettings(
             model: .default(on: UUID()), effort: nil, permissionMode: .default, fastMode: false)
+        return NewSessionModel(
+            draft: NewSessionDraft(folder: folder, settings: settings), repository: .repository(repository),
+            recentFolders: [folder, ghostty])
+    }
+
+    private func controller(width: CGFloat, height: CGFloat = 720) -> NewSessionViewController {
         let controller = NewSessionViewController()
         controller.loadViewIfNeeded()
-        controller.configure(
-            with: NewSessionModel(
-                draft: NewSessionDraft(folder: folder, settings: settings), repository: .repository(repository),
-                recentFolders: [folder, ghostty]))
+        controller.configure(with: model)
         // The composer's height in the slot, as the session tab pins it.
         controller.composerGuide.heightAnchor.constraint(equalToConstant: 78).isActive = true
         controller.view.frame = NSRect(x: 0, y: 0, width: width, height: height)
@@ -92,18 +95,30 @@ final class NewSessionViewControllerTests: XCTestCase {
     /// *Recent*: each project with its path in the key column, the draft's
     /// checked; then *Choose Folder…* ⌘O.
     func testTheFolderMenuListsRecentFoldersWithTheirPaths() throws {
-        let menu = try XCTUnwrap(try view("newSession.folder", in: controller(width: 900).view).menu)
-        let items = menu.items
-        XCTAssertTrue(items[0].isSectionHeader)
-        XCTAssertEqual(items[0].title, String(localized: "Recent"))
-        XCTAssertEqual(items[1].attributedTitle?.string, "ccterm\t~/dev/ccterm")
-        XCTAssertEqual(items[1].state, .on)
-        XCTAssertEqual(items[2].attributedTitle?.string, "ghostty\t~/dev/ghostty")
-        XCTAssertEqual(items[2].state, .off)
-        XCTAssertTrue(items[3].isSeparatorItem)
-        XCTAssertEqual(items[4].title, String(localized: "Choose Folder…"))
-        XCTAssertEqual(items[4].keyEquivalent, "o")
-        XCTAssertEqual(items[4].keyEquivalentModifierMask, .command)
-        XCTAssertEqual(items.count, 5)
+        let rows = NewSessionMenu.folderContent(of: model).rows
+        XCTAssertEqual(rows.count, 5)
+        guard case .header(.title(let recent, _)) = rows[0] else { return XCTFail("no Recent head") }
+        XCTAssertEqual(recent, String(localized: "Recent"))
+        func item(_ index: Int) throws -> MenuContent.Item {
+            guard case .item(let item) = rows[index] else { return try XCTUnwrap(nil, "row \(index) is not an item") }
+            return item
+        }
+        for (index, (title, path, isChecked)) in [
+            ("ccterm", "~/dev/ccterm", true), ("ghostty", "~/dev/ghostty", false),
+        ]
+        .enumerated() {
+            let folder = try item(index + 1)
+            XCTAssertEqual(folder.title, title)
+            XCTAssertEqual(folder.isChecked, isChecked)
+            XCTAssertNotNil(folder.glyph, "the folder glyph")
+            guard case .key(let key) = folder.trailing else { return XCTFail("\(title) has no path") }
+            XCTAssertEqual(key, path)
+        }
+        guard case .separator = rows[3] else { return XCTFail("no hairline before Choose Folder…") }
+        let choose = try item(4)
+        XCTAssertEqual(choose.title, String(localized: "Choose Folder…"))
+        XCTAssertEqual(choose.id, AnyHashable(NewSessionMenu.Choice.chooseFolder))
+        guard case .key(let key) = choose.trailing else { return XCTFail("Choose Folder… has no key") }
+        XCTAssertEqual(key, "⌘O")
     }
 }

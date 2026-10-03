@@ -487,9 +487,7 @@ extension SidebarViewController {
                 branchGlyph.centerYAnchor.constraint(equalTo: centerYAnchor),
                 branchGlyph.trailingAnchor.constraint(lessThanOrEqualTo: mark.leadingAnchor),
                 title.centerYAnchor.constraint(equalTo: centerYAnchor),
-                // The sheet keeps the mark's slot 14 pt in from the row's edge;
-                // a source list's cell ends 16 pt in, so the slot reaches 2 past it.
-                mark.trailingAnchor.constraint(equalTo: trailingAnchor, constant: 2),
+                mark.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
                 mark.centerYAnchor.constraint(equalTo: centerYAnchor),
                 markWidth,
                 mark.heightAnchor.constraint(equalToConstant: ActivityMarkView.slot),

@@ -7,8 +7,8 @@ import AppKit
 /// Overridden both ways, the AppKit recipe for pinning it: AppKit writes the
 /// system's style here whenever the setting changes, and reads it back to
 /// decide whether the scroller takes room from the clip view.
-class OverlayScrollView: NSScrollView {
-    override var scrollerStyle: NSScroller.Style {
+package class OverlayScrollView: NSScrollView {
+    package override var scrollerStyle: NSScroller.Style {
         get { .overlay }
         set { super.scrollerStyle = .overlay }
     }

@@ -1,4 +1,5 @@
 import AppKit
+import Components
 
 /// The style page, laid out as the design sheet (`design/transcript/index.html`,
 /// `.sheet`): one column, 1160 wide at most, centred, at least 16 from the
@@ -49,7 +50,9 @@ final class DesignPageViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     override func loadView() {
-        let scroll = NSScrollView()
+        // Overlay, as every scroller the page shows: a legacy one would take
+        // its width out of the column.
+        let scroll = OverlayScrollView()
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
         scroll.backgroundColor = .designPage

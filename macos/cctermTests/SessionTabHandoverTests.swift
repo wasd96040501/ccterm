@@ -125,8 +125,9 @@ final class SessionTabHandoverTests: XCTestCase {
 
     // MARK: - Geometry
 
-    /// Nothing jumps: right after the swap the composer is where it stood in the
-    /// New view, not at the bottom; the transcript is the whole tab.
+    /// Nothing jumps: right after the swap the card's top edge is where it
+    /// stood in the New view (the key hints under it are gone), not at the
+    /// bottom; the transcript is the whole tab.
     func testTheComposerStartsTheGlideWhereItStood() throws {
         let tab = mountDraft()
         let composer = try composer(of: tab)
@@ -141,7 +142,7 @@ final class SessionTabHandoverTests: XCTestCase {
         let rest = tab.view.convert(tab.view.bounds, to: nil).minY + 16
         XCTAssertGreaterThan(
             abs(before.minY - rest), 40, "premise: the New view's composer is not already at the bottom")
-        XCTAssertEqual(after.minY, before.minY, accuracy: 40, "the composer jumped at the swap")
+        XCTAssertEqual(after.maxY, before.maxY, accuracy: 0.5, "the card jumped at the swap")
         XCTAssertEqual(after.width, before.width, accuracy: 4)
         let transcript = try XCTUnwrap(stage!.find(TranscriptView.self))
         XCTAssertEqual(tab.view.convert(transcript.bounds, from: transcript), tab.view.bounds)
@@ -175,29 +176,36 @@ final class SessionTabHandoverTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(find(SessionTabDockView.self, in: tab.view) { _ in true }).isHidden)
     }
 
-    /// Needs the display awake: samples the glide's frames. Every frame stays
-    /// between where it started and where it ends, and the card ends at rest.
+    /// Needs the display awake: samples the composer's frames. Until the swap
+    /// the card's top edge holds still (in the page, the key hints under it);
+    /// from the swap the glide moves its bottom edge, only ever down, to rest.
+    /// The card may grow on the way (the session's first state), upward.
     func testTheGlideMovesMonotonicallyDownward() throws {
         let tab = mountDraft()
         let composer = try composer(of: tab)
         tab.view.layoutSubtreeIfNeeded()
-        let start = composer.view.convert(composer.view.bounds, to: tab.view).minY
+        let start = composer.view.convert(composer.view.bounds, to: tab.view)
 
         try send("Fix the gutter", in: tab)
-        var samples: [CGFloat] = []
+        var samples: [NSRect] = []
         let deadline = Date().addingTimeInterval(2)
         while Date() < deadline {
             RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0 / 120))
-            samples.append(composer.view.convert(composer.view.bounds, to: tab.view).minY)
-            if let last = samples.last, abs(last - 16) < 0.5, samples.count > 5 { break }
+            samples.append(composer.view.convert(composer.view.bounds, to: tab.view))
+            if let last = samples.last, abs(last.minY - 16) < 0.5, samples.count > 5 { break }
         }
 
         XCTAssertGreaterThan(samples.count, 5, "the glide produced no frames (is the display asleep?)")
-        XCTAssertEqual(try XCTUnwrap(samples.last), 16, accuracy: 0.5)
-        for (earlier, later) in zip(samples, samples.dropFirst()) {
-            XCTAssertLessThanOrEqual(later, earlier + 0.5, "the composer went back up mid-glide")
+        XCTAssertEqual(try XCTUnwrap(samples.last).minY, 16, accuracy: 0.5)
+        let page = samples.prefix { abs($0.height - start.height) < 0.5 }
+        let gliding = samples.dropFirst(page.count)
+        for frame in page {
+            XCTAssertEqual(frame.maxY, start.maxY, accuracy: 0.5, "the card moved before the swap")
         }
-        XCTAssertLessThanOrEqual(try XCTUnwrap(samples.first), start + 0.5)
+        XCTAssertEqual(try XCTUnwrap(gliding.first).maxY, start.maxY, accuracy: 0.5, "the card jumped at the swap")
+        for (earlier, later) in zip(gliding, gliding.dropFirst()) {
+            XCTAssertLessThanOrEqual(later.minY, earlier.minY + 0.5, "the composer went back up mid-glide")
+        }
     }
 
     /// Step 1: the words stay, dimmed — the words, not the composer — until the

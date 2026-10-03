@@ -23,9 +23,20 @@ nonisolated struct ComposerModel: Equatable, Sendable {
         case session(phase: SessionState.Phase, isWaitingForYou: Bool, isWaitingRequestVisible: Bool)
     }
 
+    /// Where the container stands the card.
+    enum Placement: Equatable, Sendable {
+        /// In a page (a New tab's): the key hints under it, and room below for
+        /// its menus and completion.
+        case page
+        /// Over a session's bottom edge: nothing under it; its menus and
+        /// completion open above.
+        case floating
+    }
+
     /// The facts the model is built from.
     struct Input: Equatable, Sendable {
         var context: Context
+        var placement: Placement
         /// `nil` while nothing is known yet — no catalog on a first launch, a
         /// session with no settings read: the chips say *Loading…*.
         var settings: SessionSettings?
@@ -171,9 +182,7 @@ nonisolated struct ComposerModel: Equatable, Sendable {
     var error: String?
     var commands: [SlashCommand]
 
-    /// A New tab's composer: its pop-ups and completion open below it (the
-    /// view is centred, with room under); a session's open above.
-    var isDraft: Bool
+    var placement: Placement
     /// Whether the status slot's words come with the running arc (starting,
     /// compacting).
     var statusIsBusy: Bool
@@ -185,7 +194,7 @@ nonisolated struct ComposerModel: Equatable, Sendable {
 
     init(_ input: Input) {
         let facts = Facts(input)
-        isDraft = input.context == .draft
+        placement = input.placement
         statusIsBusy = facts.isBusy
         let percent = input.contextUsage.flatMap { $0 >= 0.5 ? Int((min($0, 1) * 100).rounded()) : nil }
         contextRingText = percent.map { "\($0) %" }

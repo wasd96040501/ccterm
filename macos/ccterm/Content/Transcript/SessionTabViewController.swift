@@ -275,7 +275,6 @@ final class SessionTabViewController: NSViewController {
         NSLayoutConstraint.activate(draftConstraints)
         if !carriedText.isEmpty { composer.text = carriedText }
         carriedText = ""
-        newSession.setHintsVisible(composer.text.isEmpty)
         if let folder = draft?.folder { loadRepository(of: folder) }
         refresh()
     }
@@ -352,18 +351,26 @@ final class SessionTabViewController: NSViewController {
                 with: NewSessionModel(draft: draft, repository: repository, recentFolders: recentFolders))
             composer.configure(
                 with: ComposerModel(
-                    ComposerModel.Input(
-                        context: handoverURL == nil
-                            ? .draft
-                            : .session(phase: .starting, isWaitingForYou: false, isWaitingRequestVisible: true),
-                        settings: draftSettingsAreKnown ? draft.settings : nil,
-                        pendingModel: nil, pendingFastMode: nil, catalog: catalog,
-                        allowsBypassPermissions: preferences.allowsBypassPermissions, contextUsage: nil,
-                        refusal: nil, commands: commands(for: draft.settings))))
+                    launchInput(of: draft, context: handoverURL == nil ? .draft : Self.starting, placement: .page)))
         } else {
             configureComposer()
         }
     }
+
+    /// The composer of a draft, or of the launch it started: no session yet.
+    private func launchInput(
+        of draft: NewSessionDraft, context: ComposerModel.Context, placement: ComposerModel.Placement
+    ) -> ComposerModel.Input {
+        ComposerModel.Input(
+            context: context, placement: placement, settings: draftSettingsAreKnown ? draft.settings : nil,
+            pendingModel: nil, pendingFastMode: nil, catalog: catalog,
+            allowsBypassPermissions: preferences.allowsBypassPermissions, contextUsage: nil, refusal: nil,
+            commands: commands(for: draft.settings))
+    }
+
+    /// A launch under way: *Starting Claude…*, with Stop to cancel.
+    private static let starting = ComposerModel.Context.session(
+        phase: .starting, isWaitingForYou: false, isWaitingRequestVisible: true)
 
     /// What `/` completes in a New tab: the account's commands the model runs on.
     private func commands(for settings: SessionSettings) -> [SlashCommand] {
@@ -427,10 +434,12 @@ final class SessionTabViewController: NSViewController {
         title = SessionTabTitle.fromPrompt(firstPrompt ?? "")
         draft = nil
         tabDelegate?.transcriptTab(self, didStartSessionAt: url)
-        // 5. The New view goes, the transcript comes, the composer moves down.
+        // 5. The New view goes, the transcript comes, the composer moves down
+        // and floats.
         unmountDraft()
         composer.text = ""
         composer.isFieldDimmed = false
+        configureComposer()
         showSession(at: url, glidingFrom: captured)
     }
 
@@ -475,8 +484,9 @@ final class SessionTabViewController: NSViewController {
 
     /// 6. The composer glides from where it stood to its place: 0.3 s, ease-out,
     /// the position and the width as constraint constants — the card itself
-    /// doesn't relayout differently as it goes. Reduce Motion: it fades in at
-    /// its place.
+    /// doesn't relayout differently as it goes. The card's top edge is what
+    /// holds still at the swap: in the page the key hints were under it.
+    /// Reduce Motion: it fades in at its place.
     private func glide(from captured: NSRect) {
         let target = composer.view.convert(composer.view.bounds, to: nil)
         composer.isFieldDimmed = false
@@ -491,7 +501,7 @@ final class SessionTabViewController: NSViewController {
             return
         }
         // Window coordinates grow upward and the engine's constants downward.
-        bottom.constant = -Self.floatGap - (captured.minY - target.minY)
+        bottom.constant = -Self.floatGap - (captured.maxY - target.maxY)
         width.constant = captured.width
         view.layoutSubtreeIfNeeded()
         NSAnimationContext.runAnimationGroup { context in
@@ -547,7 +557,14 @@ final class SessionTabViewController: NSViewController {
     }
 
     private func configureComposer() {
-        guard let state else { return }
+        guard let state else {
+            // Started here, before its first state: still starting.
+            if let startedDraft {
+                composer.configure(
+                    with: ComposerModel(launchInput(of: startedDraft, context: Self.starting, placement: .floating)))
+            }
+            return
+        }
         let settings = state.settings ?? context.defaults.settings(catalog: catalog)
         composer.configure(
             with: ComposerModel(
@@ -555,7 +572,8 @@ final class SessionTabViewController: NSViewController {
                     context: .session(
                         phase: state.phase, isWaitingForYou: !state.requests.isEmpty,
                         isWaitingRequestVisible: isWaitingRequestVisible),
-                    settings: settings, pendingModel: state.pendingModel, pendingFastMode: state.pendingFastMode,
+                    placement: .floating, settings: settings, pendingModel: state.pendingModel,
+                    pendingFastMode: state.pendingFastMode,
                     catalog: catalog, allowsBypassPermissions: preferences.allowsBypassPermissions,
                     contextUsage: state.contextUsage, refusal: state.refusal, commands: state.commands)))
     }
@@ -588,7 +606,6 @@ final class SessionTabViewController: NSViewController {
         composer.isFieldDimmed = false
         mountDraft()
         composer.text = words
-        newSession?.setHintsVisible(words.isEmpty)
         composer.focus()
         tabDelegate?.transcriptTabDidReturnToDraft(self)
     }
@@ -708,10 +725,6 @@ extension SessionTabViewController: ComposerViewControllerDelegate {
     func composerViewControllerDidRequestContextUsage(_ composerViewController: ComposerViewController) {
         guard let transcriptURL, let report = state?.contextReport else { return }
         open(SessionTabDocuments.context(report, transcriptURL: transcriptURL))
-    }
-
-    func composerViewControllerDidChangeText(_ composerViewController: ComposerViewController) {
-        newSession?.setHintsVisible(composerViewController.text.isEmpty)
     }
 }
 

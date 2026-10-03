@@ -109,7 +109,8 @@ enum ComposerFixtures {
     ) -> ComposerModel {
         ComposerModel(
             ComposerModel.Input(
-                context: context, settings: settings, pendingModel: pendingModel, pendingFastMode: pendingFast,
+                context: context, placement: context == .draft ? .page : .floating, settings: settings,
+                pendingModel: pendingModel, pendingFastMode: pendingFast,
                 catalog: catalog, allowsBypassPermissions: allowsBypass, contextUsage: usage, refusal: refusal,
                 commands: commands))
     }

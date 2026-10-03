@@ -21,7 +21,4 @@ protocol ComposerViewControllerDelegate: AnyObject {
     func composerViewControllerDidRequestWaitingRequest(_ composerViewController: ComposerViewController)
     /// The context ring was clicked.
     func composerViewControllerDidRequestContextUsage(_ composerViewController: ComposerViewController)
-    /// The field's text changed (the New view hides its key hints while the
-    /// field has words).
-    func composerViewControllerDidChangeText(_ composerViewController: ComposerViewController)
 }

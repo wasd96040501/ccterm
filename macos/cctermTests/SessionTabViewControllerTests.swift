@@ -48,14 +48,21 @@ final class SessionTabViewControllerTests: XCTestCase {
         try XCTUnwrap(tab.children.compactMap { $0 as? ComposerViewController }.first)
     }
 
+    private func card(of composer: ComposerViewController) -> ComposerView? {
+        func walk(_ view: NSView) -> ComposerView? {
+            (view as? ComposerView) ?? view.subviews.lazy.compactMap(walk).first
+        }
+        return walk(composer.view)
+    }
+
     private func newSession(of tab: SessionTabViewController) -> NewSessionViewController? {
         tab.children.compactMap { $0 as? NewSessionViewController }.first
     }
 
     // MARK: - A New tab
 
-    /// The New view in the tab, the one composer in its guide, as tall as the
-    /// card, so the hints sit under it.
+    /// The New view in the tab, the one composer in its guide, the guide as
+    /// tall as the composer.
     func testANewTabPutsTheComposerInTheNewViewsSlot() throws {
         let tab = mountDraft()
         let newSession = try XCTUnwrap(newSession(of: tab), "a New tab shows the New view")
@@ -271,7 +278,7 @@ final class SessionTabViewControllerTests: XCTestCase {
         let tab = mountDraft()
         XCTAssertTrue(tab.isUntouchedDraft)
 
-        (try composer(of: tab).view as? ComposerView)?.complete(command: "review")
+        try XCTUnwrap(card(of: try composer(of: tab))).complete(command: "review")
 
         XCTAssertEqual(try composer(of: tab).text, "/review")
         XCTAssertFalse(tab.isUntouchedDraft)

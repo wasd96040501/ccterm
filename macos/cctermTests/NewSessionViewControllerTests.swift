@@ -61,7 +61,7 @@ final class NewSessionViewControllerTests: XCTestCase {
     // MARK: - The stack
 
     /// Icon, 16, the folder's 34-pt line, 2, the path's 16, 8, the 24-pt row,
-    /// 2, the note's 15, 20, the composer, 12, the hints' 16.
+    /// 2, the note's 15, 20, the composer.
     func testTheStackKeepsTheDesignsLines() throws {
         let controller = controller(width: 900)
         let root = controller.view
@@ -85,8 +85,7 @@ final class NewSessionViewControllerTests: XCTestCase {
         let root = controller.view
         let icon = try XCTUnwrap(root.subviews.first { $0 is NewSessionIconView })
         let above = top(icon, in: root)
-        let hintsBottom = root.bounds.maxY - (controller.composerGuide.frame.minY - 12 - 16)
-        let below = root.bounds.height - hintsBottom
+        let below = controller.composerGuide.frame.minY
         XCTAssertEqual(above / below, 0.62, accuracy: 0.005)
     }
 

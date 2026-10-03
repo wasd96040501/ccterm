@@ -73,7 +73,8 @@ final class ComposerModelTests: XCTestCase {
     ) -> ComposerModel {
         ComposerModel(
             ComposerModel.Input(
-                context: context, settings: settings ?? self.settings(), pendingModel: pendingModel,
+                context: context, placement: context == .draft ? .page : .floating,
+                settings: settings ?? self.settings(), pendingModel: pendingModel,
                 pendingFastMode: pendingFast, catalog: catalog, allowsBypassPermissions: allowsBypass,
                 contextUsage: usage, refusal: refusal, commands: []))
     }
@@ -89,7 +90,8 @@ final class ComposerModelTests: XCTestCase {
     func testWithNothingKnownTheChipsSayLoadingAndNothingCanBeChosen() {
         let model = ComposerModel(
             ComposerModel.Input(
-                context: .draft, settings: nil, pendingModel: nil, pendingFastMode: nil, catalog: ModelCatalog(),
+                context: .draft, placement: .page, settings: nil, pendingModel: nil, pendingFastMode: nil,
+                catalog: ModelCatalog(),
                 allowsBypassPermissions: false, contextUsage: nil, refusal: nil, commands: []))
         XCTAssertEqual(model.model.title, L("Loading…"))
         XCTAssertFalse(model.model.isEnabled)

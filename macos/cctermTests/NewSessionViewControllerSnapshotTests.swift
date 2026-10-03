@@ -44,11 +44,10 @@ final class NewSessionViewControllerSnapshotTests: XCTestCase {
         ])
     }
 
-    private func makeController(_ model: NewSessionModel, hintsVisible: Bool = true) -> NewSessionViewController {
+    private func makeController(_ model: NewSessionModel) -> NewSessionViewController {
         let controller = NewSessionViewController()
         controller.loadViewIfNeeded()
         controller.configure(with: model)
-        controller.setHintsVisible(hintsVisible)
         // Stands in for the composer: a card in the slot.
         let card = NSView()
         card.wantsLayer = true
@@ -70,9 +69,8 @@ final class NewSessionViewControllerSnapshotTests: XCTestCase {
         return controller
     }
 
-    private func sheet(_ model: NewSessionModel, size: CGSize, hintsVisible: Bool = true) -> NSImage {
-        ViewSnapshot.renderLightAndDark(
-            { [self] in makeController(model, hintsVisible: hintsVisible) }, size: size, name: "NewSession")
+    private func sheet(_ model: NewSessionModel, size: CGSize) -> NSImage {
+        ViewSnapshot.renderLightAndDark({ [self] in makeController(model) }, size: size, name: "NewSession")
     }
 
     private func model(
@@ -94,7 +92,7 @@ final class NewSessionViewControllerSnapshotTests: XCTestCase {
             sheet(model(draft { $0.choose(branch: .named("fix-gutter-overflow"), in: repository) }), size: wide))
         sheets.append(sheet(model(draft { $0.toggleWorktree(in: repository) }), size: wide))
         sheets.append(sheet(model(draft { $0.choose(branch: .pullRequest(327), in: repository) }), size: wide))
-        sheets.append(sheet(model(draft(), repository: .notARepository), size: wide, hintsVisible: false))
+        sheets.append(sheet(model(draft(), repository: .notARepository), size: wide))
         let url = ViewSnapshot.writeStack(sheets, name: "NewSessionView")
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
     }
@@ -114,15 +112,15 @@ final class NewSessionViewControllerSnapshotTests: XCTestCase {
             $0.toggleWorktree(in: repository)
         }
         let notes = URL(fileURLWithPath: NSHomeDirectory() + "/notes/claude-notes")
-        let parts: [(id: String, model: NewSessionModel, composer: SessionSettings, hints: Bool)] = [
-            ("part-02-new0", model(draft()), ComposerFixtures.settings(), true),
-            ("part-03-new0", model(relayDraft), relayDraft.settings, false),
+        let parts: [(id: String, model: NewSessionModel, composer: SessionSettings)] = [
+            ("part-02-new0", model(draft()), ComposerFixtures.settings()),
+            ("part-03-new0", model(relayDraft), relayDraft.settings),
             (
                 "part-04-new0",
                 NewSessionModel(
                     draft: NewSessionDraft(folder: notes, settings: settings), repository: .notARepository,
                     recentFolders: []),
-                ComposerFixtures.settings(), false
+                ComposerFixtures.settings()
             ),
         ]
         for scheme in DesignParity.Scheme.allCases {
@@ -133,7 +131,7 @@ final class NewSessionViewControllerSnapshotTests: XCTestCase {
                 let make = {
                     ParityHost(
                         model: part.model, composer: ComposerFixtures.model(.draft, settings: part.composer),
-                        hints: part.hints, page: scheme.page)
+                        page: scheme.page)
                 }
                 let width = design.width + 32
                 let height = Self.height(placingIconAt: 28, width: width, make)
@@ -235,13 +233,11 @@ private final class ParityHost: NSViewController {
     private let composer = ComposerViewController()
     private let model: NewSessionModel
     private let composerModel: ComposerModel
-    private let hints: Bool
     private let page: NSColor
 
-    init(model: NewSessionModel, composer: ComposerModel, hints: Bool, page: NSColor) {
+    init(model: NewSessionModel, composer: ComposerModel, page: NSColor) {
         self.model = model
         composerModel = composer
-        self.hints = hints
         self.page = page
         super.init(nibName: nil, bundle: nil)
     }
@@ -279,7 +275,6 @@ private final class ParityHost: NSViewController {
             guide.heightAnchor.constraint(equalTo: composer.view.heightAnchor),
         ])
         newSession.configure(with: model)
-        newSession.setHintsVisible(hints)
         composer.configure(with: composerModel)
     }
 

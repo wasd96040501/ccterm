@@ -4,11 +4,11 @@ import AppKit
 /// at 64 pt over its still glow, the folder as a 22-pt pop-up title with its
 /// path under it, the branch pop-up and the Worktree toggle on one row that
 /// never moves, the line that says what Send will do, then a slot for the
-/// composer (640 pt) and the key hints under it.
+/// composer (640 pt).
 ///
 /// The composer is not this view's: its container pins the composer's view to
 /// `composerGuide`, and moves it out when the tab hands over. This view only
-/// keeps the slot the composer's height and width, so the hints sit under it.
+/// keeps the slot, which takes the height of what fills it.
 ///
 /// Send's one motion is `rise(completion:)`: 600 ms, the icon's cursor lit
 /// row by row from the bottom while the glow swells (design 08 *Send is the one
@@ -90,11 +90,6 @@ final class NewSessionViewController: NSViewController {
 
     private lazy var notRepositoryLabel = Self.label(size: 12, color: .tertiaryLabelColor)
     private lazy var explanationLabel = Self.label(size: 11, color: .tertiaryLabelColor)
-    private lazy var hintsLabel: NSTextField = {
-        let label = Self.label(size: 11, color: .tertiaryLabelColor)
-        label.attributedStringValue = Self.hints()
-        return label
-    }()
 
     private lazy var whereRow: NSView = {
         let row = NSView()
@@ -136,7 +131,7 @@ final class NewSessionViewController: NSViewController {
     // MARK: - Tree
 
     private func configureHierarchy() {
-        for subview in [iconView, folderChip, pathLabel, whereRow, explanationLabel, hintsLabel] {
+        for subview in [iconView, folderChip, pathLabel, whereRow, explanationLabel] {
             subview.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(subview)
         }
@@ -156,8 +151,7 @@ final class NewSessionViewController: NSViewController {
         // note's 15), the words centred in it.
         let pathLine = NSLayoutGuide()
         let noteLine = NSLayoutGuide()
-        let hintsLine = NSLayoutGuide()
-        for guide in [above, below, pathLine, noteLine, hintsLine] { view.addLayoutGuide(guide) }
+        for guide in [above, below, pathLine, noteLine] { view.addLayoutGuide(guide) }
 
         // Until a composer is in the slot, a composer's worth — weaker than any
         // view's hugging, so the composer in it keeps its own height.
@@ -170,7 +164,7 @@ final class NewSessionViewController: NSViewController {
             above.topAnchor.constraint(equalTo: view.topAnchor),
             above.heightAnchor.constraint(equalTo: below.heightAnchor, multiplier: 0.62),
             iconView.topAnchor.constraint(equalTo: above.bottomAnchor),
-            hintsLine.bottomAnchor.constraint(equalTo: below.topAnchor),
+            composerGuide.bottomAnchor.constraint(equalTo: below.topAnchor),
             below.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
             iconView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -209,11 +203,6 @@ final class NewSessionViewController: NSViewController {
             composerGuide.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -2 * Self.margin),
             slotWidth,
             slotHeight,
-            hintsLine.topAnchor.constraint(equalTo: composerGuide.bottomAnchor, constant: 12),
-            hintsLine.heightAnchor.constraint(equalToConstant: 16),
-            hintsLabel.centerYAnchor.constraint(equalTo: hintsLine.centerYAnchor),
-            hintsLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            hintsLabel.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -2 * Self.margin),
         ])
     }
 
@@ -246,20 +235,6 @@ final class NewSessionViewController: NSViewController {
             branchChip.isHidden = true
             worktreeChip.isHidden = true
             notRepositoryLabel.isHidden = true
-        }
-    }
-
-    /// Whether the key hints show — only while the field is empty.
-    func setHintsVisible(_ visible: Bool) {
-        let alpha: CGFloat = visible ? 1 : 0
-        guard hintsLabel.alphaValue != alpha else { return }
-        guard view.window != nil, !prefersReducedMotion() else {
-            hintsLabel.alphaValue = alpha
-            return
-        }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.2
-            hintsLabel.animator().alphaValue = alpha
         }
     }
 
@@ -391,32 +366,6 @@ final class NewSessionViewController: NSViewController {
         label.lineBreakMode = .byTruncatingTail
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return label
-    }
-
-    /// `↩ Send   ⇧↩ New Line   ⇧⇥ Mode   / Commands`: the keys in secondary
-    /// ink, 3 pt before their words; 14 pt between the hints.
-    private static func hints() -> NSAttributedString {
-        let font = NSFont.systemFont(ofSize: 11)
-        let pairs = [
-            ("↩", String(localized: "Send")),
-            ("⇧↩", String(localized: "New Line")),
-            ("⇧⇥", String(localized: "Mode")),
-            ("/", String(localized: "Commands")),
-        ]
-        // A zero-width joiner carries each gap as its kerning, so the gap is exact.
-        let joiner = "\u{200D}"
-        let text = NSMutableAttributedString()
-        for (index, (key, words)) in pairs.enumerated() {
-            if index > 0 { text.append(NSAttributedString(string: joiner, attributes: [.font: font, .kern: 14])) }
-            text.append(
-                NSAttributedString(
-                    string: key, attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor]))
-            text.append(NSAttributedString(string: joiner, attributes: [.font: font, .kern: 3]))
-            text.append(
-                NSAttributedString(
-                    string: words, attributes: [.font: font, .foregroundColor: NSColor.tertiaryLabelColor]))
-        }
-        return text
     }
 }
 

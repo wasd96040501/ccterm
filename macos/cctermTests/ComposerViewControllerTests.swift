@@ -19,7 +19,6 @@ final class ComposerViewControllerTests: XCTestCase {
         var logs = 0
         var waiting = 0
         var contexts = 0
-        var textChanges = 0
         func composerViewController(_ c: ComposerViewController, didSubmit text: String) { submitted.append(text) }
         func composerViewControllerDidRequestStop(_ c: ComposerViewController) { stops += 1 }
         func composerViewController(_ c: ComposerViewController, didChoose change: SessionSettings.Change) {
@@ -29,7 +28,6 @@ final class ComposerViewControllerTests: XCTestCase {
         func composerViewControllerDidRequestLog(_ c: ComposerViewController) { logs += 1 }
         func composerViewControllerDidRequestWaitingRequest(_ c: ComposerViewController) { waiting += 1 }
         func composerViewControllerDidRequestContextUsage(_ c: ComposerViewController) { contexts += 1 }
-        func composerViewControllerDidChangeText(_ c: ComposerViewController) { textChanges += 1 }
     }
 
     private var composer: ComposerViewController!
@@ -287,7 +285,7 @@ final class ComposerViewControllerTests: XCTestCase {
     /// A sent prompt waiting for its session: the words and the token go to half
     /// strength, the card, chips and buttons stay as they were.
     func testDimmingTheFieldDimsOnlyItsWordsAndToken() throws {
-        (composer.view as? ComposerView)?.complete(command: "review")
+        try XCTUnwrap(find(ComposerView.self)).complete(command: "review")
         try type("the diff")
         let words = try XCTUnwrap(try textView().enclosingScrollView)
         let token = try XCTUnwrap(
@@ -305,6 +303,42 @@ final class ComposerViewControllerTests: XCTestCase {
         composer.isFieldDimmed = false
         XCTAssertEqual(words.alphaValue, 1)
         XCTAssertEqual(token.alphaValue, 1)
+    }
+
+    // MARK: Placement
+
+    private var keyHints: NSTextField? {
+        find(NSTextField.self) { $0.stringValue.contains(String(localized: "Commands")) }
+    }
+
+    /// In a page the key hints sit 12 under the card, in the 16-pt line the
+    /// view ends on; floating, the view is the card alone.
+    func testInAPageTheKeyHintsSitUnderTheCard() throws {
+        configure(F.model(.draft))
+        window.layoutIfNeeded()
+        let card = try XCTUnwrap(find(ComposerView.self))
+        let hints = try XCTUnwrap(keyHints)
+        XCTAssertFalse(hints.isHidden)
+        XCTAssertEqual(card.frame.minY, 12 + 16, accuracy: 0.5)
+        XCTAssertEqual(hints.frame.midY, 8, accuracy: 0.5)
+
+        configure(F.model(F.session(.idle)))
+        window.layoutIfNeeded()
+        XCTAssertTrue(hints.isHidden)
+        XCTAssertEqual(card.frame, composer.view.bounds)
+    }
+
+    /// The hints are for an empty field: words fade them out, and clearing
+    /// the field brings them back.
+    func testTheKeyHintsShowOnlyWhileTheFieldIsEmpty() throws {
+        configure(F.model(.draft))
+        let hints = try XCTUnwrap(keyHints)
+        XCTAssertEqual(hints.alphaValue, 1)
+
+        composer.text = "Fix the gutter"
+        wait(for: [expectation(for: NSPredicate { _, _ in hints.alphaValue == 0 }, evaluatedWith: nil)], timeout: 2)
+        composer.text = ""
+        wait(for: [expectation(for: NSPredicate { _, _ in hints.alphaValue == 1 }, evaluatedWith: nil)], timeout: 2)
     }
 }
 

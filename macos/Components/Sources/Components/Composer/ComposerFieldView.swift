@@ -303,7 +303,7 @@ private final class ComposerTextView: NSTextView {
         let origin = NSPoint(x: textContainerInset.width, y: textContainerInset.height)
         (placeholder as NSString).draw(
             at: origin,
-            withAttributes: [.font: ComposerFieldView.font, .foregroundColor: NSColor.tertiaryLabelColor])
+            withAttributes: [.font: font ?? .systemFont(ofSize: 14), .foregroundColor: NSColor.tertiaryLabelColor])
     }
 
     override func becomeFirstResponder() -> Bool {

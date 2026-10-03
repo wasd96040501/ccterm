@@ -158,7 +158,7 @@ final class NumberedLinesView: NSView {
         // A header ends in its own margin; the text's top margin is for a page without one.
         textView.set(content.lines, metrics: metrics, topInset: header == nil ? metrics.top : 0)
         gutter.set(content.lines, metrics: metrics, bar: content.bar)
-        document.gutterWidth = metrics.gutterWidth
+        document.gutterDidChange()
         fileMapView.isHidden = content.fileMap == nil
         fileMapView.fileMap = content.fileMap
         needsLayout = true
@@ -295,8 +295,10 @@ private final class LinesDocumentView: NSView {
         }
     }
 
-    var gutterWidth: CGFloat = 0 {
-        didSet { needsLayout = true }
+    /// The gutter was given other lines or metrics: its width, which it
+    /// owns, moves the text.
+    func gutterDidChange() {
+        needsLayout = true
     }
 
     /// The scroll view's visible size: the document is never smaller.
@@ -342,6 +344,7 @@ private final class LinesDocumentView: NSView {
     /// width on the way there would wrap the text once for nothing.
     private func arrange() {
         guard minimumSize.width > 0 else { return }
+        let gutterWidth = gutter.width
         let width = max(minimumSize.width, gutterWidth + textView.neededWidth)
         var top: CGFloat = 0
         if let header, let headerWidth {
@@ -595,6 +598,9 @@ private final class GutterView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     override var isFlipped: Bool { true }
+
+    /// The column's own width, from the metrics it was last given.
+    var width: CGFloat { metrics?.gutterWidth ?? 0 }
 
     func set(_ lines: [NumberedLinesView.Line], metrics: Metrics, bar: ChangeBar?) {
         self.lines = lines

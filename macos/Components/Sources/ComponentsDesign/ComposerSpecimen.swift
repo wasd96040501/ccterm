@@ -51,7 +51,7 @@ enum ComposerSpecimen {
     }
 
     /// `state` as the controller draws it at the column's width, its height
-    /// the card's own, scaled down whole in a narrower column.
+    /// the card's own.
     private static func composer(
         _ title: String, _ state: ComposerPresentation, text: String
     ) -> DesignPageViewController.Specimen {

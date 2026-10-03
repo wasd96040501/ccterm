@@ -9,8 +9,8 @@ import Components
 /// Playground (a 44-high title bar: the lights, the title over its subtitle).
 ///
 /// It is its own card on the style page: nothing around it. The content is
-/// the app's real view, laid out at `contentSize`; the frame never re-lays it
-/// out narrower (the page scales the frame whole, `ScaledHost`). The images
+/// the app's real view, laid out at `contentSize`, never another (the page is
+/// never narrower than its widest host). The images
 /// the chrome draws are the design's (`NSImage.windowChrome…`, `.settingsBack`).
 final class WindowFrame: NSView {
     enum Chrome {

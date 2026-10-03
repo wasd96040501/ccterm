@@ -1,6 +1,6 @@
 // Build the New view's glyphs: the design's own paths (design/transcript/
 // preview-live.js) → template SVG image sets in
-// macos/ccterm/Assets.xcassets/NewView. Tinted by the view, sized there to the
+// macos/Components/Sources/Components/Resources/Assets.xcassets/NewView. Tinted by the view, sized there to the
 // design's CSS box (the chevron at 11 pt beside the folder, 10 in the branch
 // pop-up; the worktree mark at 14). The branch mark is the sidebar's
 // `SidebarWorktree`, the same `LV.branch`.
@@ -11,7 +11,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 
 const ROOT = resolve(import.meta.dir, "../../..")
-const ASSETS = join(ROOT, "macos/ccterm/Assets.xcassets/NewView")
+const ASSETS = join(ROOT, "macos/Components/Sources/Components/Resources/Assets.xcassets/NewView")
 
 type Glyph = { asset: string; source: string; size: number; markup: string }
 

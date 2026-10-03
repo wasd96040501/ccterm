@@ -2,7 +2,7 @@ import AppKit
 import QuartzCore
 import XCTest
 
-@testable import ccterm
+@testable import Components
 
 /// Send's rise in the New view (design 08 *Send is the one moment it moves*):
 /// 600 ms, row onsets 0 / 70 / 150 / 240 / 340 ms, each a 240-ms flash to
@@ -13,17 +13,35 @@ import XCTest
 /// sampling (`testTheRowsLightOnTheirOnsetsAsComposited`) needs the display awake.
 @MainActor
 final class NewSessionRiseTests: XCTestCase {
-    private var stage: AppKitStage?
+    private var window: NSWindow?
 
     override func tearDown() async throws {
-        stage?.teardown()
-        stage = nil
+        window?.close()
+        window = nil
     }
 
+    /// The view in a window parked off screen, as the app's tab holds it.
     private func mount(reduceMotion: Bool = false) -> NewSessionViewController {
         let controller = NewSessionViewController(prefersReducedMotion: { reduceMotion })
-        stage = AppKitStage.mount(controller, size: CGSize(width: 720, height: 560))
-        stage?.container.layoutSubtreeIfNeeded()
+        let size = CGSize(width: 720, height: 560)
+        let window = NSWindow(
+            contentRect: NSRect(origin: CGPoint(x: -30_000, y: -30_000), size: size), styleMask: [.borderless],
+            backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.alphaValue = 0.01
+        let container = NSView(frame: NSRect(origin: .zero, size: size))
+        window.contentView = container
+        controller.view.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(controller.view)
+        NSLayoutConstraint.activate([
+            controller.view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            controller.view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            controller.view.topAnchor.constraint(equalTo: container.topAnchor),
+            controller.view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        window.makeKeyAndOrderFront(nil)
+        container.layoutSubtreeIfNeeded()
+        self.window = window
         return controller
     }
 

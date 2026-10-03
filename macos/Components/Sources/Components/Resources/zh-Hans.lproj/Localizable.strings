@@ -83,3 +83,11 @@
 /* AboutView */
 "Version %@ (%@)" = "版本 %1$@（%2$@）";
 "Commit" = "提交";
+
+/* The New view */
+"Choose Folder…" = "选择文件夹…";
+"Branch" = "分支";
+"Worktree" = "工作树";
+"Work in a new git worktree (--worktree), leaving this folder as it is" = "在新的 git 工作树 (--worktree) 中工作，保持此文件夹不变";
+"Choose the folder Claude will work in." = "选择 Claude 工作的文件夹。";
+"Recent" = "最近";

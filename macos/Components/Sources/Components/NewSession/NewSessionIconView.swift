@@ -15,17 +15,9 @@ import QuartzCore
 final class NewSessionIconView: NSView {
     /// The icon's side, points.
     static let side: CGFloat = 64
-    /// Send's rise, seconds (design 08: 600 ms, decelerating).
-    static let riseDuration: TimeInterval = 0.6
-    /// A row's onset, seconds, counted from the bottom row (k = 0): `65k + 5k²` ms —
-    /// the moments an ease-out level reaches each row.
-    static func onset(ofRow k: Int) -> TimeInterval { TimeInterval(65 * k + 5 * k * k) / 1000 }
-    /// A row's flash, seconds.
-    static let flashDuration: TimeInterval = 0.24
-    /// How bright a row's white flash gets.
-    static let flashPeak: Float = 0.55
-    /// The cursor's rows, bottom to top (layer names `rise-row-<k>`).
-    static let rowCount = 5
+    static var riseDuration: TimeInterval { RiseTiming.duration }
+    static func onset(ofRow k: Int) -> TimeInterval { RiseTiming.onset(ofRow: k) }
+    static var rowCount: Int { RiseTiming.rowCount }
 
     private let glowView = GlowView()
     private let artView = NSImageView()
@@ -43,7 +35,7 @@ final class NewSessionIconView: NSView {
     override var intrinsicContentSize: NSSize { NSSize(width: Self.side, height: Self.side) }
 
     private func configureHierarchy() {
-        artView.image = NSImage(resource: .appIconArt)
+        artView.image = NSImage.appIconArt
         artView.imageScaling = .scaleProportionallyUpOrDown
         // `drop-shadow(0 6px 14px rgba(20, 18, 24, 0.22))`, from the icon's own
         // alpha. Through the view's `shadow`: AppKit owns a backed view's layer
@@ -177,7 +169,7 @@ private final class GlowView: NSView {
         transform.fromValue = CATransform3DIdentity
         transform.toValue = risen
         for animation in [opacity, transform] {
-            animation.duration = NewSessionIconView.riseDuration
+            animation.duration = RiseTiming.duration
             animation.timingFunction = timing
         }
         glowLayer.add(opacity, forKey: "swell-opacity")
@@ -290,7 +282,7 @@ private final class LightView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        for k in 0..<NewSessionIconView.rowCount {
+        for k in 0..<RiseTiming.rowCount {
             let row = CALayer()
             row.name = "rise-row-\(k)"
             row.backgroundColor = NSColor.white.cgColor
@@ -306,12 +298,12 @@ private final class LightView: NSView {
     override func layout() {
         super.layout()
         let unit = bounds.width / Self.canvas
-        let rowHeight = Self.cursor.height / CGFloat(NewSessionIconView.rowCount)
+        let rowHeight = Self.cursor.height / CGFloat(RiseTiming.rowCount)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         for (k, row) in rowLayers.enumerated() {
             // Row k counts from the bottom; the canvas's y runs down, the layer's up.
-            let fromTop = Self.cursor.minY + CGFloat(NewSessionIconView.rowCount - 1 - k) * rowHeight
+            let fromTop = Self.cursor.minY + CGFloat(RiseTiming.rowCount - 1 - k) * rowHeight
             row.frame = CGRect(
                 x: Self.cursor.minX * unit, y: bounds.height - (fromTop + rowHeight) * unit,
                 width: Self.cursor.width * unit, height: rowHeight * unit)
@@ -330,13 +322,28 @@ private final class LightView: NSView {
         let start = layer.map { $0.convertTime(CACurrentMediaTime(), from: nil) } ?? 0
         for (k, row) in rowLayers.enumerated() where k < rows {
             let animation = CAKeyframeAnimation(keyPath: "opacity")
-            animation.values = [0, NewSessionIconView.flashPeak, 0]
+            animation.values = [0, RiseTiming.flashPeak, 0]
             animation.keyTimes = [0, 0.3, 1]
             animation.timingFunctions = [CAMediaTimingFunction(name: .easeOut), CAMediaTimingFunction(name: .easeOut)]
-            animation.duration = NewSessionIconView.flashDuration
-            animation.beginTime = start + NewSessionIconView.onset(ofRow: k)
+            animation.duration = RiseTiming.flashDuration
+            animation.beginTime = start + RiseTiming.onset(ofRow: k)
             animation.fillMode = .backwards
             row.add(animation, forKey: "flash")
         }
     }
+}
+
+/// Send's rise in numbers (design 08), shared by the icon's glow and its light.
+private enum RiseTiming {
+    /// Send's rise, seconds (design 08: 600 ms, decelerating).
+    static let duration: TimeInterval = 0.6
+    /// A row's onset, seconds, counted from the bottom row (k = 0): `65k + 5k²` ms —
+    /// the moments an ease-out level reaches each row.
+    static func onset(ofRow k: Int) -> TimeInterval { TimeInterval(65 * k + 5 * k * k) / 1000 }
+    /// A row's flash, seconds.
+    static let flashDuration: TimeInterval = 0.24
+    /// How bright a row's white flash gets.
+    static let flashPeak: Float = 0.55
+    /// The cursor's rows, bottom to top (layer names `rise-row-<k>`).
+    static let rowCount = 5
 }

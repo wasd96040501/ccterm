@@ -1,5 +1,5 @@
 import AppKit
-import Components
+import DisplayModels
 
 /// The New view (design 08): centred a third of the way down — the app icon
 /// at 64 pt over its still glow, the folder as a 22-pt pop-up title with its
@@ -16,14 +16,14 @@ import Components
 /// moment it moves*); Reduce Motion skips it. In Dark it draws the icon's
 /// Dark rendition.
 @MainActor
-final class NewSessionViewController: NSViewController {
-    weak var delegate: NewSessionViewControllerDelegate?
+public final class NewSessionViewController: NSViewController {
+    public weak var delegate: NewSessionViewControllerDelegate?
 
     /// Where the composer goes: 640 pt wide at most and 24 in from each side,
     /// centred, under the explanation line. The container sets its height to the composer's.
-    let composerGuide = NSLayoutGuide()
+    public let composerGuide = NSLayoutGuide()
 
-    private var model: NewSessionModel?
+    private var content: NewSessionContent?
     private let prefersReducedMotion: () -> Bool
     private var riseCompletions: [@MainActor () -> Void] = []
     private var isRising = false
@@ -44,7 +44,7 @@ final class NewSessionViewController: NSViewController {
     private let iconView = NewSessionIconView()
 
     private lazy var folderChip: NewSessionChip = {
-        let chip = NewSessionChip(title: String(localized: "Choose Folder…"), look: .folder)
+        let chip = NewSessionChip(title: String(localized: "Choose Folder…", bundle: .module), look: .folder)
         chip.sendsActionOnPress = true
         chip.target = self
         chip.action = #selector(showFolderMenu(_:))
@@ -62,10 +62,10 @@ final class NewSessionViewController: NSViewController {
     private lazy var branchChip: NewSessionChip = {
         let chip = NewSessionChip(title: "", look: .row)
         // The design's branch glyph, 10 × 11 on the pop-up.
-        let glyph = NSImage.sidebarWorktree
+        let glyph = NSImage.sidebarWorktree.copy() as? NSImage ?? NSImage.sidebarWorktree
         glyph.size = NSSize(width: 10, height: 11)
         chip.glyph = glyph
-        chip.toolTip = String(localized: "Branch")
+        chip.toolTip = String(localized: "Branch", bundle: .module)
         chip.sendsActionOnPress = true
         chip.target = self
         chip.action = #selector(showBranchPicker(_:))
@@ -75,13 +75,14 @@ final class NewSessionViewController: NSViewController {
     }()
 
     private lazy var worktreeChip: NewSessionChip = {
-        let chip = NewSessionChip(title: String(localized: "Worktree"), look: .row, showsChevron: false)
+        let chip = NewSessionChip(
+            title: String(localized: "Worktree", bundle: .module), look: .row, showsChevron: false)
         // The design's worktree mark, at a control's 14 pt.
-        let glyph = NSImage(resource: .newViewWorktree).copy() as? NSImage ?? NSImage(resource: .newViewWorktree)
+        let glyph = NSImage.newViewWorktree.copy() as? NSImage ?? NSImage.newViewWorktree
         glyph.size = NSSize(width: 14, height: 14)
         chip.glyph = glyph
         chip.toolTip = String(
-            localized: "Work in a new git worktree (--worktree), leaving this folder as it is")
+            localized: "Work in a new git worktree (--worktree), leaving this folder as it is", bundle: .module)
         chip.target = self
         chip.action = #selector(toggleWorktree(_:))
         chip.setAccessibilityIdentifier("newSession.worktree")
@@ -100,7 +101,7 @@ final class NewSessionViewController: NSViewController {
 
     /// `prefersReducedMotion` is the system's Reduce Motion setting; the rise
     /// is skipped under it.
-    init(
+    public init(
         prefersReducedMotion: @escaping () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     ) {
         self.prefersReducedMotion = prefersReducedMotion
@@ -108,23 +109,23 @@ final class NewSessionViewController: NSViewController {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    override func loadView() {
+    public override func loadView() {
         view = NewSessionRootView { [weak self] in self?.chooseFolder(nil) }
         configureHierarchy()
         configureConstraints()
     }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         popUpMenu.onChoose = { [weak self] item in self?.menuChose(item) }
         popUpMenu.onFilter = { [weak self] text in self?.menuFilterChanged(text) }
         popUpMenu.onClose = { [weak self] in self?.menuDidClose() }
-        if let model { configure(with: model) }
+        if let content { configure(with: content) }
     }
 
-    override func viewDidDisappear() {
+    public override func viewDidDisappear() {
         super.viewDidDisappear()
         popUpMenu.close()
     }
@@ -209,18 +210,18 @@ final class NewSessionViewController: NSViewController {
 
     // MARK: - Showing the model
 
-    /// Shows `model`. Idempotent.
-    func configure(with model: NewSessionModel) {
-        self.model = model
+    /// Shows `content`. Idempotent.
+    public func configure(with content: NewSessionContent) {
+        self.content = content
         guard isViewLoaded else { return }
 
-        folderChip.title = model.folderTitle
-        if popUpMenu.isShown, let content = menuContent(for: openChip) { popUpMenu.update(content) }
-        pathLabel.stringValue = model.folderPath ?? ""
-        explanationLabel.stringValue = model.explanation ?? ""
+        folderChip.title = content.folderTitle
+        if popUpMenu.isShown, let menu = menuContent(for: openChip) { popUpMenu.update(menu) }
+        pathLabel.stringValue = content.folderPath ?? ""
+        explanationLabel.stringValue = content.explanation ?? ""
 
-        switch model.branchRow {
-        case .repository(let branchTitle, let usesWorktree, _):
+        switch content.branchRow {
+        case .repository(let branchTitle, let usesWorktree):
             branchChip.isHidden = false
             worktreeChip.isHidden = false
             notRepositoryLabel.isHidden = true
@@ -242,7 +243,7 @@ final class NewSessionViewController: NSViewController {
     /// Plays Send's rise and calls `completion` when it ends (at once under
     /// Reduce Motion). The field's words stay, dimmed, until then — the
     /// container's to dim.
-    func rise(completion: @escaping @MainActor () -> Void) {
+    public func rise(completion: @escaping @MainActor () -> Void) {
         if prefersReducedMotion() {
             completion()
             return
@@ -265,7 +266,7 @@ final class NewSessionViewController: NSViewController {
     /// Ends a rise that is playing, back to rest at once; its completions
     /// are dropped, never called (Stop during the rise). Does nothing when
     /// none is playing.
-    func settleRise() {
+    public func settleRise() {
         guard isRising else { return }
         riseGeneration += 1
         isRising = false
@@ -286,7 +287,7 @@ final class NewSessionViewController: NSViewController {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
-        panel.message = String(localized: "Choose the folder Claude will work in.")
+        panel.message = String(localized: "Choose the folder Claude will work in.", bundle: .module)
         let finish: (NSApplication.ModalResponse) -> Void = { [weak self, weak panel] response in
             guard let self, response == .OK, let url = panel?.url else { return }
             delegate?.newSessionViewController(self, didChooseFolder: url)
@@ -309,12 +310,44 @@ final class NewSessionViewController: NSViewController {
 
     /// What `chip`'s menu shows now.
     private func menuContent(for chip: NewSessionChip?) -> MenuContent? {
-        guard let model else { return nil }
-        if chip === folderChip { return NewSessionMenu.folderContent(of: model) }
-        if chip === branchChip, case .repository(_, _, let branches) = model.branchRow {
-            return NewSessionMenu.branchContent(of: branches, query: branchQuery)
+        guard let content else { return nil }
+        if chip === folderChip { return Self.folderMenu(of: content) }
+        if chip === branchChip, case .repository = content.branchRow {
+            return delegate?.newSessionViewController(self, branchMenuMatching: branchQuery)
         }
         return nil
+    }
+
+    /// What a chosen item of the folder menu stands for.
+    enum FolderChoice: Hashable {
+        case folder(URL)
+        case chooseFolder
+    }
+
+    /// The folder's menu (design 08 *The New view*): *Recent*, each folder
+    /// with its glyph and its path at the trailing edge, then *Choose Folder…
+    /// ⌘O* past a hairline.
+    static func folderMenu(of content: NewSessionContent) -> MenuContent {
+        var rows: [MenuContent.Row] = []
+        if !content.recentFolders.isEmpty {
+            rows.append(.header(.title(String(localized: "Recent", bundle: .module))))
+            // The sheet's folder (10.4 × 9.2 of the row's 16), as SF Symbols draws it.
+            let glyph = NSImage.symbol("folder", pointSize: 11)
+            for folder in content.recentFolders {
+                rows.append(
+                    .item(
+                        MenuContent.Item(
+                            id: FolderChoice.folder(folder.url), title: folder.title, glyph: glyph,
+                            isChecked: folder.isChosen, trailing: .key(folder.path), toolTip: folder.path)))
+            }
+            rows.append(.separator)
+        }
+        rows.append(
+            .item(
+                MenuContent.Item(
+                    id: FolderChoice.chooseFolder, title: String(localized: "Choose Folder…", bundle: .module),
+                    trailing: .key("⌘O"))))
+        return MenuContent(rows: rows)
     }
 
     /// Opens `chip`'s menu under it, or closes it when it is the one open.
@@ -332,11 +365,13 @@ final class NewSessionViewController: NSViewController {
     }
 
     private func menuChose(_ item: MenuContent.Item) {
-        guard let choice = item.id as? NewSessionMenu.Choice else { return }
-        switch choice {
-        case .folder(let url): delegate?.newSessionViewController(self, didChooseFolder: url)
-        case .chooseFolder: chooseFolder(nil)
-        case .branch(let branch): delegate?.newSessionViewController(self, didChooseBranch: branch)
+        if let choice = item.id.base as? FolderChoice {
+            switch choice {
+            case .folder(let url): delegate?.newSessionViewController(self, didChooseFolder: url)
+            case .chooseFolder: chooseFolder(nil)
+            }
+        } else {
+            delegate?.newSessionViewController(self, didChooseBranchItem: item.id)
         }
     }
 

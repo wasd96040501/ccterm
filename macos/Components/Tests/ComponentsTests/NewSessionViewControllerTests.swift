@@ -1,9 +1,8 @@
-import AgentSDK
 import AppKit
-import Components
+import DisplayModels
 import XCTest
 
-@testable import ccterm
+@testable import Components
 
 /// The New view's geometry and its folder menu, as the design's stylesheet
 /// gives them (`preview-live.css` *New view*: line boxes of the sheet's 1.45,
@@ -13,24 +12,20 @@ final class NewSessionViewControllerTests: XCTestCase {
     private let folder = URL(fileURLWithPath: NSHomeDirectory() + "/dev/ccterm")
     private let ghostty = URL(fileURLWithPath: NSHomeDirectory() + "/dev/ghostty")
 
-    private var repository: RepositoryState {
-        RepositoryState(
-            root: folder, branch: "main", localBranches: ["main"], remoteBranches: [],
-            branchesCheckedOutElsewhere: [], hasUncommittedChanges: false, defaultBranch: "main")
-    }
-
-    private var model: NewSessionModel {
-        let settings = SessionSettings(
-            model: .default(on: UUID()), effort: nil, permissionMode: .default, fastMode: false)
-        return NewSessionModel(
-            draft: NewSessionDraft(folder: folder, settings: settings), repository: .repository(repository),
-            recentFolders: [folder, ghostty])
+    private var content: NewSessionContent {
+        NewSessionContent(
+            folderTitle: "ccterm", folderPath: "~/dev/ccterm",
+            recentFolders: [
+                .init(url: folder, title: "ccterm", path: "~/dev/ccterm", isChosen: true),
+                .init(url: ghostty, title: "ghostty", path: "~/dev/ghostty"),
+            ],
+            branchRow: .repository(branchTitle: "main", usesWorktree: false))
     }
 
     private func controller(width: CGFloat, height: CGFloat = 720) -> NewSessionViewController {
         let controller = NewSessionViewController()
         controller.loadViewIfNeeded()
-        controller.configure(with: model)
+        controller.configure(with: content)
         // The composer's height in the slot, as the session tab pins it.
         controller.composerGuide.heightAnchor.constraint(equalToConstant: 78).isActive = true
         controller.view.frame = NSRect(x: 0, y: 0, width: width, height: height)
@@ -95,10 +90,10 @@ final class NewSessionViewControllerTests: XCTestCase {
     /// *Recent*: each project with its path in the key column, the draft's
     /// checked; then *Choose Folder…* ⌘O.
     func testTheFolderMenuListsRecentFoldersWithTheirPaths() throws {
-        let rows = NewSessionMenu.folderContent(of: model).rows
+        let rows = NewSessionViewController.folderMenu(of: content).rows
         XCTAssertEqual(rows.count, 5)
         guard case .header(.title(let recent, _)) = rows[0] else { return XCTFail("no Recent head") }
-        XCTAssertEqual(recent, String(localized: "Recent"))
+        XCTAssertEqual(recent, String(localized: "Recent", bundle: .module))
         func item(_ index: Int) throws -> MenuContent.Item {
             guard case .item(let item) = rows[index] else { return try XCTUnwrap(nil, "row \(index) is not an item") }
             return item
@@ -116,9 +111,88 @@ final class NewSessionViewControllerTests: XCTestCase {
         }
         guard case .separator = rows[3] else { return XCTFail("no hairline before Choose Folder…") }
         let choose = try item(4)
-        XCTAssertEqual(choose.title, String(localized: "Choose Folder…"))
-        XCTAssertEqual(choose.id, AnyHashable(NewSessionMenu.Choice.chooseFolder))
+        XCTAssertEqual(choose.title, String(localized: "Choose Folder…", bundle: .module))
+        XCTAssertEqual(choose.id, AnyHashable(NewSessionViewController.FolderChoice.chooseFolder))
         guard case .key(let key) = choose.trailing else { return XCTFail("Choose Folder… has no key") }
         XCTAssertEqual(key, "⌘O")
+    }
+
+    // MARK: - The row under the path
+
+    /// A folder with no repository says so where the row is; while it is read
+    /// the row is empty. Either way the branch pop-up and Worktree are gone.
+    func testTheRowShowsOnlyWhatItIsGiven() throws {
+        let controller = controller(width: 900)
+        let branch = try view("newSession.branch", in: controller.view)
+        let worktree = try view("newSession.worktree", in: controller.view)
+        XCTAssertFalse(branch.isHidden)
+        XCTAssertFalse(worktree.isHidden)
+
+        var shown = content
+        shown.branchRow = .notARepository("Not a git repository")
+        controller.configure(with: shown)
+        XCTAssertTrue(branch.isHidden)
+        XCTAssertTrue(worktree.isHidden)
+        func words(in view: NSView) -> [String] {
+            ((view as? NSTextField).map { [$0.stringValue] } ?? []) + view.subviews.flatMap(words)
+        }
+        XCTAssertTrue(words(in: controller.view).contains("Not a git repository"))
+
+        shown.branchRow = .loading
+        controller.configure(with: shown)
+        XCTAssertTrue(branch.isHidden)
+        XCTAssertTrue(worktree.isHidden)
+    }
+
+    // MARK: - What it reports
+
+    func testWorktreeIsReportedAsAnIntent() throws {
+        let controller = controller(width: 900)
+        let delegate = Delegate()
+        controller.delegate = delegate
+        let chip = try XCTUnwrap(try view("newSession.worktree", in: controller.view) as? NSControl)
+        _ = chip.sendAction(chip.action, to: chip.target)
+        XCTAssertEqual(delegate.toggles, 1)
+    }
+
+    /// The branch menu is the owner's to word and filter: the view asks for it
+    /// by what is typed and hands a chosen item back by its id.
+    func testTheBranchMenuIsAskedForByWhatIsTyped() throws {
+        let controller = controller(width: 900)
+        let delegate = Delegate()
+        controller.delegate = delegate
+        let chip = try XCTUnwrap(try view("newSession.branch", in: controller.view) as? NSControl)
+        _ = chip.sendAction(chip.action, to: chip.target)
+        XCTAssertEqual(delegate.queries, [""])
+        controller.viewDidDisappear()
+    }
+}
+
+@MainActor
+private final class Delegate: NewSessionViewControllerDelegate {
+    var toggles = 0
+    var queries: [String] = []
+    var folders: [URL] = []
+    var items: [AnyHashable] = []
+
+    func newSessionViewController(_ newSessionViewController: NewSessionViewController, didChooseFolder url: URL) {
+        folders.append(url)
+    }
+
+    func newSessionViewControllerDidToggleWorktree(_ newSessionViewController: NewSessionViewController) {
+        toggles += 1
+    }
+
+    func newSessionViewController(
+        _ newSessionViewController: NewSessionViewController, branchMenuMatching query: String
+    ) -> MenuContent? {
+        queries.append(query)
+        return nil
+    }
+
+    func newSessionViewController(
+        _ newSessionViewController: NewSessionViewController, didChooseBranchItem id: AnyHashable
+    ) {
+        items.append(id)
     }
 }

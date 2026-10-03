@@ -1,5 +1,4 @@
 import AppKit
-import Components
 
 /// A borderless control of the New view (design 08 *The New view*): a title
 /// with an optional glyph and chevron that gets a quiet fill under the pointer —
@@ -116,7 +115,7 @@ final class NewSessionChip: NSControl {
 
     /// The design's `chev2`, in its CSS box.
     private lazy var chevronView: NSImageView = {
-        let image = NSImage(resource: .newViewChevron).copy() as? NSImage ?? NSImage(resource: .newViewChevron)
+        let image = NSImage.newViewChevron.copy() as? NSImage ?? NSImage.newViewChevron
         image.size = NSSize(width: look.chevronSize, height: look.chevronSize)
         let view = NSImageView(image: image)
         view.imageScaling = .scaleNone

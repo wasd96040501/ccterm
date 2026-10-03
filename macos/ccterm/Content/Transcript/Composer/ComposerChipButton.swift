@@ -65,7 +65,7 @@ final class ComposerChipButton: NSButton {
 
     private func configureHierarchy() {
         leadingGlyphs.orientation = .horizontal
-        leadingGlyphs.spacing = 2
+        leadingGlyphs.spacing = 4
         leadingGlyphs.alignment = .centerY
         for label in [titleLabel, detailLabel] {
             label.font = .systemFont(ofSize: 12)
@@ -73,14 +73,14 @@ final class ComposerChipButton: NSButton {
             label.setContentCompressionResistancePriority(.required, for: .horizontal)
         }
         trailingGlyph.imageScaling = .scaleNone
-        chevron.image = NSImage.symbol("chevron.down", pointSize: 7, weight: .semibold)
+        chevron.image = ComposerGlyph.chevron
         chevron.imageScaling = .scaleNone
         stack.orientation = .horizontal
         stack.spacing = 4
         stack.alignment = .centerY
         stack.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
+        // preview-live.css `.chip`: 8 in from each side, 4 between every item.
         stack.setViews([leadingGlyphs, titleLabel, detailLabel, trailingGlyph, chevron], in: .leading)
-        stack.setCustomSpacing(2, after: titleLabel)
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
     }
@@ -105,11 +105,11 @@ final class ComposerChipButton: NSButton {
         detailLabel.stringValue = chip.detail.map { "· \($0)" } ?? ""
         leadingGlyphs.setViews(
             chip.leadingGlyphs.map { glyph in
-                let view = NSImageView(image: ComposerGlyph.image(glyph) ?? NSImage())
+                let view = NSImageView(image: ComposerGlyph.chipImage(glyph) ?? NSImage())
                 view.imageScaling = .scaleNone
                 return view
             }, in: .leading)
-        trailingGlyph.image = chip.trailingGlyph.flatMap { ComposerGlyph.image($0, size: 10) }
+        trailingGlyph.image = chip.trailingGlyph.flatMap { ComposerGlyph.chipImage($0) }
         chevron.isHidden = !chip.isEnabled
         setAccessibilityLabel(chip.toolTip ?? chip.title)
         setAccessibilityValue(chip.title)
@@ -140,7 +140,10 @@ final class ComposerChipButton: NSButton {
             detailLabel.textColor = .tertiaryLabelColor
             for case let view as NSImageView in leadingGlyphs.arrangedSubviews { view.contentTintColor = ink }
             trailingGlyph.contentTintColor = .tertiaryLabelColor
-            chevron.contentTintColor = ink.withAlphaComponent(0.7)
+            // `.cv { opacity: .7 }` of the chip's ink — its alpha times 0.7,
+            // not 0.7 in place of it.
+            let resolved = ink.usingColorSpace(.sRGB) ?? ink
+            chevron.contentTintColor = resolved.withAlphaComponent(resolved.alphaComponent * 0.7)
         }
     }
 
@@ -151,7 +154,7 @@ final class ComposerChipButton: NSButton {
     override func updateLayer() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             let filled = chip?.isEnabled == true && (isHovered || isOpen)
-            layer?.backgroundColor = (filled ? NSColor.quaternarySystemFill : .clear).cgColor
+            layer?.backgroundColor = (filled ? NSColor.composerHover : .clear).cgColor
         }
         updateColors()
     }

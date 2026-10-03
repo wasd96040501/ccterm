@@ -76,7 +76,7 @@ private final class RingShape: NSView {
             let track = NSBezierPath()
             track.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360)
             track.lineWidth = 2
-            NSColor.tertiarySystemFill.setStroke()
+            NSColor.composerTile.setStroke()
             track.stroke()
             guard fraction > 0 else { return }
             let arc = NSBezierPath()

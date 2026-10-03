@@ -24,11 +24,12 @@ final class ComposerActionButton: NSButton {
         setButtonType(.momentaryChange)
         wantsLayer = true
         layer?.cornerRadius = Self.diameter / 2
+        // preview-live.css `.act-btn svg`: the arrow 14 pt, the stop square 10.
         switch kind {
         case .send:
-            image = NSImage.symbol("arrow.up", pointSize: 13, weight: .bold)
+            image = ComposerGlyph.asset(.composerSend, NSSize(width: 14, height: 14))
         case .stop:
-            image = NSImage.symbol("stop.fill", pointSize: 9, weight: .regular)
+            image = ComposerGlyph.asset(.composerStop, NSSize(width: 10, height: 10))
         }
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -59,7 +60,7 @@ final class ComposerActionButton: NSButton {
                 fill = .controlAccentColor
                 ink = .white
             case .send:
-                fill = .tertiarySystemFill
+                fill = .composerTile
                 ink = .tertiaryLabelColor
             case .stop:
                 fill = .labelColor

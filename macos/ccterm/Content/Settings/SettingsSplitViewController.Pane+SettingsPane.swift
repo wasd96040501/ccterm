@@ -6,6 +6,11 @@ extension SettingsSplitViewController.Pane {
     /// `context` holds.
     @MainActor
     init(_ pane: SettingsPane, context: SettingsContext) {
+        let glyph: NSImage =
+            switch pane {
+            case .general: .settingsGear
+            case .accounts: .settingsPerson
+            }
         let controller: NSViewController =
             switch pane {
             case .general:
@@ -15,6 +20,6 @@ extension SettingsSplitViewController.Pane {
                     accounts: context.accounts, launch: context.launch, launchCheck: context.launchCheck,
                     subscription: context.subscription)
             }
-        self.init(title: pane.title, symbolName: pane.symbolName, viewController: controller)
+        self.init(title: pane.title, glyph: glyph, viewController: controller)
     }
 }

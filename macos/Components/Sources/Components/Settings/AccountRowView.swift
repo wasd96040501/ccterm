@@ -28,10 +28,8 @@ public final class AccountRowView: NSView {
     private var noMarkConstraints: [NSLayoutConstraint] = []
 
     private lazy var infoButton: NSButton = {
-        let image = NSImage(
-            systemSymbolName: "info.circle", accessibilityDescription: String(localized: "Details", bundle: .module))?
-            .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
-        let button = NSButton(image: image ?? NSImage(), target: self, action: #selector(info(_:)))
+        let button = NSButton(image: .settingsInfo, target: self, action: #selector(info(_:)))
+        button.setAccessibilityLabel(String(localized: "Details", bundle: .module))
         button.isBordered = false
         button.imagePosition = .imageOnly
         button.contentTintColor = .secondaryLabelColor
@@ -66,8 +64,7 @@ public final class AccountRowView: NSView {
         subtitleLabel.stringValue = content.subtitle
         mark.isHidden = content.mark == .none
         if content.mark == .provider {
-            mark.image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: nil)?
-                .withSymbolConfiguration(.init(pointSize: 20, weight: .regular))
+            mark.image = .settingsProviderMark
             mark.contentTintColor = .secondaryLabelColor
         } else {
             mark.image = NSImage.claudeMark

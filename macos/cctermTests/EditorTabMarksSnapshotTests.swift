@@ -1,4 +1,5 @@
 import AppKit
+import Components
 import TranscriptWorkspace
 import XCTest
 
@@ -146,7 +147,7 @@ private final class Marks: EditorAreaViewControllerDelegate {
         }
         let mark = views[ObjectIdentifier(page)] ?? ActivityMarkView()
         views[ObjectIdentifier(page)] = mark
-        mark.activity = activity
+        mark.activity = SidebarActivity(activity)
         return mark
     }
 }

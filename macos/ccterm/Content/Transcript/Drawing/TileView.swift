@@ -1,4 +1,5 @@
 import AppKit
+import Components
 
 /// A kind of work as a 16-pt tile: a Lamé squircle |x|⁴ + |y|⁴ = 7.5⁴ — the
 /// sidebar glyphs' family — in a quaternary fill, the kind's glyph in
@@ -91,7 +92,7 @@ final class TileView: NSView {
         switch state {
         case .running: ring.strokeColor = NSColor.secondaryLabelColor.cgColor
         case .background: ring.strokeColor = NSColor.tertiaryLabelColor.cgColor
-        case .waiting: ring.strokeColor = NSColor(resource: .sidebarCoral).cgColor
+        case .waiting: ring.strokeColor = NSColor.sidebarCoral.cgColor
         default: ring.strokeColor = nil
         }
     }
@@ -152,7 +153,7 @@ final class TileView: NSView {
             case .read: return symbol("doc.text")
             case .search: return symbol("magnifyingglass")
             case .web: return symbol("globe")
-            case .agent: return NSImage(resource: .sidebarAgent)
+            case .agent: return NSImage.sidebarAgent
             case .tasks: return symbol("checklist")
             case .schedule: return symbol("clock")
             case .advisor: return symbol("lightbulb")
@@ -162,7 +163,7 @@ final class TileView: NSView {
             case .notify: return symbol("bell")
             case .other: return symbol("puzzlepiece.extension")
             }
-        case .workflow: return NSImage(resource: .sidebarWorkflow)
+        case .workflow: return NSImage.sidebarWorkflow
         case .monitor: return symbol("waveform.path.ecg")
         case .question: return symbol("questionmark.bubble")
         case .plan: return symbol("list.bullet.rectangle.portrait")

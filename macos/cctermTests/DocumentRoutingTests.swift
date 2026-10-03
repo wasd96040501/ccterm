@@ -1,5 +1,6 @@
 import AgentSDK
 import AppKit
+import Components
 import TranscriptWorkspace
 import XCTest
 
@@ -27,7 +28,7 @@ final class DocumentRoutingTests: XCTestCase {
         area = try XCTUnwrap(split.splitViewItems[1].viewController as? EditorAreaViewController)
         let sidebar = try XCTUnwrap(split.splitViewItems[0].viewController as? SidebarViewController)
         let session = LibraryNode(id: url.path, kind: .session, title: "a", transcriptURL: url, children: [])
-        split.sidebarViewController(sidebar, didOpen: session)
+        split.sidebarViewController(sidebar, didOpen: SidebarNode(session))
         transcript = try XCTUnwrap(
             area.activeViewController?.children.lazy.compactMap { $0 as? TranscriptViewController }.first)
     }

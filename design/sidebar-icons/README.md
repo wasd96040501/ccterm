@@ -53,7 +53,7 @@ make sidebar-icons                  # from the repo root; same as the line below
 cd design/sidebar-icons && bun run build
 ```
 
-`build` writes `macos/ccterm/Assets.xcassets/Sidebar` from scratch. Each glyph
+`build` writes `macos/Components/Sources/Components/Resources/Assets.xcassets/Sidebar` from scratch. Each glyph
 becomes `Sidebar<Name>.imageset`, a template SVG with its vector data
 preserved (the conversation's is full colour, see above). A colour of our own becomes a colour set; a system colour is
 named by the app.

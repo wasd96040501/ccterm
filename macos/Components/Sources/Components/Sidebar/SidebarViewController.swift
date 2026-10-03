@@ -1,5 +1,4 @@
 import AppKit
-import Combine
 import UniformTypeIdentifiers
 
 /// The main window's sidebar: the session library as an Xcode-style source
@@ -13,11 +12,8 @@ import UniformTypeIdentifiers
 /// `didOpen`; a double click on a group toggles it. A row with a transcript
 /// drags as its file.
 @MainActor
-final class SidebarViewController: NSViewController {
-    weak var delegate: SidebarViewControllerDelegate?
-
-    private let nodes: AnyPublisher<[LibraryNode]?, Never>
-    private var cancellables = Set<AnyCancellable>()
+public final class SidebarViewController: NSViewController {
+    public weak var delegate: SidebarViewControllerDelegate?
 
     /// The outline's items. `NSOutlineView` tells items apart by identity and
     /// every publish is a new tree, so each node id keeps one `Item` for as
@@ -32,24 +28,17 @@ final class SidebarViewController: NSViewController {
     /// from a New tab isn't in the tree until the CLI writes its transcript.
     private var pendingSelection: URL?
 
-    private let activities: AnyPublisher<[URL: SessionState.Activity], Never>
     /// Each live session's activity, by transcript URL, as last published.
-    private var shownActivities: [URL: SessionState.Activity] = [:]
+    private var shownActivities: [URL: SidebarActivity] = [:]
+    /// Whether the tree has been shown once; until it has, the view says it is loading.
+    private var hasNodes = false
 
-    /// `nodes`: the library's tree, current value first, then each change;
-    /// `nil` until the library is first read. `activities`: each live
-    /// session's, by transcript URL. Both deliver on the main actor.
-    init(
-        nodes: AnyPublisher<[LibraryNode]?, Never>,
-        activities: AnyPublisher<[URL: SessionState.Activity], Never>
-    ) {
-        self.nodes = nodes
-        self.activities = activities
+    public init() {
         super.init(nibName: nil, bundle: nil)
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     private lazy var outlineView: NSOutlineView = {
         let outline = NSOutlineView()
@@ -96,7 +85,7 @@ final class SidebarViewController: NSViewController {
     }()
 
     private lazy var loadingLabel: NSTextField = {
-        let label = NSTextField(labelWithString: String(localized: "Loading…"))
+        let label = NSTextField(labelWithString: String(localized: "Loading…", bundle: .module))
         label.textColor = .secondaryLabelColor
         return label
     }()
@@ -109,11 +98,11 @@ final class SidebarViewController: NSViewController {
         return stack
     }()
 
-    override func loadView() {
+    public override func loadView() {
         view = NSView()
     }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         configureHierarchy()
         configureConstraints()
@@ -123,20 +112,13 @@ final class SidebarViewController: NSViewController {
         outlineView.action = #selector(click(_:))
         outlineView.doubleAction = #selector(doubleClick(_:))
         outlineView.menu = contextMenu
-        // Sunk directly: the current value lands now, so a window shown on the
-        // library's first read shows its tree, not the spinner.
-        nodes
-            .sink { [weak self] nodes in MainActor.assumeIsolated { self?.show(nodes) } }
-            .store(in: &cancellables)
-        activities
-            .sink { [weak self] activities in MainActor.assumeIsolated { self?.show(activities) } }
-            .store(in: &cancellables)
+        showLoading(!hasNodes)
     }
 
-    /// Redraws the rows whose activity changed — a session's, and the groups
+    /// Shows each live session's activity, by transcript URL. Redraws the rows whose activity changed — a session's, and the groups
     /// above it, which show their most urgent session's while collapsed —
     /// and only those: activities change far more often than the tree.
-    private func show(_ activities: [URL: SessionState.Activity]) {
+    public func show(_ activities: [URL: SidebarActivity]) {
         let previous = shownActivities
         shownActivities = activities
         let changed = Set(previous.keys).union(activities.keys).filter { previous[$0] != activities[$0] }
@@ -162,7 +144,7 @@ final class SidebarViewController: NSViewController {
     /// The mark a row draws: a session's own activity, and for a group,
     /// while it is collapsed, its most urgent session's — an expanded group
     /// leaves each session to show its own.
-    private func activity(of item: Item) -> SessionState.Activity? {
+    private func activity(of item: Item) -> SidebarActivity? {
         if outlineView.isItemExpanded(item) { return item.node.transcriptURL.flatMap { shownActivities[$0] } }
         return item.node.mostUrgentActivity(in: shownActivities)
     }
@@ -188,12 +170,16 @@ final class SidebarViewController: NSViewController {
 
     // MARK: - Data
 
-    private func show(_ nodes: [LibraryNode]?) {
+    /// Shows the tree; `nil` while it is still being read. Rows keep their
+    /// expansion and selection across calls.
+    public func show(_ nodes: [SidebarNode]?) {
+        loadViewIfNeeded()
+        hasNodes = nodes != nil
         showLoading(nodes == nil)
         guard let nodes else { return }
         let selected = outlineView.item(atRow: outlineView.selectedRow) as? Item
         var kept: [String: Item] = [:]
-        func item(for node: LibraryNode) -> Item {
+        func item(for node: SidebarNode) -> Item {
             let item = items[node.id] ?? Item(node)
             item.node = node
             item.children = node.children.map(item(for:))
@@ -213,7 +199,7 @@ final class SidebarViewController: NSViewController {
     /// Selects the row of the session at `url` — opening the project it is in —
     /// without reporting it as chosen: the window already shows it. A session the
     /// library doesn't list yet is selected when it does.
-    func select(transcriptAt url: URL?) {
+    public func select(transcriptAt url: URL?) {
         pendingSelection = url
         applyPendingSelection()
     }
@@ -253,7 +239,7 @@ final class SidebarViewController: NSViewController {
     }
 
     @objc private func endSession(_ sender: NSMenuItem) {
-        guard let node = sender.representedObject as? LibraryNode else { return }
+        guard let node = sender.representedObject as? SidebarNode else { return }
         delegate?.sidebarViewController(self, didRequestEndOf: node)
     }
 
@@ -272,19 +258,19 @@ final class SidebarViewController: NSViewController {
 // MARK: - NSOutlineViewDataSource
 
 extension SidebarViewController: NSOutlineViewDataSource {
-    func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
+    public func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
         (item as? Item)?.children.count ?? roots.count
     }
 
-    func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
+    public func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
         (item as? Item)?.children[index] ?? roots[index]
     }
 
-    func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
+    public func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
         !((item as? Item)?.children.isEmpty ?? true)
     }
 
-    func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
+    public func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
         (item as? Item)?.node.transcriptURL as NSURL?
     }
 }
@@ -292,21 +278,21 @@ extension SidebarViewController: NSOutlineViewDataSource {
 // MARK: - NSOutlineViewDelegate
 
 extension SidebarViewController: NSOutlineViewDelegate {
-    func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
+    public func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
         guard let item = item as? Item else { return nil }
         let cell = outlineView.makeView(withIdentifier: .sidebarCell, owner: nil) as? Cell ?? Cell()
-        cell.imageView?.image = item.node.kind.image
-        cell.iconTint = item.node.kind.tintColor
+        cell.imageView?.image = item.node.glyph.image
+        cell.iconTint = item.node.glyph.tintColor
         cell.objectValue = item.node.title
-        cell.toolTip = item.node.kind == .project ? item.node.id : item.node.title
+        cell.toolTip = item.node.toolTip
         cell.activity = activity(of: item)
-        cell.worktreeBranch = item.node.worktreeBranch
+        cell.worktreeCaption = item.node.worktreeCaption
         return cell
     }
 
     /// A group's mark depends on whether it is open.
-    func outlineViewItemDidExpand(_ notification: Notification) { reloadRow(of: notification) }
-    func outlineViewItemDidCollapse(_ notification: Notification) { reloadRow(of: notification) }
+    public func outlineViewItemDidExpand(_ notification: Notification) { reloadRow(of: notification) }
+    public func outlineViewItemDidCollapse(_ notification: Notification) { reloadRow(of: notification) }
 
     private func reloadRow(of notification: Notification) {
         guard let item = notification.userInfo?["NSObject"] as? Item else { return }
@@ -317,7 +303,7 @@ extension SidebarViewController: NSOutlineViewDelegate {
 
     /// Type-to-select, which AppKit would otherwise read from the cell's
     /// `textField` — a `Cell` has none.
-    func outlineView(
+    public func outlineView(
         _ outlineView: NSOutlineView, typeSelectStringFor tableColumn: NSTableColumn?, item: Any
     )
         -> String?
@@ -325,7 +311,7 @@ extension SidebarViewController: NSOutlineViewDelegate {
         (item as? Item)?.node.title
     }
 
-    func outlineViewSelectionDidChange(_ notification: Notification) {
+    public func outlineViewSelectionDidChange(_ notification: Notification) {
         guard let item = outlineView.item(atRow: outlineView.selectedRow) as? Item else {
             reportedSelection = nil
             return
@@ -341,50 +327,17 @@ extension SidebarViewController: NSOutlineViewDelegate {
 // MARK: - NSMenuDelegate
 
 extension SidebarViewController: NSMenuDelegate {
-    func menuNeedsUpdate(_ menu: NSMenu) {
+    public func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         guard let item = outlineView.item(atRow: outlineView.clickedRow) as? Item,
             let url = item.node.transcriptURL, shownActivities[url] != nil
         else { return }
         let end = NSMenuItem(
-            title: String(localized: "End Session"), action: #selector(endSession(_:)), keyEquivalent: "")
+            title: String(localized: "End Session", bundle: .module), action: #selector(endSession(_:)),
+            keyEquivalent: "")
         end.target = self
         end.representedObject = item.node
         menu.addItem(end)
-    }
-}
-
-// MARK: - Activity
-
-extension SessionState.Activity {
-    /// How urgently the reader's eye is wanted: a request to answer first,
-    /// then a failure, then work in flight, then a session merely open.
-    fileprivate var urgency: Int {
-        switch self {
-        case .needsInput: 3
-        case .failed: 2
-        case .responding: 1
-        case .idle: 0
-        }
-    }
-
-    /// The most urgent of `activities`, `nil` when there are none.
-    static func mostUrgent(of activities: some Sequence<SessionState.Activity>) -> SessionState.Activity? {
-        activities.max { $0.urgency < $1.urgency }
-    }
-}
-
-extension LibraryNode {
-    /// The most urgent activity of this node's own session and of every
-    /// session under it, `nil` when none is live.
-    func mostUrgentActivity(in activities: [URL: SessionState.Activity]) -> SessionState.Activity? {
-        var found: [SessionState.Activity] = []
-        func visit(_ node: LibraryNode) {
-            if let url = node.transcriptURL, let activity = activities[url] { found.append(activity) }
-            node.children.forEach(visit)
-        }
-        visit(self)
-        return .mostUrgent(of: found)
     }
 }
 
@@ -413,21 +366,21 @@ extension SidebarViewController {
         private lazy var markWidth = mark.widthAnchor.constraint(equalToConstant: 0)
 
         /// The session's state, drawn as a small trailing mark; `nil` draws none.
-        var activity: SessionState.Activity? {
+        var activity: SidebarActivity? {
             didSet {
                 mark.activity = activity
                 markWidth.constant = activity == nil ? 0 : ActivityMarkView.slot
             }
         }
 
-        /// The branch of the worktree the session ran in; `nil` draws no glyph.
-        var worktreeBranch: String? {
+        /// The words of the worktree's branch glyph; `nil` draws no glyph.
+        var worktreeCaption: String? {
             didSet {
-                let shown = worktreeBranch != nil
+                let shown = worktreeCaption != nil
                 branchGlyph.isHidden = !shown
                 glyphWidth.constant = shown ? Self.glyphSize.width : 0
                 glyphGap.constant = shown ? 5 : 0
-                branchGlyph.toolTip = worktreeBranch.map(SessionTabTitle.worktreeSubtitle(branch:))
+                branchGlyph.toolTip = worktreeCaption
                 branchGlyph.setAccessibilityLabel(branchGlyph.toolTip)
             }
         }
@@ -465,7 +418,7 @@ extension SidebarViewController {
             imageView = image
             title.font = .systemFont(ofSize: NSFont.systemFontSize)
             title.lineBreakMode = .byTruncatingTail
-            branchGlyph.image = NSImage(resource: .sidebarWorktree)
+            branchGlyph.image = NSImage.sidebarWorktree
             branchGlyph.imageScaling = .scaleProportionallyDown
             branchGlyph.contentTintColor = .tertiaryLabelColor
             branchGlyph.isHidden = true
@@ -517,25 +470,25 @@ extension SidebarViewController {
 extension SidebarViewController {
     /// One outline row: a node, and the items of its children.
     private final class Item {
-        var node: LibraryNode
+        var node: SidebarNode
         var children: [Item] = []
 
-        init(_ node: LibraryNode) {
+        init(_ node: SidebarNode) {
             self.node = node
         }
     }
 }
 
-extension LibraryNode.Kind {
+extension SidebarNode.Glyph {
     /// A group is a folder, drawn with the system's folder icon as Finder and
     /// Xcode draw one — except a workflow run, which has its own glyph, as a
     /// conversation and a subagent do (`design/sidebar-icons`).
     fileprivate var image: NSImage? {
         switch self {
-        case .project, .subagents: NSWorkspace.shared.icon(for: .folder)
-        case .session: NSImage(resource: .sidebarSession)
-        case .agent: NSImage(resource: .sidebarAgent)
-        case .workflow: NSImage(resource: .sidebarWorkflow)
+        case .folder: NSWorkspace.shared.icon(for: .folder)
+        case .session: NSImage.sidebarSession
+        case .agent: NSImage.sidebarAgent
+        case .workflow: NSImage.sidebarWorkflow
         }
     }
 
@@ -544,7 +497,7 @@ extension LibraryNode.Kind {
     /// document have their own colours and take none.
     fileprivate var tintColor: NSColor? {
         switch self {
-        case .project, .subagents, .session: nil
+        case .folder, .session: nil
         case .agent: .systemGray
         case .workflow: .systemIndigo
         }

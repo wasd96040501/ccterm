@@ -1,6 +1,7 @@
 import AgentSDK
 import AppKit
 import Combine
+import Components
 import TranscriptWorkspace
 import XCTest
 
@@ -69,7 +70,7 @@ final class MainWindowTests: XCTestCase {
         defer { stage.teardown() }
         await stage.settle()
         let split = try XCTUnwrap(stage.mainSplit)
-        split.sidebarViewController(try sidebar(of: split), didOpen: Self.session("a"))
+        split.sidebarViewController(try sidebar(of: split), didOpen: SidebarNode(Self.session("a")))
         await stage.settle()
 
         let bar = try XCTUnwrap(tabBar(in: stage), "no tab bar with one tab open")
@@ -92,8 +93,8 @@ final class MainWindowTests: XCTestCase {
         await stage.settle()
         let split = try XCTUnwrap(stage.mainSplit)
         let (back, forward) = try navigation(in: stage)
-        split.sidebarViewController(try sidebar(of: split), didOpen: Self.session("a"))
-        split.sidebarViewController(try sidebar(of: split), didOpen: Self.session("b"))
+        split.sidebarViewController(try sidebar(of: split), didOpen: SidebarNode(Self.session("a")))
+        split.sidebarViewController(try sidebar(of: split), didOpen: SidebarNode(Self.session("b")))
 
         stage.window.toolbar?.validateVisibleItems()
         XCTAssertTrue(back.isEnabled)
@@ -123,8 +124,8 @@ final class MainWindowTests: XCTestCase {
         let split = try XCTUnwrap(stage.mainSplit)
         let sidebar = try sidebar(of: split)
 
-        sidebar.delegate?.sidebarViewController(sidebar, didSelect: try Self.node("Named", in: library))
-        sidebar.delegate?.sidebarViewController(sidebar, didSelect: try Self.node("fix it", in: library))
+        sidebar.delegate?.sidebarViewController(sidebar, didSelect: SidebarNode(try Self.node("Named", in: library)))
+        sidebar.delegate?.sidebarViewController(sidebar, didSelect: SidebarNode(try Self.node("fix it", in: library)))
         XCTAssertEqual(tabTitles(of: split), ["fix it"], "premise: the look was replaced")
 
         split.editorArea.goBack(nil)
@@ -157,12 +158,12 @@ final class MainWindowTests: XCTestCase {
         let title = try titleView(in: stage)
         XCTAssertTrue(title.isHidden, "a title with nothing open")
 
-        sidebar.delegate?.sidebarViewController(sidebar, didOpen: try Self.node("Named", in: library))
+        sidebar.delegate?.sidebarViewController(sidebar, didOpen: SidebarNode(try Self.node("Named", in: library)))
         await expect(title, shows: "repo", "feature")
         XCTAssertFalse(title.isHidden)
         XCTAssertEqual(stage.window.title, "repo", "the Window menu names the window something else")
 
-        sidebar.delegate?.sidebarViewController(sidebar, didOpen: try Self.node("fix it", in: library))
+        sidebar.delegate?.sidebarViewController(sidebar, didOpen: SidebarNode(try Self.node("fix it", in: library)))
         await expect(title, shows: "other", nil)
 
         split.editorArea.closeTab(nil)
@@ -190,7 +191,7 @@ final class MainWindowTests: XCTestCase {
         let split = try XCTUnwrap(stage.mainSplit)
         let sidebar = try sidebar(of: split)
         let title = try titleView(in: stage)
-        sidebar.delegate?.sidebarViewController(sidebar, didOpen: try Self.node("Named", in: library))
+        sidebar.delegate?.sidebarViewController(sidebar, didOpen: SidebarNode(try Self.node("Named", in: library)))
         await expect(title, shows: "repo", "feature")
         let transcript = try XCTUnwrap(
             split.editorArea.activeViewController?.children.lazy.compactMap { $0 as? TranscriptViewController }.first)
@@ -227,7 +228,7 @@ final class MainWindowTests: XCTestCase {
         await stage.settle()
         let split = try XCTUnwrap(stage.mainSplit)
         let sidebar = try sidebar(of: split)
-        sidebar.delegate?.sidebarViewController(sidebar, didOpen: try Self.node("Named", in: library))
+        sidebar.delegate?.sidebarViewController(sidebar, didOpen: SidebarNode(try Self.node("Named", in: library)))
         await stage.settle()
         let transcript = try XCTUnwrap(
             split.editorArea.activeViewController?.children.lazy.compactMap { $0 as? TranscriptViewController }.first)
@@ -271,7 +272,7 @@ final class MainWindowTests: XCTestCase {
         await stage.settle()
         let sidebar = try sidebar(of: try XCTUnwrap(stage.mainSplit))
 
-        sidebar.delegate?.sidebarViewController(sidebar, didOpen: try Self.node("Named", in: library))
+        sidebar.delegate?.sidebarViewController(sidebar, didOpen: SidebarNode(try Self.node("Named", in: library)))
         await expect(try titleView(in: stage), shows: "repo", nil)
     }
 
@@ -295,7 +296,7 @@ final class MainWindowTests: XCTestCase {
         await stage.settle()
         let sidebar = try sidebar(of: try XCTUnwrap(stage.mainSplit))
 
-        sidebar.delegate?.sidebarViewController(sidebar, didOpen: try Self.node("Otter", in: library))
+        sidebar.delegate?.sidebarViewController(sidebar, didOpen: SidebarNode(try Self.node("Otter", in: library)))
 
         await expect(try titleView(in: stage), shows: "repo", String(localized: "\("quiet-otter") · worktree"))
     }
@@ -361,7 +362,7 @@ final class MainWindowTests: XCTestCase {
         await stage.settle()
         try await expectFreeResizing(of: stage, "a New tab")
 
-        split.sidebarViewController(try sidebar(of: split), didOpen: Self.session("a"))
+        split.sidebarViewController(try sidebar(of: split), didOpen: SidebarNode(Self.session("a")))
         await stage.settle()
         try await expectFreeResizing(of: stage, "a session's tab")
     }

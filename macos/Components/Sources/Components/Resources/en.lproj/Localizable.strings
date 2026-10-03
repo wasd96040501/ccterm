@@ -27,3 +27,11 @@
 
 /* Settings: the sign-in sheet. */
 "Continue in your browser. CCTerm finishes signing in when you approve access." = "Continue in your browser. CCTerm finishes signing in when you approve access.";
+
+/* Sidebar: the loading state, a live session mark, its context menu. */
+"Loading…" = "Loading…";
+"Idle" = "Idle";
+"Responding" = "Responding";
+"Needs Your Input" = "Needs Your Input";
+"Failed" = "Failed";
+"End Session" = "End Session";

@@ -1,4 +1,5 @@
 import AppKit
+import Components
 import TranscriptWorkspace
 import XCTest
 
@@ -28,52 +29,52 @@ final class MainSplitRoutingTests: XCTestCase {
     }
 
     func testOpeningAnItemAddsATab() {
-        split.sidebarViewController(sidebar, didOpen: session("a"))
+        split.sidebarViewController(sidebar, didOpen: SidebarNode(session("a")))
         XCTAssertEqual(titles(), ["a"])
         XCTAssertEqual(area.activeViewController?.title, "a")
     }
 
     func testOpeningTwoItemsAddsTwoTabs() {
-        split.sidebarViewController(sidebar, didOpen: session("a"))
-        split.sidebarViewController(sidebar, didOpen: session("b"))
+        split.sidebarViewController(sidebar, didOpen: SidebarNode(session("a")))
+        split.sidebarViewController(sidebar, didOpen: SidebarNode(session("b")))
         XCTAssertEqual(titles(), ["a", "b"])
         XCTAssertEqual(area.activeViewController?.title, "b")
     }
 
     func testOpeningAnOpenItemSelectsItsTab() {
-        split.sidebarViewController(sidebar, didOpen: session("a"))
-        split.sidebarViewController(sidebar, didOpen: session("b"))
-        split.sidebarViewController(sidebar, didOpen: session("a"))
+        split.sidebarViewController(sidebar, didOpen: SidebarNode(session("a")))
+        split.sidebarViewController(sidebar, didOpen: SidebarNode(session("b")))
+        split.sidebarViewController(sidebar, didOpen: SidebarNode(session("a")))
         XCTAssertEqual(titles(), ["a", "b"])
         XCTAssertEqual(area.activeViewController?.title, "a")
     }
 
     func testAGroupOpensNothing() {
         let group = LibraryNode(id: "/p/s", kind: .subagents, title: "Subagents", transcriptURL: nil, children: [])
-        split.sidebarViewController(sidebar, didOpen: group)
-        split.sidebarViewController(sidebar, didSelect: group)
+        split.sidebarViewController(sidebar, didOpen: SidebarNode(group))
+        split.sidebarViewController(sidebar, didSelect: SidebarNode(group))
         XCTAssertEqual(titles(), [])
     }
 
     func testSelectingShowsEachInTheOneTemporaryTab() {
-        split.sidebarViewController(sidebar, didSelect: session("a"))
-        split.sidebarViewController(sidebar, didSelect: session("b"))
+        split.sidebarViewController(sidebar, didSelect: SidebarNode(session("a")))
+        split.sidebarViewController(sidebar, didSelect: SidebarNode(session("b")))
         XCTAssertEqual(titles(), ["b"])
         XCTAssertEqual(area.activeGroup.previewTabViewItem?.viewController?.title, "b")
     }
 
     func testOpeningTheTemporaryTabsItemKeepsIt() {
-        split.sidebarViewController(sidebar, didSelect: session("a"))
-        split.sidebarViewController(sidebar, didOpen: session("a"))
-        split.sidebarViewController(sidebar, didSelect: session("b"))
+        split.sidebarViewController(sidebar, didSelect: SidebarNode(session("a")))
+        split.sidebarViewController(sidebar, didOpen: SidebarNode(session("a")))
+        split.sidebarViewController(sidebar, didSelect: SidebarNode(session("b")))
         XCTAssertEqual(titles(), ["a", "b"])
         XCTAssertEqual(area.activeGroup.previewTabViewItem?.viewController?.title, "b")
     }
 
     func testSelectingAnOpenItemSelectsItsTab() {
-        split.sidebarViewController(sidebar, didOpen: session("a"))
-        split.sidebarViewController(sidebar, didOpen: session("b"))
-        split.sidebarViewController(sidebar, didSelect: session("a"))
+        split.sidebarViewController(sidebar, didOpen: SidebarNode(session("a")))
+        split.sidebarViewController(sidebar, didOpen: SidebarNode(session("b")))
+        split.sidebarViewController(sidebar, didSelect: SidebarNode(session("a")))
         XCTAssertEqual(titles(), ["a", "b"])
         XCTAssertEqual(area.activeViewController?.title, "a")
         XCTAssertNil(area.activeGroup.previewTabViewItem)
@@ -82,8 +83,8 @@ final class MainSplitRoutingTests: XCTestCase {
     /// ⌘W is sent to nil. With the focus in the sidebar — outside the area —
     /// the split hands it to the area, which closes the active tab.
     func testCloseTabFromTheSidebarClosesTheActiveTab() throws {
-        split.sidebarViewController(sidebar, didOpen: session("a"))
-        split.sidebarViewController(sidebar, didOpen: session("b"))
+        split.sidebarViewController(sidebar, didOpen: SidebarNode(session("a")))
+        split.sidebarViewController(sidebar, didOpen: SidebarNode(session("b")))
         let outline = try XCTUnwrap(stage.find(NSOutlineView.self))
         XCTAssertTrue(stage.window.makeFirstResponder(outline), "premise: the sidebar has the focus")
 

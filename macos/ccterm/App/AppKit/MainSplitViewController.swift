@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import Components
 import TranscriptWorkspace
 
 /// The main window's sidebar/detail split: the session library on the left,
@@ -54,11 +55,7 @@ final class MainSplitViewController: NSSplitViewController {
     init(library: LibraryStore, context: TranscriptTab.Context) {
         self.library = library
         self.context = context
-        let sessions = context.sessions
-        sidebarViewController = SidebarViewController(
-            nodes: library.$isLoaded.combineLatest(library.$nodes) { isLoaded, nodes in isLoaded ? nodes : nil }
-                .eraseToAnyPublisher(),
-            activities: sessions.$activities.eraseToAnyPublisher())
+        sidebarViewController = SidebarViewController()
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -94,6 +91,14 @@ final class MainSplitViewController: NSSplitViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         sidebarViewController.delegate = self
+        // Sunk directly: the current value lands now, so a window shown on the
+        // library's first read shows its tree, not the spinner.
+        library.$isLoaded.combineLatest(library.$nodes) { isLoaded, nodes in isLoaded ? nodes : nil }
+            .sink { [weak self] nodes in self?.sidebarViewController.show(nodes?.map(SidebarNode.init)) }
+            .store(in: &subscriptions)
+        sessions.$activities
+            .sink { [weak self] in self?.sidebarViewController.show($0.mapValues(SidebarActivity.init)) }
+            .store(in: &subscriptions)
         editorArea.delegate = self
         editorArea.registerForDraggedTypes([.fileURL])
         editorArea.showsNewTabButton = true
@@ -244,7 +249,7 @@ extension MainSplitViewController: TranscriptTabDelegate {
 }
 
 extension MainSplitViewController: SidebarViewControllerDelegate {
-    func sidebarViewController(_ sidebar: SidebarViewController, didSelect node: LibraryNode) {
+    func sidebarViewController(_ sidebar: SidebarViewController, didSelect node: SidebarNode) {
         guard let url = node.transcriptURL,
             !editorArea.selectTabViewItem(withIdentifier: TranscriptTab.transcript(url))
         else { return }
@@ -254,12 +259,12 @@ extension MainSplitViewController: SidebarViewControllerDelegate {
     }
 
     /// End Session: the session's CLI exits; its transcript stays.
-    func sidebarViewController(_ sidebar: SidebarViewController, didRequestEndOf node: LibraryNode) {
+    func sidebarViewController(_ sidebar: SidebarViewController, didRequestEndOf node: SidebarNode) {
         guard let url = node.transcriptURL else { return }
         Task { await sessions.end(at: url) }
     }
 
-    func sidebarViewController(_ sidebar: SidebarViewController, didOpen node: LibraryNode) {
+    func sidebarViewController(_ sidebar: SidebarViewController, didOpen node: SidebarNode) {
         guard let url = node.transcriptURL else { return }
         guard !editorArea.selectTabViewItem(withIdentifier: TranscriptTab.transcript(url), pinning: true) else {
             return
@@ -310,7 +315,7 @@ extension MainSplitViewController: EditorAreaViewControllerDelegate {
         else { return nil }
         let mark = marks[url] ?? ActivityMarkView()
         marks[url] = mark
-        mark.activity = activity
+        mark.activity = SidebarActivity(activity)
         return mark
     }
 

@@ -1,5 +1,5 @@
 import AppKit
-import Combine
+import Components
 import XCTest
 
 @testable import ccterm
@@ -38,9 +38,10 @@ final class SidebarActivitySnapshotTests: XCTestCase {
             LibraryNode(id: "/x", kind: .project, title: "repo", transcriptURL: nil, children: children),
             LibraryNode(id: "/y", kind: .project, title: "other (collapsed)", transcriptURL: nil, children: [other]),
         ]
-        let sidebar = SidebarViewController(
-            nodes: Just(nodes).eraseToAnyPublisher(), activities: Just(activities).eraseToAnyPublisher())
+        let sidebar = SidebarViewController()
         sidebar.loadViewIfNeeded()
+        sidebar.show(nodes.map(SidebarNode.init))
+        sidebar.show(activities.mapValues(SidebarActivity.init))
         sidebar.view.appearance = NSAppearance(named: appearance)
         let outline = try XCTUnwrap(Self.find(NSOutlineView.self, in: sidebar.view))
         outline.allowsMultipleSelection = true
@@ -91,9 +92,10 @@ final class SidebarActivitySnapshotTests: XCTestCase {
             let part = try DesignParity.part(id, .light)
             NSApp.appearance = NSAppearance(named: appearance)
             defer { NSApp.appearance = nil }
-            let sidebar = SidebarViewController(
-                nodes: Just(nodes).eraseToAnyPublisher(), activities: Just(activities).eraseToAnyPublisher())
+            let sidebar = SidebarViewController()
             sidebar.loadViewIfNeeded()
+            sidebar.show(nodes.map(SidebarNode.init))
+            sidebar.show(activities.mapValues(SidebarActivity.init))
             let window = CompositedCapture.mount(
                 sidebar, size: NSSize(width: part.width, height: part.height),
                 appearance: NSAppearance(named: appearance))

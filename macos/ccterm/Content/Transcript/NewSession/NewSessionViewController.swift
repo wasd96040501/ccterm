@@ -1,4 +1,5 @@
 import AppKit
+import Components
 
 /// The New view (design 08): centred a third of the way down — the app icon
 /// at 64 pt over its still glow, the folder as a 22-pt pop-up title with its
@@ -61,7 +62,7 @@ final class NewSessionViewController: NSViewController {
     private lazy var branchChip: NewSessionChip = {
         let chip = NewSessionChip(title: "", look: .row)
         // The design's branch glyph, 10 × 11 on the pop-up.
-        let glyph = NSImage(resource: .sidebarWorktree)
+        let glyph = NSImage.sidebarWorktree
         glyph.size = NSSize(width: 10, height: 11)
         chip.glyph = glyph
         chip.toolTip = String(localized: "Branch")

@@ -1,5 +1,6 @@
 import AgentSDK
 import AppKit
+import Components
 import TranscriptKit
 import TranscriptWorkspace
 import XCTest
@@ -101,7 +102,9 @@ final class TranscriptViewControllerTests: XCTestCase {
         let sidebar = try XCTUnwrap(split.splitViewItems[0].viewController as? SidebarViewController)
         let area = try XCTUnwrap(split.splitViewItems[1].viewController as? EditorAreaViewController)
         split.sidebarViewController(
-            sidebar, didOpen: LibraryNode(id: url.path, kind: .session, title: "long", transcriptURL: url, children: [])
+            sidebar,
+            didOpen: SidebarNode(
+                LibraryNode(id: url.path, kind: .session, title: "long", transcriptURL: url, children: []))
         )
         let transcript = try XCTUnwrap(stage.find(TranscriptView.self))
         XCTAssertTrue(stage.drainUntil(timeout: 10) { transcript.numberOfRows > 0 })

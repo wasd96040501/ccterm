@@ -27,3 +27,11 @@
 
 /* Settings: the sign-in sheet. */
 "Continue in your browser. CCTerm finishes signing in when you approve access." = "请在浏览器中继续。你批准访问后，CCTerm 会完成登录。";
+
+/* Sidebar: the loading state, a live session mark, its context menu. */
+"Loading…" = "正在载入…";
+"Idle" = "空闲";
+"Responding" = "正在回复";
+"Needs Your Input" = "需要你的输入";
+"Failed" = "失败";
+"End Session" = "结束会话";

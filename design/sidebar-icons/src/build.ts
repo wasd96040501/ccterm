@@ -1,5 +1,5 @@
 // Build the sidebar's glyphs: the geometry below → SVG image sets in
-// macos/ccterm/Assets.xcassets/Sidebar, plus index.html, the design sheet,
+// macos/Components/Sources/Components/Resources/Assets.xcassets/Sidebar, plus index.html, the design sheet,
 // drawn from the same paths. The subagent and the workflow are template glyphs
 // tinted by the system's colours; the conversation is a full-colour document
 // icon (white paper, the app's prompt on it) that is never tinted.
@@ -10,7 +10,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 
 const ROOT = resolve(import.meta.dir, "../../..")
-const ASSETS = join(ROOT, "macos/ccterm/Assets.xcassets/Sidebar")
+const ASSETS = join(ROOT, "macos/Components/Sources/Components/Resources/Assets.xcassets/Sidebar")
 const SHEET = resolve(import.meta.dir, "../index.html")
 
 // MARK: - Colour: as Xcode colours its file types

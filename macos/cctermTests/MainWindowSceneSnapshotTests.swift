@@ -1,6 +1,7 @@
 import AgentSDK
 import AppKit
 import Combine
+import Components
 import XCTest
 
 @testable import ccterm
@@ -82,7 +83,7 @@ final class MainWindowSceneSnapshotTests: XCTestCase {
                         Self.find("Row gap and tool rows", in: library.nodes),
                         "no session in \(library.nodes.map(\.title))")
                     let sidebar = try XCTUnwrap(split.splitViewItems[0].viewController as? SidebarViewController)
-                    split.sidebarViewController(sidebar, didOpen: node)
+                    split.sidebarViewController(sidebar, didOpen: SidebarNode(node))
                     try await settle(seconds: 0.5)
                 }
                 if scene == "new" { split.newTab() }

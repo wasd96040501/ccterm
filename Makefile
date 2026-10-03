@@ -141,7 +141,7 @@ dmg: ## Create DMG installer (usage: make dmg APP=/path/to/ccterm.app)
 icon: ## Regenerate AppIcon.icon and the AppIconArt image set from design/icon (+ review renders in design/icon/out)
 	cd design/icon && bun install --frozen-lockfile && bun run build
 
-sidebar-icons: ## Regenerate the sidebar glyph assets (Assets.xcassets/Sidebar) from design/sidebar-icons
+sidebar-icons: ## Regenerate the sidebar glyph assets (Components/Resources/Assets.xcassets/Sidebar) from design/sidebar-icons
 	cd design/sidebar-icons && bun run build
 
 new-view-icons: ## Regenerate the New view's glyph assets (Assets.xcassets/NewView) from design/new-view-icons

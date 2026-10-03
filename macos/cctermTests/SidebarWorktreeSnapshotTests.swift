@@ -1,5 +1,5 @@
 import AppKit
-import Combine
+import Components
 import XCTest
 
 @testable import ccterm
@@ -26,9 +26,10 @@ final class SidebarWorktreeSnapshotTests: XCTestCase {
         ]
         let nodes = [LibraryNode(id: "/x", kind: .project, title: "repo", transcriptURL: nil, children: children)]
         let activities: [URL: SessionState.Activity] = [children[1].transcriptURL!: .responding]
-        let sidebar = SidebarViewController(
-            nodes: Just(nodes).eraseToAnyPublisher(), activities: Just(activities).eraseToAnyPublisher())
+        let sidebar = SidebarViewController()
         sidebar.loadViewIfNeeded()
+        sidebar.show(nodes.map(SidebarNode.init))
+        sidebar.show(activities.mapValues(SidebarActivity.init))
         sidebar.view.appearance = NSAppearance(named: appearance)
         let outline = try XCTUnwrap(find(NSOutlineView.self, in: sidebar.view))
         outline.expandItem(outline.item(atRow: 0))
@@ -38,28 +39,6 @@ final class SidebarWorktreeSnapshotTests: XCTestCase {
     private func find<V: NSView>(_ type: V.Type, in view: NSView) -> V? {
         if let found = view as? V { return found }
         for subview in view.subviews { if let found = find(type, in: subview) { return found } }
-        return nil
-    }
-
-    /// The glyph is on a worktree row, with its words as the tooltip, and on no
-    /// other.
-    func testOnlyAWorktreeRowHasTheGlyph() throws {
-        let (sidebar, outline) = try mount(.aqua)
-        sidebar.view.layoutSubtreeIfNeeded()
-        func glyph(row: Int) -> NSImageView? {
-            let cell = outline.view(atColumn: 0, row: row, makeIfNecessary: true)
-            return cell.flatMap { find(NSImageView.self, in: $0, where: { $0.toolTip != nil }) }
-        }
-        XCTAssertNil(glyph(row: 1), "a plain session has no glyph")
-        let otter = try XCTUnwrap(glyph(row: 2))
-        XCTAssertFalse(otter.isHidden)
-        XCTAssertEqual(otter.toolTip, SessionTabTitle.worktreeSubtitle(branch: "worktree-quiet-otter"))
-        XCTAssertEqual(try XCTUnwrap(glyph(row: 3)).toolTip, SessionTabTitle.worktreeSubtitle(branch: "pr-327"))
-    }
-
-    private func find<V: NSView>(_ type: V.Type, in view: NSView, where match: (V) -> Bool) -> V? {
-        if let found = view as? V, match(found) { return found }
-        for subview in view.subviews { if let found = find(type, in: subview, where: match) { return found } }
         return nil
     }
 

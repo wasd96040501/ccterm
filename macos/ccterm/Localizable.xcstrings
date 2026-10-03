@@ -510,6 +510,16 @@
         }
       }
     },
+    "Advice": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "建议"
+          }
+        }
+      }
+    },
     "Advisor": {
       "localizations": {
         "zh-Hans": {
@@ -2251,6 +2261,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "监视器事件"
+          }
+        }
+      }
+    },
+    "Moved into %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "进入了 %@"
           }
         }
       }

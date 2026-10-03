@@ -154,8 +154,9 @@ final class WorkLineRowView: NSView, PageRowView {
         return result
     }
 
-    /// The text, then the detail in monospaced tertiary: one run of words,
-    /// so a short line cuts the detail before it cuts the text.
+    /// The text, then the detail in tertiary — monospaced for code, the text's
+    /// face for words (`.callsub`), 6 pt after it: one run of words, so a short
+    /// line cuts the detail before it cuts the text.
     private static func summaryString(_ line: WorkLine) -> NSAttributedString {
         let result = NSMutableAttributedString(
             attributedString: line.text.attributedString(font: textFont, color: .secondaryLabelColor))
@@ -163,7 +164,10 @@ final class WorkLineRowView: NSView, PageRowView {
             result.append(NSAttributedString(string: " ", attributes: [.font: textFont, .kern: 2.6]))
             result.append(
                 NSAttributedString(
-                    string: detail, attributes: [.font: detailFont, .foregroundColor: NSColor.tertiaryLabelColor]))
+                    string: detail,
+                    attributes: [
+                        .font: line.detailIsWords ? textFont : detailFont, .foregroundColor: NSColor.tertiaryLabelColor,
+                    ]))
         }
         return truncated(result)
     }

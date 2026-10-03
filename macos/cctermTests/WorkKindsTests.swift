@@ -109,6 +109,28 @@ final class WorkKindsTests: XCTestCase {
         XCTAssertEqual(run(s).line.text.string, String(localized: "Asked the advisor \(2) times"))
     }
 
+    /// Inside a run the item is the thing itself (preview.js `callLabel`):
+    /// *Advice* when it is in the clear, the skill's name, *To* the party; the
+    /// advisor's and the message's details are words, not code.
+    func testARunsItemsAreNamedByWhatTheyAre() throws {
+        var s = MessageScript()
+        s.advisor("adv", .result(text: "Split the tab bar first.", stopReason: nil))
+        s.call("s1", "Skill", #"{"skill":"dataviz","args":"a chart"}"#)
+        s.result("s1")
+        s.call("m1", "SendMessage", #"{"to":"team-lead","summary":"Status","message":"All done."}"#)
+        s.result("m1")
+        let items = run(s).items
+        XCTAssertEqual(items.count, 3)
+        XCTAssertEqual(items[0].line.text.string, String(localized: "Advice"))
+        XCTAssertTrue(items[0].line.detailIsWords)
+        XCTAssertEqual(items[1].line.text.string, "dataviz")
+        XCTAssertNil(items[1].line.detail)
+        XCTAssertFalse(items[1].line.detailIsWords)
+        XCTAssertEqual(items[2].line.text.string, String(localized: "To \("team-lead")"))
+        XCTAssertEqual(items[2].line.detail, "Status")
+        XCTAssertTrue(items[2].line.detailIsWords)
+    }
+
     // MARK: - Skill, worktree, notify
 
     func testASkillNamesItself() {
@@ -120,25 +142,35 @@ final class WorkKindsTests: XCTestCase {
         XCTAssertEqual(line.tile.glyph, .tool(.skill))
     }
 
+    /// The worktree is named in the line, by where it is (preview.js `callLabel`).
     func testWorktreesAreMovedIntoAndLeft() {
         var s = MessageScript()
         s.call("w1", "EnterWorktree", #"{"name":"fix"}"#)
         s.result("w1")
-        XCTAssertEqual(run(s).line.text.string, String(localized: "Moved into a worktree"))
-        XCTAssertEqual(run(s).line.detail, "fix")
+        XCTAssertEqual(run(s).line.text.string, String(localized: "Moved into \(".claude/worktrees/fix")"))
+        XCTAssertNil(run(s).line.detail)
+        var u = MessageScript()
+        u.call("w3", "EnterWorktree", "{}")
+        u.result("w3")
+        XCTAssertEqual(run(u).line.text.string, String(localized: "Moved into a worktree"))
         var t = MessageScript()
         t.call("w2", "ExitWorktree", #"{"action":"keep"}"#)
         t.result("w2")
         XCTAssertEqual(run(t).line.text.string, String(localized: "Left the worktree"))
     }
 
+    /// The notification is its own words, quoted; with none, what happened.
     func testANotificationIsSentToYou() {
         var s = MessageScript()
         s.call("n1", "PushNotification", #"{"message":"Build done\nall green"}"#)
         s.result("n1")
         let line = run(s).line
-        XCTAssertEqual(line.text.string, String(localized: "Sent you a notification"))
-        XCTAssertEqual(line.detail, "Build done")
+        XCTAssertEqual(line.text.string, String(localized: "“\("Build done")”"))
+        XCTAssertNil(line.detail)
+        var t = MessageScript()
+        t.call("n2", "PushNotification", #"{"message":""}"#)
+        t.result("n2")
+        XCTAssertEqual(run(t).line.text.string, String(localized: "Sent you a notification"))
     }
 
     // MARK: - SendMessage

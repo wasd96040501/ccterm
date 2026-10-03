@@ -18,6 +18,9 @@ nonisolated struct WorkLine: Sendable, Equatable {
     /// A command's first line, a file's folder: monospaced, tertiary, after
     /// the text. Cut first.
     var detail: String?
+    /// The detail is words, not code — a message's summary, the advice's first
+    /// line (`.callsub`): the text's face, tertiary.
+    var detailIsWords = false
     /// *· 1 failed*, *· Interrupted*: set apart from the text and never cut.
     var exceptions: StyledText
     /// Trailing: lines added and removed, time, a count. Monospaced digits.

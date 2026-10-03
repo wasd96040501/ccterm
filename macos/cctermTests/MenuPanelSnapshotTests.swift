@@ -5,23 +5,16 @@ import XCTest
 
 @testable import ccterm
 
-/// Every pop-up of the composer and the New view's branch menu — one `MenuPanelViewController`
-/// — beside the design's playground opening the same menu from its New tab
-/// (`<scheme>-live-<menu>` in `make design-shots`), in the same state: the
-/// model on *Default (recommended)*, High effort, Auto mode,
-/// and the branches the playground's ccterm has (the folder menu is the New
-/// view's own: `NewSessionSpecimen`).
+/// The New view's branch menu — the one menu the app still builds — in a
+/// `MenuPanelViewController` beside the design's playground opening it from its New tab
+/// (`<scheme>-live-branch` in `make design-shots`), with the branches the
+/// playground's ccterm has. The composer's menus and the folder menu are the
+/// package's own: `ComposerSpecimen`, `NewSessionSpecimen`.
 /// Review only — `TEST_LANGUAGE=en make test-unit FILTER=MenuPanelSnapshotTests`
 /// after `make design-shots`, then `/tmp/ccterm-parity/<scheme>-live-<menu>.png`.
 /// Needs the display awake.
 @MainActor
 final class MenuPanelSnapshotTests: XCTestCase {
-    private typealias F = ComposerFixtures
-
-    private func composer() -> ComposerModel {
-        F.model(.draft, settings: F.settings("default", effort: .high, mode: .auto))
-    }
-
     private func branches() -> NewSessionModel.BranchList {
         func item(
             _ name: String, _ subtitle: String? = nil, enabled: Bool = true, chosen: Bool = false
@@ -40,18 +33,13 @@ final class MenuPanelSnapshotTests: XCTestCase {
     }
 
     private func content(of menu: String) -> MenuContent {
-        switch menu {
-        case "model": ComposerMenu.modelContent(of: composer(), expanded: [])
-        case "effort": ComposerMenu.content(of: composer().effortMenu)
-        case "mode": ComposerMenu.content(of: composer().modeMenu)
-        default: NewSessionMenu.branchContent(of: branches(), query: "")
-        }
+        NewSessionMenu.branchContent(of: branches(), query: "")
     }
 
     func testEveryMenuAgainstTheDesign() async throws {
         var report: [String] = []
         for scheme in DesignParity.Scheme.allCases {
-            for menu in ["model", "effort", "mode", "branch"] {
+            for menu in ["branch"] {
                 let id = "live-\(menu)"
                 let part = try DesignParity.part(id, scheme)
                 let controller = MenuPanelViewController()

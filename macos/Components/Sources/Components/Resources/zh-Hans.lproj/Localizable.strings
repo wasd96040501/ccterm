@@ -98,3 +98,14 @@
 "Open" = "打开";
 "Copy" = "复制";
 "Show all %lld lines" = "显示全部 %lld 行";
+/* Composer */
+"Send" = "发送";
+"New Line" = "换行";
+"Mode" = "模式";
+"Commands" = "命令";
+"Stop" = "停止";
+"Show Log" = "显示日志";
+"Restart" = "重新启动";
+"Claude quit unexpectedly" = "Claude 意外退出";
+"%lld More Models" = "另外 %lld 个模型";
+"Fast Mode" = "快速模式";

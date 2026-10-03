@@ -1,4 +1,5 @@
 import AppKit
+import DisplayModels
 
 /// The card's top section when the session's CLI quit (design 08 *Failed*,
 /// preview-live.css `.lv-banner`): a 6 % red wash with a hairline under it, a
@@ -24,8 +25,8 @@ final class ComposerFailureView: NSView {
     private let titleLabel = NSTextField(labelWithString: "")
     private let detailLabel = NSTextField(wrappingLabelWithString: "")
     private let textStack = NSStackView()
-    private let logButton = BannerButton(title: String(localized: "Show Log"), isDefault: false)
-    private let restartButton = BannerButton(title: String(localized: "Restart"), isDefault: true)
+    private let logButton = BannerButton(title: String(localized: "Show Log", bundle: .module), isDefault: false)
+    private let restartButton = BannerButton(title: String(localized: "Restart", bundle: .module), isDefault: true)
     private let buttons = NSStackView()
     private let hairline = NSView()
 
@@ -89,7 +90,7 @@ final class ComposerFailureView: NSView {
             addSubview(view)
         }
         setAccessibilityRole(.group)
-        setAccessibilityLabel(String(localized: "Claude quit unexpectedly"))
+        setAccessibilityLabel(String(localized: "Claude quit unexpectedly", bundle: .module))
     }
 
     private func configureConstraints() {
@@ -111,7 +112,7 @@ final class ComposerFailureView: NSView {
     }
 
     /// Shows `failure`. Idempotent.
-    func configure(with failure: ComposerModel.Failure) {
+    func configure(with failure: ComposerPresentation.Failure) {
         titleLabel.stringValue = failure.title
         detailLabel.attributedStringValue = Self.detail(failure)
         setAccessibilityLabel(failure.title)
@@ -121,7 +122,7 @@ final class ComposerFailureView: NSView {
     /// `.why`: 11 pt secondary, the output in the monospaced face. Its lines
     /// are 15 pt, which the monospaced run's own box grows to 15.5 as the
     /// sheet draws them.
-    private static func detail(_ failure: ComposerModel.Failure) -> NSAttributedString {
+    private static func detail(_ failure: ComposerPresentation.Failure) -> NSAttributedString {
         let line = NSMutableParagraphStyle()
         line.minimumLineHeight = 15.5
         line.maximumLineHeight = 15.5
@@ -146,6 +147,11 @@ final class ComposerFailureView: NSView {
             - Self.insets.right
         let nextNarrow = bounds.width > 0 && room < Self.narrowestWords
         if nextNarrow != isNarrow { isNarrow = nextNarrow }
+        // The detail wraps at the words' own width, so its height is its lines'.
+        let words = nextNarrow ? room + buttons.fittingSize.width + Self.columnGap : room
+        if bounds.width > 0, abs(detailLabel.preferredMaxLayoutWidth - words) > 0.5 {
+            detailLabel.preferredMaxLayoutWidth = words
+        }
         super.layout()
     }
 

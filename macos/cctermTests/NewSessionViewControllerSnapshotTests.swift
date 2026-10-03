@@ -234,10 +234,10 @@ private final class ParityHost: NSViewController {
     private let newSession = NewSessionViewController()
     private let composer = ComposerViewController()
     private let model: NewSessionModel
-    private let composerModel: ComposerModel
+    private let composerModel: ComposerPresentation
     private let page: NSColor
 
-    init(model: NewSessionModel, composer: ComposerModel, page: NSColor) {
+    init(model: NewSessionModel, composer: ComposerPresentation, page: NSColor) {
         self.model = model
         composerModel = composer
         self.page = page

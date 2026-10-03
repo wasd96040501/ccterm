@@ -116,16 +116,6 @@
         }
       }
     },
-    "%lld More Models": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "另外 %lld 个模型"
-          }
-        }
-      }
-    },
     "%lld agents": {
       "localizations": {
         "zh-Hans": {
@@ -1067,16 +1057,6 @@
         }
       }
     },
-    "Commands": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "命令"
-          }
-        }
-      }
-    },
     "Compacted automatically": {
       "localizations": {
         "zh-Hans": {
@@ -1490,16 +1470,6 @@
         }
       }
     },
-    "Fast Mode": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "快速模式"
-          }
-        }
-      }
-    },
     "Faster output on Opus · billed as extra usage": {
       "localizations": {
         "zh-Hans": {
@@ -1902,16 +1872,6 @@
         }
       }
     },
-    "Mode": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "模式"
-          }
-        }
-      }
-    },
     "Monitor event": {
       "localizations": {
         "zh-Hans": {
@@ -1958,16 +1918,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "需要批准"
-          }
-        }
-      }
-    },
-    "New Line": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "换行"
           }
         }
       }
@@ -2857,16 +2807,6 @@
         }
       }
     },
-    "Send": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "发送"
-          }
-        }
-      }
-    },
     "Send ↩": {
       "localizations": {
         "zh-Hans": {
@@ -2975,16 +2915,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示其余 %lld 项"
-          }
-        }
-      }
-    },
-    "Show Log": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "显示日志"
           }
         }
       }
@@ -3098,16 +3028,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "仍在检查"
-          }
-        }
-      }
-    },
-    "Stop": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "停止"
           }
         }
       }

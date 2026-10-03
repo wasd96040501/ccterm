@@ -72,7 +72,9 @@ final class TranscriptViewControllerTests: XCTestCase {
         self.stage = stage
         stage.rootViewController.viewDidAppear()
         let transcript = try XCTUnwrap(stage.find(TranscriptView.self))
-        let composer = try XCTUnwrap(stage.find(ComposerView.self))
+        let composer = try XCTUnwrap(
+            stage.rootViewController.children.compactMap { $0 as? ComposerViewController }.first
+        ).view
         XCTAssertTrue(stage.drainUntil(timeout: 5) { transcript.numberOfRows == 10 })
         let host = stage.rootViewController.view
         host.layoutSubtreeIfNeeded()

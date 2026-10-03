@@ -50,13 +50,6 @@ final class SessionTabViewControllerTests: XCTestCase {
         try XCTUnwrap(tab.children.compactMap { $0 as? ComposerViewController }.first)
     }
 
-    private func card(of composer: ComposerViewController) -> ComposerView? {
-        func walk(_ view: NSView) -> ComposerView? {
-            (view as? ComposerView) ?? view.subviews.lazy.compactMap(walk).first
-        }
-        return walk(composer.view)
-    }
-
     private func newSession(of tab: SessionTabViewController) -> NewSessionViewController? {
         tab.children.compactMap { $0 as? NewSessionViewController }.first
     }
@@ -167,7 +160,7 @@ final class SessionTabViewControllerTests: XCTestCase {
         let context = context(catalog: catalog)
         let tab = mountDraft(context: context)
 
-        tab.composerViewController(try composer(of: tab), didChoose: .permissionMode(.plan))
+        tab.composerViewController(try composer(of: tab), didChoose: ComposerModel.id(of: .permissionMode(.plan)))
 
         XCTAssertEqual(context.defaults.settings(catalog: catalog)?.permissionMode, .plan)
     }
@@ -292,7 +285,7 @@ final class SessionTabViewControllerTests: XCTestCase {
         let tab = mountDraft()
         XCTAssertTrue(tab.isUntouchedDraft)
 
-        try XCTUnwrap(card(of: try composer(of: tab))).complete(command: "review")
+        try composer(of: tab).text = "/review"
 
         XCTAssertEqual(try composer(of: tab).text, "/review")
         XCTAssertFalse(tab.isUntouchedDraft)

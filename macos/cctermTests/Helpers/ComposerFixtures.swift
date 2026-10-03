@@ -1,4 +1,5 @@
 import AgentSDK
+import DisplayModels
 import Foundation
 
 @testable import ccterm
@@ -106,9 +107,9 @@ enum ComposerFixtures {
         pendingModel: ModelChoice? = nil, pendingFast: Bool? = nil, catalog: ModelCatalog = ComposerFixtures.catalog,
         allowsBypass: Bool = false, usage: Double? = nil, refusal: String? = nil,
         commands: [SlashCommand] = ComposerFixtures.commands
-    ) -> ComposerModel {
-        ComposerModel(
-            ComposerModel.Input(
+    ) -> ComposerPresentation {
+        ComposerModel.presentation(
+            of: ComposerModel.Input(
                 context: context, placement: context == .draft ? .page : .floating, settings: settings,
                 pendingModel: pendingModel, pendingFastMode: pendingFast,
                 catalog: catalog, allowsBypassPermissions: allowsBypass, contextUsage: usage, refusal: refusal,

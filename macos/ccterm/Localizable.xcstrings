@@ -439,32 +439,12 @@
         }
       }
     },
-    "Account": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "账户"
-          }
-        }
-      }
-    },
     "Accounts": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "账户"
-          }
-        }
-      }
-    },
-    "Add": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "添加"
           }
         }
       }
@@ -612,16 +592,6 @@
         }
       }
     },
-    "Arguments": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "参数"
-          }
-        }
-      }
-    },
     "Ask": {
       "localizations": {
         "zh-Hans": {
@@ -722,16 +692,6 @@
         }
       }
     },
-    "Authentication": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "认证方式"
-          }
-        }
-      }
-    },
     "Auto": {
       "localizations": {
         "zh-Hans": {
@@ -758,16 +718,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "快速模式开启时无法使用自动模式。"
-          }
-        }
-      }
-    },
-    "Automatic": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自动"
           }
         }
       }
@@ -1208,16 +1158,6 @@
         }
       }
     },
-    "Connection": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接"
-          }
-        }
-      }
-    },
     "Context Usage": {
       "comment": "The title of the document the context ring opens.",
       "localizations": {
@@ -1420,16 +1360,6 @@
         }
       }
     },
-    "Delete…": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "删除…"
-          }
-        }
-      }
-    },
     "Denied": {
       "localizations": {
         "zh-Hans": {
@@ -1561,32 +1491,12 @@
         }
       }
     },
-    "Email": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "电子邮件"
-          }
-        }
-      }
-    },
     "Enter a URL that starts with http:// or https://.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "请输入以 http:// 或 https:// 开头的 URL。"
-          }
-        }
-      }
-    },
-    "Environment Variables": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "环境变量"
           }
         }
       }
@@ -1891,16 +1801,6 @@
         }
       }
     },
-    "Launch": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "启动"
-          }
-        }
-      }
-    },
     "Launch Command": {
       "localizations": {
         "zh-Hans": {
@@ -2023,16 +1923,6 @@
         }
       }
     },
-    "Manage": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "管理"
-          }
-        }
-      }
-    },
     "Max": {
       "localizations": {
         "zh-Hans": {
@@ -2114,16 +2004,6 @@
         }
       }
     },
-    "Models": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "模型"
-          }
-        }
-      }
-    },
     "Monitor event": {
       "localizations": {
         "zh-Hans": {
@@ -2160,16 +2040,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在进入工作树"
-          }
-        }
-      }
-    },
-    "Name": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "名称"
           }
         }
       }
@@ -2281,16 +2151,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "未导入提供方"
-          }
-        }
-      }
-    },
-    "None": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无"
           }
         }
       }
@@ -2455,16 +2315,6 @@
         }
       }
     },
-    "Organization": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "组织"
-          }
-        }
-      }
-    },
     "Other": {
       "localizations": {
         "zh-Hans": {
@@ -2551,16 +2401,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "权限模式"
-          }
-        }
-      }
-    },
-    "Plan": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "套餐"
           }
         }
       }
@@ -2837,16 +2677,6 @@
         }
       }
     },
-    "Required": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "必填"
-          }
-        }
-      }
-    },
     "Requires a paid plan": {
       "localizations": {
         "zh-Hans": {
@@ -3025,16 +2855,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "沙盒已关闭"
-          }
-        }
-      }
-    },
-    "Save": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "存储"
           }
         }
       }
@@ -3317,16 +3137,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "退出登录"
-          }
-        }
-      }
-    },
-    "Sign Out…": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "退出登录…"
           }
         }
       }
@@ -3701,16 +3511,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "发给 %@"
-          }
-        }
-      }
-    },
-    "Token": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "令牌"
           }
         }
       }

@@ -20,7 +20,7 @@ public final class EnvironmentVariablesViewController: NSViewController {
     private var pending: (row: Int, edit: Bool)?
 
     /// The list's height: header 28, rows 128, bar 28.
-    public static let height: CGFloat = 184
+    static let height: CGFloat = 184
 
     public init() {
         super.init(nibName: nil, bundle: nil)

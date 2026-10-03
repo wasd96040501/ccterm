@@ -18,6 +18,8 @@ private typealias Subscription = ccterm.Subscription
 @MainActor
 final class SettingsSnapshotTests: XCTestCase {
     private var root: URL!
+    /// What each sheet reports to and is shown by, held while it renders.
+    private var sheets: [AccountEditorCoordinator] = []
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -27,6 +29,7 @@ final class SettingsSnapshotTests: XCTestCase {
 
     override func tearDownWithError() throws {
         try? FileManager.default.removeItem(at: root)
+        sheets = []
     }
 
     /// The detail column under the toolbar: 880 − 180 wide, 680 − 52 tall.
@@ -301,9 +304,11 @@ final class SettingsSnapshotTests: XCTestCase {
         let validation = LaunchCommandValidation(
             check: check, configuration: { launch.configuration(accountCommand: $0) },
             text: account.command)
-        return AccountEditorViewController(
+        let sheet = AccountEditorCoordinator(
             viewModel: AccountEditorViewModel(
                 mode: mode, account: account, secrets: secrets, commandValidation: validation))
+        sheets.append(sheet)
+        return sheet.viewController
     }
 
     private func signedIn() async -> SubscriptionService {

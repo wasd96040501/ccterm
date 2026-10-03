@@ -43,3 +43,28 @@
 "Needs Your Input" = "Needs Your Input";
 "Failed" = "Failed";
 "End Session" = "End Session";
+
+/* AccountEditorViewController */
+"Required" = "Required";
+"Base URL" = "Base URL";
+"Default Model" = "Default Model";
+"Command" = "Command";
+"None" = "None";
+"Manage" = "Manage";
+"Add" = "Add";
+"Save" = "Save";
+"Account" = "Account";
+"Email" = "Email";
+"Organization" = "Organization";
+"Plan" = "Plan";
+"Connection" = "Connection";
+"Authentication" = "Authentication";
+"Environment Variables" = "Environment Variables";
+"Models" = "Models";
+"Launch" = "Launch";
+"Arguments" = "Arguments";
+"Automatic" = "Automatic";
+"Auth Token" = "Auth Token";
+"API Key" = "API Key";
+"Token" = "Token";
+"API key" = "API key";

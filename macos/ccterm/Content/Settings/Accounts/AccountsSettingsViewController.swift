@@ -19,8 +19,7 @@ final class AccountsSettingsViewController: NSViewController {
     private var cancellables = Set<AnyCancellable>()
 
     /// The open account sheet, if any.
-    private var editor: AccountEditorViewController?
-    private var editorModel: AccountEditorViewModel?
+    private var editor: AccountEditorCoordinator?
     /// The account the open sheet edits.
     private var editing: Account?
 
@@ -108,19 +107,17 @@ final class AccountsSettingsViewController: NSViewController {
         let model = AccountEditorViewModel(
             mode: mode, account: account, secrets: secrets, entry: entry,
             takenNames: providerNames(excluding: account.id), commandValidation: commandValidation(for: account))
-        let editor = AccountEditorViewController(viewModel: model)
+        let editor = AccountEditorCoordinator(viewModel: model)
         editor.delegate = self
         self.editor = editor
-        editorModel = model
         editing = account
-        presentAsSheet(editor)
+        presentAsSheet(editor.viewController)
     }
 
     private func dismissEditor() {
         guard let editor else { return }
-        dismiss(editor)
+        dismiss(editor.viewController)
         self.editor = nil
-        editorModel = nil
         editing = nil
     }
 
@@ -232,7 +229,7 @@ final class AccountsSettingsViewController: NSViewController {
             Task {
                 do {
                     try await self.subscription.signOut()
-                    if case .subscription = self.editorModel?.mode { self.dismissEditor() }
+                    if case .subscription = self.editor?.mode { self.dismissEditor() }
                 } catch {
                     self.report(error, on: window, while: "signing out")
                 }
@@ -319,27 +316,29 @@ extension AccountsSettingsViewController: ProvidersSectionViewControllerDelegate
     }
 }
 
-extension AccountsSettingsViewController: AccountEditorViewControllerDelegate {
-    func accountEditor(_ editor: AccountEditorViewController, didSave account: Account, secrets: AccountSecrets) {
+extension AccountsSettingsViewController: AccountEditorCoordinatorDelegate {
+    func accountEditor(_ editor: AccountEditorCoordinator, didSave account: Account, secrets: AccountSecrets) {
         Task {
             do {
                 try await accounts.save(account, secrets: secrets)
                 dismissEditor()
             } catch {
-                (editor.view.window ?? view.window).map { report(error, on: $0, while: "saving an account") }
+                (editor.viewController.view.window ?? view.window).map {
+                    report(error, on: $0, while: "saving an account")
+                }
             }
         }
     }
 
-    func accountEditorDidCancel(_ editor: AccountEditorViewController) {
+    func accountEditorDidCancel(_ editor: AccountEditorCoordinator) {
         dismissEditor()
     }
 
-    func accountEditorDidRequestRemoval(_ editor: AccountEditorViewController) {
-        guard let mode = editorModel?.mode else { return }
-        switch mode {
-        case .subscription(let subscription): confirmSignOut(subscription, on: editor.view.window)
-        case .provider: editing.map { confirmDelete($0, on: editor.view.window) }
+    func accountEditorDidRequestRemoval(_ editor: AccountEditorCoordinator) {
+        let sheet = editor.viewController.view.window
+        switch editor.mode {
+        case .subscription(let subscription): confirmSignOut(subscription, on: sheet)
+        case .provider: editing.map { confirmDelete($0, on: sheet) }
         case .newProvider: break
         }
     }

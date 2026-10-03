@@ -26,6 +26,10 @@ enum AccountsSpecimen {
                 .init(
                     title: "Environment variables — click a row, then Space, Return, Delete or +",
                     view: VariablesHost(), height: nil),
+                .init(
+                    title: "Local Proxy's sheet — type, choose, ⌘V; the bar's hairline once the form runs under it",
+                    view: EditorHost(kind: .provider), height: nil),
+                .init(title: "The subscription's sheet", view: EditorHost(kind: .subscription), height: nil),
                 .init(title: "Signing in", view: SignInHost(), height: nil),
             ])
     }
@@ -176,7 +180,6 @@ private final class VariablesHost: NSView, EnvironmentVariablesViewControllerDel
             form.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
             form.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
             form.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -20),
-            list.view.heightAnchor.constraint(equalToConstant: EnvironmentVariablesViewController.height),
         ])
         show()
     }
@@ -227,6 +230,134 @@ private final class VariablesHost: NSView, EnvironmentVariablesViewControllerDel
     func environmentVariables(_ list: EnvironmentVariablesViewController, valueAt index: Int) -> String {
         variables[index].value
     }
+}
+
+/// An account's sheet at its own size, centred in its card, with the design's
+/// Local Proxy or subscription, driven by a stand-in for the app: every edit
+/// comes back as the next presentation, as the app's view model sends it; ⌘V
+/// says what it read. Its buttons have no presenter to answer them.
+private final class EditorHost: NSView, AccountEditorViewControllerDelegate {
+    private let sheet: AccountEditorViewController
+    private var presentation: AccountEditorPresentation
+    private var variables: [(isEnabled: Bool, name: String, value: String)]
+
+    init(kind: AccountEditorViewController.Kind) {
+        sheet = AccountEditorViewController(kind: kind)
+        if kind == .subscription {
+            variables = [(true, "CLAUDE_CODE_NO_FLICKER", "1")]
+            presentation = AccountEditorPresentation(
+                canSave: true, baseURLError: nil, maskedCredential: "",
+                subscription: .init(email: "name@example.com", organization: "Personal", plan: "Claude Max"),
+                fields: .init(), fieldsRevision: 0, environmentRows: [], commandDetail: .none)
+        } else {
+            variables = [
+                (true, "NO_PROXY", "127.0.0.1,localhost"),
+                (true, "API_TIMEOUT_MS", "3000000"),
+                (true, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1"),
+                (true, "CLAUDE_CODE_EFFORT_LEVEL", "xhigh"),
+                (true, "CLAUDE_CODE_ATTRIBUTION_HEADER", "0"),
+                (false, "ENABLE_TOOL_SEARCH", "false"),
+            ]
+            presentation = AccountEditorPresentation(
+                canSave: true, baseURLError: nil, maskedCredential: "sk-••••••••7c1e", subscription: nil,
+                fields: .init(
+                    name: "Local Proxy", baseURL: "http://127.0.0.1:8788", credential: "sk-proxy-example-4b0e9d2c7c1e",
+                    model: "claude-opus-5-5[1m]", arguments: "--permission-mode auto"),
+                fieldsRevision: 0, environmentRows: [], commandDetail: .none)
+        }
+        super.init(frame: .zero)
+        sheet.delegate = self
+        let content = sheet.view
+        content.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(content)
+        NSLayoutConstraint.activate([
+            content.centerXAnchor.constraint(equalTo: centerXAnchor),
+            content.topAnchor.constraint(equalTo: topAnchor),
+            content.bottomAnchor.constraint(equalTo: bottomAnchor),
+            content.widthAnchor.constraint(equalToConstant: AccountEditorViewController.size.width),
+            content.heightAnchor.constraint(equalToConstant: AccountEditorViewController.size.height),
+        ])
+        show()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+    private func show() {
+        presentation.environmentRows = variables.map { variable in
+            EnvironmentRow(
+                isEnabled: variable.isEnabled, name: variable.name, displayValue: variable.value, warning: nil)
+        }
+        presentation.canSave =
+            presentation.subscription != nil
+            || !(presentation.fields.name.isEmpty || presentation.fields.credential.isEmpty)
+        sheet.show(presentation)
+    }
+
+    func accountEditor(
+        _ editor: AccountEditorViewController, didEdit field: AccountEditorViewController.Field, to value: String
+    ) {
+        switch field {
+        case .name: presentation.fields.name = value
+        case .baseURL: presentation.fields.baseURL = value
+        case .credential: presentation.fields.credential = value
+        case .model(.main): presentation.fields.model = value
+        case .model(.opus): presentation.fields.opus = value
+        case .model(.sonnet): presentation.fields.sonnet = value
+        case .model(.haiku): presentation.fields.haiku = value
+        case .model(.fable): presentation.fields.fable = value
+        case .command: presentation.fields.command = value
+        case .arguments: presentation.fields.arguments = value
+        }
+        show()
+    }
+
+    func accountEditor(
+        _ editor: AccountEditorViewController, didChoose authentication: AccountEditorPresentation.Authentication
+    ) {
+        presentation.fields.authentication = authentication
+        show()
+    }
+
+    func accountEditor(_ editor: AccountEditorViewController, didPaste text: String) {
+        let lines = text.split(whereSeparator: \.isNewline).count
+        editor.say("Read \(lines) line\(lines == 1 ? "" : "s") from the clipboard")
+    }
+
+    func accountEditor(_ editor: AccountEditorViewController, didToggleVariableAt index: Int) {
+        variables[index].isEnabled.toggle()
+        show()
+    }
+
+    func accountEditor(_ editor: AccountEditorViewController, didSetVariableName name: String, at index: Int) {
+        variables[index].name = name
+        show()
+    }
+
+    func accountEditor(_ editor: AccountEditorViewController, didSetVariableValue value: String, at index: Int) {
+        variables[index].value = value
+        show()
+    }
+
+    func accountEditorDidAddVariable(_ editor: AccountEditorViewController) -> Int {
+        variables.append((true, "", ""))
+        show()
+        return variables.count - 1
+    }
+
+    func accountEditor(_ editor: AccountEditorViewController, didRemoveVariableAt index: Int) {
+        variables.remove(at: index)
+        show()
+    }
+
+    func accountEditor(_ editor: AccountEditorViewController, valueOfVariableAt index: Int) -> String {
+        variables[index].value
+    }
+
+    func accountEditorDidRequestManage(_ editor: AccountEditorViewController) {}
+    func accountEditorDidRequestSave(_ editor: AccountEditorViewController) {}
+    func accountEditorDidCancel(_ editor: AccountEditorViewController) {}
+    func accountEditorDidRequestRemoval(_ editor: AccountEditorViewController) {}
 }
 
 /// The sign-in sheet's content, as the sheet shows it, centred in its card.

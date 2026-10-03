@@ -68,10 +68,9 @@ final class AccountEditorViewModelTests: XCTestCase {
     func testTheCredentialRowFollowsTheAuthentication() {
         let model = newProvider()
         model.setCredential("sk-proxy-example-4b0e9d2c7c1e")
-        XCTAssertEqual(model.presentation.credentialTitle, String(localized: "Token"))
+        XCTAssertEqual(model.presentation.fields.authentication, .authToken)
         XCTAssertEqual(model.presentation.maskedCredential, "sk-••••••••7c1e")
         model.setAuthentication(.apiKey)
-        XCTAssertEqual(model.presentation.credentialTitle, String(localized: "API key"))
         XCTAssertEqual(model.presentation.fields.authentication, .apiKey)
     }
 

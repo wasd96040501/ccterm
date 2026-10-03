@@ -43,3 +43,28 @@
 "Needs Your Input" = "需要你的输入";
 "Failed" = "失败";
 "End Session" = "结束会话";
+
+/* AccountEditorViewController */
+"Required" = "必填";
+"Base URL" = "Base URL";
+"Default Model" = "默认模型";
+"Command" = "命令";
+"None" = "无";
+"Manage" = "管理";
+"Add" = "添加";
+"Save" = "存储";
+"Account" = "账户";
+"Email" = "电子邮件";
+"Organization" = "组织";
+"Plan" = "套餐";
+"Connection" = "连接";
+"Authentication" = "认证方式";
+"Environment Variables" = "环境变量";
+"Models" = "模型";
+"Launch" = "启动";
+"Arguments" = "参数";
+"Automatic" = "自动";
+"Auth Token" = "认证令牌";
+"API Key" = "API 密钥";
+"Token" = "令牌";
+"API key" = "API 密钥";

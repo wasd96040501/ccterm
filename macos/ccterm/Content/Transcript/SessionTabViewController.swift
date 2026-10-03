@@ -108,6 +108,8 @@ final class SessionTabViewController: NSViewController {
     private var draftConstraints: [NSLayoutConstraint] = []
     private var sessionConstraints: [NSLayoutConstraint] = []
     private var composerBottom: NSLayoutConstraint?
+    /// The window's colour under the floating composer, fading above it.
+    private let dock = SessionTabDockView()
     private var composerWidth: NSLayoutConstraint?
 
     /// How far the floating composer stands from the tab's bottom edge.
@@ -429,6 +431,8 @@ final class SessionTabViewController: NSViewController {
         addChild(transcript)
         transcript.view.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(transcript.view, positioned: .below, relativeTo: composer.view)
+        dock.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(dock, positioned: .below, relativeTo: composer.view)
         let bottom = composer.view.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -Self.floatGap)
         // 720 at most, 16 from each side when the tab is narrower.
         let width = composer.view.widthAnchor.constraint(equalToConstant: Self.composerWidth)
@@ -440,6 +444,10 @@ final class SessionTabViewController: NSViewController {
             transcript.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             transcript.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             transcript.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            dock.topAnchor.constraint(equalTo: composer.view.topAnchor, constant: -SessionTabDockView.fade),
+            dock.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            dock.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            dock.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             bottom,
             composer.view.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             composer.view.widthAnchor.constraint(lessThanOrEqualToConstant: Self.composerWidth),
@@ -557,6 +565,7 @@ final class SessionTabViewController: NSViewController {
         transcript = nil
         NSLayoutConstraint.deactivate(sessionConstraints)
         sessionConstraints = []
+        dock.removeFromSuperview()
         composerBottom = nil
         composerWidth = nil
         transcriptURL = nil

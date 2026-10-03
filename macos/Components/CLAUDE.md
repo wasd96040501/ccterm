@@ -8,7 +8,7 @@ Sources/Components/      the views: one directory per family (Form/, Settings/ â
   Drawing/               what the families share: the tile, the pill button, the corner radii, the colours, StyledText's fonts
   Documents/             what opens beside a transcript: the jump bar, the approval bar and the command, source and image bodies, over `NumberedLinesView` (values: `DocumentHeader`, `CommandSummary`, `SourceLines`)
   Menu/                  the one menu every pop-up opens: MenuPanel (MenuContent in, choices out), over MenuPanelViewController and MenuPopup
-  Composer/              the composer card (ComposerViewController) with its menus and slash list, over ComposerPresentation
+  Composer/              the composer card (ComposerViewController) with its menus and slash list, over ComposerPresentation; the dock that fades the transcript under it
   NewSession/            the New view (hero, folder, branch row, rise) with its folder menu, over NewSessionContent
   Rows/                  the transcript's row views (PageRowView and its kinds), drawn from display values; the contract test holds each to its declared height
 Sources/ComponentsDesign/  the style page â€” every component in its real host, live (`make design`)

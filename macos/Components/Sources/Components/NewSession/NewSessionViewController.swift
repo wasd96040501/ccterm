@@ -327,7 +327,7 @@ public final class NewSessionViewController: NSViewController {
     /// The folder's menu (design 08 *The New view*): *Recent*, each folder
     /// with its glyph and its path at the trailing edge, then *Choose Folder…
     /// ⌘O* past a hairline.
-    static func folderMenu(of content: NewSessionContent) -> MenuContent {
+    package static func folderMenu(of content: NewSessionContent) -> MenuContent {
         var rows: [MenuContent.Row] = []
         if !content.recentFolders.isEmpty {
             rows.append(.header(.title(String(localized: "Recent", bundle: .module))))

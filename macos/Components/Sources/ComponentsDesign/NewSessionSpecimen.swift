@@ -117,7 +117,8 @@ private final class NewSessionHost: NSView, NewSessionViewControllerDelegate {
 
         if let menu {
             let panel = MenuPanelViewController()
-            panel.configure(with: menu == .folder ? MenuFixtures.folder : branchMenu())
+            panel.configure(
+                with: menu == .folder ? NewSessionViewController.folderMenu(of: content) : branchMenu())
             panel.loadViewIfNeeded()
             menuController = panel
             stage.addSubview(panel.view)

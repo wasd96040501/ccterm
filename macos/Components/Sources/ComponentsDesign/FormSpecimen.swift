@@ -12,9 +12,12 @@ enum FormSpecimen {
                 + "under both when there is something to say; an error colours only the words that are wrong. A sheet "
                 + "notes what a paste filled with a toast.",
             specimens: [
-                .init(title: "Rows — a field, a pop-up, a secret", view: rows(), width: Host.paneForm, height: 168),
                 .init(
-                    title: "A description as an error, and a toast", view: notes(), width: Host.paneForm, height: 150),
+                    title: "Rows — a field, a pop-up, a secret", view: PaneView(rows(), inset: 0),
+                    width: Host.settingsPane.width, height: 168),
+                .init(
+                    title: "A description as an error, and a toast", view: PaneView(notes(), inset: 0),
+                    width: Host.settingsPane.width, height: 150),
             ])
     }
 

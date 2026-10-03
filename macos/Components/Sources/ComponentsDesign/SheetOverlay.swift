@@ -12,8 +12,10 @@ final class SheetOverlay: NSView {
     init(sheet: NSView, size: NSSize) {
         super.init(frame: .zero)
         wantsLayer = true
+        // A sheet is a window: the real window's colour, not the design's
+        // #fff and #282828.
         let surface = ElevatedView(
-            radius: 18, fill: .design(light: .design(hex: 0xffffff), dark: .design(hex: 0x282828)),
+            radius: 18, fill: .windowBackgroundColor,
             shadow: .init(
                 ring: (.design(white: 0, alpha: 0.16), .design(white: 0, alpha: 0.8)),
                 innerRing: .design(white: 1, alpha: 0.12),

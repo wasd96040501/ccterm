@@ -115,6 +115,11 @@ enum DesignRender {
         guard let scroll = page.view as? NSScrollView, let document = scroll.documentView else {
             throw CompositedCapture.Failed(description: "the page has no document view")
         }
+        // The image is the page, never its scroller: a section taller than
+        // the screen keeps the window scrolling, and a legacy scroller would
+        // take its width out of the page.
+        scroll.hasVerticalScroller = false
+        window.layoutIfNeeded()
         // The laid-out frame, never the fitting size: a specimen sized by its
         // frame has none, and the render would cut it off.
         let height = document.frame.height

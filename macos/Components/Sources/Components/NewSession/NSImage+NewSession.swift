@@ -6,5 +6,5 @@ import AppKit
 extension NSImage {
     static var newViewChevron: NSImage { Bundle.module.image(forResource: "NewViewChevron") ?? NSImage() }
     static var newViewWorktree: NSImage { Bundle.module.image(forResource: "NewViewWorktree") ?? NSImage() }
-    static var appIconArt: NSImage { Bundle.module.image(forResource: "AppIconArt") ?? NSImage() }
+    package static var appIconArt: NSImage { Bundle.module.image(forResource: "AppIconArt") ?? NSImage() }
 }

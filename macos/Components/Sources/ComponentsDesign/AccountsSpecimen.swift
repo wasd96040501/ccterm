@@ -67,19 +67,11 @@ enum AccountsSpecimen {
             id: UUID(), content: AccountRowContent(title: title, subtitle: subtitle, mark: .provider, accessory: .info))
     }
 
-    /// `view` `amount` in from every edge — `Host.formInset` as a pane's form
-    /// insets its sections; none in a plain card, whose width is the form's.
+    /// `view` on its pane, `amount` in from every edge — `Host.formInset` as a
+    /// pane's form insets its sections; none inside a window, whose pane is
+    /// already there.
     static func inset(_ view: NSView, by amount: CGFloat = Host.formInset) -> NSView {
-        let container = NSView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(view)
-        NSLayoutConstraint.activate([
-            view.topAnchor.constraint(equalTo: container.topAnchor, constant: amount),
-            view.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: amount),
-            view.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -amount),
-            view.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -amount),
-        ])
-        return container
+        PaneView(view, inset: amount)
     }
 }
 

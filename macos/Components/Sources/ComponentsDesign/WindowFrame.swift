@@ -62,8 +62,10 @@ final class WindowFrame: NSView {
         switch chrome {
         case .settings:
             barHeight = 0
+            // The real window's colour, as `.titled`'s: the design draws its
+            // Settings window #fff and #282828.
             elevated = ElevatedView(
-                radius: 15, fill: .design(light: .design(hex: 0xffffff), dark: .design(hex: 0x282828)),
+                radius: 15, fill: .windowBackgroundColor,
                 shadow: .init(
                     ring: (.design(white: 0, alpha: 0.18), .design(white: 0, alpha: 0.8)),
                     innerRing: .design(white: 1, alpha: 0.12),

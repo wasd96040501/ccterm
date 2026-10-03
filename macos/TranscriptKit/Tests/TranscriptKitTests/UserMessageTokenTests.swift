@@ -122,6 +122,10 @@ final class UserMessageTokenTests: XCTestCase {
         XCTAssertEqual(font.pointSize, 13)
         let first = try XCTUnwrap(measured.text.rects(from: 1, to: 2).first)
         XCTAssertEqual(first.minX, 5, accuracy: 0.5, "the glyph begins one 5-pt pad in")
+        let glyph = try XCTUnwrap(measured.text.symbols.first)
+        XCTAssertEqual(glyph.symbol.inkWidth, UserMessageBlock.pictureGlyphWidth, accuracy: 0.01)
+        XCTAssertEqual(
+            glyph.symbol.advance, UserMessageBlock.pictureGlyphWidth + 3, accuracy: 0.01, "3 pt before the words")
     }
 
     func testAPointOverATokenFindsItsLink() throws {

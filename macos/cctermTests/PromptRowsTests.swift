@@ -68,6 +68,9 @@ final class PromptRowsTests: XCTestCase {
             errorOutput: "")
         XCTAssertEqual(command.note?.text, "18k / 200k tokens")
         XCTAssertEqual(command.note?.link?.isAfterDot, true)
+        let indented = LocalCommand(
+            id: "c", command: .slash(name: "/x", arguments: ""), output: "  total\n  part", errorOutput: "")
+        XCTAssertEqual(indented.note?.text, "  total\n  part", "only blank lines go, never a line's own spaces")
     }
 
     func testALongSlashOutputIsCutWithShowAllBelow() {

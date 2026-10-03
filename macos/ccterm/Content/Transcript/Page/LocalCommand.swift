@@ -57,8 +57,9 @@ nonisolated extension LocalCommand {
         let lines = printedLines
         guard !lines.isEmpty, lineCount == nil else { return nil }
         // A blank second line (`/context`'s gap under its total) is no line to show.
-        return lines.prefix(Self.inlineLines).joined(separator: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        var shown = Array(lines.prefix(Self.inlineLines))
+        while shown.last?.allSatisfy(\.isWhitespace) == true { shown.removeLast() }
+        return shown.isEmpty ? nil : shown.joined(separator: "\n")
     }
 
     /// A slash command's output ran past two lines: *Show all* opens it beside.

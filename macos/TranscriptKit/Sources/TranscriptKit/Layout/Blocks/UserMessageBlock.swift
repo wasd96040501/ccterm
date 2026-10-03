@@ -170,6 +170,11 @@ struct UserMessageBlock: Block, @unchecked Sendable {
     static var tokenFont: NSFont { .monospacedSystemFont(ofSize: 13, weight: .medium) }
     /// A picture's token is words, not code: the 13-pt body face, medium (`.imgtok`).
     static var pictureTokenFont: NSFont { .systemFont(ofSize: 13, weight: .medium) }
+
+    /// The photo glyph before a picture's words: the sheet draws it 11 wide
+    /// (`.imgtok svg`). `photo`'s alignment box is wider than its strokes
+    /// (they fill 0.86 of it), so the box is 12.75 for 11 of ink.
+    static let pictureGlyphWidth: CGFloat = 12.75
     static var shellFont: NSFont { .monospacedSystemFont(ofSize: 12.5, weight: .regular) }
 
     /// The wash's height: a command token's 13-pt face with a point above and
@@ -222,8 +227,10 @@ struct UserMessageBlock: Block, @unchecked Sendable {
                 }
             case .image(let url):
                 inner.append(
-                    InlineSymbol(.image, font: pictureTokenFont, color: dim(style.secondaryColor))
-                        .attributedString(font: pictureTokenFont))
+                    InlineSymbol(
+                        .image, inkWidth: pictureGlyphWidth, font: pictureTokenFont, color: dim(style.secondaryColor)
+                    )
+                    .attributedString(font: pictureTokenFont))
                 inner.append(NSAttributedString(string: words.substring(with: range), attributes: face))
                 inner.addAttribute(.link, value: url, range: NSRange(location: 0, length: inner.length))
             }

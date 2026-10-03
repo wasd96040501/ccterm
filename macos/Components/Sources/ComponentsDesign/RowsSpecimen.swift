@@ -43,7 +43,7 @@ enum RowsSpecimen {
 
     private static func specimen(_ title: String, _ rows: [Row]) -> DesignPageViewController.Specimen {
         let column = RowColumn(rows)
-        return .init(title: title, view: ScaledHost(column, size: column.size), height: nil)
+        return .init(title: title, view: RowColumnHost(column, size: column.size), height: nil)
     }
 
     // MARK: - Rows
@@ -416,7 +416,7 @@ private final class RowColumn: NSView {
 /// A host wider than the page's column, scaled down whole: the content keeps
 /// its own coordinates (`bounds`), and the holder it sits in is as wide as the
 /// card allows, up to the content's own width, centred.
-private final class ScaledHost: NSView {
+private final class RowColumnHost: NSView {
     private let holder = Holder()
 
     init(_ content: NSView, size: NSSize) {

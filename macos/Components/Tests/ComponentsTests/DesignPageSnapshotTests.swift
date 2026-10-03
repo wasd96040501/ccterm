@@ -5,7 +5,8 @@ import XCTest
 
 /// The style page rendered for review: every section at a wide window and a
 /// narrow one, light and dark, to
-/// `/tmp/ccterm-screenshots/Design-<section>-<width>-<scheme>.png` — one PNG
+/// `<package>/.build/design/Design-<section>-<width>-<scheme>.png` — in the
+/// checkout's own build directory, so worktrees never overwrite each other's — one PNG
 /// per section, since the whole page is taller than a capture can be. Each is
 /// the built `ComponentsDesign` run as `--render`, in English
 /// (`-AppleLanguages '(en)'` — a test process can't change its own language,
@@ -16,7 +17,7 @@ import XCTest
 @MainActor
 final class DesignPageSnapshotTests: XCTestCase {
     func testEverySectionIsRenderedAtTheWindowsWidth() throws {
-        let directory = "/tmp/ccterm-screenshots"
+        let directory = Self.buildDirectory.appendingPathComponent("design").path
         let slugs = Design.sections().map { Design.fileSlug($0.title) }
         XCTAssertFalse(slugs.isEmpty)
         for width in [1240, 600] {
@@ -32,10 +33,19 @@ final class DesignPageSnapshotTests: XCTestCase {
         }
     }
 
+    /// `.build`: two above the products' directory, which holds the test
+    /// bundle and the page's executable.
+    private static var buildDirectory: URL {
+        productsDirectory.deletingLastPathComponent().deletingLastPathComponent()
+    }
+
+    private static var productsDirectory: URL {
+        Bundle(for: DesignPageSnapshotTests.self).bundleURL.deletingLastPathComponent()
+    }
+
     /// Runs the page's executable, which sits beside the test bundle.
     private func render(width: Int, scheme: String, into directory: String) throws {
-        let executable = Bundle(for: Self.self).bundleURL.deletingLastPathComponent()
-            .appendingPathComponent("ComponentsDesign")
+        let executable = Self.productsDirectory.appendingPathComponent("ComponentsDesign")
         let process = Process()
         process.executableURL = executable
         process.arguments = ["-AppleLanguages", "(en)", "--render", directory, "\(width)", scheme]
@@ -43,7 +53,15 @@ final class DesignPageSnapshotTests: XCTestCase {
         process.standardError = errors
         process.standardOutput = FileHandle.nullDevice
         try process.run()
-        process.waitUntilExit()
+        // Every wait has a deadline: the executable stops its own sections at
+        // 120 s each; this stops it all.
+        let deadline = Date(timeIntervalSinceNow: 1800)
+        while process.isRunning, Date() < deadline { Thread.sleep(forTimeInterval: 0.2) }
+        if process.isRunning {
+            process.terminate()
+            XCTFail("ComponentsDesign --render took over 30 minutes")
+            return
+        }
         let message = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         if process.terminationStatus == 75 { throw XCTSkip("no capture could be had: \(message)") }
         XCTAssertEqual(process.terminationStatus, 0, "ComponentsDesign --render failed: \(message)")

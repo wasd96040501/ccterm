@@ -205,7 +205,7 @@ private final class CardView: NSView {
             ])
         } else {
             let fill = content.widthAnchor.constraint(equalTo: widthAnchor, constant: -2 * (isWindow ? 0 : inset))
-            fill.priority = .defaultHigh
+            fill.priority = NSLayoutConstraint.Priority(740)
             NSLayoutConstraint.activate([
                 content.centerXAnchor.constraint(equalTo: centerXAnchor),
                 content.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: isWindow ? 0 : inset),

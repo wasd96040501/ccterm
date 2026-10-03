@@ -67,7 +67,7 @@ enum AccountsSpecimen {
 
     /// `view` `amount` in from every edge — `Host.formInset` as a pane's form
     /// insets its sections; none in a plain card, whose width is the form's.
-    static func inset(_ view: NSView, by amount: CGFloat) -> NSView {
+    static func inset(_ view: NSView, by amount: CGFloat = Host.formInset) -> NSView {
         let container = NSView()
         view.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(view)

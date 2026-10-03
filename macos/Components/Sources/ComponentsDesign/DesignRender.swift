@@ -114,7 +114,9 @@ enum DesignRender {
         guard let scroll = page.view as? NSScrollView, let document = scroll.documentView else {
             throw CompositedCapture.Failed(description: "the page has no document view")
         }
-        let height = document.fittingSize.height
+        // The laid-out frame, not only the fitting size: a specimen sized by
+        // its frame has no fitting size, and the render would cut it off.
+        let height = max(document.fittingSize.height, document.frame.height)
         window.setContentSize(NSSize(width: request.width, height: max(height, 200)))
         window.layoutIfNeeded()
         // Past the scrollers' flash on first showing.

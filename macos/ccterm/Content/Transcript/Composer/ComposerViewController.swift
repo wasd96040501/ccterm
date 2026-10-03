@@ -14,11 +14,9 @@ import AppKit
 /// mode (`ComposerModel.cycledMode`), ⌘. stop, `/` at the start completes a
 /// command, backspace into a command token removes it whole.
 ///
-/// Built from AppKit's own pieces: `NSMenu`s (section headers, item
-/// subtitles) for Effort and Mode; the model panel (`ModelPanelViewController`
-/// in a child panel: a table whose group rows float, and an `NSSwitch`); the
-/// slash list, a child panel too; layer corners with `cornerCurve =
-/// .continuous` at the design's radii.
+/// Model, Effort and Mode open the one menu the New view's pop-ups open too
+/// (`MenuPanel`); the slash list is a child panel of its own. Layer corners
+/// take the design's radii (`CornerRadius`) with `cornerCurve = .continuous`.
 @MainActor
 final class ComposerViewController: NSViewController {
     weak var delegate: ComposerViewControllerDelegate?
@@ -26,31 +24,14 @@ final class ComposerViewController: NSViewController {
     private let card = ComposerView()
     private var model: ComposerModel?
 
-    private lazy var modelPanel: ModelPanelViewController = {
-        let panel = ModelPanelViewController()
-        panel.onChoose = { [weak self] item in
-            guard let self else { return }
-            self.closeModelPanel(restoringFocus: true)
-            self.delegate?.composerViewController(self, didChoose: item.change)
-        }
-        panel.onSetFast = { [weak self] isOn in
-            guard let self else { return }
-            self.delegate?.composerViewController(self, didChoose: .fastMode(isOn))
-        }
-        panel.onCancel = { [weak self] in self?.closeModelPanel(restoringFocus: true) }
-        panel.onHeightChange = { [weak self] in
-            guard let self else { return }
-            self.modelPopup.resize(
-                to: NSSize(width: ModelPanelViewController.width, height: self.modelPanel.preferredHeight))
-        }
-        return panel
-    }()
-
-    private lazy var modelPopup: ComposerPopup = {
-        let popup = ComposerPopup(contentViewController: modelPanel, takesKey: true, gap: 4)
-        popup.onClose = { [weak self] in self?.card.chip(for: .model).isOpen = false }
-        return popup
-    }()
+    /// Model, Effort or Mode, whichever is open — one menu at a time.
+    private let popUpMenu = MenuPanel()
+    private var openControl: ComposerView.Control?
+    /// The model panel's account sections unfolded past *N More Models*.
+    private var expandedSections: Set<UUID> = []
+    /// The menu that closed last and when: the press on its chip that took
+    /// the keyboard from it closes it, and the chip's action must not reopen it.
+    private var lastClosed: (control: ComposerView.Control, at: TimeInterval)?
 
     private lazy var slashList: SlashListViewController = {
         let list = SlashListViewController()
@@ -58,7 +39,7 @@ final class ComposerViewController: NSViewController {
         return list
     }()
 
-    private lazy var slashPopup = ComposerPopup(contentViewController: slashList, takesKey: false, gap: 8)
+    private lazy var slashPopup = MenuPopup(contentViewController: slashList, takesKey: false, gap: 8)
 
     init() {
         super.init(nibName: nil, bundle: nil)
@@ -74,11 +55,13 @@ final class ComposerViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         card.delegate = self
+        popUpMenu.onChoose = { [weak self] item in self?.menuChose(item) }
+        popUpMenu.onClose = { [weak self] in self?.menuDidClose() }
     }
 
     override func viewDidDisappear() {
         super.viewDidDisappear()
-        closeModelPanel(restoringFocus: false)
+        popUpMenu.close()
         slashPopup.close()
     }
 
@@ -86,7 +69,7 @@ final class ComposerViewController: NSViewController {
     func configure(with model: ComposerModel) {
         self.model = model
         card.configure(with: model)
-        if modelPopup.isShown { modelPanel.configure(with: model) }
+        if popUpMenu.isShown, let openControl { popUpMenu.update(content(of: openControl, in: model)) }
         updateSlashList()
     }
 
@@ -119,54 +102,59 @@ final class ComposerViewController: NSViewController {
         return view.fittingSize.height
     }
 
-    // MARK: - Menus and the panel
+    // MARK: - Menus
 
-    @objc private func menuItemChosen(_ sender: NSMenuItem) {
-        guard let choice = sender.representedObject as? ComposerMenu.Choice else { return }
-        delegate?.composerViewController(self, didChoose: choice.change)
+    private func content(of control: ComposerView.Control, in model: ComposerModel) -> MenuContent {
+        switch control {
+        case .model: ComposerMenu.modelContent(of: model, expanded: expandedSections)
+        case .effort: ComposerMenu.content(of: model.effortMenu)
+        case .mode: ComposerMenu.content(of: model.modeMenu)
+        }
     }
 
-    private func popUp(_ menu: ComposerModel.Menu, from control: ComposerView.Control) {
-        guard !menu.sections.isEmpty else { return }
-        let nsMenu = ComposerMenu.make(menu, target: self, action: #selector(menuItemChosen(_:)))
-        let chip = card.chip(for: control)
-        let isDraft = model?.isDraft ?? false
-        // The menu hangs its top-left from the point: above the chip, that is
-        // the chip's top plus the menu's height.
-        let point =
-            isDraft
-            ? NSPoint(x: -4, y: -4)
-            : NSPoint(x: -4, y: chip.bounds.height + 4 + nsMenu.size.height)
-        chip.isOpen = true
-        nsMenu.popUp(positioning: nil, at: point, in: chip)
-        chip.isOpen = false
-        card.focus()
-    }
-
-    private func openModelPanel() {
-        guard let model, let window = view.window else { return }
-        if modelPopup.isShown {
-            closeModelPanel(restoringFocus: true)
+    /// Opens `control`'s menu — under the chip in a New tab, over it in a
+    /// session — or closes it when it is the one open.
+    private func openMenu(of control: ComposerView.Control) {
+        guard let model else { return }
+        let wasOpen = openControl
+        popUpMenu.close()
+        guard wasOpen != control else { return }
+        if let lastClosed, lastClosed.control == control,
+            ProcessInfo.processInfo.systemUptime - lastClosed.at < 0.5
+        {
             return
         }
-        let chip = card.chip(for: .model)
-        modelPanel.configure(with: model)
-        modelPanel.selectCurrent()
-        let anchor = window.convertToScreen(chip.convert(chip.bounds, to: nil))
-        modelPopup.show(
-            at: anchor, preferring: model.isDraft ? .below : .above, in: window,
-            size: NSSize(width: ModelPanelViewController.width, height: modelPanel.preferredHeight), makingKey: true)
-        modelPopup.makeFirstResponder(modelPanel.initialFirstResponder)
+        let content = content(of: control, in: model)
+        guard !content.rows.isEmpty else { return }
+        let chip = card.chip(for: control)
+        openControl = control
         chip.isOpen = true
+        popUpMenu.show(content, from: chip, preferring: model.isDraft ? .below : .above)
     }
 
-    private func closeModelPanel(restoringFocus: Bool) {
-        guard modelPopup.isShown else { return }
-        modelPopup.close()
-        if restoringFocus {
-            view.window?.makeKey()
-            card.focus()
+    private func menuChose(_ item: MenuContent.Item) {
+        guard let choice = item.id as? ComposerMenu.Choice else { return }
+        switch choice {
+        case .change(let change):
+            delegate?.composerViewController(self, didChoose: change)
+        case .more(let section):
+            // Expands in place: the panel stays open and its list stays put.
+            expandedSections.insert(section)
+            if let model, let openControl { popUpMenu.update(content(of: openControl, in: model)) }
+        case .fastMode:
+            guard case .toggle(let isOn) = item.trailing else { return }
+            delegate?.composerViewController(self, didChoose: .fastMode(!isOn))
         }
+    }
+
+    private func menuDidClose() {
+        if let openControl {
+            card.chip(for: openControl).isOpen = false
+            lastClosed = (openControl, ProcessInfo.processInfo.systemUptime)
+        }
+        openControl = nil
+        view.window?.makeKey()
+        card.focus()
     }
 
     // MARK: - Slash commands
@@ -212,12 +200,7 @@ extension ComposerViewController: ComposerViewDelegate {
     }
 
     func composerView(_ composerView: ComposerView, didPress control: ComposerView.Control) {
-        guard let model else { return }
-        switch control {
-        case .model: openModelPanel()
-        case .effort: popUp(model.effortMenu, from: .effort)
-        case .mode: popUp(model.modeMenu, from: .mode)
-        }
+        openMenu(of: control)
     }
 
     func composerViewDidRequestRestart(_ composerView: ComposerView) {

@@ -211,16 +211,16 @@ final class NewSessionViewControllerSnapshotTests: XCTestCase {
         }()
         var sheets: [NSImage] = []
         for query in ["", "#327"] {
+            let content = NewSessionMenu.branchContent(of: list, query: query)
+            let probe = MenuPanelViewController()
+            probe.configure(with: content)
             sheets.append(
                 ViewSnapshot.renderLightAndDark(
                     {
-                        let controller = BranchPickerViewController(model: BranchPickerModel(list))
-                        controller.loadViewIfNeeded()
-                        Self.addWindowBackground(to: controller.view)
-                        controller.view.layoutSubtreeIfNeeded()
-                        controller.query = query
+                        let controller = MenuPanelViewController()
+                        controller.configure(with: content)
                         return controller
-                    }, size: CGSize(width: 300, height: 300), name: "BranchPicker"))
+                    }, size: probe.preferredSize, name: "BranchPicker"))
         }
         let url = ViewSnapshot.writeStack(sheets, name: "NewSessionBranchPicker")
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))

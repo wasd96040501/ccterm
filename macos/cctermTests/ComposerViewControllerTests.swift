@@ -234,66 +234,6 @@ final class ComposerViewControllerTests: XCTestCase {
         XCTAssertTrue(ring.isHidden)
     }
 
-    // MARK: Menus
-
-    func testTheEffortMenuIsBuiltFromTheModelAndChoosingAnItemReportsItsChange() throws {
-        let model = F.model(F.session(.idle), settings: F.settings("sonnet-4-6", effort: .high))
-        let menu = ComposerMenu.make(model.effortMenu, target: self, action: #selector(chosen(_:)))
-        let items = menu.items.filter { !$0.isSectionHeader && !$0.isSeparatorItem }
-        XCTAssertEqual(items.count, 5)
-        XCTAssertEqual(menu.items.first?.isSectionHeader, true)
-        XCTAssertEqual(items.map(\.state), [.off, .off, .on, .off, .off])
-        XCTAssertEqual(items.map(\.isEnabled), [true, true, true, false, true])
-        let choice = try XCTUnwrap(items[1].representedObject as? ComposerMenu.Choice)
-        XCTAssertEqual(choice.change, .effort(.medium))
-    }
-
-    func testTheModeMenuSetsBypassApartAndMarksTheCurrentMode() {
-        let model = F.model(F.session(.idle), settings: F.settings("opus", mode: .plan))
-        let menu = ComposerMenu.make(model.modeMenu, target: self, action: #selector(chosen(_:)))
-        XCTAssertEqual(menu.items.filter(\.isSeparatorItem).count, 1)
-        XCTAssertEqual(menu.items.last?.title, model.modeMenu.sections[1].items[0].title)
-        XCTAssertEqual(menu.items.filter { $0.state == .on }.count, 1)
-    }
-
-    @objc private func chosen(_ sender: NSMenuItem) {}
-
-    // MARK: The model panel
-
-    func testThePanelListsTheNoteThenEachAccountsHeaderModelsAndItsMoreRow() {
-        let model = F.model(F.session(.responding), settings: F.settings("opus"))
-        let rows = ModelPanelViewController.rows(for: model, expanded: [])
-        guard case .note = rows.first else { return XCTFail("no note over the sections") }
-        let headers = rows.compactMap { row -> String? in
-            if case .header(let section) = row { section.name } else { nil }
-        }
-        XCTAssertEqual(headers, ["Claude Max", "Work Relay", "DeepSeek"])
-        let more = rows.compactMap { row -> Int? in
-            if case .more(_, let count) = row { count } else { nil }
-        }
-        XCTAssertEqual(more, [7])
-    }
-
-    func testExpandingMoreModelsPutsTheFoldedOnesInPlace() {
-        let model = F.model(.draft, settings: F.settings("opus"))
-        let rows = ModelPanelViewController.rows(for: model, expanded: [F.subscription])
-        let titles = rows.compactMap { row -> String? in
-            if case .item(let item) = row { item.title } else { nil }
-        }
-        XCTAssertEqual(titles.prefix(12).last, "Sonnet 4.6")
-        XCTAssertFalse(rows.contains { if case .more = $0 { true } else { false } })
-    }
-
-    func testThePanelFollowsTheModelAndOpensWithinItsHeightLimit() {
-        let panel = ModelPanelViewController()
-        panel.configure(with: F.model(.draft, settings: F.settings("opus")))
-        // The list stops at 360; under it the hairline and the Fast Mode row —
-        // the design's 5 + a two-line row of 54 + 5.
-        XCTAssertLessThanOrEqual(
-            panel.preferredHeight, ModelPanelViewController.maxScrollHeight + 0.5 + 64)
-        XCTAssertGreaterThan(panel.preferredHeight, 200)
-    }
-
     // MARK: - Narrow
 
     /// The status's words never set the card's width: in a window sized to

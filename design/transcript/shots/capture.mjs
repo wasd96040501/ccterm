@@ -63,6 +63,19 @@ for (const scheme of ["light", "dark"]) {
     const rect = await shoot(`${scheme}-scene-${scene}`, `document.getElementById('live')`);
     if (rect) sceneParts.push({ name: `${scheme}-scene-${scene}`, card: -1, kind: "scene", n: 0, cap: scene, width: rect.width, height: rect.height, text: "" });
   }
+  // Each pop-up as the playground opens it from the New tab, at the width its
+  // content gives it (the sheet's static figures are stretched by their captions).
+  for (const which of ["model", "effort", "mode", "folder", "branch"]) {
+    await evaluate(`document.querySelector('[data-scene="new"]').click()`);
+    await sleep(800);
+    await evaluate(`document.querySelector('#live [data-lv-menu="${which}"]').dispatchEvent(new MouseEvent('click', {bubbles: true}))`);
+    await sleep(400);
+    const name = `${scheme}-live-${which}`;
+    const rect = await shoot(name, `[...document.querySelectorAll('.lv-menu')].find((m) => !m.classList.contains('static') && m.getClientRects().length)`);
+    if (rect) sceneParts.push({ name, card: -1, kind: "live-menu", n: 0, cap: which, width: rect.width, height: rect.height, text: "" });
+    await evaluate(`document.body.click()`);
+    await sleep(200);
+  }
   const cards = await evaluate(`[...document.querySelectorAll('.lv-card')].map((c, i) => {
     const t = (c.querySelector('.cap, .lv-cap, h4, figcaption, .ttl, b')?.textContent || c.textContent).trim().slice(0, 40);
     return {i, t};

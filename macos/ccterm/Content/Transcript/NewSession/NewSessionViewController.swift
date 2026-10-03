@@ -28,7 +28,14 @@ final class NewSessionViewController: NSViewController {
     private var isRising = false
     /// Which rise is playing; a rise that was settled finds its timer stale.
     private var riseGeneration = 0
-    private var branchPopover: NSPopover?
+    /// The folder's or the branch's menu, whichever is open.
+    private let popUpMenu = MenuPanel()
+    private var openChip: NewSessionChip?
+    /// The press on a chip that took the keyboard from its open menu closes
+    /// it; the chip's action must not reopen it.
+    private var lastClosed: (chip: NewSessionChip, at: TimeInterval)?
+    /// What is typed in the branch menu's filter.
+    private var branchQuery = ""
 
     /// The page's side margin (the design's `.lv-new` padding).
     private static let margin: CGFloat = 24
@@ -37,6 +44,9 @@ final class NewSessionViewController: NSViewController {
 
     private lazy var folderChip: NewSessionChip = {
         let chip = NewSessionChip(title: String(localized: "Choose Folder…"), look: .folder)
+        chip.sendsActionOnPress = true
+        chip.target = self
+        chip.action = #selector(showFolderMenu(_:))
         chip.setAccessibilityIdentifier("newSession.folder")
         chip.setAccessibilityRole(.popUpButton)
         return chip
@@ -55,6 +65,7 @@ final class NewSessionViewController: NSViewController {
         glyph.size = NSSize(width: 10, height: 11)
         chip.glyph = glyph
         chip.toolTip = String(localized: "Branch")
+        chip.sendsActionOnPress = true
         chip.target = self
         chip.action = #selector(showBranchPicker(_:))
         chip.setAccessibilityIdentifier("newSession.branch")
@@ -111,7 +122,15 @@ final class NewSessionViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        popUpMenu.onChoose = { [weak self] item in self?.menuChose(item) }
+        popUpMenu.onFilter = { [weak self] text in self?.menuFilterChanged(text) }
+        popUpMenu.onClose = { [weak self] in self?.menuDidClose() }
         if let model { configure(with: model) }
+    }
+
+    override func viewDidDisappear() {
+        super.viewDidDisappear()
+        popUpMenu.close()
     }
 
     // MARK: - Tree
@@ -206,7 +225,7 @@ final class NewSessionViewController: NSViewController {
         guard isViewLoaded else { return }
 
         folderChip.title = model.folderTitle
-        folderChip.menu = folderMenu(for: model)
+        if popUpMenu.isShown, let content = menuContent(for: openChip) { popUpMenu.update(content) }
         pathLabel.stringValue = model.folderPath ?? ""
         explanationLabel.stringValue = model.explanation ?? ""
 
@@ -280,53 +299,8 @@ final class NewSessionViewController: NSViewController {
 
     // MARK: - The folder
 
-    private func folderMenu(for model: NewSessionModel) -> NSMenu {
-        let menu = NSMenu()
-        if !model.recentFolders.isEmpty {
-            menu.addItem(NSMenuItem.sectionHeader(title: String(localized: "Recent")))
-            // Each folder's path in the key column, 12-pt tertiary, right-aligned
-            // to the longest name, 16 pt on, plus the longest path.
-            let titleFont = NSFont.menuFont(ofSize: 0)
-            let pathFont = NSFont.menuFont(ofSize: 12)
-            let rows = model.recentFolders.map { ($0, ($0.url.path as NSString).abbreviatingWithTildeInPath) }
-            let widest = { (strings: [String], font: NSFont) in
-                strings.map { ($0 as NSString).size(withAttributes: [.font: font]).width }.max() ?? 0
-            }
-            let column =
-                widest(rows.map(\.0.title), titleFont) + 16 + widest(rows.map(\.1), pathFont)
-            let style = NSMutableParagraphStyle()
-            style.tabStops = [NSTextTab(textAlignment: .right, location: ceil(column))]
-            for (folder, path) in rows {
-                let item = NSMenuItem(title: folder.title, action: #selector(chooseRecent(_:)), keyEquivalent: "")
-                item.target = self
-                item.representedObject = folder.url
-                item.state = folder.isChosen ? .on : .off
-                item.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
-                let title = NSMutableAttributedString(
-                    string: folder.title + "\t", attributes: [.font: titleFont, .paragraphStyle: style])
-                title.append(
-                    NSAttributedString(
-                        string: path,
-                        attributes: [
-                            .font: pathFont, .foregroundColor: NSColor.tertiaryLabelColor, .paragraphStyle: style,
-                        ]))
-                item.attributedTitle = title
-                item.toolTip = path
-                menu.addItem(item)
-            }
-            menu.addItem(.separator())
-        }
-        let choose = NSMenuItem(
-            title: String(localized: "Choose Folder…"), action: #selector(chooseFolder(_:)), keyEquivalent: "o")
-        choose.keyEquivalentModifierMask = .command
-        choose.target = self
-        menu.addItem(choose)
-        return menu
-    }
-
-    @objc private func chooseRecent(_ sender: NSMenuItem) {
-        guard let url = sender.representedObject as? URL else { return }
-        delegate?.newSessionViewController(self, didChooseFolder: url)
+    @objc private func showFolderMenu(_ sender: NSControl) {
+        open(folderChip)
     }
 
     /// *Choose Folder…* (⌘O): an open panel for the folder Claude will work in.
@@ -351,22 +325,56 @@ final class NewSessionViewController: NSViewController {
     // MARK: - The branch
 
     @objc private func showBranchPicker(_ sender: NSControl) {
-        guard case .repository(_, _, let branches)? = model?.branchRow else { return }
-        branchPopover?.close()
+        branchQuery = ""
+        open(branchChip)
+    }
 
-        let picker = BranchPickerViewController(model: BranchPickerModel(branches))
-        picker.onChoose = { [weak self] branch in
-            guard let self else { return }
-            branchPopover?.close()
-            delegate?.newSessionViewController(self, didChooseBranch: branch)
+    // MARK: - The menus
+
+    /// What `chip`'s menu shows now.
+    private func menuContent(for chip: NewSessionChip?) -> MenuContent? {
+        guard let model else { return nil }
+        if chip === folderChip { return NewSessionMenu.folderContent(of: model) }
+        if chip === branchChip, case .repository(_, _, let branches) = model.branchRow {
+            return NewSessionMenu.branchContent(of: branches, query: branchQuery)
         }
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.contentViewController = picker
-        popover.delegate = self
-        branchPopover = popover
-        branchChip.isOpen = true
-        popover.show(relativeTo: branchChip.bounds, of: branchChip, preferredEdge: .minY)
+        return nil
+    }
+
+    /// Opens `chip`'s menu under it, or closes it when it is the one open.
+    private func open(_ chip: NewSessionChip) {
+        let wasOpen = openChip
+        popUpMenu.close()
+        guard wasOpen !== chip else { return }
+        if let lastClosed, lastClosed.chip === chip, ProcessInfo.processInfo.systemUptime - lastClosed.at < 0.5 {
+            return
+        }
+        guard let content = menuContent(for: chip) else { return }
+        openChip = chip
+        chip.isOpen = true
+        popUpMenu.show(content, from: chip, preferring: .below)
+    }
+
+    private func menuChose(_ item: MenuContent.Item) {
+        guard let choice = item.id as? NewSessionMenu.Choice else { return }
+        switch choice {
+        case .folder(let url): delegate?.newSessionViewController(self, didChooseFolder: url)
+        case .chooseFolder: chooseFolder(nil)
+        case .branch(let branch): delegate?.newSessionViewController(self, didChooseBranch: branch)
+        }
+    }
+
+    private func menuFilterChanged(_ text: String) {
+        branchQuery = text
+        if let content = menuContent(for: openChip) { popUpMenu.update(content) }
+    }
+
+    private func menuDidClose() {
+        if let openChip {
+            openChip.isOpen = false
+            lastClosed = (openChip, ProcessInfo.processInfo.systemUptime)
+        }
+        openChip = nil
     }
 
     @objc private func toggleWorktree(_ sender: NSControl) {
@@ -409,13 +417,6 @@ final class NewSessionViewController: NSViewController {
                     string: words, attributes: [.font: font, .foregroundColor: NSColor.tertiaryLabelColor]))
         }
         return text
-    }
-}
-
-extension NewSessionViewController: NSPopoverDelegate {
-    func popoverDidClose(_ notification: Notification) {
-        branchChip.isOpen = false
-        branchPopover = nil
     }
 }
 

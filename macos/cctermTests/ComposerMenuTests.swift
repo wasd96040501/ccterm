@@ -6,10 +6,10 @@ import XCTest
 
 /// The Effort and Mode menus as built, item by item against the design's menus
 /// sheet (`index.html` #lv-menus: *Effort · Sonnet 4.6*, *Permission mode · Fast
-/// on*, *Permission mode · Haiku*). They are `NSMenu`s — AppKit draws them only
-/// while they track — so what is compared is what the menu is made of: the
-/// header and its key hint, each item's title, its reason or note under it,
-/// enabled, checked, its glyph, and the separator before Bypass.
+/// on*, *Permission mode · Haiku*): the head and its key hint, each item's
+/// title, its reason or note under it, enabled, checked, its glyph, and the
+/// hairline before Bypass; and the model panel's sections. How they are drawn
+/// is `MenuPanelSnapshotTests`'.
 @MainActor
 final class ComposerMenuTests: XCTestCase {
     private typealias F = ComposerFixtures
@@ -31,21 +31,22 @@ final class ComposerMenuTests: XCTestCase {
         }
     }
 
-    @objc private func chosen(_ sender: NSMenuItem) {}
-
-    private func lines(_ menu: NSMenu) -> [Line] {
-        menu.items.map { item in
-            if item.isSeparatorItem { return .separator }
-            // The words before the key hint, which has its own test.
-            if item.isSectionHeader { return .header(item.title.components(separatedBy: "\t")[0]) }
-            return Line(
-                title: item.title, subtitle: item.subtitle, enabled: item.isEnabled, checked: item.state == .on,
-                glyph: item.image != nil)
+    private func lines(_ content: MenuContent) -> [Line] {
+        content.rows.map { row in
+            switch row {
+            case .separator: return .separator
+            case .header(.title(let title, _)): return .header(title)
+            case .header(.account(_, let name, _, _)): return .header(name)
+            case .item(let item):
+                return Line(
+                    title: item.title, subtitle: item.subtitle, enabled: item.isEnabled, checked: item.isChecked,
+                    glyph: item.glyph != nil)
+            }
         }
     }
 
-    private func menu(_ menu: ComposerModel.Menu) -> NSMenu {
-        ComposerMenu.make(menu, target: self, action: #selector(chosen(_:)))
+    private func menu(_ menu: ComposerModel.Menu) -> MenuContent {
+        ComposerMenu.content(of: menu)
     }
 
     // MARK: - Effort · Sonnet 4.6
@@ -67,15 +68,23 @@ final class ComposerMenuTests: XCTestCase {
             ])
     }
 
-    /// Each level's meter is a row's glyph: 16 pt.
+    /// Each level's meter and each mode's glyph is a row's: 16 pt.
     func testTheGlyphsAreRowSized() {
         let model = F.model(F.session(.idle), settings: F.settings("opus", mode: .acceptEdits))
         for built in [menu(model.effortMenu), menu(model.modeMenu)] {
-            for item in built.items where item.image != nil {
-                XCTAssertLessThanOrEqual(item.image!.size.height, 16, item.title)
-                XCTAssertLessThanOrEqual(item.image!.size.width, 16, item.title)
+            for case .item(let item) in built.rows {
+                XCTAssertEqual(item.glyph?.size, NSSize(width: 16, height: 16), item.title)
             }
         }
+    }
+
+    /// Choosing a level reports its change.
+    func testAnItemStandsForItsChange() throws {
+        let model = F.model(F.session(.idle), settings: F.settings("sonnet-4-6", effort: .high))
+        let items = menu(model.effortMenu).rows.compactMap { row -> MenuContent.Item? in
+            if case .item(let item) = row { item } else { nil }
+        }
+        XCTAssertEqual(items[1].id as? ComposerMenu.Choice, .change(.effort(.medium)))
     }
 
     // MARK: - Permission Mode
@@ -115,20 +124,51 @@ final class ComposerMenuTests: XCTestCase {
             lines(menu(model.modeMenu)), modes(checked: .default, autoWhy: String(localized: "Not on \("Haiku 4.5")")))
     }
 
-    /// ⇧⇥ ends where the items' key equivalents would, and the header never
-    /// makes the menu wider than its items do.
-    func testTheModeHintEndsAtTheMenusEdgeWithoutWideningIt() throws {
+    /// ⇧⇥ is the Mode head's key hint (`.mh kbd`).
+    func testTheModeHeadCarriesItsKey() throws {
         let model = F.model(F.session(.idle), settings: F.settings("opus", mode: .acceptEdits))
-        let built = menu(model.modeMenu)
-        let header = try XCTUnwrap(built.items.first { $0.isSectionHeader })
-        let hinted = try XCTUnwrap(header.attributedTitle)
-        XCTAssertTrue(hinted.string.hasSuffix("\t⇧⇥"), hinted.string)
-        let style = try XCTUnwrap(hinted.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)
-        XCTAssertEqual(style.tabStops.first?.alignment, .right)
+        guard case .header(.title(_, let hint))? = menu(model.modeMenu).rows.first else {
+            return XCTFail("no head")
+        }
+        XCTAssertEqual(hint, "⇧⇥")
+    }
 
-        let width = built.size.width
-        header.attributedTitle = nil
-        header.title = String(localized: "Permission Mode")
-        XCTAssertEqual(width, built.size.width, accuracy: 0.5, "the hint widened the menu")
+    // MARK: - Model
+
+    func testTheModelPanelListsTheNoteThenEachAccountsHeadModelsAndItsMoreRow() {
+        let model = F.model(F.session(.responding), settings: F.settings("opus"))
+        let content = ComposerMenu.modelContent(of: model, expanded: [])
+        XCTAssertTrue(content.isPanel)
+        guard case .header(.title)? = content.rows.first else { return XCTFail("no note over the sections") }
+        let heads = content.rows.compactMap { row -> String? in
+            if case .header(.account(_, let name, _, _)) = row { name } else { nil }
+        }
+        XCTAssertEqual(heads, ["Claude Max", "Work Relay", "DeepSeek"])
+        let more = content.rows.compactMap { row -> MenuContent.Item? in
+            if case .item(let item) = row, item.isMore { item } else { nil }
+        }
+        XCTAssertEqual(more.map(\.title), [String(localized: "\(7) More Models")])
+        XCTAssertEqual(more.first?.id as? ComposerMenu.Choice, .more(F.subscription))
+    }
+
+    func testExpandingMoreModelsPutsTheFoldedOnesInPlace() {
+        let model = F.model(.draft, settings: F.settings("opus"))
+        let content = ComposerMenu.modelContent(of: model, expanded: [F.subscription])
+        let titles = content.rows.compactMap { row -> String? in
+            if case .item(let item) = row { item.title } else { nil }
+        }
+        XCTAssertEqual(titles.prefix(12).last, "Sonnet 4.6")
+        XCTAssertFalse(content.rows.contains { if case .item(let item) = $0 { item.isMore } else { false } })
+    }
+
+    /// Fast Mode is a switch under the scroll, and keeps the menu open.
+    func testFastModeIsASwitchUnderTheScroll() throws {
+        let model = F.model(F.session(.idle), settings: F.settings("opus", fast: true))
+        let content = ComposerMenu.modelContent(of: model, expanded: [])
+        guard case .item(let fast)? = content.footer.first else { return XCTFail("no Fast Mode") }
+        XCTAssertEqual(fast.id as? ComposerMenu.Choice, .fastMode)
+        guard case .toggle(let isOn) = fast.trailing else { return XCTFail("not a switch") }
+        XCTAssertTrue(isOn)
+        XCTAssertTrue(fast.keepsMenuOpen)
     }
 }

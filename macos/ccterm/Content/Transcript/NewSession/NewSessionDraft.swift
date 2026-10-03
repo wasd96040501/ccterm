@@ -15,7 +15,7 @@ nonisolated struct NewSessionDraft: Equatable, Sendable {
     var settings: SessionSettings
 
     /// What the branch pop-up chose.
-    enum Branch: Equatable, Sendable {
+    enum Branch: Hashable, Sendable {
         case named(String)
         /// `#N` typed in the filter: checked out in a new worktree.
         case pullRequest(Int)

@@ -3,9 +3,9 @@ import AppKit
 /// A borderless control of the New view (design 08 *The New view*): a title
 /// with an optional glyph and chevron that gets a quiet fill under the pointer —
 /// the folder pop-up (22 pt semibold), the branch pop-up and the Worktree
-/// toggle (12 pt). `menu`, when set, is popped on press as a pop-up button's
-/// is; otherwise a press that ends inside sends `action` (the branch popover,
-/// the toggle).
+/// toggle (12 pt). A pop-up sends `action` on press, as the composer's chips
+/// do, and its owner opens the menu (`MenuPanel`); the toggle sends it when a
+/// press ends inside.
 ///
 /// A dumb view: it shows the title, glyph and state it is given and reports a
 /// press.
@@ -79,7 +79,10 @@ final class NewSessionChip: NSControl {
         }
     }
 
-    /// Held in its pressed look while its menu or popover is open.
+    /// A pop-up: the action goes on press, not on release.
+    var sendsActionOnPress = false
+
+    /// Held in its pressed look while its menu is open.
     var isOpen = false {
         didSet {
             guard isOpen != oldValue else { return }
@@ -215,14 +218,8 @@ final class NewSessionChip: NSControl {
 
     override func mouseDown(with event: NSEvent) {
         guard isEnabled else { return }
-        if let menu {
-            isPressed = true
-            isOpen = true
-            refresh()
-            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -2), in: self)
-            isPressed = false
-            isOpen = false
-            refresh()
+        if sendsActionOnPress {
+            sendAction(action, to: target)
             return
         }
         isPressed = true
@@ -247,11 +244,7 @@ final class NewSessionChip: NSControl {
 
     override func accessibilityPerformPress() -> Bool {
         guard isEnabled else { return false }
-        if let menu {
-            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -2), in: self)
-        } else {
-            sendAction(action, to: target)
-        }
+        sendAction(action, to: target)
         return true
     }
 }

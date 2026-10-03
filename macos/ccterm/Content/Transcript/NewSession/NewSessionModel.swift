@@ -23,6 +23,8 @@ nonisolated struct NewSessionModel: Equatable, Sendable {
     struct Folder: Equatable, Sendable {
         var url: URL
         var title: String
+        /// Where it is, with `~` for home: the menu's trailing column.
+        var path: String
         /// Whether it is the draft's folder (the menu checks it).
         var isChosen = false
     }
@@ -80,7 +82,9 @@ nonisolated struct NewSessionModel: Equatable, Sendable {
         folderTitle = folder.map(Self.title(of:)) ?? String(localized: "Choose Folder…")
         folderPath = folder.map { ($0.path as NSString).abbreviatingWithTildeInPath }
         self.recentFolders = recentFolders.prefix(Self.recentLimit).map {
-            Folder(url: $0, title: Self.title(of: $0), isChosen: $0 == folder)
+            Folder(
+                url: $0, title: Self.title(of: $0), path: ($0.path as NSString).abbreviatingWithTildeInPath,
+                isChosen: $0 == folder)
         }
         canSend = folder != nil
 

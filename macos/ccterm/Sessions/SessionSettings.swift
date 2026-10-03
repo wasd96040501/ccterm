@@ -28,7 +28,7 @@ nonisolated struct SessionSettings: Equatable, Sendable, Codable {
     }
 
     /// One control's choice.
-    enum Change: Equatable, Sendable {
+    enum Change: Hashable, Sendable {
         case model(ModelChoice)
         /// `nil` goes back to the model's default level.
         case effort(Effort?)

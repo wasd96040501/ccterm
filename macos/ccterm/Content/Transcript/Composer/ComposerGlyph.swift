@@ -41,6 +41,15 @@ enum ComposerGlyph {
         }
     }
 
+    /// The glyph at the 16-pt box a menu row gives it (`.mi .g`): the bolt
+    /// stays the chip's 10 × 12 in it (`padding: 2px 3px`).
+    static func menuImage(_ glyph: ComposerModel.Glyph) -> NSImage? {
+        switch glyph {
+        case .fast: symbol(.bolt, scale: 1, in: NSSize(width: 16, height: 16))
+        default: image(glyph, size: 16)
+        }
+    }
+
     /// The chips' chevron, in its 8-pt box.
     static var chevron: NSImage { symbol(.chevron, scale: 1, in: NSSize(width: 8, height: 8)) }
 

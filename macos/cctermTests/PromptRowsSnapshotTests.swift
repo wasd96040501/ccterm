@@ -54,8 +54,10 @@ final class PromptRowsSnapshotTests: XCTestCase {
 
     /// Each state of a prompt from Send (08-live.md *A prompt, from Send to the
     /// transcript*) beside the sheet's own, at its 301-pt column:
-    /// `/tmp/ccterm-parity/<scheme>-part-<card>-pst0.png`.
-    func testDeliveryAgainstTheDesign() throws {
+    /// `/tmp/ccterm-parity/<scheme>-part-<card>-pst0.png`. Captured as the
+    /// screen composites it (its grey words are the design's), so it needs the
+    /// display awake.
+    func testDeliveryAgainstTheDesign() async throws {
         let summary = "Make the summary 12 pt and rebuild."
         let states: [(card: String, page: TranscriptPage)] = [
             ("18", local("Tidy the tab bar", .held)),
@@ -68,7 +70,8 @@ final class PromptRowsSnapshotTests: XCTestCase {
             for state in states {
                 let id = "part-\(state.card)-pst0"
                 let part = try DesignParity.part(id, scheme)
-                attach(try DesignParity.write(id, scheme, ours: column(state.page, part: part, scheme: scheme)))
+                let ours = try await column(state.page, part: part, scheme: scheme)
+                attach(try DesignParity.write(id, scheme, ours: ours))
             }
         }
     }
@@ -87,17 +90,29 @@ final class PromptRowsSnapshotTests: XCTestCase {
     /// The page's rows in a column `part.width` wide, on the sheet's page, from
     /// the top of the first row down to the last's foot (or the part's height,
     /// whichever is more).
-    private func column(_ page: TranscriptPage, part: DesignParity.Part, scheme: DesignParity.Scheme) -> NSImage {
+    private func column(
+        _ page: TranscriptPage, part: DesignParity.Part, scheme: DesignParity.Scheme
+    ) async throws
+        -> NSImage
+    {
         let margin: CGFloat = 20
         let host = PageSnapshot.Host(page: page, disclosure: .collapsed)
         host.loadView()
-        host.view.appearance = scheme.appearance
+        // No inset over the first row: `rect(ofRow:)` is then where the row is in the view.
+        host.transcript.contentInsets = NSEdgeInsets()
         host.view.layer?.backgroundColor = scheme.page.cgColor
-        var rows = NSRect.zero
-        let image = ViewSnapshot.renderViewController(host, size: CGSize(width: part.width + 2 * margin, height: 240)) {
-            let count = host.transcript.numberOfRows
-            rows = (0..<count).map { host.transcript.rect(ofRow: $0) }.reduce(NSRect.null) { $0.union($1) }
+        let window = CompositedCapture.mount(
+            host, size: NSSize(width: part.width + 2 * margin, height: 240), appearance: scheme.appearance)
+        defer {
+            window.contentViewController = nil
+            window.close()
         }
+        let deadline = Date(timeIntervalSinceNow: 0.6)
+        while Date() < deadline { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02)) }
+        host.view.layoutSubtreeIfNeeded()
+        let count = host.transcript.numberOfRows
+        let rows = (0..<count).map { host.transcript.rect(ofRow: $0) }.reduce(NSRect.null) { $0.union($1) }
+        let image = try await CompositedCapture.pointImage(of: window)
         let height = max(part.height, ceil(rows.height))
         let crop = NSRect(x: margin, y: rows.minY, width: part.width, height: height)
         let out = NSImage(size: crop.size)

@@ -237,17 +237,30 @@ public final class EditorAreaViewController: NSSplitViewController {
     }
 
     /// Opens a collapsed editor to half the area, the way Xcode opens one, with
-    /// the motion a sidebar is toggled with. Uncollapsing through its animator
-    /// returns an item to the width its view has, so the editor is laid out at
-    /// that width first, with its tab in it: the tab appears at its final size
-    /// and is uncovered, not reflowed, and the other editor narrows as in a
-    /// divider drag. (`preferredThicknessFraction` doesn't size an item that
-    /// isn't a sidebar — measured.)
+    /// the motion a sidebar is toggled with: the editor is laid out at half
+    /// first, with its tab in it, so the tab appears at its final size and is
+    /// uncovered, not reflowed, and the other editor narrows as in a divider
+    /// drag.
+    ///
+    /// The item's animator alone holds neither width against what a tab's
+    /// content wishes for. It opens the item to the width its view has at
+    /// priority 250.001 and moves the divider at 252 (measured, AppKit's
+    /// `NSSplitViewWrapperView-WeakViewBreadth` and `-ConstantBreadth`), and a
+    /// content's wish to be wider — the composer's 720 at 499 — beats both: the
+    /// new editor opens past half, the other stops narrowing where its own wish
+    /// is met, and when the animation lands the split keeps the widths it got
+    /// and squeezes the new editor to its narrowest. So both editors are held
+    /// while it opens, above any wish (`openingPriority`) — the new one at half,
+    /// the other narrowing to the rest in the same animation — and once open the
+    /// divider is put where they are and they are let go.
+    /// (`preferredThicknessFraction` doesn't size an item that isn't a sidebar
+    /// — measured.)
     private func expand(_ group: EditorGroupViewController) {
         guard let item = splitViewItem(for: group), item.isCollapsed else { return }
         let area = splitView.bounds
-        group.view.frame = NSRect(
-            x: 0, y: 0, width: ((area.width - splitView.dividerThickness) / 2).rounded(.down), height: area.height)
+        let half = ((area.width - splitView.dividerThickness) / 2).rounded(.down)
+        let rest = area.width - splitView.dividerThickness - half
+        group.view.frame = NSRect(x: 0, y: 0, width: half, height: area.height)
         group.view.layoutSubtreeIfNeeded()
         // A split view item animates even in a group of duration 0, so Reduce
         // Motion opens it outright — and outright it takes a width of its own
@@ -260,9 +273,29 @@ public final class EditorAreaViewController: NSSplitViewController {
             splitView.setPosition(
                 splitView.bounds.width - splitView.dividerThickness - width, ofDividerAt: 0)
         } else {
-            item.animator().isCollapsed = false
+            let opening = group.view.widthAnchor.constraint(equalToConstant: half)
+            // The other editor, from the area less the divider as it goes in.
+            let narrowing = groups.filter { $0 !== group }.map {
+                $0.view.widthAnchor.constraint(equalToConstant: area.width - splitView.dividerThickness)
+            }
+            let holds = [opening] + narrowing
+            for hold in holds { hold.priority = Self.openingPriority }
+            NSLayoutConstraint.activate(holds)
+            NSAnimationContext.runAnimationGroup { _ in
+                item.animator().isCollapsed = false
+                for hold in narrowing { hold.animator().constant = rest }
+            } completionHandler: { [self] in
+                splitView.setPosition(rest, ofDividerAt: 0)
+                NSLayoutConstraint.deactivate(holds)
+            }
         }
     }
+
+    /// What holds the editors while one opens: above anything a tab's content
+    /// may wish for — a wish that is not to size the window stays under
+    /// `.windowSizeStayPut` — and under anything it requires, so a content
+    /// that can't be as narrow as half keeps its width without a conflict.
+    private static let openingPriority = NSLayoutConstraint.Priority.defaultHigh
 
     /// Every editor coming passes through here — `addSplitViewItem` and setting
     /// `splitViewItems` included — reports to the area, and takes what it takes.

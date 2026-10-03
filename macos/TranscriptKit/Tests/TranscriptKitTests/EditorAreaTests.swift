@@ -469,6 +469,50 @@ final class EditorAreaTests: XCTestCase {
             "a third editor opened")
     }
 
+    /// What a tab holds may wish to be wider than half — the app's composer is
+    /// 720 wide unless its tab is narrower, a wish just under the window's
+    /// size — and here both editors' tabs do. Neither wish moves the editor
+    /// that opens off half, its tab is at that width the whole way in, and once
+    /// open the divider goes where it is put.
+    func testASecondEditorOpensAtHalfTheWidthWhateverItsTabsWishFor() throws {
+        // The editor area of the style page's main window: 1128 less its
+        // 290 sidebar and the divider.
+        let size = NSSize(width: 837, height: 676)
+        let window = TestWindow.make(contentSize: size)
+        defer { window.close() }
+        let area = EditorAreaViewController()
+        let recorder = Recorder()
+        area.delegate = recorder
+        window.contentViewController = area
+        TestWindow.park(window, contentSize: size)
+        area.activeGroup.addTabViewItem(NSTabViewItem(viewController: WishingViewController(title: "Left")))
+        settle(window)
+        let mounted = Mounted(window: window, area: area, recorder: recorder, probes: [])
+        let right = WishingViewController(title: "Right")
+
+        let group = try XCTUnwrap(area.addGroup(with: NSTabViewItem(viewController: right)))
+        var widths: Set<CGFloat> = []
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline, !opened(area) {
+            if right.isViewLoaded { widths.insert(right.view.frame.width) }
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
+        }
+        finishOpening(mounted)
+        // Past the animation's end, where the editors are let go.
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.3))
+        settle(window)
+
+        let half = ((size.width - area.splitView.dividerThickness) / 2).rounded(.down)
+        XCTAssertEqual(frame(of: area.groups[0]).width, half, accuracy: 0.5, "the other editor is not at half")
+        XCTAssertEqual(frame(of: group).width, half, accuracy: 0.5, "the new editor is not at half")
+        XCTAssertEqual(right.view.frame.width, half, accuracy: 0.5, "premise: the tab fills its editor")
+        XCTAssertEqual(widths, [half], "the tab was laid out at another width on the way")
+
+        area.splitView.setPosition(300, ofDividerAt: 0)
+        settle(window)
+        XCTAssertEqual(frame(of: area.groups[0]).width, 300, accuracy: 0.5, "the editors are still held")
+    }
+
     /// It opens with motion, the way a sidebar is toggled: its edge moves in
     /// over time, its tab laid out at its final width the whole way (uncovered,
     /// never reflowed), and the other editor narrows as in a divider drag —
@@ -2007,5 +2051,41 @@ private final class LiveResizeProbe: NSView {
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         log.append("\(Int(newSize.width)) \(inLiveResize ? "live" : "still")")
+    }
+}
+
+/// A tab whose content wishes for a width, as the app's composer does: a card
+/// 720 wide unless the tab is narrower — a wish just under the window's own
+/// size (`.windowSizeStayPut` less one) — and never closer than 16 to either
+/// side.
+private final class WishingViewController: NSViewController {
+
+    private static let wish: CGFloat = 720
+
+    init(title: String) {
+        super.init(nibName: nil, bundle: nil)
+        self.title = title
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("code-only")
+    }
+
+    override func loadView() {
+        view = NSView()
+        let card = NSView()
+        card.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(card)
+        let width = card.widthAnchor.constraint(equalToConstant: Self.wish)
+        width.priority = NSLayoutConstraint.Priority(NSLayoutConstraint.Priority.windowSizeStayPut.rawValue - 1)
+        NSLayoutConstraint.activate([
+            card.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            card.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16),
+            card.heightAnchor.constraint(equalToConstant: 100),
+            card.widthAnchor.constraint(lessThanOrEqualToConstant: Self.wish),
+            card.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -32),
+            width,
+        ])
     }
 }

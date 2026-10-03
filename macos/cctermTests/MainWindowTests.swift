@@ -345,6 +345,40 @@ final class MainWindowTests: XCTestCase {
         add(XCTAttachment(string: fadeIn.report()))
     }
 
+    // MARK: - Size
+
+    /// The window, not what is in it, decides its width: with the New view of
+    /// an empty area, a New tab, or a session's tab, it grows as wide as asked
+    /// and shrinks to its minimum, and the editors take the difference.
+    func testTheWindowResizesFreelyWhateverTheTabShows() async throws {
+        let stage = AppKitStage.mainWindow()
+        defer { stage.teardown() }
+        await stage.settle()
+        let split = try XCTUnwrap(stage.mainSplit)
+        try await expectFreeResizing(of: stage, "the empty area's New view")
+
+        split.newTab()
+        await stage.settle()
+        try await expectFreeResizing(of: stage, "a New tab")
+
+        split.sidebarViewController(try sidebar(of: split), didOpen: Self.session("a"))
+        await stage.settle()
+        try await expectFreeResizing(of: stage, "a session's tab")
+    }
+
+    private func expectFreeResizing(of stage: AppKitStage, _ what: String) async throws {
+        let window = stage.window
+        let detail = try XCTUnwrap(stage.mainSplit).splitViewItems[1].viewController.view
+        for width in [1600, window.minSize.width, 1200] {
+            window.setFrame(NSRect(origin: window.frame.origin, size: NSSize(width: width, height: 800)), display: true)
+            await stage.settle(rounds: 3)
+            XCTAssertEqual(window.frame.width, width, accuracy: 0.5, "\(what): the window would not be \(width) wide")
+            XCTAssertEqual(
+                detail.convert(detail.bounds, to: nil).maxX, window.frame.width, accuracy: 0.5,
+                "\(what): the editors did not take the width")
+        }
+    }
+
     // MARK: - Fixtures
 
     typealias Rows = SessionDirectoryFixture

@@ -109,10 +109,10 @@ final class ComposerView: NSView {
     }
 
     private func configureConstraints() {
-        // The column: as wide as 720 allows, centred. Below 500 a window sizes
-        // itself to what its constraints ask, so the width is a wish, not a minimum.
+        // The column: as wide as 720 allows, centred — a wish, never a size
+        // for the window.
         let fill = surface.widthAnchor.constraint(equalToConstant: Self.maxWidth)
-        fill.priority = NSLayoutConstraint.Priority(499)
+        fill.priority = .wishUnderWindowSize
         NSLayoutConstraint.activate([
             surface.topAnchor.constraint(equalTo: topAnchor),
             surface.centerXAnchor.constraint(equalTo: centerXAnchor),

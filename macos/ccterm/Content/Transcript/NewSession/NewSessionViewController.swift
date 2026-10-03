@@ -131,7 +131,7 @@ final class NewSessionViewController: NSViewController {
         let slotHeight = composerGuide.heightAnchor.constraint(equalToConstant: 100)
         slotHeight.priority = .fittingSizeCompression
         let slotWidth = composerGuide.widthAnchor.constraint(equalTo: view.widthAnchor, constant: -32)
-        slotWidth.priority = .defaultHigh
+        slotWidth.priority = .wishUnderWindowSize
 
         NSLayoutConstraint.activate([
             above.topAnchor.constraint(equalTo: view.topAnchor),

@@ -432,7 +432,7 @@ final class SessionTabViewController: NSViewController {
         let bottom = composer.view.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -Self.floatGap)
         // 720 at most, 16 from each side when the tab is narrower.
         let width = composer.view.widthAnchor.constraint(equalToConstant: Self.composerWidth)
-        width.priority = .defaultHigh
+        width.priority = .wishUnderWindowSize
         composerBottom = bottom
         composerWidth = width
         sessionConstraints = [

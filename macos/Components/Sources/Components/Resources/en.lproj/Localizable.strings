@@ -36,3 +36,10 @@
 "Delete…" = "Delete…";
 "Sign Out…" = "Sign Out…";
 "API Providers" = "API Providers";
+/* Sidebar: the loading state, a live session mark, its context menu. */
+"Loading…" = "Loading…";
+"Idle" = "Idle";
+"Responding" = "Responding";
+"Needs Your Input" = "Needs Your Input";
+"Failed" = "Failed";
+"End Session" = "End Session";

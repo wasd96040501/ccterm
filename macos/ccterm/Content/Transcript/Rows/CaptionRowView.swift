@@ -1,4 +1,5 @@
 import AppKit
+import Components
 
 /// The 20-pt line naming who speaks in the `.markdown` row under it — a
 /// subagent, a session, the coordinator, a plugin, or a plan
@@ -72,13 +73,13 @@ final class CaptionRowView: NSView, PageRowView {
         glyph.isHidden = false
         switch model.glyph {
         case .subagent:
-            glyph.image = NSImage(resource: .sidebarAgent)
+            glyph.image = NSImage.sidebarAgent
             glyph.contentTintColor = .systemGray
         case .session:
-            glyph.image = NSImage(resource: .sidebarSession)
-            glyph.contentTintColor = NSColor(resource: .sidebarCoral)
+            glyph.image = NSImage.sidebarSession
+            glyph.contentTintColor = NSColor.sidebarCoral
         case .coordinator:
-            glyph.image = NSImage(resource: .sidebarWorkflow)
+            glyph.image = NSImage.sidebarWorkflow
             glyph.contentTintColor = .systemIndigo
         case .plugin:
             glyph.image = .symbol("puzzlepiece.extension", pointSize: 13)

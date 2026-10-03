@@ -36,3 +36,10 @@
 "Delete…" = "删除…";
 "Sign Out…" = "退出登录…";
 "API Providers" = "API 提供方";
+/* Sidebar: the loading state, a live session mark, its context menu. */
+"Loading…" = "正在载入…";
+"Idle" = "空闲";
+"Responding" = "正在回复";
+"Needs Your Input" = "需要你的输入";
+"Failed" = "失败";
+"End Session" = "结束会话";

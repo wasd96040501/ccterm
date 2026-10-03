@@ -6,13 +6,13 @@ import AppKit
 /// tile's motion, since a running thing moves and isn't coloured. On a
 /// selected, focused row every mark is white, as the icon is. Reduce Motion
 /// stills the arc.
-final class ActivityMarkView: NSView {
+public final class ActivityMarkView: NSView {
     /// The width and height of the mark's slot.
     static let slot: CGFloat = 14
 
     private let shape = CAShapeLayer()
 
-    var activity: SessionState.Activity? {
+    public var activity: SidebarActivity? {
         didSet {
             guard activity != oldValue else { return }
             setAccessibilityLabel(activity?.accessibilityLabel)
@@ -20,14 +20,14 @@ final class ActivityMarkView: NSView {
         }
     }
 
-    var isEmphasized = false {
+    public var isEmphasized = false {
         didSet {
             guard isEmphasized != oldValue else { return }
             needsDisplay = true
         }
     }
 
-    override init(frame: NSRect) {
+    public override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
         layer?.addSublayer(shape)
@@ -37,17 +37,17 @@ final class ActivityMarkView: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    override var intrinsicContentSize: NSSize { NSSize(width: Self.slot, height: Self.slot) }
+    public override var intrinsicContentSize: NSSize { NSSize(width: Self.slot, height: Self.slot) }
 
-    override var wantsUpdateLayer: Bool { true }
+    public override var wantsUpdateLayer: Bool { true }
 
-    override func updateLayer() {
+    public override func updateLayer() {
         effectiveAppearance.performAsCurrentDrawingAppearance { paint() }
     }
 
-    override func layout() {
+    public override func layout() {
         super.layout()
         // The shape is its own centred square, so the arc turns about its middle.
         let side = Self.slot
@@ -55,7 +55,7 @@ final class ActivityMarkView: NSView {
         shape.position = CGPoint(x: bounds.midX, y: bounds.midY)
     }
 
-    override func viewDidMoveToWindow() {
+    public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         animate()
     }
@@ -81,7 +81,7 @@ final class ActivityMarkView: NSView {
             switch activity {
             case .idle: NSColor.secondaryLabelColor.withAlphaComponent(0.55)
             case .responding: .secondaryLabelColor
-            case .needsInput: NSColor(resource: .sidebarCoral)
+            case .needsInput: NSColor.sidebarCoral
             case .failed: .systemRed
             case nil: nil
             }
@@ -112,17 +112,5 @@ final class ActivityMarkView: NSView {
         turn.duration = 1
         turn.repeatCount = .infinity
         shape.add(turn, forKey: "turn")
-    }
-}
-
-extension SessionState.Activity {
-    /// What VoiceOver says of a mark.
-    var accessibilityLabel: String {
-        switch self {
-        case .idle: String(localized: "Idle")
-        case .responding: String(localized: "Responding")
-        case .needsInput: String(localized: "Needs Your Input")
-        case .failed: String(localized: "Failed")
-        }
     }
 }

@@ -1,4 +1,5 @@
 import AppKit
+import Components
 
 /// Under the jump bar of a document whose call waits for the reader: *Claude
 /// wants to run this command* · the reason · **Deny** / **Allow** — the same
@@ -87,7 +88,7 @@ final class ApprovalBarView: NSView {
     override func updateLayer() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             layer?.backgroundColor =
-                NSColor.textBackgroundColor.blended(withFraction: 0.09, of: NSColor(resource: .sidebarCoral))?.cgColor
+                NSColor.textBackgroundColor.blended(withFraction: 0.09, of: NSColor.sidebarCoral)?.cgColor
             separator.backgroundColor = NSColor.separatorColor.cgColor
         }
     }

@@ -1571,16 +1571,6 @@
         }
       }
     },
-    "End Session": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "结束会话"
-          }
-        }
-      }
-    },
     "Enter a URL that starts with http:// or https://.": {
       "localizations": {
         "zh-Hans": {
@@ -1809,16 +1799,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "高"
-          }
-        }
-      }
-    },
-    "Idle": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "空闲"
           }
         }
       }
@@ -2190,16 +2170,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "名称"
-          }
-        }
-      }
-    },
-    "Needs Your Input": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "需要你的输入"
           }
         }
       }
@@ -2903,16 +2873,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "重新发送"
-          }
-        }
-      }
-    },
-    "Responding": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在回复"
           }
         }
       }

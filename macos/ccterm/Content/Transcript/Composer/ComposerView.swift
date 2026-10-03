@@ -1,5 +1,6 @@
 import AgentSDK
 import AppKit
+import Components
 import DisplayModels
 
 /// The composer's card (design 08 *The composer*): an optional failure section
@@ -576,7 +577,7 @@ private final class ComposerStatusView: NSView {
             isWaitingForYou = true
         }
         tileHost.isHidden = !isBusy
-        label.textColor = isWaitingForYou ? NSColor(resource: .sidebarCoral) : .tertiaryLabelColor
+        label.textColor = isWaitingForYou ? NSColor.sidebarCoral : .tertiaryLabelColor
         setAccessibilityRole(isWaitingForYou ? .button : .staticText)
         setAccessibilityLabel(label.stringValue)
     }

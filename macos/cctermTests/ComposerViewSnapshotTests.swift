@@ -189,6 +189,77 @@ final class ComposerViewSnapshotTests: XCTestCase {
         attach(ViewSnapshot.writePNG(stack(sheets), name: "Composer-Tiers"))
     }
 
+    // MARK: - Against the design
+
+    /// Each specimen beside the sheet's own composer of that state, at its
+    /// width: `/tmp/ccterm-parity/<scheme>-part-<card>-comp0.png`.
+    func testTheComposerAgainstTheDesign() throws {
+        let cards = [
+            "Idle": "07", "Responding": "08", "Waiting": "09", "Starting": "10", "AtRest": "11", "Failed": "12",
+            "HaikuBypass": "13", "FastRing": "14", "Refused": "15", "Command": "16",
+        ]
+        for scheme in DesignParity.Scheme.allCases {
+            NSApp.appearance = scheme.appearance
+            defer { NSApp.appearance = nil }
+            for specimen in specimens {
+                guard let card = cards[specimen.name] else { continue }
+                let id = "part-\(card)-comp0"
+                let part = try DesignParity.part(id, scheme)
+                let probe = host(specimen, width: part.width)
+                probe.view.frame = NSRect(x: 0, y: 0, width: part.width, height: 400)
+                probe.view.layoutSubtreeIfNeeded()
+                let height = max(part.height, ceil(probe.composer.cardHeight))
+                let image = ViewSnapshot.renderViewController(
+                    flush(specimen, page: scheme.page), size: CGSize(width: part.width, height: height))
+                attach(try DesignParity.write(id, scheme, ours: image))
+            }
+        }
+    }
+
+    /// The card alone, edge to edge, on the sheet's page — as the design's capture frames it.
+    private func flush(_ specimen: Specimen, page: NSColor) -> NSViewController {
+        let host = Flush(page: page)
+        host.loadViewIfNeeded()
+        host.composer.configure(with: specimen.model)
+        host.composer.text = specimen.text
+        host.focused = specimen.focused
+        return host
+    }
+
+    private final class Flush: NSViewController {
+        let composer = ComposerViewController()
+        let page: NSColor
+        var focused = false
+
+        init(page: NSColor) {
+            self.page = page
+            super.init(nibName: nil, bundle: nil)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError() }
+
+        override func loadView() {
+            let view = NSView()
+            view.wantsLayer = true
+            view.layer?.backgroundColor = page.cgColor
+            self.view = view
+            addChild(composer)
+            composer.view.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(composer.view)
+            NSLayoutConstraint.activate([
+                composer.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                composer.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                composer.view.topAnchor.constraint(equalTo: view.topAnchor),
+            ])
+        }
+
+        override func viewDidAppear() {
+            super.viewDidAppear()
+            if focused { composer.focus() } else { view.window?.makeFirstResponder(nil) }
+        }
+    }
+
     func testTheSlashListOverTheCard() {
         let list = SlashListViewController()
         list.loadViewIfNeeded()

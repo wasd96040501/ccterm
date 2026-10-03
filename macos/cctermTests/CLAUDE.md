@@ -75,6 +75,8 @@ Render a real view into an off-screen window, write `/tmp/ccterm-screenshots/<Na
 - **Run policy:** the runner injects `-skip-testing:<Class>` for every `*SnapshotTests.swift` when `FILTER` is empty, so they never run on the default suite or CI but still compile. File name must equal class name; split files for multiple classes.
 - **Helpers:** `ViewSnapshot.render(_ view: some View, size:settle:)` for SwiftUI, `ViewSnapshot.renderViewController(_:size:settle:)` for AppKit VCs, `ViewSnapshot.writePNG(_:name:)`. Always go through them — they park the window off-screen at alpha 0.01, so a snapshot never flashes on the user's display.
 
+**Against the design.** A view the transcript design sheet draws is checked beside it, not by eye alone: `make design-shots` renders the sheet's live parts (each composer, New view, tab bar, prompt, menu, alert) at @2x into `/tmp/design-shots` with their sizes in pt; the snapshot renders the same state at that size and `DesignParity.write` puts design | ours | difference in `/tmp/ccterm-parity/` (`ComposerViewSnapshotTests.testTheComposerAgainstTheDesign` is the reference). Run with `TEST_LANGUAGE=en` so the words line up. Measure what differs in pt from the stylesheet's numbers (`preview-live.css`), not from the picture; the only accepted residue is what the browser draws differently (text rasterisation of translucent ink, materials).
+
 Adding one:
 
 1. Create `<ViewName>SnapshotTests.swift`; seed state the way production does and reuse production fixture constants.

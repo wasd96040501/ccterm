@@ -86,6 +86,7 @@ private final class NewSessionHost: NSView, NewSessionViewControllerDelegate {
     private let openMenu: NewSessionSpecimen.Menu?
     private var content: NewSessionContent
     private var menuController: MenuPanelViewController?
+    private var menuSurface: ElevatedView?
 
     init(state: NewSessionSpecimen.State, menu: NewSessionSpecimen.Menu?) {
         content = state.content
@@ -119,7 +120,9 @@ private final class NewSessionHost: NSView, NewSessionViewControllerDelegate {
                 with: menu == .folder ? NewSessionViewController.folderMenu(of: content) : branchMenu())
             panel.loadViewIfNeeded()
             menuController = panel
-            stage.addSubview(panel.view)
+            let surface = ElevatedView.popover(holding: panel.view)
+            menuSurface = surface
+            stage.addSubview(surface)
         }
     }
 
@@ -143,13 +146,13 @@ private final class NewSessionHost: NSView, NewSessionViewControllerDelegate {
 
     /// The menu under the chip that opens it, as the pop-up shows it.
     private func placeMenu() {
-        guard let menuController, let menu = openMenu else { return }
+        guard let menuController, let menuSurface, let menu = openMenu else { return }
         let id = menu == .folder ? "newSession.folder" : "newSession.branch"
         guard let chip = Self.find(id, in: controller.view) else { return }
         let size = menuController.preferredSize
         let chipFrame = stage.convert(chip.bounds, from: chip)
         // `stage` is not flipped: its y runs up, so under the chip is lower.
-        menuController.view.frame = NSRect(
+        menuSurface.frame = NSRect(
             x: chipFrame.minX, y: chipFrame.minY - 4 - size.height, width: size.width, height: size.height)
     }
 

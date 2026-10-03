@@ -1,4 +1,5 @@
 import AppKit
+import Components
 
 /// A surface the design lifts off what is behind it — a window, a sheet: a
 /// fill with rounded corners, a hairline edge, and its shadows, all as the
@@ -68,7 +69,8 @@ final class ElevatedView: NSView {
                 roundedRect: layer.bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
             // CSS blur is the Gaussian's diameter; a layer's radius is half.
             layer.shadowRadius = drop.blur / 2
-            layer.shadowOffset = CGSize(width: 0, height: drop.dy)
+            // CSS's y runs down; this view's layers' runs up.
+            layer.shadowOffset = CGSize(width: 0, height: isFlipped ? drop.dy : -drop.dy)
             layer.shadowOpacity = 1
         }
         CATransaction.commit()
@@ -94,6 +96,24 @@ final class ElevatedView: NSView {
             content.layer?.borderWidth = isDark && elevation.innerRing != nil ? 0.5 : 0
             content.layer?.borderColor = elevation.innerRing?.cgColor
         }
+    }
+}
+
+extension ElevatedView {
+    /// What a pop-up stands on (`.lv-menu`, `.lv-slash`), as the app's
+    /// borderless panel and its window shadow are on screen: the popover's
+    /// corners, the separator outside the edge and `0 10px 32px` under it —
+    /// 18 % for a menu, 14 % for the slash list.
+    static func popover(holding view: NSView, shadow alpha: CGFloat = 0.18) -> ElevatedView {
+        let surface = ElevatedView(
+            radius: CornerRadius.popover, fill: .design(light: .design(hex: 0xffffff), dark: .design(hex: 0x1e1e1e)),
+            shadow: .init(
+                ring: (.design(white: 0, alpha: 0.1), .design(white: 1, alpha: 0.1)), innerRing: nil,
+                drops: [(10, 32, .design(white: 0, alpha: alpha), .design(white: 0, alpha: alpha))]))
+        view.frame = surface.content.bounds
+        view.autoresizingMask = [.width, .height]
+        surface.content.addSubview(view)
+        return surface
     }
 }
 

@@ -1,5 +1,6 @@
 import AppKit
 import Components
+import DisplayModels
 
 /// The one menu (design/transcript, section 8 *Menus*, `.lv-menu`): the five
 /// pop-ups of the composer and the New view, each at the width the design
@@ -49,8 +50,9 @@ final class MenuRow: NSView {
         var tallest: CGFloat = 0
         for controller in controllers {
             let size = controller.preferredSize
-            controller.view.frame = NSRect(origin: NSPoint(x: x, y: 20), size: size)
-            addSubview(controller.view)
+            let surface = ElevatedView.popover(holding: controller.view)
+            surface.frame = NSRect(origin: NSPoint(x: x, y: 20), size: size)
+            addSubview(surface)
             x += size.width + 24
             tallest = max(tallest, size.height)
         }
@@ -69,64 +71,18 @@ final class MenuRow: NSView {
 }
 
 /// What the app's menus are built from, as the playground opens them: the
-/// model on *Default (recommended)*, High effort, Auto mode, four recent
-/// folders with ccterm chosen, and the branches the playground's ccterm has.
-/// Glyphs are stand-ins in the glyph's box until the design's own arrive.
+/// composer's own (`ComposerMenu`) on *Default (recommended)*, High effort and
+/// Auto mode, the New view's folder menu over four recent folders with ccterm
+/// chosen, and the branches the playground's ccterm has.
 enum MenuFixtures {
-    private static func glyph(_ name: String, _ point: CGFloat = 13) -> NSImage {
-        let image = NSImage(systemSymbolName: name, accessibilityDescription: nil) ?? NSImage()
-        return image.withSymbolConfiguration(.init(pointSize: point, weight: .regular)) ?? image
-    }
+    private static let composer = ComposerFixtures.state(
+        current: "model:\(ComposerFixtures.subscription.uuidString):default")
 
-    private static func item(
-        _ title: String, _ subtitle: String? = nil, glyph: NSImage? = nil, checked: Bool = false,
-        enabled: Bool = true, danger: Bool = false
-    ) -> MenuContent.Row {
-        .item(
-            MenuContent.Item(
-                id: title, title: title, subtitle: subtitle, glyph: glyph, isChecked: checked, isEnabled: enabled,
-                isDanger: danger))
-    }
+    static var effort: MenuContent { ComposerMenu.content(of: composer.effortMenu) }
 
-    static var effort: MenuContent {
-        let meter = glyph("chart.bar")
-        return MenuContent(rows: [
-            .header(.title("Effort · Opus 5.5")),
-            item("Low", glyph: meter), item("Medium", glyph: meter),
-            item("High", "Default", glyph: meter, checked: true),
-            item("Extra High", glyph: meter), item("Max", "This session only", glyph: meter),
-        ])
-    }
+    static var mode: MenuContent { ComposerMenu.content(of: composer.modeMenu) }
 
-    static var mode: MenuContent {
-        let mode = glyph("hand.raised")
-        return MenuContent(rows: [
-            .header(.title("Permission Mode", hint: "⇧⇥")),
-            item("Ask Permissions", "Asks before edits and commands", glyph: mode),
-            item("Accept Edits", "Edits files without asking; asks before commands", glyph: mode),
-            item("Plan", "Reads and plans; changes nothing", glyph: mode),
-            item("Auto", "Approves safe actions, asks when unsure", glyph: mode, checked: true),
-            item("Don’t Ask", "Runs only what’s already allowed", glyph: mode),
-            .separator,
-            item("Bypass Permissions", "Runs everything without asking", glyph: mode, danger: true),
-        ])
-    }
-
-    static var folder: MenuContent {
-        let folder = glyph("folder", 11)
-        func recent(_ title: String, _ path: String, checked: Bool = false) -> MenuContent.Row {
-            .item(
-                MenuContent.Item(
-                    id: path, title: title, glyph: folder, isChecked: checked, trailing: .key(path), toolTip: path))
-        }
-        return MenuContent(rows: [
-            .header(.title("Recent")),
-            recent("ccterm", "~/dev/ccterm", checked: true), recent("ghostty", "~/dev/ghostty"),
-            recent("claude-notes", "~/notes/claude-notes"), recent("dotfiles", "~/dotfiles"),
-            .separator,
-            .item(MenuContent.Item(id: "choose", title: "Choose Folder…", trailing: .key("⌘O"))),
-        ])
-    }
+    static var folder: MenuContent { NewSessionViewController.folderMenu(of: NewSessionSpecimen.State.rest.content) }
 
     /// The branch picker, its list narrowed to the names holding `query`.
     static func branch(query: String = "") -> MenuContent {
@@ -149,27 +105,5 @@ enum MenuFixtures {
         return MenuContent(rows: all, filter: MenuContent.Filter(placeholder: "Filter", text: query))
     }
 
-    static var model: MenuContent {
-        let mark = NSImage.claudeMark.copy() as? NSImage ?? NSImage()
-        mark.size = NSSize(width: 14, height: 14)
-        let provider = glyph("server.rack", 14)
-        return MenuContent(
-            rows: [
-                .header(.account(mark: mark, name: "Claude Max", detail: "Subscription", note: nil)),
-                item("Default (recommended)", "Opus 5.5", checked: true), item("Opus 5.5"), item("Fable 5.1"),
-                item("Sonnet 5.5"), item("Haiku 4.5"),
-                .item(MenuContent.Item(id: "more", title: "7 More Models", isMore: true)),
-                .header(.account(mark: provider, name: "Work Relay", detail: "relay.example.com", note: nil)),
-                item("Default", "claude-sonnet-4-6"), item("Opus", "claude-opus-4-6"),
-                item("Sonnet", "claude-sonnet-4-6"), item("Haiku", "claude-haiku-4-5"),
-                .header(.account(mark: provider, name: "DeepSeek", detail: "api.deepseek.com", note: nil)),
-                item("Default", "deepseek-v3.2"),
-            ],
-            footer: [
-                .item(
-                    MenuContent.Item(
-                        id: "fast", title: "Fast Mode", subtitle: "Faster output on Opus · billed as extra usage",
-                        glyph: glyph("bolt", 14), trailing: .toggle(isOn: false)))
-            ], isPanel: true)
-    }
+    static var model: MenuContent { ComposerMenu.modelContent(of: composer, expanded: []) }
 }

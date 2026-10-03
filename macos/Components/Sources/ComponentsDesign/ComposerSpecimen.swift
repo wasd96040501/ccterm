@@ -33,19 +33,13 @@ enum ComposerSpecimen {
         var specimens = states.map { title, state, text in
             composer(title, state, text: text)
         }
-        specimens.append(
-            MenuRow([
-                ComposerMenu.content(of: ComposerFixtures.idle.effortMenu),
-                ComposerMenu.content(of: ComposerFixtures.idle.modeMenu),
-                ComposerMenu.modelContent(of: ComposerFixtures.responding, expanded: []),
-            ]).specimen("Menus — Effort, Permission mode, and the Model panel with Fast Mode under the scroll"))
         specimens.append(slashList("Slash commands — the list a `/` opens"))
         return DesignPageViewController.Section(
             title: "Composer",
             note:
                 "One card: an optional failure section, the growing field, the Model / Effort / Mode pull-downs, "
                 + "the status slot and the action button. In a page the key hints sit under it while the field is "
-                + "empty. The pull-downs open the one menu; `/` at the start completes a command into a token. It "
+                + "empty. The pull-downs open the one menu (Menus); `/` at the start completes a command into a token. It "
                 + "is shown at the transcript's column, 720 wide.",
             specimens: specimens)
     }
@@ -73,7 +67,9 @@ enum ComposerSpecimen {
         list.configure(commands: ComposerFixtures.commands, width: columnWidth)
         let size = list.preferredSize
         return .init(
-            title: title, view: CentredHost(list.view, size: size, owner: list), width: size.width,
+            title: title,
+            view: CentredHost(ElevatedView.popover(holding: list.view, shadow: 0.14), size: size, owner: list),
+            width: size.width,
             height: size.height)
     }
 }

@@ -36,7 +36,7 @@ final class PromptRowsTests: XCTestCase {
 
     func testAShellCommandIsMonospacedWithABangToken() {
         let bubble = Bubble.shell("git status --short")
-        XCTAssertEqual(bubble.text, "!git status --short")
+        XCTAssertEqual(bubble.text, "! git status --short")
         XCTAssertEqual(bubble.tokens, [Bubble.Token(range: 0..<1, kind: .command, toolTip: nil)])
         XCTAssertTrue(bubble.isMonospaced)
     }
@@ -59,12 +59,23 @@ final class PromptRowsTests: XCTestCase {
         XCTAssertEqual(rows.map(\.id.part), [.main])
     }
 
+    /// `/context` prints its total, then a blank line: the note is the total
+    /// alone, so *· Show all* follows it on the same line.
+    func testABlankSecondLineIsNoLineToShow() {
+        let command = LocalCommand(
+            id: "c", command: .slash(name: "/context", arguments: ""),
+            output: "18k / 200k tokens\n\nSystem 3k\nTools 9k",
+            errorOutput: "")
+        XCTAssertEqual(command.note?.text, "18k / 200k tokens")
+        XCTAssertEqual(command.note?.link?.isAfterDot, true)
+    }
+
     func testALongSlashOutputIsCutWithShowAllBelow() {
         let command = LocalCommand(
             id: "c", command: .slash(name: "/usage", arguments: ""), output: "a\nb\nc\nd", errorOutput: "")
         XCTAssertEqual(command.note?.text, "a\nb")
         XCTAssertEqual(
-            command.note?.link, Note.Link(title: String(localized: "Show all"), intent: .open("c"), isBelow: true))
+            command.note?.link, Note.Link(title: String(localized: "Show all"), intent: .open("c"), isAfterDot: true))
     }
 
     func testAShellCommandsOutputIsItsLengthAsALink() {

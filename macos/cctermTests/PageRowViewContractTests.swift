@@ -281,7 +281,8 @@ final class PageRowViewContractTests: XCTestCase {
             (
                 "cut",
                 Note(
-                    text: "Plan: Max\nWeek: 41%", link: Note.Link(title: "Show all", intent: .open("x"), isBelow: true))
+                    text: "Plan: Max\nWeek: 41%",
+                    link: Note.Link(title: "Show all", intent: .open("x"), isAfterDot: true))
             ),
             ("count", Note(text: "", link: Note.Link(title: "12 lines ›", intent: .open("x")))),
             ("held", Note(text: "Sent when Claude is ready")),

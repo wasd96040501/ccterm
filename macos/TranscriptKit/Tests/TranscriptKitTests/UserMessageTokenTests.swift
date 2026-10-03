@@ -108,6 +108,22 @@ final class UserMessageTokenTests: XCTestCase {
         XCTAssertEqual(measured.text(from: 0, to: measured.length), "Image 1 shows it")
     }
 
+    /// A picture's token is words (`.imgtok`): the 13-pt body face, medium, on
+    /// an 18-pt wash with 5 pt either side; a command's is code on 15.
+    func testAPictureTokenIsSetAsWordsOnATallerWash() throws {
+        let url = URL(string: "ccterm-image:1")!
+        let measured = try measured(.init("Image 1", tokens: [.init(range: 0..<7, kind: .image(url))]))
+        let wash = try XCTUnwrap(measured.washes.first)
+        XCTAssertEqual(wash.height, UserMessageBlock.pictureWashHeight, accuracy: 0.01)
+        XCTAssertEqual(UserMessageBlock.pictureWashHeight, 18)
+        let attributed = measured.text.attributed
+        let font = try XCTUnwrap(attributed.attribute(.font, at: attributed.length - 2, effectiveRange: nil) as? NSFont)
+        XCTAssertFalse(font.isFixedPitch)
+        XCTAssertEqual(font.pointSize, 13)
+        let first = try XCTUnwrap(measured.text.rects(from: 1, to: 2).first)
+        XCTAssertEqual(first.minX, 5, accuracy: 0.5, "the glyph begins one 5-pt pad in")
+    }
+
     func testAPointOverATokenFindsItsLink() throws {
         let url = URL(string: "ccterm-image:1")!
         let measured = try measured(.init("Image 1", tokens: [.init(range: 0..<7, kind: .image(url))]))
@@ -163,6 +179,18 @@ final class UserMessageTokenTests: XCTestCase {
         let font = attributed.attribute(.font, at: attributed.length - 1, effectiveRange: nil) as? NSFont
         XCTAssertEqual(font?.pointSize, 12.5)
         XCTAssertTrue(font?.isFixedPitch ?? false)
+    }
+
+    /// `! git status`: the space after the `!` token is the bubble's body face,
+    /// as the sheet sets it, not a wider mono space.
+    func testTheSpaceAfterAShellTokenIsTheBodyFace() throws {
+        let message = TranscriptRowContent.UserMessage(
+            "! git status", tokens: [.init(range: 0..<1, kind: .command)], isMonospaced: true)
+        let attributed = try measured(message).text.attributed
+        let space = (attributed.string as NSString).range(of: " ").location
+        let font = try XCTUnwrap(attributed.attribute(.font, at: space, effectiveRange: nil) as? NSFont)
+        XCTAssertFalse(font.isFixedPitch)
+        XCTAssertEqual((attributed.string as NSString).substring(from: space + 1), "git status")
     }
 
     // MARK: - Truncation

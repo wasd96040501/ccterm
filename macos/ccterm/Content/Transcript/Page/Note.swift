@@ -27,9 +27,9 @@ nonisolated struct Note: Sendable, Equatable {
     struct Link: Sendable, Equatable {
         var title: String
         var intent: Intent
-        /// On its own line under the words (*Show all*) rather than after
-        /// them (*Queued · Withdraw*).
-        var isBelow = false
+        /// After the words and a ` · ` (*61k / 200k tokens (31%) · Show all*),
+        /// rather than 8 pt after them (*Queued  Withdraw*).
+        var isAfterDot = false
     }
 
     /// May be empty when only the link says anything (*4 lines ›*).

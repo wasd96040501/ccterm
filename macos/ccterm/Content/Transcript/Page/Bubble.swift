@@ -44,10 +44,11 @@ nonisolated extension Bubble {
             ], isPending: isPending)
     }
 
-    /// A `!` command: the sigil as a token, the command in mono.
+    /// A `!` command: the sigil as a token, a space, the command in mono
+    /// (preview.js `cmdToken("!")` then the `.shellcmd`).
     static func shell(_ command: String) -> Bubble {
         Bubble(
-            text: "!" + command, tokens: [Token(range: 0..<1, kind: .command, toolTip: nil)], isMonospaced: true)
+            text: "! " + command, tokens: [Token(range: 0..<1, kind: .command, toolTip: nil)], isMonospaced: true)
     }
 
     /// `/skill-creator` for `/skill-creator:skill-creator`.

@@ -84,6 +84,8 @@ struct UserMessageBlock: Block, @unchecked Sendable {
     struct Span: Sendable, Equatable {
         let range: Range<Int>
         let toolTip: String?
+        /// A picture's token: the body face, a taller wash.
+        var isPicture = false
     }
 
     /// How much of the content column the bubble may occupy. The remainder is
@@ -160,14 +162,20 @@ struct UserMessageBlock: Block, @unchecked Sendable {
         return NSColor.controlAccentColor.withAlphaComponent(dark ? 0.24 : 0.16)
     }
 
-    /// The padding either side of a token's words.
+    /// The padding either side of a command token's words (`.cmdtok` 4) and a
+    /// picture token's (`.imgtok` 5).
     static let tokenPadding: CGFloat = 4
+    static let pictureTokenPadding: CGFloat = 5
     static let tokenRadius: CGFloat = 5
     static var tokenFont: NSFont { .monospacedSystemFont(ofSize: 13, weight: .medium) }
+    /// A picture's token is words, not code: the 13-pt body face, medium (`.imgtok`).
+    static var pictureTokenFont: NSFont { .systemFont(ofSize: 13, weight: .medium) }
     static var shellFont: NSFont { .monospacedSystemFont(ofSize: 12.5, weight: .regular) }
 
-    /// The wash's height: the token's 13-pt face with a point above and below.
+    /// The wash's height: a command token's 13-pt face with a point above and
+    /// below; a picture token's 18-pt line (`.imgtok` line-height).
     static let washHeight: CGFloat = 15
+    static let pictureWashHeight: CGFloat = 18
 
     /// `message` as one attributed string: its words in the body face (or SF Mono
     /// for a shell command), each token's words in the token face between two
@@ -194,11 +202,12 @@ struct UserMessageBlock: Block, @unchecked Sendable {
                     string: words.substring(with: NSRange(location: cursor, length: range.location - cursor)),
                     attributes: body))
             let start = out.length
-            out.append(pad())
+            let isPicture: Bool = if case .image = token.kind { true } else { false }
+            out.append(pad(picture: isPicture))
 
             let inner = NSMutableAttributedString()
             let face: [NSAttributedString.Key: Any] = [
-                .font: tokenFont, .foregroundColor: dim(style.textColor),
+                .font: isPicture ? pictureTokenFont : tokenFont, .foregroundColor: dim(style.textColor),
             ]
             switch token.kind {
             case .command:
@@ -213,29 +222,41 @@ struct UserMessageBlock: Block, @unchecked Sendable {
                 }
             case .image(let url):
                 inner.append(
-                    InlineSymbol(.image, font: tokenFont, color: dim(style.secondaryColor))
-                        .attributedString(font: tokenFont))
+                    InlineSymbol(.image, font: pictureTokenFont, color: dim(style.secondaryColor))
+                        .attributedString(font: pictureTokenFont))
                 inner.append(NSAttributedString(string: words.substring(with: range), attributes: face))
                 inner.addAttribute(.link, value: url, range: NSRange(location: 0, length: inner.length))
             }
             out.append(inner)
-            out.append(pad())
-            spans.append(Span(range: start..<out.length, toolTip: token.toolTip))
+            out.append(pad(picture: isPicture))
+            spans.append(Span(range: start..<out.length, toolTip: token.toolTip, isPicture: isPicture))
             cursor = NSMaxRange(range)
         }
-        out.append(NSAttributedString(string: words.substring(from: cursor), attributes: body))
+        var rest = words.substring(from: cursor)
+        // The space between a token and a shell command's words is the bubble's
+        // body face, as the sheet sets it: a mono space would push them apart.
+        if message.isMonospaced, !spans.isEmpty, rest.hasPrefix(" ") {
+            out.append(
+                NSAttributedString(
+                    string: " ", attributes: [.font: style.bodyFont, .foregroundColor: dim(style.textColor)]))
+            rest.removeFirst()
+        }
+        out.append(NSAttributedString(string: rest, attributes: body))
         return (ShapedText(out), spans)
     }
 
     /// A 4-pt advance with no ink: one position in the index space, dropped from
     /// a copy with the symbols.
-    private static func pad() -> NSAttributedString {
+    private static func pad(picture: Bool) -> NSAttributedString {
         var callbacks = CTRunDelegateCallbacks(
             version: kCTRunDelegateCurrentVersion,
             dealloc: { _ in },
             getAscent: { _ in 0 },
             getDescent: { _ in 0 },
             getWidth: { _ in UserMessageBlock.tokenPadding })
+        if picture {
+            callbacks.getWidth = { _ in UserMessageBlock.pictureTokenPadding }
+        }
         var attributes: [NSAttributedString.Key: Any] = [.font: tokenFont]
         if let delegate = CTRunDelegateCreate(&callbacks, nil) {
             attributes[kCTRunDelegateAttributeName as NSAttributedString.Key] = delegate
@@ -295,9 +316,10 @@ struct UserMessageBlock: Block, @unchecked Sendable {
         var washes: [CGRect] = []
         var toolTips: [ToolTip] = []
         for span in tokens {
+            let font = span.isPicture ? Self.pictureTokenFont : Self.tokenFont
             let rects = text.tokenRects(
-                in: span.range, ascent: Self.tokenFont.ascender, descent: -Self.tokenFont.descender,
-                height: Self.washHeight
+                in: span.range, ascent: font.ascender, descent: -font.descender,
+                height: span.isPicture ? Self.pictureWashHeight : Self.washHeight
             ).map { $0.offsetBy(dx: textOrigin.x, dy: textOrigin.y) }
             washes += rects
             if let tip = span.toolTip { toolTips += rects.map { ToolTip(rect: $0, text: tip) } }

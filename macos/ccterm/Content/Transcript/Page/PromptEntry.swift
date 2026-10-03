@@ -75,7 +75,7 @@ nonisolated extension LocalCommand {
     }
 
     /// The line under the bubble: a slash command's output, cut at two lines
-    /// with *Show all* under it; a `!` command's one line of output, or how
+    /// with ` · Show all` after it; a `!` command's one line of output, or how
     /// many it printed as a link that opens the command's document. `nil` when
     /// it printed nothing.
     var note: Note? {
@@ -87,6 +87,6 @@ nonisolated extension LocalCommand {
         guard isOutputCut else { return Note(text: text, style: style) }
         return Note(
             text: text, style: style,
-            link: Note.Link(title: String(localized: "Show all"), intent: .open(id), isBelow: true))
+            link: Note.Link(title: String(localized: "Show all"), intent: .open(id), isAfterDot: true))
     }
 }

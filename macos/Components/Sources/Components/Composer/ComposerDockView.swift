@@ -4,13 +4,13 @@ import AppKit
 /// `.lv-dock`): the transcript scrolls under it, fading out over the 24 pt
 /// above the card and gone beside and below it, so the card stands on the
 /// window's colour. Clicks and scrolling pass through to the transcript.
-final class SessionTabDockView: NSView {
+public final class ComposerDockView: NSView {
     /// How far above the card the transcript starts to fade.
-    static let fade: CGFloat = 24
+    public static let fade: CGFloat = 24
 
     private let gradient = CAGradientLayer()
 
-    override init(frame frameRect: NSRect) {
+    override public init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.addSublayer(gradient)
@@ -22,16 +22,16 @@ final class SessionTabDockView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    override var wantsUpdateLayer: Bool { true }
+    override public var wantsUpdateLayer: Bool { true }
 
-    override func updateLayer() {
+    override public func updateLayer() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             let window = NSColor.windowBackgroundColor
             gradient.colors = [window.cgColor, window.cgColor, window.withAlphaComponent(0).cgColor]
         }
     }
 
-    override func layout() {
+    override public func layout() {
         super.layout()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -41,10 +41,10 @@ final class SessionTabDockView: NSView {
         CATransaction.commit()
     }
 
-    override func viewDidChangeEffectiveAppearance() {
+    override public func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         needsDisplay = true
     }
 
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override public func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

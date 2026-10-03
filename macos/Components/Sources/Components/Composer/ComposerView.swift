@@ -27,7 +27,6 @@ final class ComposerView: NSView {
     weak var delegate: ComposerViewDelegate?
 
     static let maxWidth: CGFloat = 720
-    static let cornerRadius = CornerRadius.card
     /// The card's width below which the status takes its own line.
     static let narrowWidth: CGFloat = 380
 
@@ -285,8 +284,19 @@ final class ComposerView: NSView {
     /// The card, in this view's coordinates.
     var cardFrame: NSRect { convert(surface.bounds, from: surface) }
 
-    /// The pull-down for `control`, the anchor of its menu.
-    func chip(for control: Control) -> ComposerChipButton {
+    /// Opens `menu` with `content` from `control`'s chip, which shows itself open.
+    func showMenu(of control: Control, content: MenuContent, in menu: MenuPanel, preferring side: MenuPopup.Side) {
+        let chip = chip(for: control)
+        chip.isOpen = true
+        menu.show(content, from: chip, preferring: side)
+    }
+
+    /// Shows `control`'s chip as open or closed.
+    func setMenuOpen(_ isOpen: Bool, for control: Control) {
+        chip(for: control).isOpen = isOpen
+    }
+
+    private func chip(for control: Control) -> ComposerChipButton {
         switch control {
         case .model: modelChip
         case .effort: effortChip
@@ -444,7 +454,7 @@ private final class CardSurfaceView: NSView {
             layer?.addSublayer(edge)
         }
         clip.wantsLayer = true
-        clip.layer?.cornerRadius = ComposerView.cornerRadius
+        clip.layer?.cornerRadius = CornerRadius.card
         clip.layer?.cornerCurve = .continuous
         clip.layer?.masksToBounds = true
         clip.translatesAutoresizingMaskIntoConstraints = false
@@ -487,7 +497,7 @@ private final class CardSurfaceView: NSView {
     private func placeEdges() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        let radius = ComposerView.cornerRadius
+        let radius = CornerRadius.card
         body.frame = bounds
         body.cornerRadius = radius
         ring.borderWidth = ringWidth

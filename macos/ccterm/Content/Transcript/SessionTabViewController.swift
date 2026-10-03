@@ -114,7 +114,7 @@ final class SessionTabViewController: NSViewController {
     private var sessionConstraints: [NSLayoutConstraint] = []
     private var composerBottom: NSLayoutConstraint?
     /// The window's colour under the floating composer, fading above it.
-    private let dock = SessionTabDockView()
+    private let dock = ComposerDockView()
     private var composerWidth: NSLayoutConstraint?
 
     /// How far the floating composer stands from the tab's bottom edge.
@@ -152,7 +152,7 @@ final class SessionTabViewController: NSViewController {
         dock.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(dock, positioned: .below, relativeTo: composer.view)
         NSLayoutConstraint.activate([
-            dock.topAnchor.constraint(equalTo: composer.view.topAnchor, constant: -SessionTabDockView.fade),
+            dock.topAnchor.constraint(equalTo: composer.view.topAnchor, constant: -ComposerDockView.fade),
             dock.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             dock.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             dock.bottomAnchor.constraint(equalTo: view.bottomAnchor),

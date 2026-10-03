@@ -217,10 +217,9 @@ public final class ComposerViewController: NSViewController {
         }
         let content = content(of: control, in: model)
         guard !content.rows.isEmpty else { return }
-        let chip = card.chip(for: control)
         openControl = control
-        chip.isOpen = true
-        popUpMenu.show(content, from: chip, preferring: model.placement == .page ? .below : .above)
+        card.showMenu(
+            of: control, content: content, in: popUpMenu, preferring: model.placement == .page ? .below : .above)
     }
 
     private func menuChose(_ item: MenuContent.Item) {
@@ -240,7 +239,7 @@ public final class ComposerViewController: NSViewController {
 
     private func menuDidClose() {
         if let openControl {
-            card.chip(for: openControl).isOpen = false
+            card.setMenuOpen(false, for: openControl)
             lastClosed = (openControl, ProcessInfo.processInfo.systemUptime)
         }
         openControl = nil

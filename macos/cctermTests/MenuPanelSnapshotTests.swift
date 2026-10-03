@@ -19,10 +19,6 @@ final class MenuPanelSnapshotTests: XCTestCase {
 
     private static let home = URL(fileURLWithPath: NSHomeDirectory())
 
-    private func composer() -> ComposerModel {
-        F.model(.draft, settings: F.settings("default", effort: .high, mode: .auto))
-    }
-
     private func newSession() -> NewSessionModel {
         let folders = ["dev/ccterm", "dev/ghostty", "notes/claude-notes", "dotfiles"].map {
             Self.home.appendingPathComponent($0)
@@ -51,9 +47,6 @@ final class MenuPanelSnapshotTests: XCTestCase {
 
     private func content(of menu: String) -> MenuContent {
         switch menu {
-        case "model": ComposerMenu.modelContent(of: composer(), expanded: [])
-        case "effort": ComposerMenu.content(of: composer().effortMenu)
-        case "mode": ComposerMenu.content(of: composer().modeMenu)
         case "folder": NewSessionMenu.folderContent(of: newSession())
         default: NewSessionMenu.branchContent(of: branches(), query: "")
         }
@@ -62,7 +55,7 @@ final class MenuPanelSnapshotTests: XCTestCase {
     func testEveryMenuAgainstTheDesign() async throws {
         var report: [String] = []
         for scheme in DesignParity.Scheme.allCases {
-            for menu in ["model", "effort", "mode", "folder", "branch"] {
+            for menu in ["folder", "branch"] {
                 let id = "live-\(menu)"
                 let part = try DesignParity.part(id, scheme)
                 let controller = MenuPanelViewController()

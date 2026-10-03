@@ -1,6 +1,7 @@
 import AgentSDK
 import AppKit
 import Combine
+import Components
 import TranscriptKit
 import XCTest
 
@@ -231,7 +232,7 @@ final class SessionTabHandoverTests: XCTestCase {
         try send("Fix the gutter", in: tab)
 
         let stop = try XCTUnwrap(
-            find(NSButton.self, in: composer.view) { $0.accessibilityLabel() == String(localized: "Stop") })
+            find(NSButton.self, in: composer.view) { $0.toolTip == String(localized: "Cancel ⌘.") })
         XCTAssertFalse(stop.isHidden, "the stop button is not offered while starting")
     }
 

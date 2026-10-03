@@ -1,14 +1,13 @@
-import AgentSDK
 import AppKit
-import Components
+import DisplayModels
 
-/// The images behind `ComposerModel.Glyph` (design 08 *Glyphs match by eye*):
+/// The images behind `ComposerPresentation.Glyph` (design 08 *Glyphs match by eye*):
 /// an SF Symbol wherever one has the sheet's shape, at the point size and
 /// weight whose ink matches the sheet's glyph (box and area, measured against
 /// preview-live.js's own geometry); the sheet's own geometry, generated into
 /// the asset catalog by `make composer-icons`, for the modes SF Symbols has no
 /// shape for; the Claude mark asset; and the effort meter — five bars filled
-/// to a level, drawn because it is a measured shape, not an icon. Every glyph
+/// to a level, the sheet's own geometry too, generated per level. Every glyph
 /// is centred in the box the sheet gives it, so a chip is as wide as the
 /// sheet's.
 @MainActor
@@ -16,14 +15,14 @@ enum ComposerGlyph {
     /// The glyph centred in a `size`-point square (template, so a view's tint
     /// colours it) — as a menu row or a panel draws it — except the Claude
     /// mark, which is the asset as is.
-    static func image(_ glyph: ComposerModel.Glyph, size: CGFloat = 14) -> NSImage? {
+    static func image(_ glyph: ComposerPresentation.Glyph, size: CGFloat = 14) -> NSImage? {
         let box = NSSize(width: size, height: size)
         switch glyph {
         // The sheet's bolt is 10 × 12 wherever it stands, measured in the chip's 14.
         case .fast: return symbol(.bolt, scale: size / 14, in: box)
         case .later: return symbol(.clock, scale: size / 10, in: box)
-        case .permissionMode(let mode): return modeImage(mode, size: size)
-        case .effort(let level): return meter(level: level, size: size)
+        case .ask, .acceptEdits, .plan, .auto, .dontAsk, .bypassPermissions: return modeImage(glyph, size: size)
+        case .effort(let level): return asset("ComposerEffort\(min(max(level ?? 0, 0), 5))", box)
         case .subscription: return sized(.claudeMark, box)
         case .provider: return symbol(.rack, scale: size / 16, in: box)
         case .restart: return symbol(.restart, scale: size / 16, in: box)
@@ -34,7 +33,7 @@ enum ComposerGlyph {
 
     /// The glyph at the box a chip gives it (preview-live.css `.chip`): 14 pt
     /// for the effort meter and a mode, the bolt 10 × 12, the clock 10.
-    static func chipImage(_ glyph: ComposerModel.Glyph) -> NSImage? {
+    static func chipImage(_ glyph: ComposerPresentation.Glyph) -> NSImage? {
         switch glyph {
         case .fast: symbol(.bolt, scale: 1, in: NSSize(width: 10, height: 12))
         case .later: symbol(.clock, scale: 1, in: NSSize(width: 10, height: 10))
@@ -44,7 +43,7 @@ enum ComposerGlyph {
 
     /// The glyph at the 16-pt box a menu row gives it (`.mi .g`): the bolt
     /// stays the chip's 10 × 12 in it (`padding: 2px 3px`).
-    static func menuImage(_ glyph: ComposerModel.Glyph) -> NSImage? {
+    static func menuImage(_ glyph: ComposerPresentation.Glyph) -> NSImage? {
         switch glyph {
         case .fast: symbol(.bolt, scale: 1, in: NSSize(width: 16, height: 16))
         default: image(glyph, size: 16)
@@ -99,21 +98,24 @@ enum ComposerGlyph {
 
     /// The permission mode's glyph in a `size` square: the SF Symbol where one
     /// has the sheet's shape, else the sheet's own.
-    private static func modeImage(_ mode: PermissionMode, size: CGFloat) -> NSImage {
+    private static func modeImage(_ mode: ComposerPresentation.Glyph, size: CGFloat) -> NSImage {
         let box = NSSize(width: size, height: size)
         switch mode {
-        case .default: return symbol(.defaultMode, scale: size / 14, in: box)
+        case .ask: return symbol(.defaultMode, scale: size / 14, in: box)
         case .bypassPermissions: return symbol(.bypassMode, scale: size / 14, in: box)
-        case .acceptEdits: return asset(.composerModeAcceptEdits, box)
-        case .plan: return asset(.composerModePlan, box)
-        case .auto: return asset(.composerModeAuto, box)
-        case .dontAsk: return asset(.composerModeDontAsk, box)
+        case .acceptEdits: return asset("ComposerModeAcceptEdits", box)
+        case .plan: return asset("ComposerModePlan", box)
+        case .auto: return asset("ComposerModeAuto", box)
+        case .dontAsk: return asset("ComposerModeDontAsk", box)
+        default: return NSImage(size: box)
         }
     }
 
-    /// `resource` at `size`; the catalog's SVG scales without loss.
-    private static func asset(_ resource: ImageResource, _ size: NSSize) -> NSImage {
-        sized(NSImage(resource: resource), size)
+    /// The catalogue's template image `name` at `size`; the SVG scales without loss.
+    private static func asset(_ name: String, _ size: NSSize) -> NSImage {
+        let image = sized(Bundle.module.image(forResource: name) ?? NSImage(), size)
+        image.isTemplate = true
+        return image
     }
 
     private static func sized(_ source: NSImage, _ size: NSSize) -> NSImage {
@@ -135,40 +137,4 @@ enum ComposerGlyph {
         boxed.isTemplate = template
         return boxed
     }
-
-    // MARK: - The effort meter
-
-    /// Bars rising left to right, `level` of the five filled; the rest at 28 %.
-    static func meter(level: Int?, size: CGFloat) -> NSImage {
-        let key = MeterKey(level: level ?? 0, size: size)
-        if let image = meters[key] { return image }
-        let image = NSImage(size: NSSize(width: size, height: size), flipped: true) { rect in
-            // The sheet's `bars`: on the 16-pt grid, y down, bars 2 wide on a
-            // 2.9 pitch, 3 to 12 tall, ending at 13; scaled 0.956 about (7.8, 7)
-            // onto the box's centre.
-            let scale = size / 16
-            let transform = NSAffineTransform()
-            transform.translateX(by: rect.midX, yBy: rect.midY)
-            transform.scale(by: scale * 0.956)
-            transform.translateX(by: -7.8, yBy: -7)
-            transform.concat()
-            for index in 0..<5 {
-                let height = 3 + CGFloat(index) * 2.25
-                let bar = NSRect(x: 1 + CGFloat(index) * 2.9, y: 13 - height, width: 2, height: height)
-                NSColor.black.withAlphaComponent(index < (level ?? 0) ? 1 : 0.28).setFill()
-                NSBezierPath(roundedRect: bar, xRadius: 0.8, yRadius: 0.8).fill()
-            }
-            return true
-        }
-        image.isTemplate = true
-        meters[key] = image
-        return image
-    }
-
-    private struct MeterKey: Hashable {
-        var level: Int
-        var size: CGFloat
-    }
-
-    private static var meters: [MeterKey: NSImage] = [:]
 }

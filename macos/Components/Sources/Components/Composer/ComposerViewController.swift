@@ -1,6 +1,5 @@
-import AgentSDK
 import AppKit
-import Components
+import DisplayModels
 
 /// The composer (design 08 *The composer*): one card — an optional failure
 /// section on top, the growing field, the accessory row of Model / Effort /
@@ -9,24 +8,24 @@ import Components
 /// same instance, serves a New tab and the session it becomes: its
 /// container moves its view from the New view's middle to the tab's bottom.
 ///
-/// In a page (`ComposerModel.Placement`) the key hints sit 12 pt under the
+/// In a page (`ComposerPresentation.Placement`) the key hints sit 12 pt under the
 /// card, while the field is empty; floating, the view is the card alone.
 ///
-/// Draws a `ComposerModel` (`configure(with:)`) and reports intents to its
+/// Draws a `ComposerPresentation` (`configure(with:)`) and reports intents to its
 /// delegate; it never knows a store. Its own state is only the field's text
 /// and the slash list's selection. Keys: ↩ send, ⇧↩ new line, ⇧⇥ the next
-/// mode (`ComposerModel.cycledMode`), ⌘. stop, `/` at the start completes a
+/// mode (`ComposerPresentation.cycledModeID`), ⌘. stop, `/` at the start completes a
 /// command, backspace into a command token removes it whole.
 ///
 /// Model, Effort and Mode open the one menu the New view's pop-ups open too
 /// (`MenuPanel`); the slash list is a child panel of its own. Layer corners
 /// take the design's radii (`CornerRadius`) with `cornerCurve = .continuous`.
 @MainActor
-final class ComposerViewController: NSViewController {
-    weak var delegate: ComposerViewControllerDelegate?
+public final class ComposerViewController: NSViewController {
+    public weak var delegate: ComposerViewControllerDelegate?
 
     private let card = ComposerView()
-    private var model: ComposerModel?
+    private var model: ComposerPresentation?
     private let keyHints = NSTextField(labelWithAttributedString: ComposerViewController.hints())
     /// The card, 12, the hints' 16-pt line: in a page.
     private var hintsUnderCard: [NSLayoutConstraint] = []
@@ -50,14 +49,14 @@ final class ComposerViewController: NSViewController {
 
     private lazy var slashPopup = MenuPopup(contentViewController: slashList, takesKey: false, gap: 8)
 
-    init() {
+    public init() {
         super.init(nibName: nil, bundle: nil)
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    override func loadView() {
+    public override func loadView() {
         view = NSView()
         keyHints.alignment = .center
         keyHints.lineBreakMode = .byTruncatingTail
@@ -87,21 +86,22 @@ final class ComposerViewController: NSViewController {
         keyHints.isHidden = true
     }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         card.delegate = self
         popUpMenu.onChoose = { [weak self] item in self?.menuChose(item) }
         popUpMenu.onClose = { [weak self] in self?.menuDidClose() }
     }
 
-    override func viewDidDisappear() {
+    public override func viewDidDisappear() {
         super.viewDidDisappear()
         popUpMenu.close()
         slashPopup.close()
     }
 
     /// Shows `model`. Idempotent.
-    func configure(with model: ComposerModel) {
+    public func configure(with model: ComposerPresentation) {
+        loadViewIfNeeded()
         let placementChanged = model.placement != self.model?.placement
         self.model = model
         card.configure(with: model)
@@ -113,7 +113,7 @@ final class ComposerViewController: NSViewController {
     /// The field's words — read when a New tab closes (they carry to the next
     /// one) and written when a prompt comes back (*Stopped before it was
     /// read*, a cancelled launch).
-    var text: String {
+    public var text: String {
         get { card.text }
         set {
             card.setText(newValue)
@@ -124,21 +124,21 @@ final class ComposerViewController: NSViewController {
     /// Whether the field's words and token are drawn dimmed — the container's
     /// to set while a sent prompt waits for its session (the handover's first
     /// step). Not the card, the chips or the buttons, and not part of the
-    /// `ComposerModel`: nothing the session knows.
-    var isFieldDimmed: Bool {
+    /// `ComposerPresentation`: nothing the session knows.
+    public var isFieldDimmed: Bool {
         get { card.isFieldDimmed }
         set { card.isFieldDimmed = newValue }
     }
 
     /// Gives the field the focus.
-    func focus() {
+    public func focus() {
         card.focus()
     }
 
     // MARK: - Key hints
 
     /// The hints under the card in a page; the card alone floating.
-    private func place(_ placement: ComposerModel.Placement) {
+    private func place(_ placement: ComposerPresentation.Placement) {
         let inPage = placement == .page
         // One bottom at a time: the old one goes before the new one comes.
         if inPage {
@@ -172,10 +172,10 @@ final class ComposerViewController: NSViewController {
     private static func hints() -> NSAttributedString {
         let font = NSFont.systemFont(ofSize: 11)
         let pairs = [
-            ("↩", String(localized: "Send")),
-            ("⇧↩", String(localized: "New Line")),
-            ("⇧⇥", String(localized: "Mode")),
-            ("/", String(localized: "Commands")),
+            ("↩", String(localized: "Send", bundle: .module)),
+            ("⇧↩", String(localized: "New Line", bundle: .module)),
+            ("⇧⇥", String(localized: "Mode", bundle: .module)),
+            ("/", String(localized: "Commands", bundle: .module)),
         ]
         // A zero-width joiner carries each gap as its kerning, so the gap is exact.
         let joiner = "\u{200D}"
@@ -195,7 +195,7 @@ final class ComposerViewController: NSViewController {
 
     // MARK: - Menus
 
-    private func content(of control: ComposerView.Control, in model: ComposerModel) -> MenuContent {
+    private func content(of control: ComposerView.Control, in model: ComposerPresentation) -> MenuContent {
         switch control {
         case .model: ComposerMenu.modelContent(of: model, expanded: expandedSections)
         case .effort: ComposerMenu.content(of: model.effortMenu)
@@ -226,15 +226,15 @@ final class ComposerViewController: NSViewController {
     private func menuChose(_ item: MenuContent.Item) {
         guard let choice = item.id as? ComposerMenu.Choice else { return }
         switch choice {
-        case .change(let change):
-            delegate?.composerViewController(self, didChoose: change)
+        case .item(let id):
+            delegate?.composerViewController(self, didChoose: id)
         case .more(let section):
             // Expands in place: the panel stays open and its list stays put.
             expandedSections.insert(section)
             if let model, let openControl { popUpMenu.update(content(of: openControl, in: model)) }
         case .fastMode:
             guard case .toggle(let isOn) = item.trailing else { return }
-            delegate?.composerViewController(self, didChoose: .fastMode(!isOn))
+            delegate?.composerViewController(self, didSetFastMode: !isOn)
         }
     }
 
@@ -274,7 +274,7 @@ final class ComposerViewController: NSViewController {
         }
     }
 
-    private func complete(_ command: SlashCommand) {
+    private func complete(_ command: ComposerPresentation.Command) {
         slashPopup.close()
         card.complete(command: command.name)
         card.focus()
@@ -332,8 +332,8 @@ extension ComposerViewController: ComposerViewDelegate {
             slashList.moveSelection(1)
             return true
         case .backtab:
-            if let change = model?.cycledMode {
-                delegate?.composerViewController(self, didChoose: change)
+            if let id = model?.cycledModeID {
+                delegate?.composerViewController(self, didChoose: id)
             }
             return true
         case .escape:

@@ -83,3 +83,15 @@
 /* AboutView */
 "Version %@ (%@)" = "Version %@ (%@)";
 "Commit" = "Commit";
+
+/* Composer */
+"Send" = "Send";
+"New Line" = "New Line";
+"Mode" = "Mode";
+"Commands" = "Commands";
+"Stop" = "Stop";
+"Show Log" = "Show Log";
+"Restart" = "Restart";
+"Claude quit unexpectedly" = "Claude quit unexpectedly";
+"%lld More Models" = "%lld More Models";
+"Fast Mode" = "Fast Mode";

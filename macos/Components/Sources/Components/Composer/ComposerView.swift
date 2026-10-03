@@ -1,6 +1,4 @@
-import AgentSDK
 import AppKit
-import Components
 import DisplayModels
 
 /// The composer's card (design 08 *The composer*): an optional failure section
@@ -8,7 +6,7 @@ import DisplayModels
 /// pull-downs, the status slot, the context ring, the action buttons — and,
 /// under the card, the one red line of an error.
 ///
-/// It draws a `ComposerModel` and reports intents to its delegate; the
+/// It draws a `ComposerPresentation` and reports intents to its delegate; the
 /// field's words are the only state it keeps. The card is 720 pt at most,
 /// centred, the card radius with continuous corners, the window's background,
 /// a hairline and a soft shadow; focus adds a 1-pt accent ring at 45 % and a
@@ -56,7 +54,7 @@ final class ComposerView: NSView {
     private let body = NSView()
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
 
-    private var model: ComposerModel?
+    private var model: ComposerPresentation?
     private var tier = ComposerChipButton.Tier.full
     private var isNarrow = false
 
@@ -185,14 +183,14 @@ final class ComposerView: NSView {
             guard let self else { return }
             self.delegate?.composerViewDidRequestContextUsage(self)
         }
-        sendButton.setAccessibilityLabel(String(localized: "Send"))
-        stopButton.setAccessibilityLabel(String(localized: "Stop"))
+        sendButton.setAccessibilityLabel(String(localized: "Send", bundle: .module))
+        stopButton.setAccessibilityLabel(String(localized: "Stop", bundle: .module))
     }
 
     // MARK: - Showing
 
     /// Shows `model`. Idempotent: the field's words are kept.
-    func configure(with model: ComposerModel) {
+    func configure(with model: ComposerPresentation) {
         self.model = model
         field.placeholder = model.placeholder
         modelChip.configure(with: model.model)
@@ -562,7 +560,7 @@ private final class ComposerStatusView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    func configure(status: ComposerModel.Status?, isBusy: Bool) {
+    func configure(status: ComposerPresentation.Status?, isBusy: Bool) {
         guard let status else {
             isHidden = true
             return

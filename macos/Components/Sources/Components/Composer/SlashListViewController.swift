@@ -1,6 +1,5 @@
-import AgentSDK
 import AppKit
-import Components
+import DisplayModels
 
 /// The command completion list (design 08 *Slash commands*): over the card — or
 /// under it, in a New tab — one row per command, 28 pt at least: the name in
@@ -9,9 +8,9 @@ import Components
 /// on has the selection wash; ↑ ↓ move it (`moveSelection`), the composer
 /// completes it. It draws what it is handed and reports a click.
 @MainActor
-final class SlashListViewController: NSViewController {
+package final class SlashListViewController: NSViewController {
     /// A row was clicked.
-    var onChoose: ((SlashCommand) -> Void)?
+    var onChoose: ((ComposerPresentation.Command) -> Void)?
 
     static let inset: CGFloat = 5
     static let rowPadding: CGFloat = 10
@@ -20,7 +19,7 @@ final class SlashListViewController: NSViewController {
     /// so a wrapped description is never what pushes the last of them out.
     static let visibleRows = 8
 
-    private(set) var commands: [SlashCommand] = []
+    private(set) var commands: [ComposerPresentation.Command] = []
     private var width: CGFloat = 640
 
     private let scrollView = NSScrollView()
@@ -30,11 +29,11 @@ final class SlashListViewController: NSViewController {
         equalToConstant: Self.minRowHeight + 2 * Self.inset)
     private lazy var widthConstraint = container.widthAnchor.constraint(equalToConstant: width)
 
-    override func loadView() {
+    package override func loadView() {
         view = container
     }
 
-    override func viewDidLoad() {
+    package override func viewDidLoad() {
         super.viewDidLoad()
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("slash.column"))
         column.resizingMask = .autoresizingMask
@@ -71,7 +70,7 @@ final class SlashListViewController: NSViewController {
 
     /// Lists `commands` at `width`. Keeps the selection on the same command
     /// when it is still there, else the first.
-    func configure(commands: [SlashCommand], width: CGFloat) {
+    package func configure(commands: [ComposerPresentation.Command], width: CGFloat) {
         loadViewIfNeeded()
         let selected = selectedCommand
         self.commands = commands
@@ -84,7 +83,7 @@ final class SlashListViewController: NSViewController {
     }
 
     /// The size the list wants.
-    var preferredSize: NSSize {
+    package var preferredSize: NSSize {
         loadViewIfNeeded()
         return NSSize(width: width, height: shownHeight)
     }
@@ -96,7 +95,7 @@ final class SlashListViewController: NSViewController {
 
     // MARK: - Selection
 
-    var selectedCommand: SlashCommand? {
+    var selectedCommand: ComposerPresentation.Command? {
         table.selectedRow >= 0 && table.selectedRow < commands.count ? commands[table.selectedRow] : nil
     }
 
@@ -129,11 +128,11 @@ final class SlashListViewController: NSViewController {
 }
 
 extension SlashListViewController: NSTableViewDataSource, NSTableViewDelegate {
-    func numberOfRows(in tableView: NSTableView) -> Int { commands.count }
+    package func numberOfRows(in tableView: NSTableView) -> Int { commands.count }
 
-    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat { rowHeight(of: row) }
+    package func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat { rowHeight(of: row) }
 
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+    package func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let identifier = NSUserInterfaceItemIdentifier("slash.row")
         let cell = tableView.makeView(withIdentifier: identifier, owner: nil) as? SlashRowView ?? SlashRowView()
         cell.identifier = identifier
@@ -247,7 +246,7 @@ private final class SlashRowView: NSTableCellView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    func configure(_ command: SlashCommand, rowWidth: CGFloat, isSelected: Bool) {
+    func configure(_ command: ComposerPresentation.Command, rowWidth: CGFloat, isSelected: Bool) {
         self.isSelected = isSelected
         let name = NSMutableAttributedString(
             string: "/", attributes: [.font: Self.nameFont, .foregroundColor: NSColor.tertiaryLabelColor])
@@ -274,7 +273,7 @@ private final class SlashRowView: NSTableCellView {
     }
 
     /// The width the description has in its row: what the name and the hint leave.
-    private static func descriptionWidth(of command: SlashCommand, rowWidth: CGFloat) -> CGFloat {
+    private static func descriptionWidth(of command: ComposerPresentation.Command, rowWidth: CGFloat) -> CGFloat {
         let name = ("/" + command.name as NSString).size(withAttributes: [.font: nameFont]).width
         var taken = SlashListViewController.rowPadding * 2 + ceil(name) + gap + gap
         if !command.argumentHint.isEmpty {
@@ -284,7 +283,7 @@ private final class SlashRowView: NSTableCellView {
     }
 
     /// How tall the description is at `rowWidth`.
-    static func descriptionHeight(of command: SlashCommand, rowWidth: CGFloat) -> CGFloat {
+    static func descriptionHeight(of command: ComposerPresentation.Command, rowWidth: CGFloat) -> CGFloat {
         let width = descriptionWidth(of: command, rowWidth: rowWidth)
         let rect = (command.description as NSString).boundingRect(
             with: NSSize(width: width, height: .greatestFiniteMagnitude),

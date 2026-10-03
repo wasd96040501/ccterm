@@ -1,8 +1,9 @@
-import AgentSDK
 import AppKit
+import DisplayModels
 import XCTest
 
-@testable import ccterm
+@testable import Components
+@testable import ComponentsDesign
 
 /// What the composer reports, driven the way its controls are: the keys go
 /// through the field's command selectors, the buttons through `performClick`,
@@ -14,16 +15,16 @@ final class ComposerViewControllerTests: XCTestCase {
     private final class Recorder: ComposerViewControllerDelegate {
         var submitted: [String] = []
         var stops = 0
-        var changes: [SessionSettings.Change] = []
+        var chosen: [String] = []
+        var fast: [Bool] = []
         var restarts = 0
         var logs = 0
         var waiting = 0
         var contexts = 0
         func composerViewController(_ c: ComposerViewController, didSubmit text: String) { submitted.append(text) }
         func composerViewControllerDidRequestStop(_ c: ComposerViewController) { stops += 1 }
-        func composerViewController(_ c: ComposerViewController, didChoose change: SessionSettings.Change) {
-            changes.append(change)
-        }
+        func composerViewController(_ c: ComposerViewController, didChoose id: String) { chosen.append(id) }
+        func composerViewController(_ c: ComposerViewController, didSetFastMode isOn: Bool) { fast.append(isOn) }
         func composerViewControllerDidRequestRestart(_ c: ComposerViewController) { restarts += 1 }
         func composerViewControllerDidRequestLog(_ c: ComposerViewController) { logs += 1 }
         func composerViewControllerDidRequestWaitingRequest(_ c: ComposerViewController) { waiting += 1 }
@@ -52,7 +53,7 @@ final class ComposerViewControllerTests: XCTestCase {
             composer.view.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -16),
             composer.view.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -16),
         ])
-        configure(F.model(F.session(.idle)))
+        configure(F.idle)
         window.layoutIfNeeded()
     }
 
@@ -60,7 +61,7 @@ final class ComposerViewControllerTests: XCTestCase {
         window.close()
     }
 
-    private func configure(_ model: ComposerModel) {
+    private func configure(_ model: ComposerPresentation) {
         composer.configure(with: model)
         composer.view.layoutSubtreeIfNeeded()
     }
@@ -89,8 +90,19 @@ final class ComposerViewControllerTests: XCTestCase {
         (view.delegate as? NSTextViewDelegate)?.textDidChange?(Notification(name: NSText.didChangeNotification))
     }
 
-    private func button(_ label: String) -> NSButton? {
-        find(NSButton.self) { $0.accessibilityLabel() == label }
+    private func actionButton(_ kind: ComposerActionButton.Kind) -> ComposerActionButton? {
+        find(ComposerActionButton.self) { $0.kind == kind }
+    }
+
+    /// The failure section's two buttons, Show Log then Restart.
+    private func failureButtons() -> [NSButton] {
+        var found: [NSButton] = []
+        func walk(_ view: NSView) {
+            if let button = view as? NSButton, button.target is ComposerFailureView { found.append(button) }
+            view.subviews.forEach(walk)
+        }
+        walk(composer.view)
+        return found
     }
 
     // MARK: Sending
@@ -108,7 +120,7 @@ final class ComposerViewControllerTests: XCTestCase {
     }
 
     func testTheArrowIsDisabledUntilThereAreWordsAndSendsThem() throws {
-        let send = try XCTUnwrap(button(String(localized: "Send")))
+        let send = try XCTUnwrap(actionButton(.send))
         XCTAssertFalse(send.isEnabled)
         try type("run it")
         XCTAssertTrue(send.isEnabled)
@@ -118,9 +130,9 @@ final class ComposerViewControllerTests: XCTestCase {
     }
 
     func testWhileClaudeWorksStopIsShownAndTheArrowAppearsWithWords() throws {
-        configure(F.model(F.session(.responding)))
-        let stop = try XCTUnwrap(button(String(localized: "Stop")))
-        let send = try XCTUnwrap(button(String(localized: "Send")))
+        configure(F.responding)
+        let stop = try XCTUnwrap(actionButton(.stop))
+        let send = try XCTUnwrap(actionButton(.send))
         XCTAssertFalse(stop.isHidden)
         XCTAssertTrue(send.isHidden)
         try type("and the docs")
@@ -132,7 +144,7 @@ final class ComposerViewControllerTests: XCTestCase {
     func testEscapeDoesNotStop() throws {
         // ⌘. and ⎋ both arrive as cancelOperation; the field tells them by the
         // event, and with none in flight it is ⎋, which the permission card owns.
-        configure(F.model(F.session(.responding)))
+        configure(F.responding)
         XCTAssertFalse(try press(#selector(NSResponder.cancelOperation(_:))))
         XCTAssertEqual(recorder.stops, 0)
     }
@@ -171,17 +183,17 @@ final class ComposerViewControllerTests: XCTestCase {
 
     // MARK: Keys
 
-    /// Needs `SessionSettings.nextCycledMode` (workstream B).
     func testShiftTabChoosesTheNextMode() throws {
-        configure(F.model(F.session(.idle), settings: F.settings("opus", mode: .default)))
+        XCTAssertEqual(F.idle.cycledModeID, "mode:acceptEdits", "premise: the fixture's cycle")
         XCTAssertTrue(try press(#selector(NSResponder.insertBacktab(_:))))
-        XCTAssertEqual(recorder.changes, [.permissionMode(.acceptEdits)])
+        XCTAssertEqual(recorder.chosen, ["mode:acceptEdits"])
     }
 
     func testShiftTabIsSwallowedWhenThereIsNothingToChoose() throws {
-        configure(F.model(.draft, settings: nil, catalog: ModelCatalog()))
+        configure(F.loading)
+        XCTAssertNil(F.loading.cycledModeID)
         XCTAssertTrue(try press(#selector(NSResponder.insertBacktab(_:))))
-        XCTAssertEqual(recorder.changes, [])
+        XCTAssertEqual(recorder.chosen, [])
     }
 
     func testEscapeIsLeftToThePermissionCard() throws {
@@ -215,20 +227,22 @@ final class ComposerViewControllerTests: XCTestCase {
     // MARK: Failure, status, ring
 
     func testTheFailureSectionsButtonsReportRestartAndLog() throws {
-        configure(F.model(F.session(.failed(SessionFailure(message: "Exit code 1 · boom")))))
-        try XCTUnwrap(button(String(localized: "Restart"))).performClick(nil)
-        try XCTUnwrap(button(String(localized: "Show Log"))).performClick(nil)
+        configure(F.failed)
+        let buttons = failureButtons()
+        XCTAssertEqual(buttons.count, 2)
+        buttons[1].performClick(nil)
+        buttons[0].performClick(nil)
         XCTAssertEqual(recorder.restarts, 1)
         XCTAssertEqual(recorder.logs, 1)
     }
 
     func testTheContextRingOpensTheContext() throws {
-        configure(F.model(F.session(.idle), usage: 0.72))
+        configure(F.fastRing)
         let ring = try XCTUnwrap(find(ContextRingView.self))
         XCTAssertFalse(ring.isHidden)
         ring.mouseDown(with: NSEvent())
         XCTAssertEqual(recorder.contexts, 1)
-        configure(F.model(F.session(.idle), usage: 0.3))
+        configure(F.state(ring: nil))
         XCTAssertTrue(ring.isHidden)
     }
 
@@ -244,9 +258,7 @@ final class ComposerViewControllerTests: XCTestCase {
         defer { window.close() }
         // Shown, then pinned edge to edge in a view, as a tab holds its composer.
         let narrow = ComposerViewController()
-        narrow.configure(
-            with: F.model(
-                F.session(.atRest), settings: F.settings("default", on: F.relay, effort: .high, mode: .acceptEdits)))
+        narrow.configure(with: F.atRest)
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 330, height: 200))
         window.contentView = root
         narrow.view.translatesAutoresizingMaskIntoConstraints = false
@@ -270,10 +282,10 @@ final class ComposerViewControllerTests: XCTestCase {
             return nil
         }
         let status = try XCTUnwrap(
-            find(NSTextField.self, in: narrow.view) { $0.stringValue == String(localized: "Will resume when you send") }
+            find(NSTextField.self, in: narrow.view) { $0.stringValue == "Will resume when you send" }
         )
         let send = try XCTUnwrap(
-            find(NSButton.self, in: narrow.view) { $0.accessibilityLabel() == String(localized: "Send") })
+            find(ComposerActionButton.self, in: narrow.view) { $0.kind == .send })
         let statusFrame = status.convert(status.bounds, to: nil)
         let sendFrame = send.convert(send.bounds, to: nil)
         XCTAssertLessThan(statusFrame.maxY, sendFrame.minY + 0.5, "the status is not under the controls")
@@ -308,13 +320,13 @@ final class ComposerViewControllerTests: XCTestCase {
     // MARK: Placement
 
     private var keyHints: NSTextField? {
-        find(NSTextField.self) { $0.stringValue.contains(String(localized: "Commands")) }
+        find(NSTextField.self) { $0.stringValue.contains("⇧⇥") }
     }
 
     /// In a page the key hints sit 12 under the card, in the 16-pt line the
     /// view ends on; floating, the view is the card alone.
     func testInAPageTheKeyHintsSitUnderTheCard() throws {
-        configure(F.model(.draft))
+        configure(F.newTab)
         window.layoutIfNeeded()
         let card = try XCTUnwrap(find(ComposerView.self))
         let hints = try XCTUnwrap(keyHints)
@@ -322,7 +334,7 @@ final class ComposerViewControllerTests: XCTestCase {
         XCTAssertEqual(card.frame.minY, 12 + 16, accuracy: 0.5)
         XCTAssertEqual(hints.frame.midY, 8, accuracy: 0.5)
 
-        configure(F.model(F.session(.idle)))
+        configure(F.idle)
         window.layoutIfNeeded()
         XCTAssertTrue(hints.isHidden)
         XCTAssertEqual(card.frame, composer.view.bounds)
@@ -331,7 +343,7 @@ final class ComposerViewControllerTests: XCTestCase {
     /// The hints are for an empty field: words fade them out, and clearing
     /// the field brings them back.
     func testTheKeyHintsShowOnlyWhileTheFieldIsEmpty() throws {
-        configure(F.model(.draft))
+        configure(F.newTab)
         let hints = try XCTUnwrap(keyHints)
         XCTAssertEqual(hints.alphaValue, 1)
 

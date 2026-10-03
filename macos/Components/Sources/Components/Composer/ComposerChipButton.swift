@@ -1,5 +1,5 @@
 import AppKit
-import Components
+import DisplayModels
 
 /// One of the composer's pull-downs (design 08 *The accessory row*): borderless,
 /// 24 pt tall, 12-pt secondary words with their glyphs and a small chevron; a
@@ -38,7 +38,7 @@ final class ComposerChipButton: NSButton {
         }
     }
 
-    private var chip: ComposerModel.Chip?
+    private var chip: ComposerPresentation.Chip?
     private var isHovered = false
 
     private let stack = NSStackView()
@@ -101,7 +101,7 @@ final class ComposerChipButton: NSButton {
     // MARK: - Showing
 
     /// Shows `chip`. Idempotent.
-    func configure(with chip: ComposerModel.Chip) {
+    func configure(with chip: ComposerPresentation.Chip) {
         self.chip = chip
         isEnabled = chip.isEnabled
         toolTip = chip.toolTip

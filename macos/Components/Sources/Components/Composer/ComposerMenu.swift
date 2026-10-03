@@ -1,5 +1,5 @@
 import AppKit
-import Components
+import DisplayModels
 
 /// The composer's three pop-ups as the one menu (`MenuContent`, design 08
 /// *Model*, *Effort*, *Permission mode*): Effort and Mode a section head with
@@ -7,10 +7,11 @@ import Components
 /// account under its sticky head, *N More Models* expanding in place, and Fast
 /// Mode's switch under the scroll.
 @MainActor
-enum ComposerMenu {
+package enum ComposerMenu {
     /// What a chosen item stands for.
-    enum Choice: Hashable {
-        case change(SessionSettings.Change)
+    package enum Choice: Hashable {
+        /// The item with this id (a model, an effort, a mode).
+        case item(String)
         /// *N More Models* of the account section with this id.
         case more(UUID)
         /// The Fast Mode switch.
@@ -18,7 +19,7 @@ enum ComposerMenu {
     }
 
     /// Effort's or Mode's menu.
-    static func content(of menu: ComposerModel.Menu) -> MenuContent {
+    package static func content(of menu: ComposerPresentation.Menu) -> MenuContent {
         var rows: [MenuContent.Row] = []
         for (index, section) in menu.sections.enumerated() {
             if index > 0 { rows.append(.separator) }
@@ -29,7 +30,7 @@ enum ComposerMenu {
     }
 
     /// The model panel, with the sections in `expanded` unfolded.
-    static func modelContent(of model: ComposerModel, expanded: Set<UUID>) -> MenuContent {
+    package static func modelContent(of model: ComposerPresentation, expanded: Set<UUID>) -> MenuContent {
         var rows: [MenuContent.Row] = []
         if let header = model.modelPanelHeader { rows.append(.header(.title(header))) }
         for section in model.modelSections {
@@ -43,21 +44,22 @@ enum ComposerMenu {
                     .item(
                         MenuContent.Item(
                             id: Choice.more(section.id),
-                            title: String(localized: "\(section.foldedItems.count) More Models"), isMore: true)))
+                            title: String(localized: "\(section.foldedItems.count) More Models", bundle: .module),
+                            isMore: true)))
             }
         }
         let fast = model.fastMode
         let footer = MenuContent.Row.item(
             MenuContent.Item(
-                id: Choice.fastMode, title: String(localized: "Fast Mode"), subtitle: fast.subtitle,
+                id: Choice.fastMode, title: String(localized: "Fast Mode", bundle: .module), subtitle: fast.subtitle,
                 glyph: ComposerGlyph.menuImage(.fast), isEnabled: fast.isEnabled,
                 trailing: .toggle(isOn: fast.isOn), toolTip: fast.subtitle))
         return MenuContent(rows: rows, footer: [footer], isPanel: true)
     }
 
-    private static func item(_ item: ComposerModel.Item) -> MenuContent.Item {
+    private static func item(_ item: ComposerPresentation.Item) -> MenuContent.Item {
         MenuContent.Item(
-            id: Choice.change(item.change), title: item.title, subtitle: item.subtitle,
+            id: Choice.item(item.id), title: item.title, subtitle: item.subtitle,
             glyph: item.glyph.flatMap(ComposerGlyph.menuImage), isChecked: item.isChecked, isEnabled: item.isEnabled,
             isDanger: item.isDanger,
             trailing: item.restarts ? .glyph(ComposerGlyph.image(.restart, size: 14) ?? NSImage()) : .none)

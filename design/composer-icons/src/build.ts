@@ -1,8 +1,8 @@
 // Build the composer's glyphs that SF Symbols has no shape for — the design
 // sheet's own geometry (design/transcript/preview-live.js `MODE_GLYPH`;
 // preview.js `GLYPHS`) → template SVG image sets in
-// macos/ccterm/Assets.xcassets/Composer, which `ComposerGlyph` loads by
-// symbol. Every other composer glyph is an SF Symbol (design 08 *Glyphs match
+// macos/Components/Sources/Components/Resources/Assets.xcassets/Composer, which
+// `ComposerGlyph` loads by name; and the effort meter at each level. Every other composer glyph is an SF Symbol (design 08 *Glyphs match
 // by eye*), sized in `ComposerGlyph` to the sheet's ink.
 //
 //   bun run build        (make composer-icons)
@@ -11,7 +11,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 
 const ROOT = resolve(import.meta.dir, "../../..")
-const ASSETS = join(ROOT, "macos/ccterm/Assets.xcassets/Composer")
+const ASSETS = join(ROOT, "macos/Components/Sources/Components/Resources/Assets.xcassets/Composer")
 const INFO = { author: "xcode", version: 1 }
 const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`
 
@@ -176,4 +176,20 @@ rmSync(ASSETS, { recursive: true, force: true })
 mkdirSync(ASSETS, { recursive: true })
 writeFileSync(join(ASSETS, "Contents.json"), json({ info: INFO }))
 for (const [name, body] of Object.entries(OPTICAL)) imageSet(name, svg16(body))
+
+/** preview-live.js `bars`: five bars rising on the 16 grid, `level` of them
+ *  filled and the rest at 28 % ink, scaled 0.956 about (7.8, 7) onto the
+ *  centre — thin and wide, so sized by its width, not by `svg16`'s area. */
+function bars(level: number): string {
+  let rects = ""
+  for (let i = 0; i < 5; i++) {
+    const h = 3 + i * 2.25
+    rects += `<rect x="${r3(1 + i * 2.9)}" y="${r3(13 - h)}" width="2" height="${h}" rx=".8" fill="#000000" fill-opacity="${i < level ? 1 : 0.28}"/>`
+  }
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">` +
+    `<g transform="translate(8 8) scale(0.956) translate(-7.8 -7)">${rects}</g></svg>`
+  )
+}
+for (let level = 0; level <= 5; level++) imageSet(`ComposerEffort${level}`, bars(level))
 console.log(`wrote ${ASSETS}`)

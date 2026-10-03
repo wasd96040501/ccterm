@@ -772,7 +772,8 @@ final class MenuItemCell: NSTableCellView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        check.image = .transcriptLiveCheck
+        check.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 10, weight: .bold))
         check.imageScaling = .scaleNone
         glyph.imageScaling = .scaleProportionallyDown
         trailingGlyph.imageScaling = .scaleProportionallyDown

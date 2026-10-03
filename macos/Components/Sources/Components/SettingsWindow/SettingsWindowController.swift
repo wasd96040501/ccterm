@@ -86,9 +86,8 @@ public final class SettingsWindowController: NSWindowController, NSToolbarDelega
         let group = NSToolbarItemGroup(
             itemIdentifier: .settingsNavigation,
             images: [
-                NSImage(systemSymbolName: "chevron.left", accessibilityDescription: back),
-                NSImage(systemSymbolName: "chevron.right", accessibilityDescription: forward),
-            ].compactMap { $0 },
+                .settingsBack, .settingsForward,
+            ],
             selectionMode: .momentary, labels: [back, forward], target: splitController, action: nil)
         for (subitem, action) in zip(
             group.subitems,

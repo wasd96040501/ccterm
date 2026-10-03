@@ -87,7 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller =
             aboutWindowController
             ?? {
-                let c = AboutWindowController()
+                let c = AboutWindowController(content: .current, icon: NSApp.applicationIconImage)
                 aboutWindowController = c
                 return c
             }()

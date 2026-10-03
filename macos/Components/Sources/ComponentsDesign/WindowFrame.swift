@@ -1,4 +1,5 @@
 import AppKit
+import Components
 
 /// The design's window drawn around real content, at the window's content
 /// size: corners, hairline edge and shadows, the traffic lights, and the
@@ -10,7 +11,7 @@ import AppKit
 /// It is its own card on the style page: nothing around it. The content is
 /// the app's real view, laid out at `contentSize`; the frame never re-lays it
 /// out narrower (the page scales the frame whole, `ScaledHost`). The images
-/// the chrome draws come from `WindowChromeImages`.
+/// the chrome draws are the design's (`NSImage.windowChrome…`, `.settingsBack`).
 final class WindowFrame: NSView {
     enum Chrome {
         /// design/settings' `.window`: 15-pt corners, the content full-bleed;
@@ -114,13 +115,13 @@ final class WindowFrame: NSView {
                 toolbar.heightAnchor.constraint(equalToConstant: Self.toolbarHeight),
             ])
             // `.traffic`: top 19, left 19, three 14-pt lights 9 apart.
-            if let lights = Self.lights(width: 3 * 14 + 2 * 9, height: 14) {
-                surface.addSubview(lights)
-                NSLayoutConstraint.activate([
-                    lights.topAnchor.constraint(equalTo: surface.topAnchor, constant: 19),
-                    lights.leadingAnchor.constraint(equalTo: surface.leadingAnchor, constant: 19),
-                ])
-            }
+            let lights = Self.lights(
+                [.windowChromeClose, .windowChromeMinimize, .windowChromeZoom], size: 14, gap: 9, tint: nil)
+            surface.addSubview(lights)
+            NSLayoutConstraint.activate([
+                lights.topAnchor.constraint(equalTo: surface.topAnchor, constant: 19),
+                lights.leadingAnchor.constraint(equalTo: surface.leadingAnchor, constant: 19),
+            ])
         case .titled(let title, let subtitle):
             let bar = TitleBar(title: title, subtitle: subtitle)
             surface.addSubview(bar)
@@ -147,18 +148,24 @@ final class WindowFrame: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    /// The traffic lights' image, at the design's measure; `nil` while the
-    /// image is a placeholder.
-    fileprivate static func lights(width: CGFloat, height: CGFloat) -> NSView? {
-        guard let image = WindowChromeImages.trafficLights() else { return nil }
-        let view = NSImageView(image: image)
-        view.imageScaling = .scaleProportionallyUpOrDown
-        view.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            view.widthAnchor.constraint(equalToConstant: width),
-            view.heightAnchor.constraint(equalToConstant: height),
-        ])
-        return view
+    /// Three lights in a row: `size` square, `gap` apart; a template image is
+    /// tinted with `tint`.
+    fileprivate static func lights(_ images: [NSImage], size: CGFloat, gap: CGFloat, tint: NSColor?) -> NSView {
+        let views = images.map { image -> NSImageView in
+            let view = NSImageView(image: image)
+            view.imageScaling = .scaleProportionallyUpOrDown
+            view.contentTintColor = tint
+            view.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                view.widthAnchor.constraint(equalToConstant: size),
+                view.heightAnchor.constraint(equalToConstant: size),
+            ])
+            return view
+        }
+        let row = NSStackView(views: views)
+        row.spacing = gap
+        row.translatesAutoresizingMaskIntoConstraints = false
+        return row
     }
 }
 
@@ -188,19 +195,15 @@ private final class TitleBar: NSView {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
-        var leading = leadingAnchor
-        var gap: CGFloat = 14
-        if let lights = WindowFrame.lights(width: 3 * 12 + 2 * 8, height: 12) {
-            addSubview(lights)
-            NSLayoutConstraint.activate([
-                lights.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-                lights.centerYAnchor.constraint(equalTo: centerYAnchor),
-            ])
-            leading = lights.trailingAnchor
-            gap = 12
-        }
+        // `.lights`: three 12-pt dots 8 apart at 60 % of the tertiary label.
+        let lights = WindowFrame.lights(
+            [.windowChromeLight, .windowChromeLight, .windowChromeLight], size: 12, gap: 8,
+            tint: NSColor.tertiaryLabelColor.withAlphaComponent(0.6))
+        addSubview(lights)
         NSLayoutConstraint.activate([
-            words.leadingAnchor.constraint(equalTo: leading, constant: gap),
+            lights.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            lights.centerYAnchor.constraint(equalTo: centerYAnchor),
+            words.leadingAnchor.constraint(equalTo: lights.trailingAnchor, constant: 12),
             words.centerYAnchor.constraint(equalTo: centerYAnchor),
             hairline.leadingAnchor.constraint(equalTo: leadingAnchor),
             hairline.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -295,8 +298,8 @@ private final class ToolbarRow: NSView {
 
 /// `.history`: 73 × 36, fully rounded, a translucent fill, a hairline edge.
 private final class HistoryPill: NSView {
-    let back = ChevronButton(image: WindowChromeImages.back(), label: "Back")
-    let forward = ChevronButton(image: WindowChromeImages.forward(), label: "Forward")
+    let back = ChevronButton(image: .settingsBack, label: "Back")
+    let forward = ChevronButton(image: .settingsForward, label: "Forward")
     private let divider = NSView()
 
     init() {
@@ -349,9 +352,9 @@ private final class HistoryPill: NSView {
     }
 }
 
-/// A chevron button, 36 square; the image is `WindowChromeImages`'.
+/// A chevron button, 36 square.
 private final class ChevronButton: NSButton {
-    init(image: NSImage?, label: String) {
+    init(image: NSImage, label: String) {
         super.init(frame: .zero)
         self.image = image
         isBordered = false

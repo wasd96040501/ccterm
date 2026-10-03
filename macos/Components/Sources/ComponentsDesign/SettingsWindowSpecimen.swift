@@ -44,13 +44,13 @@ private final class SettingsContent: NSView, SettingsSplitViewControllerDelegate
         split = SettingsSplitViewController(
             panes: [
                 .init(
-                    title: "General", symbolName: "gearshape",
+                    title: "General", glyph: .settingsGear,
                     viewController: PaneViewController(
                         LaunchHost(
                             command: GeneralSpecimen.found, folder: GeneralSpecimen.inEffect,
                             allowsBypassPermissions: false))),
                 .init(
-                    title: "Accounts", symbolName: "person.crop.circle",
+                    title: "Accounts", glyph: .settingsPerson,
                     viewController: PaneViewController(
                         AccountsHost(
                             subscription: .signedIn(AccountsSpecimen.subscription),

@@ -1,0 +1,8 @@
+{
+  "name": "ccterm-transcript-icons",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun run src/build.ts"
+  }
+}

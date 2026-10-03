@@ -21,7 +21,7 @@ struct Design {
         [
             FormSpecimen.section(), AccountsSpecimen.section(), GeneralSpecimen.section(),
             SettingsWindowSpecimen.section(), SidebarSpecimen.section(),
-            DrawingSpecimen.section(),
+            AboutSpecimen.section(), MainWindowSpecimen.section(), DrawingSpecimen.section(),
         ]
     }
 

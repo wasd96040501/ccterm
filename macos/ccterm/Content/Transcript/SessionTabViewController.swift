@@ -5,12 +5,15 @@ import Combine
 /// A session's own tab — or a New tab, which becomes one at Send (design 08:
 /// *before the first prompt it's a form, after it's a conversation*).
 ///
-/// A container of three children: the New view (`NewSessionViewController`,
-/// while a draft), the transcript (`TranscriptViewController`, once there is
-/// a session) and the composer (`ComposerViewController`, always — one
-/// instance, which moves). As a draft the composer sits in the New view's
-/// `composerGuide`; on a session it floats 16 pt above the tab's bottom edge,
-/// 720 pt at most, and the transcript scrolls under it (`bottomInset`).
+/// A z-stack of children that never meet: the page at the back — the New
+/// view (`NewSessionViewController`, while a draft) or the transcript
+/// (`TranscriptViewController`, once there is a session) — then the dock (the
+/// window's colour behind the floating composer, a session's only), then the
+/// composer (`ComposerViewController`, always — one instance, which moves) on
+/// top. As a draft the composer sits in the New view's `composerGuide`; on a
+/// session it floats 16 pt above the tab's bottom edge, 720 pt at most. What
+/// it covers is the transcript's safe area (its view's `additionalSafeAreaInsets`), which
+/// the transcript scrolls clear of like any scroll view.
 ///
 /// It is the only one in the tab that talks to the stores: it follows the
 /// session once (`SessionStore.states(at:)`) and hands each state to the
@@ -144,6 +147,14 @@ final class SessionTabViewController: NSViewController {
         addChild(composer)
         composer.view.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(composer.view)
+        dock.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(dock, positioned: .below, relativeTo: composer.view)
+        NSLayoutConstraint.activate([
+            dock.topAnchor.constraint(equalTo: composer.view.topAnchor, constant: -SessionTabDockView.fade),
+            dock.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            dock.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            dock.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
         context.catalog
             .sink { [weak self] in
                 self?.catalog = $0
@@ -180,11 +191,16 @@ final class SessionTabViewController: NSViewController {
         composer.focus()
     }
 
-    /// The floating composer's height is what the transcript scrolls clear of.
+    /// What the floating composer covers is the transcript's safe area: the
+    /// card and the float under it. Its height, not its place, so the glide
+    /// moves no row.
     override func viewDidLayout() {
         super.viewDidLayout()
         guard let transcript else { return }
-        transcript.bottomInset = composer.cardHeight + Self.floatGap
+        let covered = composer.view.frame.height + Self.floatGap
+        if transcript.view.additionalSafeAreaInsets.bottom != covered {
+            transcript.view.additionalSafeAreaInsets.bottom = covered
+        }
     }
 
     // MARK: - What the window asks of a tab
@@ -240,7 +256,8 @@ final class SessionTabViewController: NSViewController {
         addChild(newSession)
         let content = newSession.view
         content.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(content, positioned: .below, relativeTo: composer.view)
+        view.addSubview(content, positioned: .below, relativeTo: dock)
+        dock.isHidden = true
         NSLayoutConstraint.activate([
             content.topAnchor.constraint(equalTo: view.topAnchor),
             content.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -419,7 +436,7 @@ final class SessionTabViewController: NSViewController {
 
     // MARK: - The session
 
-    /// Mounts the transcript and the composer under it and follows the
+    /// Mounts the transcript behind the floating composer and follows the
     /// session. `captured`: where the composer stood in the New view, window
     /// coordinates, when this tab has just started the session — it glides from
     /// there.
@@ -430,9 +447,8 @@ final class SessionTabViewController: NSViewController {
         self.transcript = transcript
         addChild(transcript)
         transcript.view.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(transcript.view, positioned: .below, relativeTo: composer.view)
-        dock.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(dock, positioned: .below, relativeTo: composer.view)
+        view.addSubview(transcript.view, positioned: .below, relativeTo: dock)
+        dock.isHidden = false
         let bottom = composer.view.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -Self.floatGap)
         // 720 at most, 16 from each side when the tab is narrower.
         let width = composer.view.widthAnchor.constraint(equalToConstant: Self.composerWidth)
@@ -444,10 +460,6 @@ final class SessionTabViewController: NSViewController {
             transcript.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             transcript.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             transcript.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            dock.topAnchor.constraint(equalTo: composer.view.topAnchor, constant: -SessionTabDockView.fade),
-            dock.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            dock.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            dock.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             bottom,
             composer.view.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             composer.view.widthAnchor.constraint(lessThanOrEqualToConstant: Self.composerWidth),
@@ -565,7 +577,6 @@ final class SessionTabViewController: NSViewController {
         transcript = nil
         NSLayoutConstraint.deactivate(sessionConstraints)
         sessionConstraints = []
-        dock.removeFromSuperview()
         composerBottom = nil
         composerWidth = nil
         transcriptURL = nil
@@ -713,7 +724,7 @@ extension SessionTabViewController: TranscriptViewControllerDelegate {
         configureComposer()
     }
 
-    func transcriptViewControllerDidRequestComposer(_ transcriptViewController: TranscriptViewController) {
+    func transcriptViewControllerDidChooseToChat(_ transcriptViewController: TranscriptViewController) {
         composer.focus()
     }
 }

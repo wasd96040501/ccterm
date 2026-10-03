@@ -163,12 +163,12 @@ final class ComposerViewControllerTests: XCTestCase {
     }
 
     func testTheFieldGrowsWithItsWordsAndStopsAtEightLines() throws {
-        let before = composer.cardHeight
+        let before = composer.fittedHeight
         composer.text = (1...3).map { "line \($0)" }.joined(separator: "\n")
-        XCTAssertEqual(composer.cardHeight - before, 44, accuracy: 2)
+        XCTAssertEqual(composer.fittedHeight - before, 44, accuracy: 2)
         composer.text = (1...20).map { "line \($0)" }.joined(separator: "\n")
         composer.view.layoutSubtreeIfNeeded()
-        XCTAssertEqual(composer.cardHeight - before, 22 * 7, accuracy: 2)
+        XCTAssertEqual(composer.fittedHeight - before, 22 * 7, accuracy: 2)
     }
 
     // MARK: Keys
@@ -305,5 +305,13 @@ final class ComposerViewControllerTests: XCTestCase {
         composer.isFieldDimmed = false
         XCTAssertEqual(words.alphaValue, 1)
         XCTAssertEqual(token.alphaValue, 1)
+    }
+}
+
+extension ComposerViewController {
+    /// The card's height once laid out, as a container placing it reads it.
+    var fittedHeight: CGFloat {
+        view.layoutSubtreeIfNeeded()
+        return view.fittingSize.height
     }
 }

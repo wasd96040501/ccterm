@@ -2,9 +2,8 @@ import AgentSDK
 import AppKit
 import TranscriptKit
 
-/// A session's transcript in a `TranscriptView`: a session tab's lower part
-/// (under its container's floating composer), or a subagent's conversation
-/// on its own.
+/// A session's transcript in a `TranscriptView`: a session tab's, or a
+/// subagent's conversation on its own.
 ///
 /// Shows the states it is handed (`show(_:)`) — by its container, which
 /// follows the session once for the whole tab, or by `follow(_:)` for a
@@ -21,6 +20,11 @@ import TranscriptKit
 /// (`RunDisclosure`), which item's document is showing (the selection), and
 /// bringing an item back into view. What opening a document does is the
 /// delegate's; what sending, stopping and answering do is the store's.
+///
+/// Honours its own safe area: whatever a container lays over its bottom edge
+/// (`additionalSafeAreaInsets`), the last row scrolls clear of it. The
+/// transcript anchors that change like a row mutation — at the tail it stays
+/// at the tail, anywhere else the rows in view hold still.
 @MainActor
 final class TranscriptViewController: NSViewController {
     /// The file this tab shows — what the tab is, for finding it again.
@@ -28,21 +32,8 @@ final class TranscriptViewController: NSViewController {
 
     /// The window: opening a document beside, revealing.
     weak var tabDelegate: TranscriptTabDelegate?
-    /// The tab around it, when there is one: the composer's needs.
+    /// The tab around it, when there is one.
     weak var delegate: TranscriptViewControllerDelegate?
-
-    /// The space the container's floating composer covers at the bottom; the
-    /// last row scrolls clear of it. Assigned on every layout pass of the
-    /// container. The transcript anchors a change like a row mutation — at the
-    /// tail it stays at the tail, anywhere else the rows in view hold still —
-    /// so the reader keeps their place while the field grows.
-    var bottomInset: CGFloat = 0 {
-        didSet {
-            guard bottomInset != oldValue else { return }
-            transcript.contentInsets.bottom = 24 + bottomInset
-            updateWaitingRequestVisibility()
-        }
-    }
 
     private let sessions: SessionStore
     private let transcript = TranscriptView()
@@ -86,7 +77,7 @@ final class TranscriptViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     override func loadView() {
-        view = NSView()
+        view = SafeAreaView()
     }
 
     override func viewDidLoad() {
@@ -100,7 +91,7 @@ final class TranscriptViewController: NSViewController {
             transcript.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         transcript.maxContentWidth = 720
-        transcript.contentInsets = NSEdgeInsets(top: 12, left: 0, bottom: 24 + bottomInset, right: 0)
+        transcript.contentInsets = NSEdgeInsets(top: 12, left: 0, bottom: Self.bottomGap, right: 0)
         transcript.dataSource = self
         transcript.delegate = self
     }
@@ -170,8 +161,7 @@ final class TranscriptViewController: NSViewController {
     }
 
     /// Tells the delegate when the waiting request comes into view or leaves it:
-    /// at the tail, or any part of its row inside what the composer leaves
-    /// visible. With no request waiting it is trivially in view. A row not laid
+    /// at the tail, or any part of its row inside the safe area. With no request waiting it is trivially in view. A row not laid
     /// out yet says nothing.
     ///
     /// Computed when the page changes, the inset or size changes, the transcript
@@ -188,7 +178,7 @@ final class TranscriptViewController: NSViewController {
             } else {
                 let shown = NSRect(
                     x: 0, y: 0, width: transcript.bounds.width,
-                    height: max(transcript.bounds.height - bottomInset, 0))
+                    height: max(transcript.bounds.height - view.safeAreaInsets.bottom, 0))
                 visible = rect.intersects(shown)
             }
         } else {
@@ -199,8 +189,13 @@ final class TranscriptViewController: NSViewController {
         delegate?.transcriptViewController(self, didChangeWaitingRequestVisibility: visible)
     }
 
+    /// The space under the last row, above the safe area's bottom edge.
+    private static let bottomGap: CGFloat = 24
+
     override func viewDidLayout() {
         super.viewDidLayout()
+        let bottom = Self.bottomGap + view.safeAreaInsets.bottom
+        if transcript.contentInsets.bottom != bottom { transcript.contentInsets.bottom = bottom }
         updateWaitingRequestVisibility()
     }
 
@@ -528,6 +523,14 @@ extension TranscriptViewController {
     private func decide(_ decision: Decision, forCall callID: String) {
         sessions.respond(toCall: callID, at: fileURL) { decision.permissionDecision(for: $0) }
         // *Chat About This* answers nothing: the conversation is the answer.
-        if case .chatAbout = decision { delegate?.transcriptViewControllerDidRequestComposer(self) }
+        if case .chatAbout = decision { delegate?.transcriptViewControllerDidChooseToChat(self) }
+    }
+}
+
+/// The transcript's root: lays out again when a container changes its safe
+/// area, which AppKit doesn't do on its own.
+private final class SafeAreaView: NSView {
+    override var additionalSafeAreaInsets: NSEdgeInsets {
+        didSet { needsLayout = true }
     }
 }

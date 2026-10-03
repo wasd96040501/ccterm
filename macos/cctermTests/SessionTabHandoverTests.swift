@@ -162,6 +162,17 @@ final class SessionTabHandoverTests: XCTestCase {
         let card = composer.view.convert(composer.view.bounds, to: tab.view)
         XCTAssertEqual(card.width, 720, accuracy: 0.5)
         XCTAssertEqual(card.midX, tab.view.bounds.midX, accuracy: 0.5)
+        // What the card covers is the transcript's safe area, nothing more.
+        let transcript = try XCTUnwrap(tab.children.compactMap { $0 as? TranscriptViewController }.first)
+        XCTAssertEqual(transcript.view.safeAreaInsets.bottom, card.height + 16, accuracy: 0.5)
+        XCTAssertFalse(try XCTUnwrap(find(SessionTabDockView.self, in: tab.view) { _ in true }).isHidden)
+    }
+
+    /// The dock is the session's: a New tab shows none.
+    func testANewTabShowsNoDock() throws {
+        let tab = mountDraft()
+
+        XCTAssertTrue(try XCTUnwrap(find(SessionTabDockView.self, in: tab.view) { _ in true }).isHidden)
     }
 
     /// Needs the display awake: samples the glide's frames. Every frame stays

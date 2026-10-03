@@ -5,9 +5,9 @@ import XCTest
 
 @testable import ccterm
 
-/// What a session tab's container needs from its transcript: the space its
-/// floating composer covers (`bottomInset`) without moving the reader, and
-/// whether the request waiting for them is in view.
+/// What a session tab's container needs from its transcript: its safe area
+/// honoured (what the container lays over its bottom edge) without moving the
+/// reader, and whether the request waiting for them is in view.
 @MainActor
 final class TranscriptViewControllerWaitingTests: XCTestCase {
     private var stage: AppKitStage?
@@ -61,14 +61,14 @@ final class TranscriptViewControllerWaitingTests: XCTestCase {
 
     /// The card floats over the bottom: a taller one gives the last row more
     /// room, and a reader who scrolled up keeps the row they were on.
-    func testGrowingTheBottomInsetKeepsTheReadersPlace() throws {
+    func testGrowingTheSafeAreaKeepsTheReadersPlace() throws {
         let (controller, transcript) = try mount(state(turns: 40, waiting: false))
         transcript.scrollToRow(at: 30, scrollPosition: .top)
         stage!.drain(seconds: 0.2)
         let before = transcript.rect(ofRow: 30).minY
         XCTAssertEqual(before, 0, accuracy: 20, "premise: the row is at the top of the view")
 
-        controller.bottomInset = 160
+        controller.view.additionalSafeAreaInsets.bottom = 160
         stage!.drain(seconds: 0.2)
 
         XCTAssertEqual(transcript.rect(ofRow: 30).minY, before, accuracy: 0.5, "the rows moved under the reader")
@@ -80,7 +80,7 @@ final class TranscriptViewControllerWaitingTests: XCTestCase {
         let last = transcript.numberOfRows - 1
         XCTAssertGreaterThan(transcript.rect(ofRow: last).maxY, 0, "premise: the last row is laid out")
 
-        controller.bottomInset = 160
+        controller.view.additionalSafeAreaInsets.bottom = 160
         stage!.drain(seconds: 0.2)
 
         XCTAssertLessThanOrEqual(
@@ -116,7 +116,7 @@ final class TranscriptViewControllerWaitingTests: XCTestCase {
     /// bringing the request back into view by hand, short of the tail.
     func testScrollingByHandTheRequestIntoViewShortOfTheEndReportsIt() throws {
         let (controller, transcript) = try mount(state(turns: 40, waiting: true))
-        controller.bottomInset = 300
+        controller.view.additionalSafeAreaInsets.bottom = 300
         stage!.drain(seconds: 0.3)
         transcript.scrollToRow(at: 0, scrollPosition: .top)
         stage!.drain(seconds: 0.3)
@@ -154,5 +154,5 @@ private final class VisibilityRecorder: TranscriptViewControllerDelegate {
         reports.append(isVisible)
     }
 
-    func transcriptViewControllerDidRequestComposer(_ transcriptViewController: TranscriptViewController) {}
+    func transcriptViewControllerDidChooseToChat(_ transcriptViewController: TranscriptViewController) {}
 }

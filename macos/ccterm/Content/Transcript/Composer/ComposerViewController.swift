@@ -95,13 +95,6 @@ final class ComposerViewController: NSViewController {
         card.focus()
     }
 
-    /// The card's height as laid out — the transcript keeps this much (plus
-    /// the 16-pt float) clear under its last row.
-    var cardHeight: CGFloat {
-        view.layoutSubtreeIfNeeded()
-        return view.fittingSize.height
-    }
-
     // MARK: - Menus
 
     private func content(of control: ComposerView.Control, in model: ComposerModel) -> MenuContent {

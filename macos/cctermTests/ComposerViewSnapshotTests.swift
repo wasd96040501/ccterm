@@ -135,7 +135,7 @@ final class ComposerViewSnapshotTests: XCTestCase {
         let probe = host(specimen, width: width)
         probe.view.frame = NSRect(x: 0, y: 0, width: width, height: 400)
         probe.view.layoutSubtreeIfNeeded()
-        return ceil(probe.composer.cardHeight) + 16 + 24
+        return ceil(probe.composer.fittedHeight) + 16 + 24
     }
 
     private func sheet(width: CGFloat) -> NSImage {
@@ -275,7 +275,7 @@ final class ComposerViewSnapshotTests: XCTestCase {
         let probe = host(specimen, width: part.width)
         probe.view.frame = NSRect(x: 0, y: 0, width: part.width, height: 400)
         probe.view.layoutSubtreeIfNeeded()
-        let height = max(part.height, ceil(probe.composer.cardHeight))
+        let height = max(part.height, ceil(probe.composer.fittedHeight))
         let image = try await CompositedCapture.render(
             flush(specimen, page: scheme.page), size: CGSize(width: part.width, height: height),
             appearance: scheme.appearance)

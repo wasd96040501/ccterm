@@ -49,7 +49,7 @@ nonisolated struct PromptEntry: Sendable, Equatable, Identifiable {
             let words =
                 reason.isEmpty ? String(localized: "Not sent") : String(localized: "Not sent — \(reason)")
             return Note(
-                text: words, style: .failure,
+                text: words, style: .notSent,
                 link: Note.Link(title: String(localized: "Resend"), intent: .resend(id)))
         case .sent?, .returned?, nil:
             return nil

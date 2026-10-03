@@ -33,10 +33,16 @@ public final class PillButton: NSButton {
             string: title, attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: ink])
         guard let keys else { return text }
         text.addAttribute(.kern, value: keysGap, range: NSRange(location: text.length - 1, length: 1))
+        // Dimmed in the appearance it is drawn in: `withAlphaComponent` on a
+        // dynamic colour fixes it in the one current when it is made.
+        let dimmed = NSColor(name: nil) { appearance in
+            var resolved = ink
+            appearance.performAsCurrentDrawingAppearance { resolved = NSColor(cgColor: ink.cgColor) ?? ink }
+            return resolved.withAlphaComponent(0.7)
+        }
         text.append(
             NSAttributedString(
-                string: keys,
-                attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: ink.withAlphaComponent(0.7)]))
+                string: keys, attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: dimmed]))
         return text
     }
 

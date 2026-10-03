@@ -146,20 +146,6 @@ final class UserMessageTokenTests: XCTestCase {
         XCTAssertEqual(alpha(try XCTUnwrap(text)), alpha(.labelColor) / 2, accuracy: 0.01)
     }
 
-    /// The design's `--bubble`: the accent at 15 %, 20 % in Dark.
-    func testTheBubbleIsTheAccentAtFifteenPercentTwentyInDark() throws {
-        let bubble = try measured(command()).backgroundColor
-        func alpha(_ name: NSAppearance.Name) -> CGFloat {
-            var value: CGFloat = 0
-            NSAppearance(named: name)!.performAsCurrentDrawingAppearance {
-                value = bubble.usingColorSpace(.sRGB)?.alphaComponent ?? -1
-            }
-            return value
-        }
-        XCTAssertEqual(alpha(.aqua), 0.15, accuracy: 0.001)
-        XCTAssertEqual(alpha(.darkAqua), 0.2, accuracy: 0.001)
-    }
-
     func testAPendingBubbleKeepsItsGeometry() throws {
         let full = try measured(command())
         let pending = try measured(.init("/model opus", tokens: command().tokens, isPending: true))

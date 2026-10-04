@@ -221,6 +221,8 @@ final class Index {
                 target.extensionLines += ext.lines
                 target.extensionFiles.insert(ext.file)
                 guard ext.unit != target.unit else {
+                    // What the extension names resolves through its own file's imports.
+                    target.visibleModules.formUnion(ext.visibleModules)
                     target.typeRefs.formUnion(ext.typeRefs)
                     target.creates += ext.creates
                     target.hosts += ext.hosts

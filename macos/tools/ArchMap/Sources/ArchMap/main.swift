@@ -195,6 +195,9 @@ try rules.render(header: "# Rules — where code lives and component boundaries"
     to: outDir.appendingPathComponent("rules.md"), atomically: true, encoding: .utf8)
 indexText += "\n## Rules\n\n- [rules.md](rules.md) — \(ruleFindings.count) findings "
 indexText += "against `macos/CLAUDE.md` § Where code lives and § Component boundaries, each with its fix\n"
+try Tree(index: index, rules: rules).render(header: "# Component tree").write(
+    to: outDir.appendingPathComponent("tree.md"), atomically: true, encoding: .utf8)
+indexText += "- [tree.md](tree.md) — the component tree from the composition root\n"
 try indexText.write(to: outDir.appendingPathComponent("index.md"), atomically: true, encoding: .utf8)
 for unit in units {
     try renderer.renderUnit(unit).write(

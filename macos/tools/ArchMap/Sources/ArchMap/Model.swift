@@ -146,7 +146,7 @@ final class TypeInfo {
 
     /// Its own module plus what its file imports: the only places a name it
     /// uses can resolve to (TranscriptKit's `Transcript` is not AgentSDK's).
-    let visibleModules: Set<String>
+    var visibleModules: Set<String>
 
     var shortName: String { String(name.split(separator: ".").last ?? Substring(name)) }
     var lines: Int { endLine - line + 1 + extensionLines }

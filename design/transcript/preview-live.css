@@ -10,7 +10,7 @@
   --k: 1;
   --r-tag: calc(5px * var(--k));     /* tokens, small marks */
   --r-ctl: calc(7px * var(--k));     /* chips, tabs, menu rows, sidebar selection */
-  --r-pop: calc(12px * var(--k));    /* menus, panels, completion, banners */
+  --r-pop: calc(12px * var(--k));    /* completion, banners */
   --r-card: calc(18px * var(--k));   /* the composer, alerts, specimen cards */
   --i-row: 16px;                     /* sidebar rows, menu items, tiles */
   --i-ctl: 14px;                     /* glyphs inside 12-pt controls */
@@ -18,6 +18,7 @@
   --side-bg: #e8e8ea;
   --side-sel: rgba(0, 0, 0, 0.1);
   --menu-bg: color-mix(in srgb, var(--window) 98%, transparent);
+  --po-bg: color-mix(in srgb, var(--window) 94%, transparent);   /* NSPopover's material */
   --si-fill: #ffffff;
   --si-edge: rgba(0, 0, 0, 0.34);
   --si-ink: #6e6e73;
@@ -26,13 +27,13 @@
 }
 @supports (corner-shape: squircle) {
   :root { --k: 1.45; }
-  .sq, .chip, .lv-menu, .mi, .lv-slash, .sl, .lv-banner, .lv-comp, .lv-card, .lv-card .stage, .lv-alert,
+  .sq, .chip, .mi, .lv-slash, .sl, .lv-banner, .lv-comp, .lv-card, .lv-card .stage, .lv-alert,
   .lv-side .it::before, .lv-folder, .lv-group > .tabbar .tab, .tabbar.spec-bar .tab, .matrix-wrap { corner-shape: squircle; }
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --side-bg: #2b2b2e; --side-sel: rgba(255, 255, 255, 0.12); --si-fill: #f5f5f7; --si-edge: rgba(0, 0, 0, 0.5); --glow: 0.36; --ic-top: #1f1f21; --ic-bot: #0e0e0f; --rim-top: 0.34; --rim-mid: 0.1; --rim-bot: 0.2; }
+  :root:not([data-theme="light"]) { --po-bg: color-mix(in srgb, #2d2d30 94%, transparent); --side-bg: #2b2b2e; --side-sel: rgba(255, 255, 255, 0.12); --si-fill: #f5f5f7; --si-edge: rgba(0, 0, 0, 0.5); --glow: 0.36; --ic-top: #1f1f21; --ic-bot: #0e0e0f; --rim-top: 0.34; --rim-mid: 0.1; --rim-bot: 0.2; }
 }
-:root[data-theme="dark"] { --side-bg: #2b2b2e; --side-sel: rgba(255, 255, 255, 0.12); --si-fill: #f5f5f7; --si-edge: rgba(0, 0, 0, 0.5); --glow: 0.36; --ic-top: #1f1f21; --ic-bot: #0e0e0f; --rim-top: 0.34; --rim-mid: 0.1; --rim-bot: 0.2; }
+:root[data-theme="dark"] { --po-bg: color-mix(in srgb, #2d2d30 94%, transparent); --side-bg: #2b2b2e; --side-sel: rgba(255, 255, 255, 0.12); --si-fill: #f5f5f7; --si-edge: rgba(0, 0, 0, 0.5); --glow: 0.36; --ic-top: #1f1f21; --ic-bot: #0e0e0f; --rim-top: 0.34; --rim-mid: 0.1; --rim-bot: 0.2; }
 
 /* MARK: - Window: the sidebar + editor groups */
 
@@ -156,7 +157,9 @@
 .lv-tog.on:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
 .lv-where .nogit { font-size: 12px; color: var(--tertiary); }
 .lv-note { font-size: 11px; color: var(--tertiary); min-height: 15px; line-height: 15px; margin-top: 2px; }
-.mfilter { display: flex; align-items: center; gap: 6px; margin: 5px 5px 4px; padding: 0 8px; height: 26px; border-radius: var(--r-ctl); background: var(--hover); box-shadow: inset 0 0 0 0.5px var(--separator); color: var(--tertiary); }
+/* The branch picker's filter: a capsule 26 tall, 7 in from the popover's
+   edges, so its 13 round is concentric with the popover's 20. */
+.mfilter { display: flex; align-items: center; gap: 6px; margin: 7px 7px 0; padding: 0 10px; height: 26px; flex: none; border-radius: 13px; background: var(--hover); box-shadow: inset 0 0 0 0.5px var(--separator); color: var(--tertiary); }
 .mfilter:focus-within { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent), 0 0 0 3.5px color-mix(in srgb, var(--accent) 18%, transparent); }
 .mfilter svg { width: 12px; height: 12px; flex: none; }
 .mfilter input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font: inherit; font-size: 13px; color: var(--label); }
@@ -264,15 +267,23 @@
 
 /* MARK: - Menus and the model panel */
 
-.lv-menu {
-  position: fixed; z-index: 50; min-width: 240px; max-width: 340px; padding: 5px; border-radius: var(--r-pop); font-size: 13px;
-  background: var(--menu-bg); backdrop-filter: blur(20px) saturate(1.6); -webkit-backdrop-filter: blur(20px) saturate(1.6);
-  box-shadow: 0 0 0 0.5px var(--separator), 0 10px 32px rgba(0,0,0,.18); color: var(--label); user-select: none;
-}
-.lv-menu.static { position: relative; z-index: 0; display: inline-block; vertical-align: top; }
-.lv-menu.panel { padding: 0; width: 300px; overflow: hidden; }
-.lv-menu .mscroll { max-height: 360px; overflow: auto; padding: 0 5px 5px; scrollbar-width: thin; }
-.lv-menu .mfoot { padding: 5px; border-top: 0.5px solid var(--separator); }
+/* A popover (shapePopover draws its body and arrow as one shape): the
+   popover material, a hairline edge and the system's shadow, no animation.
+   Rows sit 10 in from its edges, their fill 10 round, concentric with the
+   body's 20. */
+.lv-po { position: fixed; z-index: 50; box-sizing: border-box; font-size: 13px; color: var(--label); user-select: none; }
+.lv-po.static { position: relative; z-index: 0; }
+.lv-po .po-frame { position: absolute; left: 0; top: 0; overflow: visible; filter: drop-shadow(0 0 0.4px rgba(0,0,0,.42)) drop-shadow(0 8px 22px rgba(0,0,0,.16)); }
+.lv-po .po-frame path { fill: var(--po-bg); }
+.lv-po .po-body { position: relative; display: flex; flex-direction: column; backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6); }
+.lv-po .mscroll { padding: 10px; overflow: auto; scrollbar-width: thin; }
+.lv-po .mfilter + .mscroll { padding-top: 3px; }
+.lv-po .mscroll.heads { padding-top: 0; }
+.lv-po .mfoot { padding: 6px 10px 10px; border-top: 0.5px solid var(--separator); }
+.lv-po .mi { border-radius: calc(10px * var(--k)); }
+.lv-po .mempty { height: 100%; display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--secondary); }
+:root[data-theme="dark"] .lv-po .po-frame { filter: drop-shadow(0 0 0.4px rgba(255,255,255,.3)) drop-shadow(0 8px 22px rgba(0,0,0,.4)); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .lv-po .po-frame { filter: drop-shadow(0 0 0.4px rgba(255,255,255,.3)) drop-shadow(0 8px 22px rgba(0,0,0,.4)); } }
 .mi { display: grid; grid-template-columns: 14px 20px 1fr auto; align-items: center; column-gap: 4px; padding: 3px 10px 3px 6px; border-radius: calc(var(--r-ctl) - 2px); min-height: 22px; cursor: default; }
 .mi.nog { grid-template-columns: 14px 1fr auto; }
 .mi .ck { width: var(--i-badge); height: var(--i-badge); }
@@ -304,8 +315,8 @@
 .mh { font-size: 11px; font-weight: 600; color: var(--tertiary); padding: 4px 10px 2px 24px; display: flex; justify-content: space-between; gap: 12px; }
 .mh kbd { font: inherit; font-weight: 400; }
 .mh.acct {
-  position: sticky; top: 0; z-index: 1; justify-content: flex-start; align-items: center; flex-wrap: wrap; gap: 0 6px; padding: 8px 10px 4px 11px; margin: 0 -5px;
-  background: var(--menu-bg); color: var(--secondary); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  position: sticky; top: 0; z-index: 1; justify-content: flex-start; align-items: center; flex-wrap: wrap; gap: 0 6px; padding: 10px 10px 4px 16px; margin: 0 -10px;
+  background: var(--po-bg); color: var(--secondary); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
 }
 .mh.acct .g { width: var(--i-ctl); height: var(--i-ctl); color: var(--secondary); flex: none; }
 .mh.acct i { font-style: normal; font-weight: 400; color: var(--tertiary); margin-left: 6px; }
@@ -360,7 +371,9 @@
 .lv-card .stage.plain { background: none; padding: 0; }
 .lv-menus { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
 .lv-menus figure { margin: 0; display: flex; flex-direction: column; gap: 8px; }
-.lv-menus figcaption { font-size: 12px; color: var(--secondary); max-width: 300px; }
+.lv-menus figcaption { font-size: 12px; color: var(--secondary); max-width: 320px; }
+.po-spec { display: flex; flex-direction: column; align-items: center; gap: 2.5px; }
+.po-spec .chip, .po-spec .lv-pop, .po-spec .lv-folder { flex: none; }
 .lv-menus figcaption b { color: var(--label); font-weight: 600; display: block; }
 
 .tabbar.spec-bar { border-radius: var(--r-pop) var(--r-pop) 0 0; border: 0.5px solid var(--separator); height: 34px; align-items: center; }

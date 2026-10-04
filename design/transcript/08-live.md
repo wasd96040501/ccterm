@@ -171,9 +171,9 @@ badge, not a thing.
   - Worktree on: *A new branch from main, in a new worktree*;
   - a pull request: *Pull request #327, in a new worktree*.
 - **The branch pop-up opens a popover with a filter**, as Xcode's toolbar
-  branch picker does: a search field (focused, 26 pt) over the list,
+  branch picker does: a search field (focused, a 26-pt capsule) over the list,
   sections *Local* and *Remote* (a remote branch with a local twin is listed
-  once), 360 pt at most, then it scrolls. Typing filters; ↩ takes the first
+  once), 264 pt of list whatever is typed, then it scrolls. Typing filters; ↩ takes the first
   match. Typing `#327` adds *Pull Request · #327 — Checked out in a new
   worktree*, and choosing it turns Worktree on.
 - **What the branch means depends on Worktree.**
@@ -240,10 +240,8 @@ prompt, so this leaves nothing in the sidebar.
   halo at 12 %.
 - **The accessory row** is three pull-down buttons, a status slot, and the
   action button. Each pull-down is borderless, 24 pt tall, 12-pt secondary
-  text with its glyph, and a chevron; hover gives it the hover fill. Their
-  menus are NSMenus with item subtitles (`NSMenuItem.subtitle`, macOS 14.4)
-  and section headers — except Model's, a panel with a height limit (see
-  *Model*).
+  text with its glyph, and a chevron; hover gives it the hover fill. Each
+  opens its menu in an `NSPopover` (see *Menus are popovers*).
   - **Model** — the model's short name. *Fast* adds a bolt before it.
   - **Effort** — a 5-bar level glyph filled to the level, then its name. The
     bars are the page's one bit of ornament in the composer.
@@ -266,6 +264,32 @@ prompt, so this leaves nothing in the sidebar.
   `/context` beside. Below half, it isn't shown.
 - **Errors** (a send refused, a model the organisation doesn't allow) are one
   12-pt red line under the card, and the control reverts.
+
+### Menus are popovers
+
+Every pop-up of the composer and the New view — Model, Effort, Permission
+Mode, the folder, the branch — is an `NSPopover` holding the menu's rows,
+never an `NSMenu` or a window of our own.
+
+- **As AppKit draws it** (measured on macOS 26): the body is exactly the
+  content's size, continuous corners of 20 pt, the popover material; an arrow
+  10.5 pt tall and 28 pt at its base points at the control's centre, its tip
+  2.5 pt off the control. The composer's open above their chip, the New view's
+  below their pop-up, each on the other side when there is no room.
+- **No animation** (`animates = false`): it is there on the click, gone on the
+  choice, as a menu is. It closes on a click outside, on ⎋, and on a choice.
+- **One size while open.** A popover never resizes under the pointer:
+  Effort, Permission Mode and the folder are as tall as their rows; Model is
+  300 wide and as tall as its list fully expanded, 360 pt at most, so *N More
+  Models* opens inside it; the branch picker is 300 wide with 264 pt of list,
+  whatever the filter leaves.
+- **Concentric with its corners.** Rows sit 10 pt in from the body's edges and
+  round their fill 10 pt; the branch picker's filter field is a capsule 26 pt
+  tall, 7 pt from the edges, so its 13-pt round follows the body's 20.
+- **Nothing matches** the filter: the list keeps its size and says *No
+  Matching Branches* in its middle.
+- Keys as a menu's: ↑ ↓ move over what can be chosen, ↩ chooses, ⎋ closes,
+  typing selects by title — or, with a filter field, types into it.
 
 ### Model
 
@@ -298,13 +322,11 @@ have to pick a model on your behalf; and both would mean *restart* while only
 one says so. With one menu, the only expensive choice — a model in another
 account — is marked where it is chosen.
 
-- **A panel, not an NSMenu**, because it has a height limit: 360 pt, then it
-  scrolls, with each account's header sticking to the top as its models pass
-  under it. A borderless child panel with the menu material, NSMenu's metrics
-  (22-pt rows, 5-pt inset, 12-pt radius), keyboard navigation and
-  type-select. Fast Mode sits under the scroll, always visible.
+- **A popover 300 wide, as tall as its list with every model shown, 360 pt at
+  most**, then it scrolls, with each account's header sticking to the top as
+  its models pass under it. Fast Mode sits under the scroll, always visible.
 - **Older models** of an account fold into one *N More Models* row that
-  expands in place (the panel stays open, the scroll stays put). The current
+  expands in place (the popover stays open, its size and scroll where they are). The current
   model is never folded.
 - **A section header** is the account's mark (the Claude mark for the
   subscription, a server glyph for a provider), its name, and its detail in
@@ -334,7 +356,7 @@ account — is marked where it is chosen.
 
 - **Fast Mode** is a switch (a small `NSSwitch` at the row's trailing edge) — a
   setting that stays on, not a choice among items — so toggling it leaves the
-  panel open and the chip's bolt appears behind it. Only models with
+  popover open and the chip's bolt appears behind it. Only models with
   `supportsFastMode` enable it. On others it's
   disabled: *Opus 5.5, Opus 5 and Opus 4.8 only*; on a provider's model,
   *Only with the subscription*. When the account can't use
@@ -542,7 +564,7 @@ Every view on this page draws from the same few numbers.
 |---|---|---|
 | **Radius · tag** | 5 | the command token, tooltips |
 | **Radius · control** | 7 | chips, tabs, sidebar and menu rows (row = control − 2) |
-| **Radius · popover** | 12 | menus, the model panel, the slash list |
+| **Radius · popover** | 12 | the slash list, banners (a menu's popover is the system's 20, continuous) |
 | **Radius · card** | 18 | the composer, the alert, cards |
 | **Icon · row** | 16 | anything that heads a row: sidebar, menu items, tiles |
 | **Icon · control** | 14 | inside a 12-pt control: chips, the action button, the ring |

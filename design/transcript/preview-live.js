@@ -371,9 +371,21 @@ function branchItems(s) {
   // The CLI checks out a pull request itself: --worktree #123.
   const pr = q.match(/^#?(\d+)$/);
   if (pr) out.push({ header: "Pull Request" }, { label: `#${pr[1]}`, sub: "Checked out in a new worktree", checked: s.branch === `#${pr[1]}`, act: () => { s.branch = `#${pr[1]}`; s.worktree = true; LW.refresh(s); } });
-  if (!out.length) out.push({ label: "No Matching Branches", disabled: true });
+  // Nothing matches: the list stays its size and says so in its middle.
   return out;
 }
+
+/** Every menu is an NSPopover, as AppKit draws one (measured on macOS 26):
+ *  its body is exactly the content's size, continuous corners of 20 pt, and a
+ *  10.5-pt arrow, 28 pt at its base, its tip 2.5 pt off the control it points
+ *  at; it opens without animation. Each kind has one size, fixed while it is
+ *  open — filtering or expanding scrolls inside, the box never moves:
+ *  Effort, Permission Mode and the folder are their rows; Model is 300 wide
+ *  and as tall as its list fully expanded, 360 at most; the branch picker is
+ *  300 × 264 of list whatever the filter leaves. */
+const PO = { r: 20, arrow: 10.5, base: 28, tip: 2.5, inset: 10 };
+const PO_KIND = { effort: { w: 240 }, mode: { w: 300 }, folder: { w: 320 }, model: { w: 300 }, branch: { w: 300, list: 264 } };
+
 function menuHTML(items, opts = {}) {
   const anyGlyph = items.some((i) => i.glyph);
   const body = items.map((it, i) => {
@@ -385,21 +397,63 @@ function menuHTML(items, opts = {}) {
     // and the menu stays open so the chip can be seen to change.
     if (it.toggle) return `<div class="${cls}" data-mi="${i}" role="switch" aria-checked="${!!it.on}"><span></span>${it.glyph || "<span></span>"}<span class="l">${esc(it.label)}</span><span class="k"><span class="nsw${it.on ? " on" : ""}"></span></span>${it.sub ? `<span class="s">${esc(it.sub)}</span>` : ""}</div>`;
     return `<div class="${cls}" data-mi="${i}">${it.checked ? LV.check : "<span></span>"}${anyGlyph ? it.glyph || "<span></span>" : ""}<span class="l">${esc(it.label)}</span>${
-      it.submenu ? `<span class="k">${LV.sub}</span>` : it.k ? `<span class="k">${esc(it.k)}</span>` : it.trail ? `<span class="k t">${it.trail}</span>` : "<span></span>"
+      it.k ? `<span class="k">${esc(it.k)}</span>` : it.trail ? `<span class="k t">${it.trail}</span>` : "<span></span>"
     }${it.sub ? `<span class="s">${esc(it.sub)}</span>` : ""}</div>`;
   });
-  // A long list is a panel with its own scroller, capped in height; what
-  // follows its last separator (Fast Mode) stays below the scroll, always seen.
-  const panel = opts.panel || items.some((i) => i.acct);
-  if (!panel) return `<div class="lv-menu${opts.static ? " static" : ""}" role="menu">${body.join("")}</div>`;
+  // The model list scrolls under its sticky account heads; what follows its
+  // last separator (Fast Mode) stays below the scroll, always seen.
+  const scrolls = items.some((i) => i.acct);
   const filter = opts.filter != null ? `<div class="mfilter"><svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="5.2" cy="5.2" r="3.6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 8l2.6 2.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg><input placeholder="Filter" value="${esc(opts.filter)}" spellcheck="false"></div>` : "";
-  const cut = items.map((i) => !!i.sep).lastIndexOf(true);
+  const cut = scrolls ? items.map((i) => !!i.sep).lastIndexOf(true) : -1;
   const head = cut < 0 ? body : body.slice(0, cut), foot = cut < 0 ? [] : body.slice(cut + 1);
-  return `<div class="lv-menu${opts.static ? " static" : ""} panel" role="menu">${filter}<div class="mscroll">${head.join("")}</div>${foot.length ? `<div class="mfoot">${foot.join("")}</div>` : ""}</div>`;
+  const empty = opts.filter != null && !items.length ? `<div class="mempty">No Matching Branches</div>` : "";
+  const kind = PO_KIND[opts.kind] || { w: 240 };
+  const list = kind.list ? ` style="height:${kind.list}px"` : "";
+  return `<div class="lv-po${opts.static ? " static" : ""}" data-kind="${opts.kind || ""}" role="menu" style="width:${kind.w}px">` +
+    `<svg class="po-frame" aria-hidden="true"><path/></svg>` +
+    `<div class="po-body">${filter}<div class="mscroll${scrolls ? " heads" : ""}"${list}>${empty || head.join("")}</div>${foot.length ? `<div class="mfoot">${foot.join("")}</div>` : ""}</div></div>`;
+}
+
+/** Draws `el`'s popover — body and arrow as one shape — with its arrow on
+ *  `edge` ("top": it opens below what it points at) at `ax` from its leading
+ *  edge, and clips its content to the body's continuous corners. */
+function shapePopover(el, edge, ax) {
+  const body = el.querySelector(".po-body");
+  const w = el.offsetWidth, h = body.offsetHeight, a = PO.arrow;
+  el.style.paddingTop = edge === "top" ? `${a}px` : "0";
+  el.style.paddingBottom = edge === "bottom" ? `${a}px` : "0";
+  ax = Math.max(PO.r + PO.base / 2, Math.min(w - PO.r - PO.base / 2, ax ?? w / 2));
+  const y0 = edge === "top" ? a : 0, half = PO.base / 2;
+  // The arrow flares into the body's edge and rounds at its tip.
+  const arrow = edge === "top"
+    ? `M${ax - half - 2} ${y0}C${ax - half + 6} ${y0} ${ax - 3.2} 0.4 ${ax} 0.4C${ax + 3.2} 0.4 ${ax + half - 6} ${y0} ${ax + half + 2} ${y0}Z`
+    : `M${ax - half - 2} ${y0 + h}C${ax - half + 6} ${y0 + h} ${ax - 3.2} ${y0 + h + a - 0.4} ${ax} ${y0 + h + a - 0.4}C${ax + 3.2} ${y0 + h + a - 0.4} ${ax + half - 6} ${y0 + h} ${ax + half + 2} ${y0 + h}Z`;
+  const svg = el.querySelector(".po-frame");
+  svg.setAttribute("width", w);
+  svg.setAttribute("height", h + a);
+  svg.setAttribute("viewBox", `0 0 ${w} ${h + a}`);
+  svg.querySelector("path").setAttribute("d", contRect(w, h, PO.r).replace(/(-?\d+\.\d+) (-?\d+\.\d+)/g, (_, x, y) => `${x} ${(+y + y0).toFixed(2)}`) + arrow);
+  body.style.clipPath = `path("${contRect(w, h, PO.r)}")`;
+}
+
+/** The model list's one height: as tall as it is with every model shown, 360
+ *  at most — so *N More Models* opens inside it and the popover never grows. */
+function fixModelList(el, s) {
+  const was = s.moreModels;
+  s.moreModels = true;
+  const host = document.createElement("div");
+  host.innerHTML = menuHTML(menuItems("model", s), { kind: "model" });
+  s.moreModels = was;
+  const probe = host.firstElementChild;
+  probe.style.cssText += ";position:fixed;visibility:hidden;left:0;top:0";
+  document.body.appendChild(probe);
+  const full = probe.querySelector(".mscroll").scrollHeight;
+  probe.remove();
+  el.querySelector(".mscroll").style.height = `${Math.min(360, full)}px`;
 }
 
 const MENU = {
-  el: null, sub: null, items: null, chip: null,
+  el: null, items: null, chip: null,
   open(chip, kind, s) {
     this.close();
     this.items = menuItems(kind, s);
@@ -407,13 +461,14 @@ const MENU = {
     this.s = s;
     this.chip = chip;
     chip.classList.add("open");
-    const filtered = kind === "branch"; // a popover with a filter field, as Xcode's branch picker
+    const filtered = kind === "branch"; // a filter field over the list, as Xcode's branch picker
     if (filtered) { s.bq = ""; this.items = menuItems(kind, s); }
     const host = document.createElement("div");
-    host.innerHTML = menuHTML(this.items, filtered ? { filter: "", panel: true } : {});
+    host.innerHTML = menuHTML(this.items, filtered ? { filter: "", kind } : { kind });
     this.el = host.firstElementChild;
     document.body.appendChild(this.el);
-    this.place(this.el, chip.getBoundingClientRect(), chip.closest(".lv-new") ? "below" : "auto");
+    if (kind === "model") fixModelList(this.el, s);
+    this.place(this.el, chip.getBoundingClientRect(), chip.closest(".lv-new") ? "below" : "above");
     if (filtered) {
       const input = this.el.querySelector(".mfilter input");
       input.focus();
@@ -421,7 +476,7 @@ const MENU = {
         s.bq = input.value;
         this.items = menuItems(kind, s);
         const tmp = document.createElement("div");
-        tmp.innerHTML = menuHTML(this.items, { filter: s.bq, panel: true });
+        tmp.innerHTML = menuHTML(this.items, { filter: s.bq, kind });
         const sc = this.el.querySelector(".mscroll");
         sc.innerHTML = tmp.querySelector(".mscroll").innerHTML;
         sc.scrollTop = 0;
@@ -436,69 +491,43 @@ const MENU = {
       const mi = e.target.closest("[data-mi]");
       if (!mi) return;
       const it = this.items[+mi.dataset.mi];
-      if (it.disabled || it.submenu) return;
-      if (it.keep) { // expands in place: the panel stays open where it is
+      if (it.disabled) return;
+      if (it.keep) { // expands in place: the popover stays open, its size and scroll where they are
         e.stopPropagation();
         it.act();
         const old = this.el.querySelector(".mscroll");
-        const top = old && old.scrollTop, cap = old && old.style.maxHeight;
+        const top = old.scrollTop, height = old.style.height;
         this.items = menuItems(this.kind, this.s);
         const host = document.createElement("div");
-        host.innerHTML = menuHTML(this.items);
-        this.el.innerHTML = host.firstElementChild.innerHTML;
+        host.innerHTML = menuHTML(this.items, { kind: this.kind });
+        this.el.querySelector(".po-body").innerHTML = host.querySelector(".po-body").innerHTML;
         const sc = this.el.querySelector(".mscroll");
-        if (sc && old) { sc.style.maxHeight = cap; sc.scrollTop = top; }
+        sc.style.height = height;
+        sc.scrollTop = top;
         return;
       }
       this.close();
       it.act();
     });
-    this.el.addEventListener("mouseover", (e) => {
-      const mi = e.target.closest("[data-mi]");
-      if (!mi) return;
-      const it = this.items[+mi.dataset.mi];
-      if (it.submenu) this.openSub(mi, it.submenu);
-      else if (this.sub && !this.sub.contains(e.target)) { this.sub.remove(); this.sub = null; }
-    });
-  },
-  openSub(row, items) {
-    if (this.sub) this.sub.remove();
-    const host = document.createElement("div");
-    host.innerHTML = menuHTML(items);
-    this.sub = host.firstElementChild;
-    document.body.appendChild(this.sub);
-    const r = row.getBoundingClientRect();
-    const w = this.sub.offsetWidth;
-    const left = r.right + 4 + w > innerWidth ? r.left - w - 4 : r.right + 4;
-    this.sub.style.left = `${left}px`;
-    this.sub.style.top = `${Math.min(r.top - 5, innerHeight - this.sub.offsetHeight - 8)}px`;
-    this.sub.addEventListener("click", (e) => {
-      const mi = e.target.closest("[data-mi]");
-      if (!mi || items[+mi.dataset.mi].disabled) return;
-      const it = items[+mi.dataset.mi];
-      this.close();
-      it.act();
-    });
   },
   place(el, r, dir) {
-    // As NSMenu does: the preferred side if it fits, else the other, else the
-    // roomier one with the panel's scroller shortened to fit.
-    const roomBelow = innerHeight - 8 - (r.bottom + 4), roomAbove = r.top - 4 - 8;
-    let h = el.offsetHeight;
-    const prefer = dir === "below" ? "below" : "above";
-    const fits = (side) => (side === "below" ? roomBelow : roomAbove) >= h;
-    const below = fits(prefer) ? prefer === "below" : fits(prefer === "below" ? "above" : "below") ? prefer !== "below" : roomBelow > roomAbove;
-    const sc = el.querySelector(".mscroll"), room = below ? roomBelow : roomAbove;
-    if (sc && h > room) { sc.style.maxHeight = `${Math.max(120, sc.offsetHeight - (h - room))}px`; h = el.offsetHeight; }
-    const w = el.offsetWidth;
-    el.style.top = `${below ? r.bottom + 4 : r.top - h - 4}px`;
-    el.style.left = `${Math.max(8, Math.min(r.left - 4, innerWidth - w - 8))}px`;
+    // As NSPopover does: on the preferred side if it fits, else the other;
+    // centred on the control and kept 8 pt inside the window, its arrow at
+    // the control's centre wherever the body had to move.
+    const a = PO.arrow, gap = PO.tip;
+    const h = el.querySelector(".po-body").offsetHeight + a, w = el.offsetWidth;
+    const roomBelow = innerHeight - 8 - (r.bottom + gap), roomAbove = r.top - gap - 8;
+    const below = dir === "below" ? roomBelow >= h || roomBelow > roomAbove : !(roomAbove >= h || roomAbove > roomBelow);
+    const cx = (r.left + r.right) / 2;
+    const left = Math.max(8, Math.min(cx - w / 2, innerWidth - w - 8));
+    shapePopover(el, below ? "top" : "bottom", cx - left);
+    el.style.left = `${left}px`;
+    el.style.top = `${below ? r.bottom + gap : r.top - gap - h}px`;
   },
   close() {
     if (this.el) this.el.remove();
-    if (this.sub) this.sub.remove();
     if (this.chip) this.chip.classList.remove("open");
-    this.el = this.sub = this.chip = null;
+    this.el = this.chip = null;
   },
 };
 
@@ -1325,16 +1354,37 @@ function buildLiveSpecimens() {
   const fast = specS({ state: "idle", model: "opus", fast: true, effort: "high", mode: "acceptEdits" });
   const hk = specS({ state: "idle", model: "haiku", mode: "default" });
   const fig = (cap, html) => `<figure><figcaption>${cap}</figcaption>${html}</figure>`;
+  // A popover as it opens: the composer's above its chip, the New view's
+  // below its pop-up, the arrow on the control's centre.
+  const shaped = [];
+  const po = (kind, s, control, opts = {}) => {
+    shaped.push({ kind, s });
+    const above = kind !== "folder" && kind !== "branch";
+    const pop = menuHTML(opts.items || menuItems(kind, s), { static: true, kind, filter: opts.filter });
+    return `<div class="po-spec ${above ? "above" : "below"}">${above ? pop + control : control + pop}</div>`;
+  };
+  const chipStub = (label) => `<span class="chip open">${label}${LV.chev}</span>`;
+  const branchStub = `<span class="lv-pop open">${LV.branch}<span>main</span>${LV.chev2}</span>`;
+  const folderStub = `<span class="lv-folder open">ccterm${LV.chev2}</span>`;
+  const filtered = (q) => { const s = specS({ model: "opus" }); s.bq = q; return s; };
   document.getElementById("lv-menus").innerHTML = `<div class="lv-menus">${[
-    fig("<b>Model · a New tab</b>One list, a section per account, in Settings' order. The account follows the model. Capped at 360 pt; it scrolls inside.", menuHTML(menuItems("model", newp), { static: true })),
-    fig("<b>Model · a live session, while Claude works</b>Within the account: after this turn. Another account restarts the CLI — its items say so, and choosing one asks first.", menuHTML(menuItems("model", busy), { static: true })),
+    fig("<b>Model · a New tab</b>One list, a section per account, in Settings' order. The account follows the model. As tall as the list with every model shown, 360 at most; it scrolls inside, and More Models opens inside it.", po("model", newp, chipStub("Opus 5.5"))),
+    fig("<b>Model · a live session, while Claude works</b>Within the account: after this turn. Another account restarts the CLI — its items say so, and choosing one asks first.", po("model", busy, chipStub("Opus 5.5"))),
     fig("<b>Switching account in a live session</b>An NSAlert sheet. Idle: Restart is the default. While Claude works, Cancel is.", `<div class="lv-sheethost static">${alertHTML(restartAlert(busy, "relay:default"))}</div>`),
-    fig("<b>Effort · Sonnet 4.6</b>Extra High isn't on this model: it runs as High, and says why.", menuHTML(menuItems("effort", s46), { static: true })),
-    fig("<b>Permission mode · Fast on</b>Auto is greyed with its reason; Bypass waits on Settings.", menuHTML(menuItems("mode", fast), { static: true })),
-    fig("<b>Permission mode · Haiku</b>", menuHTML(menuItems("mode", hk), { static: true })),
-    fig("<b>Folder</b>The New view's title menu.", menuHTML(menuItems("folder", idle), { static: true })),
+    fig("<b>Effort · Sonnet 4.6</b>Extra High isn't on this model: it runs as High, and says why.", po("effort", s46, chipStub("Extra High"))),
+    fig("<b>Permission mode · Fast on</b>Auto is greyed with its reason; Bypass waits on Settings.", po("mode", fast, chipStub("Accept Edits"))),
+    fig("<b>Permission mode · Haiku</b>", po("mode", hk, chipStub("Ask"))),
+    fig("<b>Folder</b>The New view's title menu.", po("folder", idle, folderStub)),
+    fig("<b>Branch</b>A filter field over the list, inset 7 so its capsule follows the popover's corners. 300 × 264 of list whatever the filter leaves.", po("branch", idle, branchStub, { filter: "" })),
+    fig("<b>Branch · #327</b>A number offers that pull request; the box keeps its size.", po("branch", filtered("#327"), branchStub, { filter: "#327", items: menuItems("branch", filtered("#327")) })),
+    fig("<b>Branch · nothing matches</b>The list keeps its size and says so in its middle.", po("branch", filtered("zzz"), branchStub, { filter: "zzz", items: menuItems("branch", filtered("zzz")) })),
     fig("<b>Commands</b>Above the card; ↑ ↓ move, ↩ or ⇥ completes.", `<div style="width:420px">${slashHTML("", 0, { static: true })}</div>`),
   ].join("")}</div>`;
+  document.querySelectorAll("#lv-menus .po-spec").forEach((spec, i) => {
+    const el = spec.querySelector(".lv-po");
+    if (shaped[i].kind === "model") fixModelList(el, shaped[i].s);
+    shapePopover(el, spec.classList.contains("above") ? "bottom" : "top");
+  });
 }
 
 // MARK: - The language: radii, icon sizes
@@ -1423,7 +1473,7 @@ function buildMatrix() {
 
 // MARK: - Boot
 
-document.addEventListener("click", (e) => { if (MENU.el && !MENU.el.contains(e.target) && !(MENU.sub && MENU.sub.contains(e.target))) MENU.close(); });
+document.addEventListener("click", (e) => { if (MENU.el && !MENU.el.contains(e.target)) MENU.close(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && MENU.el) MENU.close(); });
 window.addEventListener("scroll", () => MENU.close(), { passive: true });
 document.addEventListener("DOMContentLoaded", () => {

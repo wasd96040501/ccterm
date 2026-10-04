@@ -15,7 +15,7 @@ import TranscriptWorkspace
 /// `TranscriptTab` (`NSTabViewItem.identifier`).
 ///
 /// **New tabs** (design 08 *Tabs and the +*): every editor's bar ends in a +, and
-/// ⌘T opens a New tab — a `SessionTabViewController` as a draft — after the
+/// ⌘T opens a New tab — a session tab as a draft — after the
 /// active one, or selects the group's New tab that nobody has touched. With no
 /// tab at all the area shows a New view of its own, no bar; sending from it
 /// moves that same controller into the first tab. A New tab becomes its
@@ -117,8 +117,8 @@ final class MainSplitViewController: NSSplitViewController {
     /// sidebar too, not only from inside a tab.
     override func supplementalTarget(forAction action: Selector, sender: Any?) -> Any? {
         // ⌘. stops the active session tab's turn from anywhere in the window.
-        if action == #selector(SessionTabViewController.stopResponding(_:)) {
-            return editorArea.activeViewController as? SessionTabViewController
+        if action == TranscriptTab.stopAction {
+            return TranscriptTab.stopTarget(editorArea.activeViewController)
         }
         return Self.areaCommands.contains(action)
             ? editorArea : super.supplementalTarget(forAction: action, sender: sender)
@@ -155,7 +155,7 @@ final class MainSplitViewController: NSSplitViewController {
         let group = editorArea.activeGroup
         if group.tabViewItems.indices.contains(group.selectedTabViewItemIndex) {
             let item = group.tabViewItems[group.selectedTabViewItemIndex]
-            if let tab = item.viewController as? SessionTabViewController, let folder = tab.folder { return folder }
+            if let folder = TranscriptTab.folder(of: item.viewController) { return folder }
             if let url = TranscriptTab(identifier: item.identifier)?.transcriptURL,
                 let project = library.path(toTranscriptAt: url).first
             {
@@ -294,7 +294,7 @@ extension MainSplitViewController: EditorAreaViewControllerDelegate {
     /// the New view is already there.
     func editorArea(_ editorArea: EditorAreaViewController, didRequestNewTabIn group: EditorGroupViewController) {
         guard !group.tabViewItems.isEmpty else {
-            (editorArea.emptyViewController as? SessionTabViewController)?.focusComposer()
+            TranscriptTab.focusComposer(in: editorArea.emptyViewController)
             return
         }
         if let index = group.tabViewItems.firstIndex(where: {

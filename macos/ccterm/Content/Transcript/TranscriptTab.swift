@@ -96,6 +96,27 @@ extension TranscriptTab {
         (viewController as? SessionTabViewController)?.draftText
     }
 
+    /// The folder a session tab works in — a New tab's choice, or where the
+    /// session it started runs; `nil` for any other tab, or a session opened
+    /// from disk (the library knows).
+    @MainActor static func folder(of viewController: NSViewController?) -> URL? {
+        (viewController as? SessionTabViewController)?.folder
+    }
+
+    /// Gives a session tab's field the focus; any other controller is left alone.
+    @MainActor static func focusComposer(in viewController: NSViewController?) {
+        (viewController as? SessionTabViewController)?.focusComposer()
+    }
+
+    /// ⌘.'s action: a session tab stops what Claude is doing. Sent to nil.
+    static var stopAction: Selector { #selector(SessionTabViewController.stopResponding(_:)) }
+
+    /// Who takes `stopAction` when the active tab is `viewController`: the
+    /// session tab itself; `nil` for any other tab.
+    @MainActor static func stopTarget(_ viewController: NSViewController?) -> NSViewController? {
+        viewController as? SessionTabViewController
+    }
+
     /// Internal, feature-only (not used by App/AppKit): a document tab from an already-resolved Document
     /// (synchronous, no blank frame). Identifier `.document(document.reference)`.
     @MainActor static func makeDocumentItem(

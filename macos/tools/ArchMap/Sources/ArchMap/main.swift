@@ -185,18 +185,21 @@ if detail == "members" {
         indexText += "- [\(unit)](\(name))\n"
     }
 }
-// The app's component boundaries, whatever the scope: a scope picks what the
-// map describes, while a coupling is a fact about the app's tree.
-let coupling = Coupling(index: index, modules: ["ccterm", "Components", "DisplayModels"])
-let couplingCount = coupling.findings().count
-try coupling.render(header: "# Component boundaries — ccterm, Components and DisplayModels").write(
-    to: outDir.appendingPathComponent("coupling.md"), atomically: true, encoding: .utf8)
-indexText += "\n## Component boundaries\n\n- [coupling.md](coupling.md) — \(couplingCount) findings "
-indexText += "against `macos/CLAUDE.md` § Component boundaries, each with its fix\n"
+// The app's placement and component boundaries, whatever the scope: a scope
+// picks what the map describes, while a break is a fact about the app's tree.
+let rules = Rules(
+    index: index, modules: ["ccterm", "Components", "DisplayModels"], files: sources,
+    repoModules: Set(modules.map(\.name)))
+let ruleFindings = rules.findings()
+try rules.render(header: "# Rules — where code lives and component boundaries").write(
+    to: outDir.appendingPathComponent("rules.md"), atomically: true, encoding: .utf8)
+indexText += "\n## Rules\n\n- [rules.md](rules.md) — \(ruleFindings.count) findings "
+indexText += "against `macos/CLAUDE.md` § Where code lives and § Component boundaries, each with its fix\n"
 try indexText.write(to: outDir.appendingPathComponent("index.md"), atomically: true, encoding: .utf8)
 for unit in units {
     try renderer.renderUnit(unit).write(
         to: outDir.appendingPathComponent(Renderer.fileName(ofUnit: unit)), atomically: true, encoding: .utf8)
 }
 print("arch map (\(scopeArg)): \(units.count) units → \(outDir.path)/index.md")
-print("component boundaries: \(couplingCount) findings → \(outDir.path)/coupling.md")
+print("rules: \(ruleFindings.count) findings → \(outDir.path)/rules.md")
+for line in rules.summary() { print("  " + line) }

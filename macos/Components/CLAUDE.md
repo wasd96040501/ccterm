@@ -39,12 +39,11 @@ The app's views come here one unit at a time — a family, or a component with t
 
 ## Verify — every unit, before its commit
 
-1. **Boundary:** `grep -rnE 'AccountStore|LaunchStore|LaunchCheckService|SubscriptionService|SessionStore|LibraryStore|GitService|SettingsContext|TranscriptTab|import (AgentSDK|TranscriptKit|ccterm)' macos/Components/Sources/Components macos/Components/Sources/DisplayModels` finds nothing. Domain types the compiler refuses on its own: the package can't see them.
-2. **Words:** `grep -rn 'localized:' macos/Components/Sources/Components` shows `bundle: .module` on every hit (a wrapped call carries it on the next line); each key is in both `Resources/*.lproj/Localizable.strings` and gone from `ccterm/Localizable.xcstrings` unless the app still says it.
-3. **Gates:** `make build`, `make test-unit`, `make test-ui`, `make fmt-check` — all green.
-4. **Architecture:** `make arch`; `build/arch/coupling.md` has no more findings than before the unit, and none names a type in `Components`.
-5. **Look:** `make test-ui FILTER=DesignPageSnapshotTests`, then open your section's `macos/Components/.build/design/Design-<section>-1240-{light,dark}.png` (inside your own checkout, so no other worktree overwrites it) (the section's title, lower-cased, words joined by `-`) and read the new specimen against its design part, at the same size: every state the design shows is there; nothing collapsed, clipped, truncated or overlapping; edges that line up in the design line up here (a form's content and its button bar); the dark render its own. Whatever looks wrong is wrong — a legacy scroller, a non-key window, a mouse attached are a real Mac, not the environment.
-6. **Commit and push.**
+1. **Words:** `grep -rn 'localized:' macos/Components/Sources/Components` shows `bundle: .module` on every hit (a wrapped call carries it on the next line); each key is in both `Resources/*.lproj/Localizable.strings` and gone from `ccterm/Localizable.xcstrings` unless the app still says it.
+2. **Gates:** `make build`, `make test-unit`, `make test-ui`, `make fmt-check` — all green.
+3. **Architecture:** `make arch`; `build/arch/rules.md` has no more findings than before the unit, and none in `Components` or `DisplayModels` — the domain stays out by the compiler, the rest by these rules.
+4. **Look:** `make test-ui FILTER=DesignPageSnapshotTests`, then open your section's `macos/Components/.build/design/Design-<section>-1240-{light,dark}.png` (inside your own checkout, so no other worktree overwrites it) (the section's title, lower-cased, words joined by `-`) and read the new specimen against its design part, at the same size: every state the design shows is there; nothing collapsed, clipped, truncated or overlapping; edges that line up in the design line up here (a form's content and its button bar); the dark render its own. Whatever looks wrong is wrong — a legacy scroller, a non-key window, a mouse attached are a real Mac, not the environment.
+5. **Commit and push.**
 
 ## The style page
 

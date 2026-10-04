@@ -125,7 +125,7 @@ The controller tree is a responsibility tree: `NSWindowController` at the root o
 
 ### Where code lives — the app or a package
 
-The app holds state and flow; what the user sees is drawn by packages. Place each type by what it does:
+The app holds state and flow; what the user sees is drawn by packages. Place each type by what it does; `make arch` checks P1–P3 below and writes what breaks them to `build/arch/rules.md`, with the rule and its fix.
 
 | It… | Lives in | Its shape |
 |---|---|---|
@@ -135,13 +135,14 @@ The app holds state and flow; what the user sees is drawn by packages. Place eac
 | owns or reads the domain — a store, a service, an AgentSDK type — or decides flow | the app (`ccterm`) | Model, Store / Service, ViewModel, Coordinator; the mapping from a domain type to a display model (`AccountRowContent+Account.swift`); and the **binder** — the controller that subscribes a store, configures a component and turns what it reports into a store call |
 
 - **Both? Split it.** A screen that draws and knows a store is a component in `Components` plus its binder in the app (`ComposerViewController`, bound by `SessionTabViewController`). The component never sees the store; the binder configures the component through its surface and never reaches inside it.
-- **The app draws nothing.** A binder places package views with constraints (a bare `NSView()` or an `NSStackView` as their container) and configures a package view through its API (`TranscriptView.maxContentWidth`). It makes no AppKit control, label or image view, sets no font, colour or layer, and subclasses `NSView` only for a private root that routes layout or focus and draws nothing. System UI drawn as the system draws it stays in the app: the main menu, the window's toolbar items, `NSAlert`, `NSOpenPanel`.
-- **Imports say where a type is.** `DisplayModels` imports Foundation alone; `Components` imports `DisplayModels` and Apple's frameworks alone. In the app, a model, store, service or view model imports neither AppKit nor `Components`; only a binder, a coordinator or a mapping to a component's own value does.
+- **P1 — The app draws nothing.** A binder places package views with constraints (a bare `NSView()` or an `NSStackView` as their container) and configures a package view through its API (`TranscriptView.maxContentWidth`). It makes no AppKit control, label or image view, sets no font, colour or layer, and subclasses `NSView` only for a private root that routes layout or focus and draws nothing. System UI drawn as the system draws it stays in the app: the main menu, the window's toolbar items, `NSAlert`, `NSOpenPanel`.
+- **P2 — A package imports only down its arrow.** `DisplayModels` imports Foundation alone; `Components` imports `DisplayModels` and Apple's frameworks alone.
+- **P3 — Only what binds a view imports a view framework.** In the app, a model, store, service or view model imports neither AppKit nor `Components`; only a binder, a coordinator, the app's entry or a mapping to a component's own value does.
 - **Each part is looked at where it lives.** A component on the style page (`make test-ui FILTER=DesignPageSnapshotTests`, [Components/CLAUDE.md](Components/CLAUDE.md)); an engine in its package's demo; a screen the app composes — binders and the components they place — in its `cctermTests` snapshot test.
 
 ### Component boundaries
 
-A component (an `NSView`, `NSViewController`, `NSWindowController` or `NSControl` subclass — in `Components`, or a binder in the app) depends on nothing beside it. Start from "these two must not know each other" and keep a dependency only when it can't be removed. Each component must be buildable alone from its init, its model and a stub delegate. `make arch` checks the rules below and writes what breaks them to `build/arch/coupling.md`, with the rule and its fix.
+A component (an `NSView`, `NSViewController`, `NSWindowController` or `NSControl` subclass — in `Components`, or a binder in the app) depends on nothing beside it. Start from "these two must not know each other" and keep a dependency only when it can't be removed. Each component must be buildable alone from its init, its model and a stub delegate. `make arch` checks the rules below and writes what breaks them to `build/arch/rules.md`, with the rule and its fix.
 
 - **B1 — No geometry crosses a boundary.** A component exposes no size, inset, frame or guide for another to read, and takes none that describes something else ("the space the composer covers"). Overlap is the container's business. It sets the child's safe area (`additionalSafeAreaInsets`), and the child honours its own safe area like any scroll view. A child that must publish a region gives a layout guide named for its own role, never for what fills it.
 - **B2 — Siblings never meet, not even through the container.** A container never feeds one child from another (`a.x = b.y`, `a.set(b.z)`). A child reports the event up; the container updates the one source of truth; both children are configured from it. If the data is really one child's own concern (the hints for its own keys), it belongs inside that child.

@@ -1,13 +1,13 @@
 import SwiftSyntax
 
-/// The component-boundary rules of `macos/CLAUDE.md` § Component boundaries,
-/// checked over the index: each finding names the rule, the place, and what to
-/// do instead, so whoever reads `coupling.md` can fix it without re-deriving
-/// the rule. A component is a class whose superclass chain reaches an AppKit
+/// The rules of `macos/CLAUDE.md` § Where code lives (P1–P3, `Placement`) and
+/// § Component boundaries (B1–B4), checked over the index: each finding names
+/// the rule, the place, and what to do instead, so whoever reads `rules.md`
+/// can fix it without re-deriving the rule. A component is a class whose superclass chain reaches an AppKit
 /// view, view controller, window controller or control. Rules apply to the
 /// app's own components; a package's public API (TranscriptKit's
 /// `contentInsets`) is a framework's and has its own rules.
-struct Coupling {
+struct Rules {
     struct Finding {
         let rule: String
         let file: String
@@ -18,27 +18,44 @@ struct Coupling {
     let index: Index
     /// The app and the packages its components live in.
     let modules: Set<String>
+    let files: [SourceFile]
+    let repoModules: Set<String>
 
-    private static let rules: [String: (title: String, fix: String)] = [
+    private static let rules: [String: (title: String, section: String, fix: String)] = [
+        "P1": (
+            "The app draws nothing", "Where code lives",
+            "Move the view into `Components` — a component built from a display model and a delegate, with its "
+                + "specimen on the style page; the app places it and configures it."
+        ),
+        "P2": (
+            "A package imports only down its arrow", "Where code lives",
+            "Take the dependency out: what the package needs becomes a display model, what it would call an event "
+                + "up through its delegate."
+        ),
+        "P3": (
+            "Only what binds a view imports a view framework", "Where code lives",
+            "Move the value it builds into `DisplayModels`, so it imports `DisplayModels` alone, or the view work "
+                + "into the binder that shows it."
+        ),
         "B1": (
-            "No geometry crosses a boundary",
+            "No geometry crosses a boundary", "Component boundaries",
             "Delete the member. The container that places both sets the child's `additionalSafeAreaInsets`; "
                 + "the child reads its own `view.safeAreaInsets` / `safeAreaRect`. A region a child must publish is a "
                 + "layout guide named for the child's own role, not for what fills it."
         ),
         "B2": (
-            "Siblings never meet, not even through the container",
+            "Siblings never meet, not even through the container", "Component boundaries",
             "Don't feed one child from another. The source child reports the event up (delegate); the container "
                 + "updates the one source of truth and configures both children from it — or, if the data is the "
                 + "source child's own concern, move it inside that child."
         ),
         "B3": (
-            "No reaching through a child",
+            "No reaching through a child", "Component boundaries",
             "Give the child a command of its own and call that, or send the action to `nil` (the responder chain) "
                 + "instead of targeting the grandchild."
         ),
         "B4": (
-            "A component names only what it builds or holds",
+            "A component names only what it builds or holds", "Component boundaries",
             "Move a shared value down into a shared type (`Drawing/`, the model) or report the event up through "
                 + "the delegate; never name a parent's or sibling's type."
         ),
@@ -137,7 +154,8 @@ struct Coupling {
     // MARK: Rules
 
     func findings() -> [Finding] {
-        var found: [Finding] = []
+        var found = Placement(index: index, files: files, repoModules: repoModules, isComponent: { isComponent($0) })
+            .findings()
         let components = index.types.filter { modules.contains($0.module) && isComponent($0) }
         let componentIDs = Set(components.map(ObjectIdentifier.init))
         for user in index.types where modules.contains(user.module) && user.kind != "file" {
@@ -212,17 +230,29 @@ struct Coupling {
 
     // MARK: Report
 
+    static let order = ["P1", "P2", "P3", "B1", "B2", "B3", "B4"]
+
+    /// One line per rule that has findings, for the terminal.
+    func summary() -> [String] {
+        let all = findings()
+        return Self.order.compactMap { rule in
+            let count = all.filter { $0.rule == rule }.count
+            guard count > 0, let text = Self.rules[rule] else { return nil }
+            return "\(rule) \(text.title): \(count)"
+        }
+    }
+
     func render(header: String) -> String {
         let all = findings()
         var out = header + "\n\n"
-        out += "How to read: each finding breaks one rule of `macos/CLAUDE.md` § Component boundaries. "
-        out += "Fix it the way its rule says; keep one only when the dependency can't be removed, and say why "
-        out += "in the code. \(all.count) findings.\n"
-        for rule in ["B1", "B2", "B3", "B4"] {
+        out += "How to read: each finding breaks one rule of `macos/CLAUDE.md` — § Where code lives (P) or "
+        out += "§ Component boundaries (B). Fix it the way its rule says; keep one only when the dependency can't "
+        out += "be removed, and say why in the code. \(all.count) findings.\n"
+        for rule in Self.order {
             let hits = all.filter { $0.rule == rule }
             guard let text = Self.rules[rule] else { continue }
             out += "\n## \(rule) — \(text.title) (\(hits.count))\n\n"
-            out += "Fix: \(text.fix)\nRule: `macos/CLAUDE.md` § Component boundaries, \(rule).\n\n"
+            out += "Fix: \(text.fix)\nRule: `macos/CLAUDE.md` § \(text.section).\n\n"
             for hit in hits { out += "- `\(hit.file):\(hit.line)` — \(hit.what)\n" }
             if hits.isEmpty { out += "- none\n" }
         }

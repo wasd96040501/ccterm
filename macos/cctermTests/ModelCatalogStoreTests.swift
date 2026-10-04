@@ -90,6 +90,15 @@ final class ModelCatalogStoreTests: XCTestCase {
         XCTAssertEqual(section.fastModeUnavailableReason, String(localized: "Requires extra usage"))
     }
 
+    /// A plan the CLI already names `Claude …` is named once.
+    func testThePlanIsNamedOnce() async throws {
+        accounts.send([subscription])
+        let answer = result(subscriptionModels, type: "Claude Max")
+        let store = store { _ in answer }
+        await wait(store) { $0.accounts.first?.isLoaded == true }
+        XCTAssertEqual(try XCTUnwrap(store.catalog.subscription).name, "Claude Max")
+    }
+
     func testTheSubscriptionListsDefaultAndTheAliasesAndFoldsVersionedModelsAfterThem() async throws {
         accounts.send([subscription])
         let answer = result(subscriptionModels)

@@ -199,7 +199,10 @@ extension AccountCatalog {
         guard let type = subscriptionType?.trimmingCharacters(in: .whitespaces), !type.isEmpty else {
             return String(localized: "Claude")
         }
-        return String(localized: "Claude \(type.capitalized)")
+        // The CLI says `max` or, from some versions, `Claude Max`: the plan is
+        // named once either way.
+        let plan = type.lowercased().hasPrefix("claude ") ? String(type.dropFirst(7)) : type
+        return String(localized: "Claude \(plan.capitalized)")
     }
 
     private static func detail(of account: Account) -> String {

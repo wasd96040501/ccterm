@@ -400,7 +400,7 @@ function menuHTML(items, opts = {}) {
       it.k ? `<span class="k">${esc(it.k)}</span>` : it.trail ? `<span class="k t">${it.trail}</span>` : "<span></span>"
     }${it.sub ? `<span class="s">${esc(it.sub)}</span>` : ""}</div>`;
   });
-  // The model list scrolls under its sticky account heads; what follows its
+  // The model list scrolls, its account heads with it; what follows its
   // last separator (Fast Mode) stays below the scroll, always seen.
   const scrolls = items.some((i) => i.acct);
   const filter = opts.filter != null ? `<div class="mfilter"><svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="5.2" cy="5.2" r="3.6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 8l2.6 2.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg><input placeholder="Filter" value="${esc(opts.filter)}" spellcheck="false"></div>` : "";
@@ -411,7 +411,7 @@ function menuHTML(items, opts = {}) {
   const list = kind.list ? ` style="height:${kind.list}px"` : "";
   return `<div class="lv-po${opts.static ? " static" : ""}" data-kind="${opts.kind || ""}" role="menu" style="width:${kind.w}px">` +
     `<svg class="po-frame" aria-hidden="true"><path/></svg>` +
-    `<div class="po-body">${filter}<div class="mscroll${scrolls ? " heads" : ""}"${list}>${empty || head.join("")}</div>${foot.length ? `<div class="mfoot">${foot.join("")}</div>` : ""}</div></div>`;
+    `<div class="po-body">${filter}<div class="mscroll"${list}>${empty || head.join("")}</div>${foot.length ? `<div class="mfoot">${foot.join("")}</div>` : ""}</div></div>`;
 }
 
 /** Draws `el`'s popover — body and arrow as one shape — with its arrow on
@@ -1351,7 +1351,7 @@ function buildLiveSpecimens() {
   const folderStub = `<span class="lv-folder open">ccterm${LV.chev2}</span>`;
   const filtered = (q) => { const s = specS({ model: "opus" }); s.bq = q; return s; };
   document.getElementById("lv-menus").innerHTML = `<div class="lv-menus">${[
-    fig("<b>Model · a New tab</b>One list, a section per account, in Settings' order. The account follows the model. Every model, as tall as the list, 360 at most; it scrolls inside, each account's head sticking to the top.", po("model", newp, chipStub("Opus 5.5"))),
+    fig("<b>Model · a New tab</b>One list, a section per account, in Settings' order. The account follows the model. Every model under its account's head, as tall as the list, 360 at most, then it scrolls.", po("model", newp, chipStub("Opus 5.5"))),
     fig("<b>Model · a live session, while Claude works</b>Within the account: after this turn. Another account restarts the CLI — its items say so, and choosing one asks first.", po("model", busy, chipStub("Opus 5.5"))),
     fig("<b>Switching account in a live session</b>An NSAlert sheet. Idle: Restart is the default. While Claude works, Cancel is.", `<div class="lv-sheethost static">${alertHTML(restartAlert(busy, "relay:default"))}</div>`),
     fig("<b>Effort · Sonnet 4.6</b>Extra High isn't on this model: it runs as High, and says why.", po("effort", s46, chipStub("Extra High"))),

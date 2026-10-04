@@ -278,9 +278,7 @@
 .lv-po .po-frame path { fill: var(--po-bg); }
 .lv-po .po-body { position: relative; display: flex; flex-direction: column; backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6); }
 .lv-po .mscroll { padding: 10px; overflow: auto; scrollbar-width: thin; }
-.lv-po .mfilter + .mscroll { padding-top: 4px; }
 .lv-po[data-kind="model"] .mscroll { max-height: 360px; }
-.lv-po .mscroll.heads { padding-top: 0; }
 .lv-po .mfoot { padding: 6px 10px 10px; border-top: 0.5px solid var(--separator); }
 .lv-po .mi { border-radius: calc(10px * var(--k)); }
 .lv-po .mempty { height: 100%; display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--secondary); }
@@ -315,10 +313,9 @@
 .mi.danger.dis .l, .mi.danger.dis .g { color: var(--tertiary); }
 .mh { font-size: 11px; font-weight: 600; color: var(--tertiary); padding: 4px 10px 2px 24px; display: flex; justify-content: space-between; gap: 12px; }
 .mh kbd { font: inherit; font-weight: 400; }
-.mh.acct {
-  position: sticky; top: 0; z-index: 1; justify-content: flex-start; align-items: center; flex-wrap: wrap; gap: 0 6px; padding: 10px 10px 4px 16px; margin: 0 -10px;
-  background: var(--po-bg); color: var(--secondary); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-}
+/* An account's head: as an inset table lays it out, 10 into the list and 8
+   above its words, scrolling with its models. */
+.mh.acct { justify-content: flex-start; align-items: center; flex-wrap: wrap; gap: 0 6px; padding: 8px 10px 4px 16px; margin: 0 -10px; color: var(--secondary); }
 .mh.acct .g { width: var(--i-ctl); height: var(--i-ctl); color: var(--secondary); flex: none; }
 .mh.acct i { font-style: normal; font-weight: 400; color: var(--tertiary); margin-left: 6px; }
 .mh.acct > span { white-space: nowrap; }

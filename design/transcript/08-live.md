@@ -307,7 +307,7 @@ each account is a section of it, in Settings' order:
 
 ```
   ┌──────────────────────────────────────────────┐
-  │ ✦ Claude Max  Subscription                    │  sticky section header
+  │ ✦ Claude Max  Subscription                    │  section header
   │   Default (recommended)    Opus 5.5           │
   │ ✓ Opus 5.5                                    │
   │   Fable 5.1 · Sonnet 5.5 · Haiku 4.5          │
@@ -328,8 +328,8 @@ one says so. With one menu, the only expensive choice — a model in another
 account — is marked where it is chosen.
 
 - **A popover 300 wide, as tall as its list, 360 pt at most**, then it
-  scrolls, with each account's header sticking to the top as its models pass
-  under it. Fast Mode sits under the scroll, always visible.
+  scrolls, each account's header scrolling with its models. Fast Mode sits
+  under the scroll, always visible.
 - **Every model is listed**, newest first as the CLI gives them; none is
   folded away.
 - **A section header** is the account's mark (the Claude mark for the

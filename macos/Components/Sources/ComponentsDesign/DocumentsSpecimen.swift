@@ -24,7 +24,7 @@ enum DocumentsSpecimen {
                     title: "Command documents — failed, warnings, a note, running, waiting, background, too long",
                     view: DocumentGrid(Self.commands()), height: nil),
                 .init(
-                    title: "File documents — a change, a new file, a read, a change that failed, one waiting",
+                    title: "File documents — a change, a new file, a read, a change that failed, one waiting, one gone",
                     view: DocumentGrid(Self.files()), height: nil),
             ])
     }
@@ -204,6 +204,14 @@ enum DocumentsSpecimen {
             file(
                 "Change waiting for you — the approval bar under the jump bar", proposed, mode: .change,
                 glyph: .change, state: .waiting, stat: .diffStat(added: 1, removed: 1), approval: waiting),
+            DocumentFrame.Content(
+                caption: "Gone — a document whose call is no longer in the transcript",
+                header: DocumentHeader(
+                    tile: Tile(glyph: .tool(.read), state: .done),
+                    crumbs: ["ccterm"] + path.split(separator: "/").map(String.init),
+                    title: "TranscriptView.swift"),
+                approval: nil,
+                body: DocumentNoteViewController("This document is no longer in the transcript.")),
         ]
     }
 }

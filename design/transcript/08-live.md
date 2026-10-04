@@ -171,9 +171,11 @@ badge, not a thing.
   - Worktree on: *A new branch from main, in a new worktree*;
   - a pull request: *Pull request #327, in a new worktree*.
 - **The branch pop-up opens a popover with a filter**, as Xcode's toolbar
-  branch picker does: a search field (focused, a 26-pt capsule) over the list,
+  branch picker does: a search field (focused, a 24-pt capsule) over the list,
   sections *Local* and *Remote* (a remote branch with a local twin is listed
-  once), 264 pt of list whatever is typed, then it scrolls. Typing filters; ↩ takes the first
+  once), each with origin's default branch first, then the checked-out one,
+  then the rest newest commit first; 264 pt of list whatever is typed, then
+  it scrolls. Typing filters; ↩ takes the first
   match. Typing `#327` adds *Pull Request · #327 — Checked out in a new
   worktree*, and choosing it turns Worktree on.
 - **What the branch means depends on Worktree.**
@@ -278,14 +280,17 @@ never an `NSMenu` or a window of our own.
   below their pop-up, each on the other side when there is no room.
 - **No animation** (`animates = false`): it is there on the click, gone on the
   choice, as a menu is. It closes on a click outside, on ⎋, and on a choice.
+- **Opened by a button.** Each pop-up is an `NSButton` that shows its bezel
+  under the pointer, darkens while pressed and stays on while its popover is
+  open; a second click closes it.
 - **One size while open.** A popover never resizes under the pointer:
   Effort, Permission Mode and the folder are as tall as their rows; Model is
-  300 wide and as tall as its list fully expanded, 360 pt at most, so *N More
-  Models* opens inside it; the branch picker is 300 wide with 264 pt of list,
-  whatever the filter leaves.
-- **Concentric with its corners.** Rows sit 10 pt in from the body's edges and
-  round their fill 10 pt; the branch picker's filter field is a capsule 26 pt
-  tall, 7 pt from the edges, so its 13-pt round follows the body's 20.
+  300 wide and as tall as its list, 360 pt at most, then it scrolls; the
+  branch picker is 300 wide with 264 pt of list, whatever the filter leaves.
+- **Concentric with its corners.** The list is an inset `NSTableView`: rows
+  sit 10 pt in from the body's edges, the selection the system's. The branch
+  picker's filter is an `NSSearchField` at its regular size, a capsule 24 pt
+  tall, 8 pt from the edges, so its 12-pt round follows the body's 20.
 - **Nothing matches** the filter: the list keeps its size and says *No
   Matching Branches* in its middle.
 - Keys as a menu's: ↑ ↓ move over what can be chosen, ↩ chooses, ⎋ closes,
@@ -306,7 +311,7 @@ each account is a section of it, in Settings' order:
   │   Default (recommended)    Opus 5.5           │
   │ ✓ Opus 5.5                                    │
   │   Fable 5.1 · Sonnet 5.5 · Haiku 4.5          │
-  │   7 More Models                               │  expands in place
+  │   Opus 5 · Fable 5 · Opus 4.8 · …             │  every model, none folded
   │ ▤ Work Relay  relay.example.com  Restarts the session │
   │   Default · Opus · Sonnet · Haiku           ↻ │
   │ ▤ DeepSeek  api.deepseek.com                  │
@@ -322,12 +327,11 @@ have to pick a model on your behalf; and both would mean *restart* while only
 one says so. With one menu, the only expensive choice — a model in another
 account — is marked where it is chosen.
 
-- **A popover 300 wide, as tall as its list with every model shown, 360 pt at
-  most**, then it scrolls, with each account's header sticking to the top as
-  its models pass under it. Fast Mode sits under the scroll, always visible.
-- **Older models** of an account fold into one *N More Models* row that
-  expands in place (the popover stays open, its size and scroll where they are). The current
-  model is never folded.
+- **A popover 300 wide, as tall as its list, 360 pt at most**, then it
+  scrolls, with each account's header sticking to the top as its models pass
+  under it. Fast Mode sits under the scroll, always visible.
+- **Every model is listed**, newest first as the CLI gives them; none is
+  folded away.
 - **A section header** is the account's mark (the Claude mark for the
   subscription, a server glyph for a provider), its name, and its detail in
   tertiary (*Subscription*, the provider's host).

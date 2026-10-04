@@ -49,13 +49,14 @@ const MODE = (v) => MODES.find((m) => m.v === v);
 const CYCLE = ["default", "acceptEdits", "plan", "auto"]; // ⇧⇥, the CLI's own order
 
 // `branch` is what the folder has checked out (null: not a git repository);
+// `def`, origin's default branch; `local` and `remote` newest commit first;
 // `elsewhere`, branches checked out in another worktree; `dirty`, uncommitted
 // changes — both stop a switch in place.
 const FOLDERS = [
-  { name: "ccterm", path: "~/dev/ccterm", branch: "main", local: ["main", "live-session-design", "fix-gutter-overflow", "exactlist-bench", "settings-accounts"], remote: ["origin/main", "origin/release/1.4", "origin/sidebar-icons"], elsewhere: ["live-session-design"] },
-  { name: "ghostty", path: "~/dev/ghostty", branch: "main", local: ["main", "tab-accessory"], remote: ["origin/main"], dirty: true },
+  { name: "ccterm", path: "~/dev/ccterm", branch: "main", def: "main", local: ["live-session-design", "exactlist-bench", "fix-gutter-overflow", "main", "settings-accounts"], remote: ["origin/sidebar-icons", "origin/main", "origin/release/1.4"], elsewhere: ["live-session-design"] },
+  { name: "ghostty", path: "~/dev/ghostty", branch: "main", def: "main", local: ["main", "tab-accessory"], remote: ["origin/main"], dirty: true },
   { name: "claude-notes", path: "~/notes/claude-notes", branch: null }, // not a git repository
-  { name: "dotfiles", path: "~/dotfiles", branch: "master", local: ["master"], remote: ["origin/master"] },
+  { name: "dotfiles", path: "~/dotfiles", branch: "master", def: "master", local: ["master"], remote: ["origin/master"] },
 ];
 // Accounts, as Settings has them: the subscription, then API providers.
 const ACCOUNTS = [
@@ -312,12 +313,7 @@ function menuItems(kind, s) {
       const restarts = live && a.id !== here;
       out.push({ acct: a, note: restarts ? "Restarts the session" : "" });
       const item = (m) => ({ label: m.label, sub: m.sub, checked: cur === m.v, trail: restarts ? svg16(RESTART) : "", act: () => chooseModel(s, m.v) });
-      out.push(...ms.filter((m) => !m.other).map(item));
-      const older = ms.filter((m) => m.other);
-      if (older.length) {
-        if (s.moreModels || older.some((m) => m.v === cur)) out.push(...older.map(item));
-        else out.push({ label: `${older.length} More Models`, more: true, keep: true, act: () => { s.moreModels = true; } });
-      }
+      out.push(...ms.map(item));
     }
     out.push({ sep: true });
     out.push({ label: "Fast Mode", glyph: LV.bolt.replace('class="bolt"', 'class="g" style="padding:2px 3px"'), sub: fm.fast ? "Faster output on Opus · billed as extra usage" : fm.acct === "sub" ? "Opus 5.5, Opus 5 and Opus 4.8 only" : "Only with the subscription", toggle: true, on: shownFast(s), disabled: !fm.fast, keep: true, act: () => setFast(s, !shownFast(s)) });
@@ -364,7 +360,11 @@ function branchItems(s) {
     : f.dirty ? "Uncommitted changes here — use a worktree" : null;
   const item = (b) => ({ label: b, checked: s.branch === b, disabled: !!why(b), sub: why(b) || (b === f.branch ? "Checked out here" : null), act: () => { s.branch = b; LW.refresh(s); } });
   const match = (b) => !q || b.toLowerCase().includes(q.replace(/^#/, ""));
-  const local = f.local.filter(match), remote = f.remote.filter((b) => match(b) && !f.local.includes(b.replace(/^origin\//, "")));
+  // origin's default branch first, then the checked-out one, then the rest
+  // as git lists them: newest commit first.
+  const rank = (b) => (b.replace(/^origin\//, "") === f.def ? 0 : b === f.branch ? 1 : 2);
+  const order = (list) => list.map((b, i) => [b, i]).sort((x, y) => rank(x[0]) - rank(y[0]) || x[1] - y[1]).map((p) => p[0]);
+  const local = order(f.local.filter(match)), remote = order(f.remote.filter((b) => match(b) && !f.local.includes(b.replace(/^origin\//, ""))));
   const out = [];
   if (local.length) out.push({ header: "Local" }, ...local.map(item));
   if (remote.length) out.push({ header: "Remote" }, ...remote.map(item));
@@ -379,9 +379,9 @@ function branchItems(s) {
  *  its body is exactly the content's size, continuous corners of 20 pt, and a
  *  10.5-pt arrow, 28 pt at its base, its tip 2.5 pt off the control it points
  *  at; it opens without animation. Each kind has one size, fixed while it is
- *  open — filtering or expanding scrolls inside, the box never moves:
- *  Effort, Permission Mode and the folder are their rows; Model is 300 wide
- *  and as tall as its list fully expanded, 360 at most; the branch picker is
+ *  open — filtering scrolls inside, the box never moves: Effort,
+ *  Permission Mode and the folder are their rows; Model is 300 wide and as
+ *  tall as its list, 360 at most, then it scrolls; the branch picker is
  *  300 × 264 of list whatever the filter leaves. */
 const PO = { r: 20, arrow: 10.5, base: 28, tip: 2.5, inset: 10 };
 const PO_KIND = { effort: { w: 240 }, mode: { w: 300 }, folder: { w: 320 }, model: { w: 300 }, branch: { w: 300, list: 264 } };
@@ -392,7 +392,7 @@ function menuHTML(items, opts = {}) {
     if (it.sep) return '<div class="msep"></div>';
     if (it.header) return `<div class="mh"><span>${esc(it.header)}</span>${it.key ? `<kbd>${it.key}</kbd>` : ""}</div>`;
     if (it.acct) return `<div class="mh acct">${acctMark(it.acct, 14)}<span>${esc(it.acct.name)}<i>${esc(it.acct.detail)}</i></span>${it.note ? `<em>${esc(it.note)}</em>` : ""}</div>`;
-    const cls = ["mi", anyGlyph ? "" : "nog", it.toggle ? "tg" : "", it.disabled ? "dis" : "", it.danger ? "danger" : "", it.more ? "more" : "", opts.hl === i ? "hl" : ""].join(" ");
+    const cls = ["mi", anyGlyph ? "" : "nog", it.toggle ? "tg" : "", it.disabled ? "dis" : "", it.danger ? "danger" : "", opts.hl === i ? "hl" : ""].join(" ");
     // A setting, not a choice: a switch at the trailing edge (NSSwitch, small),
     // and the menu stays open so the chip can be seen to change.
     if (it.toggle) return `<div class="${cls}" data-mi="${i}" role="switch" aria-checked="${!!it.on}"><span></span>${it.glyph || "<span></span>"}<span class="l">${esc(it.label)}</span><span class="k"><span class="nsw${it.on ? " on" : ""}"></span></span>${it.sub ? `<span class="s">${esc(it.sub)}</span>` : ""}</div>`;
@@ -436,22 +436,6 @@ function shapePopover(el, edge, ax) {
   body.style.clipPath = `path("${contRect(w, h, PO.r)}")`;
 }
 
-/** The model list's one height: as tall as it is with every model shown, 360
- *  at most — so *N More Models* opens inside it and the popover never grows. */
-function fixModelList(el, s) {
-  const was = s.moreModels;
-  s.moreModels = true;
-  const host = document.createElement("div");
-  host.innerHTML = menuHTML(menuItems("model", s), { kind: "model" });
-  s.moreModels = was;
-  const probe = host.firstElementChild;
-  probe.style.cssText += ";position:fixed;visibility:hidden;left:0;top:0";
-  document.body.appendChild(probe);
-  const full = probe.querySelector(".mscroll").scrollHeight;
-  probe.remove();
-  el.querySelector(".mscroll").style.height = `${Math.min(360, full)}px`;
-}
-
 const MENU = {
   el: null, items: null, chip: null,
   open(chip, kind, s) {
@@ -467,7 +451,6 @@ const MENU = {
     host.innerHTML = menuHTML(this.items, filtered ? { filter: "", kind } : { kind });
     this.el = host.firstElementChild;
     document.body.appendChild(this.el);
-    if (kind === "model") fixModelList(this.el, s);
     this.place(this.el, chip.getBoundingClientRect(), chip.closest(".lv-new") ? "below" : "above");
     if (filtered) {
       const input = this.el.querySelector(".mfilter input");
@@ -492,7 +475,7 @@ const MENU = {
       if (!mi) return;
       const it = this.items[+mi.dataset.mi];
       if (it.disabled) return;
-      if (it.keep) { // expands in place: the popover stays open, its size and scroll where they are
+      if (it.keep) { // a switch: the popover stays open, its size and scroll where they are
         e.stopPropagation();
         it.act();
         const old = this.el.querySelector(".mscroll");
@@ -1368,21 +1351,20 @@ function buildLiveSpecimens() {
   const folderStub = `<span class="lv-folder open">ccterm${LV.chev2}</span>`;
   const filtered = (q) => { const s = specS({ model: "opus" }); s.bq = q; return s; };
   document.getElementById("lv-menus").innerHTML = `<div class="lv-menus">${[
-    fig("<b>Model · a New tab</b>One list, a section per account, in Settings' order. The account follows the model. As tall as the list with every model shown, 360 at most; it scrolls inside, and More Models opens inside it.", po("model", newp, chipStub("Opus 5.5"))),
+    fig("<b>Model · a New tab</b>One list, a section per account, in Settings' order. The account follows the model. Every model, as tall as the list, 360 at most; it scrolls inside, each account's head sticking to the top.", po("model", newp, chipStub("Opus 5.5"))),
     fig("<b>Model · a live session, while Claude works</b>Within the account: after this turn. Another account restarts the CLI — its items say so, and choosing one asks first.", po("model", busy, chipStub("Opus 5.5"))),
     fig("<b>Switching account in a live session</b>An NSAlert sheet. Idle: Restart is the default. While Claude works, Cancel is.", `<div class="lv-sheethost static">${alertHTML(restartAlert(busy, "relay:default"))}</div>`),
     fig("<b>Effort · Sonnet 4.6</b>Extra High isn't on this model: it runs as High, and says why.", po("effort", s46, chipStub("Extra High"))),
     fig("<b>Permission mode · Fast on</b>Auto is greyed with its reason; Bypass waits on Settings.", po("mode", fast, chipStub("Accept Edits"))),
     fig("<b>Permission mode · Haiku</b>", po("mode", hk, chipStub("Ask"))),
     fig("<b>Folder</b>The New view's title menu.", po("folder", idle, folderStub)),
-    fig("<b>Branch</b>A filter field over the list, inset 7 so its capsule follows the popover's corners. 300 × 264 of list whatever the filter leaves.", po("branch", idle, branchStub, { filter: "" })),
+    fig("<b>Branch</b>A search field over the list, 8 in so its capsule follows the popover's corners. Local, then Remote: origin's default branch first, then the checked-out one, then newest commit first. 300 × 264 of list whatever the filter leaves.", po("branch", idle, branchStub, { filter: "" })),
     fig("<b>Branch · #327</b>A number offers that pull request; the box keeps its size.", po("branch", filtered("#327"), branchStub, { filter: "#327", items: menuItems("branch", filtered("#327")) })),
     fig("<b>Branch · nothing matches</b>The list keeps its size and says so in its middle.", po("branch", filtered("zzz"), branchStub, { filter: "zzz", items: menuItems("branch", filtered("zzz")) })),
     fig("<b>Commands</b>Above the card; ↑ ↓ move, ↩ or ⇥ completes.", `<div style="width:420px">${slashHTML("", 0, { static: true })}</div>`),
   ].join("")}</div>`;
   document.querySelectorAll("#lv-menus .po-spec").forEach((spec, i) => {
     const el = spec.querySelector(".lv-po");
-    if (shaped[i].kind === "model") fixModelList(el, shaped[i].s);
     shapePopover(el, spec.classList.contains("above") ? "bottom" : "top");
   });
 }

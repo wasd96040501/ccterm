@@ -124,7 +124,10 @@ struct Rules {
     /// The declared type of `member` on `type`: a property's type or a
     /// function's return type, as written.
     private func declaredType(of member: String, on type: TypeInfo) -> Declared? {
-        if let property = type.properties.first(where: { $0.name == member }), let text = property.type {
+        // An unannotated `let x = Foo()` declares the type it is built as.
+        if let property = type.properties.first(where: { $0.name == member }),
+            let text = property.type ?? index.propertyType(property, in: type)?.name
+        {
             return Declared(
                 text: text, isStatic: property.isStatic,
                 isSettable: !property.isLet && !property.isComputed && !property.isPrivate
@@ -217,7 +220,15 @@ struct Rules {
             for name in component.typeRefs.sorted() {
                 guard let other = index.lookup(name, from: component), isComponent(other),
                     !index.isSelfOrNested(other, of: component), !own.contains(ObjectIdentifier(other)),
-                    !component.inherits.contains(where: { index.lookup($0, from: component) === other })
+                    !component.inherits.contains(where: { index.lookup($0, from: component) === other }),
+                    // Named because a protocol it answers names it (a delegate
+                    // method's parameter): the protocol's surface, not a reach.
+                    !component.inherits.contains(where: { parent in
+                        guard let proto = index.lookup(parent, from: component), proto.kind == "protocol" else {
+                            return false
+                        }
+                        return proto.typeRefs.contains { index.lookup($0, from: proto) === other }
+                    })
                 else { continue }
                 found.append(
                     Finding(

@@ -113,18 +113,16 @@ appkit-doc: ## Look up an AppKit symbol (SYMBOL=NSStackView or SYMBOL=NSStackVie
 	@test -n "$(SYMBOL)" || (echo "Usage: make appkit-doc SYMBOL=NSStackView[.member]" && exit 1)
 	@python3 macos/scripts/appkit-doc.py "$(SYMBOL)"
 
-# The architecture map an /arch-review reads instead of the code: parses the
-# Swift sources (no app build) and rewrites build/arch/ from scratch — index.md
-# plus one file per source directory with each type's dependencies, data flow
-# (@Published, AsyncStream, @Observable, callbacks, delegates) and which of its
-# members other units use. SCOPE takes names or paths, comma-separated.
-# DETAIL=members adds, per unit, how each type's members call one another and
-# write its state — what a simplification pass reads. Whatever the scope,
-# tree.md is the component tree from the composition root, data.md the data
-# dependencies (store → binder → component, and each event back), and
-# rules.md lists every break of macos/CLAUDE.md § Where code lives (P1–P3) and
-# § Component boundaries (B1–B4), and the terminal counts them.
-arch: ## Map structure + data flow to build/arch/ (SCOPE=core|app|kit|sdk|<dir under macos/>, DETAIL=members)
+# The architecture, read off the Swift sources (no app build), rewritten into
+# build/arch/ on every run: index.md (modules and what follows), tree.md (the
+# component tree from the composition root), data.md (store → binder →
+# component, and each event back) and rules.md (every break of macos/CLAUDE.md
+# § Where code lives and § Component boundaries, counted in the terminal).
+# SCOPE (names or paths, comma-separated) adds units/ — per source directory,
+# each type's dependencies, data flow and surface — which /arch-review reads;
+# DETAIL=members adds there how each type's members call one another and write
+# its state.
+arch: ## Component tree, data dependencies and rule breaks to build/arch/ (SCOPE=core|app|kit|sdk|<dir> adds the unit map, DETAIL=members)
 	@swift run --package-path macos/tools/ArchMap --quiet ArchMap "$(CURDIR)/macos" "$(CURDIR)/build/arch" "$(SCOPE)" "$(DETAIL)"
 
 dmg: ## Create DMG installer (usage: make dmg APP=/path/to/ccterm.app)

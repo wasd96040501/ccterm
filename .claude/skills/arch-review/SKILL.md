@@ -20,7 +20,7 @@ Reviewers see only `make arch`'s map — never the Swift source. That is the poi
 make arch SCOPE=<scope>
 ```
 
-It rewrites `build/arch/` from the working tree every time, so always run it — never trust a map left over from earlier. One review per worktree at a time: a second `make arch` would swap the map under reviewers still reading it. Then read `build/arch/index.md` yourself (small: modules, unit table, cross-unit data flow, cycles, unreferenced types) and `wc -c build/arch/*.md` for unit file sizes. Don't read the unit files and don't read source — you're the coordinator, and the reviewers' independence from the code is what makes the review useful.
+It rewrites `build/arch/` from the working tree every time, so always run it — never trust a map left over from earlier. One review per worktree at a time: a second `make arch` would swap the map under reviewers still reading it. It writes the app-wide views — `tree.md` (the component tree), `data.md` (store → binder → component and each event back), `rules.md` (every break of where code lives and the component boundaries) — and, for the scope, `units/`: `units/index.md` (unit table, cross-unit data flow, cycles, unreferenced types) and one file per unit. Read `build/arch/index.md` and `build/arch/units/index.md` yourself, and `wc -c build/arch/units/*.md` for unit file sizes. Don't read the unit files and don't read source — you're the coordinator, and the reviewers' independence from the code is what makes the review useful.
 
 ## 3. Plan shards
 
@@ -41,6 +41,7 @@ Convention docs to hand each reviewer (docs, not code — they define "our conve
 | Shard contains | Docs |
 |---|---|
 | anything | `macos/CLAUDE.md` — the "AppKit conventions" part (skip the runloop tick model) |
+| the app or Components / DisplayModels | `macos/Components/CLAUDE.md` |
 | TranscriptKit / TranscriptMedia / TranscriptWorkspace | `macos/TranscriptKit/CLAUDE.md` + `macos/TranscriptKit/Sources/<Target>/CLAUDE.md` for each target in the shard |
 | AgentSDK | `macos/AgentSDK/CLAUDE.md` |
 
@@ -49,7 +50,7 @@ Convention docs to hand each reviewer (docs, not code — they define "our conve
 When every reviewer has returned:
 
 1. **Merge and dedupe** — findings about the same types or edge become one; keep the strongest evidence.
-2. **Cross-shard pass (yours)** — using only `index.md`: link findings that meet at a boundary (the app over-consuming a package surface its reviewer called wide), and add system-level ones no shard owns — module import direction, unit cycles, unreferenced types, the same concept modelled in two modules.
+2. **Cross-shard pass (yours)** — using only `index.md`, `units/index.md` and `rules.md`: link findings that meet at a boundary (the app over-consuming a package surface its reviewer called wide), and add system-level ones no shard owns — module import direction, unit cycles, unreferenced types, the same concept modelled in two modules.
 3. **Filter** — drop findings whose evidence doesn't quote the map, and ones that restate a rule without a concrete change.
 4. **Rank** by payoff (types, edges, public members, cycles that disappear) × confidence.
 

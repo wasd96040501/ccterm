@@ -24,7 +24,8 @@ guard args.count >= 3 else {
 }
 let root = URL(fileURLWithPath: args[1]).standardizedFileURL
 let outDir = URL(fileURLWithPath: args[2]).standardizedFileURL
-let scopeArg = args.count > 3 && !args[3].isEmpty ? args[3] : "core"
+let scopeIsDefault = args.count <= 3 || args[3].isEmpty
+let scopeArg = scopeIsDefault ? "core" : args[3]
 let detail = args.count > 4 ? args[4] : ""
 guard ["", "members"].contains(detail) else {
     FileHandle.standardError.write("error: DETAIL '\(detail)' is unknown. Use members.\n".data(using: .utf8)!)
@@ -163,51 +164,78 @@ let units = Array(Set(scoped.map(\.unit))).sorted()
 }
 
 let dirty = git("status", "--porcelain", "--", ".").isEmpty ? "" : " + uncommitted changes"
-let scopedLines = sources.filter { scopedPaths.contains($0.path) }.reduce(0) { $0 + $1.lines }
-let header = """
-    # Architecture map — scope `\(scopeArg)`
-
-    Generated from `\(git("rev-parse", "--short", "HEAD"))`\(dirty) by `make arch`. \
-    \(units.count) units · \(scopedLines) lines. Regenerated in full on every run; never edit by hand.
-    """
-
-let renderer = Renderer(index: index, files: sources, units: units, header: header)
+let stamp = "Generated from `\(git("rev-parse", "--short", "HEAD"))`\(dirty) by `make arch`; never edit by hand."
 try? fm.removeItem(at: outDir)
 try fm.createDirectory(at: outDir, withIntermediateDirectories: true)
-var indexText = renderer.renderIndex()
-if detail == "members" {
-    let map = MemberMap(index: index, files: sources)
-    indexText += "\n## Member maps\n\n"
-    for unit in units {
-        let name = Renderer.fileName(ofUnit: unit).replacingOccurrences(of: ".md", with: ".members.md")
-        try map.render(unit: unit, header: "# \(unit) — members").write(
-            to: outDir.appendingPathComponent(name), atomically: true, encoding: .utf8)
-        indexText += "- [\(unit)](\(name))\n"
-    }
+@MainActor func write(_ text: String, to name: String) throws {
+    let url = outDir.appendingPathComponent(name)
+    try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try text.write(to: url, atomically: true, encoding: .utf8)
 }
-// The app's placement and component boundaries, whatever the scope: a scope
-// picks what the map describes, while a break is a fact about the app's tree.
+
+// The app's placement, tree and data, whatever the scope: a scope picks what
+// the unit map describes, while these are facts about the app as a whole.
 let rules = Rules(
     index: index, modules: ["ccterm", "Components", "DisplayModels"], files: sources,
     repoModules: Set(modules.map(\.name)))
 let ruleFindings = rules.findings()
-try rules.render(header: "# Rules — where code lives and component boundaries").write(
-    to: outDir.appendingPathComponent("rules.md"), atomically: true, encoding: .utf8)
-indexText += "\n## Rules\n\n- [rules.md](rules.md) — \(ruleFindings.count) findings "
-indexText += "against `macos/CLAUDE.md` § Where code lives and § Component boundaries, each with its fix\n"
-try Tree(index: index, rules: rules).render(header: "# Component tree").write(
-    to: outDir.appendingPathComponent("tree.md"), atomically: true, encoding: .utf8)
-indexText += "- [tree.md](tree.md) — the component tree from the composition root\n"
-try DataMap(index: index, rules: rules, renderer: renderer, members: MemberMap(index: index, files: sources))
-    .render(header: "# Data dependencies — the app's binders and stores").write(
-        to: outDir.appendingPathComponent("data.md"), atomically: true, encoding: .utf8)
-indexText += "- [data.md](data.md) — per binder, what it takes from the stores, shows each component and does "
-indexText += "with what they report; per store, who reads and calls it\n"
-try indexText.write(to: outDir.appendingPathComponent("index.md"), atomically: true, encoding: .utf8)
-for unit in units {
-    try renderer.renderUnit(unit).write(
-        to: outDir.appendingPathComponent(Renderer.fileName(ofUnit: unit)), atomically: true, encoding: .utf8)
+try write(rules.render(header: "# Rules — where code lives and component boundaries"), to: "rules.md")
+try write(Tree(index: index, rules: rules).render(header: "# Component tree"), to: "tree.md")
+let renderer = Renderer(
+    index: index, files: sources, units: units,
+    header: "# Unit map — scope `\(scopeArg)`\n\n\(stamp) \(units.count) units · "
+        + "\(sources.filter { scopedPaths.contains($0.path) }.reduce(0) { $0 + $1.lines }) lines.")
+let members = MemberMap(index: index, files: sources)
+try write(
+    DataMap(index: index, rules: rules, renderer: renderer, members: members)
+        .render(header: "# Data dependencies — the app's binders and stores"), to: "data.md")
+
+// The unit map /arch-review reads: only for a scope asked for.
+let writesUnits = !scopeIsDefault || detail == "members"
+if writesUnits {
+    var unitIndex = renderer.renderIndex()
+    for unit in units { try write(renderer.renderUnit(unit), to: "units/" + Renderer.fileName(ofUnit: unit)) }
+    if detail == "members" {
+        unitIndex += "\n## Member maps\n\n"
+        for unit in units {
+            let name = Renderer.fileName(ofUnit: unit).replacingOccurrences(of: ".md", with: ".members.md")
+            try write(members.render(unit: unit, header: "# \(unit) — members"), to: "units/" + name)
+            unitIndex += "- [\(unit)](\(name))\n"
+        }
+    }
+    try write(unitIndex, to: "units/index.md")
 }
-print("arch map (\(scopeArg)): \(units.count) units → \(outDir.path)/index.md")
+
+let summary = rules.summary()
+let ruleCounts = summary.isEmpty ? "" : ": " + summary.joined(separator: " · ")
+let unitLine: String
+if writesUnits {
+    unitLine =
+        "- [units/index.md](units/index.md) — the unit map for scope `\(scopeArg)`: per source directory, "
+        + "its types' dependencies, data flow and surface (what /arch-review reads)"
+} else {
+    unitLine = "- the unit map /arch-review reads: `make arch SCOPE=<core|app|kit|sdk|dir|unit>`"
+}
+var overview: [String] = ["# Architecture", "", stamp, ""]
+overview.append(
+    "- [tree.md](tree.md) — the component tree from `AppDelegate`: who builds or holds whom, what each reads, "
+        + "shows and reports")
+overview.append(
+    "- [data.md](data.md) — the data dependencies: per binder, what it takes from the stores, shows each "
+        + "component and does with what it reports; per store, who reads and calls it")
+overview.append(
+    "- [rules.md](rules.md) — \(ruleFindings.count) breaks of `macos/CLAUDE.md` § Where code lives and "
+        + "§ Component boundaries" + ruleCounts)
+overview += [unitLine, "", "## Modules", "", "Each library and the repo's modules it imports.", ""]
+for module in modules where module.isLibrary {
+    let files = sources.filter { $0.module == module.name }
+    let imports = Set(files.flatMap(\.imports)).intersection(modules.map(\.name)).subtracting([module.name])
+    let lines = files.reduce(0) { $0 + $1.lines }
+    let arrow = imports.isEmpty ? "—" : imports.sorted().joined(separator: ", ")
+    overview.append("- **\(module.name)** → \(arrow) · \(lines) lines")
+}
+try write(overview.joined(separator: "\n") + "\n", to: "index.md")
+
+print("arch: \(outDir.path)/index.md — tree.md, data.md, rules.md" + (writesUnits ? ", units/ (\(units.count))" : ""))
 print("rules: \(ruleFindings.count) findings → \(outDir.path)/rules.md")
 for line in rules.summary() { print("  " + line) }

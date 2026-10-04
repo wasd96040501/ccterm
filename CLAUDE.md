@@ -76,7 +76,7 @@ make record-list [FILTER=<name>]     # ExactList demo scenarios captured off scr
 make logs [CONFIG=release] [CATEGORY=X] [LEVEL=debug]   # tail unified log of THIS worktree's build
 make appkit-doc SYMBOL=NSTableView   # Apple's DocC for an AppKit symbol
 make icon / make sidebar-icons / make window-chrome / make new-view-icons   # regenerate the app icon / the app's glyph assets from design/ (see "Icons" in macos/CLAUDE.md)
-make arch [SCOPE=core|app|kit|sdk|<dir>|<unit>] [DETAIL=members]   # architecture map → build/arch/ (what /arch-review reads); DETAIL=members adds each type's calls and state writers; build/arch/tree.md is the component tree from AppDelegate (who builds or holds whom, what each reads, shows and reports); build/arch/data.md the data dependencies (per binder: what it subscribes and asks of the stores, what it shows each component, what each reported event calls; per store: who reads it); build/arch/rules.md lists every break of where code lives and the component boundaries (macos/CLAUDE.md), each with its fix, and the terminal counts them
+make arch [SCOPE=core|app|kit|sdk|<dir>|<unit>] [DETAIL=members]   # build/arch/: tree.md (the component tree from AppDelegate), data.md (store → binder → component, and each event back), rules.md (every break of macos/CLAUDE.md § Where code lives and § Component boundaries, with its fix; the terminal counts them); SCOPE adds units/, the per-directory map /arch-review reads; DETAIL=members adds each type's calls and state writers
 ```
 
 `make build` prints success/failure plus two log paths. On failure read the summary log first; open the full log only if the summary isn't enough — don't `tail`/`cat` it blindly.

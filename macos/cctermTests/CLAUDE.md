@@ -47,7 +47,7 @@ final class MyServiceTests: XCTestCase {
 }
 ```
 
-Shared fixtures live in `Helpers/` (`ViewSnapshot`; `RowSnapshot` for any `PageRowView`, light above dark, one column per width) — look there before writing a new one.
+Shared fixtures live in `Helpers/` (`ViewSnapshot`; `PageSnapshot` for a page the app builds, light above dark, one column per width) — look there before writing a new one.
 
 ## Measurement probes (merge gates)
 
@@ -75,7 +75,7 @@ Render a real view into an off-screen window, write `/tmp/ccterm-screenshots/<Na
 - **Run policy:** the runner injects `-skip-testing:<Class>` for every `*SnapshotTests.swift` when `FILTER` is empty, so they never run on the default suite or CI but still compile. File name must equal class name; split files for multiple classes.
 - **Helpers:** `ViewSnapshot.render(_ view: some View, size:settle:)` for SwiftUI, `ViewSnapshot.renderViewController(_:size:settle:)` for AppKit VCs, `ViewSnapshot.writePNG(_:name:)`. Always go through them — they park the window off-screen at alpha 0.01, so a snapshot never flashes on the user's display.
 
-**Against the design.** A view the transcript design sheet draws is checked beside it: `make design-shots` renders the sheet's parts (each composer, New view, tab bar, prompt, alert, and every menu as the playground opens it) at @2x into `/tmp/design-shots` with their sizes in pt; the snapshot renders the same state and `DesignParity.write` puts design | ours side by side in `/tmp/ccterm-parity/` (`MenuPanelSnapshotTests` is the reference). The pair is a checklist — what is missing, extra or out of place — not a target: the numbers to build to are the stylesheet's (`preview-live.css`, `preview.css`), and only for what the design commit specifies. Capture ours with `CompositedCapture` (what the window server shows; needs the display awake): `cacheDisplay` draws translucent text far too dark (secondary ink 0.5 comes out near 0.75). Run with `TEST_LANGUAGE=en` so the words line up.
+**Against the design.** A view the transcript design sheet draws is checked beside it: `make design-shots` renders the sheet's parts (each composer, New view, tab bar, prompt, alert, and every menu as the playground opens it) at @2x into `/tmp/design-shots` with their sizes in pt; the snapshot renders the same state and `DesignParity.write` puts design | ours side by side in `/tmp/ccterm-parity/` (`PromptRowsSnapshotTests` is the reference). The pair is a checklist — what is missing, extra or out of place — not a target: the numbers to build to are the stylesheet's (`preview-live.css`, `preview.css`), and only for what the design commit specifies. Capture ours with `CompositedCapture` (what the window server shows; needs the display awake): `cacheDisplay` draws translucent text far too dark (secondary ink 0.5 comes out near 0.75). Run with `TEST_LANGUAGE=en` so the words line up.
 
 Adding one:
 

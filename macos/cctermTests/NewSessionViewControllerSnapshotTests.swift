@@ -202,29 +202,6 @@ final class NewSessionViewControllerSnapshotTests: XCTestCase {
         return cropped
     }
 
-    func testBranchPopover() {
-        let list: NewSessionModel.BranchList = {
-            guard case .repository(_, _, let list) = model(draft()).branchRow else {
-                return .init(local: [], remote: [])
-            }
-            return list
-        }()
-        var sheets: [NSImage] = []
-        for query in ["", "#327"] {
-            let content = NewSessionMenu.branchMenu(of: list, query: query).menuContent
-            let probe = MenuPanelViewController()
-            probe.configure(with: content)
-            sheets.append(
-                ViewSnapshot.renderLightAndDark(
-                    {
-                        let controller = MenuPanelViewController()
-                        controller.configure(with: content)
-                        return controller
-                    }, size: probe.preferredSize, name: "BranchPicker"))
-        }
-        let url = ViewSnapshot.writeStack(sheets, name: "NewSessionBranchPicker")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
-    }
 }
 
 /// The New view with the real composer in its slot, as `SessionTabViewController`

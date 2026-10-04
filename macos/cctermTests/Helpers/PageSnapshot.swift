@@ -8,9 +8,9 @@ import XCTest
 
 /// Renders a whole `TranscriptPage` the way a transcript tab shows it — the
 /// transcript's own bubbles and markdown with the page's row views among them —
-/// light above dark, to `/tmp/ccterm-screenshots/<name>.png`, for review. What
-/// `RowSnapshot` is to one kind of `.view` row, this is to rows TranscriptKit
-/// draws itself (a bubble with tokens) and to how rows sit together.
+/// light above dark, to `/tmp/ccterm-screenshots/<name>.png`, for review: the
+/// rows TranscriptKit draws itself (a bubble with tokens) and how rows sit
+/// together.
 enum PageSnapshot {
     @MainActor
     static func render(

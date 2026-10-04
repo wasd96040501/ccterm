@@ -52,19 +52,4 @@ final class WorkKindsSnapshotTests: XCTestCase {
             ])
         PageSnapshot.render(page, widths: [560, 340], height: 460, name: "WorkKinds-dividers", test: self)
     }
-
-    func testAPicturesDocument() {
-        let image = PromptImage(ImageFixture.png(width: 480, height: 300), number: 2, entryID: "p")!
-        for (suffix, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
-            let controller = ImageDocumentViewController(image, title: image.title)
-            controller.loadView()
-            controller.view.appearance = NSAppearance(named: appearance)
-            let size = CGSize(width: 640, height: 420)
-            let rendered = ViewSnapshot.renderViewController(controller, size: size)
-            let url = ViewSnapshot.writePNG(rendered, name: "WorkKinds-image-\(suffix)")
-            let attachment = XCTAttachment(contentsOfFile: url)
-            attachment.lifetime = .keepAlways
-            add(attachment)
-        }
-    }
 }

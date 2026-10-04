@@ -6,9 +6,28 @@ import DisplayModels
 /// looks like. Columns: 30 for the checkbox, the name and the value sharing
 /// the rest 1.6 : 1, 22 for the glyph, 5 to spare. The fields edit in
 /// place; the value field swaps its masked display for `editingValue` while
-/// it is edited.
+/// it is edited. Tab moves from the name to the value; Escape puts the field
+/// back as it was.
 @MainActor
-final class EnvironmentVariableCellView: NSTableCellView {
+final class EnvironmentVariableCellView: NSTableCellView, NSTextFieldDelegate {
+    /// The two fields of a row.
+    enum Part {
+        case name, value
+    }
+
+    /// The checkbox was clicked.
+    var onToggle: (() -> Void)?
+    /// `part`'s edit ended with `text`.
+    var onCommit: ((_ part: Part, _ text: String) -> Void)?
+    /// Return or Escape ended the edit, and focus goes back to the list;
+    /// `cancelled` for Escape, which has already put the field back.
+    var onEndEditing: ((_ cancelled: Bool) -> Void)?
+    /// The value to edit, when it isn't what's shown — unmasked.
+    var editingValue: (() -> String?)? {
+        get { valueField.editingValue }
+        set { valueField.editingValue = newValue }
+    }
+
     let checkbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     let nameField = Field()
     let valueField = Field()
@@ -35,6 +54,26 @@ final class EnvironmentVariableCellView: NSTableCellView {
         updateColors()
     }
 
+    /// Whether either field is being edited.
+    var isEditing: Bool {
+        nameField.currentEditor() != nil || valueField.currentEditor() != nil
+    }
+
+    /// The name as its field holds it.
+    var name: String { nameField.stringValue }
+
+    /// Puts `part`'s field into editing.
+    func edit(_ part: Part) {
+        window?.makeFirstResponder(part == .name ? nameField : valueField)
+    }
+
+    /// The field at `point`, in the cell's coordinates; `nil` over the
+    /// checkbox.
+    func part(at point: NSPoint) -> Part? {
+        guard point.x > 30 else { return nil }
+        return point.x >= valueField.frame.minX - 2 ? .value : .name
+    }
+
     override var backgroundStyle: NSView.BackgroundStyle {
         didSet { updateColors() }
     }
@@ -42,7 +81,6 @@ final class EnvironmentVariableCellView: NSTableCellView {
     /// Label ink; tertiary for a row that's off; white on the selection.
     func updateColors() {
         // A row being edited draws no selection, so its ink goes back to label.
-        let isEditing = nameField.currentEditor() != nil || valueField.currentEditor() != nil
         let onSelection = backgroundStyle == .emphasized && !isEditing
         for field in [nameField, valueField] {
             // The row hands its style to every control cell, which would draw
@@ -64,7 +102,10 @@ final class EnvironmentVariableCellView: NSTableCellView {
             systemSymbolName: "exclamationmark.triangle.fill",
             accessibilityDescription: String(localized: "Warning", bundle: .module))?
             .withSymbolConfiguration(.init(pointSize: 11, weight: .regular))
+        checkbox.target = self
+        checkbox.action = #selector(toggled(_:))
         for field in [nameField, valueField] {
+            field.delegate = self
             field.onEditingChange = { [weak self] in self?.editingDidChange() }
         }
         for view in [checkbox, nameField, valueField, warning] as [NSView] {
@@ -91,6 +132,39 @@ final class EnvironmentVariableCellView: NSTableCellView {
             warning.centerXAnchor.constraint(equalTo: trailingAnchor, constant: -(5 + 11)),
             warning.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
+    }
+
+    @objc private func toggled(_ sender: NSButton) {
+        onToggle?()
+    }
+
+    // MARK: - NSTextFieldDelegate
+
+    /// Return commits; Tab from the name moves on to the value; Escape puts
+    /// the field back as it was.
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        switch commandSelector {
+        // A field editor binds Escape to `complete:`.
+        case #selector(NSResponder.cancelOperation(_:)), #selector(NSResponder.complete(_:)):
+            _ = (control as? NSTextField)?.abortEditing()
+            if let row { configure(with: row) }
+            onEndEditing?(true)
+            return true
+        case #selector(NSResponder.insertNewline(_:)):
+            onEndEditing?(false)
+            return true
+        case #selector(NSResponder.insertTab(_:)):
+            guard control === nameField else { return false }
+            window?.makeFirstResponder(valueField)
+            return true
+        default:
+            return false
+        }
+    }
+
+    func controlTextDidEndEditing(_ notification: Notification) {
+        guard let field = notification.object as? Field else { return }
+        onCommit?(field === nameField ? .name : .value, field.stringValue)
     }
 
     /// Editing draws the field as a text box over the selection, which the

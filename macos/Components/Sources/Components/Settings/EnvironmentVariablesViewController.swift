@@ -200,7 +200,7 @@ public final class EnvironmentVariablesViewController: NSViewController {
     private func edit(row: Int, value: Bool) {
         guard let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: true) as? EnvironmentVariableCellView
         else { return }
-        view.window?.makeFirstResponder(value ? cell.valueField : cell.nameField)
+        cell.edit(value ? .value : .name)
     }
 
     private func editSelected() {
@@ -226,8 +226,7 @@ public final class EnvironmentVariablesViewController: NSViewController {
         delegate?.environmentVariables(self, didRemoveAt: row)
     }
 
-    @objc private func toggle(_ sender: NSButton) {
-        let row = tableView.row(for: sender)
+    private func toggle(row: Int) {
         guard row >= 0 else { return }
         tableView.selectRowIndexes([row], byExtendingSelection: false)
         view.window?.makeFirstResponder(tableView)
@@ -240,9 +239,8 @@ public final class EnvironmentVariablesViewController: NSViewController {
         guard row >= 0, let event = NSApp.currentEvent,
             let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? EnvironmentVariableCellView
         else { return }
-        let point = cell.convert(event.locationInWindow, from: nil)
-        guard point.x > 30 else { return }
-        edit(row: row, value: point.x >= cell.valueField.frame.minX - 2)
+        guard let part = cell.part(at: cell.convert(event.locationInWindow, from: nil)) else { return }
+        cell.edit(part)
     }
 
 }
@@ -271,68 +269,47 @@ extension EnvironmentVariablesViewController: NSTableViewDataSource, NSTableView
     private func makeCell() -> EnvironmentVariableCellView {
         let cell = EnvironmentVariableCellView()
         cell.identifier = .environmentVariable
-        cell.checkbox.target = self
-        cell.checkbox.action = #selector(toggle(_:))
-        for field in [cell.nameField, cell.valueField] {
-            field.delegate = self
+        cell.onToggle = { [weak self, weak cell] in
+            guard let self, let cell else { return }
+            toggle(row: tableView.row(for: cell))
         }
-        cell.valueField.editingValue = { [weak self, weak cell] in
+        cell.editingValue = { [weak self, weak cell] in
             guard let self, let cell else { return nil }
             let row = tableView.row(for: cell)
             return row >= 0 ? delegate?.environmentVariables(self, valueAt: row) : nil
         }
+        cell.onCommit = { [weak self, weak cell] part, text in
+            guard let self, let cell else { return }
+            commit(part, text: text, in: cell)
+        }
+        // Return and Escape hand focus back to the list; a row Escape left
+        // blank goes.
+        cell.onEndEditing = { [weak self, weak cell] cancelled in
+            guard let self, let cell else { return }
+            let row = tableView.row(for: cell)
+            view.window?.makeFirstResponder(tableView)
+            if cancelled { removeIfBlank(row) }
+        }
         return cell
+    }
+
+    /// An edit that ended goes to the delegate; a row left blank goes once
+    /// neither of its fields is edited.
+    private func commit(_ part: EnvironmentVariableCellView.Part, text: String, in cell: EnvironmentVariableCellView) {
+        let row = tableView.row(for: cell)
+        guard row >= 0 else { return }
+        switch part {
+        case .name: delegate?.environmentVariables(self, didSetName: text, at: row)
+        case .value: delegate?.environmentVariables(self, didSetValue: text, at: row)
+        }
+        // Not while focus moves on to the row's other field.
+        if !cell.isEditing {
+            removeIfBlank(row, name: cell.name, value: part == .value ? text : nil)
+        }
     }
 }
 
-extension EnvironmentVariablesViewController: NSTextFieldDelegate {
-    /// Return commits and hands focus back to the list; Tab from the name
-    /// moves on to the value; Escape puts the field back as it was.
-    public func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-        guard let field = control as? NSTextField else { return false }
-        let row = tableView.row(for: field)
-        switch commandSelector {
-        // A field editor binds Escape to `complete:`.
-        case #selector(NSResponder.cancelOperation(_:)), #selector(NSResponder.complete(_:)):
-            _ = field.abortEditing()
-            if row >= 0, row < rows.count {
-                (tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? EnvironmentVariableCellView)?
-                    .configure(with: rows[row])
-            }
-            view.window?.makeFirstResponder(tableView)
-            removeIfBlank(row)
-            return true
-        case #selector(NSResponder.insertNewline(_:)):
-            view.window?.makeFirstResponder(tableView)
-            return true
-        case #selector(NSResponder.insertTab(_:)):
-            guard let cell = field.superview as? EnvironmentVariableCellView, field === cell.nameField else {
-                return false
-            }
-            view.window?.makeFirstResponder(cell.valueField)
-            return true
-        default:
-            return false
-        }
-    }
-
-    public func controlTextDidEndEditing(_ notification: Notification) {
-        guard let field = notification.object as? NSTextField,
-            let cell = field.superview as? EnvironmentVariableCellView
-        else { return }
-        let row = tableView.row(for: cell)
-        guard row >= 0 else { return }
-        if field === cell.nameField {
-            delegate?.environmentVariables(self, didSetName: field.stringValue, at: row)
-        } else {
-            delegate?.environmentVariables(self, didSetValue: field.stringValue, at: row)
-        }
-        // Not while focus moves on to the row's other field.
-        if cell.nameField.currentEditor() == nil, cell.valueField.currentEditor() == nil {
-            removeIfBlank(
-                row, name: cell.nameField.stringValue, value: field === cell.valueField ? field.stringValue : nil)
-        }
-    }
+extension EnvironmentVariablesViewController {
 
     /// A row with neither a name nor a value is dropped when editing ends.
     private func removeIfBlank(_ row: Int, name: String? = nil, value: String? = nil) {

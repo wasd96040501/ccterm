@@ -213,6 +213,29 @@ final class AccountsTests: XCTestCase {
         XCTAssertEqual(recorder.events, ["add", "toggle 0"])
     }
 
+    /// A field's ended edit reaches the delegate with its row; Escape on a row
+    /// with neither a name nor a value removes it.
+    func testAnEndedEditGoesToTheDelegateAndEscapeDropsABlankRow() throws {
+        let recorder = Recorder()
+        recorder.values.append("")
+        let list = list(
+            [Self.proxy, EnvironmentRow(isEnabled: true, name: "", displayValue: "", warning: nil)], delegate: recorder)
+        let table = try XCTUnwrap(shown(NSTableView.self, in: list.view).first)
+        let first = try XCTUnwrap(
+            table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? EnvironmentVariableCellView)
+        first.nameField.stringValue = "ALL_PROXY"
+        first.controlTextDidEndEditing(
+            Notification(name: NSControl.textDidEndEditingNotification, object: first.nameField))
+        XCTAssertEqual(recorder.events, ["name 0 ALL_PROXY"])
+
+        let blank = try XCTUnwrap(
+            table.view(atColumn: 0, row: 1, makeIfNecessary: true) as? EnvironmentVariableCellView)
+        XCTAssertTrue(
+            blank.control(
+                blank.valueField, textView: NSTextView(), doCommandBy: #selector(NSResponder.cancelOperation(_:))))
+        XCTAssertEqual(recorder.events, ["name 0 ALL_PROXY", "remove 1"])
+    }
+
     func testMinusIsOffUntilARowIsSelected() throws {
         let list = list([Self.proxy], delegate: Recorder())
         let remove = try XCTUnwrap(

@@ -3,10 +3,27 @@ import AppKit
 /// The API Providers group with nothing in it, as `ContentUnavailableView`
 /// draws one: a quiet `server.rack`, “No API Providers”, one line of what a
 /// provider is for, Add Provider…, and a hint that a pasted alias works too.
-/// Its owner wires the button.
+/// Its owner answers the button through the callbacks below.
 @MainActor
 public final class ProvidersEmptyView: NSView {
-    let addButton = AddProviderButton()
+    /// Add Provider… was clicked.
+    public var onAdd: (() -> Void)? {
+        get { addButton.onAdd }
+        set { addButton.onAdd = newValue }
+    }
+    /// Import from Clipboard was chosen.
+    public var onImport: (() -> Void)? {
+        get { addButton.onImport }
+        set { addButton.onImport = newValue }
+    }
+    /// Asked each time the button's menu is validated; Import is enabled while
+    /// it answers `true`.
+    public var isImportEnabled: () -> Bool {
+        get { addButton.isImportEnabled }
+        set { addButton.isImportEnabled = newValue }
+    }
+
+    private let addButton = AddProviderButton()
 
     private lazy var symbol: NSImageView = {
         let image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: nil)?

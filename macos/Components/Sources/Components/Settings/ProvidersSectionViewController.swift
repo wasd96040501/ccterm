@@ -43,13 +43,17 @@ public final class ProvidersSectionViewController: NSViewController {
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-        for button in [addButton, emptyView.addButton] {
-            button.onAdd = { [weak self] in self.map { $0.delegate?.providersSectionDidRequestAdd($0) } }
-            button.onImport = { [weak self] in self.map { $0.delegate?.providersSectionDidRequestImport($0) } }
-            button.isImportEnabled = { [weak self] in
-                self.flatMap { $0.delegate?.providersSectionCanImport($0) } ?? false
-            }
+        let onAdd: () -> Void = { [weak self] in self.map { $0.delegate?.providersSectionDidRequestAdd($0) } }
+        let onImport: () -> Void = { [weak self] in self.map { $0.delegate?.providersSectionDidRequestImport($0) } }
+        let isImportEnabled: () -> Bool = { [weak self] in
+            self.flatMap { $0.delegate?.providersSectionCanImport($0) } ?? false
         }
+        addButton.onAdd = onAdd
+        addButton.onImport = onImport
+        addButton.isImportEnabled = isImportEnabled
+        emptyView.onAdd = onAdd
+        emptyView.onImport = onImport
+        emptyView.isImportEnabled = isImportEnabled
     }
 
     /// A row per provider; with none, the empty state, which carries Add

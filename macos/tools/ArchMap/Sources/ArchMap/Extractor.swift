@@ -379,6 +379,13 @@ final class Extractor: SyntaxVisitor {
         {
             return constructedType(base)
         }
+        // A nested type: `TranscriptTab.Context(…)`.
+        if let member = callee.as(MemberAccessExprSyntax.self),
+            member.declName.baseName.text.first?.isUppercase == true,
+            let base = member.base, constructedType(base) != nil
+        {
+            return callee.trimmedDescription
+        }
         return nil
     }
 

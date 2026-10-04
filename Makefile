@@ -120,7 +120,8 @@ appkit-doc: ## Look up an AppKit symbol (SYMBOL=NSStackView or SYMBOL=NSStackVie
 # members other units use. SCOPE takes names or paths, comma-separated.
 # DETAIL=members adds, per unit, how each type's members call one another and
 # write its state — what a simplification pass reads. Whatever the scope,
-# tree.md is the component tree from the composition root, and
+# tree.md is the component tree from the composition root, data.md the data
+# dependencies (store → binder → component, and each event back), and
 # rules.md lists every break of macos/CLAUDE.md § Where code lives (P1–P3) and
 # § Component boundaries (B1–B4), and the terminal counts them.
 arch: ## Map structure + data flow to build/arch/ (SCOPE=core|app|kit|sdk|<dir under macos/>, DETAIL=members)

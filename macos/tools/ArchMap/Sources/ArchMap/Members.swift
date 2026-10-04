@@ -549,6 +549,13 @@ private final class MemberWalker: SyntaxVisitor {
     /// The type of a receiver: a stored property (`x`, `self.x`), a parameter
     /// or local with a declared type, or a type name.
     private func typeOf(_ base: ExprSyntax) -> TypeInfo? {
+        // `context.sessions`: a property of a receiver that resolves.
+        if let access = base.as(MemberAccessExprSyntax.self), let inner = access.base,
+            inner.trimmedDescription != "self", let outer = typeOf(stripped(inner)),
+            let property = outer.properties.first(where: { $0.name == access.declName.baseName.text })
+        {
+            return index.propertyType(property, in: outer)
+        }
         var name: String?
         if let ref = base.as(DeclReferenceExprSyntax.self) {
             name = ref.baseName.text

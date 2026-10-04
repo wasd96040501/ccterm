@@ -198,6 +198,11 @@ indexText += "against `macos/CLAUDE.md` § Where code lives and § Component bou
 try Tree(index: index, rules: rules).render(header: "# Component tree").write(
     to: outDir.appendingPathComponent("tree.md"), atomically: true, encoding: .utf8)
 indexText += "- [tree.md](tree.md) — the component tree from the composition root\n"
+try DataMap(index: index, rules: rules, renderer: renderer, members: MemberMap(index: index, files: sources))
+    .render(header: "# Data dependencies — the app's binders and stores").write(
+        to: outDir.appendingPathComponent("data.md"), atomically: true, encoding: .utf8)
+indexText += "- [data.md](data.md) — per binder, what it takes from the stores, shows each component and does "
+indexText += "with what they report; per store, who reads and calls it\n"
 try indexText.write(to: outDir.appendingPathComponent("index.md"), atomically: true, encoding: .utf8)
 for unit in units {
     try renderer.renderUnit(unit).write(

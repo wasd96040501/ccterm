@@ -314,7 +314,7 @@ struct Renderer {
 
     /// One flow of a type with its receiver resolved: the producing type
     /// (`source`), and for `passes` the type it is handed to (`into`).
-    private struct ResolvedFlow {
+    struct ResolvedFlow {
         let kind: String
         let text: String
         let source: TypeInfo?
@@ -323,7 +323,7 @@ struct Renderer {
 
     /// Every flow of a type, receivers resolved; `passes` only for what
     /// resolves to a `$published` value or a stream-typed member.
-    private func resolvedFlows(of type: TypeInfo) -> [ResolvedFlow] {
+    func resolvedFlows(of type: TypeInfo) -> [ResolvedFlow] {
         var result: [ResolvedFlow] = []
         var seen: Set<String> = []
         for flow in type.flows where flow.kind != .notifyPost && flow.kind != .notifyObserve {

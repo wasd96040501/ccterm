@@ -68,7 +68,7 @@ When a reported visual glitch doesn't reproduce, **widen the sampled dimensions 
 
 ## Snapshot tests
 
-Render a real view into an off-screen window, write `/tmp/ccterm-screenshots/<Name>.png`, attach it to the xcresult. **For review only.**
+Render a real view into an off-screen window, write `/tmp/ccterm-screenshots/<Name>.png`, attach it to the xcresult. **For review only.** They render what the app composes — a binder with the components it places, a window; a component alone is looked at on the style page ([Components/CLAUDE.md](../Components/CLAUDE.md)).
 
 - **Existing ones:** `ls macos/cctermTests/*SnapshotTests.swift` — the class name tells you the view. Run with `make test-unit FILTER=<Class>` and `open` the PNG. Prefix `TEST_LANGUAGE=en` to render in English on a Mac set to another language (e.g. to lay a PNG over an English design mock).
 - **Seed synchronously.** A `@MainActor … async` test body runs as a main-queue job, so the snapshot's run-loop drain can't deliver `.receive(on: DispatchQueue.main)` sinks — the view renders unbound. Keep snapshot tests synchronous; do async seeding in a `Task` and `wait(for:)` its expectation.

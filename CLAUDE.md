@@ -4,6 +4,8 @@ Native macOS client for Claude Code. Pure AppKit (Swift), programmatic, minimum 
 
 The app is a main window — a sidebar listing every session transcript on disk (`AgentSDK`'s `SessionDirectory`, grouped by project) beside a tabbed, splittable editor area that shows them (`TranscriptKit`'s view and workspace) — plus Settings and About. A session tab can also run its session: ccterm starts or resumes the CLI (`Sessions/`) and the tab follows it live.
 
+**What goes where:** the app holds state and flow — stores, services, view models, coordinators, and the binders that join a store to a view; it draws nothing. Every view is drawn by a package: the app's own in `Components`, shown values from `DisplayModels`. Place a new type by [macos/CLAUDE.md § Where code lives](macos/CLAUDE.md#where-code-lives--the-app-or-a-package) before writing it.
+
 ## Where to read more
 
 This file holds repo-wide commands and workflow. Engineering conventions and area rules live next to the code — when you touch an area, read its `CLAUDE.md` first.
@@ -26,8 +28,8 @@ ccterm/
 ├── macos/
 │   ├── ccterm.xcodeproj/
 │   ├── ccterm/               # App sources
-│   │   ├── App/              # CCTermApp + menu commands; AppKit/ holds AppDelegate (composition root) + window controllers + main split
-│   │   ├── Content/          # About/, Settings/, Sidebar/ (session outline), Transcript/ (a transcript tab)
+│   │   ├── App/              # CCTermApp + menu commands; AppKit/ holds AppDelegate (composition root) + the main window's controller and split
+│   │   ├── Content/          # About/, Settings/, Transcript/ (a session tab): binders, models and mappings — their views are Components'
 │   │   ├── Accounts/         # AccountStore (JSON + keychain secrets), LaunchStore (how the CLI is launched), LaunchCheckService, SubscriptionService
 │   │   ├── Library/          # LibraryStore — the session tree on disk, and reading one transcript
 │   │   ├── Sessions/         # SessionStore — every session by transcript URL: read at rest, or run live (LiveSession, SessionState)
@@ -36,7 +38,7 @@ ccterm/
 │   │   └── Resources/
 │   ├── cctermTests/          # The app's only test target
 │   ├── TranscriptKit/        # Standalone SwiftPM package (own tests, own demo)
-│   ├── Components/             # Standalone SwiftPM package: the app's components and the DisplayModels they draw, depending on nothing (own tests, the style page)
+│   ├── Components/             # Standalone SwiftPM package: the app's components and the DisplayModels they draw; the library depends on nothing (own tests, the style page)
 │   ├── ExactList/            # Standalone SwiftPM package: the list engine (SPEC.md, own tests, own demo)
 │   ├── AgentSDK/             # Swift SDK package over the claude CLI
 │   ├── Config.xcconfig
@@ -83,7 +85,7 @@ make arch [SCOPE=core|app|kit|sdk|<dir>|<unit>] [DETAIL=members]   # architectur
 
 Unit tests only — no XCUITest target. Five suites, all merge gates: `cctermTests` (`make test-unit`), TranscriptKit's own (`make test-kit`), Components' own (`make test-ui`), ExactList's own (`make test-list`) and AgentSDK's own (`make test-sdk`); the package suites stay separate so each package is testable without the app. Click / keystroke / focus flows are tested by driving the session / bridge / controller directly. `*SnapshotTests.swift` files render a view to a PNG for **visual review**; they're skipped by default and on CI and run only when named with `FILTER`.
 
-After editing a view, verify it visually: find or add its `*SnapshotTests` class, `make test-unit FILTER=<Class>`, then `open /tmp/ccterm-screenshots/<Name>.png` and look. Details in [cctermTests/CLAUDE.md](macos/cctermTests/CLAUDE.md).
+After editing a view, look at it where it lives: a component on the style page (`make test-ui FILTER=DesignPageSnapshotTests`, then its section's PNG — [Components/CLAUDE.md](macos/Components/CLAUDE.md)); a screen the app composes in its `*SnapshotTests` class (`make test-unit FILTER=<Class>`, then `open /tmp/ccterm-screenshots/<Name>.png` — [cctermTests/CLAUDE.md](macos/cctermTests/CLAUDE.md)).
 
 ## CI
 

@@ -12,9 +12,9 @@ import DisplayModels
 /// a hairline and a soft shadow; focus adds a 1-pt accent ring at 45 % and a
 /// 4-pt halo at 12 %.
 ///
-/// Words are never cut: when the card narrows the chips drop the provider's
+/// Words are never cut: when the card narrows the buttons drop the provider's
 /// name, then Effort's and Mode's names (glyphs and tooltips remain), and
-/// below 380 pt the status takes a line of its own under the chips.
+/// below 380 pt the status takes a line of its own under the buttons.
 @MainActor
 final class ComposerView: NSView {
     /// The three pull-downs.
@@ -31,9 +31,9 @@ final class ComposerView: NSView {
     private let surface = CardSurfaceView()
     private let failureView = ComposerFailureView()
     private let field = ComposerFieldView()
-    private let modelChip = ComposerChipButton()
-    private let effortChip = ComposerChipButton()
-    private let modeChip = ComposerChipButton()
+    private let modelButton = NSButton.menuButton()
+    private let effortButton = NSButton.menuButton()
+    private let modeButton = NSButton.menuButton()
     private let spacer = NSView()
     private let statusView = ComposerStatusView()
     private let ringView = ContextRingView()
@@ -50,7 +50,18 @@ final class ComposerView: NSView {
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
 
     private var model: ComposerPresentation?
-    private var tier = ComposerChipButton.Tier.full
+    private var tier = Tier.full
+
+    /// How much of their words the buttons keep as the card narrows.
+    private enum Tier: Int, Comparable {
+        case full
+        /// The provider's name is gone.
+        case withoutDetail
+        /// Effort's and Mode's names are gone too; their glyphs remain.
+        case glyphsOnly
+
+        static func < (lhs: Tier, rhs: Tier) -> Bool { lhs.rawValue < rhs.rawValue }
+    }
     private var isNarrow = false
 
     private lazy var bottomWithoutError = surface.bottomAnchor.constraint(equalTo: bottomAnchor)
@@ -75,7 +86,8 @@ final class ComposerView: NSView {
         controlsRow.alignment = .centerY
         controlsRow.spacing = 0
         controlsRow.setViews(
-            [modelChip, effortChip, modeChip, spacer, statusView, ringView, stopButton, sendButton], in: .leading)
+            [modelButton, effortButton, modeButton, spacer, statusView, ringView, stopButton, sendButton],
+            in: .leading)
         // preview-live.css: the status keeps 8 on either side (its own insets),
         // the ring 8 after it, and every action button 4 before it.
         controlsRow.setCustomSpacing(4, after: spacer)
@@ -153,10 +165,14 @@ final class ComposerView: NSView {
     private lazy var bodyBottomWithStatus = statusLine.bottomAnchor.constraint(equalTo: body.bottomAnchor, constant: -8)
 
     private func configureActions() {
-        for (control, chip) in [(Control.model, modelChip), (.effort, effortChip), (.mode, modeChip)] {
-            chip.target = self
-            chip.action = #selector(chipPressed(_:))
-            chip.tag = control.tag
+        for (control, button) in [(Control.model, modelButton), (.effort, effortButton), (.mode, modeButton)] {
+            // The words keep their width over everything but the window's: the
+            // card drops them by tier when it narrows (`layout`), so they are
+            // never cut — and never what widens the window.
+            button.setContentCompressionResistancePriority(.dragThatCannotResizeWindow, for: .horizontal)
+            button.target = self
+            button.action = #selector(menuButtonPressed(_:))
+            button.tag = control.tag
         }
         stopButton.target = self
         stopButton.action = #selector(stop)
@@ -188,9 +204,7 @@ final class ComposerView: NSView {
     func configure(with model: ComposerPresentation) {
         self.model = model
         field.placeholder = model.placeholder
-        modelChip.configure(with: model.model)
-        effortChip.configure(with: model.effort)
-        modeChip.configure(with: model.mode)
+        showButtons()
         statusView.configure(status: model.status, isBusy: model.statusIsBusy)
         if let fraction = model.contextRing, let text = model.contextRingText {
             ringView.configure(fraction: fraction, text: text, toolTip: model.contextRingToolTip)
@@ -280,32 +294,62 @@ final class ComposerView: NSView {
     /// The card, in this view's coordinates.
     var cardFrame: NSRect { convert(surface.bounds, from: surface) }
 
-    /// Opens `menu` with `content` from `control`'s chip, which shows itself open.
-    func showMenu(of control: Control, content: MenuContent, in menu: MenuPanel, preferring side: MenuPopup.Side) {
-        let chip = chip(for: control)
-        chip.isOpen = true
-        menu.show(content, from: chip, preferring: side)
+    /// Opens `popover` from `control`'s button, over it when `above`.
+    func showMenu(of control: Control, in popover: MenuPopover, above: Bool) {
+        let button =
+            switch control {
+            case .model: modelButton
+            case .effort: effortButton
+            case .mode: modeButton
+            }
+        popover.show(from: button, above: above)
     }
 
-    /// Shows `control`'s chip as open or closed.
-    func setMenuOpen(_ isOpen: Bool, for control: Control) {
-        chip(for: control).isOpen = isOpen
+    // MARK: - The buttons
+
+    private func showButtons() {
+        guard let model else { return }
+        show(model.model, on: modelButton)
+        show(model.effort, on: effortButton)
+        show(model.mode, on: modeButton)
     }
 
-    /// Shows `control`'s chip open and gives the view its menu points at,
-    /// for a menu drawn still.
-    func showMenuStill(of control: Control) -> NSView {
-        let chip = chip(for: control)
-        chip.isOpen = true
-        return chip
-    }
-
-    private func chip(for control: Control) -> ComposerChipButton {
-        switch control {
-        case .model: modelChip
-        case .effort: effortChip
-        case .mode: modeChip
+    /// `chip`'s glyphs, title and detail on `button`, as much as the tier keeps:
+    /// secondary ink, red for Bypass, tertiary while disabled; the detail and
+    /// the trailing clock tertiary.
+    private func show(_ chip: ComposerPresentation.Chip, on button: NSButton) {
+        let font = NSFont.systemFont(ofSize: 12)
+        let ink: NSColor = !chip.isEnabled ? .tertiaryLabelColor : chip.isDanger ? .failureText : .secondaryLabelColor
+        let title = NSMutableAttributedString()
+        func append(_ words: String, _ color: NSColor) {
+            if title.length > 0 { title.append(NSAttributedString(string: " ", attributes: [.font: font])) }
+            title.append(NSAttributedString(string: words, attributes: [.font: font, .foregroundColor: color]))
         }
+        func append(_ glyph: ComposerPresentation.Glyph, _ color: NSColor) {
+            guard let image = ComposerGlyph.chipImage(glyph) else { return }
+            if title.length > 0 { title.append(NSAttributedString(string: " ", attributes: [.font: font])) }
+            let attachment = NSTextAttachment()
+            attachment.image = image
+            // Centred on the words' capitals.
+            attachment.bounds = NSRect(
+                x: 0, y: ((font.capHeight - image.size.height) / 2).rounded(), width: image.size.width,
+                height: image.size.height)
+            let glyphString = NSMutableAttributedString(attachment: attachment)
+            glyphString.addAttributes(
+                [.font: font, .foregroundColor: color], range: NSRange(location: 0, length: glyphString.length))
+            title.append(glyphString)
+        }
+        for glyph in chip.leadingGlyphs { append(glyph, ink) }
+        if !(chip.titleIsDroppable && tier >= .glyphsOnly) { append(chip.title, ink) }
+        if let detail = chip.detail, tier < .withoutDetail { append(detail, .tertiaryLabelColor) }
+        if let trailing = chip.trailingGlyph { append(trailing, .tertiaryLabelColor) }
+        button.attributedTitle = title
+        button.contentTintColor = ink
+        button.imagePosition = chip.isEnabled ? .imageTrailing : .noImage
+        button.isEnabled = chip.isEnabled
+        button.toolTip = chip.toolTip
+        button.setAccessibilityLabel(chip.toolTip ?? chip.title)
+        button.setAccessibilityValue(chip.title)
     }
 
     // MARK: - Layout
@@ -315,11 +359,11 @@ final class ComposerView: NSView {
         // Narrowing is a question of the card's own width, which constraints can't ask.
         // (The room the card is given, not the width its contents ask for.)
         let width = min(bounds.width, Self.maxWidth)
-        let nextTier: ComposerChipButton.Tier = width > 600 ? .full : width > 500 ? .withoutDetail : .glyphsOnly
+        let nextTier: Tier = width > 600 ? .full : width > 500 ? .withoutDetail : .glyphsOnly
         let tierChanged = nextTier != tier
         if tierChanged {
             tier = nextTier
-            for chip in [modelChip, effortChip, modeChip] { chip.tier = nextTier }
+            showButtons()
         }
         // The status takes its own line below 380, and wherever its words
         // wouldn't fit beside the controls — never cut, never widening the card.
@@ -348,7 +392,7 @@ final class ComposerView: NSView {
 
     // MARK: - Actions
 
-    @objc private func chipPressed(_ sender: ComposerChipButton) {
+    @objc private func menuButtonPressed(_ sender: NSButton) {
         guard let control = Control(tag: sender.tag) else { return }
         delegate?.composerView(self, didPress: control)
     }

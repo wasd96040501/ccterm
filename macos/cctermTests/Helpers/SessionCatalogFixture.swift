@@ -35,15 +35,13 @@ enum SessionCatalogFixture {
                     model("sonnet", name: "Sonnet 5.5", resolved: "claude-sonnet-5-5"),
                     model("haiku", name: "Haiku 4.5", resolved: "claude-haiku-4-5", levels: [], auto: false),
                     model("claude-opus-4-6", name: "Opus 4.6", resolved: "claude-opus-4-6", levels: noExtraHigh),
-                ],
-                shownModelCount: 5, commands: [], fastModeUnavailableReason: nil, defaultPermissionMode: .auto),
+                ], commands: [], fastModeUnavailableReason: nil, defaultPermissionMode: .auto),
             AccountCatalog(
                 id: relay, name: "Work Relay", detail: "relay.example.com", isSubscription: false, isLoaded: true,
                 models: [
                     model("default", name: "Default", resolved: "claude-sonnet-4-6", levels: noExtraHigh),
                     model("haiku", name: "Haiku", resolved: "claude-haiku-4-5", levels: [], auto: false),
-                ],
-                shownModelCount: 2, commands: [], fastModeUnavailableReason: nil, defaultPermissionMode: nil),
+                ], commands: [], fastModeUnavailableReason: nil, defaultPermissionMode: nil),
         ])
     }
 

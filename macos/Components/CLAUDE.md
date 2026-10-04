@@ -7,7 +7,7 @@ Sources/DisplayModels/   what a component is shown, as values — Foundation onl
 Sources/Components/      the views: one directory per family (Form/, Settings/ …), over DisplayModels
   Drawing/               what the families share: the tile, the pill button, the corner radii, the colours, StyledText's fonts
   Documents/             what opens beside a transcript: the jump bar, the approval bar and the command, source and image bodies, over `NumberedLinesView` (values: `DocumentHeader`, `CommandSummary`, `SourceLines`)
-  Menu/                  every pop-up: MenuPanel (MenuContent in, choices out) — MenuPanelViewController (rows, a capsule filter, sticky heads, a list of one height) in an NSPopover without its animation; MenuPopup, the slash list's child panel
+  Menu/                  every pop-up: MenuPopover (MenuContent in, choices out) — an NSPopover without its animation holding an inset table under an optional search field, opened by `NSButton.menuButton()`; MenuPopup, the slash list's child panel
   Composer/              the composer card (ComposerViewController) with its menus and slash list, over ComposerPresentation; the dock that fades the transcript under it
   NewSession/            the New view (hero, folder, branch row, rise) with its folder and branch menus, over NewSessionContent and NewSessionBranchMenu
   Rows/                  the transcript's row views (PageRowView and its kinds), drawn from display values; the contract test holds each to its declared height

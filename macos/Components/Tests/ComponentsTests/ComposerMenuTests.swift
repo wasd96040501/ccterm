@@ -36,8 +36,8 @@ final class ComposerMenuTests: XCTestCase {
         content.rows.map { row in
             switch row {
             case .separator: return .separator
-            case .header(.title(let title, _)): return .header(title)
-            case .header(.account(_, let name, _, _)): return .header(name)
+            case .header(let title, _): return .header(title)
+            case .account(_, let name, _, _): return .header(name)
             case .item(let item):
                 return Line(
                     title: item.title, subtitle: item.subtitle, enabled: item.isEnabled, checked: item.isChecked,
@@ -46,14 +46,14 @@ final class ComposerMenuTests: XCTestCase {
         }
     }
 
-    private func menu(_ menu: ComposerPresentation.Menu) -> MenuContent {
-        ComposerMenu.content(of: menu, width: 240)
+    private func menu(_ control: ComposerMenu.Control, _ state: ComposerPresentation) -> MenuContent {
+        ComposerMenu.content(of: control, in: state)
     }
 
     // MARK: - Effort
 
     func testEffortIsTheSheets() {
-        let built = menu(F.state(model: "Sonnet 4.6", effort: ("High", 3)).effortMenu)
+        let built = menu(.effort, F.state(model: "Sonnet 4.6", effort: ("High", 3)))
         XCTAssertEqual(
             lines(built),
             [
@@ -68,7 +68,7 @@ final class ComposerMenuTests: XCTestCase {
     /// Each level's meter and each mode's glyph is a row's: 16 pt.
     func testTheGlyphsAreRowSized() {
         let state = F.state(mode: .acceptEdits)
-        for built in [menu(state.effortMenu), menu(state.modeMenu)] {
+        for built in [menu(.effort, state), menu(.mode, state)] {
             for case .item(let item) in built.rows {
                 XCTAssertEqual(item.glyph?.size, NSSize(width: 16, height: 16), item.title)
             }
@@ -77,7 +77,7 @@ final class ComposerMenuTests: XCTestCase {
 
     /// Choosing an item hands back its id.
     func testAnItemStandsForItsId() throws {
-        let items = menu(F.idle.effortMenu).rows.compactMap { row -> MenuContent.Item? in
+        let items = menu(.effort, F.idle).rows.compactMap { row -> MenuContent.Item? in
             if case .item(let item) = row { item } else { nil }
         }
         XCTAssertEqual(items[1].id as? ComposerMenu.Choice, .item("effort:medium"))
@@ -96,7 +96,7 @@ final class ComposerMenuTests: XCTestCase {
 
     func testModeIsTheSheets() {
         XCTAssertEqual(
-            lines(menu(F.state(mode: .acceptEdits).modeMenu)),
+            lines(menu(.mode, F.state(mode: .acceptEdits))),
             [
                 .header("Permission Mode"),
                 Line(title: "Ask Permissions", subtitle: "Asks before edits and commands"),
@@ -112,7 +112,7 @@ final class ComposerMenuTests: XCTestCase {
 
     /// ⇧⇥ is the Mode head's key hint (`.mh kbd`).
     func testTheModeHeadCarriesItsKey() throws {
-        guard case .header(.title(_, let hint))? = menu(F.idle.modeMenu).rows.first else {
+        guard case .header(_, let hint)? = menu(.mode, F.idle).rows.first else {
             return XCTFail("no head")
         }
         XCTAssertEqual(hint, "⇧⇥")
@@ -120,49 +120,30 @@ final class ComposerMenuTests: XCTestCase {
 
     // MARK: - Model
 
-    /// The list keeps the height it has with every section unfolded, so
-    /// *More Models* opens inside it and the popover never grows.
-    func testTheModelListIsAsTallAsWithEveryModelShown() {
-        let folded = ComposerMenu.modelContent(of: F.responding, expanded: [])
-        let unfolded = ComposerMenu.modelContent(of: F.responding, expanded: [F.subscription])
-        guard case .expanded(let all) = folded.listHeight, case .expanded(let same) = unfolded.listHeight else {
-            return XCTFail("the model list is not as tall as when unfolded")
-        }
-        XCTAssertEqual(lines(MenuContent(rows: all)), lines(unfolded))
-        XCTAssertEqual(lines(MenuContent(rows: same)), lines(MenuContent(rows: all)))
-    }
-
-    func testTheModelPanelListsTheNoteThenEachAccountsHeadModelsAndItsMoreRow() {
-        let content = ComposerMenu.modelContent(of: F.responding, expanded: [])
-        XCTAssertEqual(content.width, ComposerMenu.modelWidth)
-        guard case .header(.title)? = content.rows.first else { return XCTFail("no note over the sections") }
+    /// The note over the sections, then each account's head over every model
+    /// it has; none is folded away.
+    func testTheModelMenuListsEveryModelUnderItsAccount() {
+        let content = menu(.model, F.responding)
+        XCTAssertEqual(content.width, 300)
+        guard case .header? = content.rows.first else { return XCTFail("no note over the sections") }
         let heads = content.rows.compactMap { row -> String? in
-            if case .header(.account(_, let name, _, _)) = row { name } else { nil }
+            if case .account(_, let name, _, _) = row { name } else { nil }
         }
         XCTAssertEqual(heads, ["Claude Max", "Work Relay", "DeepSeek"])
-        let more = content.rows.compactMap { row -> MenuContent.Item? in
-            if case .item(let item) = row, item.isMore { item } else { nil }
-        }
-        XCTAssertEqual(more.count, 1)
-        XCTAssertEqual(more.first?.id as? ComposerMenu.Choice, .more(F.subscription))
-    }
-
-    func testExpandingMoreModelsPutsTheFoldedOnesInPlace() {
-        let content = ComposerMenu.modelContent(of: F.idle, expanded: [F.subscription])
         let titles = content.rows.compactMap { row -> String? in
             if case .item(let item) = row { item.title } else { nil }
         }
         XCTAssertEqual(titles.prefix(12).last, "Sonnet 4.6")
-        XCTAssertFalse(content.rows.contains { if case .item(let item) = $0 { item.isMore } else { false } })
+        XCTAssertEqual(titles.count, 12 + 4 + 1)
     }
 
     /// Fast Mode is a switch under the scroll, and keeps the menu open.
     func testFastModeIsASwitchUnderTheScroll() throws {
-        let content = ComposerMenu.modelContent(of: F.fastRing, expanded: [])
-        guard case .item(let fast)? = content.footer.first else { return XCTFail("no Fast Mode") }
+        let content = menu(.model, F.fastRing)
+        let fast = try XCTUnwrap(content.footer.first)
         XCTAssertEqual(fast.id as? ComposerMenu.Choice, .fastMode)
         guard case .toggle(let isOn) = fast.trailing else { return XCTFail("not a switch") }
         XCTAssertTrue(isOn)
-        XCTAssertTrue(fast.keepsMenuOpen)
+        XCTAssertTrue(fast.isToggle)
     }
 }

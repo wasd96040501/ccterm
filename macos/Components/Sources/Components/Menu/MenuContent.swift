@@ -1,55 +1,40 @@
 import AppKit
 
-/// What a `MenuPanelViewController` shows: the design's one menu (`menuHTML`
-/// in preview-live.js), which every pop-up of the composer and the New view is
-/// — Model, Effort, Mode, the folder and the branch — each in a system popover
-/// of one size. Rows top to bottom; what goes under the scroll (Fast Mode) is
-/// `footer`.
+/// What a `MenuPopover` shows (design 08 *Menus are popovers*): rows top to
+/// bottom, the rows that stay under the list (Fast Mode), and for the branch
+/// picker a search field over it.
 public struct MenuContent {
-    /// A section's head (`.mh`).
-    public enum Header {
-        /// 11-pt semibold tertiary words over the items, with a key hint at the
+    public enum Row {
+        /// 11-pt semibold tertiary words over a group, and a key hint at the
         /// trailing edge (⇧⇥).
-        case title(String, hint: String? = nil)
-        /// An account (`.mh.acct`): its mark, name and detail, and a note on a
-        /// line under (*Restarts the session*). It sticks to the scroll's top
-        /// while its items pass under it.
+        case header(String, hint: String? = nil)
+        /// An account's head: its mark, name and detail, and a note under it
+        /// (*Restarts the session*).
         case account(mark: NSImage, name: String, detail: String, note: String?)
+        case item(Item)
+        case separator
     }
 
-    /// What sits at an item's trailing edge (`.mi .k`).
-    public enum Trailing {
-        case none
-        /// 12-pt tertiary words: a key equivalent (⌘O) or a folder's path.
-        case key(String)
-        /// A 14-pt glyph in tertiary (↻).
-        case glyph(NSImage)
-        /// A small switch: the row is a setting, not a choice (Fast Mode).
-        case toggle(isOn: Bool)
-    }
-
-    /// A row that can be chosen (`.mi`).
+    /// A row that can be chosen.
     public struct Item {
-        /// Handed back when the item is chosen.
+        /// Handed back when it is chosen.
         public var id: AnyHashable
         public var title: String
-        /// 11-pt, under the title; for a disabled item, the reason.
+        /// Under the title; for a disabled item, the reason.
         public var subtitle: String?
-        /// A 16-pt glyph in the glyph column, secondary ink.
+        /// In the glyph column, secondary ink.
         public var glyph: NSImage?
-        public var isChecked = false
-        public var isEnabled = true
+        public var isChecked: Bool
+        public var isEnabled: Bool
         /// Bypass Permissions: title and glyph in red.
-        public var isDanger = false
-        /// *N More Models*: accent words; choosing it keeps the menu open.
-        public var isMore = false
-        public var trailing = Trailing.none
+        public var isDanger: Bool
+        public var trailing: Trailing
         public var toolTip: String?
 
         public init(
             id: AnyHashable, title: String, subtitle: String? = nil, glyph: NSImage? = nil,
-            isChecked: Bool = false, isEnabled: Bool = true, isDanger: Bool = false, isMore: Bool = false,
-            trailing: Trailing = .none, toolTip: String? = nil
+            isChecked: Bool = false, isEnabled: Bool = true, isDanger: Bool = false, trailing: Trailing = .none,
+            toolTip: String? = nil
         ) {
             self.id = id
             self.title = title
@@ -58,83 +43,55 @@ public struct MenuContent {
             self.isChecked = isChecked
             self.isEnabled = isEnabled
             self.isDanger = isDanger
-            self.isMore = isMore
             self.trailing = trailing
             self.toolTip = toolTip
         }
 
-        /// Choosing it leaves the menu open: a switch, or a fold that expands.
-        public var keepsMenuOpen: Bool {
-            if isMore { return true }
-            if case .toggle = trailing { return true }
-            return false
+        /// A setting rather than a choice: choosing it leaves the menu open.
+        public var isToggle: Bool {
+            if case .toggle = trailing { true } else { false }
         }
     }
 
-    public enum Row {
-        case header(Header)
-        case item(Item)
-        /// A hairline (`.msep`).
-        case separator
-    }
-
-    /// The filter field over the list (`.mfilter`), and what it holds.
-    public struct Filter {
-        public var placeholder: String
-        public var text: String
-
-        public init(placeholder: String, text: String) {
-            self.placeholder = placeholder
-            self.text = text
-        }
+    /// What sits at an item's trailing edge.
+    public enum Trailing {
+        case none
+        /// Tertiary words: a key equivalent (⌘O) or a folder's path.
+        case key(String)
+        /// A tertiary glyph (↻).
+        case glyph(NSImage)
+        /// A small switch: the item is a setting (Fast Mode).
+        case toggle(isOn: Bool)
     }
 
     public var rows: [Row]
-    /// Under the scroll, past a hairline (`.mfoot`), always in view.
-    public var footer: [Row] = []
-    public var filter: Filter?
-    /// The popover's width (`PO_KIND`): Effort 240, Permission Mode 300, the
-    /// folder 320, Model and the branch 300.
-    public var width: CGFloat
-    /// How tall the list is — one height while the popover is open, so it
-    /// never moves under the pointer.
-    public var listHeight: ListHeight
-    /// Said in the list's middle when it has no rows: a filter that matches
-    /// nothing (*No Matching Branches*).
+    /// Under the list, past a hairline, always in view.
+    public var footer: [Item]
+    /// The search field's placeholder; `nil`: no search field.
+    public var searchPlaceholder: String?
+    /// Said in the list's middle when `rows` is empty.
     public var emptyText: String?
-
-    /// The list's one height.
-    public enum ListHeight {
-        /// As tall as its rows: a menu whose rows don't change while it is open.
-        case rows
-        /// Always this tall, whatever the filter leaves (the branch picker's 264).
-        case fixed(CGFloat)
-        /// As tall as these rows — every model shown — at most 360, so *N More
-        /// Models* opens inside it.
-        case expanded([Row])
-    }
+    public var width: CGFloat
+    /// The list's height whatever it holds; `nil`: as tall as its rows, 360 at
+    /// most.
+    public var listHeight: CGFloat?
 
     public init(
-        rows: [Row], footer: [Row] = [], filter: Filter? = nil, width: CGFloat = 240,
-        listHeight: ListHeight = .rows, emptyText: String? = nil
+        rows: [Row], footer: [Item] = [], searchPlaceholder: String? = nil, emptyText: String? = nil,
+        width: CGFloat, listHeight: CGFloat? = nil
     ) {
         self.rows = rows
         self.footer = footer
-        self.filter = filter
+        self.searchPlaceholder = searchPlaceholder
+        self.emptyText = emptyText
         self.width = width
         self.listHeight = listHeight
-        self.emptyText = emptyText
-    }
-
-    /// Whether the list scrolls under its accounts' sticky heads: then it
-    /// starts at the popover's top (`.mscroll.heads`).
-    var hasAccountHeads: Bool {
-        rows.contains { if case .header(.account) = $0 { true } else { false } }
     }
 
     /// Whether any item has a glyph: then every item keeps the glyph column,
-    /// so all words start together (`.mi` vs `.mi.nog`).
-    public var hasGlyphColumn: Bool {
-        (rows + footer).contains { if case .item(let item) = $0 { item.glyph != nil } else { false } }
+    /// so all titles start together.
+    var hasGlyphColumn: Bool {
+        footer.contains { $0.glyph != nil }
+            || rows.contains { if case .item(let item) = $0 { item.glyph != nil } else { false } }
     }
 }

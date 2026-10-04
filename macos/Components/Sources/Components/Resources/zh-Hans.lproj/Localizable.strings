@@ -108,7 +108,6 @@
 "Show Log" = "显示日志";
 "Restart" = "重新启动";
 "Claude quit unexpectedly" = "Claude 意外退出";
-"%lld More Models" = "另外 %lld 个模型";
 "Fast Mode" = "快速模式";
 /* Rows */
 "Interrupted" = "已中断";

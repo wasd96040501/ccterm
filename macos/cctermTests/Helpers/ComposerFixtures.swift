@@ -61,8 +61,7 @@ enum ComposerFixtures {
                 model("opus-4-7", "Opus 4.7"),
                 model("opus-4-6", "Opus 4.6", levels: ["low", "medium", "high", "max"]),
                 model("sonnet-4-6", "Sonnet 4.6", levels: ["low", "medium", "high", "max"]),
-            ],
-            shownModelCount: 5, commands: commands, fastModeUnavailableReason: nil, defaultPermissionMode: .auto),
+            ], commands: commands, fastModeUnavailableReason: nil, defaultPermissionMode: .auto),
         AccountCatalog(
             id: relay, name: "Work Relay", detail: "relay.example.com", isSubscription: false, isLoaded: true,
             models: [
@@ -71,12 +70,11 @@ enum ComposerFixtures {
                 model("opus", "Opus", resolved: "claude-opus-4-6", levels: ["low", "medium", "high", "max"]),
                 model("sonnet", "Sonnet", resolved: "claude-sonnet-4-6", levels: ["low", "medium", "high", "max"]),
                 model("haiku", "Haiku", resolved: "claude-haiku-4-5", levels: [], auto: false),
-            ],
-            shownModelCount: 4, commands: commands, fastModeUnavailableReason: nil, defaultPermissionMode: nil),
+            ], commands: commands, fastModeUnavailableReason: nil, defaultPermissionMode: nil),
         AccountCatalog(
             id: deepseek, name: "DeepSeek", detail: "api.deepseek.com", isSubscription: false, isLoaded: true,
             models: [model("default", "Default", resolved: "deepseek-v3.2", levels: [], auto: false)],
-            shownModelCount: 1, commands: commands, fastModeUnavailableReason: nil, defaultPermissionMode: nil),
+            commands: commands, fastModeUnavailableReason: nil, defaultPermissionMode: nil),
     ])
 
     /// The same, but the third account's CLI hasn't answered yet.
@@ -84,7 +82,6 @@ enum ComposerFixtures {
         var catalog = Self.catalog
         catalog.accounts[2].isLoaded = false
         catalog.accounts[2].models = []
-        catalog.accounts[2].shownModelCount = 0
         return catalog
     }
 

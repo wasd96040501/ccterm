@@ -30,12 +30,8 @@ public final class NewSessionViewController: NSViewController {
     /// Which rise is playing; a rise that was settled finds its timer stale.
     private var riseGeneration = 0
     /// The folder's or the branch's menu, whichever is open.
-    private let popUpMenu = MenuPanel()
-    private var openChip: NewSessionChip?
-    /// The press on a chip that took the keyboard from its open menu closes
-    /// it; the chip's action must not reopen it.
-    private var lastClosed: (chip: NewSessionChip, at: TimeInterval)?
-    /// What is typed in the branch menu's filter.
+    private let menuPopover = MenuPopover()
+    /// What is typed in the branch menu's search field.
     private var branchQuery = ""
 
     /// The page's side margin (the design's `.lv-new` padding).
@@ -45,14 +41,25 @@ public final class NewSessionViewController: NSViewController {
 
     private let iconView = NewSessionIconView()
 
-    private lazy var folderChip: NewSessionChip = {
-        let chip = NewSessionChip(title: String(localized: "Choose Folder…", bundle: .module), look: .folder)
-        chip.sendsActionOnPress = true
-        chip.target = self
-        chip.action = #selector(showFolderMenu(_:))
-        chip.setAccessibilityIdentifier("newSession.folder")
-        chip.setAccessibilityRole(.popUpButton)
-        return chip
+    /// The page's title: the folder's name in 22 pt at weight 650, between
+    /// Semibold and Bold on the font's weight axis.
+    private static let titleFont: NSFont = {
+        let wght = 0x7767_6874
+        let descriptor = NSFont.systemFont(ofSize: 22).fontDescriptor.addingAttributes([
+            NSFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String): [wght: 650]
+        ])
+        return NSFont(descriptor: descriptor, size: 22) ?? .systemFont(ofSize: 22, weight: .semibold)
+    }()
+
+    private lazy var folderButton: NSButton = {
+        let button = NSButton.menuButton()
+        button.controlSize = .large
+        button.lineBreakMode = .byTruncatingMiddle
+        button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        button.target = self
+        button.action = #selector(showFolderMenu(_:))
+        button.setAccessibilityIdentifier("newSession.folder")
+        return button
     }()
 
     private lazy var pathLabel: NSTextField = {
@@ -61,35 +68,32 @@ public final class NewSessionViewController: NSViewController {
         return label
     }()
 
-    private lazy var branchChip: NewSessionChip = {
-        let chip = NewSessionChip(title: "", look: .row)
-        // The design's branch glyph, 10 × 11 on the pop-up.
-        let glyph = NSImage.sidebarWorktree.copy() as? NSImage ?? NSImage.sidebarWorktree
-        glyph.size = NSSize(width: 10, height: 11)
-        chip.glyph = glyph
-        chip.toolTip = String(localized: "Branch", bundle: .module)
-        chip.sendsActionOnPress = true
-        chip.target = self
-        chip.action = #selector(showBranchPicker(_:))
-        chip.setAccessibilityIdentifier("newSession.branch")
-        chip.setAccessibilityRole(.popUpButton)
-        return chip
+    private lazy var branchButton: NSButton = {
+        let button = NSButton.menuButton()
+        button.lineBreakMode = .byTruncatingMiddle
+        button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        button.toolTip = String(localized: "Branch", bundle: .module)
+        button.target = self
+        button.action = #selector(showBranchMenu(_:))
+        button.setAccessibilityIdentifier("newSession.branch")
+        return button
     }()
 
-    private lazy var worktreeChip: NewSessionChip = {
-        let chip = NewSessionChip(
-            title: String(localized: "Worktree", bundle: .module), look: .row, showsChevron: false)
-        // The design's worktree mark, at a control's 14 pt.
+    /// On while the session gets a worktree of its own: the system's on
+    /// bezel, its words and glyph in the accent.
+    private lazy var worktreeButton: NSButton = {
+        let button = NSButton(title: "", target: self, action: #selector(toggleWorktree(_:)))
+        button.bezelStyle = .accessoryBar
+        button.setButtonType(.pushOnPushOff)
+        button.showsBorderOnlyWhileMouseInside = true
         let glyph = NSImage.newViewWorktree.copy() as? NSImage ?? NSImage.newViewWorktree
         glyph.size = NSSize(width: 14, height: 14)
-        chip.glyph = glyph
-        chip.toolTip = String(
+        button.image = glyph
+        button.imagePosition = .imageLeading
+        button.toolTip = String(
             localized: "Work in a new git worktree (--worktree), leaving this folder as it is", bundle: .module)
-        chip.target = self
-        chip.action = #selector(toggleWorktree(_:))
-        chip.setAccessibilityIdentifier("newSession.worktree")
-        chip.setAccessibilityRole(.checkBox)
-        return chip
+        button.setAccessibilityIdentifier("newSession.worktree")
+        return button
     }()
 
     private lazy var notRepositoryLabel = Self.label(size: 12, color: .tertiaryLabelColor)
@@ -121,25 +125,24 @@ public final class NewSessionViewController: NSViewController {
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-        popUpMenu.onChoose = { [weak self] item in self?.menuChose(item) }
-        popUpMenu.onFilter = { [weak self] text in self?.menuFilterChanged(text) }
-        popUpMenu.onClose = { [weak self] in self?.menuDidClose() }
+        menuPopover.onChoose = { [weak self] item in self?.menuChose(item) }
+        menuPopover.onSearch = { [weak self] words in self?.branchSearchChanged(words) }
         if let content { configure(with: content) }
     }
 
     public override func viewDidDisappear() {
         super.viewDidDisappear()
-        popUpMenu.close()
+        menuPopover.close()
     }
 
     // MARK: - Tree
 
     private func configureHierarchy() {
-        for subview in [iconView, folderChip, pathLabel, whereRow, explanationLabel] {
+        for subview in [iconView, folderButton, pathLabel, whereRow, explanationLabel] {
             subview.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(subview)
         }
-        for subview in [branchChip, worktreeChip, notRepositoryLabel] {
+        for subview in [branchButton, worktreeButton, notRepositoryLabel] {
             subview.translatesAutoresizingMaskIntoConstraints = false
             whereRow.addSubview(subview)
         }
@@ -153,9 +156,10 @@ public final class NewSessionViewController: NSViewController {
         let below = NSLayoutGuide()
         // Each line of words is the design's line box (its size × 1.45, the
         // note's 15), the words centred in it.
+        let folderLine = NSLayoutGuide()
         let pathLine = NSLayoutGuide()
         let noteLine = NSLayoutGuide()
-        for guide in [above, below, pathLine, noteLine] { view.addLayoutGuide(guide) }
+        for guide in [above, below, folderLine, pathLine, noteLine] { view.addLayoutGuide(guide) }
 
         // Until a composer is in the slot, a composer's worth — weaker than any
         // view's hugging, so the composer in it keeps its own height.
@@ -176,10 +180,12 @@ public final class NewSessionViewController: NSViewController {
             below.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
             iconView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            folderChip.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: 16),
-            folderChip.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            folderChip.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -2 * Self.margin),
-            pathLine.topAnchor.constraint(equalTo: folderChip.bottomAnchor, constant: 2),
+            folderLine.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: 16),
+            folderLine.heightAnchor.constraint(equalToConstant: 34),
+            folderButton.centerYAnchor.constraint(equalTo: folderLine.centerYAnchor),
+            folderButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            folderButton.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -2 * Self.margin),
+            pathLine.topAnchor.constraint(equalTo: folderLine.bottomAnchor, constant: 2),
             pathLine.heightAnchor.constraint(equalToConstant: 16),
             pathLabel.centerYAnchor.constraint(equalTo: pathLine.centerYAnchor),
             pathLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -194,12 +200,12 @@ public final class NewSessionViewController: NSViewController {
             explanationLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             explanationLabel.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -2 * Self.margin),
 
-            branchChip.leadingAnchor.constraint(equalTo: whereRow.leadingAnchor),
-            branchChip.centerYAnchor.constraint(equalTo: whereRow.centerYAnchor),
-            branchChip.widthAnchor.constraint(lessThanOrEqualToConstant: 260),
-            worktreeChip.leadingAnchor.constraint(equalTo: branchChip.trailingAnchor, constant: 8),
-            worktreeChip.trailingAnchor.constraint(equalTo: whereRow.trailingAnchor),
-            worktreeChip.centerYAnchor.constraint(equalTo: whereRow.centerYAnchor),
+            branchButton.leadingAnchor.constraint(equalTo: whereRow.leadingAnchor),
+            branchButton.centerYAnchor.constraint(equalTo: whereRow.centerYAnchor),
+            branchButton.widthAnchor.constraint(lessThanOrEqualToConstant: 260),
+            worktreeButton.leadingAnchor.constraint(equalTo: branchButton.trailingAnchor, constant: 8),
+            worktreeButton.trailingAnchor.constraint(equalTo: whereRow.trailingAnchor),
+            worktreeButton.centerYAnchor.constraint(equalTo: whereRow.centerYAnchor),
             notRepositoryLabel.centerXAnchor.constraint(equalTo: whereRow.centerXAnchor),
             notRepositoryLabel.centerYAnchor.constraint(equalTo: whereRow.centerYAnchor),
             notRepositoryLabel.leadingAnchor.constraint(equalTo: whereRow.leadingAnchor),
@@ -221,29 +227,60 @@ public final class NewSessionViewController: NSViewController {
         self.content = content
         guard isViewLoaded else { return }
 
-        folderChip.title = content.folderTitle
-        if popUpMenu.isShown, let menu = menuContent(for: openChip) { popUpMenu.update(menu) }
+        folderButton.attributedTitle = NSAttributedString(
+            string: content.folderTitle,
+            attributes: [.font: Self.titleFont, .kern: -0.22, .foregroundColor: NSColor.labelColor])
+        folderButton.contentTintColor = .tertiaryLabelColor
+        folderButton.setAccessibilityLabel(content.folderTitle)
+        if menuPopover.isShown, let content = menuContent(for: openButton) { menuPopover.configure(with: content) }
         pathLabel.stringValue = content.folderPath ?? ""
         explanationLabel.stringValue = content.explanation ?? ""
 
         switch content.branchRow {
         case .repository(let branchTitle, let usesWorktree):
-            branchChip.isHidden = false
-            worktreeChip.isHidden = false
+            branchButton.isHidden = false
+            worktreeButton.isHidden = false
             notRepositoryLabel.isHidden = true
-            branchChip.title = branchTitle
-            worktreeChip.isOn = usesWorktree
-            worktreeChip.setAccessibilityValue(usesWorktree ? 1 : 0)
+            showBranch(branchTitle)
+            showWorktree(usesWorktree)
         case .notARepository(let words):
-            branchChip.isHidden = true
-            worktreeChip.isHidden = true
+            branchButton.isHidden = true
+            worktreeButton.isHidden = true
             notRepositoryLabel.isHidden = false
             notRepositoryLabel.stringValue = words
         case .loading:
-            branchChip.isHidden = true
-            worktreeChip.isHidden = true
+            branchButton.isHidden = true
+            worktreeButton.isHidden = true
             notRepositoryLabel.isHidden = true
         }
+    }
+
+    /// The branch glyph and name, 12 pt in secondary ink.
+    private func showBranch(_ name: String) {
+        let font = NSFont.systemFont(ofSize: 12)
+        let glyph = NSTextAttachment()
+        let image = NSImage.sidebarWorktree.copy() as? NSImage ?? NSImage.sidebarWorktree
+        image.size = NSSize(width: 10, height: 11)
+        glyph.image = image
+        glyph.bounds = NSRect(x: 0, y: ((font.capHeight - 11) / 2).rounded(), width: 10, height: 11)
+        let title = NSMutableAttributedString(attachment: glyph)
+        title.append(NSAttributedString(string: " \(name)"))
+        title.addAttributes(
+            [.font: font, .foregroundColor: NSColor.secondaryLabelColor],
+            range: NSRange(location: 0, length: title.length))
+        branchButton.attributedTitle = title
+        branchButton.contentTintColor = .secondaryLabelColor
+        branchButton.setAccessibilityValue(name)
+    }
+
+    /// Worktree, on or off: in the accent while on.
+    private func showWorktree(_ isOn: Bool) {
+        let ink: NSColor = isOn ? .controlAccentColor : .secondaryLabelColor
+        worktreeButton.state = isOn ? .on : .off
+        worktreeButton.contentTintColor = ink
+        worktreeButton.attributedTitle = NSAttributedString(
+            string: String(localized: "Worktree", bundle: .module),
+            attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: ink])
     }
 
     /// Plays Send's rise and calls `completion` when it ends (at once under
@@ -282,8 +319,8 @@ public final class NewSessionViewController: NSViewController {
 
     // MARK: - The folder
 
-    @objc private func showFolderMenu(_ sender: NSControl) {
-        open(folderChip)
+    @objc private func showFolderMenu(_ sender: NSButton) {
+        open(from: folderButton)
     }
 
     /// *Choose Folder…* (⌘O): an open panel for the folder Claude will work in.
@@ -307,18 +344,21 @@ public final class NewSessionViewController: NSViewController {
 
     // MARK: - The branch
 
-    @objc private func showBranchPicker(_ sender: NSControl) {
+    @objc private func showBranchMenu(_ sender: NSButton) {
         branchQuery = ""
-        open(branchChip)
+        open(from: branchButton)
     }
 
     // MARK: - The menus
 
-    /// What `chip`'s menu shows now.
-    private func menuContent(for chip: NewSessionChip?) -> MenuContent? {
+    /// The button whose menu is open.
+    private var openButton: NSButton?
+
+    /// What `button`'s menu shows now.
+    private func menuContent(for button: NSButton?) -> MenuContent? {
         guard let content else { return nil }
-        if chip === folderChip { return Self.folderMenu(of: content) }
-        if chip === branchChip, case .repository = content.branchRow {
+        if button === folderButton { return Self.folderMenu(of: content) }
+        if button === branchButton, case .repository = content.branchRow {
             return delegate?.newSessionViewController(self, branchMenuMatching: branchQuery).map(Self.branchMenu)
         }
         return nil
@@ -336,7 +376,7 @@ public final class NewSessionViewController: NSViewController {
     package static func folderMenu(of content: NewSessionContent) -> MenuContent {
         var rows: [MenuContent.Row] = []
         if !content.recentFolders.isEmpty {
-            rows.append(.header(.title(String(localized: "Recent", bundle: .module))))
+            rows.append(.header(String(localized: "Recent", bundle: .module)))
             // The sheet's folder (10.4 × 9.2 of the row's 16), as SF Symbols draws it.
             let glyph = NSImage.symbol("folder", pointSize: 11)
             for folder in content.recentFolders {
@@ -356,15 +396,14 @@ public final class NewSessionViewController: NSViewController {
         return MenuContent(rows: rows, width: 320)
     }
 
-    /// The branch's menu (design 08 *The New view*): a filter field over the
-    /// groups the app lists, in a popover 300 wide with 264 of list under the
-    /// filter whatever it leaves, the line that says nothing matches in its
-    /// middle.
+    /// The branch's menu (design 08 *The New view*): a search field over the
+    /// groups the app lists, 300 wide with 264 of list whatever the search
+    /// leaves, the line that says nothing matches in its middle.
     package static func branchMenu(of menu: NewSessionBranchMenu) -> MenuContent {
         let rows: [MenuContent.Row] = menu.rows.map { row in
             switch row {
             case .header(let words):
-                .header(.title(words))
+                .header(words)
             case .item(let item):
                 .item(
                     MenuContent.Item(
@@ -373,45 +412,17 @@ public final class NewSessionViewController: NSViewController {
             }
         }
         return MenuContent(
-            rows: rows,
-            filter: MenuContent.Filter(placeholder: String(localized: "Filter", bundle: .module), text: menu.query),
-            width: 300, listHeight: .fixed(264), emptyText: menu.emptyText)
+            rows: rows, searchPlaceholder: String(localized: "Filter", bundle: .module), emptyText: menu.emptyText,
+            width: 300, listHeight: 264)
     }
 
-    /// Opens `chip`'s menu under it, or closes it when it is the one open.
-    private func open(_ chip: NewSessionChip) {
-        let wasOpen = openChip
-        popUpMenu.close()
-        guard wasOpen !== chip else { return }
-        if let lastClosed, lastClosed.chip === chip, ProcessInfo.processInfo.systemUptime - lastClosed.at < 0.5 {
-            return
+    /// Opens `button`'s menu under it, or closes it when it is the one open.
+    private func open(from button: NSButton) {
+        if !menuPopover.isShown || openButton !== button, let content = menuContent(for: button) {
+            menuPopover.configure(with: content)
         }
-        guard let content = menuContent(for: chip) else { return }
-        openChip = chip
-        chip.isOpen = true
-        popUpMenu.show(content, from: chip, preferring: .below)
-    }
-
-    /// The two pop-ups, the branch's with what its filter holds.
-    package enum PopUp {
-        case folder
-        case branch(query: String)
-    }
-
-    /// `popUp`'s menu as it opens and the chip it opens from, shown open: for
-    /// the style page, which draws it still in a popover of its own.
-    package func menuStill(of popUp: PopUp) -> (content: MenuContent, chip: NSView)? {
-        let chip: NewSessionChip
-        switch popUp {
-        case .folder:
-            chip = folderChip
-        case .branch(let query):
-            chip = branchChip
-            branchQuery = query
-        }
-        guard let content = menuContent(for: chip) else { return nil }
-        chip.isOpen = true
-        return (content, chip)
+        menuPopover.show(from: button, above: false)
+        openButton = menuPopover.isShown ? button : nil
     }
 
     private func menuChose(_ item: MenuContent.Item) {
@@ -425,17 +436,9 @@ public final class NewSessionViewController: NSViewController {
         }
     }
 
-    private func menuFilterChanged(_ text: String) {
-        branchQuery = text
-        if let content = menuContent(for: openChip) { popUpMenu.update(content) }
-    }
-
-    private func menuDidClose() {
-        if let openChip {
-            openChip.isOpen = false
-            lastClosed = (openChip, ProcessInfo.processInfo.systemUptime)
-        }
-        openChip = nil
+    private func branchSearchChanged(_ words: String) {
+        branchQuery = words
+        if let content = menuContent(for: branchButton) { menuPopover.configure(with: content) }
     }
 
     @objc private func toggleWorktree(_ sender: NSControl) {

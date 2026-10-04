@@ -78,11 +78,8 @@ nonisolated struct AccountCatalog: Sendable, Equatable, Identifiable {
     var isSubscription: Bool
     /// Whether its CLI has answered (from this launch or the disk cache).
     var isLoaded: Bool
-    /// Every model `initialize` listed, in its order; the first `shownModelCount`
-    /// are listed, the rest fold into *N More Models* (the current model is never
-    /// folded — that is the menu's to honour).
+    /// Every model `initialize` listed, in the CLI picker's order.
     var models: [InitializationResult.Model]
-    var shownModelCount: Int
     /// The slash commands this account's CLI knows, for completion in a New tab.
     var commands: [SlashCommand]
     /// Why Fast Mode can't be used on this account (`fast_mode_disabled_reason`

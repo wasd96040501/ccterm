@@ -8,7 +8,7 @@ protocol ComposerViewDelegate: AnyObject {
     func composerView(_ composerView: ComposerView, didSubmit text: String)
     /// Stop (the button).
     func composerViewDidRequestStop(_ composerView: ComposerView)
-    /// A pull-down was pressed: the controller opens its menu or panel.
+    /// A menu button was pressed: the controller opens its menu, or closes it.
     func composerView(_ composerView: ComposerView, didPress control: ComposerView.Control)
     func composerViewDidRequestRestart(_ composerView: ComposerView)
     func composerViewDidRequestLog(_ composerView: ComposerView)

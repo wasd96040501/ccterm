@@ -99,14 +99,13 @@ final class ModelCatalogStoreTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(store.catalog.subscription).name, "Claude Max")
     }
 
-    func testTheSubscriptionListsDefaultAndTheAliasesAndFoldsVersionedModelsAfterThem() async throws {
+    func testTheSubscriptionListsDefaultAndTheAliasesThenTheVersionedModels() async throws {
         accounts.send([subscription])
         let answer = result(subscriptionModels)
         let store = store { _ in answer }
         await wait(store) { $0.accounts.first?.isLoaded == true }
         let section = try XCTUnwrap(store.catalog.subscription)
         XCTAssertEqual(section.models.map(\.value), ["default", "opus", "haiku", "claude-opus-4-6"])
-        XCTAssertEqual(section.shownModelCount, 3)
     }
 
     func testAProvidersModelsAreAllListed() async throws {
@@ -115,7 +114,7 @@ final class ModelCatalogStoreTests: XCTestCase {
         let store = store { _ in answer }
         await wait(store) { $0.accounts.first?.isLoaded == true }
         let section = try XCTUnwrap(store.catalog.accounts.first)
-        XCTAssertEqual(section.shownModelCount, 2)
+        XCTAssertEqual(section.models.map(\.value), ["default", "claude-sonnet-4-6"])
         XCTAssertEqual(section.name, "Work Relay")
     }
 
@@ -206,7 +205,6 @@ final class ModelCatalogStoreTests: XCTestCase {
         XCTAssertEqual(section.models.first?.supportsFastMode, true)
         XCTAssertEqual(section.commands.map(\.argumentHint), ["<pr>"])
         XCTAssertEqual(section.fastModeUnavailableReason, String(localized: "Requires extra usage"))
-        XCTAssertEqual(section.shownModelCount, 3)
     }
 
     func testAnUnreadableCacheIsNoCache() {

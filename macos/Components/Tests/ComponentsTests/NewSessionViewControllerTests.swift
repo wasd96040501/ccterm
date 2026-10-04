@@ -82,7 +82,7 @@ final class NewSessionViewControllerTests: XCTestCase {
     // MARK: - The stack
 
     /// Icon, 16, the folder's 34-pt line, 2, the path's 16, 8, the 24-pt row,
-    /// 2, the note's 15, 20, the composer.
+    /// 2, the note's 15, 20, the composer; each button centred in its line.
     func testTheStackKeepsTheDesignsLines() throws {
         let controller = controller(width: 900)
         let root = controller.view
@@ -91,11 +91,11 @@ final class NewSessionViewControllerTests: XCTestCase {
         let branch = try view("newSession.branch", in: root)
         let iconTop = top(icon, in: root)
 
-        XCTAssertEqual(top(folder, in: root) - iconTop, 64 + 16)
-        XCTAssertEqual(folder.frame.height, 34)
+        let folderTop = iconTop + 64 + 16
+        XCTAssertEqual(top(folder, in: root) + folder.frame.height / 2, folderTop + 17)
         // The row's top: the folder's line, 2, the path's 16, 8.
-        let rowTop = top(folder, in: root) + 34 + 2 + 16 + 8
-        XCTAssertEqual(top(branch, in: root), rowTop)
+        let rowTop = folderTop + 34 + 2 + 16 + 8
+        XCTAssertEqual(top(branch, in: root) + branch.frame.height / 2, rowTop + 12)
         let slotTop = root.bounds.maxY - controller.composerGuide.frame.maxY
         XCTAssertEqual(slotTop, rowTop + 24 + 2 + 15 + 20)
     }
@@ -117,7 +117,7 @@ final class NewSessionViewControllerTests: XCTestCase {
     func testTheFolderMenuListsRecentFoldersWithTheirPaths() throws {
         let rows = NewSessionViewController.folderMenu(of: content).rows
         XCTAssertEqual(rows.count, 5)
-        guard case .header(.title(let recent, _)) = rows[0] else { return XCTFail("no Recent head") }
+        guard case .header(let recent, _) = rows[0] else { return XCTFail("no Recent head") }
         XCTAssertEqual(recent, String(localized: "Recent", bundle: .module))
         func item(_ index: Int) throws -> MenuContent.Item {
             guard case .item(let item) = rows[index] else { return try XCTUnwrap(nil, "row \(index) is not an item") }
@@ -175,8 +175,8 @@ final class NewSessionViewControllerTests: XCTestCase {
         let controller = controller(width: 900)
         let delegate = Delegate()
         controller.delegate = delegate
-        let chip = try XCTUnwrap(try view("newSession.worktree", in: controller.view) as? NSControl)
-        _ = chip.sendAction(chip.action, to: chip.target)
+        let button = try XCTUnwrap(try view("newSession.worktree", in: controller.view) as? NSControl)
+        _ = button.sendAction(button.action, to: button.target)
         XCTAssertEqual(delegate.toggles, 1)
     }
 
@@ -186,8 +186,8 @@ final class NewSessionViewControllerTests: XCTestCase {
         let controller = controller(width: 900)
         let delegate = Delegate()
         controller.delegate = delegate
-        let chip = try XCTUnwrap(try view("newSession.branch", in: controller.view) as? NSControl)
-        _ = chip.sendAction(chip.action, to: chip.target)
+        let button = try XCTUnwrap(try view("newSession.branch", in: controller.view) as? NSControl)
+        _ = button.sendAction(button.action, to: button.target)
         XCTAssertEqual(delegate.queries, [""])
         controller.viewDidDisappear()
     }

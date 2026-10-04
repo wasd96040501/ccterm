@@ -43,19 +43,17 @@ final class ComposerModelTests: XCTestCase {
                 model("haiku", "Haiku 4.5", levels: [], auto: false),
                 model("opus-5", "Opus 5", fast: true),
                 model("sonnet-4-6", "Sonnet 4.6", levels: ["low", "medium", "high", "max"]),
-            ],
-            shownModelCount: 5, commands: [], fastModeUnavailableReason: nil, defaultPermissionMode: .auto),
+            ], commands: [], fastModeUnavailableReason: nil, defaultPermissionMode: .auto),
         AccountCatalog(
             id: relay, name: "Work Relay", detail: "relay.example.com", isSubscription: false, isLoaded: true,
             models: [
                 model(
                     "default", "Default", resolved: "claude-sonnet-4-6", levels: ["low", "medium", "high", "max"]),
                 model("opus", "Opus", resolved: "claude-opus-4-6", levels: ["low", "medium", "high", "max"]),
-            ],
-            shownModelCount: 2, commands: [], fastModeUnavailableReason: nil, defaultPermissionMode: nil),
+            ], commands: [], fastModeUnavailableReason: nil, defaultPermissionMode: nil),
         AccountCatalog(
             id: deepseek, name: "DeepSeek", detail: "api.deepseek.com", isSubscription: false, isLoaded: false,
-            models: [], shownModelCount: 0, commands: [], fastModeUnavailableReason: nil,
+            models: [], commands: [], fastModeUnavailableReason: nil,
             defaultPermissionMode: nil),
     ])
 
@@ -270,18 +268,13 @@ final class ComposerModelTests: XCTestCase {
         XCTAssertEqual(sections.map(\.glyph), [.subscription, .provider, .provider])
     }
 
-    func testTheSubscriptionFoldsItsOlderModelsIntoMoreModels() {
-        let section = model(settings: settings("opus")).modelSections[0]
-        XCTAssertEqual(
-            section.items.map(\.title), ["Default (recommended)", "Opus 5.5", "Fable 5.1", "Sonnet 5.5", "Haiku 4.5"])
-        XCTAssertEqual(section.foldedItems.map(\.title), ["Opus 5", "Sonnet 4.6"])
-    }
-
-    func testTheCurrentModelIsNeverFolded() {
+    /// Every model of the subscription, in the catalog's order: none folded away.
+    func testTheSubscriptionListsEveryModel() {
         let section = model(settings: settings("opus-5")).modelSections[0]
-        XCTAssertEqual(section.foldedItems, [])
+        XCTAssertEqual(
+            section.items.map(\.title),
+            ["Default (recommended)", "Opus 5.5", "Fable 5.1", "Sonnet 5.5", "Haiku 4.5", "Opus 5", "Sonnet 4.6"])
         XCTAssertTrue(section.items.contains { $0.title == "Opus 5" && $0.isChecked })
-        XCTAssertEqual(section.items.count, 7)
     }
 
     func testTheCurrentModelIsChecked() {
@@ -313,7 +306,7 @@ final class ComposerModelTests: XCTestCase {
         for phase in [SessionState.Phase.idle, .responding, .compacting] {
             let sections = model(session(phase), settings: settings("opus")).modelSections
             XCTAssertNil(sections[0].note, "\(phase)")
-            XCTAssertEqual(sections[0].items.map(\.restarts), [false, false, false, false, false])
+            XCTAssertEqual(sections[0].items.map(\.restarts), Array(repeating: false, count: 7))
             XCTAssertEqual(sections[1].note, L("Restarts the session"), "\(phase)")
             XCTAssertEqual(sections[1].items.map(\.restarts), [true, true])
         }

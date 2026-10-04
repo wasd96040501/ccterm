@@ -392,14 +392,6 @@ extension ComposerModel {
                         id: ComposerModel.id(of: .model(choice)), title: model.displayName, subtitle: subtitle,
                         isChecked: choice == current, isEnabled: !model.isDisabled, restarts: restarts)
                 }
-                let count = min(max(account.shownModelCount, 0), account.models.count)
-                var shown = Array(account.models[..<count])
-                var folded = Array(account.models[count...])
-                // The current model is never folded away.
-                if let current, current.account == account.id, folded.contains(where: { $0.value == current.value }) {
-                    shown += folded
-                    folded = []
-                }
                 let note: String?
                 if !account.isLoaded {
                     note = String(localized: "Loading…")
@@ -411,7 +403,7 @@ extension ComposerModel {
                 return ModelSection(
                     id: account.id, name: account.name, detail: account.detail,
                     glyph: account.isSubscription ? .subscription : .provider, note: note,
-                    items: shown.map(item), foldedItems: folded.map(item))
+                    items: account.models.map(item))
             }
         }
 

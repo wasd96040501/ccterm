@@ -154,7 +154,7 @@ final class SessionTabViewControllerTests: XCTestCase {
         let catalog = ModelCatalog(accounts: [
             AccountCatalog(
                 id: account, name: "Claude", detail: "Subscription", isSubscription: true, isLoaded: true,
-                models: [InitializationResult.Model(value: "default", supportsAutoMode: true)], shownModelCount: 1,
+                models: [InitializationResult.Model(value: "default", supportsAutoMode: true)],
                 commands: [], fastModeUnavailableReason: nil, defaultPermissionMode: .default)
         ])
         let context = context(catalog: catalog)

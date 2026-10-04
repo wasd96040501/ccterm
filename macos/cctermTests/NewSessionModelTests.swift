@@ -174,6 +174,21 @@ final class NewSessionModelTests: XCTestCase {
         XCTAssertEqual(list.local.map(\.name), ["main", "live-session-design", "fix-gutter-overflow"])
     }
 
+    /// origin's default branch first, then the checked-out one, then the
+    /// rest as git lists them (newest commit first); remote branches likewise.
+    func testTheDefaultBranchThenTheCheckedOutOneThenTheNewest() throws {
+        let repository = RepositoryState(
+            root: folder, branch: "fix-gutter-overflow",
+            localBranches: ["exactlist-bench", "fix-gutter-overflow", "settings-accounts", "main"],
+            remoteBranches: ["origin/sidebar-icons", "origin/release/1.4"],
+            branchesCheckedOutElsewhere: [], hasUncommittedChanges: false, defaultBranch: "main")
+        let model = NewSessionModel(draft: draft(), repository: .repository(repository), recentFolders: [])
+        let list = try list(of: model)
+        XCTAssertEqual(
+            list.local.map(\.name), ["main", "fix-gutter-overflow", "exactlist-bench", "settings-accounts"])
+        XCTAssertEqual(list.remote.map(\.name), ["origin/sidebar-icons", "origin/release/1.4"])
+    }
+
     func testTheChosenBranchIsMarked() throws {
         let model = model(draft { $0.choose(branch: .named("origin/release/1.4"), in: repository()) })
         let list = try list(of: model)

@@ -164,9 +164,19 @@ nonisolated struct NewSessionModel: Equatable, Sendable {
             guard let slash = name.firstIndex(of: "/") else { return true }
             return !local.contains(String(name[name.index(after: slash)...]))
         }
+        // origin's default branch first, then the checked-out one, then the
+        // rest as git lists them: newest commit first.
+        func ordered(_ names: [String]) -> [String] {
+            func rank(_ name: String) -> Int {
+                BranchRules.isDefaultBranch(name, in: repository) ? 0 : name == repository.branch ? 1 : 2
+            }
+            return names.enumerated().sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }
+                .map(\.element)
+        }
         var pullRequest: Int?
         if case .pullRequest(let number) = draft.branch { pullRequest = number }
         return BranchList(
-            local: repository.localBranches.map(item), remote: remote.map(item), chosenPullRequest: pullRequest)
+            local: ordered(repository.localBranches).map(item), remote: ordered(remote).map(item),
+            chosenPullRequest: pullRequest)
     }
 }

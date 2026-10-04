@@ -118,7 +118,8 @@ public struct ComposerPresentation: Equatable, Sendable {
         }
     }
 
-    /// One account's section of the model panel (design 08 *Model*).
+    /// One account's section of the model menu (design 08 *Model*): every
+    /// model it has.
     public struct ModelSection: Equatable, Sendable, Identifiable {
         public var id: UUID
         public var name: String
@@ -128,20 +129,14 @@ public struct ComposerPresentation: Equatable, Sendable {
         /// *Restarts the session* / *Applies after this turn* / *Loading…*.
         public var note: String?
         public var items: [Item]
-        /// Models folded into *N More Models* (expands in place).
-        public var foldedItems: [Item]
 
-        public init(
-            id: UUID, name: String, detail: String, glyph: Glyph, note: String? = nil, items: [Item],
-            foldedItems: [Item] = []
-        ) {
+        public init(id: UUID, name: String, detail: String, glyph: Glyph, note: String? = nil, items: [Item]) {
             self.id = id
             self.name = name
             self.detail = detail
             self.glyph = glyph
             self.note = note
             self.items = items
-            self.foldedItems = foldedItems
         }
     }
 

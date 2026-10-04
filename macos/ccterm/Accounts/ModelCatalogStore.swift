@@ -148,39 +148,30 @@ extension AccountCatalog {
         self.init(
             id: account.id, name: Self.name(of: account, subscriptionType: nil),
             detail: Self.detail(of: account), isSubscription: account.provider == nil, isLoaded: false, models: [],
-            shownModelCount: 0, commands: [], fastModeUnavailableReason: nil, defaultPermissionMode: nil)
+            commands: [], fastModeUnavailableReason: nil, defaultPermissionMode: nil)
     }
 
     /// `account` as its CLI's `initialize` answered.
     ///
-    /// **Which models fold into *N More Models*.** The CLI's own picker keeps
-    /// a row per family under its alias (`opus`, `sonnet`, `haiku`, `fable`,
-    /// each resolving to the family's latest) after *Default*, and lists the
-    /// versioned ids of earlier models behind them (its catalog marks those
-    /// `picker.section = "overflow"`, which `initialize` doesn't pass on — the
-    /// rows arrive in the picker's order, aliases first). So on the
-    /// subscription *Default* and every alias row are listed and the rows
-    /// named by a versioned id fold, kept after the listed ones in the CLI's
-    /// order. A provider's models are the few names Settings gives it: all
-    /// listed. An account with no alias row lists everything.
+    /// **The models' order.** The CLI's own picker keeps a row per family
+    /// under its alias (`opus`, `sonnet`, `haiku`, `fable`, each resolving to
+    /// the family's latest) after *Default*, and the versioned ids of earlier
+    /// models behind them. So on the subscription *Default* and every alias
+    /// come first and the versioned ids after them, each in the CLI's order.
+    /// A provider's models are the few names Settings gives it, as given.
     init(account: Account, result: InitializationResult) {
         let subscriptionType = result.account?.subscriptionType
         var models = result.models
-        var shown = models.count
         if account.provider == nil {
-            let isListed = { (model: InitializationResult.Model) in
+            let isAliasRow = { (model: InitializationResult.Model) in
                 model.value == "default" || Self.isAlias(model.value)
             }
-            if models.contains(where: { $0.value != "default" && Self.isAlias($0.value) }) {
-                let listed = models.filter(isListed)
-                models = listed + models.filter { !isListed($0) }
-                shown = listed.count
-            }
+            models = models.filter(isAliasRow) + models.filter { !isAliasRow($0) }
         }
         self.init(
             id: account.id, name: Self.name(of: account, subscriptionType: subscriptionType),
             detail: Self.detail(of: account), isSubscription: account.provider == nil, isLoaded: true, models: models,
-            shownModelCount: shown, commands: result.commands,
+            commands: result.commands,
             fastModeUnavailableReason: result.fastModeDisabledReason.flatMap(Self.words(forFastModeReason:)),
             defaultPermissionMode: result.currentPermissionMode)
     }
@@ -262,7 +253,6 @@ private struct CachedAccount: Codable {
     var detail: String
     var isSubscription: Bool
     var models: [Model]
-    var shownModelCount: Int
     var commands: [Command]
     var fastModeUnavailableReason: String?
     var defaultPermissionMode: String?
@@ -279,7 +269,6 @@ private struct CachedAccount: Codable {
                 supportsAdaptiveThinking: $0.supportsAdaptiveThinking, supportsFastMode: $0.supportsFastMode,
                 supportsAutoMode: $0.supportsAutoMode, resolvedModel: $0.resolvedModel, isDisabled: $0.isDisabled)
         }
-        shownModelCount = catalog.shownModelCount
         commands = catalog.commands.map {
             Command(name: $0.name, description: $0.description, argumentHint: $0.argumentHint)
         }
@@ -301,7 +290,6 @@ private struct CachedAccount: Codable {
                 model.isDisabled = cached.isDisabled
                 return model
             },
-            shownModelCount: shownModelCount,
             // `SlashCommand` decodes from the CLI's own shape; its `init` is the SDK's.
             commands: commands.compactMap { command in
                 let json: [String: String] = [

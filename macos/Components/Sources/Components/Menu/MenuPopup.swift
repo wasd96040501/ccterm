@@ -2,7 +2,7 @@ import AppKit
 
 /// A borderless child panel that floats over its parent window: the slash
 /// list, which leaves the keyboard to the field so it keeps typing (the menus
-/// are `MenuPanel`'s popovers). It sits a gap above or below an anchor
+/// are `MenuPopover`s). It sits a gap above or below an anchor
 /// rectangle — the preferred side if it fits, else the other, else the
 /// roomier one — 8 pt clear of the screen's edges, and follows the anchor as
 /// the card moves.

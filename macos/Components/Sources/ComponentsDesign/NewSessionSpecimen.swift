@@ -6,9 +6,8 @@ import DisplayModels
 /// Playground's window with no tabs): the app icon over its glow, the folder
 /// as the page's title, the branch and Worktree on a row that never moves, the
 /// line that says what Send will do, and the composer's slot — a card stands in
-/// for the composer, which is the app's. Each state the sheet shows, then the
-/// two menus open in their popovers under their chips: the branch's filter
-/// empty, holding a pull request's number and matching nothing.
+/// for the composer, which is the app's. Each state the sheet shows; its two
+/// menus are the Menus section's.
 enum NewSessionSpecimen {
     /// The pane a New tab gets in the sheet's main window (900 × 642, under its
     /// title bar and tab bar): the host the app puts the view in.
@@ -29,21 +28,11 @@ enum NewSessionSpecimen {
                 .init(title: "Worktree on — the line says what Send will do", view: host(.worktree), height: nil),
                 .init(title: "A folder that isn't a git repository", view: host(.notARepository), height: nil),
                 .init(title: "No folder yet", view: host(.noFolder), height: nil),
-                .init(title: "The folder menu", view: host(.rest, menu: .folder), height: nil),
-                .init(
-                    title: "The branch menu — 300 × 264 of list whatever the filter leaves",
-                    view: host(.rest, menu: .branch(query: "")), height: nil),
-                .init(
-                    title: "The branch menu — a number offers its pull request; the box keeps its size",
-                    view: host(.rest, menu: .branch(query: "#327")), height: nil),
-                .init(
-                    title: "The branch menu — nothing matches: the list keeps its size and says so",
-                    view: host(.rest, menu: .branch(query: "zzz")), height: nil),
             ])
     }
 
-    private static func host(_ state: State, menu: NewSessionViewController.PopUp? = nil) -> NSView {
-        NewSessionHost(state: state, menu: menu)
+    private static func host(_ state: State) -> NSView {
+        NewSessionHost(state: state)
     }
 
     enum State {
@@ -83,18 +72,15 @@ enum NewSessionSpecimen {
     }
 }
 
-/// The view in its pane at the pane's real size, centred, with a menu drawn
-/// open under its chip when asked for. It answers the
+/// The view in its pane at the pane's real size, centred. It answers the
 /// view's delegate from the fixture, so the page stays live.
 @MainActor
 private final class NewSessionHost: NSView, NewSessionViewControllerDelegate {
     private let controller = NewSessionViewController()
     private let stage = NSView()
     private var content: NewSessionContent
-    /// The open menu, its popover and the chip it points at.
-    private var openMenu: (panel: MenuPanelViewController, surface: PopoverSurface, chip: NSView)?
 
-    init(state: NewSessionSpecimen.State, menu: NewSessionViewController.PopUp?) {
+    init(state: NewSessionSpecimen.State) {
         content = state.content
         super.init(frame: .zero)
         controller.delegate = self
@@ -118,14 +104,6 @@ private final class NewSessionHost: NSView, NewSessionViewControllerDelegate {
             card.topAnchor.constraint(equalTo: controller.composerGuide.topAnchor),
             card.bottomAnchor.constraint(equalTo: controller.composerGuide.bottomAnchor),
         ])
-
-        if let menu, let still = controller.menuStill(of: menu) {
-            let panel = MenuPanelViewController()
-            panel.configure(with: still.content)
-            let surface = PopoverSurface(holding: panel.view, size: panel.preferredSize, edge: .top)
-            openMenu = (panel, surface, still.chip)
-            stage.addSubview(surface)
-        }
     }
 
     @available(*, unavailable)
@@ -143,15 +121,6 @@ private final class NewSessionHost: NSView, NewSessionViewControllerDelegate {
         stage.frame = NSRect(
             origin: NSPoint(x: ((bounds.width - pane.width) / 2).rounded(), y: 0), size: pane)
         stage.layoutSubtreeIfNeeded()
-        placeMenu()
-    }
-
-    /// The popover under the chip that opens it, its arrow on the chip's centre.
-    private func placeMenu() {
-        guard let openMenu else { return }
-        let chip = stage.convert(openMenu.chip.bounds, from: openMenu.chip)
-        openMenu.surface.frame = PopoverSurface.frame(
-            for: openMenu.panel.preferredSize, edge: .top, against: chip, flipped: stage.isFlipped)
     }
 
     // MARK: - The view's delegate

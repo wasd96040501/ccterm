@@ -93,10 +93,6 @@ enum ComposerFixtures {
                     [
                         ("default", "Default (recommended)", "Opus 5.5"), ("opus", "Opus 5.5", nil),
                         ("fable", "Fable 5.1", nil), ("sonnet", "Sonnet 5.5", nil), ("haiku", "Haiku 4.5", nil),
-                    ]),
-                foldedItems: models(
-                    subscription,
-                    [
                         ("opus-5", "Opus 5", nil), ("sonnet-5", "Sonnet 5", nil), ("fable-5", "Fable 5", nil),
                         ("opus-4-8", "Opus 4.8", nil), ("opus-4-7", "Opus 4.7", nil), ("opus-4-6", "Opus 4.6", nil),
                         ("sonnet-4-6", "Sonnet 4.6", nil),

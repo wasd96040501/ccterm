@@ -17,8 +17,8 @@ import DisplayModels
 /// mode (`ComposerPresentation.cycledModeID`), ⌘. stop, `/` at the start completes a
 /// command, backspace into a command token removes it whole.
 ///
-/// Model, Effort and Mode open the one menu the New view's pop-ups open too
-/// (`MenuPanel`); the slash list is a child panel of its own. Layer corners
+/// Model, Effort and Mode open the popover the New view's pop-ups open too
+/// (`MenuPopover`); the slash list is a child panel of its own. Layer corners
 /// take the design's radii (`CornerRadius`) with `cornerCurve = .continuous`.
 @MainActor
 public final class ComposerViewController: NSViewController {
@@ -32,14 +32,9 @@ public final class ComposerViewController: NSViewController {
     /// The card's bottom is the view's: floating.
     private var cardAtBottom: NSLayoutConstraint?
 
-    /// Model, Effort or Mode, whichever is open — one menu at a time.
-    private let popUpMenu = MenuPanel()
+    /// Model's, Effort's or Mode's menu, whichever is open.
+    private let menuPopover = MenuPopover()
     private var openControl: ComposerView.Control?
-    /// The model panel's account sections unfolded past *N More Models*.
-    private var expandedSections: Set<UUID> = []
-    /// The menu that closed last and when: the press on its chip that took
-    /// the keyboard from it closes it, and the chip's action must not reopen it.
-    private var lastClosed: (control: ComposerView.Control, at: TimeInterval)?
 
     private lazy var slashList: SlashListViewController = {
         let list = SlashListViewController()
@@ -89,13 +84,13 @@ public final class ComposerViewController: NSViewController {
     public override func viewDidLoad() {
         super.viewDidLoad()
         card.delegate = self
-        popUpMenu.onChoose = { [weak self] item in self?.menuChose(item) }
-        popUpMenu.onClose = { [weak self] in self?.menuDidClose() }
+        menuPopover.onChoose = { [weak self] item in self?.menuChose(item) }
+        menuPopover.onClose = { [weak self] in self?.menuDidClose() }
     }
 
     public override func viewDidDisappear() {
         super.viewDidDisappear()
-        popUpMenu.close()
+        menuPopover.close()
         slashPopup.close()
     }
 
@@ -106,7 +101,9 @@ public final class ComposerViewController: NSViewController {
         self.model = model
         card.configure(with: model)
         if placementChanged { place(model.placement) }
-        if popUpMenu.isShown, let openControl { popUpMenu.update(content(of: openControl, in: model)) }
+        if menuPopover.isShown, let openControl {
+            menuPopover.configure(with: ComposerMenu.content(of: openControl, in: model))
+        }
         updateSlashList()
     }
 
@@ -195,38 +192,15 @@ public final class ComposerViewController: NSViewController {
 
     // MARK: - Menus
 
-    private func content(of control: ComposerView.Control, in model: ComposerPresentation) -> MenuContent {
-        switch control {
-        case .model: ComposerMenu.modelContent(of: model, expanded: expandedSections)
-        case .effort: ComposerMenu.content(of: model.effortMenu, width: ComposerMenu.effortWidth)
-        case .mode: ComposerMenu.content(of: model.modeMenu, width: ComposerMenu.modeWidth)
-        }
-    }
-
-    /// Opens `control`'s menu — under the chip in a page, over it floating —
-    /// or closes it when it is the one open.
+    /// Opens `control`'s menu — under its button in a page, over it floating
+    /// — or closes it when it is the one open.
     private func openMenu(of control: ComposerView.Control) {
         guard let model else { return }
-        let wasOpen = openControl
-        popUpMenu.close()
-        guard wasOpen != control else { return }
-        if let lastClosed, lastClosed.control == control,
-            ProcessInfo.processInfo.systemUptime - lastClosed.at < 0.5
-        {
-            return
+        if openControl != control || !menuPopover.isShown {
+            menuPopover.configure(with: ComposerMenu.content(of: control, in: model))
         }
-        let content = content(of: control, in: model)
-        guard !content.rows.isEmpty else { return }
-        openControl = control
-        card.showMenu(
-            of: control, content: content, in: popUpMenu, preferring: model.placement == .page ? .below : .above)
-    }
-
-    /// `control`'s menu as it opens and the chip it opens from, shown open:
-    /// for the style page, which draws it still in a popover of its own.
-    package func menuStill(of control: ComposerMenu.Control) -> (content: MenuContent, chip: NSView)? {
-        guard let model else { return nil }
-        return (content(of: control, in: model), card.showMenuStill(of: control))
+        card.showMenu(of: control, in: menuPopover, above: model.placement != .page)
+        openControl = menuPopover.isShown ? control : nil
     }
 
     private func menuChose(_ item: MenuContent.Item) {
@@ -234,10 +208,6 @@ public final class ComposerViewController: NSViewController {
         switch choice {
         case .item(let id):
             delegate?.composerViewController(self, didChoose: id)
-        case .more(let section):
-            // Expands in place: the panel stays open and its list stays put.
-            expandedSections.insert(section)
-            if let model, let openControl { popUpMenu.update(content(of: openControl, in: model)) }
         case .fastMode:
             guard case .toggle(let isOn) = item.trailing else { return }
             delegate?.composerViewController(self, didSetFastMode: !isOn)
@@ -245,10 +215,6 @@ public final class ComposerViewController: NSViewController {
     }
 
     private func menuDidClose() {
-        if let openControl {
-            card.setMenuOpen(false, for: openControl)
-            lastClosed = (openControl, ProcessInfo.processInfo.systemUptime)
-        }
         openControl = nil
         view.window?.makeKey()
         card.focus()

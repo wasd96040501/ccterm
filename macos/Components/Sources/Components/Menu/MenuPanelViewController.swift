@@ -1,20 +1,16 @@
 import AppKit
 
 /// The one menu every pop-up of the composer and the New view is — Model,
-/// Effort, Mode, the folder and the branch — drawn to the design's `.lv-menu`
-/// (design 08, preview-live.css *Menus and the model panel*), so they share
-/// one look and one set of manners: the menu material with the popover radius,
-/// 5 pt around the rows; a section head in 11-pt semibold tertiary; items with
-/// a check, a 16-pt glyph, a title, a subtitle under it and a trailing key,
-/// glyph or switch; the accent under the pointer; greyed items with their
-/// reason; hairlines between groups; a filter field over a list that scrolls
-/// past 360 pt with each account's head sticking to its top; what follows
-/// under the scroll, always in view.
-///
-/// 08-live names `NSMenu` for Effort and Mode. They are this instead, so the
-/// five pop-ups are one component: `NSMenu` can't cap its height with sticky
-/// heads, keep itself open for a switch, or hold a filter field, which the
-/// model panel and the branch picker need.
+/// Effort, Mode, the folder and the branch — drawn to the design's menu
+/// (design 08 *Menus are popovers*, preview-live.css *Menus and the model
+/// panel*) inside the system popover `MenuPanel` opens: rows 10 in from the
+/// popover's edges and 10 round, concentric with its 20; a section head in
+/// 11-pt semibold tertiary; items with a check, a 16-pt glyph, a title, a
+/// subtitle under it and a trailing key, glyph or switch; the accent under the
+/// pointer; greyed items with their reason; hairlines between groups; a
+/// capsule filter field over a list that keeps one height while it is open,
+/// each account's head sticking to its top and a line in its middle when
+/// nothing matches; what follows under the scroll, always in view.
 ///
 /// Manners as `NSMenu`'s: the pointer selects, a release over an item chooses
 /// it, ↑ ↓ move over what can be chosen, ↩ chooses, ⎋ closes, typing selects
@@ -25,24 +21,9 @@ import AppKit
 public final class MenuPanelViewController: NSViewController {
     weak var delegate: MenuPanelViewControllerDelegate?
 
-    /// A panel's list scrolls past this (`.mscroll`).
-    static let maxListHeight: CGFloat = 360
-
     private(set) var content = MenuContent(rows: [])
-    /// The width the content asks for.
-    private(set) var width: CGFloat = 240
-    /// How tall the list may be; the presenter lowers it when the screen has
-    /// less room (never under 120).
-    private(set) var listHeightLimit: CGFloat = .greatestFiniteMagnitude {
-        didSet { resize() }
-    }
+    private var width: CGFloat { content.width }
 
-    /// Cuts the list to `height` (the presenter's call when the screen has no room).
-    func limitList(to height: CGFloat) {
-        listHeightLimit = height
-    }
-
-    private let material = NSVisualEffectView()
     private let filterField = MenuFilterField()
     private let scrollView = OverlayScrollView()
     private let table = MenuTableView()
@@ -51,11 +32,13 @@ public final class MenuPanelViewController: NSViewController {
     private let footerSeparator = MenuHairline()
     private let footer = NSStackView()
     private var footerItems: [MenuContent.Item] = []
+    /// What the list says in its middle when it has no rows.
+    private let emptyLabel = NSTextField(labelWithString: "")
 
     private lazy var filterHeight = filterField.heightAnchor.constraint(equalToConstant: 0)
     private lazy var listTop = scrollView.topAnchor.constraint(equalTo: view.topAnchor)
     private lazy var listHeight = scrollView.heightAnchor.constraint(equalToConstant: 0)
-    private lazy var viewWidth = view.widthAnchor.constraint(equalToConstant: width)
+    private lazy var viewWidth = view.widthAnchor.constraint(equalToConstant: 240)
 
     public override init(nibName nibNameOrNil: NSNib.Name?, bundle nibBundleOrNil: Bundle?) {
         super.init(nibName: nibNameOrNil, bundle: nibBundleOrNil)
@@ -69,15 +52,9 @@ public final class MenuPanelViewController: NSViewController {
         NotificationCenter.default.removeObserver(self)
     }
 
+    /// A plain view: the popover around it draws the material and the shape.
     public override func loadView() {
-        material.material = .menu
-        material.blendingMode = .behindWindow
-        material.state = .active
-        material.wantsLayer = true
-        material.layer?.cornerRadius = CornerRadius.popover
-        material.layer?.cornerCurve = .continuous
-        material.layer?.masksToBounds = true
-        view = material
+        view = NSView()
     }
 
     public override func viewDidLoad() {
@@ -123,8 +100,12 @@ public final class MenuPanelViewController: NSViewController {
         footer.spacing = 0
         footer.alignment = .width
         footer.edgeInsets = NSEdgeInsets(
-            top: MenuMetrics.inset, left: 0, bottom: MenuMetrics.inset, right: 0)
-        for subview in [filterField, scrollView, footerSeparator, footer] {
+            top: MenuMetrics.footerTop, left: 0, bottom: MenuMetrics.inset, right: 0)
+        emptyLabel.font = MenuMetrics.titleFont
+        emptyLabel.textColor = .secondaryLabelColor
+        emptyLabel.alignment = .center
+        emptyLabel.isHidden = true
+        for subview in [filterField, scrollView, footerSeparator, footer, emptyLabel] {
             subview.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(subview)
         }
@@ -135,9 +116,9 @@ public final class MenuPanelViewController: NSViewController {
     private func configureConstraints() {
         NSLayoutConstraint.activate([
             viewWidth,
-            filterField.topAnchor.constraint(equalTo: view.topAnchor, constant: MenuMetrics.inset),
-            filterField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: MenuMetrics.inset),
-            filterField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -MenuMetrics.inset),
+            filterField.topAnchor.constraint(equalTo: view.topAnchor, constant: MenuMetrics.filterInset),
+            filterField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: MenuMetrics.filterInset),
+            filterField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -MenuMetrics.filterInset),
             listTop,
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -149,6 +130,11 @@ public final class MenuPanelViewController: NSViewController {
             footer.topAnchor.constraint(equalTo: footerSeparator.bottomAnchor),
             footer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             footer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            emptyLabel.centerXAnchor.constraint(equalTo: scrollView.centerXAnchor),
+            // In the middle of the list's padded box (`.mempty`).
+            emptyLabel.centerYAnchor.constraint(
+                equalTo: scrollView.centerYAnchor, constant: (MenuMetrics.filterGap - MenuMetrics.inset) / 2),
+            emptyLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: MenuMetrics.inset),
         ])
     }
 
@@ -165,7 +151,6 @@ public final class MenuPanelViewController: NSViewController {
     private func apply() {
         let selected = selectedItemID
         let offset = scrollView.contentView.bounds.origin
-        width = MenuMetrics.width(of: content)
         viewWidth.constant = width
         let hasFilter = content.filter != nil
         filterField.isHidden = !hasFilter
@@ -173,12 +158,16 @@ public final class MenuPanelViewController: NSViewController {
             filterField.placeholder = filter.placeholder
             if filterField.text != filter.text { filterField.text = filter.text }
         }
-        // The filter's 5 above and 4 under; a panel's list starts at its top,
-        // a menu's 5 in.
+        // Under the filter, its rows 3 down and scrolling up to it; a list of
+        // accounts at the top, its heads sticking there; any other 10 in.
         listTop.constant =
             hasFilter
-            ? MenuMetrics.inset + MenuFilterField.height + 4 : (content.isPanel ? 0 : MenuMetrics.inset)
-        scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: MenuMetrics.inset, right: 0)
+            ? MenuMetrics.filterInset + MenuFilterField.height
+            : (content.hasAccountHeads ? 0 : MenuMetrics.inset)
+        scrollView.contentInsets = NSEdgeInsets(
+            top: listPaddingTop, left: 0, bottom: MenuMetrics.inset, right: 0)
+        emptyLabel.stringValue = content.emptyText ?? ""
+        emptyLabel.isHidden = !content.rows.isEmpty || content.emptyText == nil
         table.reloadData()
         configureFooter()
         resize()
@@ -210,37 +199,42 @@ public final class MenuPanelViewController: NSViewController {
         }
     }
 
-    /// The size the menu wants: the filter, the list up to its limit, the footer.
+    /// The popover's one size: the filter, the list at its one height, the
+    /// footer. The same for every content a menu shows while it is open.
     public var preferredSize: NSSize {
         loadViewIfNeeded()
-        return NSSize(width: width, height: chromeHeight + shownListHeight)
+        return NSSize(width: width, height: chromeHeight + listHeightShown)
     }
 
-    /// The list's whole height, unscrolled.
-    var fullListHeight: CGFloat {
-        content.rows.reduce(0) { $0 + MenuMetrics.height(of: $1, width: width, content: content) }
+    /// Over the rows, inside the scroll: the gap under the filter.
+    private var listPaddingTop: CGFloat { content.filter == nil ? 0 : MenuMetrics.filterGap }
+
+    /// `rows` unscrolled, with the list's padding over and under them.
+    private func height(of rows: [MenuContent.Row]) -> CGFloat {
+        listPaddingTop + rows.reduce(0) { $0 + MenuMetrics.height(of: $1, width: width, content: content) }
             + MenuMetrics.inset
     }
 
     /// Everything but the list: the filter above it, the footer under it.
-    var chromeHeight: CGFloat {
+    private var chromeHeight: CGFloat {
         listTop.constant
             + (content.footer.isEmpty
                 ? 0
-                : 0.5 + 2 * MenuMetrics.inset
+                : 0.5 + MenuMetrics.footerTop + MenuMetrics.inset
                     + content.footer.reduce(0) { $0 + MenuMetrics.height(of: $1, width: width, content: content) })
     }
 
-    private var shownListHeight: CGFloat {
-        let cap = content.isPanel ? Self.maxListHeight : .greatestFiniteMagnitude
-        return min(fullListHeight, cap, listHeightLimit)
+    private var listHeightShown: CGFloat {
+        switch content.listHeight {
+        case .rows: height(of: content.rows)
+        case .fixed(let height): height
+        case .expanded(let rows): min(height(of: rows), MenuMetrics.maxListHeight)
+        }
     }
 
     private func resize() {
         guard isViewLoaded else { return }
-        let before = listHeight.constant
-        listHeight.constant = shownListHeight
-        if before != listHeight.constant { delegate?.menuPanelViewControllerDidChangeSize(self) }
+        listHeight.constant = listHeightShown
     }
 
     /// Scrolls the checked item into view under its head: a menu opens on
@@ -512,7 +506,7 @@ private final class MenuTableView: NSTableView {
     }
 }
 
-/// A row: the accent under the selected item, inset 5 pt, at the row radius,
+/// A row: the accent under the selected item, inset 10 pt, 10 round,
 /// accent even while the list isn't the first responder; a switch's row takes
 /// the quiet hover fill instead — the switch is the control (`.mi.tg`).
 private final class MenuRowView: NSTableRowView {
@@ -536,7 +530,7 @@ private final class MenuRowView: NSTableRowView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        highlight.cornerRadius = CornerRadius.row
+        highlight.cornerRadius = CornerRadius.menuRow
         highlight.cornerCurve = .continuous
         layer?.addSublayer(highlight)
     }
@@ -573,8 +567,8 @@ private final class MenuRowView: NSTableRowView {
 
 /// An account's head (`.mh.acct`): its 14-pt mark, its name in semibold
 /// secondary, its detail in tertiary after it, and a note on a line under
-/// (*Restarts the session*). The menu's material under it covers the items
-/// that scroll past.
+/// (*Restarts the session*). The popover's material under it covers the
+/// items that scroll past.
 private final class MenuAccountCell: NSTableCellView {
     private let backdrop = NSVisualEffectView()
     private let mark = NSImageView()
@@ -584,7 +578,7 @@ private final class MenuAccountCell: NSTableCellView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        backdrop.material = .menu
+        backdrop.material = .popover
         backdrop.blendingMode = .behindWindow
         backdrop.state = .active
         mark.imageScaling = .scaleProportionallyDown
@@ -653,7 +647,7 @@ private final class MenuFooterRow: NSView {
         self.row = row
         super.init(frame: .zero)
         wantsLayer = true
-        highlight.cornerRadius = CornerRadius.row
+        highlight.cornerRadius = CornerRadius.menuRow
         highlight.cornerCurve = .continuous
         layer?.addSublayer(highlight)
         translatesAutoresizingMaskIntoConstraints = false

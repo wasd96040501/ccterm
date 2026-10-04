@@ -8,7 +8,8 @@ import Foundation
 @MainActor
 enum NewSessionMenu {
     static func branchMenu(of list: NewSessionModel.BranchList, query: String) -> NewSessionBranchMenu {
-        let rows: [NewSessionBranchMenu.Row] = BranchPickerModel(list).rows(matching: query).map { row in
+        var emptyText: String?
+        let rows: [NewSessionBranchMenu.Row] = BranchPickerModel(list).rows(matching: query).compactMap { row in
             switch row {
             case .header(let words):
                 return .header(words)
@@ -23,9 +24,10 @@ enum NewSessionMenu {
                         id: NewSessionDraft.Branch.pullRequest(number), title: "#\(number)", subtitle: subtitle,
                         isChecked: isChosen))
             case .empty(let words):
-                return .note(words)
+                emptyText = words
+                return nil
             }
         }
-        return NewSessionBranchMenu(rows: rows, query: query)
+        return NewSessionBranchMenu(rows: rows, query: query, emptyText: emptyText)
     }
 }

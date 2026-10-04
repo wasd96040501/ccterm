@@ -1,24 +1,32 @@
 import AppKit
 
-/// The design's numbers for a menu (`.lv-menu`, `.mi`, `.mh`, `.msep`), as
-/// measured on the sheet: x is from the menu's leading edge.
+/// The design's numbers for a menu (`.lv-po`, `.mi`, `.mh`, `.msep`), as
+/// measured on the sheet: x is from the popover's leading edge.
 enum MenuMetrics {
-    /// The menu's padding, and a row's inset within it (`.lv-menu` 5).
-    static let inset: CGFloat = 5
+    /// The list's padding inside the popover, and a row's inset within it
+    /// (`.lv-po .mscroll` 10): rows 10 round, concentric with the popover's 20.
+    static let inset: CGFloat = 10
+    /// The filter field's inset from the popover's edges and the list's gap
+    /// under it (`.mfilter` 7, `.mfilter + .mscroll` 3): its 26-pt capsule
+    /// concentric with the popover's corners.
+    static let filterInset: CGFloat = 7
+    static let filterGap: CGFloat = 3
+    /// Above the footer's rows, under its hairline (`.mfoot` 6).
+    static let footerTop: CGFloat = 6
     /// A check's leading edge: the inset and the row's 6 (`.mi` padding).
-    static let checkX: CGFloat = 11
+    static let checkX: CGFloat = 16
     /// A 10-pt check in its 14-pt column.
     static let checkSize: CGFloat = 10
     /// The glyph column, after the check's 14 and a 4 gap; 20 wide, its glyph 16.
-    static let glyphX: CGFloat = 29
+    static let glyphX: CGFloat = 34
     static let glyphSize: CGFloat = 16
     /// The words: after the glyph column's 20 and a 4 gap — or where the
     /// glyph column would start, when no item has a glyph (`.mi.nog`).
-    static let wordsX: CGFloat = 53
-    static let wordsXWithoutGlyphs: CGFloat = 29
+    static let wordsX: CGFloat = 58
+    static let wordsXWithoutGlyphs: CGFloat = 34
     /// From the menu's trailing edge to a row's trailing words, glyph or switch:
     /// the inset and the row's 10.
-    static let trailingInset: CGFloat = 15
+    static let trailingInset: CGFloat = 20
     /// The grid's gap before the trailing column, there even when it is empty
     /// (`.mi` column-gap).
     static let columnGap: CGFloat = 4
@@ -43,13 +51,15 @@ enum MenuMetrics {
     static let headerLine: CGFloat = 11 * 1.45
     static let headerTop: CGFloat = 4
     static let headerBottom: CGFloat = 2
-    /// An account's head: 8 above, 4 under, its mark 14 at 11, words at 31 (`.mh.acct`).
-    static let accountTop: CGFloat = 8
+    /// An account's head: 10 above, 4 under, its mark 14 at 16, words at 36 (`.mh.acct`).
+    static let accountTop: CGFloat = 10
     static let accountBottom: CGFloat = 4
-    static let accountMarkX: CGFloat = 11
+    static let accountMarkX: CGFloat = 16
     static let accountMarkSize: CGFloat = 14
-    static let accountWordsX: CGFloat = 31
-    /// The hairline's 5 above and under, 15 in from either side (`.msep`).
+    static let accountWordsX: CGFloat = 36
+    /// The model list's height at most (`fixModelList`'s 360).
+    static let maxListHeight: CGFloat = 360
+    /// The hairline's 5 above and under, 20 in from either side (`.msep`).
     static let separatorHeight: CGFloat = 10.5
 
     /// Where `font`'s baseline sits on a line `height` tall, from its top:
@@ -113,39 +123,6 @@ enum MenuMetrics {
             }
             return height
         }
-    }
-
-    /// The menu width a row needs to set its words on one line.
-    static func naturalWidth(of row: MenuContent.Row, content: MenuContent) -> CGFloat {
-        switch row {
-        case .separator:
-            return 0
-        case .header(.title(let title, let hint)):
-            let hinted = hint.map { 12 + width(of: $0, font: hintFont) } ?? 0
-            return inset + 24 + width(of: title, font: headerFont) + hinted + 10 + inset
-        case .header(.account(_, let name, let detail, let note)):
-            let line = accountWordsX + width(of: name, font: headerFont) + 6 + width(of: detail, font: hintFont)
-            let under = accountWordsX + (note.map { width(of: $0, font: hintFont) } ?? 0)
-            return max(line, under) + 10
-        case .item(let item):
-            let words = max(
-                width(of: item.title, font: titleFont), item.subtitle.map { width(of: $0, font: subtitleFont) } ?? 0)
-            return wordsX(glyphColumn: content.hasGlyphColumn) + words + trailingWidth(of: item.trailing)
-                + trailingInset
-        }
-    }
-
-    /// A panel's width (`.lv-menu.panel`).
-    static let panelWidth: CGFloat = 300
-    /// A menu's width, from its widest row (`.lv-menu`'s min- and max-width).
-    static let menuWidths: ClosedRange<CGFloat> = 240...340
-
-    /// The width `content` asks for, as a panel or an `NSMenu` draws it: a
-    /// panel's fixed width, or a menu's widest row within its range.
-    static func width(of content: MenuContent) -> CGFloat {
-        if content.isPanel { return panelWidth }
-        let widest = (content.rows + content.footer).map { naturalWidth(of: $0, content: content) }.max() ?? 0
-        return min(max(ceil(widest), menuWidths.lowerBound), menuWidths.upperBound)
     }
 
     static func width(of words: String, font: NSFont) -> CGFloat {

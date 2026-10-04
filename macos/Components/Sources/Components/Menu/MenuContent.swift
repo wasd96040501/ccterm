@@ -1,9 +1,10 @@
 import AppKit
 
-/// What a `MenuPanelViewController` shows: the design's one menu (`.lv-menu`,
-/// `menuHTML` in preview-live.js), which every pop-up of the composer and the
-/// New view is — Model, Effort, Mode, the folder and the branch. Rows top to
-/// bottom; what goes under the scroll (Fast Mode) is `footer`.
+/// What a `MenuPanelViewController` shows: the design's one menu (`menuHTML`
+/// in preview-live.js), which every pop-up of the composer and the New view is
+/// — Model, Effort, Mode, the folder and the branch — each in a system popover
+/// of one size. Rows top to bottom; what goes under the scroll (Fast Mode) is
+/// `footer`.
 public struct MenuContent {
     /// A section's head (`.mh`).
     public enum Header {
@@ -92,15 +93,43 @@ public struct MenuContent {
     /// Under the scroll, past a hairline (`.mfoot`), always in view.
     public var footer: [Row] = []
     public var filter: Filter?
-    /// A panel (`.lv-menu.panel`) is 300 pt wide and its list scrolls past
-    /// 360 pt; a menu is as wide as its widest row, 240 to 340.
-    public var isPanel = false
+    /// The popover's width (`PO_KIND`): Effort 240, Permission Mode 300, the
+    /// folder 320, Model and the branch 300.
+    public var width: CGFloat
+    /// How tall the list is — one height while the popover is open, so it
+    /// never moves under the pointer.
+    public var listHeight: ListHeight
+    /// Said in the list's middle when it has no rows: a filter that matches
+    /// nothing (*No Matching Branches*).
+    public var emptyText: String?
 
-    public init(rows: [Row], footer: [Row] = [], filter: Filter? = nil, isPanel: Bool = false) {
+    /// The list's one height.
+    public enum ListHeight {
+        /// As tall as its rows: a menu whose rows don't change while it is open.
+        case rows
+        /// Always this tall, whatever the filter leaves (the branch picker's 264).
+        case fixed(CGFloat)
+        /// As tall as these rows — every model shown — at most 360, so *N More
+        /// Models* opens inside it.
+        case expanded([Row])
+    }
+
+    public init(
+        rows: [Row], footer: [Row] = [], filter: Filter? = nil, width: CGFloat = 240,
+        listHeight: ListHeight = .rows, emptyText: String? = nil
+    ) {
         self.rows = rows
         self.footer = footer
         self.filter = filter
-        self.isPanel = isPanel || filter != nil || !footer.isEmpty
+        self.width = width
+        self.listHeight = listHeight
+        self.emptyText = emptyText
+    }
+
+    /// Whether the list scrolls under its accounts' sticky heads: then it
+    /// starts at the popover's top (`.mscroll.heads`).
+    var hasAccountHeads: Bool {
+        rows.contains { if case .header(.account) = $0 { true } else { false } }
     }
 
     /// Whether any item has a glyph: then every item keeps the glyph column,

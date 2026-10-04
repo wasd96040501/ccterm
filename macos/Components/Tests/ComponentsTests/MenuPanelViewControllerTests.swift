@@ -77,22 +77,37 @@ final class MenuPanelViewControllerTests: XCTestCase {
     }
 
     func testEffortIsTheDesignsSize() {
-        assertSize(MenuFixtures.effort, 240, 186.16)
+        assertSize(MenuFixtures.effort, 240, 196.16)
     }
 
-    /// As wide as its widest subtitle — the words' widths are the system font's,
-    /// so within 2 pt of Chrome's.
+    /// 300 wide, a subtitle wrapping under its title.
     func testModeIsTheDesignsSize() {
-        assertSize(MenuFixtures.mode, 330.1, 281.51, widthAccuracy: 2)
+        assertSize(MenuFixtures.mode, 300, 305.5)
     }
 
-    func testBranchIsTheDesignsSize() {
-        assertSize(MenuFixtures.branch(), 300, 287.8)
+    /// The filter, then 264 of list whatever it leaves: the box never moves
+    /// while you type.
+    func testTheBranchKeepsItsSizeWhateverTheFilterLeaves() {
+        for query in ["", "gutter", "#327", "zzz"] {
+            assertSize(MenuFixtures.branch(query: query), 300, 297)
+        }
     }
 
-    /// The list stops at 360; Fast Mode's two-line row sits under it.
-    func testTheModelPanelIsTheDesignsSize() {
-        assertSize(MenuFixtures.model, 300, 424.34)
+    /// As tall as with every model shown, 360 at most; Fast Mode's two-line
+    /// row under it.
+    func testTheModelListIsTheDesignsSize() {
+        assertSize(MenuFixtures.model, 300, 430.84)
+    }
+
+    /// Nothing left: the list keeps its size and says so in its middle.
+    func testNothingMatchingSaysSo() throws {
+        let menu = mount(MenuFixtures.branch(query: "zzz"))
+        let label = try XCTUnwrap(
+            menu.view.subviews.compactMap { $0 as? NSTextField }.first { $0.stringValue == "No Matching Branches" })
+        XCTAssertFalse(label.isHidden)
+        XCTAssertEqual(try table(in: menu).numberOfRows, 0)
+        let shown = mount(MenuFixtures.branch())
+        XCTAssertTrue(shown.view.subviews.compactMap { $0 as? NSTextField }.allSatisfy { $0.isHidden })
     }
 
     func testRowsAreTheSheetsHeights() {
@@ -104,11 +119,11 @@ final class MenuPanelViewControllerTests: XCTestCase {
         XCTAssertEqual(height(.header(.title("Recent"))), 21.95, accuracy: 0.02)
         XCTAssertEqual(height(.separator), 10.5)
         XCTAssertEqual(
-            height(.header(.account(mark: NSImage(), name: "Claude Max", detail: "Subscription", note: nil))), 27.95,
+            height(.header(.account(mark: NSImage(), name: "Claude Max", detail: "Subscription", note: nil))), 29.94,
             accuracy: 0.02)
         XCTAssertEqual(
             height(.header(.account(mark: NSImage(), name: "Work Relay", detail: "", note: "Restarts the session"))),
-            43.9, accuracy: 0.02)
+            45.88, accuracy: 0.02)
     }
 
     /// The hairline over the footer (`.mfoot` border-top): 0.5 pt, the panel's
@@ -169,11 +184,11 @@ final class MenuPanelViewControllerTests: XCTestCase {
     }
 
     /// Words start in one column: with a glyph anywhere, every item keeps the
-    /// glyph column (53); with none, they start at 29 (`.mi.nog`).
+    /// glyph column (58); with none, they start at 34 (`.mi.nog`).
     func testTheWordsColumn() {
         XCTAssertTrue(MenuFixtures.mode.hasGlyphColumn)
         XCTAssertFalse(MenuFixtures.branch().hasGlyphColumn)
-        XCTAssertEqual(MenuMetrics.wordsX(glyphColumn: true), 53)
-        XCTAssertEqual(MenuMetrics.wordsX(glyphColumn: false), 29)
+        XCTAssertEqual(MenuMetrics.wordsX(glyphColumn: true), 58)
+        XCTAssertEqual(MenuMetrics.wordsX(glyphColumn: false), 34)
     }
 }

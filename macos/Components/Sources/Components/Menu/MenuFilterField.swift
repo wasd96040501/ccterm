@@ -1,12 +1,15 @@
 import AppKit
 
-/// The filter over a menu's list (`.mfilter`): 26 pt tall, the control radius,
+/// The filter over a menu's list (`.mfilter`): a capsule 26 pt tall, 7 in
+/// from the popover's edges so its round ends follow the popover's corners;
 /// the hover fill with a hairline inside its edge, a 12-pt magnifier in
-/// tertiary 8 pt in, then 13-pt words 6 pt after it. While it has the
+/// tertiary 10 pt in, then 13-pt words 6 pt after it. While it has the
 /// keyboard, a 1-pt accent ring at 50 % over a 3.5-pt halo at 18 % sit outside
 /// its edge in place of the hairline.
 final class MenuFilterField: NSView {
     static let height: CGFloat = 26
+    /// A capsule's.
+    private static let radius = height / 2
 
     let field = NSTextField()
     private let magnifier = NSImageView()
@@ -24,7 +27,7 @@ final class MenuFilterField: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.cornerRadius = CornerRadius.control
+        layer?.cornerRadius = Self.radius
         layer?.cornerCurve = .continuous
         layer?.borderWidth = 0.5
         layer?.masksToBounds = false
@@ -55,13 +58,13 @@ final class MenuFilterField: NSView {
         }
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: Self.height),
-            magnifier.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            magnifier.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
             magnifier.widthAnchor.constraint(equalToConstant: 12),
             magnifier.heightAnchor.constraint(equalToConstant: 12),
             magnifier.centerYAnchor.constraint(equalTo: centerYAnchor),
             // The text field's cell keeps 2 pt before its words: 6 after the glyph.
             field.leadingAnchor.constraint(equalTo: magnifier.trailingAnchor, constant: 4),
-            field.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            field.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
             field.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }
@@ -101,10 +104,10 @@ final class MenuFilterField: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         ring.frame = bounds.insetBy(dx: -1, dy: -1)
-        ring.cornerRadius = CornerRadius.control + 1
+        ring.cornerRadius = Self.radius + 1
         // Both spread from the edge, the ring over the halo's first point.
         halo.frame = bounds.insetBy(dx: -3.5, dy: -3.5)
-        halo.cornerRadius = CornerRadius.control + 3.5
+        halo.cornerRadius = Self.radius + 3.5
         CATransaction.commit()
     }
 }

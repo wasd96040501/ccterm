@@ -1,14 +1,14 @@
 import AppKit
 
-/// A borderless child panel that floats over its parent window: every menu
-/// (`MenuPanel`, which takes the keyboard) and the slash list (which doesn't —
-/// the field keeps typing). It sits a gap above or below an anchor rectangle —
-/// the preferred side if it fits, else the other, else the roomier one — 8 pt
-/// clear of the screen's edges, and keeps the edge on the anchor where it is
-/// when its height changes (design 08, `MENU.place` in preview-live.js).
+/// A borderless child panel that floats over its parent window: the slash
+/// list, which leaves the keyboard to the field so it keeps typing (the menus
+/// are `MenuPanel`'s popovers). It sits a gap above or below an anchor
+/// rectangle — the preferred side if it fits, else the other, else the
+/// roomier one — 8 pt clear of the screen's edges, and follows the anchor as
+/// the card moves.
 ///
-/// Why a panel and not a subview: they pop out of the composer's card and the
-/// New view, and a view outside its parent's bounds can't be clicked.
+/// Why a panel and not a subview: it pops out of the composer's card, and a
+/// view outside its parent's bounds can't be clicked.
 @MainActor
 public final class MenuPopup: NSObject {
     public enum Side {
@@ -22,7 +22,6 @@ public final class MenuPopup: NSObject {
     private(set) var side = Side.below
     private let panel: PopupPanel
     private let gap: CGFloat
-    private let leadingOffset: CGFloat
     private var anchor = NSRect.zero
     private var observer: NSObjectProtocol?
 
@@ -31,16 +30,10 @@ public final class MenuPopup: NSObject {
 
     public var isShown: Bool { panel.isVisible }
 
-    /// The panel's window, for asking where it is.
-    var window: NSWindow { panel }
-
-    /// `gap` between the anchor and the panel; `leadingOffset` moves the
-    /// panel's leading edge from the anchor's (a menu starts 4 pt before its
-    /// control, so its words line up with the control's).
-    public init(contentViewController: NSViewController, takesKey: Bool, gap: CGFloat, leadingOffset: CGFloat = 0) {
+    /// `gap` between the anchor and the panel.
+    public init(contentViewController: NSViewController, takesKey: Bool, gap: CGFloat) {
         panel = PopupPanel(takesKey: takesKey)
         self.gap = gap
-        self.leadingOffset = leadingOffset
         super.init()
         panel.contentViewController = contentViewController
     }
@@ -101,16 +94,6 @@ public final class MenuPopup: NSObject {
         panel.invalidateShadow()
     }
 
-    /// Resizes keeping the edge on the anchor where it is.
-    func resize(to size: NSSize) {
-        var frame = panel.frame
-        let delta = size.height - frame.height
-        if side == .below { frame.origin.y -= delta }
-        frame.size = size
-        panel.setFrame(frame, display: true)
-        panel.invalidateShadow()
-    }
-
     public func close() {
         if let observer {
             NotificationCenter.default.removeObserver(observer)
@@ -122,11 +105,6 @@ public final class MenuPopup: NSObject {
         onClose?()
     }
 
-    /// The keyboard goes to `view`.
-    func makeFirstResponder(_ view: NSView) {
-        panel.makeFirstResponder(view)
-    }
-
     private static func visibleFrame(of parent: NSWindow) -> NSRect {
         parent.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
     }
@@ -134,7 +112,7 @@ public final class MenuPopup: NSObject {
     private func frame(for size: NSSize, in screen: NSRect) -> NSRect {
         let y = side == .above ? anchor.maxY + gap : anchor.minY - gap - size.height
         let margin = Self.screenMargin
-        let x = max(screen.minX + margin, min(anchor.minX + leadingOffset, screen.maxX - size.width - margin))
+        let x = max(screen.minX + margin, min(anchor.minX, screen.maxX - size.width - margin))
         return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
 }

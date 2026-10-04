@@ -9,8 +9,8 @@ import XCTest
 /// sheet (`index.html` #lv-menus: *Effort · Sonnet 4.6*, *Permission mode · Fast
 /// on*, *Permission mode · Haiku*): the head and its key hint, each item's
 /// title, its reason or note under it, enabled, checked, its glyph, and the
-/// hairline before Bypass; and the model panel's sections. How they are drawn
-/// is `MenuPanelSnapshotTests`'.
+/// hairline before Bypass; and the model list's sections. How they are drawn
+/// is the style page's *Menus*.
 @MainActor
 final class ComposerMenuTests: XCTestCase {
     private typealias F = ComposerFixtures
@@ -47,7 +47,7 @@ final class ComposerMenuTests: XCTestCase {
     }
 
     private func menu(_ menu: ComposerPresentation.Menu) -> MenuContent {
-        ComposerMenu.content(of: menu)
+        ComposerMenu.content(of: menu, width: 240)
     }
 
     // MARK: - Effort
@@ -120,9 +120,21 @@ final class ComposerMenuTests: XCTestCase {
 
     // MARK: - Model
 
+    /// The list keeps the height it has with every section unfolded, so
+    /// *More Models* opens inside it and the popover never grows.
+    func testTheModelListIsAsTallAsWithEveryModelShown() {
+        let folded = ComposerMenu.modelContent(of: F.responding, expanded: [])
+        let unfolded = ComposerMenu.modelContent(of: F.responding, expanded: [F.subscription])
+        guard case .expanded(let all) = folded.listHeight, case .expanded(let same) = unfolded.listHeight else {
+            return XCTFail("the model list is not as tall as when unfolded")
+        }
+        XCTAssertEqual(lines(MenuContent(rows: all)), lines(unfolded))
+        XCTAssertEqual(lines(MenuContent(rows: same)), lines(MenuContent(rows: all)))
+    }
+
     func testTheModelPanelListsTheNoteThenEachAccountsHeadModelsAndItsMoreRow() {
         let content = ComposerMenu.modelContent(of: F.responding, expanded: [])
-        XCTAssertTrue(content.isPanel)
+        XCTAssertEqual(content.width, ComposerMenu.modelWidth)
         guard case .header(.title)? = content.rows.first else { return XCTFail("no note over the sections") }
         let heads = content.rows.compactMap { row -> String? in
             if case .header(.account(_, let name, _, _)) = row { name } else { nil }

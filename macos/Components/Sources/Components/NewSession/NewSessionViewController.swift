@@ -353,11 +353,13 @@ public final class NewSessionViewController: NSViewController {
                 MenuContent.Item(
                     id: FolderChoice.chooseFolder, title: String(localized: "Choose Folder…", bundle: .module),
                     trailing: .key("⌘O"))))
-        return MenuContent(rows: rows)
+        return MenuContent(rows: rows, width: 320)
     }
 
-    /// The branch's menu (design 08 *The New view*): a panel with a filter
-    /// field over the groups the app lists; a note is a disabled item.
+    /// The branch's menu (design 08 *The New view*): a filter field over the
+    /// groups the app lists, in a popover 300 wide with 264 of list under the
+    /// filter whatever it leaves, the line that says nothing matches in its
+    /// middle.
     package static func branchMenu(of menu: NewSessionBranchMenu) -> MenuContent {
         let rows: [MenuContent.Row] = menu.rows.map { row in
             switch row {
@@ -368,13 +370,12 @@ public final class NewSessionViewController: NSViewController {
                     MenuContent.Item(
                         id: item.id, title: item.title, subtitle: item.subtitle, isChecked: item.isChecked,
                         isEnabled: item.isEnabled, toolTip: item.toolTip))
-            case .note(let words):
-                .item(MenuContent.Item(id: words, title: words, isEnabled: false))
             }
         }
         return MenuContent(
             rows: rows,
-            filter: MenuContent.Filter(placeholder: String(localized: "Filter", bundle: .module), text: menu.query))
+            filter: MenuContent.Filter(placeholder: String(localized: "Filter", bundle: .module), text: menu.query),
+            width: 300, listHeight: .fixed(264), emptyText: menu.emptyText)
     }
 
     /// Opens `chip`'s menu under it, or closes it when it is the one open.
@@ -389,6 +390,28 @@ public final class NewSessionViewController: NSViewController {
         openChip = chip
         chip.isOpen = true
         popUpMenu.show(content, from: chip, preferring: .below)
+    }
+
+    /// The two pop-ups, the branch's with what its filter holds.
+    package enum PopUp {
+        case folder
+        case branch(query: String)
+    }
+
+    /// `popUp`'s menu as it opens and the chip it opens from, shown open: for
+    /// the style page, which draws it still in a popover of its own.
+    package func menuStill(of popUp: PopUp) -> (content: MenuContent, chip: NSView)? {
+        let chip: NewSessionChip
+        switch popUp {
+        case .folder:
+            chip = folderChip
+        case .branch(let query):
+            chip = branchChip
+            branchQuery = query
+        }
+        guard let content = menuContent(for: chip) else { return nil }
+        chip.isOpen = true
+        return (content, chip)
     }
 
     private func menuChose(_ item: MenuContent.Item) {

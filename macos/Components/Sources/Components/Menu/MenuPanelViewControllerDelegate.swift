@@ -11,6 +11,4 @@ protocol MenuPanelViewControllerDelegate: AnyObject {
     func menuPanelViewController(_ menuPanelViewController: MenuPanelViewController, didChangeFilter text: String)
     /// ⎋.
     func menuPanelViewControllerDidCancel(_ menuPanelViewController: MenuPanelViewController)
-    /// The menu's size changed (a fold expanded, the filter matched fewer rows).
-    func menuPanelViewControllerDidChangeSize(_ menuPanelViewController: MenuPanelViewController)
 }

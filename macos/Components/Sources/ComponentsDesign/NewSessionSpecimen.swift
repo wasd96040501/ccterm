@@ -7,7 +7,8 @@ import DisplayModels
 /// as the page's title, the branch and Worktree on a row that never moves, the
 /// line that says what Send will do, and the composer's slot — a card stands in
 /// for the composer, which is the app's. Each state the sheet shows, then the
-/// two menus open under their chips.
+/// two menus open in their popovers under their chips: the branch's filter
+/// empty, holding a pull request's number and matching nothing.
 enum NewSessionSpecimen {
     /// The pane a New tab gets in the sheet's main window (900 × 642, under its
     /// title bar and tab bar): the host the app puts the view in.
@@ -29,11 +30,19 @@ enum NewSessionSpecimen {
                 .init(title: "A folder that isn't a git repository", view: host(.notARepository), height: nil),
                 .init(title: "No folder yet", view: host(.noFolder), height: nil),
                 .init(title: "The folder menu", view: host(.rest, menu: .folder), height: nil),
-                .init(title: "The branch menu", view: host(.rest, menu: .branch), height: nil),
+                .init(
+                    title: "The branch menu — 300 × 264 of list whatever the filter leaves",
+                    view: host(.rest, menu: .branch(query: "")), height: nil),
+                .init(
+                    title: "The branch menu — a number offers its pull request; the box keeps its size",
+                    view: host(.rest, menu: .branch(query: "#327")), height: nil),
+                .init(
+                    title: "The branch menu — nothing matches: the list keeps its size and says so",
+                    view: host(.rest, menu: .branch(query: "zzz")), height: nil),
             ])
     }
 
-    private static func host(_ state: State, menu: Menu? = nil) -> NSView {
+    private static func host(_ state: State, menu: NewSessionViewController.PopUp? = nil) -> NSView {
         NewSessionHost(state: state, menu: menu)
     }
 
@@ -72,8 +81,6 @@ enum NewSessionSpecimen {
             }
         }
     }
-
-    enum Menu { case folder, branch }
 }
 
 /// The view in its pane at the pane's real size, centred, with a menu drawn
@@ -83,16 +90,12 @@ enum NewSessionSpecimen {
 private final class NewSessionHost: NSView, NewSessionViewControllerDelegate {
     private let controller = NewSessionViewController()
     private let stage = NSView()
-    private let openMenu: NewSessionSpecimen.Menu?
     private var content: NewSessionContent
-    /// What draws the open menu: the folder's `SystemMenu`, the branch's panel.
-    private var menuOwner: AnyObject?
-    private var menuSize = NSSize.zero
-    private var menuSurface: ElevatedView?
+    /// The open menu, its popover and the chip it points at.
+    private var openMenu: (panel: MenuPanelViewController, surface: PopoverSurface, chip: NSView)?
 
-    init(state: NewSessionSpecimen.State, menu: NewSessionSpecimen.Menu?) {
+    init(state: NewSessionSpecimen.State, menu: NewSessionViewController.PopUp?) {
         content = state.content
-        openMenu = menu
         super.init(frame: .zero)
         controller.delegate = self
         controller.loadViewIfNeeded()
@@ -116,26 +119,11 @@ private final class NewSessionHost: NSView, NewSessionViewControllerDelegate {
             card.bottomAnchor.constraint(equalTo: controller.composerGuide.bottomAnchor),
         ])
 
-        if let menu {
-            // The folder's is an `NSMenu`, shown by its own rows; the branch's
-            // is a panel, for its filter.
-            let view: NSView
-            if menu == .folder {
-                let folder = SystemMenu()
-                folder.configure(with: NewSessionViewController.folderMenu(of: content))
-                menuOwner = folder
-                view = StaticMenuView(folder.menu)
-                menuSize = view.frame.size
-            } else {
-                let panel = MenuPanelViewController()
-                panel.configure(with: MenuFixtures.branch())
-                panel.loadViewIfNeeded()
-                menuOwner = panel
-                menuSize = panel.preferredSize
-                view = panel.view
-            }
-            let surface = ElevatedView.popover(holding: view)
-            menuSurface = surface
+        if let menu, let still = controller.menuStill(of: menu) {
+            let panel = MenuPanelViewController()
+            panel.configure(with: still.content)
+            let surface = PopoverSurface(holding: panel.view, size: panel.preferredSize, edge: .top)
+            openMenu = (panel, surface, still.chip)
             stage.addSubview(surface)
         }
     }
@@ -158,21 +146,12 @@ private final class NewSessionHost: NSView, NewSessionViewControllerDelegate {
         placeMenu()
     }
 
-    /// The menu under the chip that opens it, as the pop-up shows it.
+    /// The popover under the chip that opens it, its arrow on the chip's centre.
     private func placeMenu() {
-        guard let menuSurface, let menu = openMenu else { return }
-        let id = menu == .folder ? "newSession.folder" : "newSession.branch"
-        guard let chip = Self.find(id, in: controller.view) else { return }
-        let size = menuSize
-        let chipFrame = stage.convert(chip.bounds, from: chip)
-        // `stage` is not flipped: its y runs up, so under the chip is lower.
-        menuSurface.frame = NSRect(
-            x: chipFrame.minX, y: chipFrame.minY - 4 - size.height, width: size.width, height: size.height)
-    }
-
-    private static func find(_ identifier: String, in view: NSView) -> NSView? {
-        if view.accessibilityIdentifier() == identifier { return view }
-        return view.subviews.lazy.compactMap { find(identifier, in: $0) }.first
+        guard let openMenu else { return }
+        let chip = stage.convert(openMenu.chip.bounds, from: openMenu.chip)
+        openMenu.surface.frame = PopoverSurface.frame(
+            for: openMenu.panel.preferredSize, edge: .top, against: chip, flipped: stage.isFlipped)
     }
 
     // MARK: - The view's delegate

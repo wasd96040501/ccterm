@@ -9,10 +9,15 @@ public enum CornerRadius {
     public static let tag: CGFloat = 5
     /// Chips, tabs, the filter field, a question's option.
     public static let control: CGFloat = 7
-    /// A row inside a menu or a list: the control's less 2.
+    /// A row inside a list: the control's less 2.
     public static let row: CGFloat = control - 2
-    /// Menus, the model panel, the slash list.
+    /// The slash list, banners.
     public static let popover: CGFloat = 12
+    /// The system popover every menu opens in, as AppKit draws it on macOS 26
+    /// (measured): what a menu's rows and its filter are concentric with.
+    public static let systemPopover: CGFloat = 20
+    /// A menu row's fill, 10 in from the popover's edge: the popover's less 10.
+    public static let menuRow: CGFloat = systemPopover - 10
     /// The composer, the alert, cards.
     public static let card: CGFloat = 18
 }

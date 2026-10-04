@@ -198,8 +198,8 @@ public final class ComposerViewController: NSViewController {
     private func content(of control: ComposerView.Control, in model: ComposerPresentation) -> MenuContent {
         switch control {
         case .model: ComposerMenu.modelContent(of: model, expanded: expandedSections)
-        case .effort: ComposerMenu.content(of: model.effortMenu)
-        case .mode: ComposerMenu.content(of: model.modeMenu)
+        case .effort: ComposerMenu.content(of: model.effortMenu, width: ComposerMenu.effortWidth)
+        case .mode: ComposerMenu.content(of: model.modeMenu, width: ComposerMenu.modeWidth)
         }
     }
 
@@ -220,6 +220,13 @@ public final class ComposerViewController: NSViewController {
         openControl = control
         card.showMenu(
             of: control, content: content, in: popUpMenu, preferring: model.placement == .page ? .below : .above)
+    }
+
+    /// `control`'s menu as it opens and the chip it opens from, shown open:
+    /// for the style page, which draws it still in a popover of its own.
+    package func menuStill(of control: ComposerMenu.Control) -> (content: MenuContent, chip: NSView)? {
+        guard let model else { return nil }
+        return (content(of: control, in: model), card.showMenuStill(of: control))
     }
 
     private func menuChose(_ item: MenuContent.Item) {

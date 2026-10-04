@@ -18,11 +18,7 @@ import DisplayModels
 @MainActor
 final class ComposerView: NSView {
     /// The three pull-downs.
-    enum Control {
-        case model
-        case effort
-        case mode
-    }
+    typealias Control = ComposerMenu.Control
 
     weak var delegate: ComposerViewDelegate?
 
@@ -294,6 +290,14 @@ final class ComposerView: NSView {
     /// Shows `control`'s chip as open or closed.
     func setMenuOpen(_ isOpen: Bool, for control: Control) {
         chip(for: control).isOpen = isOpen
+    }
+
+    /// Shows `control`'s chip open and gives the view its menu points at,
+    /// for a menu drawn still.
+    func showMenuStill(of control: Control) -> NSView {
+        let chip = chip(for: control)
+        chip.isOpen = true
+        return chip
     }
 
     private func chip(for control: Control) -> ComposerChipButton {

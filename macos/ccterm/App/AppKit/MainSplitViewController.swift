@@ -125,9 +125,30 @@ final class MainSplitViewController: NSSplitViewController {
     }
 
     private static let areaCommands: Set<Selector> = [
-        #selector(EditorAreaViewController.goBack(_:)), #selector(EditorAreaViewController.goForward(_:)),
         #selector(EditorAreaViewController.closeTab(_:)), #selector(EditorAreaViewController.newTab(_:)),
     ]
+
+    // MARK: - Back and forward
+
+    /// Back through the active editor's history — the toolbar's back button
+    /// aims here, and ⌘[ reaches it from the sidebar.
+    @objc func goBack(_ sender: Any?) {
+        editorArea.goBack(sender)
+    }
+
+    /// Forward through the active editor's history.
+    @objc func goForward(_ sender: Any?) {
+        editorArea.goForward(sender)
+    }
+
+    /// Back and forward while the active editor has somewhere to go: the
+    /// editor area answers.
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        switch item.action {
+        case #selector(goBack(_:)), #selector(goForward(_:)): editorArea.validateUserInterfaceItem(item)
+        default: super.validateUserInterfaceItem(item)
+        }
+    }
 
     // MARK: - New tabs
 
@@ -189,6 +210,14 @@ final class MainSplitViewController: NSSplitViewController {
         editorArea.reloadIndicators()
     }
 
+}
+
+/// A toolbar item asks its target `validateToolbarItem(_:)` and nothing else,
+/// so it is passed to the switch menu items are asked.
+extension MainSplitViewController: NSToolbarItemValidation {
+    func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
+        validateUserInterfaceItem(item)
+    }
 }
 
 extension MainSplitViewController: TranscriptTabDelegate {

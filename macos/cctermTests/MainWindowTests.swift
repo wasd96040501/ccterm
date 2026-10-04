@@ -38,8 +38,8 @@ final class MainWindowTests: XCTestCase {
         XCTAssertTrue(navigation.isNavigational)
         XCTAssertEqual(
             navigation.subitems.map(\.action),
-            [#selector(EditorAreaViewController.goBack(_:)), #selector(EditorAreaViewController.goForward(_:))])
-        XCTAssertTrue(navigation.subitems.allSatisfy { $0.target === stage.mainSplit?.editorArea })
+            [#selector(MainSplitViewController.goBack(_:)), #selector(MainSplitViewController.goForward(_:))])
+        XCTAssertTrue(navigation.subitems.allSatisfy { $0.target === stage.mainSplit })
         XCTAssertFalse(toolbar.items[2].isBordered, "the title sits in a bezel")
     }
 

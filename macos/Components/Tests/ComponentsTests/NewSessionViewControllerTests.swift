@@ -210,7 +210,7 @@ private final class Delegate: NewSessionViewControllerDelegate {
 
     func newSessionViewController(
         _ newSessionViewController: NewSessionViewController, branchMenuMatching query: String
-    ) -> MenuContent? {
+    ) -> NewSessionBranchMenu? {
         queries.append(query)
         return nil
     }

@@ -3,7 +3,7 @@ import Foundation
 
 extension NewSessionContent {
     /// What the New view shows of `model`: the branch list stays here, asked
-    /// for by the view through `NewSessionMenu`.
+    /// for by the view, and worded by `NewSessionMenu`.
     init(_ model: NewSessionModel) {
         self.init(
             folderTitle: model.folderTitle, folderPath: model.folderPath,

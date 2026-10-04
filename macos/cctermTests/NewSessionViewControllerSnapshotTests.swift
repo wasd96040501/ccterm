@@ -211,7 +211,7 @@ final class NewSessionViewControllerSnapshotTests: XCTestCase {
         }()
         var sheets: [NSImage] = []
         for query in ["", "#327"] {
-            let content = NewSessionMenu.branchContent(of: list, query: query)
+            let content = NewSessionMenu.branchMenu(of: list, query: query).menuContent
             let probe = MenuPanelViewController()
             probe.configure(with: content)
             sheets.append(

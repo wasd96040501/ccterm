@@ -86,6 +86,7 @@
 
 /* The New view */
 "Choose Folder…" = "选择文件夹…";
+"Filter" = "筛选";
 "Branch" = "分支";
 "Worktree" = "工作树";
 "Work in a new git worktree (--worktree), leaving this folder as it is" = "在新的 git 工作树 (--worktree) 中工作，保持此文件夹不变";

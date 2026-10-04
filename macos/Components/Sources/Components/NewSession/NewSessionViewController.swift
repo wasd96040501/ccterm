@@ -319,7 +319,7 @@ public final class NewSessionViewController: NSViewController {
         guard let content else { return nil }
         if chip === folderChip { return Self.folderMenu(of: content) }
         if chip === branchChip, case .repository = content.branchRow {
-            return delegate?.newSessionViewController(self, branchMenuMatching: branchQuery)
+            return delegate?.newSessionViewController(self, branchMenuMatching: branchQuery).map(Self.branchMenu)
         }
         return nil
     }
@@ -354,6 +354,27 @@ public final class NewSessionViewController: NSViewController {
                     id: FolderChoice.chooseFolder, title: String(localized: "Choose Folder…", bundle: .module),
                     trailing: .key("⌘O"))))
         return MenuContent(rows: rows)
+    }
+
+    /// The branch's menu (design 08 *The New view*): a panel with a filter
+    /// field over the groups the app lists; a note is a disabled item.
+    package static func branchMenu(of menu: NewSessionBranchMenu) -> MenuContent {
+        let rows: [MenuContent.Row] = menu.rows.map { row in
+            switch row {
+            case .header(let words):
+                .header(.title(words))
+            case .item(let item):
+                .item(
+                    MenuContent.Item(
+                        id: item.id, title: item.title, subtitle: item.subtitle, isChecked: item.isChecked,
+                        isEnabled: item.isEnabled, toolTip: item.toolTip))
+            case .note(let words):
+                .item(MenuContent.Item(id: words, title: words, isEnabled: false))
+            }
+        }
+        return MenuContent(
+            rows: rows,
+            filter: MenuContent.Filter(placeholder: String(localized: "Filter", bundle: .module), text: menu.query))
     }
 
     /// Opens `chip`'s menu under it, or closes it when it is the one open.

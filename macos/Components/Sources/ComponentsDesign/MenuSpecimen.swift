@@ -94,12 +94,18 @@ enum MenuFixtures {
 
     static var folder: MenuContent { NewSessionViewController.folderMenu(of: NewSessionSpecimen.State.rest.content) }
 
-    /// The branch picker, its list narrowed to the names holding `query`.
+    /// The branch picker, its list narrowed to the names holding `query`, as
+    /// the New view draws it.
     static func branch(query: String = "") -> MenuContent {
-        func rows(_ names: [(String, String?, Bool)], chosen: String = "main") -> [MenuContent.Row] {
+        NewSessionViewController.branchMenu(of: branchMenu(query: query))
+    }
+
+    /// What the app lists for the branch picker: its branches holding `query`.
+    static func branchMenu(query: String = "") -> NewSessionBranchMenu {
+        func rows(_ names: [(String, String?, Bool)], chosen: String = "main") -> [NewSessionBranchMenu.Row] {
             names.filter { query.isEmpty || $0.0.localizedCaseInsensitiveContains(query) }.map {
                 .item(
-                    MenuContent.Item(
+                    NewSessionBranchMenu.Item(
                         id: $0.0, title: $0.0, subtitle: $0.1, isChecked: $0.0 == chosen, isEnabled: $0.2,
                         toolTip: $0.0))
             }
@@ -109,10 +115,10 @@ enum MenuFixtures {
             ("fix-gutter-overflow", nil, true), ("exactlist-bench", nil, true), ("settings-accounts", nil, true),
         ])
         let remote = rows([("origin/release/1.4", nil, true), ("origin/sidebar-icons", nil, true)])
-        var all: [MenuContent.Row] = []
-        if !local.isEmpty { all += [.header(.title("Local"))] + local }
-        if !remote.isEmpty { all += [.header(.title("Remote"))] + remote }
-        return MenuContent(rows: all, filter: MenuContent.Filter(placeholder: "Filter", text: query))
+        var all: [NewSessionBranchMenu.Row] = []
+        if !local.isEmpty { all += [.header("Local")] + local }
+        if !remote.isEmpty { all += [.header("Remote")] + remote }
+        return NewSessionBranchMenu(rows: all, query: query)
     }
 
     static var model: MenuContent { ComposerMenu.modelContent(of: composer, expanded: []) }

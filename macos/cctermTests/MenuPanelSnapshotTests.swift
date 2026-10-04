@@ -33,7 +33,7 @@ final class MenuPanelSnapshotTests: XCTestCase {
     }
 
     private func content(of menu: String) -> MenuContent {
-        NewSessionMenu.branchContent(of: branches(), query: "")
+        NewSessionMenu.branchMenu(of: branches(), query: "").menuContent
     }
 
     func testEveryMenuAgainstTheDesign() async throws {

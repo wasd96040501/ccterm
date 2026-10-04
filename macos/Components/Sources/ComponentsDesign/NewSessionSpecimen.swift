@@ -128,7 +128,7 @@ private final class NewSessionHost: NSView, NewSessionViewControllerDelegate {
                 menuSize = view.frame.size
             } else {
                 let panel = MenuPanelViewController()
-                panel.configure(with: branchMenu())
+                panel.configure(with: MenuFixtures.branch())
                 panel.loadViewIfNeeded()
                 menuOwner = panel
                 menuSize = panel.preferredSize
@@ -192,8 +192,8 @@ private final class NewSessionHost: NSView, NewSessionViewControllerDelegate {
 
     func newSessionViewController(
         _ newSessionViewController: NewSessionViewController, branchMenuMatching query: String
-    ) -> MenuContent? {
-        branchMenu(query: query)
+    ) -> NewSessionBranchMenu? {
+        MenuFixtures.branchMenu(query: query)
     }
 
     func newSessionViewController(
@@ -203,8 +203,6 @@ private final class NewSessionHost: NSView, NewSessionViewControllerDelegate {
         content.branchRow = .repository(branchTitle: name, usesWorktree: on)
         controller.configure(with: content)
     }
-
-    private func branchMenu(query: String = "") -> MenuContent { MenuFixtures.branch(query: query) }
 }
 
 /// What stands for the composer: the window's colour in a hairline, 18-pt

@@ -140,8 +140,8 @@ extension PlaygroundTab: NewSessionViewControllerDelegate {
 
     func newSessionViewController(
         _ newSessionViewController: NewSessionViewController, branchMenuMatching query: String
-    ) -> MenuContent? {
-        MenuFixtures.branch(query: query)
+    ) -> NewSessionBranchMenu? {
+        MenuFixtures.branchMenu(query: query)
     }
 
     func newSessionViewController(

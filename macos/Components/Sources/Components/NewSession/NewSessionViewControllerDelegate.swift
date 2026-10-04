@@ -1,4 +1,5 @@
-import AppKit
+import DisplayModels
+import Foundation
 
 /// What the New view reports: choices about where Claude works, and the one
 /// thing it asks — the branch menu's rows, which its owner filters. The
@@ -9,12 +10,12 @@ public protocol NewSessionViewControllerDelegate: AnyObject {
     func newSessionViewController(_ newSessionViewController: NewSessionViewController, didChooseFolder url: URL)
     /// The Worktree toggle.
     func newSessionViewControllerDidToggleWorktree(_ newSessionViewController: NewSessionViewController)
-    /// The branch menu's rows for what is typed in its filter, asked each
-    /// time the menu opens, the filter changes or the view is shown anew;
-    /// `nil` when there is no branch to choose.
+    /// The branch menu for what is typed in its filter, asked each time the
+    /// menu opens, the filter changes or the view is shown anew; `nil` when
+    /// there is no branch to choose.
     func newSessionViewController(
         _ newSessionViewController: NewSessionViewController, branchMenuMatching query: String
-    ) -> MenuContent?
+    ) -> NewSessionBranchMenu?
     /// An item of that menu, by the `id` it was given.
     func newSessionViewController(
         _ newSessionViewController: NewSessionViewController, didChooseBranchItem id: AnyHashable)

@@ -1511,16 +1511,6 @@
         }
       }
     },
-    "Filter": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "筛选"
-          }
-        }
-      }
-    },
     "Folder doesn’t exist": {
       "localizations": {
         "zh-Hans": {

@@ -769,11 +769,11 @@ extension SessionTabViewController: NewSessionViewControllerDelegate {
 
     func newSessionViewController(
         _ newSessionViewController: NewSessionViewController, branchMenuMatching query: String
-    ) -> MenuContent? {
+    ) -> NewSessionBranchMenu? {
         guard let draft, case .repository(_, _, let branches) = newSessionModel(of: draft).branchRow else {
             return nil
         }
-        return NewSessionMenu.branchContent(of: branches, query: query)
+        return NewSessionMenu.branchMenu(of: branches, query: query)
     }
 
     func newSessionViewController(

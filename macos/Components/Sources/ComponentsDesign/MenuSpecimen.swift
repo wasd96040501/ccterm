@@ -21,42 +21,52 @@ enum MenuSpecimen {
                     "Menus — Effort, Permission mode, Folder"),
                 MenuRow([MenuFixtures.branch(), MenuFixtures.model]).specimen(
                     "Panels — Branch with its filter, Model with Fast Mode under the scroll"),
+                LiveMenus([
+                    ("Effort", MenuFixtures.effort), ("Permission Mode", MenuFixtures.mode),
+                    ("Folder", MenuFixtures.folder),
+                ]).specimen("The menus, live — click one to open it"),
             ])
     }
 }
 
-/// Menus side by side, each at its own size, top-aligned in a plain card.
+/// Menus side by side, each at its own size, top-aligned in a plain card: a
+/// panel as the panel draws it, a menu as its `NSMenu` does (`StaticMenuView`).
 final class MenuRow: NSView {
-    private let controllers: [MenuPanelViewController]
+    /// What draws each: a panel's controller or a menu's `SystemMenu`.
+    private let owners: [AnyObject]
     /// The row's size: its menus at their own sizes, 24 apart and from the edges.
     let size: NSSize
 
     init(_ contents: [MenuContent]) {
-        controllers = contents.map {
-            let controller = MenuPanelViewController()
-            controller.configure(with: $0)
-            return controller
+        var owners: [AnyObject] = []
+        var views: [(NSView, NSSize)] = []
+        for content in contents {
+            if content.isPanel {
+                let controller = MenuPanelViewController()
+                controller.configure(with: content)
+                owners.append(controller)
+                views.append((controller.view, controller.preferredSize))
+            } else {
+                let menu = SystemMenu()
+                menu.configure(with: content)
+                owners.append(menu)
+                let view = StaticMenuView(menu.menu)
+                views.append((view, view.frame.size))
+            }
         }
-        var width: CGFloat = 24
-        var height: CGFloat = 0
-        for controller in controllers {
-            width += controller.preferredSize.width + 24
-            height = max(height, controller.preferredSize.height)
-        }
-        size = NSSize(width: width, height: height + 40)
+        self.owners = owners
+        size = NSSize(
+            width: views.reduce(24) { $0 + $1.1.width + 24 }, height: (views.map(\.1.height).max() ?? 0) + 40)
         super.init(frame: .zero)
         // Placed by frame, as a window places its content view.
         var x: CGFloat = 24
-        var tallest: CGFloat = 0
-        for controller in controllers {
-            let size = controller.preferredSize
-            let surface = ElevatedView.popover(holding: controller.view)
+        for (view, size) in views {
+            let surface = ElevatedView.popover(holding: view)
             surface.frame = NSRect(origin: NSPoint(x: x, y: 20), size: size)
             addSubview(surface)
             x += size.width + 24
-            tallest = max(tallest, size.height)
         }
-        heightAnchor.constraint(equalToConstant: tallest + 40).isActive = true
+        heightAnchor.constraint(equalToConstant: size.height).isActive = true
     }
 
     /// This row as a specimen at its own size.
@@ -106,4 +116,46 @@ enum MenuFixtures {
     }
 
     static var model: MenuContent { ComposerMenu.modelContent(of: composer, expanded: []) }
+}
+
+/// A button per menu that pops its real `NSMenu` under it, for hands: the
+/// system's tracking, keys and chrome around the design's rows.
+private final class LiveMenus: NSView {
+    private let menus: [SystemMenu]
+    private let buttons: [PillButton]
+
+    init(_ entries: [(String, MenuContent)]) {
+        menus = entries.map { _, content in
+            let menu = SystemMenu()
+            menu.configure(with: content)
+            return menu
+        }
+        buttons = entries.map { title, _ in PillButton(title: title) }
+        super.init(frame: .zero)
+        let stack = NSStackView(views: buttons)
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            heightAnchor.constraint(equalToConstant: 64),
+        ])
+        for button in buttons {
+            button.target = self
+            button.action = #selector(open(_:))
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+    func specimen(_ title: String) -> DesignPageViewController.Specimen {
+        .init(title: title, view: self, height: 64)
+    }
+
+    @objc private func open(_ sender: PillButton) {
+        guard let index = buttons.firstIndex(of: sender) else { return }
+        menus[index].popUp(from: sender, on: .below, gap: 4, leadingOffset: -4)
+    }
 }

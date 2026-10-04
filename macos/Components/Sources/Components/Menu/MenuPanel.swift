@@ -1,10 +1,17 @@
 import AppKit
 
-/// Puts a `MenuPanelViewController` on screen against the control that opens
-/// it (design 08, `MENU.place`): 4 pt from the control, its leading edge 4 pt
-/// before the control's, on the preferred side if it fits, else the other,
-/// else the roomier one with the list shortened to fit (never under 120 pt).
-/// It takes the keyboard and closes when it loses it — a click elsewhere.
+/// Puts a pop-up on screen against the control that opens it (design 08,
+/// `MENU.place`): 4 pt from the control, its leading edge 4 pt before the
+/// control's, on the preferred side if it fits, else the other.
+///
+/// What it is follows the design's tree: a menu (`.lv-menu` — Effort,
+/// Permission Mode, the folder) is a real `NSMenu` (`SystemMenu`), the
+/// system's tracking, keys and chrome with the design's rows; a panel
+/// (`.lv-menu.panel` — the branch picker's filter, the model list's sticky
+/// heads, its 360-pt scroll and the Fast Mode under it, none of which a menu
+/// has) is `MenuPanelViewController` in a `MenuPopup`, its list shortened to
+/// fit the roomier side (never under 120 pt), taking the keyboard and closing
+/// when it loses it. Both draw the same rows.
 ///
 /// Choosing an item closes it first and then reports, unless the item keeps
 /// the menu open (a switch, *N More Models*): then the owner calls `update`
@@ -22,6 +29,12 @@ public final class MenuPanel: NSObject {
     static let minimumListHeight: CGFloat = 120
 
     private let controller = MenuPanelViewController()
+    private lazy var systemMenu: SystemMenu = {
+        let menu = SystemMenu()
+        menu.onChoose = { [weak self] item in self?.onChoose?(item) }
+        menu.onClose = { [weak self] in self?.onClose?() }
+        return menu
+    }()
     private lazy var popup: MenuPopup = {
         let popup = MenuPopup(contentViewController: controller, takesKey: true, gap: 4, leadingOffset: -4)
         popup.onClose = { [weak self] in self?.onClose?() }
@@ -33,11 +46,17 @@ public final class MenuPanel: NSObject {
         controller.delegate = self
     }
 
-    public var isShown: Bool { popup.isShown }
+    public var isShown: Bool { popup.isShown || systemMenu.isShown }
 
-    /// Opens `content` against `control`, on `preferred` side if it fits.
+    /// Opens `content` against `control`, on `preferred` side if it fits. A
+    /// menu returns once it has closed, as `NSMenu` does; a panel at once.
     public func show(_ content: MenuContent, from control: NSView, preferring preferred: MenuPopup.Side) {
         guard let window = control.window else { return }
+        guard content.isPanel else {
+            systemMenu.configure(with: content)
+            systemMenu.popUp(from: control, on: preferred, gap: 4, leadingOffset: -4)
+            return
+        }
         controller.limitList(to: .greatestFiniteMagnitude)
         controller.configure(with: content)
         let anchor = window.convertToScreen(control.convert(control.bounds, to: nil))
@@ -56,6 +75,10 @@ public final class MenuPanel: NSObject {
 
     /// Shows new content in the open menu, keeping its edge on the control.
     public func update(_ content: MenuContent) {
+        if systemMenu.isShown {
+            systemMenu.configure(with: content)
+            return
+        }
         controller.configure(with: content)
         guard popup.isShown else { return }
         popup.resize(to: controller.preferredSize)
@@ -63,6 +86,7 @@ public final class MenuPanel: NSObject {
 
     public func close() {
         popup.close()
+        systemMenu.close()
     }
 }
 

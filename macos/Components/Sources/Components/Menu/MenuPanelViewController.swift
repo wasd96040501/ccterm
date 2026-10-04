@@ -25,12 +25,8 @@ import AppKit
 public final class MenuPanelViewController: NSViewController {
     weak var delegate: MenuPanelViewControllerDelegate?
 
-    /// A panel's width (`.lv-menu.panel`).
-    static let panelWidth: CGFloat = 300
     /// A panel's list scrolls past this (`.mscroll`).
     static let maxListHeight: CGFloat = 360
-    /// A menu's width, from its widest row (`.lv-menu`'s min- and max-width).
-    static let menuWidths: ClosedRange<CGFloat> = 240...340
 
     private(set) var content = MenuContent(rows: [])
     /// The width the content asks for.
@@ -169,7 +165,7 @@ public final class MenuPanelViewController: NSViewController {
     private func apply() {
         let selected = selectedItemID
         let offset = scrollView.contentView.bounds.origin
-        width = Self.width(of: content)
+        width = MenuMetrics.width(of: content)
         viewWidth.constant = width
         let hasFilter = content.filter != nil
         filterField.isHidden = !hasFilter
@@ -245,15 +241,6 @@ public final class MenuPanelViewController: NSViewController {
         let before = listHeight.constant
         listHeight.constant = shownListHeight
         if before != listHeight.constant { delegate?.menuPanelViewControllerDidChangeSize(self) }
-    }
-
-    /// The width `content` asks for: a panel's fixed width, or a menu's
-    /// widest row within its range.
-    static func width(of content: MenuContent) -> CGFloat {
-        if content.isPanel { return panelWidth }
-        let widest =
-            (content.rows + content.footer).map { MenuMetrics.naturalWidth(of: $0, content: content) }.max() ?? 0
-        return min(max(ceil(widest), menuWidths.lowerBound), menuWidths.upperBound)
     }
 
     /// Scrolls the checked item into view under its head: a menu opens on
@@ -466,159 +453,6 @@ extension MenuPanelViewController: NSTextFieldDelegate {
     }
 }
 
-// MARK: - Metrics
-
-/// The design's numbers for a menu (`.lv-menu`, `.mi`, `.mh`, `.msep`), as
-/// measured on the sheet: x is from the menu's leading edge.
-enum MenuMetrics {
-    /// The menu's padding, and a row's inset within it (`.lv-menu` 5).
-    static let inset: CGFloat = 5
-    /// A check's leading edge: the inset and the row's 6 (`.mi` padding).
-    static let checkX: CGFloat = 11
-    /// A 10-pt check in its 14-pt column.
-    static let checkSize: CGFloat = 10
-    /// The glyph column, after the check's 14 and a 4 gap; 20 wide, its glyph 16.
-    static let glyphX: CGFloat = 29
-    static let glyphSize: CGFloat = 16
-    /// The words: after the glyph column's 20 and a 4 gap — or where the
-    /// glyph column would start, when no item has a glyph (`.mi.nog`).
-    static let wordsX: CGFloat = 53
-    static let wordsXWithoutGlyphs: CGFloat = 29
-    /// From the menu's trailing edge to a row's trailing words, glyph or switch:
-    /// the inset and the row's 10.
-    static let trailingInset: CGFloat = 15
-    /// The grid's gap before the trailing column, there even when it is empty
-    /// (`.mi` column-gap).
-    static let columnGap: CGFloat = 4
-    /// Before a key or a trailing glyph (`.mi .k` padding-left), and before a switch.
-    static let keyGap: CGFloat = 16
-    static let switchGap: CGFloat = 12
-    /// A row's padding above and below its words.
-    static let rowPadding: CGFloat = 3
-
-    static let titleFont = NSFont.systemFont(ofSize: 13)
-    static let subtitleFont = NSFont.systemFont(ofSize: 11)
-    static let keyFont = NSFont.systemFont(ofSize: 12)
-    static let headerFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
-    static let hintFont = NSFont.systemFont(ofSize: 11)
-
-    /// The sheet's 1.45 line: 13-pt words on an 18.85-pt line.
-    static let titleLine: CGFloat = 13 * 1.45
-    /// A subtitle's 14-pt lines and the 1 under them.
-    static let subtitleLine: CGFloat = 14
-    static let subtitleBottom: CGFloat = 1
-    /// An 11-pt head on its 15.95-pt line, 4 above and 2 under (`.mh`).
-    static let headerLine: CGFloat = 11 * 1.45
-    static let headerTop: CGFloat = 4
-    static let headerBottom: CGFloat = 2
-    /// An account's head: 8 above, 4 under, its mark 14 at 11, words at 31 (`.mh.acct`).
-    static let accountTop: CGFloat = 8
-    static let accountBottom: CGFloat = 4
-    static let accountMarkX: CGFloat = 11
-    static let accountMarkSize: CGFloat = 14
-    static let accountWordsX: CGFloat = 31
-    /// The hairline's 5 above and under, 15 in from either side (`.msep`).
-    static let separatorHeight: CGFloat = 10.5
-
-    /// Where `font`'s baseline sits on a line `height` tall, from its top:
-    /// the half-leading above, then the ascent — the browser's placement.
-    static func baseline(of font: NSFont, onLine height: CGFloat) -> CGFloat {
-        (height - (font.ascender - font.descender)) / 2 + font.ascender
-    }
-
-    static func accountHeight(note: String?) -> CGFloat {
-        accountTop + headerLine + (note == nil ? 0 : headerLine) + accountBottom
-    }
-
-    static func wordsX(glyphColumn: Bool) -> CGFloat { glyphColumn ? wordsX : wordsXWithoutGlyphs }
-
-    /// The width the trailing column takes after the words, with the grid's
-    /// gap before it and its own padding.
-    static func trailingWidth(of trailing: MenuContent.Trailing) -> CGFloat {
-        switch trailing {
-        case .none: columnGap
-        case .key(let words): columnGap + keyGap + ceil(width(of: words, font: keyFont))
-        case .glyph: columnGap + keyGap + 14
-        case .toggle: columnGap + switchGap + MenuSwitchMetrics.size.width
-        }
-    }
-
-    /// Where an item's subtitle may run: from the words' column to its trailing accessory.
-    static func subtitleWidth(of item: MenuContent.Item, menuWidth: CGFloat, glyphColumn: Bool) -> CGFloat {
-        menuWidth - trailingInset - trailingWidth(of: item.trailing) - wordsX(glyphColumn: glyphColumn)
-    }
-
-    /// The subtitle in its 14-pt lines.
-    static func subtitle(_ words: String, color: NSColor) -> NSAttributedString {
-        let lines = NSMutableParagraphStyle()
-        lines.minimumLineHeight = subtitleLine
-        lines.maximumLineHeight = subtitleLine
-        return NSAttributedString(
-            string: words, attributes: [.font: subtitleFont, .foregroundColor: color, .paragraphStyle: lines])
-    }
-
-    static func subtitleLines(_ words: String, width: CGFloat) -> Int {
-        let rect = subtitle(words, color: .labelColor).boundingRect(
-            with: NSSize(width: max(width, 1), height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading])
-        return max(1, Int((rect.height / subtitleLine).rounded()))
-    }
-
-    static func height(of row: MenuContent.Row, width: CGFloat, content: MenuContent) -> CGFloat {
-        switch row {
-        case .separator:
-            return separatorHeight
-        case .header(.title):
-            return headerTop + headerLine + headerBottom
-        case .header(.account(_, _, _, let note)):
-            return accountHeight(note: note)
-        case .item(let item):
-            var height = rowPadding + titleLine + rowPadding
-            if let subtitle = item.subtitle {
-                let lines = subtitleLines(
-                    subtitle, width: subtitleWidth(of: item, menuWidth: width, glyphColumn: content.hasGlyphColumn))
-                height += CGFloat(lines) * subtitleLine + subtitleBottom
-            }
-            return height
-        }
-    }
-
-    /// The menu width a row needs to set its words on one line.
-    static func naturalWidth(of row: MenuContent.Row, content: MenuContent) -> CGFloat {
-        switch row {
-        case .separator:
-            return 0
-        case .header(.title(let title, let hint)):
-            let hinted = hint.map { 12 + width(of: $0, font: hintFont) } ?? 0
-            return inset + 24 + width(of: title, font: headerFont) + hinted + 10 + inset
-        case .header(.account(_, let name, let detail, let note)):
-            let line = accountWordsX + width(of: name, font: headerFont) + 6 + width(of: detail, font: hintFont)
-            let under = accountWordsX + (note.map { width(of: $0, font: hintFont) } ?? 0)
-            return max(line, under) + 10
-        case .item(let item):
-            let words = max(
-                width(of: item.title, font: titleFont), item.subtitle.map { width(of: $0, font: subtitleFont) } ?? 0)
-            return wordsX(glyphColumn: content.hasGlyphColumn) + words + trailingWidth(of: item.trailing)
-                + trailingInset
-        }
-    }
-
-    static func width(of words: String, font: NSFont) -> CGFloat {
-        (words as NSString).size(withAttributes: [.font: font]).width
-    }
-}
-
-/// The small switch at a setting's trailing edge (`.nsw`: 26 × 15).
-enum MenuSwitchMetrics {
-    static var size: NSSize {
-        let toggle = NSSwitch()
-        toggle.controlSize = .mini
-        return toggle.intrinsicContentSize
-    }
-}
-
-// MARK: - The list
-
 /// The list: the pointer selects what can be chosen, a release over the row
 /// it was pressed on chooses it, ↩ chooses, ⎋ cancels.
 private final class MenuTableView: NSTableView {
@@ -737,198 +571,6 @@ private final class MenuRowView: NSTableRowView {
     }
 }
 
-/// An item (`.mi`): the check, the glyph, the title with its subtitle under,
-/// and the trailing key, glyph or switch. White on the accent while selected,
-/// its quieter parts at 85 %; all tertiary while disabled.
-final class MenuItemCell: NSTableCellView {
-    var onToggle: ((Bool) -> Void)?
-
-    private let check = NSImageView()
-    private let glyph = NSImageView()
-    private let titleLabel = NSTextField(labelWithString: "")
-    private let subtitleLabel = NSTextField(wrappingLabelWithString: "")
-    private let key = NSTextField(labelWithString: "")
-    private let trailingGlyph = NSImageView()
-    private let toggle = NSSwitch()
-
-    private var item: MenuContent.Item?
-    private var glyphColumn = true
-    private lazy var titleLeading = titleLabel.leadingAnchor.constraint(
-        equalTo: leadingAnchor, constant: MenuMetrics.wordsX)
-    private lazy var subtitleWidth = subtitleLabel.widthAnchor.constraint(equalToConstant: 0)
-
-    override var backgroundStyle: NSView.BackgroundStyle {
-        didSet { updateColors() }
-    }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        check.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 10, weight: .bold))
-        check.imageScaling = .scaleNone
-        glyph.imageScaling = .scaleProportionallyDown
-        trailingGlyph.imageScaling = .scaleProportionallyDown
-        titleLabel.font = MenuMetrics.titleFont
-        titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        subtitleLabel.isSelectable = false
-        subtitleLabel.maximumNumberOfLines = 0
-        key.font = MenuMetrics.keyFont
-        key.lineBreakMode = .byTruncatingHead
-        toggle.controlSize = .mini
-        toggle.target = self
-        toggle.action = #selector(toggled)
-        for view in [check, glyph, titleLabel, subtitleLabel, key, trailingGlyph, toggle] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(view)
-        }
-        let titleLineMiddle = MenuMetrics.rowPadding + MenuMetrics.titleLine / 2
-        NSLayoutConstraint.activate([
-            check.centerXAnchor.constraint(
-                equalTo: leadingAnchor, constant: MenuMetrics.checkX + MenuMetrics.checkSize / 2),
-            check.centerYAnchor.constraint(equalTo: topAnchor, constant: titleLineMiddle),
-            glyph.leadingAnchor.constraint(equalTo: leadingAnchor, constant: MenuMetrics.glyphX),
-            glyph.widthAnchor.constraint(equalToConstant: MenuMetrics.glyphSize),
-            glyph.heightAnchor.constraint(equalToConstant: MenuMetrics.glyphSize),
-            glyph.centerYAnchor.constraint(equalTo: topAnchor, constant: titleLineMiddle),
-            titleLeading,
-            titleLabel.firstBaselineAnchor.constraint(
-                equalTo: topAnchor,
-                constant: MenuMetrics.rowPadding
-                    + MenuMetrics.baseline(of: MenuMetrics.titleFont, onLine: MenuMetrics.titleLine)),
-            titleLabel.trailingAnchor.constraint(
-                lessThanOrEqualTo: trailingAnchor, constant: -MenuMetrics.trailingInset),
-            subtitleLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            subtitleLabel.topAnchor.constraint(
-                equalTo: topAnchor, constant: MenuMetrics.rowPadding + MenuMetrics.titleLine),
-            subtitleWidth,
-            key.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -MenuMetrics.trailingInset),
-            key.firstBaselineAnchor.constraint(equalTo: titleLabel.firstBaselineAnchor),
-            key.leadingAnchor.constraint(
-                greaterThanOrEqualTo: titleLabel.trailingAnchor, constant: MenuMetrics.keyGap),
-            trailingGlyph.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -MenuMetrics.trailingInset),
-            trailingGlyph.widthAnchor.constraint(equalToConstant: 14),
-            trailingGlyph.heightAnchor.constraint(equalToConstant: 14),
-            trailingGlyph.centerYAnchor.constraint(equalTo: topAnchor, constant: titleLineMiddle),
-            // A switch spans the title and the subtitle (`.mi.tg .k`).
-            toggle.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -MenuMetrics.trailingInset),
-            toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
-
-    func configure(_ item: MenuContent.Item, glyphColumn: Bool) {
-        self.item = item
-        self.glyphColumn = glyphColumn
-        titleLabel.stringValue = item.title
-        titleLeading.constant = MenuMetrics.wordsX(glyphColumn: glyphColumn)
-        check.isHidden = !item.isChecked
-        glyph.image = item.glyph
-        glyph.isHidden = item.glyph == nil
-        subtitleLabel.isHidden = item.subtitle == nil
-        key.isHidden = true
-        trailingGlyph.isHidden = true
-        toggle.isHidden = true
-        switch item.trailing {
-        case .none: break
-        case .key(let words):
-            key.stringValue = words
-            key.isHidden = false
-        case .glyph(let image):
-            trailingGlyph.image = image
-            trailingGlyph.isHidden = false
-        case .toggle(let isOn):
-            toggle.state = isOn ? .on : .off
-            toggle.isEnabled = item.isEnabled
-            toggle.isHidden = false
-        }
-        toolTip = item.toolTip
-        setAccessibilityLabel([item.title, item.subtitle].compactMap { $0 }.joined(separator: ", "))
-        setAccessibilityValue(item.isChecked ? 1 : 0)
-        needsLayout = true
-        updateColors()
-    }
-
-    override func layout() {
-        if let item {
-            subtitleWidth.constant = max(
-                0, MenuMetrics.subtitleWidth(of: item, menuWidth: bounds.width, glyphColumn: glyphColumn))
-            subtitleLabel.preferredMaxLayoutWidth = subtitleWidth.constant
-        }
-        super.layout()
-    }
-
-    private func updateColors() {
-        guard let item else { return }
-        let selected = backgroundStyle == .emphasized
-        let quiet = NSColor.white.withAlphaComponent(0.85)
-        let title: NSColor
-        let secondary: NSColor
-        if !item.isEnabled {
-            title = .tertiaryLabelColor
-            secondary = .tertiaryLabelColor
-        } else if selected {
-            title = .white
-            secondary = quiet
-        } else {
-            title = item.isDanger ? .failureText : item.isMore ? .controlAccentColor : .labelColor
-            secondary = .secondaryLabelColor
-        }
-        titleLabel.textColor = title
-        check.contentTintColor = title
-        glyph.contentTintColor = item.isEnabled && item.isDanger && !selected ? .failureText : secondary
-        subtitleLabel.attributedStringValue = MenuMetrics.subtitle(item.subtitle ?? "", color: secondary)
-        key.textColor = selected && item.isEnabled ? quiet : .tertiaryLabelColor
-        trailingGlyph.contentTintColor = selected && item.isEnabled ? quiet : .tertiaryLabelColor
-    }
-
-    @objc private func toggled() {
-        onToggle?(toggle.state == .on)
-    }
-}
-
-/// A section's head (`.mh`): 11-pt semibold tertiary words over the items'
-/// glyph column, a key hint at the trailing edge.
-private final class MenuTitleCell: NSTableCellView {
-    private let title = NSTextField(labelWithString: "")
-    private let hint = NSTextField(labelWithString: "")
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        title.font = MenuMetrics.headerFont
-        title.textColor = .tertiaryLabelColor
-        title.lineBreakMode = .byTruncatingTail
-        title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        hint.font = MenuMetrics.hintFont
-        hint.textColor = .tertiaryLabelColor
-        for view in [title, hint] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(view)
-        }
-        let baseline =
-            MenuMetrics.headerTop + MenuMetrics.baseline(of: MenuMetrics.headerFont, onLine: MenuMetrics.headerLine)
-        NSLayoutConstraint.activate([
-            title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: MenuMetrics.inset + 24),
-            title.firstBaselineAnchor.constraint(equalTo: topAnchor, constant: baseline),
-            hint.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -MenuMetrics.trailingInset),
-            hint.firstBaselineAnchor.constraint(equalTo: title.firstBaselineAnchor),
-            hint.leadingAnchor.constraint(greaterThanOrEqualTo: title.trailingAnchor, constant: 12),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
-
-    func configure(_ words: String, hint: String?) {
-        title.stringValue = words
-        self.hint.stringValue = hint ?? ""
-        self.hint.isHidden = hint == nil
-        setAccessibilityLabel(words)
-    }
-}
-
 /// An account's head (`.mh.acct`): its 14-pt mark, its name in semibold
 /// secondary, its detail in tertiary after it, and a note on a line under
 /// (*Restarts the session*). The menu's material under it covers the items
@@ -992,26 +634,6 @@ private final class MenuAccountCell: NSTableCellView {
         noteLabel.isHidden = note == nil
         setAccessibilityLabel([name, detail, note].compactMap { $0 }.joined(separator: " "))
     }
-}
-
-/// A hairline between groups (`.msep`): 5 above and under, 15 in from either side.
-private final class MenuSeparatorCell: NSTableCellView {
-    private let line = MenuHairline()
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        line.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(line)
-        NSLayoutConstraint.activate([
-            line.leadingAnchor.constraint(equalTo: leadingAnchor, constant: MenuMetrics.trailingInset),
-            line.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -MenuMetrics.trailingInset),
-            line.centerYAnchor.constraint(equalTo: centerYAnchor),
-            line.heightAnchor.constraint(equalToConstant: 0.5),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 }
 
 /// A row under the scroll (`.mfoot`): an item that tracks the pointer itself —
@@ -1097,37 +719,5 @@ private final class MenuFooterRow: NSView {
                 isHovered ? (isQuiet ? NSColor.quaternarySystemFill : NSColor.controlAccentColor).cgColor : nil
         }
         cell.backgroundStyle = isHovered && !isQuiet ? .emphasized : .normal
-    }
-}
-
-/// A 0.5-pt line in the separator colour of plain Light or Dark (`plain`): the
-/// material's vibrant appearance would hand it an opaque grey.
-final class MenuHairline: NSView {
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
-
-    override var allowsVibrancy: Bool { false }
-
-    // Painted when it joins a window and when the appearance flips, not in
-    // `updateLayer`: a line laid out after its first display pass never got one.
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        paint()
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        paint()
-    }
-
-    private func paint() {
-        effectiveAppearance.plain.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = NSColor.separatorColor.cgColor
-        }
     }
 }

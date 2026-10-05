@@ -108,23 +108,17 @@ final class TailFollowingTests: XCTestCase {
 
     // MARK: transcriptViewDidScroll
 
-    /// Several offset changes in one pass are one report, and it arrives.
-    func testScrollingReportsOncePerRunloopPass() throws {
+    /// Every offset change is a report, as it happens.
+    func testEveryScrollIsReported() throws {
         let (mounted, host) = mount()
         defer { mounted.teardown() }
         host.resetRecordings()
 
         mounted.scroll(toY: 2000)
+        XCTAssertEqual(host.scrollReports, 1)
         mounted.scroll(toY: 1000)
         mounted.scroll(toY: 1500)
-        mounted.settle()
-        drainMainQueue()
-        XCTAssertEqual(host.scrollReports, 1, "not coalesced to one per pass")
-
-        mounted.scroll(toY: 300)
-        mounted.settle()
-        drainMainQueue()
-        XCTAssertEqual(host.scrollReports, 2)
+        XCTAssertEqual(host.scrollReports, 3)
     }
 
     /// A programmatic scroll is a scroll.
@@ -135,7 +129,6 @@ final class TailFollowingTests: XCTestCase {
 
         mounted.transcript.scrollToRow(at: 10, scrollPosition: .top)
         mounted.settle()
-        drainMainQueue()
         XCTAssertGreaterThanOrEqual(host.scrollReports, 1)
     }
 
@@ -146,16 +139,6 @@ final class TailFollowingTests: XCTestCase {
         host.resetRecordings()
 
         mounted.settle(passes: 3)
-        drainMainQueue()
         XCTAssertEqual(host.scrollReports, 0)
-    }
-
-    /// Runs what the main queue holds now: a block queued behind it runs after
-    /// it. A zero-length runloop pass is not enough — it returns after the
-    /// first source it handles, which may be another test's leftover timer.
-    private func drainMainQueue() {
-        let drained = expectation(description: "the main queue drained")
-        DispatchQueue.main.async { drained.fulfill() }
-        wait(for: [drained], timeout: 2)
     }
 }

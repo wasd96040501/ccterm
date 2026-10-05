@@ -277,10 +277,10 @@ public protocol TranscriptViewDelegate: AnyObject {
     /// screen* (a pill that says a row below the fold wants an answer). Sibling
     /// of `didChangeTailFollowing`, which reports only the end of the range.
     ///
-    /// **Coalesced:** at most one call per runloop pass, however many offset
-    /// changes it held — a drag is not a per-pixel storm. Read the state when
-    /// it arrives (`rect(ofRow:)`, the scroll view's visible rect), not from
-    /// what the scroll was.
+    /// Called on every change of the offset, once the rows it needs are
+    /// mounted — as a clip view's bounds notification is. Read the state when
+    /// it arrives (`rect(ofRow:)`, the scroll view's visible rect); like every
+    /// callback, it may not reload or scroll the transcript.
     func transcriptViewDidScroll(_ transcriptView: TranscriptView)
 
     /// A key the reader pressed in the transcript, as the standard key

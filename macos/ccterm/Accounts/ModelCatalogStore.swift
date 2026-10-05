@@ -34,9 +34,9 @@ final class ModelCatalogStore {
     private var entries: [UUID: AccountCatalog]
     /// The launch each account was last probed with (or is being).
     private var probed: [UUID: CLIConfiguration] = [:]
-    /// Counts the probes started per account: what an earlier one answers
-    /// never lands.
-    private var probeCount: [UUID: Int] = [:]
+    /// Each account's probe in flight; a newer launch or the account's removal
+    /// cancels it, and a cancelled probe never lands.
+    private var probes: [UUID: Task<Void, Never>] = [:]
     /// The last cache write; the next one waits for it.
     private var lastWrite: Task<Void, Never>?
 
@@ -66,7 +66,7 @@ final class ModelCatalogStore {
         for id in entries.keys where !ids.contains(id) { entries[id] = nil }
         for id in probed.keys where !ids.contains(id) {
             probed[id] = nil
-            probeCount[id] = nil
+            probes.removeValue(forKey: id)?.cancel()
         }
         publish()
         for account in accounts { refresh(account) }
@@ -83,18 +83,23 @@ final class ModelCatalogStore {
                 return
             }
             probed[account.id] = launch
-            let count = (probeCount[account.id] ?? 0) + 1
-            probeCount[account.id] = count
-            do {
-                let result = try await probe(launch)
-                guard probeCount[account.id] == count, let current = accounts.first(where: { $0.id == account.id })
-                else { return }
-                entries[account.id] = AccountCatalog(account: current, result: result)
-                publish()
-                writeCache()
-            } catch {
-                if probeCount[account.id] == count { probed[account.id] = nil }
-                appLog(.warning, "ModelCatalogStore", "a model probe failed — \(error.localizedDescription)")
+            probes[account.id]?.cancel()
+            probes[account.id] = Task { [weak self, probe] in
+                do {
+                    let result = try await probe(launch)
+                    guard let self, !Task.isCancelled,
+                        let current = accounts.first(where: { $0.id == account.id })
+                    else { return }
+                    probes[account.id] = nil
+                    entries[account.id] = AccountCatalog(account: current, result: result)
+                    publish()
+                    writeCache()
+                } catch {
+                    guard let self, !Task.isCancelled else { return }
+                    probes[account.id] = nil
+                    probed[account.id] = nil
+                    appLog(.warning, "ModelCatalogStore", "a model probe failed — \(error.localizedDescription)")
+                }
             }
         }
     }

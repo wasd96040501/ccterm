@@ -238,20 +238,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// A short-lived CLI that answers `initialize` and is ended: what an
     /// account offers, read without a session (`ModelCatalogStore`). It writes
-    /// no transcript; a CLI that doesn't answer in a minute is given up on.
+    /// no transcript. A CLI that doesn't answer in a minute is terminated, as
+    /// `Session.close(timeout:)` does, and so is one whose probe is cancelled:
+    /// either way its pending `initialize` fails.
     private static let probe: @Sendable (CLIConfiguration) async throws -> InitializationResult = { configuration in
         let session = Session(
             configuration: SessionConfiguration(
                 workingDirectory: FileManager.default.homeDirectoryForCurrentUser, launch: configuration))
-        defer { session.terminate() }
-        return try await withThrowingTaskGroup(of: InitializationResult.self) { group in
-            group.addTask { try await session.start() }
-            group.addTask {
-                try await Task.sleep(for: .seconds(60))
-                throw AgentSDKError.launchFailed("the CLI did not answer")
-            }
-            defer { group.cancelAll() }
-            return try await group.next()!
+        let watchdog = Task {
+            try await Task.sleep(for: .seconds(60))
+            session.terminate()
+        }
+        defer {
+            watchdog.cancel()
+            session.terminate()
+        }
+        return try await withTaskCancellationHandler {
+            try await session.start()
+        } onCancel: {
+            session.terminate()
         }
     }
 

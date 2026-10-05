@@ -160,6 +160,29 @@ final class ModelCatalogStoreTests: XCTestCase {
         XCTAssertEqual(store.catalog.accounts.count, 1)
     }
 
+    /// A probe of a launch that changed is cancelled — its CLI is ended, not
+    /// waited for — and the new launch's answer is the one shown.
+    func testAChangedLaunchCancelsTheProbeOfTheOldOne() async throws {
+        let cancelled = Counter()
+        accounts.send([relay])
+        let answer = result(#"[{"value":"new-model"}]"#)
+        let store = store { launch in
+            guard launch.customCommand == "other-relay" else {
+                do { try await Task.sleep(for: .seconds(30)) } catch { cancelled.increment() }
+                throw CancellationError()
+            }
+            return answer
+        }
+        try await Task.sleep(for: .milliseconds(100))
+        var changed = relay
+        changed.command = "other-relay"
+        accounts.send([changed])
+
+        await wait(store) { $0.accounts.first?.isLoaded == true }
+        XCTAssertEqual(cancelled.value, 1, "the old launch's probe ran on")
+        XCTAssertEqual(store.catalog.accounts.first?.models.map(\.value), ["new-model"])
+    }
+
     func testAnAccountRemovedLeavesTheCatalog() async {
         accounts.send([subscription, relay])
         let answer = result(#"[{"value":"default"}]"#)

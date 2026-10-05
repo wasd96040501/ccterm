@@ -41,6 +41,16 @@ enum ComposerGlyph {
         }
     }
 
+    /// The glyph as a character of a chip's words: the clock is its SF Symbol
+    /// at its own size, unboxed, so it sits on the words' baseline as a
+    /// character does.
+    static func inlineImage(_ glyph: ComposerPresentation.Glyph) -> NSImage? {
+        switch glyph {
+        case .later: NSImage.symbol(Symbol.clock.name, pointSize: Symbol.clock.pointSize, weight: Symbol.clock.weight)
+        default: chipImage(glyph)
+        }
+    }
+
     /// The glyph at the 16-pt box a menu row gives it (`.mi .g`): the bolt
     /// stays the chip's 10 × 12 in it (`padding: 2px 3px`).
     static func menuImage(_ glyph: ComposerPresentation.Glyph) -> NSImage? {
@@ -49,9 +59,6 @@ enum ComposerGlyph {
         default: image(glyph, size: 16)
         }
     }
-
-    /// The chips' chevron, in its 8-pt box.
-    static var chevron: NSImage { symbol(.chevron, scale: 1, in: NSSize(width: 8, height: 8)) }
 
     /// The action button's arrow, in its 14-pt box.
     static var send: NSImage { symbol(.send, scale: 1, in: NSSize(width: 14, height: 14)) }
@@ -85,7 +92,6 @@ enum ComposerGlyph {
         static let send = Symbol(name: "arrow.up", pointSize: 12, weight: .bold)  // in 14
         static let stop = Symbol(name: "stop.fill", pointSize: 10.6, weight: .bold)  // in 10
         static let check = Symbol(name: "checkmark", pointSize: 9.2, weight: .bold)  // in 10
-        static let chevron = Symbol(name: "chevron.down", pointSize: 7.6, weight: .bold)  // in 8
         static let restart = Symbol(name: "arrow.clockwise", pointSize: 11.8, weight: .bold)  // in 16
         static let rack = Symbol(name: "server.rack", pointSize: 9.8, weight: .bold)  // in 16
     }

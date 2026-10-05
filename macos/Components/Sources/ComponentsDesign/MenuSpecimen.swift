@@ -112,8 +112,8 @@ private final class LiveMenus: NSView {
 
     init() {
         buttons = entries.map { title, _ in
-            let button = NSButton.menuButton()
-            button.title = title
+            let button = MenuButton()
+            button.show(title, font: .systemFont(ofSize: 12), ink: .secondaryLabelColor)
             return button
         }
         super.init(frame: .zero)
@@ -142,7 +142,11 @@ private final class LiveMenus: NSView {
 
     @objc private func open(_ sender: NSButton) {
         guard let index = buttons.firstIndex(of: sender) else { return }
-        if !popover.isShown { popover.configure(with: entries[index].1()) }
+        if popover.isShown, popover.anchor === sender {
+            popover.close()
+            return
+        }
+        popover.configure(with: entries[index].1())
         popover.show(from: sender, above: false)
     }
 }

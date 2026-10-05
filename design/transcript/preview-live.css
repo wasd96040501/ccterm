@@ -139,7 +139,7 @@
 .lv-new.rising textarea { opacity: 0.5; }
 
 .lv-folder {
-  font: inherit; font-size: 22px; font-weight: 650; letter-spacing: -0.01em; color: var(--label); background: none; border: 0;
+  font: inherit; font-size: 22px; font-weight: 600; color: var(--label); background: none; border: 0;
   border-radius: var(--r-ctl); padding: 1px 8px 1px 10px; display: inline-flex; align-items: center; gap: 6px; cursor: default;
 }
 .lv-folder:hover, .lv-folder.open { background: var(--hover); }

@@ -161,12 +161,24 @@ final class MenuPopoverTests: XCTestCase {
 
     // MARK: - The button
 
-    /// Pressing the button of the open popover closes it.
-    func testThePressThatOpenedItClosesIt() {
+    /// The button is on while the popover is open from it, whichever way it
+    /// closes.
+    func testItsButtonIsOnWhileItIsOpen() throws {
         open(MenuFixtures.folder)
-        stage.popover.show(from: stage.button, above: false)
+        XCTAssertEqual(stage.popover.anchor, stage.button)
+        XCTAssertEqual(stage.button.state, .on)
+        try pressEscape()
         XCTAssertFalse(stage.popover.isShown)
         XCTAssertEqual(stage.button.state, .off)
+    }
+
+    /// Opened from another button, it closes at the first, which goes off.
+    func testOpeningFromAnotherButtonMovesIt() {
+        open(MenuFixtures.folder)
+        stage.popover.show(from: stage.other, above: false)
+        XCTAssertTrue(stage.popover.isShown)
+        XCTAssertEqual(stage.popover.anchor, stage.other)
+        XCTAssertEqual([stage.button.state, stage.other.state], [.off, .on])
     }
 
     /// A switch leaves the popover open; a choice closes it.

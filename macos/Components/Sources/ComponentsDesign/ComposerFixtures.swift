@@ -135,19 +135,19 @@ enum ComposerFixtures {
         return P(
             placeholder: draft ? "Ask Claude to…" : "Message Claude",
             model: P.Chip(
-                title: model, detail: provider, leadingGlyphs: fast ? [.fast] : [],
+                title: model, detail: provider, glyph: fast ? .fast : nil,
                 trailingGlyph: pending ? .later : nil,
                 toolTip: model),
             effort: effort.map {
                 P.Chip(
-                    title: $0.name, leadingGlyphs: [.effort(level: $0.level)], toolTip: "Effort: \($0.name)",
+                    title: $0.name, glyph: .effort(level: $0.level), toolTip: "Effort: \($0.name)",
                     titleIsDroppable: true)
             }
                 ?? P.Chip(
-                    title: "—", leadingGlyphs: [.effort(level: nil)], isEnabled: false,
+                    title: "—", glyph: .effort(level: nil), isEnabled: false,
                     toolTip: "\(model) doesn’t take an effort level", titleIsDroppable: true),
             mode: P.Chip(
-                title: modeWords.short, leadingGlyphs: [mode], isDanger: mode == .bypassPermissions,
+                title: modeWords.short, glyph: mode, isDanger: mode == .bypassPermissions,
                 toolTip: modeWords.name, titleIsDroppable: true),
             modelSections: modelSections(current: current ?? "model:\(subscription.uuidString):opus"),
             modelPanelHeader: pending ? "Applies after this turn" : nil,
@@ -180,8 +180,8 @@ enum ComposerFixtures {
         current: "model:\(relay.uuidString):default")
     static let loading = P(
         placeholder: "Ask Claude to…", model: P.Chip(title: "Loading…", isEnabled: false),
-        effort: P.Chip(title: "—", leadingGlyphs: [.effort(level: nil)], isEnabled: false, titleIsDroppable: true),
-        mode: P.Chip(title: "Ask", leadingGlyphs: [.ask], isEnabled: false, titleIsDroppable: true),
+        effort: P.Chip(title: "—", glyph: .effort(level: nil), isEnabled: false, titleIsDroppable: true),
+        mode: P.Chip(title: "Ask", glyph: .ask, isEnabled: false, titleIsDroppable: true),
         fastMode: P.FastModeSwitch(isOn: false, isEnabled: false), placement: .page,
         sendToolTip: "Send ↩", stopToolTip: "Stop ⌘.")
 }

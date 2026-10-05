@@ -42,7 +42,8 @@ public struct ComposerPresentation: Equatable, Sendable {
         /// Tertiary words after the title (a provider's name); dropped first
         /// when the composer narrows.
         public var detail: String?
-        public var leadingGlyphs: [Glyph]
+        /// Before the title: the bolt of Fast, the effort meter, the mode's glyph.
+        public var glyph: Glyph?
         /// After the title: the clock while a change waits for the turn.
         public var trailingGlyph: Glyph?
         public var isEnabled: Bool
@@ -54,12 +55,12 @@ public struct ComposerPresentation: Equatable, Sendable {
         public var titleIsDroppable: Bool
 
         public init(
-            title: String, detail: String? = nil, leadingGlyphs: [Glyph] = [], trailingGlyph: Glyph? = nil,
+            title: String, detail: String? = nil, glyph: Glyph? = nil, trailingGlyph: Glyph? = nil,
             isEnabled: Bool = true, isDanger: Bool = false, toolTip: String? = nil, titleIsDroppable: Bool = false
         ) {
             self.title = title
             self.detail = detail
-            self.leadingGlyphs = leadingGlyphs
+            self.glyph = glyph
             self.trailingGlyph = trailingGlyph
             self.isEnabled = isEnabled
             self.isDanger = isDanger

@@ -113,7 +113,7 @@ final class ComposerModelTests: XCTestCase {
         let chip = model(settings: settings("sonnet")).model
         XCTAssertEqual(chip.title, "Sonnet 5.5")
         XCTAssertNil(chip.detail)
-        XCTAssertEqual(chip.leadingGlyphs, [])
+        XCTAssertNil(chip.glyph)
         XCTAssertNil(chip.trailingGlyph)
         XCTAssertTrue(chip.isEnabled)
         XCTAssertFalse(chip.titleIsDroppable)
@@ -132,7 +132,7 @@ final class ComposerModelTests: XCTestCase {
     }
 
     func testFastAddsABoltBeforeTheName() {
-        XCTAssertEqual(model(settings: settings(fast: true)).model.leadingGlyphs, [.fast])
+        XCTAssertEqual(model(settings: settings(fast: true)).model.glyph, .fast)
     }
 
     func testAModelChosenWhileClaudeWorksShowsWithAClockAndItsToolTipSaysWhen() {
@@ -145,14 +145,14 @@ final class ComposerModelTests: XCTestCase {
 
     func testFastChosenWhileClaudeWorksShowsTheBoltAndAClock() {
         let chip = model(session(.responding), settings: settings(fast: false), pendingFast: true).model
-        XCTAssertEqual(chip.leadingGlyphs, [.fast])
+        XCTAssertEqual(chip.glyph, .fast)
         XCTAssertEqual(chip.trailingGlyph, .later)
     }
 
     func testTheEffortChipShowsTheMeterAndTheLevelAndMayDropItsName() {
         let chip = model(settings: settings(effort: .xhigh)).effort
         XCTAssertEqual(chip.title, L("Extra High"))
-        XCTAssertEqual(chip.leadingGlyphs, [.effort(level: 4)])
+        XCTAssertEqual(chip.glyph, .effort(level: 4))
         XCTAssertTrue(chip.titleIsDroppable)
         XCTAssertEqual(chip.toolTip, String(localized: "Effort: \(L("Extra High"))"))
     }
@@ -161,14 +161,14 @@ final class ComposerModelTests: XCTestCase {
         let chip = model(settings: settings("haiku", effort: .high)).effort
         XCTAssertEqual(chip.title, "—")
         XCTAssertFalse(chip.isEnabled)
-        XCTAssertEqual(chip.leadingGlyphs, [.effort(level: nil)])
+        XCTAssertEqual(chip.glyph, .effort(level: nil))
         XCTAssertEqual(chip.toolTip, String(localized: "\("Haiku 4.5") doesn’t take an effort level"))
     }
 
     func testTheModeChipShowsTheGlyphAndTheShortNameAndBypassIsDanger() {
         let ask = model(settings: settings(mode: .default)).mode
         XCTAssertEqual(ask.title, L("Ask"))
-        XCTAssertEqual(ask.leadingGlyphs, [.ask])
+        XCTAssertEqual(ask.glyph, .ask)
         XCTAssertEqual(ask.toolTip, L("Ask Permissions"))
         XCTAssertFalse(ask.isDanger)
         XCTAssertTrue(ask.titleIsDroppable)

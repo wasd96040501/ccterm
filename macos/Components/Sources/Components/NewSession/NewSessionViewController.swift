@@ -41,19 +41,14 @@ public final class NewSessionViewController: NSViewController {
 
     private let iconView = NewSessionIconView()
 
-    /// The page's title: the folder's name in 22 pt at weight 650, between
-    /// Semibold and Bold on the font's weight axis.
-    private static let titleFont: NSFont = {
-        let wght = 0x7767_6874
-        let descriptor = NSFont.systemFont(ofSize: 22).fontDescriptor.addingAttributes([
-            NSFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String): [wght: 650]
-        ])
-        return NSFont(descriptor: descriptor, size: 22) ?? .systemFont(ofSize: 22, weight: .semibold)
-    }()
+    /// The page's title: the folder's name, 22-pt semibold.
+    private static let titleFont = NSFont.systemFont(ofSize: 22, weight: .semibold)
 
-    private lazy var folderButton: NSButton = {
-        let button = NSButton.menuButton()
-        button.controlSize = .large
+    private lazy var folderButton: MenuButton = {
+        let button = MenuButton()
+        // The 22-pt title outgrows the accessory bar's fixed bezel; this one
+        // is as tall as what it holds.
+        button.bezelStyle = .flexiblePush
         button.lineBreakMode = .byTruncatingMiddle
         button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         button.target = self
@@ -68,8 +63,8 @@ public final class NewSessionViewController: NSViewController {
         return label
     }()
 
-    private lazy var branchButton: NSButton = {
-        let button = NSButton.menuButton()
+    private lazy var branchButton: MenuButton = {
+        let button = MenuButton()
         button.lineBreakMode = .byTruncatingMiddle
         button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         button.toolTip = String(localized: "Branch", bundle: .module)
@@ -79,12 +74,16 @@ public final class NewSessionViewController: NSViewController {
         return button
     }()
 
-    /// On while the session gets a worktree of its own: the system's on
-    /// bezel, its words and glyph in the accent.
+    /// On while the session gets a worktree of its own: the accessory-bar
+    /// toggle beside the branch's button, drawn on as the system draws it.
     private lazy var worktreeButton: NSButton = {
-        let button = NSButton(title: "", target: self, action: #selector(toggleWorktree(_:)))
+        let button = NSButton(
+            title: String(localized: "Worktree", bundle: .module), target: self,
+            action: #selector(toggleWorktree(_:)))
         button.bezelStyle = .accessoryBar
         button.setButtonType(.pushOnPushOff)
+        button.font = .systemFont(ofSize: 12)
+        button.contentTintColor = .secondaryLabelColor
         button.showsBorderOnlyWhileMouseInside = true
         let glyph = NSImage.newViewWorktree.copy() as? NSImage ?? NSImage.newViewWorktree
         glyph.size = NSSize(width: 14, height: 14)
@@ -99,9 +98,13 @@ public final class NewSessionViewController: NSViewController {
     private lazy var notRepositoryLabel = Self.label(size: 12, color: .tertiaryLabelColor)
     private lazy var explanationLabel = Self.label(size: 11, color: .tertiaryLabelColor)
 
-    private lazy var whereRow: NSView = {
-        let row = NSView()
-        row.translatesAutoresizingMaskIntoConstraints = false
+    /// Branch and Worktree, 8 apart, or the line that says the folder isn't a
+    /// repository: whichever shows; a hidden view takes no room.
+    private lazy var whereRow: NSStackView = {
+        let row = NSStackView(views: [branchButton, worktreeButton, notRepositoryLabel])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 8
         return row
     }()
 
@@ -141,10 +144,6 @@ public final class NewSessionViewController: NSViewController {
         for subview in [iconView, folderButton, pathLabel, whereRow, explanationLabel] {
             subview.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(subview)
-        }
-        for subview in [branchButton, worktreeButton, notRepositoryLabel] {
-            subview.translatesAutoresizingMaskIntoConstraints = false
-            whereRow.addSubview(subview)
         }
         view.addLayoutGuide(composerGuide)
     }
@@ -200,16 +199,7 @@ public final class NewSessionViewController: NSViewController {
             explanationLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             explanationLabel.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -2 * Self.margin),
 
-            branchButton.leadingAnchor.constraint(equalTo: whereRow.leadingAnchor),
-            branchButton.centerYAnchor.constraint(equalTo: whereRow.centerYAnchor),
             branchButton.widthAnchor.constraint(lessThanOrEqualToConstant: 260),
-            worktreeButton.leadingAnchor.constraint(equalTo: branchButton.trailingAnchor, constant: 8),
-            worktreeButton.trailingAnchor.constraint(equalTo: whereRow.trailingAnchor),
-            worktreeButton.centerYAnchor.constraint(equalTo: whereRow.centerYAnchor),
-            notRepositoryLabel.centerXAnchor.constraint(equalTo: whereRow.centerXAnchor),
-            notRepositoryLabel.centerYAnchor.constraint(equalTo: whereRow.centerYAnchor),
-            notRepositoryLabel.leadingAnchor.constraint(equalTo: whereRow.leadingAnchor),
-            notRepositoryLabel.trailingAnchor.constraint(equalTo: whereRow.trailingAnchor),
 
             composerGuide.topAnchor.constraint(equalTo: noteLine.bottomAnchor, constant: 20),
             composerGuide.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -227,12 +217,11 @@ public final class NewSessionViewController: NSViewController {
         self.content = content
         guard isViewLoaded else { return }
 
-        folderButton.attributedTitle = NSAttributedString(
-            string: content.folderTitle,
-            attributes: [.font: Self.titleFont, .kern: -0.22, .foregroundColor: NSColor.labelColor])
-        folderButton.contentTintColor = .tertiaryLabelColor
-        folderButton.setAccessibilityLabel(content.folderTitle)
-        if menuPopover.isShown, let content = menuContent(for: openButton) { menuPopover.configure(with: content) }
+        folderButton.show(
+            content.folderTitle, font: Self.titleFont, ink: .labelColor, chevronInk: .tertiaryLabelColor)
+        if menuPopover.isShown, let content = menuContent(for: menuPopover.anchor) {
+            menuPopover.configure(with: content)
+        }
         pathLabel.stringValue = content.folderPath ?? ""
         explanationLabel.stringValue = content.explanation ?? ""
 
@@ -257,30 +246,14 @@ public final class NewSessionViewController: NSViewController {
 
     /// The branch glyph and name, 12 pt in secondary ink.
     private func showBranch(_ name: String) {
-        let font = NSFont.systemFont(ofSize: 12)
-        let glyph = NSTextAttachment()
-        let image = NSImage.sidebarWorktree.copy() as? NSImage ?? NSImage.sidebarWorktree
-        image.size = NSSize(width: 10, height: 11)
-        glyph.image = image
-        glyph.bounds = NSRect(x: 0, y: ((font.capHeight - 11) / 2).rounded(), width: 10, height: 11)
-        let title = NSMutableAttributedString(attachment: glyph)
-        title.append(NSAttributedString(string: " \(name)"))
-        title.addAttributes(
-            [.font: font, .foregroundColor: NSColor.secondaryLabelColor],
-            range: NSRange(location: 0, length: title.length))
-        branchButton.attributedTitle = title
-        branchButton.contentTintColor = .secondaryLabelColor
-        branchButton.setAccessibilityValue(name)
+        let glyph = NSImage.sidebarWorktree.copy() as? NSImage ?? NSImage.sidebarWorktree
+        glyph.size = NSSize(width: 10, height: 11)
+        branchButton.show(name, font: .systemFont(ofSize: 12), ink: .secondaryLabelColor, glyph: glyph)
     }
 
-    /// Worktree, on or off: in the accent while on.
+    /// Worktree as the draft has it.
     private func showWorktree(_ isOn: Bool) {
-        let ink: NSColor = isOn ? .controlAccentColor : .secondaryLabelColor
         worktreeButton.state = isOn ? .on : .off
-        worktreeButton.contentTintColor = ink
-        worktreeButton.attributedTitle = NSAttributedString(
-            string: String(localized: "Worktree", bundle: .module),
-            attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: ink])
     }
 
     /// Plays Send's rise and calls `completion` when it ends (at once under
@@ -351,9 +324,6 @@ public final class NewSessionViewController: NSViewController {
 
     // MARK: - The menus
 
-    /// The button whose menu is open.
-    private var openButton: NSButton?
-
     /// What `button`'s menu shows now.
     private func menuContent(for button: NSButton?) -> MenuContent? {
         guard let content else { return nil }
@@ -416,13 +386,16 @@ public final class NewSessionViewController: NSViewController {
             width: 300, listHeight: 264)
     }
 
-    /// Opens `button`'s menu under it, or closes it when it is the one open.
+    /// Opens `button`'s menu under it, or closes it when it is the one open:
+    /// the press that closes it.
     private func open(from button: NSButton) {
-        if !menuPopover.isShown || openButton !== button, let content = menuContent(for: button) {
-            menuPopover.configure(with: content)
+        if menuPopover.isShown, menuPopover.anchor === button {
+            menuPopover.close()
+            return
         }
+        guard let content = menuContent(for: button) else { return }
+        menuPopover.configure(with: content)
         menuPopover.show(from: button, above: false)
-        openButton = menuPopover.isShown ? button : nil
     }
 
     private func menuChose(_ item: MenuContent.Item) {
@@ -441,8 +414,12 @@ public final class NewSessionViewController: NSViewController {
         if let content = menuContent(for: branchButton) { menuPopover.configure(with: content) }
     }
 
+    /// A press asks for the other choice; the button goes on showing the
+    /// draft's, which comes back through `configure(with:)` when the owner
+    /// takes it.
     @objc private func toggleWorktree(_ sender: NSControl) {
         delegate?.newSessionViewControllerDidToggleWorktree(self)
+        if let content, case .repository(_, let usesWorktree) = content.branchRow { showWorktree(usesWorktree) }
     }
 
     // MARK: - Pieces

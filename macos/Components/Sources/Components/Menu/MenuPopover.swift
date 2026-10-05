@@ -6,8 +6,8 @@ import AppKit
 /// choice. It holds the menu's list, an inset table — under a search field
 /// when the menu has one, over the items that stay in view (Fast Mode).
 ///
-/// It opens from a button, on press as a menu does, and keeps the button on
-/// while it is open; pressing the button again closes it. Its size is set
+/// It opens from a `MenuButton` and keeps the button on while it is open; a
+/// press on the button, as anywhere outside it, closes it. Its size is set
 /// when it opens and kept until it closes: searching or flipping a switch
 /// changes what the list shows, never the box.
 ///
@@ -22,10 +22,8 @@ public final class MenuPopover: NSPopover {
     public var onClose: (() -> Void)?
 
     private let list = MenuListViewController()
-    private weak var button: NSButton?
-    /// The press that closed the popover and the button it closed it from:
-    /// that press reaches the button next, and must not open it again.
-    private var closingPress: (timestamp: TimeInterval, button: NSButton)?
+    /// The button it is open from.
+    package private(set) weak var anchor: NSButton?
 
     public override init() {
         super.init()
@@ -47,29 +45,18 @@ public final class MenuPopover: NSPopover {
     }
 
     /// Opens against `button` — over it when `above`, else under it, on the
-    /// other side when there is no room — or closes it when it is open from
-    /// that button.
+    /// other side when there is no room — and turns the button on until it
+    /// closes. Open from another button, it closes there first.
     public func show(from button: NSButton, above: Bool) {
         guard button.window != nil else { return }
-        if let closingPress, closingPress.button === button,
-            NSApp.currentEvent?.timestamp == closingPress.timestamp
-        {
-            self.closingPress = nil
-            button.state = .off
-            return
-        }
-        closingPress = nil
-        if isShown {
-            let wasButton = self.button
-            close()
-            if wasButton === button { return }
-        }
-        self.button = button
-        button.state = .on
+        if isShown { close() }
         contentSize = list.popoverSize
         // A flipped view's maximum y is its bottom.
         let edge: NSRectEdge = above == button.isFlipped ? .minY : .maxY
         show(relativeTo: button.bounds, of: button, preferredEdge: edge)
+        guard isShown else { return }
+        anchor = button
+        button.state = .on
         list.didOpen()
     }
 
@@ -85,14 +72,8 @@ public final class MenuPopover: NSPopover {
 
 extension MenuPopover: NSPopoverDelegate {
     public func popoverDidClose(_ notification: Notification) {
-        if let button, let event = NSApp.currentEvent, event.type == .leftMouseDown,
-            event.window === button.window,
-            button.bounds.contains(button.convert(event.locationInWindow, from: nil))
-        {
-            closingPress = (event.timestamp, button)
-        }
-        button?.state = .off
-        button = nil
+        anchor?.state = .off
+        anchor = nil
         onClose?()
     }
 }

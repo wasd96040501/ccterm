@@ -31,9 +31,9 @@ final class ComposerView: NSView {
     private let surface = CardSurfaceView()
     private let failureView = ComposerFailureView()
     private let field = ComposerFieldView()
-    private let modelButton = NSButton.menuButton()
-    private let effortButton = NSButton.menuButton()
-    private let modeButton = NSButton.menuButton()
+    private let modelButton = MenuButton()
+    private let effortButton = MenuButton()
+    private let modeButton = MenuButton()
     private let spacer = NSView()
     private let statusView = ComposerStatusView()
     private let ringView = ContextRingView()
@@ -314,42 +314,19 @@ final class ComposerView: NSView {
         show(model.mode, on: modeButton)
     }
 
-    /// `chip`'s glyphs, title and detail on `button`, as much as the tier keeps:
-    /// secondary ink, red for Bypass, tertiary while disabled; the detail and
-    /// the trailing clock tertiary.
-    private func show(_ chip: ComposerPresentation.Chip, on button: NSButton) {
-        let font = NSFont.systemFont(ofSize: 12)
+    /// `chip` on `button`, as much as the tier keeps: its glyph, title and
+    /// detail, in secondary ink, red for Bypass, tertiary while disabled; the
+    /// detail and the trailing clock tertiary; no chevron while disabled.
+    private func show(_ chip: ComposerPresentation.Chip, on button: MenuButton) {
         let ink: NSColor = !chip.isEnabled ? .tertiaryLabelColor : chip.isDanger ? .failureText : .secondaryLabelColor
-        let title = NSMutableAttributedString()
-        func append(_ words: String, _ color: NSColor) {
-            if title.length > 0 { title.append(NSAttributedString(string: " ", attributes: [.font: font])) }
-            title.append(NSAttributedString(string: words, attributes: [.font: font, .foregroundColor: color]))
-        }
-        func append(_ glyph: ComposerPresentation.Glyph, _ color: NSColor) {
-            guard let image = ComposerGlyph.chipImage(glyph) else { return }
-            if title.length > 0 { title.append(NSAttributedString(string: " ", attributes: [.font: font])) }
-            let attachment = NSTextAttachment()
-            attachment.image = image
-            // Centred on the words' capitals.
-            attachment.bounds = NSRect(
-                x: 0, y: ((font.capHeight - image.size.height) / 2).rounded(), width: image.size.width,
-                height: image.size.height)
-            let glyphString = NSMutableAttributedString(attachment: attachment)
-            glyphString.addAttributes(
-                [.font: font, .foregroundColor: color], range: NSRange(location: 0, length: glyphString.length))
-            title.append(glyphString)
-        }
-        for glyph in chip.leadingGlyphs { append(glyph, ink) }
-        if !(chip.titleIsDroppable && tier >= .glyphsOnly) { append(chip.title, ink) }
-        if let detail = chip.detail, tier < .withoutDetail { append(detail, .tertiaryLabelColor) }
-        if let trailing = chip.trailingGlyph { append(trailing, .tertiaryLabelColor) }
-        button.attributedTitle = title
-        button.contentTintColor = ink
-        button.imagePosition = chip.isEnabled ? .imageTrailing : .noImage
+        button.show(
+            chip.titleIsDroppable && tier >= .glyphsOnly ? "" : chip.title, font: .systemFont(ofSize: 12), ink: ink,
+            glyph: chip.glyph.flatMap(ComposerGlyph.chipImage),
+            detail: tier < .withoutDetail ? chip.detail : nil,
+            trailing: chip.trailingGlyph.flatMap(ComposerGlyph.inlineImage), hasChevron: chip.isEnabled)
         button.isEnabled = chip.isEnabled
         button.toolTip = chip.toolTip
         button.setAccessibilityLabel(chip.toolTip ?? chip.title)
-        button.setAccessibilityValue(chip.title)
     }
 
     // MARK: - Layout

@@ -161,7 +161,7 @@ badge, not a thing.
     work in.*).
 - **Branch and Worktree** sit on one row under the path: a borderless
   pop-up with the branch glyph and name, and a toggle button, **Worktree**
-  (accent-tinted when on, `aria-pressed`). Both are choices *about* the
+  (on: the system's on bezel, `aria-pressed`). Both are choices *about* the
   folder, so they sit under it, not in its menu. **The row never moves**: the
   toggle doesn't change either control's text, and what the choices add up to
   is said on the line under the row — 11-pt tertiary, its height kept when it

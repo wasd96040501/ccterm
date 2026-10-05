@@ -279,14 +279,14 @@ extension ComposerModel {
         func modelChip() -> Chip {
             guard settings != nil else {
                 return Chip(
-                    title: String(localized: "Loading…"), detail: nil, leadingGlyphs: [], trailingGlyph: nil,
+                    title: String(localized: "Loading…"), detail: nil, glyph: nil, trailingGlyph: nil,
                     isEnabled: false, isDanger: false, toolTip: nil, titleIsDroppable: false)
             }
             let provider = account.flatMap { $0.isSubscription ? nil : $0.name }
             var tip = [account?.name, model?.resolvedModel ?? modelName].compactMap { $0 }.joined(separator: " · ")
             if hasPendingChange { tip += " — " + String(localized: "switches after this turn") }
             return Chip(
-                title: modelName, detail: provider, leadingGlyphs: shownFast ? [.fast] : [],
+                title: modelName, detail: provider, glyph: shownFast ? .fast : nil,
                 trailingGlyph: hasPendingChange ? .later : nil, isEnabled: true, isDanger: false,
                 toolTip: tip, titleIsDroppable: false)
         }
@@ -295,12 +295,12 @@ extension ComposerModel {
             guard settings != nil, let level = shownEffort else {
                 let tip = settings == nil ? nil : String(localized: "\(modelName) doesn’t take an effort level")
                 return Chip(
-                    title: "—", detail: nil, leadingGlyphs: [.effort(level: nil)], trailingGlyph: nil,
+                    title: "—", detail: nil, glyph: .effort(level: nil), trailingGlyph: nil,
                     isEnabled: false, isDanger: false, toolTip: tip, titleIsDroppable: true)
             }
             let name = ComposerModel.effortLevels.first { $0.effort == level }?.name ?? level.rawValue
             return Chip(
-                title: name, detail: nil, leadingGlyphs: [.effort(level: ComposerModel.meterLevel(of: level))],
+                title: name, detail: nil, glyph: .effort(level: ComposerModel.meterLevel(of: level)),
                 trailingGlyph: nil, isEnabled: true, isDanger: false,
                 toolTip: String(localized: "Effort: \(name)"), titleIsDroppable: true)
         }
@@ -309,7 +309,7 @@ extension ComposerModel {
             let mode = settings?.permissionMode ?? .default
             let words = ComposerModel.words(of: mode)
             return Chip(
-                title: words.short, detail: nil, leadingGlyphs: [ComposerModel.glyph(of: mode)], trailingGlyph: nil,
+                title: words.short, detail: nil, glyph: ComposerModel.glyph(of: mode), trailingGlyph: nil,
                 isEnabled: settings != nil, isDanger: mode == .bypassPermissions, toolTip: words.name,
                 titleIsDroppable: true)
         }

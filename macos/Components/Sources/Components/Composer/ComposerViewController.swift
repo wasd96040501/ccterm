@@ -193,12 +193,14 @@ public final class ComposerViewController: NSViewController {
     // MARK: - Menus
 
     /// Opens `control`'s menu — under its button in a page, over it floating
-    /// — or closes it when it is the one open.
+    /// — or closes it when it is the one open: the press that closes it.
     private func openMenu(of control: ComposerView.Control) {
         guard let model else { return }
-        if openControl != control || !menuPopover.isShown {
-            menuPopover.configure(with: ComposerMenu.content(of: control, in: model))
+        if menuPopover.isShown, openControl == control {
+            menuPopover.close()
+            return
         }
+        menuPopover.configure(with: ComposerMenu.content(of: control, in: model))
         card.showMenu(of: control, in: menuPopover, above: model.placement != .page)
         openControl = menuPopover.isShown ? control : nil
     }

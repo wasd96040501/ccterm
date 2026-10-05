@@ -292,6 +292,29 @@ final class ComposerViewControllerTests: XCTestCase {
         XCTAssertLessThanOrEqual(statusFrame.maxX, 330, "the status runs out of the card")
     }
 
+    // MARK: - Menus
+
+    /// A menu button opens its menu and is on while it is open; the next
+    /// press on it closes the menu, a press on another moves it there.
+    func testAMenuButtonOpensItsMenuAndTheNextPressClosesIt() throws {
+        func popoverIsOpen() -> Bool {
+            NSApp.windows.contains { $0.isVisible && String(describing: Swift.type(of: $0)).contains("Popover") }
+        }
+        // A popover opens only from a window on screen (this one is far off it).
+        window.orderFrontRegardless()
+        let model = try XCTUnwrap(find(MenuButton.self) { $0.attributedTitle.string.hasPrefix("Sonnet") })
+        let effort = try XCTUnwrap(find(MenuButton.self) { $0 !== model })
+        model.performClick(nil)
+        XCTAssertEqual(model.state, .on)
+        XCTAssertTrue(popoverIsOpen())
+        effort.performClick(nil)
+        XCTAssertEqual([model.state, effort.state], [.off, .on])
+        XCTAssertTrue(popoverIsOpen())
+        effort.performClick(nil)
+        XCTAssertEqual(effort.state, .off)
+        XCTAssertFalse(popoverIsOpen())
+    }
+
     // MARK: - Dimming the words
 
     /// A sent prompt waiting for its session: the words and the token go to half
@@ -302,7 +325,7 @@ final class ComposerViewControllerTests: XCTestCase {
         let words = try XCTUnwrap(try textView().enclosingScrollView)
         let token = try XCTUnwrap(
             find(NSView.self) { String(describing: Swift.type(of: $0)).contains("CommandTokenView") })
-        let button = try XCTUnwrap(find(NSButton.self) { $0.accessibilityRole() == .popUpButton })
+        let button = try XCTUnwrap(find(MenuButton.self))
 
         composer.isFieldDimmed = true
 

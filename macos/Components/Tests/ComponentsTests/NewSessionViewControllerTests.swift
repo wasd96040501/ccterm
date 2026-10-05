@@ -171,13 +171,46 @@ final class NewSessionViewControllerTests: XCTestCase {
 
     // MARK: - What it reports
 
-    func testWorktreeIsReportedAsAnIntent() throws {
+    /// A press on Worktree asks for the other choice; the button goes on
+    /// showing the draft's until the draft changes.
+    func testWorktreeIsReportedAsAnIntentAndShowsTheDraft() throws {
         let controller = controller(width: 900)
         let delegate = Delegate()
         controller.delegate = delegate
-        let button = try XCTUnwrap(try view("newSession.worktree", in: controller.view) as? NSControl)
-        _ = button.sendAction(button.action, to: button.target)
+        let button = try XCTUnwrap(try view("newSession.worktree", in: controller.view) as? NSButton)
+        button.performClick(nil)
         XCTAssertEqual(delegate.toggles, 1)
+        XCTAssertEqual(button.state, .off, "the draft still works in place")
+        var draft = content
+        draft.branchRow = .repository(branchTitle: "main", usesWorktree: true)
+        controller.configure(with: draft)
+        XCTAssertEqual(button.state, .on)
+    }
+
+    /// The folder's button opens its menu and is on while it is open; the
+    /// next press on it closes the menu.
+    func testTheFolderButtonOpensItsMenuAndClosesIt() throws {
+        let controller = controller(width: 900)
+        let window = NSWindow(
+            contentRect: NSRect(x: -20_000, y: -20_000, width: 900, height: 720), styleMask: [.borderless],
+            backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView?.addSubview(controller.view)
+        window.orderFrontRegardless()
+        defer {
+            controller.viewDidDisappear()
+            window.close()
+        }
+        func popoverIsOpen() -> Bool {
+            NSApp.windows.contains { $0.isVisible && String(describing: type(of: $0)).contains("Popover") }
+        }
+        let button = try XCTUnwrap(try view("newSession.folder", in: controller.view) as? NSButton)
+        button.performClick(nil)
+        XCTAssertEqual(button.state, .on)
+        XCTAssertTrue(popoverIsOpen())
+        button.performClick(nil)
+        XCTAssertEqual(button.state, .off)
+        XCTAssertFalse(popoverIsOpen())
     }
 
     /// The branch menu is the owner's to word and filter: the view asks for it

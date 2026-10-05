@@ -80,11 +80,13 @@ final class MenuPopoverSnapshotTests: XCTestCase {
     }
 }
 
-/// A button in a borderless window far off screen, and a popover to open from it.
+/// Two menu buttons in a borderless window far off screen, and a popover to
+/// open from them.
 @MainActor
 final class Stage {
     let window: NSWindow
-    let button = NSButton.menuButton()
+    let button = MenuButton()
+    let other = MenuButton()
     let popover = MenuPopover()
 
     init(appearance: NSAppearance? = nil) {
@@ -93,9 +95,12 @@ final class Stage {
             backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.appearance = appearance
-        button.title = "Menu"
-        button.frame = NSRect(x: 150, y: 150, width: 100, height: 24)
+        button.show("Menu", font: .systemFont(ofSize: 12), ink: .secondaryLabelColor)
+        other.show("Other", font: .systemFont(ofSize: 12), ink: .secondaryLabelColor)
+        button.frame = NSRect(origin: CGPoint(x: 150, y: 150), size: button.fittingSize)
+        other.frame = NSRect(origin: CGPoint(x: 20, y: 20), size: other.fittingSize)
         window.contentView?.addSubview(button)
+        window.contentView?.addSubview(other)
         window.orderFrontRegardless()
     }
 }

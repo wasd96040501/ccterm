@@ -5,8 +5,9 @@ import DisplayModels
 /// under it, in a New tab — one row per command, 28 pt at least: the name in
 /// SF Mono 12, its argument hint in tertiary mono, the description in
 /// secondary, wrapping to a second line rather than cut. The row the keyboard is
-/// on has the selection wash; ↑ ↓ move it (`moveSelection`), the composer
-/// completes it. It draws what it is handed and reports a click.
+/// on is the table's selection, drawn as the wash; ↑ ↓ move it
+/// (`moveSelection`), the composer completes it. The table never takes the
+/// keyboard from the field; a click on a row is its action.
 @MainActor
 package final class SlashListViewController: NSViewController {
     /// A row was clicked.
@@ -22,7 +23,9 @@ package final class SlashListViewController: NSViewController {
     private var width: CGFloat = 640
 
     private let scrollView = NSScrollView()
-    private let table = SlashTableView()
+    private let table = NSTableView()
+    /// Lays a command out to measure its row.
+    private let prototype = SlashRowView()
     private let container = SlashContainerView()
     private lazy var heightConstraint = container.heightAnchor.constraint(
         equalToConstant: Self.minRowHeight + 2 * Self.inset)
@@ -40,13 +43,13 @@ package final class SlashListViewController: NSViewController {
         table.headerView = nil
         table.backgroundColor = .clear
         table.intercellSpacing = .zero
-        table.selectionHighlightStyle = .none
         table.allowsEmptySelection = false
         table.style = .plain
-        table.focusRingType = .none
+        table.refusesFirstResponder = true
         table.dataSource = self
         table.delegate = self
-        table.onClick = { [weak self] row in self?.choose(row: row) }
+        table.target = self
+        table.action = #selector(clicked)
         scrollView.documentView = table
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
@@ -106,12 +109,11 @@ package final class SlashListViewController: NSViewController {
     private func select(row: Int) {
         table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
         table.scrollRowToVisible(row)
-        table.reloadData(forRowIndexes: IndexSet(integersIn: 0..<commands.count), columnIndexes: IndexSet(integer: 0))
     }
 
-    private func choose(row: Int) {
-        guard commands.indices.contains(row) else { return }
-        onChoose?(commands[row])
+    @objc private func clicked() {
+        guard commands.indices.contains(table.clickedRow) else { return }
+        onChoose?(commands[table.clickedRow])
     }
 
     // MARK: - Geometry
@@ -119,9 +121,8 @@ package final class SlashListViewController: NSViewController {
     private var rowWidth: CGFloat { width - 2 * Self.inset }
 
     private func rowHeight(of row: Int) -> CGFloat {
-        let command = commands[row]
-        let lines = SlashRowView.descriptionHeight(of: command, rowWidth: rowWidth)
-        return max(Self.minRowHeight, lines + 12)
+        prototype.configure(commands[row])
+        return max(Self.minRowHeight, prototype.fittedHeight(rowWidth: rowWidth))
     }
 }
 
@@ -134,8 +135,12 @@ extension SlashListViewController: NSTableViewDataSource, NSTableViewDelegate {
         let identifier = NSUserInterfaceItemIdentifier("slash.row")
         let cell = tableView.makeView(withIdentifier: identifier, owner: nil) as? SlashRowView ?? SlashRowView()
         cell.identifier = identifier
-        cell.configure(commands[row], rowWidth: rowWidth, isSelected: row == tableView.selectedRow)
+        cell.configure(commands[row])
         return cell
+    }
+
+    package func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        SlashSelectionRowView()
     }
 }
 
@@ -170,15 +175,11 @@ private final class SlashContainerView: NSView {
     }
 }
 
-/// Sends a click on a row up; the keyboard stays with the field.
-private final class SlashTableView: NSTableView {
-    var onClick: ((Int) -> Void)?
-
-    override var acceptsFirstResponder: Bool { false }
-
-    override func mouseDown(with event: NSEvent) {
-        let row = self.row(at: convert(event.locationInWindow, from: nil))
-        if row >= 0 { onClick?(row) }
+/// A row whose selection is the composer's wash with the row's corners.
+private final class SlashSelectionRowView: NSTableRowView {
+    override func drawSelection(in dirtyRect: NSRect) {
+        NSColor.composerSelection.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: CornerRadius.row, yRadius: CornerRadius.row).fill()
     }
 }
 
@@ -207,13 +208,9 @@ private final class SlashRowView: NSTableCellView {
     private let nameLabel = NSTextField(labelWithString: "")
     private let hintLabel = NSTextField(labelWithString: "")
     private let descriptionLabel = NSTextField(wrappingLabelWithString: "")
-    private var isSelected = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.cornerRadius = CornerRadius.row
-        layer?.cornerCurve = .continuous
         hintLabel.font = Self.hintFont
         hintLabel.textColor = .tertiaryLabelColor
         descriptionLabel.font = Self.descriptionFont
@@ -245,8 +242,7 @@ private final class SlashRowView: NSTableCellView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    func configure(_ command: ComposerPresentation.Command, rowWidth: CGFloat, isSelected: Bool) {
-        self.isSelected = isSelected
+    func configure(_ command: ComposerPresentation.Command) {
         let name = NSMutableAttributedString(
             string: "/", attributes: [.font: Self.nameFont, .foregroundColor: NSColor.tertiaryLabelColor])
         name.append(
@@ -257,36 +253,29 @@ private final class SlashRowView: NSTableCellView {
         hintLabel.isHidden = command.argumentHint.isEmpty
         descriptionLabel.attributedStringValue = NSAttributedString(
             string: command.description, attributes: Self.descriptionAttributes)
-        descriptionLabel.preferredMaxLayoutWidth = Self.descriptionWidth(of: command, rowWidth: rowWidth)
-        needsDisplay = true
         setAccessibilityLabel("/\(command.name) \(command.argumentHint) \(command.description)")
-        setAccessibilitySelected(isSelected)
     }
 
-    override var wantsUpdateLayer: Bool { true }
-
-    override func updateLayer() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = (isSelected ? NSColor.composerSelection : .clear).cgColor
+    /// The description wraps at the width the name and the hint leave it.
+    override func layout() {
+        super.layout()
+        let width = descriptionLabel.frame.width
+        if width > 0, descriptionLabel.preferredMaxLayoutWidth != width {
+            descriptionLabel.preferredMaxLayoutWidth = width
+            super.layout()
         }
     }
 
-    /// The width the description has in its row: what the name and the hint leave.
-    private static func descriptionWidth(of command: ComposerPresentation.Command, rowWidth: CGFloat) -> CGFloat {
-        let name = ("/" + command.name as NSString).size(withAttributes: [.font: nameFont]).width
-        var taken = SlashRowView.rowPadding * 2 + ceil(name) + gap + gap
-        if !command.argumentHint.isEmpty {
-            taken += ceil((command.argumentHint as NSString).size(withAttributes: [.font: hintFont]).width)
-        }
-        return max(80, rowWidth - taken)
-    }
-
-    /// How tall the description is at `rowWidth`.
-    static func descriptionHeight(of command: ComposerPresentation.Command, rowWidth: CGFloat) -> CGFloat {
-        let width = descriptionWidth(of: command, rowWidth: rowWidth)
-        let rect = (command.description as NSString).boundingRect(
-            with: NSSize(width: width, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: descriptionAttributes)
-        return ceil(rect.height)
+    /// The row's height at `rowWidth`: laid out, its description measured by
+    /// its own cell at the width it gets, and the padding around it.
+    func fittedHeight(rowWidth: CGFloat) -> CGFloat {
+        frame = NSRect(x: 0, y: 0, width: rowWidth, height: 100)
+        layoutSubtreeIfNeeded()
+        let width = descriptionLabel.frame.width
+        let text =
+            descriptionLabel.cell?.cellSize(
+                forBounds: NSRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude)
+            ).height ?? Self.lineHeight
+        return ceil(text) + 12
     }
 }

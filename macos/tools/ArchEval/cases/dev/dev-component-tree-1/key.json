@@ -1,0 +1,10 @@
+{
+  "id": "dev-component-tree-1",
+  "dimension": "component-tree",
+  "area": "A1",
+  "story": "Give General's launch-command check a longer timeout, since a wrapper script that sets up a toolchain can take more than 10 s to print its version.",
+  "defect": "GeneralSettingsViewController now constructs its own LaunchCheckService(timeout: 30) in its init instead of taking the one the composition root built, so a second check service (with its own cache) lives outside AppDelegate's graph and the pane has no injection seam.",
+  "involved": ["GeneralSettingsViewController", "LaunchCheckService", "AppDelegate", "SettingsContext"],
+  "rule": "macos/CLAUDE.md § Dependency injection & composition root — concrete services are new'd only at the composition root and handed down by initializer; never self-constructed in a VC",
+  "hit": "Says GeneralSettingsViewController creates (news) a LaunchCheckService itself rather than receiving the injected one from AppDelegate/SettingsContext — a service built outside the composition root / a second instance."
+}

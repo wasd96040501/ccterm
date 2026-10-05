@@ -1,0 +1,34 @@
+diff -ruN a/macos/ccterm/Content/Settings/General/GeneralSettingsViewController.swift b/macos/ccterm/Content/Settings/General/GeneralSettingsViewController.swift
+--- a/macos/ccterm/Content/Settings/General/GeneralSettingsViewController.swift	2026-10-05 10:02:27
++++ b/macos/ccterm/Content/Settings/General/GeneralSettingsViewController.swift	2026-10-05 10:54:16
+@@ -33,11 +33,16 @@
+     private var typedCommand: String
+     private var typedFolder: String
+ 
++    /// How long General's command gets to print its version: a wrapper
++    /// script that sets up a toolchain first can take far longer than a
++    /// bare `claude`.
++    private static let commandTimeout: TimeInterval = 30
++
+     /// `debounce`: how long typing pauses before a field is checked.
+-    init(launch: LaunchStore, launchCheck: LaunchCheckService, debounce: Duration = .milliseconds(500)) {
++    init(launch: LaunchStore, debounce: Duration = .milliseconds(500)) {
+         self.launch = launch
+         commandValidation = LaunchCommandValidation(
+-            check: launchCheck,
++            check: LaunchCheckService(timeout: Self.commandTimeout),
+             configuration: { [launch] in launch.configuration(generalCommand: $0) },
+             text: launch.preferences.command, debounce: debounce)
+         folderValidation = FolderValidation(text: launch.preferences.configDirectory, debounce: debounce)
+diff -ruN a/macos/ccterm/Content/Settings/SettingsSplitViewController.Pane+SettingsPane.swift b/macos/ccterm/Content/Settings/SettingsSplitViewController.Pane+SettingsPane.swift
+--- a/macos/ccterm/Content/Settings/SettingsSplitViewController.Pane+SettingsPane.swift	2026-10-05 10:02:27
++++ b/macos/ccterm/Content/Settings/SettingsSplitViewController.Pane+SettingsPane.swift	2026-10-05 10:54:16
+@@ -9,7 +9,7 @@
+         let controller: NSViewController =
+             switch pane {
+             case .general:
+-                GeneralSettingsViewController(launch: context.launch, launchCheck: context.launchCheck)
++                GeneralSettingsViewController(launch: context.launch)
+             case .accounts:
+                 AccountsSettingsViewController(
+                     accounts: context.accounts, launch: context.launch, launchCheck: context.launchCheck,

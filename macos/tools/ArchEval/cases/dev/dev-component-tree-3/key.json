@@ -1,0 +1,10 @@
+{
+  "id": "dev-component-tree-3",
+  "dimension": "component-tree",
+  "area": "A4",
+  "story": "Make Show in Transcript work for a document opened from a subagent's conversation, which is not a tab the window can find.",
+  "defect": "DocumentViewController now holds (strongly) the TranscriptViewController it was opened from — a sibling tab in the editor area, handed over by TranscriptViewController.open via TranscriptTab.makeDocumentItem — and calls its reveal(_:select:) directly, bypassing the coordinator (TranscriptTabDelegate) and coupling the document shell to the root transcript type.",
+  "involved": ["DocumentViewController", "TranscriptViewController", "TranscriptTab", "MainSplitViewController"],
+  "rule": "macos/CLAUDE.md § Component boundaries — B4: a component names only what it builds or holds, never a sibling's type; events go up through the delegate (and the Transcript CLAUDE.md: Documents/ never names the root)",
+  "hit": "Says DocumentViewController references/holds a TranscriptViewController (its sibling / the tab it came from) and calls reveal on it directly instead of reporting Show in Transcript up to the coordinator; strong cross-tab reference."
+}

@@ -1,0 +1,10 @@
+{
+  "id": "dev-data-3",
+  "dimension": "data",
+  "area": "A3",
+  "story": "Stop the sidebar and the tab bar calling for a session's waiting request while the reader already has it on screen in its tab.",
+  "defect": "SessionStore now holds a view's scroll state — whether a tab's waiting request is visible (`requestsInView`, set by SessionTabViewController via setWaitingRequestVisible from the transcript's visibility report) — and rewrites the published domain activity from it, so a process-wide store carries transient UI state and its `activities` are no longer the session's truth.",
+  "involved": ["SessionStore", "SessionTabViewController", "TranscriptViewController"],
+  "rule": "macos/CLAUDE.md § State & data flow — transient view-private UI state stays a private stored property (no model field, no broadcast); § Layering — a Store does no UI and references no view state",
+  "hit": "Says SessionStore stores/consumes the tab's waiting-request visibility (UI/scroll state pushed up by SessionTabViewController) and alters activities with it — view state leaking into the store / store depending on UI."
+}

@@ -1,0 +1,54 @@
+diff -ruN a/macos/ccterm/App/AppKit/MainSplitViewController.swift b/macos/ccterm/App/AppKit/MainSplitViewController.swift
+--- a/macos/ccterm/App/AppKit/MainSplitViewController.swift	2026-10-05 10:02:27
++++ b/macos/ccterm/App/AppKit/MainSplitViewController.swift	2026-10-05 11:00:26
+@@ -51,6 +51,11 @@
+     /// One mark per session shown in a tab, kept so an animating mark is the
+     /// same view for as long as its state is.
+     private var marks: [URL: ActivityMarkView] = [:]
++    /// The library's tree as the sidebar shows it; `nil` while it loads.
++    private var libraryNodes: [SidebarNode]?
++    /// Sessions started in a tab that the library doesn't list yet — it does
++    /// once the CLI writes the transcript — by URL, with their tab's name.
++    private var startedSessions: [URL: String] = [:]
+     private var subscriptions: Set<AnyCancellable> = []
+ 
+     init(library: LibraryStore, context: TranscriptTab.Context) {
+@@ -96,7 +101,10 @@
+         // Sunk directly: the current value lands now, so a window shown on the
+         // library's first read shows its tree, not the spinner.
+         library.$isLoaded.combineLatest(library.$nodes) { isLoaded, nodes in isLoaded ? nodes : nil }
+-            .sink { [weak self] nodes in self?.sidebarViewController.show(nodes?.map(SidebarNode.init)) }
++            .sink { [weak self] nodes in
++                self?.libraryNodes = nodes?.map(SidebarNode.init)
++                self?.showSidebar()
++            }
+             .store(in: &subscriptions)
+         sessions.$activities
+             .sink { [weak self] in self?.sidebarViewController.show($0.mapValues(SidebarActivity.init)) }
+@@ -191,6 +199,17 @@
+         editorArea.reloadIndicators()
+     }
+ 
++    /// The library's tree, under the sessions started here that it doesn't
++    /// list yet — each until it does.
++    private func showSidebar() {
++        guard let libraryNodes else { return sidebarViewController.show(nil) }
++        startedSessions = startedSessions.filter { library.path(toTranscriptAt: $0.key).isEmpty }
++        let started = startedSessions.map { url, title in
++            SidebarNode(id: url.path, title: title, toolTip: title, glyph: .session, transcriptURL: url)
++        }
++        sidebarViewController.show(started + libraryNodes)
++    }
++
+ }
+ 
+ extension MainSplitViewController: TranscriptTabDelegate {
+@@ -213,6 +232,8 @@
+             return
+         }
+         show(transcript: url)
++        startedSessions[url] = source.title ?? ""
++        showSidebar()
+         sidebarViewController.select(transcriptAt: url)
+     }
+ 

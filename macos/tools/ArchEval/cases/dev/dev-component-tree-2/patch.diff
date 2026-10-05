@@ -1,0 +1,96 @@
+diff -ruN a/macos/ccterm/App/AppKit/AppDelegate.swift b/macos/ccterm/App/AppKit/AppDelegate.swift
+--- a/macos/ccterm/App/AppKit/AppDelegate.swift	2026-10-05 10:02:27
++++ b/macos/ccterm/App/AppKit/AppDelegate.swift	2026-10-05 10:55:09
+@@ -190,7 +190,10 @@
+         self.library = library
+         self.sessions = sessions
+         self.catalog = catalog
+-        let controller = MainWindowController(library: library, context: context, git: GitService())
++        let controller = MainWindowController(
++            library: library, context: context, git: GitService(),
++            settings: SettingsContext(
++                accounts: accounts, launch: launch, launchCheck: launchCheck, subscription: subscription))
+         // Where the frame persists is the app's configuration, not the window's:
+         // a `MainWindowController` built anywhere else writes no defaults.
+         controller.windowFrameAutosaveName = "MainWindow"
+diff -ruN a/macos/ccterm/App/AppKit/MainWindowController.swift b/macos/ccterm/App/AppKit/MainWindowController.swift
+--- a/macos/ccterm/App/AppKit/MainWindowController.swift	2026-10-05 10:02:27
++++ b/macos/ccterm/App/AppKit/MainWindowController.swift	2026-10-05 10:54:59
+@@ -19,6 +19,11 @@
+     private let git: GitService
+     private let splitController: MainSplitViewController
+     private let titleView = MainWindowTitleView()
++    /// What the toolbar's Settings button opens on.
++    private let settings: SettingsContext
++    /// The Settings window the toolbar opened, kept so a second press brings
++    /// the same one forward.
++    private var settingsWindowController: SettingsWindowController?
+ 
+     /// The task following the shown transcript's branch.
+     private var branchTask: Task<Void, Never>?
+@@ -31,9 +36,10 @@
+     /// Waiting to show the window; see `showWindow(whenLoadedWithin:)`.
+     private var pendingShow: AnyCancellable?
+ 
+-    init(library: LibraryStore, context: TranscriptTab.Context, git: GitService) {
++    init(library: LibraryStore, context: TranscriptTab.Context, git: GitService, settings: SettingsContext) {
+         self.library = library
+         self.git = git
++        self.settings = settings
+         splitController = MainSplitViewController(library: library, context: context)
+         let window = NSWindow(
+             contentRect: NSRect(x: 0, y: 0, width: 1200, height: 860),
+@@ -131,7 +137,7 @@
+     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+         // `.sidebarTrackingSeparator` is system-provided: it keeps the items
+         // after it over the editors, whatever the sidebar's width.
+-        [.sidebarTrackingSeparator, .navigation, .projectTitle, .flexibleSpace]
++        [.sidebarTrackingSeparator, .navigation, .projectTitle, .flexibleSpace, .settings]
+     }
+ 
+     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+@@ -146,10 +152,38 @@
+         switch itemIdentifier {
+         case .navigation: navigationItem()
+         case .projectTitle: titleItem()
++        case .settings: settingsItem()
+         default: nil
+         }
+     }
+ 
++    /// A gear at the trailing edge, as Xcode's: Settings without the menu.
++    private func settingsItem() -> NSToolbarItem {
++        let title = String(localized: "Settings")
++        let item = NSToolbarItem(itemIdentifier: .settings)
++        item.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: title)
++        item.label = title
++        item.toolTip = title
++        item.target = self
++        item.action = #selector(showSettings(_:))
++        return item
++    }
++
++    @objc private func showSettings(_ sender: Any?) {
++        let controller =
++            settingsWindowController
++            ?? {
++                let c = SettingsWindowController(
++                    panes: SettingsPane.allCases.map { .init($0, context: settings) },
++                    initial: SettingsPane.general.rawValue)
++                c.windowFrameAutosaveName = "SettingsWindow"
++                settingsWindowController = c
++                return c
++            }()
++        controller.showWindow(nil)
++        controller.window?.makeKeyAndOrderFront(nil)
++    }
++
+     /// Back and forward as one control, as Xcode's and Finder's: a momentary
+     /// segmented group, each segment a subitem with the editor area's own
+     /// action sent to nil — the responder chain finds the area, which also
+@@ -250,4 +284,5 @@
+ extension NSToolbarItem.Identifier {
+     fileprivate static let navigation = NSToolbarItem.Identifier("ccterm.main.navigation")
+     fileprivate static let projectTitle = NSToolbarItem.Identifier("ccterm.main.projectTitle")
++    fileprivate static let settings = NSToolbarItem.Identifier("ccterm.main.settings")
+ }

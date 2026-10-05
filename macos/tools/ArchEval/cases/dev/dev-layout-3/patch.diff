@@ -1,0 +1,29 @@
+diff -ruN a/macos/ccterm/Content/Transcript/TranscriptViewController.swift b/macos/ccterm/Content/Transcript/TranscriptViewController.swift
+--- a/macos/ccterm/Content/Transcript/TranscriptViewController.swift	2026-10-05 10:02:27
++++ b/macos/ccterm/Content/Transcript/TranscriptViewController.swift	2026-10-05 10:58:35
+@@ -9,8 +9,8 @@
+ ///
+ /// Shows the states it is handed (`show(_:)`) — by its container, which
+ /// follows the session once for the whole tab, or by `follow(_:)` for a
+-/// conversation with no container. Nothing is shown before the view has
+-/// its size; each state becomes a `TranscriptPage` off the main actor. The
++/// conversation with no container. Showing starts as the view comes on
++/// screen; each state becomes a `TranscriptPage` off the main actor. The
+ /// first page shows its last screen of rows at once and prepends the history
+ /// behind it a chunk at a time — scroll anchoring keeps the reader's place
+ /// while it arrives; every later page (a live session's) is applied as the
+@@ -98,10 +98,10 @@
+         transcript.delegate = self
+     }
+ 
+-    /// Mount, lay out, then load (`TranscriptKit` §5): here rather than in
+-    /// `viewWillAppear()`, where a tab's view has no size yet.
+-    override func viewDidAppear() {
+-        super.viewDidAppear()
++    /// Loads as the tab comes on screen, so its first frame already has the
++    /// last screen of rows rather than a blank one before them.
++    override func viewWillAppear() {
++        super.viewWillAppear()
+         guard !hasAppeared else { return }
+         hasAppeared = true
+         view.layoutSubtreeIfNeeded()

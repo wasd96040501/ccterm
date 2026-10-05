@@ -1,0 +1,10 @@
+{
+  "id": "dev-layout-2",
+  "dimension": "layout",
+  "area": "A3",
+  "story": "Drop the safe-area round trip (and its SafeAreaView root) and hand the transcript the floating composer's height directly, so its bottom inset follows the composer without an extra layout pass.",
+  "defect": "TranscriptViewController now takes `composerHeight` — geometry describing its sibling, the composer — which SessionTabViewController feeds from composer.view.frame in viewDidLayout, instead of the container setting the transcript's own safe area (additionalSafeAreaInsets) and the transcript honouring it like any scroll view.",
+  "involved": ["TranscriptViewController", "SessionTabViewController", "ComposerViewController"],
+  "rule": "macos/CLAUDE.md § Component boundaries — B1: a component takes no geometry that describes something else (\"the space the composer covers\"); overlap is the container's business via the child's safe area",
+  "hit": "Says TranscriptViewController exposes/takes a composerHeight (a sibling's geometry) set by SessionTabViewController from the composer's frame, instead of using additionalSafeAreaInsets / its own safe area."
+}

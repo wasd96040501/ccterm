@@ -1,0 +1,127 @@
+diff -ruN a/macos/ccterm/Content/Transcript/SessionTabViewController.swift b/macos/ccterm/Content/Transcript/SessionTabViewController.swift
+--- a/macos/ccterm/Content/Transcript/SessionTabViewController.swift	2026-10-05 10:02:27
++++ b/macos/ccterm/Content/Transcript/SessionTabViewController.swift	2026-10-05 10:58:01
+@@ -13,9 +13,9 @@
+ /// window's colour behind the floating composer, a session's only), then the
+ /// composer (`ComposerViewController`, always — one instance, which moves) on
+ /// top. As a draft the composer sits in the New view's `composerGuide`; on a
+-/// session it floats 16 pt above the tab's bottom edge, 720 pt at most. What
+-/// it covers is the transcript's safe area (its view's `additionalSafeAreaInsets`), which
+-/// the transcript scrolls clear of like any scroll view.
++/// session it floats 16 pt above the tab's bottom edge, 720 pt at most, and
++/// the transcript is told how tall it stands (`composerHeight`) so its last
++/// row scrolls clear of it.
+ ///
+ /// It is the only one in the tab that talks to the stores: it follows the
+ /// session once (`SessionStore.states(at:)`) and hands each state to the
+@@ -193,16 +193,12 @@
+         composer.focus()
+     }
+ 
+-    /// What the floating composer covers is the transcript's safe area: the
+-    /// card and the float under it. Its height, not its place, so the glide
+-    /// moves no row.
++    /// The transcript hears how tall the floating composer stands: the card
++    /// and the float under it. Its height, not its place, so the glide moves
++    /// no row.
+     override func viewDidLayout() {
+         super.viewDidLayout()
+-        guard let transcript else { return }
+-        let covered = composer.view.frame.height + Self.floatGap
+-        if transcript.view.additionalSafeAreaInsets.bottom != covered {
+-            transcript.view.additionalSafeAreaInsets.bottom = covered
+-        }
++        transcript?.composerHeight = composer.view.frame.height + Self.floatGap
+     }
+ 
+     // MARK: - What the window asks of a tab
+diff -ruN a/macos/ccterm/Content/Transcript/TranscriptViewController.swift b/macos/ccterm/Content/Transcript/TranscriptViewController.swift
+--- a/macos/ccterm/Content/Transcript/TranscriptViewController.swift	2026-10-05 10:02:27
++++ b/macos/ccterm/Content/Transcript/TranscriptViewController.swift	2026-10-05 10:58:01
+@@ -23,10 +23,10 @@
+ /// bringing an item back into view. What opening a document does is the
+ /// delegate's; what sending, stopping and answering do is the store's.
+ ///
+-/// Honours its own safe area: whatever a container lays over its bottom edge
+-/// (`additionalSafeAreaInsets`), the last row scrolls clear of it. The
+-/// transcript anchors that change like a row mutation — at the tail it stays
+-/// at the tail, anywhere else the rows in view hold still.
++/// Keeps its last row clear of the composer floating over its bottom edge
++/// (`composerHeight`). The transcript anchors that change like a row
++/// mutation — at the tail it stays at the tail, anywhere else the rows in
++/// view hold still.
+ @MainActor
+ final class TranscriptViewController: NSViewController {
+     /// The file this tab shows — what the tab is, for finding it again.
+@@ -37,6 +37,15 @@
+     /// The tab around it, when there is one.
+     weak var delegate: TranscriptViewControllerDelegate?
+ 
++    /// How tall the floating composer stands over the bottom edge, the float
++    /// under it included; 0 for a conversation with no composer.
++    var composerHeight: CGFloat = 0 {
++        didSet {
++            guard composerHeight != oldValue, isViewLoaded else { return }
++            view.needsLayout = true
++        }
++    }
++
+     private let sessions: SessionStore
+     private let transcript = TranscriptView()
+     private var page = TranscriptPage(entries: [])
+@@ -79,7 +88,7 @@
+     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+ 
+     override func loadView() {
+-        view = SafeAreaView()
++        view = NSView()
+     }
+ 
+     override func viewDidLoad() {
+@@ -163,7 +172,7 @@
+     }
+ 
+     /// Tells the delegate when the waiting request comes into view or leaves it:
+-    /// at the tail, or any part of its row inside the safe area. With no request waiting it is trivially in view. A row not laid
++    /// at the tail, or any part of its row above the composer. With no request waiting it is trivially in view. A row not laid
+     /// out yet says nothing.
+     ///
+     /// Computed when the page changes, the inset or size changes, the transcript
+@@ -180,7 +189,7 @@
+             } else {
+                 let shown = NSRect(
+                     x: 0, y: 0, width: transcript.bounds.width,
+-                    height: max(transcript.bounds.height - view.safeAreaInsets.bottom, 0))
++                    height: max(transcript.bounds.height - composerHeight, 0))
+                 visible = rect.intersects(shown)
+             }
+         } else {
+@@ -191,12 +200,12 @@
+         delegate?.transcriptViewController(self, didChangeWaitingRequestVisibility: visible)
+     }
+ 
+-    /// The space under the last row, above the safe area's bottom edge.
++    /// The space under the last row, above the composer.
+     private static let bottomGap: CGFloat = 24
+ 
+     override func viewDidLayout() {
+         super.viewDidLayout()
+-        let bottom = Self.bottomGap + view.safeAreaInsets.bottom
++        let bottom = Self.bottomGap + composerHeight
+         if transcript.contentInsets.bottom != bottom { transcript.contentInsets.bottom = bottom }
+         updateWaitingRequestVisibility()
+     }
+@@ -526,13 +535,5 @@
+         sessions.respond(toCall: callID, at: fileURL) { decision.permissionDecision(for: $0) }
+         // *Chat About This* answers nothing: the conversation is the answer.
+         if case .chatAbout = decision { delegate?.transcriptViewControllerDidChooseToChat(self) }
+-    }
+-}
+-
+-/// The transcript's root: lays out again when a container changes its safe
+-/// area, which AppKit doesn't do on its own.
+-private final class SafeAreaView: NSView {
+-    override var additionalSafeAreaInsets: NSEdgeInsets {
+-        didSet { needsLayout = true }
+     }
+ }

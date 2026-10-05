@@ -13,7 +13,7 @@ The conventions you judge against: `{REPO}/macos/CLAUDE.md` (from "AppKit conven
 on; skip the runloop tick model) and `{REPO}/macos/Components/CLAUDE.md`.
 
 Read nothing else: not the repo's `macos/` sources (they are not the version under
-review), not `build/`, not other directories. Don't run `make` or `git`.
+review), nothing else under `build/`, no other directory. Don't run `make` or `git`.
 
 ## What to look for
 
@@ -27,7 +27,7 @@ Concentrate on three things, in this area:
    whether data flows down and events up.
 
 Report anything else clearly wrong in the area too, but those three come first.
-Prefer problems this area *introduces* over general remarks about the whole app.
+Prefer concrete problems in this area over general remarks about the whole app.
 
 ## Output — exactly this, nothing before it, in English
 

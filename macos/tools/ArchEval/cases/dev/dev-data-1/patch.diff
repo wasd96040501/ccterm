@@ -1,0 +1,104 @@
+diff -ruN a/macos/ccterm/Content/Settings/Accounts/AccountsSettingsViewController.swift b/macos/ccterm/Content/Settings/Accounts/AccountsSettingsViewController.swift
+--- a/macos/ccterm/Content/Settings/Accounts/AccountsSettingsViewController.swift	2026-10-05 10:02:27
++++ b/macos/ccterm/Content/Settings/Accounts/AccountsSettingsViewController.swift	2026-10-05 10:59:42
+@@ -18,6 +18,9 @@
+     private let providersSection = ProvidersSectionViewController()
+     private var cancellables = Set<AnyCancellable>()
+ 
++    /// The providers the list shows, in its order.
++    private var providers: [Account] = []
++
+     /// The open account sheet, if any.
+     private var editor: AccountEditorCoordinator?
+     /// The account the open sheet edits.
+@@ -65,21 +68,24 @@
+         addChild(providersSection)
+         subscriptionSection.delegate = self
+         providersSection.delegate = self
++        providers = accounts.providers
+         // Both stores are main-actor and publish their current value on
+         // subscribing, so the first frame is already right.
+         subscription.$state
+             .sink { [weak self] state in self?.subscriptionSection.show(.init(state)) }
+             .store(in: &cancellables)
+         accounts.$accounts
+-            .sink { [weak self] accounts in
+-                self?.providersSection.show(
+-                    accounts.compactMap { account in
+-                        account.provider.map { .init(id: account.id, content: AccountRowContent(provider: $0)) }
+-                    })
+-            }
++            .sink { [weak self] accounts in self?.providersSection.show(Self.rows(of: accounts)) }
+             .store(in: &cancellables)
+     }
+ 
++    /// A row for each of `accounts` that is a provider.
++    private static func rows(of accounts: [Account]) -> [ProvidersSectionViewController.Row] {
++        accounts.compactMap { account in
++            account.provider.map { .init(id: account.id, content: AccountRowContent(provider: $0)) }
++        }
++    }
++
+     override func viewWillAppear() {
+         super.viewWillAppear()
+         Task { await subscription.refresh() }
+@@ -131,7 +137,7 @@
+     }
+ 
+     private func providerNames(excluding id: UUID) -> [String] {
+-        accounts.providers.filter { $0.id != id }.compactMap { $0.provider?.name }
++        providers.filter { $0.id != id }.compactMap { $0.provider?.name }
+     }
+ 
+     // MARK: - Import
+@@ -159,7 +165,7 @@
+ 
+     private func importProviders(_ entries: [AccountPaste.Entry]) {
+         let (providers, skipped) = AccountPaste.importable(
+-            entries, existingNames: accounts.providers.compactMap { $0.provider?.name })
++            entries, existingNames: self.providers.compactMap { $0.provider?.name })
+         appLog(
+             .info, "AccountsSettingsViewController",
+             "import — \(entries.count) entries, \(providers.count) importable, \(skipped) skipped")
+@@ -170,6 +176,7 @@
+         Task {
+             do {
+                 try await accounts.add(providers)
++                self.providers.append(contentsOf: providers.map(\.0))
+                 providersSection.flash(providers.map(\.0.id))
+                 showImportResult(added: providers.count, skipped: skipped)
+             } catch {
+@@ -206,6 +213,7 @@
+             Task {
+                 do {
+                     try await self.accounts.remove(account.id)
++                    self.providers.removeAll { $0.id == account.id }
+                     if self.editing?.id == account.id { self.dismissEditor() }
+                 } catch {
+                     self.report(error, on: window, while: "deleting an account")
+@@ -299,7 +307,12 @@
+     func providersSection(_ section: ProvidersSectionViewController, didRequestDuplicate id: UUID) {
+         Task {
+             do {
+-                try await accounts.duplicate(id)
++                guard let copy = try await accounts.duplicate(id) else { return }
++                // Under the original, at once, and flashed as an import's are.
++                let index = providers.firstIndex { $0.id == id }.map { $0 + 1 } ?? providers.endIndex
++                providers.insert(copy, at: index)
++                providersSection.show(Self.rows(of: providers))
++                providersSection.flash([copy.id])
+             } catch {
+                 view.window.map { report(error, on: $0, while: "duplicating an account") }
+             }
+@@ -310,9 +323,9 @@
+         provider(id).map { confirmDelete($0, on: view.window) }
+     }
+ 
+-    /// The provider a row stands for, as the store holds it now.
++    /// The provider a row stands for.
+     private func provider(_ id: UUID) -> Account? {
+-        accounts.providers.first { $0.id == id }
++        providers.first { $0.id == id }
+     }
+ }
+ 

@@ -1,0 +1,53 @@
+diff -ruN a/macos/ccterm/App/AppKit/MainSplitViewController.swift b/macos/ccterm/App/AppKit/MainSplitViewController.swift
+--- a/macos/ccterm/App/AppKit/MainSplitViewController.swift	2026-10-05 10:02:27
++++ b/macos/ccterm/App/AppKit/MainSplitViewController.swift	2026-10-05 10:57:03
+@@ -63,11 +63,13 @@
+     @available(*, unavailable)
+     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+ 
++    /// The sidebar at its narrowest: Xcode's navigator's.
++    static let sidebarMinimumThickness: CGFloat = 290
++
+     override func loadView() {
+         super.loadView()
+         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarViewController)
+-        // Xcode's navigator at its narrowest.
+-        sidebarItem.minimumThickness = 290
++        sidebarItem.minimumThickness = Self.sidebarMinimumThickness
+         sidebarItem.maximumThickness = 350
+         // First-launch width when no autosaved divider position exists,
+         // clamped into [290, 350]. Once autosave kicks in this is ignored.
+diff -ruN a/macos/ccterm/App/AppKit/MainWindowController.swift b/macos/ccterm/App/AppKit/MainWindowController.swift
+--- a/macos/ccterm/App/AppKit/MainWindowController.swift	2026-10-05 10:02:27
++++ b/macos/ccterm/App/AppKit/MainWindowController.swift	2026-10-05 10:57:03
+@@ -47,9 +47,11 @@
+         window.titleVisibility = .hidden
+         window.toolbarStyle = .unified
+         window.isReleasedWhenClosed = false
+-        // As narrow as the sidebar beside the editors' narrowest — their
+-        // constraints say how narrow; the height is the window's own.
+-        window.minSize = NSSize(width: 0, height: 540)
++        // As narrow as the sidebar beside one tab at their narrowest, so a
++        // live resize stops there instead of pushing against the editors.
++        window.minSize = NSSize(
++            width: MainSplitViewController.sidebarMinimumThickness + SessionTabViewController.minimumWidth,
++            height: 540)
+         window.contentViewController = splitController
+ 
+         super.init(window: window)
+diff -ruN a/macos/ccterm/Content/Transcript/SessionTabViewController.swift b/macos/ccterm/Content/Transcript/SessionTabViewController.swift
+--- a/macos/ccterm/Content/Transcript/SessionTabViewController.swift	2026-10-05 10:02:27
++++ b/macos/ccterm/Content/Transcript/SessionTabViewController.swift	2026-10-05 10:57:03
+@@ -121,6 +121,12 @@
+     private static let floatGap: CGFloat = 16
+     /// The floating composer's width.
+     private static let composerWidth: CGFloat = 720
++    /// The floating composer's card at its narrowest: the accessory row's
++    /// chips side by side with the action button.
++    private static let composerMinimumWidth: CGFloat = 440
++    /// The narrowest a tab lays out: the card at its narrowest with the float
++    /// on either side.
++    static let minimumWidth: CGFloat = composerMinimumWidth + 2 * floatGap
+ 
+     init(_ start: Start, title: String, context: TranscriptTab.Context) {
+         self.context = context

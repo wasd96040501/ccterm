@@ -1,0 +1,73 @@
+diff -ruN a/macos/ccterm/Content/Transcript/SessionTabViewController.swift b/macos/ccterm/Content/Transcript/SessionTabViewController.swift
+--- a/macos/ccterm/Content/Transcript/SessionTabViewController.swift	2026-10-05 10:02:27
++++ b/macos/ccterm/Content/Transcript/SessionTabViewController.swift	2026-10-05 11:01:33
+@@ -233,6 +233,7 @@
+         repositoryTask = nil
+         subscriptions = []
+         transcript?.prepareForRemoval()
++        if let transcriptURL { context.sessions.setWaitingRequestVisible(false, at: transcriptURL) }
+     }
+ 
+     /// Brings `itemID` back into view in the transcript, and flashes it.
+@@ -759,6 +760,9 @@
+     ) {
+         guard isWaitingRequestVisible != isVisible else { return }
+         isWaitingRequestVisible = isVisible
++        // The sidebar and the tab bar stop calling for a request the reader
++        // already has in view.
++        if let transcriptURL { context.sessions.setWaitingRequestVisible(isVisible, at: transcriptURL) }
+         configureComposer()
+     }
+ 
+diff -ruN a/macos/ccterm/Sessions/SessionStore.swift b/macos/ccterm/Sessions/SessionStore.swift
+--- a/macos/ccterm/Sessions/SessionStore.swift	2026-10-05 10:02:27
++++ b/macos/ccterm/Sessions/SessionStore.swift	2026-10-05 11:01:33
+@@ -51,6 +51,9 @@
+     private var readers: [URL: Int] = [:]
+     /// Where each session's CLI works: what a restart or a resume launches in.
+     private var workingDirectories: [URL: URL] = [:]
++    /// Sessions whose waiting request is on screen in their tab: the reader
++    /// is already looking at it, so their activity doesn't call for them.
++    private var requestsInView: Set<URL> = []
+ 
+     /// `launch`: how the CLI is launched for an account (its id), secrets
+     /// read. `directories`: where launches write sessions. `catalog`: what
+@@ -357,12 +360,28 @@
+         followers[url] = session.$state.sink { [weak self, weak session] state in
+             MainActor.assumeIsolated {
+                 guard let self, let session else { return }
+-                guard let activity = state.activity else { return self.drop(session) }
+-                if self.activities[url] != activity { self.activities[url] = activity }
++                guard state.activity != nil else { return self.drop(session) }
++                self.publishActivity(of: state, at: url)
+             }
+         }
+     }
+ 
++    /// `state`'s activity into `activities`: a request the reader has in view
++    /// reads as the turn it waits in.
++    private func publishActivity(of state: SessionState, at url: URL) {
++        guard var activity = state.activity else { return }
++        if activity == .needsInput, requestsInView.contains(url) { activity = .responding }
++        if activities[url] != activity { activities[url] = activity }
++    }
++
++    /// Whether the request waiting in the session at `url` is on screen in
++    /// its tab.
++    func setWaitingRequestVisible(_ isVisible: Bool, at url: URL) {
++        if isVisible { requestsInView.insert(url) } else { requestsInView.remove(url) }
++        guard let state = live[url]?.state else { return }
++        publishActivity(of: state, at: url)
++    }
++
+     /// Forgets `session` — only if it is still the one at its URL.
+     private func drop(_ session: LiveSession) {
+         let url = session.transcriptURL
+@@ -370,6 +389,7 @@
+         live[url] = nil
+         followers[url] = nil
+         activities[url] = nil
++        requestsInView.remove(url)
+     }
+ 
+     /// Interrupts the turn running at `url`; nothing if none.

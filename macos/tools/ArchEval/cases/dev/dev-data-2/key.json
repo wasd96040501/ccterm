@@ -1,0 +1,10 @@
+{
+  "id": "dev-data-2",
+  "dimension": "data",
+  "area": "A2",
+  "story": "List a session started in a tab in the sidebar at once, under its tab's name, instead of waiting for the CLI to write its transcript and the library to read it.",
+  "defect": "MainSplitViewController feeds the sidebar (SidebarViewController) a node built from a sibling's state — the session tab's `title` — and keeps its own `startedSessions` list merged into the library's tree, so the container passes one child's data to another and the sidebar's tree gets a second source of truth beside LibraryStore.",
+  "involved": ["MainSplitViewController", "SidebarViewController", "SessionTabViewController", "LibraryStore"],
+  "rule": "macos/CLAUDE.md § Component boundaries — B2: siblings never meet, not even through the container; a container never feeds one child from another, it updates the one source of truth and configures both from it",
+  "hit": "Says MainSplitViewController pushes the tab's title (source.title) into the sidebar / merges its own started-session nodes with LibraryStore's tree — a sibling-to-sibling feed through the container and a second source of truth for the sidebar."
+}

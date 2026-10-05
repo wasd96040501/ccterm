@@ -1,0 +1,10 @@
+{
+  "id": "dev-layout-1",
+  "dimension": "layout",
+  "area": "A2",
+  "story": "Give the main window an explicit minimum width so a live resize stops at the sidebar plus one tab at their narrowest.",
+  "defect": "MainWindowController computes window.minSize by adding a static size exposed by its child MainSplitViewController (sidebarMinimumThickness) to one exposed by a great-grandchild, SessionTabViewController.minimumWidth — itself a hand-copied guess of the composer card's narrowest width — so geometry crosses component boundaries and duplicates what the composer's own constraints already decide.",
+  "involved": ["MainWindowController", "SessionTabViewController", "MainSplitViewController", "ComposerViewController"],
+  "rule": "macos/CLAUDE.md § Component boundaries — B1: no geometry crosses a boundary; a component exposes no size for another to read (and B3: nothing reaches past its child)",
+  "hit": "Says MainWindowController sizes the window from SessionTabViewController.minimumWidth (and the split's sidebar thickness) — a size exposed for another component to read / a far descendant's geometry and a copied composer-width constant instead of letting the constraints decide."
+}

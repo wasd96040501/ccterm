@@ -1,0 +1,10 @@
+{
+  "id": "dev-component-tree-2",
+  "dimension": "component-tree",
+  "area": "A2",
+  "story": "Add a gear button to the main window's toolbar that opens Settings, as Xcode's does.",
+  "defect": "MainWindowController now takes a SettingsContext and itself builds, holds and presents a SettingsWindowController (and its panes) instead of sending showSettingsWindow(_:) up the responder chain to AppDelegate, so one window controller creates the next screen and a second Settings window can exist beside the AppDelegate-owned one.",
+  "involved": ["MainWindowController", "SettingsWindowController", "AppDelegate", "SettingsContext"],
+  "rule": "macos/CLAUDE.md § Coordinator & navigation — a controller reports the event (or sends the action to nil) and never creates/presents the next screen or constructs its dependencies; each window is owned by one window controller created at the composition root",
+  "hit": "Says MainWindowController creates/owns/presents the SettingsWindowController (and needs SettingsContext for it) rather than routing to AppDelegate's showSettingsWindow — a window controller building another window / duplicate Settings window ownership."
+}

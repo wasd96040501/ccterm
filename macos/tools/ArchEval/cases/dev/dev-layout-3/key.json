@@ -1,0 +1,10 @@
+{
+  "id": "dev-layout-3",
+  "dimension": "layout",
+  "area": "A4",
+  "story": "Avoid a blank frame when a transcript tab opens by starting its first load as the tab comes on screen.",
+  "defect": "TranscriptViewController's first load (layoutSubtreeIfNeeded, then showPending, which measures rows, fills the first screen and scrolls to the bottom) moved from viewDidAppear to viewWillAppear, where the tab's view is not yet in the window or sized by its container (0x0), so the size-dependent first page is computed at the wrong size and redone.",
+  "involved": ["TranscriptViewController", "TranscriptView"],
+  "rule": "macos/CLAUDE.md § Controllers & containment — Size before content: a size-dependent first load runs in viewDidAppear (guarded once, after layoutSubtreeIfNeeded), never in viewWillAppear",
+  "hit": "Says TranscriptViewController loads/measures its first page in viewWillAppear, before the view is mounted and laid out (size before content broken)."
+}

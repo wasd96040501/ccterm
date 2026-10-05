@@ -1,0 +1,10 @@
+{
+  "id": "dev-data-1",
+  "dimension": "data",
+  "area": "A1",
+  "story": "Show a duplicated provider under its original at once and flash it, as an import's rows flash.",
+  "defect": "AccountsSettingsViewController now keeps its own `providers: [Account]` copied once from AccountStore and maintains it by hand (insert on duplicate, append on import, remove on delete), feeds ProvidersSectionViewController from that copy alongside the store's $accounts sink, and resolves rows and taken names from it — a second source of truth that goes stale (e.g. after a sheet save) and fights the store's publish.",
+  "involved": ["AccountsSettingsViewController", "AccountStore", "ProvidersSectionViewController"],
+  "rule": "macos/CLAUDE.md § Data down, events up — state lives in exactly one source of truth; the Controller invents no truth (only subscribes) and never mutates its own copy of store state",
+  "hit": "Says AccountsSettingsViewController caches the provider list (a copy of AccountStore's accounts) and mutates that copy / feeds the section from it, instead of only subscribing to AccountStore — two sources of truth."
+}

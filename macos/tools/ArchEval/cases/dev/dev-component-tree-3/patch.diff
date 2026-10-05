@@ -1,0 +1,103 @@
+diff -ruN a/macos/ccterm/Content/Transcript/Documents/DocumentViewController.swift b/macos/ccterm/Content/Transcript/Documents/DocumentViewController.swift
+--- a/macos/ccterm/Content/Transcript/Documents/DocumentViewController.swift	2026-10-05 10:02:27
++++ b/macos/ccterm/Content/Transcript/Documents/DocumentViewController.swift	2026-10-05 11:03:21
+@@ -26,10 +26,14 @@
+     private var document: Document?
+     private let loadDocument: DocumentLoader
+     private let showInTranscript: @MainActor (DocumentReference) -> Void
++    /// The transcript the reader opened this document from, when they did —
++    /// a subagent's conversation inside another document is no tab the
++    /// window can find.
++    private let transcript: TranscriptViewController?
+     /// Answers the call waiting on the reader: the approval bar's decision.
+     private let decide: @MainActor (Decision, String) -> Void
+-    /// A transcript tab for the conversation at a URL, titled — this module
+-    /// doesn't know the transcript view controller.
++    /// A transcript tab for the conversation at a URL, titled, built by
++    /// whoever made this tab.
+     private let makeConversation: @MainActor (URL, String) -> NSViewController
+     private var loadTask: Task<Void, Never>?
+     private var hasLoaded = false
+@@ -69,10 +73,12 @@
+     /// `document` is what the reader just opened; without one — a tab made
+     /// from history — the tab has no title until `load` gives it.
+     /// `makeConversation` makes the transcript tab a subagent's conversation
+-    /// opens as; `showInTranscript` is *Show in Transcript*; `decide` answers
+-    /// the call (decision, call id).
++    /// opens as; `showInTranscript` is *Show in Transcript*, unless
++    /// `transcript` — where it was opened from — reveals it itself; `decide`
++    /// answers the call (decision, call id).
+     init(
+         reference: DocumentReference, document: Document? = nil,
++        transcript: TranscriptViewController? = nil,
+         load: @escaping DocumentLoader,
+         makeConversation: @escaping @MainActor (URL, String) -> NSViewController,
+         showInTranscript: @escaping @MainActor (DocumentReference) -> Void,
+@@ -80,6 +86,7 @@
+     ) {
+         self.reference = reference
+         self.document = document
++        self.transcript = transcript
+         loadDocument = load
+         self.showInTranscript = showInTranscript
+         self.decide = decide
+@@ -287,7 +294,11 @@
+ 
+ extension DocumentViewController: JumpBarViewDelegate {
+     func jumpBarViewDidRequestShowInTranscript(_ jumpBar: JumpBarView) {
+-        showInTranscript(reference)
++        guard let transcript else {
++            showInTranscript(reference)
++            return
++        }
++        transcript.reveal(reference.id, select: true)
+     }
+ }
+ 
+diff -ruN a/macos/ccterm/Content/Transcript/TranscriptTab.swift b/macos/ccterm/Content/Transcript/TranscriptTab.swift
+--- a/macos/ccterm/Content/Transcript/TranscriptTab.swift	2026-10-05 10:02:27
++++ b/macos/ccterm/Content/Transcript/TranscriptTab.swift	2026-10-05 11:03:21
+@@ -119,11 +119,14 @@
+ 
+     /// Internal, feature-only (not used by App/AppKit): a document tab from an already-resolved Document
+     /// (synchronous, no blank frame). Identifier `.document(document.reference)`.
++    /// `transcript`: the transcript it was opened from, which *Show in
++    /// Transcript* goes back to.
+     @MainActor static func makeDocumentItem(
+-        _ document: Document, sessions: SessionStore,
++        _ document: Document, from transcript: TranscriptViewController? = nil, sessions: SessionStore,
+         delegate: TranscriptTabDelegate
+     ) -> NSTabViewItem {
+-        makeDocumentItem(document.reference, document: document, sessions: sessions, delegate: delegate)
++        makeDocumentItem(
++            document.reference, document: document, transcript: transcript, sessions: sessions, delegate: delegate)
+     }
+ 
+     /// Stops what the tab's controllers have in flight — a transcript's load,
+@@ -162,12 +165,12 @@
+     }
+ 
+     @MainActor private static func makeDocumentItem(
+-        _ reference: DocumentReference, document: Document?,
++        _ reference: DocumentReference, document: Document?, transcript: TranscriptViewController? = nil,
+         sessions: SessionStore, delegate: TranscriptTabDelegate
+     ) -> NSTabViewItem {
+         weak var controller: DocumentViewController?
+         let created = DocumentViewController(
+-            reference: reference, document: document,
++            reference: reference, document: document, transcript: transcript,
+             load: { documents($0, in: sessions) },
+             makeConversation: { [weak delegate] url, title in
+                 makeConversation(url, title: title, sessions: sessions, delegate: delegate)
+diff -ruN a/macos/ccterm/Content/Transcript/TranscriptViewController.swift b/macos/ccterm/Content/Transcript/TranscriptViewController.swift
+--- a/macos/ccterm/Content/Transcript/TranscriptViewController.swift	2026-10-05 10:02:27
++++ b/macos/ccterm/Content/Transcript/TranscriptViewController.swift	2026-10-05 11:03:21
+@@ -377,7 +377,7 @@
+         let sessions = sessions
+         delegate.transcriptTab(
+             self, didRequestOpen: .document(document.reference), pinned: pinned,
+-            makeItem: { TranscriptTab.makeDocumentItem(document, sessions: sessions, delegate: delegate) })
++            makeItem: { TranscriptTab.makeDocumentItem(document, from: self, sessions: sessions, delegate: delegate) })
+     }
+ 
+     /// Brings `id` — an item, or the call an entry is about — into view and

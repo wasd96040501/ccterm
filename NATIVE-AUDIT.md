@@ -11,9 +11,11 @@ Status: `[ ]` open · `[x]` fixed (commit) · `[-]` dropped (why)
 
 ## First batch — user-visible, verified
 
-- [ ] **1. Question card options are hand-drawn** — `Components/Rows/QuestionRowView.swift` (`OptionView`, `mark(for:picked:)`).
+- [x] **1. Question card options are hand-drawn** — `Components/Rows/QuestionRowView.swift` (`OptionView`, `mark(for:picked:)`).
   `main` had `NSButton(radioButtonWithTitle:)` / `checkboxWithTitle:`; `09a98af0` replaced them with an NSView, an SF Symbol and a tracking area. Lost: Tab / Space, VoiceOver's role and value, act on release.
   Native: radio / checkbox `NSButton`s; the row's hover fill drawn by the container.
+  **Fixed** (*Question options are AppKit radio buttons and checkboxes*): each live option is one radio button / checkbox titled with both lines, measured by its own cell; a question's buttons share a view and an action, so its radio buttons are one group; what is picked is the buttons' state (no `picks` copy); *Other* is a radio button beside its field. The hover fill is gone — a radio button takes a click on its mark and words only, so a row-wide fill promised a click that wasn't there; 07-talk.md and preview.css say so. Tests: the window's hit test finds the button under the words, `performClick` picks, the group follows, each question is its own group, *Other* focuses its field, typing picks *Other* alone; roles read from the cells (`AXRadioButton` / `AXCheckBox`).
+  Note for the tests that follow: synthetic mouse-down/up don't drive an `NSButton`'s tracking under XCTest (no mouse button is really down) — assert the hit, then `performClick`.
 - [ ] **2. Menu button and Worktree toggle** — `Components/Drawing/NSButton+Menu.swift`, `Menu/MenuPopover.swift`, `Composer/ComposerView.swift` (`show(_:on:)`), `NewSession/NewSessionViewController.swift` (`worktreeButton`).
   `.pushOnPushOff` plus the popover / owner writing `state` (two writers); acts on mouse-down; `setAccessibilityRole(.popUpButton)` on a plain button; title hand-built from `NSTextAttachment`s (text off the bezel's centre); `closingPress` event-timestamp hack; open/close decided in three places; Worktree's title hard-codes `.foregroundColor`.
   Native: a button whose state only mirrors its popover, acting on release; `NSPopoverDelegate.popoverShouldClose(_:)` for the press that closes it; title / image laid out by the cell.

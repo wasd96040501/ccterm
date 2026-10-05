@@ -26,7 +26,11 @@ answer together, like a form that was filled in.
   description (12 pt), both wrapped, never cut — an option's description is
   often a sentence, and side by side it either truncates or pushes the
   label's column wide. The mark (radio, or checkbox for `multiSelect`) sits
-  on the label's line; a live option's hover covers both lines.
+  on the label's line. Live, an option is an AppKit radio button (or
+  checkbox) titled with both lines: it takes a click on its mark or its
+  words, Space and VoiceOver as any does, and a question's radio buttons are
+  one group. No hover fill — AppKit's radio buttons have none, and a fill
+  wider than what takes the click would promise a click that isn't there.
 - Answered: the chosen ones with a filled mark, label colour and secondary
   description; the others hollow and tertiary. A multi-select question says
   *Choose any* after its header.

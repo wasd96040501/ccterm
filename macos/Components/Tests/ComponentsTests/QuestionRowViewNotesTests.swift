@@ -33,15 +33,11 @@ final class QuestionRowViewNotesTests: XCTestCase {
 
     /// Pick *Split*, write notes, and press the button titled `title`.
     private func pickNoteAndPress(_ view: QuestionRowView, _ title: String) throws {
-        let label = try XCTUnwrap(
-            descendants(of: view).compactMap { $0 as? NSTextField }.first { $0.stringValue == "Split" })
-        let option = try XCTUnwrap(label.superview)
-        let event = try XCTUnwrap(
-            NSEvent.mouseEvent(
-                with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
-                windowNumber: view.window?.windowNumber ?? 0, context: nil, eventNumber: 0, clickCount: 1,
-                pressure: 1))
-        option.mouseDown(with: event)
+        let split = try XCTUnwrap(
+            descendants(of: view).compactMap { $0 as? NSButton }.first { $0.attributedTitle.string == "Split\nTwo" })
+        XCTAssertTrue(
+            split.hitInWindow(at: NSPoint(x: 26, y: split.isFlipped ? 13 : split.bounds.height - 13)) === split)
+        split.performClick(nil)
         let notes = try XCTUnwrap(
             descendants(of: view).compactMap { $0 as? NSTextField }.first { $0.tag == 1000 })
         notes.stringValue = "  keep the doc beside  "

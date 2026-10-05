@@ -10,8 +10,10 @@ import DisplayModels
 /// (14-pt label) and its options, 12 pt apart. An option is two lines — its
 /// label and, under it, its description, both wrapped and never cut — with the
 /// mark on the label's line: chosen ones filled and in label colour, the others
-/// hollow and tertiary. While it waits the marks are radio buttons or
-/// checkboxes, the last option of each question is *Other* (a text field), an
+/// hollow and tertiary. While it waits each option is a radio button or a
+/// checkbox whose title is both lines — the control takes the click on its
+/// mark and words, the keys and VoiceOver, and a question's radio buttons are
+/// one group — the last option of each question is *Other* (a text field), an
 /// option with a preview shows it beside the list with a *Notes* field, and
 /// **Submit** (⌘↩, enabled once every question has an answer) and *Chat About
 /// This* sit under them; ⎋ declines.
@@ -116,6 +118,14 @@ public final class QuestionRowView: NSView, PageRowView {
                 let inner = max(0, laid.listWidth - QuestionRowView.markColumn)
                 var top: CGFloat = 0
                 for option in model.isTalkedOver ? [] : item.options {
+                    if model.isWaiting {
+                        // Measured by the control that draws it.
+                        let height = QuestionRowView.liveOptionHeight(
+                            option, several: item.allowsSeveral, width: laid.listWidth)
+                        laid.options.append(Option(top: top, labelHeight: 0, detailHeight: 0, height: height))
+                        top += height
+                        continue
+                    }
                     let label = QuestionRowView.linedHeight(
                         option.label, font: QuestionRowView.optionFont, line: QuestionRowView.labelLine, width: inner)
                     let detail =
@@ -167,52 +177,35 @@ public final class QuestionRowView: NSView, PageRowView {
 
     // MARK: - Views
 
-    /// One option: a mark, its label and its description, hovered and pressed
-    /// while it waits. *Other* swaps its label for a text field.
-    private final class OptionView: NSView {
+    /// An answered option: its mark, filled when chosen, its label and its
+    /// description — words to read, not a control.
+    private final class AnsweredOptionView: NSView {
         let mark = NSImageView()
-        let label: NSTextField
-        let detail: NSTextField
-        let field: NSTextField?
-        var onPress: (() -> Void)?
-        private let isLive: Bool
-        private var isHovered = false {
-            didSet { needsDisplay = true }
-        }
+        let label = NSTextField(wrappingLabelWithString: "")
+        let detail = NSTextField(wrappingLabelWithString: "")
 
-        init(label: String, detail: String, live: Bool, typed placeholder: String? = nil) {
-            self.isLive = live
-            self.label = NSTextField(wrappingLabelWithString: label)
-            self.detail = NSTextField(wrappingLabelWithString: detail)
-            if let placeholder {
-                let field = NSTextField()
-                field.placeholderAttributedString = NSAttributedString(
-                    string: placeholder,
-                    attributes: [.font: QuestionRowView.optionFont, .foregroundColor: NSColor.tertiaryLabelColor])
-                field.font = QuestionRowView.optionFont
-                field.isBordered = false
-                field.drawsBackground = false
-                field.focusRingType = .none
-                field.lineBreakMode = .byTruncatingTail
-                self.field = field
-            } else {
-                field = nil
-            }
+        init(_ option: Question.Item.Option, several: Bool) {
             super.init(frame: .zero)
-            for text in [self.label, self.detail] {
+            let symbol =
+                several
+                ? (option.isChosen ? "checkmark.square.fill" : "square")
+                : (option.isChosen ? "circle.inset.filled" : "circle")
+            mark.image = .symbol(symbol, pointSize: 12)
+            mark.contentTintColor = option.isChosen ? .controlAccentColor : .tertiaryLabelColor
+            mark.imageScaling = .scaleNone
+            for text in [label, detail] {
                 text.isSelectable = false
                 text.maximumNumberOfLines = 0
                 text.lineBreakMode = .byWordWrapping
             }
-            self.label.font = QuestionRowView.optionFont
-            self.detail.font = QuestionRowView.detailFont
-            self.detail.isHidden = detail.isEmpty
-            self.label.isHidden = placeholder != nil
-            mark.imageScaling = .scaleNone
-            for view in [mark, self.label, self.detail, field].compactMap({ $0 }) { addSubview(view) }
-            wantsLayer = true
-            layer?.cornerRadius = CornerRadius.control
-            layer?.cornerCurve = .continuous
+            label.attributedStringValue = QuestionRowView.lined(
+                option.label, font: QuestionRowView.optionFont, line: QuestionRowView.labelLine,
+                color: option.isChosen ? .labelColor : .tertiaryLabelColor)
+            detail.attributedStringValue = QuestionRowView.lined(
+                option.detail, font: QuestionRowView.detailFont, line: QuestionRowView.detailLine,
+                color: option.isChosen ? .secondaryLabelColor : .tertiaryLabelColor)
+            detail.isHidden = option.detail.isEmpty
+            for view in [mark, label, detail] { addSubview(view) }
         }
 
         @available(*, unavailable)
@@ -220,44 +213,11 @@ public final class QuestionRowView: NSView, PageRowView {
 
         override var isFlipped: Bool { true }
 
-        override var wantsUpdateLayer: Bool { true }
-
-        override func updateLayer() {
-            effectiveAppearance.performAsCurrentDrawingAppearance {
-                layer?.backgroundColor = (isLive && isHovered ? NSColor.quaternarySystemFill : .clear).cgColor
-            }
-        }
-
-        override func updateTrackingAreas() {
-            super.updateTrackingAreas()
-            for area in trackingAreas { removeTrackingArea(area) }
-            if isLive {
-                addTrackingArea(
-                    NSTrackingArea(
-                        rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
-                )
-            }
-        }
-
-        override func mouseEntered(with event: NSEvent) { isHovered = true }
-        override func mouseExited(with event: NSEvent) { isHovered = false }
-
-        override func mouseDown(with event: NSEvent) {
-            guard isLive else { return super.mouseDown(with: event) }
-            onPress?()
-        }
-
-        func layoutContent(_ metrics: Metrics.Option?) {
+        func layoutContent(_ metrics: Metrics.Option) {
             let inner = max(0, bounds.width - QuestionRowView.markColumn)
             let pad = QuestionRowView.optionPad
             // Centred on the label's first 18-pt line.
             mark.frame = NSRect(x: 0, y: pad + (QuestionRowView.labelLine - 16) / 2, width: 16, height: 16)
-            if let field {
-                field.frame = NSRect(
-                    x: QuestionRowView.markColumn, y: (bounds.height - 18) / 2, width: inner, height: 18)
-                return
-            }
-            guard let metrics else { return }
             label.frame = NSRect(x: QuestionRowView.markColumn, y: pad, width: inner, height: metrics.labelHeight)
             detail.frame = NSRect(
                 x: QuestionRowView.markColumn, y: pad + metrics.labelHeight, width: inner,
@@ -265,11 +225,72 @@ public final class QuestionRowView: NSView, PageRowView {
         }
     }
 
+    /// A waiting question's options: a radio button or checkbox per option,
+    /// then *Other* — its button and the field it is typed in. The buttons
+    /// share this view and one action, so a question's radio buttons are one
+    /// group, apart from every other question's.
+    private final class OptionList: NSView {
+        let buttons: [NSButton]
+        let field = NSTextField()
+
+        /// The *Other* row's button, last of `buttons`.
+        var other: NSButton { buttons[buttons.count - 1] }
+
+        init(_ item: Question.Item, target: AnyObject, action: Selector) {
+            let titles = item.options.map(QuestionRowView.liveTitle) + [NSAttributedString()]
+            buttons = titles.map { title in
+                let button =
+                    item.allowsSeveral
+                    ? NSButton(checkboxWithTitle: "", target: target, action: action)
+                    : NSButton(radioButtonWithTitle: "", target: target, action: action)
+                button.attributedTitle = title
+                button.lineBreakMode = .byWordWrapping
+                return button
+            }
+            super.init(frame: .zero)
+            field.placeholderAttributedString = NSAttributedString(
+                string: item.otherLabel,
+                attributes: [.font: QuestionRowView.optionFont, .foregroundColor: NSColor.tertiaryLabelColor])
+            field.font = QuestionRowView.optionFont
+            field.isBordered = false
+            field.drawsBackground = false
+            field.focusRingType = .none
+            field.lineBreakMode = .byTruncatingTail
+            other.setAccessibilityLabel(item.otherLabel)
+            for view in buttons + [field] { addSubview(view) }
+            setAccessibilityElement(true)
+            setAccessibilityRole(item.allowsSeveral ? .group : .radioGroup)
+            setAccessibilityLabel(item.text)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+        override var isFlipped: Bool { true }
+
+        /// Each option's row, top to bottom, *Other*'s last: an option's
+        /// button fills its row; *Other*'s mark takes the row's start and the
+        /// field the rest of its one line.
+        func place(_ rows: [NSRect]) {
+            for (button, row) in zip(buttons.dropLast(), rows) { button.frame = row }
+            guard let row = rows.last else { return }
+            other.frame = NSRect(x: row.minX, y: row.minY, width: QuestionRowView.markColumn, height: row.height)
+            // A borderless field sets its words 2 in from its edge: back by
+            // as much, they start where the options' labels do.
+            let fieldX = QuestionRowView.markColumn - 2
+            field.frame = NSRect(
+                x: fieldX, y: row.midY - QuestionRowView.labelLine / 2, width: max(0, row.width - fieldX),
+                height: QuestionRowView.labelLine)
+        }
+    }
+
     private struct ItemViews {
         var header: NSTextField?
         var text: NSTextField
-        var options: [OptionView]
-        var other: OptionView?
+        /// Answered: the options to read.
+        var answered: [AnsweredOptionView]
+        /// Waiting: the options to choose.
+        var list: OptionList?
         var previewBox: NSView?
         var preview: NSTextField?
         var notes: NSTextField?
@@ -298,9 +319,8 @@ public final class QuestionRowView: NSView, PageRowView {
     }()
     private var model: Question?
 
-    /// What the reader has picked: per question, the options (the *Other* row is
-    /// one past the last), what they typed in *Other*, and their notes.
-    private var picks: [Set<Int>] = []
+    /// Per question, what the reader typed in *Other* and their notes. What
+    /// they picked is the buttons' state (`picked(_:)`).
     private var typed: [String] = []
     private var notes: [String] = []
 
@@ -354,6 +374,31 @@ public final class QuestionRowView: NSView, PageRowView {
         return max(line, (height / line).rounded() * line)
     }
 
+    /// A live option's title: its label on 18-pt lines and, under it, its
+    /// description on 16.
+    fileprivate static func liveTitle(_ option: Question.Item.Option) -> NSAttributedString {
+        let title = NSMutableAttributedString(
+            attributedString: lined(option.label, font: optionFont, line: labelLine, color: .labelColor))
+        if !option.detail.isEmpty {
+            title.append(
+                lined("\n" + option.detail, font: detailFont, line: detailLine, color: .secondaryLabelColor))
+        }
+        return title
+    }
+
+    private static let radioCell = NSButton(radioButtonWithTitle: "", target: nil, action: nil).cell
+    private static let checkboxCell = NSButton(checkboxWithTitle: "", target: nil, action: nil).cell
+
+    /// A live option's height at `width`: its button's, measured by the
+    /// button's own cell, and the option's padding above and below.
+    private static func liveOptionHeight(_ option: Question.Item.Option, several: Bool, width: CGFloat) -> CGFloat {
+        guard let cell = (several ? checkboxCell : radioCell) as? NSButtonCell else { return 0 }
+        cell.attributedTitle = liveTitle(option)
+        cell.lineBreakMode = .byWordWrapping
+        let size = cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: max(width, 1), height: 100_000))
+        return 2 * optionPad + ceil(size.height)
+    }
+
     /// The height `text` wraps to at `width` — measured by the cell the label
     /// draws with, so measuring and drawing cannot disagree.
     private static func wrappedHeight(_ text: String, font: NSFont, width: CGFloat) -> CGFloat {
@@ -375,12 +420,13 @@ public final class QuestionRowView: NSView, PageRowView {
 
     private func rebuild(_ model: Question) {
         for views in itemViews {
-            for view in [views.header, views.text, views.previewBox, views.notes] { view?.removeFromSuperview() }
-            for option in views.options + [views.other].compactMap({ $0 }) { option.removeFromSuperview() }
+            for view in [views.header, views.text, views.list, views.previewBox, views.notes] {
+                view?.removeFromSuperview()
+            }
+            for option in views.answered { option.removeFromSuperview() }
         }
         submit.removeFromSuperview()
         chat.removeFromSuperview()
-        picks = model.items.map { _ in [] }
         typed = model.items.map { _ in "" }
         notes = model.items.map { _ in "" }
         outcome.stringValue = model.outcome ?? ""
@@ -391,24 +437,18 @@ public final class QuestionRowView: NSView, PageRowView {
             let text = label(item.text, font: Self.textFont, color: .labelColor)
             text.maximumNumberOfLines = 0
             text.lineBreakMode = .byWordWrapping
-            let options = (model.isTalkedOver ? [] : item.options).enumerated().map { position, option in
-                makeOption(option, of: item, item: index, position: position, waiting: model.isWaiting)
-            }
-            var other: OptionView?
+            let answered =
+                model.isWaiting || model.isTalkedOver
+                ? [] : item.options.map { AnsweredOptionView($0, several: item.allowsSeveral) }
+            var list: OptionList?
             var box: NSView?
             var preview: NSTextField?
             var notesField: NSTextField?
             if model.isWaiting {
-                let view = OptionView(label: "", detail: "", live: true, typed: item.otherLabel)
-                view.field?.delegate = self
-                view.field?.tag = index
-                view.onPress = { [weak self, weak view] in
-                    self?.pickOther(item: index)
-                    view?.field.map { self?.window?.makeFirstResponder($0) }
-                }
-                view.mark.image = mark(for: item, picked: false)
-                view.mark.contentTintColor = .tertiaryLabelColor
-                other = view
+                let options = OptionList(item, target: self, action: #selector(optionPressed(_:)))
+                options.field.delegate = self
+                options.field.tag = index
+                list = options
                 if item.hasPreviews {
                     box = PreviewBox()
                     let words = NSTextField(wrappingLabelWithString: "")
@@ -427,10 +467,10 @@ public final class QuestionRowView: NSView, PageRowView {
                     notesField = field
                 }
             }
-            for view in [header, text, box, notesField, other].compactMap({ $0 }) { addSubview(view) }
-            for option in options { addSubview(option) }
+            for view in [header, text, box, notesField, list].compactMap({ $0 }) { addSubview(view) }
+            for option in answered { addSubview(option) }
             return ItemViews(
-                header: header, text: text, options: options, other: other, previewBox: box, preview: preview,
+                header: header, text: text, answered: answered, list: list, previewBox: box, preview: preview,
                 notes: notesField)
         }
         if model.isWaiting {
@@ -457,38 +497,6 @@ public final class QuestionRowView: NSView, PageRowView {
         return field
     }
 
-    private func makeOption(
-        _ option: Question.Item.Option, of item: Question.Item, item index: Int, position: Int, waiting: Bool
-    ) -> OptionView {
-        let view = OptionView(label: option.label, detail: option.detail, live: waiting)
-        let labelColor: NSColor
-        let detailColor: NSColor
-        if waiting {
-            view.onPress = { [weak self] in self?.pick(item: index, option: position) }
-            view.mark.image = mark(for: item, picked: false)
-            view.mark.contentTintColor = .tertiaryLabelColor
-            labelColor = .labelColor
-            detailColor = .secondaryLabelColor
-        } else {
-            view.mark.image = mark(for: item, picked: option.isChosen)
-            view.mark.contentTintColor = option.isChosen ? .controlAccentColor : .tertiaryLabelColor
-            labelColor = option.isChosen ? .labelColor : .tertiaryLabelColor
-            detailColor = option.isChosen ? .secondaryLabelColor : .tertiaryLabelColor
-        }
-        view.label.attributedStringValue = Self.lined(
-            option.label, font: Self.optionFont, line: Self.labelLine, color: labelColor)
-        view.detail.attributedStringValue = Self.lined(
-            option.detail, font: Self.detailFont, line: Self.detailLine, color: detailColor)
-        return view
-    }
-
-    private func mark(for item: Question.Item, picked: Bool) -> NSImage? {
-        let symbol =
-            item.allowsSeveral
-            ? (picked ? "checkmark.square.fill" : "square") : (picked ? "circle.inset.filled" : "circle")
-        return .symbol(symbol, pointSize: 12)
-    }
-
     private func label(_ string: String, font: NSFont, color: NSColor) -> NSTextField {
         let field = NSTextField(wrappingLabelWithString: string)
         field.font = font
@@ -506,19 +514,22 @@ public final class QuestionRowView: NSView, PageRowView {
         let x = Self.tileColumn
         let available = max(0, bounds.width - x)
         tileView.frame = NSRect(x: 0, y: 0, width: Self.tileSide, height: Self.tileSide)
-        for ((views, laid), item) in zip(zip(itemViews, plan.items), model.items) {
+        for (views, laid) in zip(itemViews, plan.items) {
             if let header = views.header, let top = laid.headerTop {
                 header.frame = NSRect(x: x, y: top, width: available, height: Self.headerHeight)
             }
             views.text.frame = NSRect(x: x, y: laid.textTop, width: available, height: laid.textHeight)
-            for (option, metrics) in zip(views.options, laid.options) {
+            for (option, metrics) in zip(views.answered, laid.options) {
                 option.frame = NSRect(
                     x: x, y: laid.listTop + metrics.top, width: laid.listWidth, height: metrics.height)
                 option.layoutContent(metrics)
             }
-            if let other = views.other, let top = laid.otherTop {
-                other.frame = NSRect(x: x, y: laid.listTop + top, width: laid.listWidth, height: Self.otherHeight)
-                other.layoutContent(nil)
+            if let list = views.list, let otherTop = laid.otherTop {
+                list.frame = NSRect(x: x, y: laid.listTop, width: laid.listWidth, height: laid.listHeight)
+                let rows =
+                    laid.options.map { NSRect(x: 0, y: $0.top, width: laid.listWidth, height: $0.height) }
+                    + [NSRect(x: 0, y: otherTop, width: laid.listWidth, height: Self.otherHeight)]
+                list.place(rows)
             }
             if let origin = laid.previewOrigin, let box = views.previewBox, let notes = views.notes {
                 box.frame = NSRect(
@@ -528,7 +539,6 @@ public final class QuestionRowView: NSView, PageRowView {
                     x: x + origin.x, y: origin.y + Self.previewHeight + Self.previewGap, width: laid.previewWidth,
                     height: Self.notesHeight)
             }
-            _ = item
         }
         if let top = plan.buttonsTop {
             let size = submit.fittingSize
@@ -547,45 +557,34 @@ public final class QuestionRowView: NSView, PageRowView {
 
     // MARK: - Answering
 
-    private func pick(item: Int, option: Int) {
-        window?.makeFirstResponder(self)
-        guard let model, model.items.indices.contains(item) else { return }
-        if model.items[item].allowsSeveral {
-            if picks[item].contains(option) { picks[item].remove(option) } else { picks[item].insert(option) }
-        } else {
-            picks[item] = [option]
+    /// What question `index` has picked: the options whose buttons are on,
+    /// *Other* one past the last.
+    private func picked(_ index: Int) -> Set<Int> {
+        guard let list = itemViews[index].list else { return [] }
+        return Set(list.buttons.indices.filter { list.buttons[$0].state == .on })
+    }
+
+    /// A button was pressed — clicked, or Space while it has the keys. The
+    /// button has already changed its state (and a radio button its group's);
+    /// *Other* takes the keyboard to its field.
+    @objc private func optionPressed(_ sender: NSButton) {
+        guard let list = sender.superview as? OptionList else { return }
+        if sender === list.other, sender.state == .on {
+            window?.makeFirstResponder(list.field)
+        } else if !((window?.firstResponder as? NSView)?.isDescendant(of: self) ?? false) {
+            // ⎋ declines while the card has the keys.
+            window?.makeFirstResponder(self)
         }
         update()
     }
 
-    private func pickOther(item: Int) {
-        guard let model, model.items.indices.contains(item) else { return }
-        let other = model.items[item].options.count
-        if model.items[item].allowsSeveral {
-            picks[item].insert(other)
-        } else {
-            picks[item] = [other]
-        }
-        update()
-    }
-
-    /// Marks, the preview, and whether Submit can answer.
+    /// The preview and whether Submit can answer.
     private func update() {
         guard let model, model.isWaiting else { return }
         for (index, item) in model.items.enumerated() {
             let views = itemViews[index]
-            for (position, view) in views.options.enumerated() {
-                let picked = picks[index].contains(position)
-                view.mark.image = mark(for: item, picked: picked)
-                view.mark.contentTintColor = picked ? .controlAccentColor : .tertiaryLabelColor
-            }
-            if let other = views.other {
-                let picked = picks[index].contains(item.options.count)
-                other.mark.image = mark(for: item, picked: picked)
-                other.mark.contentTintColor = picked ? .controlAccentColor : .tertiaryLabelColor
-            }
             if item.hasPreviews {
-                let shown = picks[index].first.flatMap {
+                let shown = picked(index).first.flatMap {
                     item.options.indices.contains($0) ? item.options[$0].preview : nil
                 }
                 views.preview?.stringValue = shown ?? ""
@@ -600,7 +599,7 @@ public final class QuestionRowView: NSView, PageRowView {
         guard let model else { return false }
         let other = model.items[index].options.count
         let typedWords = typed[index].trimmingCharacters(in: .whitespacesAndNewlines)
-        return picks[index].contains { $0 != other || !typedWords.isEmpty }
+        return picked(index).contains { $0 != other || !typedWords.isEmpty }
     }
 
     /// The answer of question `index` so far: the chosen labels, several
@@ -608,7 +607,7 @@ public final class QuestionRowView: NSView, PageRowView {
     private func answer(_ index: Int) -> String? {
         guard let model else { return nil }
         let item = model.items[index]
-        var parts = picks[index].sorted().compactMap { position -> String? in
+        var parts = picked(index).sorted().compactMap { position -> String? in
             if position < item.options.count { return item.options[position].label }
             let words = typed[index].trimmingCharacters(in: .whitespacesAndNewlines)
             return words.isEmpty ? nil : words
@@ -685,15 +684,17 @@ extension QuestionRowView: NSTextFieldDelegate {
             if notes.indices.contains(index) { notes[index] = field.stringValue }
             return
         }
-        guard typed.indices.contains(field.tag) else { return }
+        guard typed.indices.contains(field.tag), let list = itemViews[field.tag].list else { return }
         typed[field.tag] = field.stringValue
-        let other = model.items[field.tag].options.count
+        // Typing chooses *Other*; emptying the field takes it back. A radio
+        // group follows only a press, so its other buttons are turned off here.
         if field.stringValue.isEmpty {
-            picks[field.tag].remove(other)
-        } else if model.items[field.tag].allowsSeveral {
-            picks[field.tag].insert(other)
+            list.other.state = .off
         } else {
-            picks[field.tag] = [other]
+            if !model.items[field.tag].allowsSeveral {
+                for button in list.buttons { button.state = .off }
+            }
+            list.other.state = .on
         }
         update()
     }

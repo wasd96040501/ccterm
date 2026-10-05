@@ -350,8 +350,8 @@ account — is marked where it is chosen.
   > *[Cancel]  [Restart]*
 
   While Claude works the text adds *Claude stops what it's doing now.*, the
-  button reads **Stop and Restart**, and Cancel becomes the default button —
-  Return must not throw away a turn. Restarting interrupts the turn, ends the
+  button reads **Stop and Restart**, marked destructive and no longer the
+  default — Return must not throw away a turn; Escape still cancels. Restarting interrupts the turn, ends the
   process, and resumes with `--resume` plus the new environment and
   `--model`; the transcript gets a divider *Restarted as Work Relay · Sonnet*.
   At rest or failed there is no process: the choice is free and the next Send

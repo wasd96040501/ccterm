@@ -133,6 +133,18 @@ final class SessionTabViewControllerTests: XCTestCase {
     }
 
     /// A session's tab has no draft: no words to keep, nothing to reuse.
+    /// *Choose Folder…* (⌘O, a nil-targeted `chooseFolder:`) reaches the New
+    /// view from the composer's focus, the composer being its sibling.
+    func testChooseFolderReachesTheNewViewFromTheComposer() throws {
+        let tab = mountDraft()
+        let action = Selector(("chooseFolder:"))
+        XCTAssertTrue(tab.supplementalTarget(forAction: action, sender: nil) as? NSObject === newSession(of: tab))
+
+        let session = SessionTabViewController(
+            .session(URL(fileURLWithPath: "/nonexistent/s.jsonl")), title: "s", context: context())
+        XCTAssertNil(session.supplementalTarget(forAction: action, sender: nil))
+    }
+
     func testASessionsTabIsNoDraft() throws {
         let tab = SessionTabViewController(
             .session(URL(fileURLWithPath: "/nonexistent/s.jsonl")), title: "s", context: context())
@@ -220,18 +232,18 @@ final class SessionTabViewControllerTests: XCTestCase {
         XCTAssertTrue(words.message.contains("Sonnet"))
         XCTAssertEqual(words.confirmTitle, String(localized: "Restart"))
         XCTAssertEqual(words.cancelTitle, String(localized: "Cancel"))
-        XCTAssertFalse(words.cancelIsDefault)
+        XCTAssertFalse(words.confirmIsDestructive)
         XCTAssertFalse(words.message.hasSuffix(String(localized: "Claude stops what it’s doing now.")))
     }
 
     /// While Claude works the restart stops the turn: the words say so, and
     /// Return must not throw it away.
-    func testWhileWorkingTheRestartSheetSaysSoAndCancelIsTheDefault() {
+    func testWhileWorkingTheRestartSheetSaysSoAndItsButtonIsDestructive() {
         let words = RestartConfirmation(accountName: "Work Relay", modelName: "Sonnet", isWorking: true)
 
         XCTAssertTrue(words.message.hasSuffix(String(localized: "Claude stops what it’s doing now.")))
         XCTAssertEqual(words.confirmTitle, String(localized: "Stop and Restart"))
-        XCTAssertTrue(words.cancelIsDefault)
+        XCTAssertTrue(words.confirmIsDestructive)
     }
 
     // MARK: - Documents beside

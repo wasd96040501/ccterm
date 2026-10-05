@@ -1181,11 +1181,11 @@ function resume(s, row) {
   }, 1200);
 }
 /** NSAlert as a sheet on the window: the app icon, a bold question, what will
- *  happen, two buttons. While Claude works the default is Cancel — stopping
- *  work isn't what Return should do. */
+ *  happen, two buttons. While Claude works no button is the default (the
+ *  stopping one is marked destructive): Return does nothing, Escape cancels. */
 function alertHTML(o) {
   return `<div class="lv-alert" role="alertdialog"><div class="ai">${appIcon(56)}</div><b>${esc(o.title)}</b><p>${esc(o.text)}</p><div class="ab">` +
-    `<button class="abtn${o.cancelDefault ? " def" : ""}" data-alert="0">Cancel</button><button class="abtn${o.cancelDefault ? "" : " def"}" data-alert="1">${esc(o.ok)}</button></div></div>`;
+    `<button class="abtn" data-alert="0">Cancel</button><button class="abtn${o.destructive ? "" : " def"}" data-alert="1">${esc(o.ok)}</button></div></div>`;
 }
 function restartAlert(s, v) {
   const a = acctOf(v), m = MODEL(v), working = WORKING.has(s.state);
@@ -1193,7 +1193,7 @@ function restartAlert(s, v) {
     title: `Restart this session as ${a.name}?`,
     text: `Claude Code reads its account when it starts. ccterm ends this session's process and resumes the conversation as ${a.name}, on ${m.short || m.label}.${working ? " Claude stops what it's doing now." : ""}`,
     ok: working ? "Stop and Restart" : "Restart",
-    cancelDefault: working,
+    destructive: working,
   };
 }
 function confirmRestart(s, v) {
@@ -1208,7 +1208,7 @@ function confirmRestart(s, v) {
   };
   const onKey = (e) => {
     if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(false); }
-    if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); done(!restartAlert(s, v).cancelDefault); }
+    if (e.key === "Enter" && !restartAlert(s, v).destructive) { e.preventDefault(); e.stopPropagation(); done(true); }
   };
   document.addEventListener("keydown", onKey, true);
   host.onclick = (e) => { const b = e.target.closest("[data-alert]"); if (b) done(b.dataset.alert === "1"); };
@@ -1353,7 +1353,7 @@ function buildLiveSpecimens() {
   document.getElementById("lv-menus").innerHTML = `<div class="lv-menus">${[
     fig("<b>Model · a New tab</b>One list, a section per account, in Settings' order. The account follows the model. Every model under its account's head, as tall as the list, 360 at most, then it scrolls.", po("model", newp, chipStub("Opus 5.5"))),
     fig("<b>Model · a live session, while Claude works</b>Within the account: after this turn. Another account restarts the CLI — its items say so, and choosing one asks first.", po("model", busy, chipStub("Opus 5.5"))),
-    fig("<b>Switching account in a live session</b>An NSAlert sheet. Idle: Restart is the default. While Claude works, Cancel is.", `<div class="lv-sheethost static">${alertHTML(restartAlert(busy, "relay:default"))}</div>`),
+    fig("<b>Switching account in a live session</b>An NSAlert sheet. Idle: Restart is the default. While Claude works, neither is: Return does nothing, Escape cancels.", `<div class="lv-sheethost static">${alertHTML(restartAlert(busy, "relay:default"))}</div>`),
     fig("<b>Effort · Sonnet 4.6</b>Extra High isn't on this model: it runs as High, and says why.", po("effort", s46, chipStub("Extra High"))),
     fig("<b>Permission mode · Fast on</b>Auto is greyed with its reason; Bypass waits on Settings.", po("mode", fast, chipStub("Accept Edits"))),
     fig("<b>Permission mode · Haiku</b>", po("mode", hk, chipStub("Ask"))),

@@ -641,6 +641,13 @@ final class SessionTabViewController: NSViewController {
         refresh()
     }
 
+    /// What the New view answers (*Choose Folder…*) reaches it from wherever
+    /// the tab's focus is: the composer is its sibling, not inside it.
+    override func supplementalTarget(forAction action: Selector, sender: Any?) -> Any? {
+        if let newSession, newSession.responds(to: action) { return newSession }
+        return super.supplementalTarget(forAction: action, sender: sender)
+    }
+
     private func confirmRestart(_ change: SessionSettings.Change, at url: URL) {
         guard case .model(let choice) = change, let window = view.window else { return }
         let phase = state?.phase
@@ -653,10 +660,10 @@ final class SessionTabViewController: NSViewController {
         alert.informativeText = confirmation.message
         alert.addButton(withTitle: confirmation.confirmTitle)
         alert.addButton(withTitle: confirmation.cancelTitle)
-        if confirmation.cancelIsDefault {
-            // Return must not throw away a turn.
+        if confirmation.confirmIsDestructive {
+            // Return must not throw away a turn; Cancel keeps its Escape.
             alert.buttons[0].keyEquivalent = ""
-            alert.buttons[1].keyEquivalent = "\r"
+            alert.buttons[0].hasDestructiveAction = true
         }
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }

@@ -218,8 +218,6 @@ public final class ComposerViewController: NSViewController {
 
     private func menuDidClose() {
         openControl = nil
-        view.window?.makeKey()
-        card.focus()
     }
 
     // MARK: - Slash commands
@@ -313,9 +311,6 @@ extension ComposerViewController: ComposerViewDelegate {
         case .escape:
             guard slashPopup.isShown else { return false }
             slashPopup.close()
-            return true
-        case .stop:
-            if model?.action == .stop { delegate?.composerViewControllerDidRequestStop(self) }
             return true
         }
     }

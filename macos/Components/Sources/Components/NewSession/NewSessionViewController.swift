@@ -121,7 +121,7 @@ public final class NewSessionViewController: NSViewController {
     public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     public override func loadView() {
-        view = NewSessionRootView { [weak self] in self?.chooseFolder(nil) }
+        view = NSView()
         configureHierarchy()
         configureConstraints()
     }
@@ -296,7 +296,8 @@ public final class NewSessionViewController: NSViewController {
         open(from: folderButton)
     }
 
-    /// *Choose Folder…* (⌘O): an open panel for the folder Claude will work in.
+    /// *Choose Folder…* (⌘O, the main menu's, sent up the responder chain):
+    /// an open panel for the folder Claude will work in.
     @objc private func chooseFolder(_ sender: Any?) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -432,28 +433,5 @@ public final class NewSessionViewController: NSViewController {
         label.lineBreakMode = .byTruncatingTail
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return label
-    }
-}
-
-/// The view, answering ⌘O (*Choose Folder…*) while it is on screen.
-@MainActor
-private final class NewSessionRootView: NSView {
-    private let chooseFolder: () -> Void
-
-    init(chooseFolder: @escaping () -> Void) {
-        self.chooseFolder = chooseFolder
-        super.init(frame: .zero)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
-
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        if flags == .command, event.charactersIgnoringModifiers == "o" {
-            chooseFolder()
-            return true
-        }
-        return super.performKeyEquivalent(with: event)
     }
 }

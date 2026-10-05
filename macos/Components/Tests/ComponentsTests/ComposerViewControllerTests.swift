@@ -141,14 +141,6 @@ final class ComposerViewControllerTests: XCTestCase {
         XCTAssertEqual(recorder.stops, 1)
     }
 
-    func testEscapeDoesNotStop() throws {
-        // ⌘. and ⎋ both arrive as cancelOperation; the field tells them by the
-        // event, and with none in flight it is ⎋, which the permission card owns.
-        configure(F.responding)
-        XCTAssertFalse(try press(#selector(NSResponder.cancelOperation(_:))))
-        XCTAssertEqual(recorder.stops, 0)
-    }
-
     // MARK: Words and the token
 
     func testACommandAtTheStartBecomesTheTokenAndComesBackAsItsText() {
@@ -196,8 +188,16 @@ final class ComposerViewControllerTests: XCTestCase {
         XCTAssertEqual(recorder.chosen, [])
     }
 
-    func testEscapeIsLeftToThePermissionCard() throws {
-        XCTAssertFalse(try press(#selector(NSResponder.cancelOperation(_:))))
+    /// With no slash list open, ⎋ goes up the responder chain (the permission
+    /// card, a sheet) and stops nothing.
+    func testEscapeGoesUpTheResponderChain() throws {
+        configure(F.responding)
+        let above = CancelRecorder()
+        above.nextResponder = composer.nextResponder
+        composer.nextResponder = above
+        XCTAssertTrue(try press(#selector(NSResponder.cancelOperation(_:))))
+        XCTAssertEqual(above.cancels, 1)
+        XCTAssertEqual(recorder.stops, 0)
     }
 
     // MARK: Slash commands
@@ -375,6 +375,12 @@ final class ComposerViewControllerTests: XCTestCase {
         composer.text = ""
         wait(for: [expectation(for: NSPredicate { _, _ in hints.alphaValue == 1 }, evaluatedWith: nil)], timeout: 2)
     }
+}
+
+/// A responder above the composer, counting the ⎋ that reach it.
+private final class CancelRecorder: NSResponder {
+    var cancels = 0
+    override func cancelOperation(_ sender: Any?) { cancels += 1 }
 }
 
 extension ComposerViewController {

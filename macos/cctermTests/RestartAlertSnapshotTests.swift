@@ -16,9 +16,9 @@ final class RestartAlertSnapshotTests: XCTestCase {
         alert.informativeText = confirmation.message
         alert.addButton(withTitle: confirmation.confirmTitle)
         alert.addButton(withTitle: confirmation.cancelTitle)
-        if confirmation.cancelIsDefault {
+        if confirmation.confirmIsDestructive {
             alert.buttons[0].keyEquivalent = ""
-            alert.buttons[1].keyEquivalent = "\r"
+            alert.buttons[0].hasDestructiveAction = true
         }
         return alert
     }

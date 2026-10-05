@@ -31,8 +31,6 @@ final class ComposerFieldView: NSView {
         case backtab
         /// ⎋ — the field never takes it unless a list is open.
         case escape
-        /// ⌘. (the Mac's Cancel).
-        case stop
     }
 
     weak var delegate: ComposerFieldViewDelegate?
@@ -271,11 +269,11 @@ extension ComposerFieldView: NSTextViewDelegate {
         case #selector(NSResponder.insertBacktab(_:)):
             return delegate?.composerFieldView(self, handle: .backtab) ?? true
         case #selector(NSResponder.cancelOperation(_:)):
-            // ⌘. and ⎋ both arrive here; ⎋ belongs to the permission card.
-            if flags.contains(.command), event?.charactersIgnoringModifiers == "." {
-                return delegate?.composerFieldView(self, handle: .stop) ?? false
-            }
-            return delegate?.composerFieldView(self, handle: .escape) ?? false
+            // ⎋ closes the slash list; otherwise it goes up the responder
+            // chain, never to the text view's completion list.
+            if delegate?.composerFieldView(self, handle: .escape) == true { return true }
+            nextResponder?.tryToPerform(#selector(NSResponder.cancelOperation(_:)), with: nil)
+            return true
         case #selector(NSResponder.deleteBackward(_:)):
             // Backspace into the token removes it whole.
             if token != nil, textView.selectedRange() == NSRange(location: 0, length: 0) {

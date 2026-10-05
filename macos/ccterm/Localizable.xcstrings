@@ -2952,6 +2952,17 @@
         }
       }
     },
+    "Stop": {
+      "comment": "File menu: stops the session's turn.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止"
+          }
+        }
+      }
+    },
     "Stop and Restart": {
       "comment": "The restart sheet's confirming button while Claude is working.",
       "localizations": {

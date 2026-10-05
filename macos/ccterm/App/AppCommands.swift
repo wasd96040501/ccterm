@@ -33,6 +33,11 @@ struct AppCommands: Commands {
                 }
             }
             .keyboardShortcut("t", modifiers: .command)
+            // A nil-targeted `chooseFolder:`: the key window's New view answers.
+            Button("Choose Folder…") {
+                NSApp.sendAction(Selector(("chooseFolder:")), to: nil, from: nil)
+            }
+            .keyboardShortcut("o", modifiers: .command)
         }
         // Xcode's pair: ⌘W closes a tab, ⇧⌘W the window. A window without
         // tabs answers no `closeTab:`, so ⌘W closes it.

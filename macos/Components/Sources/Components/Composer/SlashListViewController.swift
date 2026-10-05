@@ -21,7 +21,7 @@ package final class SlashListViewController: NSViewController {
     private(set) var commands: [ComposerPresentation.Command] = []
     private var width: CGFloat = 640
 
-    private let scrollView = OverlayScrollView()
+    private let scrollView = NSScrollView()
     private let table = SlashTableView()
     private let container = SlashContainerView()
     private lazy var heightConstraint = container.heightAnchor.constraint(

@@ -62,17 +62,10 @@ final class AccountEditorTests: XCTestCase {
         XCTAssertNoThrow(try button("Delete…", in: sheet.view))
     }
 
-    /// A Mac with a mouse has legacy scrollers, which take their width from
-    /// the scroll view: the form's content would then end short of the button
-    /// bar's edge. The form keeps overlay scrollers, so both share the sheet's
-    /// 20-point insets.
+    /// The form's content and the button bar share the sheet's 20-point insets.
     func testTheFormsContentAndTheButtonBarShareTheSheetsInsets() throws {
         let (sheet, _) = sheet(.provider, Self.provider())
-        let form = try XCTUnwrap(shown(FormView.self, in: sheet.view).first)
-        form.scrollerStyle = .legacy
-        form.layoutSubtreeIfNeeded()
         sheet.view.layoutSubtreeIfNeeded()
-        XCTAssertEqual(form.scrollerStyle, .overlay)
         let sections = shown(FormSectionView.self, in: sheet.view)
         XCTAssertFalse(sections.isEmpty)
         for section in sections {

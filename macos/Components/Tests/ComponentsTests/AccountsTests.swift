@@ -179,18 +179,11 @@ final class AccountsTests: XCTestCase {
             let list = EnvironmentVariablesViewController()
             list.delegate = Recorder()
             list.view.frame = NSRect(x: 0, y: 0, width: width, height: EnvironmentVariablesViewController.height)
-            // More rows than the list holds, so a legacy scroller would show.
             list.configure(
                 with: (0..<12).map { EnvironmentRow(isEnabled: true, name: "N\($0)", displayValue: "v", warning: nil) })
             list.view.layoutSubtreeIfNeeded()
             let scroll = try XCTUnwrap(shown(NSScrollView.self, in: list.view).first)
-            scroll.scrollerStyle = .legacy
-            list.view.layoutSubtreeIfNeeded()
             let table = try XCTUnwrap(scroll.documentView as? NSTableView)
-            XCTAssertEqual(scroll.scrollerStyle, .overlay)
-            XCTAssertEqual(table.frame.width, scroll.contentView.bounds.width, accuracy: 0.5)
-            XCTAssertEqual(
-                scroll.contentView.bounds.width, scroll.frame.width, accuracy: 0.5, "no scroller takes width")
             let cell = try XCTUnwrap(
                 table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? EnvironmentVariableCellView)
             cell.layoutSubtreeIfNeeded()

@@ -20,7 +20,8 @@ Status: `[ ]` open · `[x]` fixed (commit) · `[-]` dropped (why)
   Was: — `Components/Drawing/NSButton+Menu.swift`, `Menu/MenuPopover.swift`, `Composer/ComposerView.swift` (`show(_:on:)`), `NewSession/NewSessionViewController.swift` (`worktreeButton`).
   `.pushOnPushOff` plus the popover / owner writing `state` (two writers); acts on mouse-down; `setAccessibilityRole(.popUpButton)` on a plain button; title hand-built from `NSTextAttachment`s (text off the bezel's centre); `closingPress` event-timestamp hack; open/close decided in three places; Worktree's title hard-codes `.foregroundColor`.
   Native: a button whose state only mirrors its popover, acting on release; the transient popover's own handling of the press that closes it; title / image laid out by the cell.
-- [ ] **3. Overlay scrollers forced on every form** — `Components/Form/FormView.swift` (`scrollerStyle` `didSet`), `Drawing/OverlayScrollView.swift` where production uses it.
+- [x] **3. Overlay scrollers forced on every form** — **Fixed** (*Forms and lists outside the editor area follow Show scroll bars*): `FormView`'s override is gone; the environment table, the slash list and the style page are plain `NSScrollView`s. `OverlayScrollView` stays for the editor area alone (transcript, composer, documents), as `design/transcript/README.md` *Scrollers* and `main` have it. The tests that forced legacy and asserted overlay are gone.
+  Was: — `Components/Form/FormView.swift` (`scrollerStyle` `didSet`), `Drawing/OverlayScrollView.swift` where production uses it.
   Overrides the user's *Show scroll bars* preference; added so the style page's render looked right (`58f20ffa`).
   Native: the system's scroller style; edges kept with insets.
 - [ ] **4. Keys outside the menu and the responder chain**

@@ -50,9 +50,7 @@ final class DesignPageViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     override func loadView() {
-        // Overlay, as every scroller the page shows: a legacy one would take
-        // its width out of the column.
-        let scroll = OverlayScrollView()
+        let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
         scroll.backgroundColor = .designPage

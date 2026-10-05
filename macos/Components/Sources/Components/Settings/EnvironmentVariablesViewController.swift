@@ -49,7 +49,7 @@ public final class EnvironmentVariablesViewController: NSViewController {
     }()
 
     private lazy var scrollView: NSScrollView = {
-        let scroll = OverlayScrollView()
+        let scroll = NSScrollView()
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true

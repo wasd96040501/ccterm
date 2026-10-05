@@ -126,11 +126,9 @@
 .lv-new { display: flex; flex-direction: column; align-items: center; padding: 0 24px; overflow: auto; }
 .lv-new::before { content: ""; flex: 0.62 1 0; }   /* the optical centre: a third of the way down */
 .lv-new::after { content: ""; flex: 1 1 0; }
-/* What the page centres is the page at rest — the icon, 24, the card at one
-   line, the row — at a fixed height, so the card's top never moves: lines
-   typed into the card, the note under the row and an error all grow down,
-   past the block's bottom, into the space under it. */
-.lv-anchor { flex: none; width: 100%; height: calc(64px + 24px + 78px + 36px); display: flex; flex-direction: column; align-items: center; }
+/* What the page centres: the icon, the card, the row. The note under the
+   row is an overlay, outside that layout, so it moves nothing. */
+.lv-anchor { flex: none; width: 100%; display: flex; flex-direction: column; align-items: center; }
 .lv-hero { display: flex; flex-direction: column; align-items: center; margin-bottom: 24px; }
 .lv-compwrap { width: min(640px, 100%); position: relative; }
 
@@ -159,7 +157,7 @@
    borderless 12-pt controls whose contents start on the card's 16-pt line;
    what Send will do on a line under them, in tertiary — under the card, so
    nothing above it moves when it comes and goes. */
-.lv-where { display: flex; flex-wrap: wrap; align-items: center; align-content: flex-start; gap: 0 4px; min-height: 28px; margin: 8px 0 0 8px; }
+.lv-where { position: relative; display: flex; align-items: center; gap: 0 4px; height: 28px; margin: 8px 0 0 8px; }
 .lv-pop {
   display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: 0; border-radius: var(--r-ctl);
   background: none; font: inherit; font-size: 12px; color: var(--secondary); cursor: default; white-space: nowrap;
@@ -170,7 +168,7 @@
 .lv-pop .g { width: var(--i-ctl); height: var(--i-ctl); flex: none; color: var(--secondary); }
 .lv-where .lv-check { margin-left: 8px; }
 .lv-where .nogit { font-size: 12px; color: var(--tertiary); margin-left: 8px; }
-.lv-note { flex-basis: 100%; padding: 0 8px; font-size: 11px; color: var(--tertiary); line-height: 16px; }
+.lv-note { position: absolute; top: 100%; left: 0; right: 0; padding: 0 8px; font-size: 11px; color: var(--tertiary); line-height: 16px; }
 .lv-note:empty { display: none; }
 
 /* The branch picker's filter: NSSearchField at its regular size, a capsule

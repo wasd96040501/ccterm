@@ -125,11 +125,9 @@ badge, not a thing.
   on one axis; a column has one edge to read down.
 - **Centred**, vertically a third of the way down rather than at the centre
   (the optical centre, the way Spotlight's field sits). What is centred is
-  the page at rest — the icon, the card at one line and the row — as one
-  block of fixed height, so **the card's top never moves**: more lines in the
-  field, the line under the row and an error all grow down, under the
-  block. Centring what is there instead would move the icon and the card
-  each time the line under the row came or went. Nothing else on the
+  the icon, the card and the row; **the line under the row is an overlay**,
+  outside that layout, so it comes and goes without moving anything.
+  Nothing else on the
   page: the keys (↩, ⇧↩, ⇧⇥) are the conventions of a field and a menu's
   shortcut, and `/` is named by the placeholder.
 - **The decoration is the app icon** (`design/icon`, the shipped pixels) at

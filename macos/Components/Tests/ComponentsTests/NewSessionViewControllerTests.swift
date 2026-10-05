@@ -101,19 +101,17 @@ final class NewSessionViewControllerTests: XCTestCase {
         XCTAssertLessThan(folder.frame.maxX, worktree.frame.minX, "the folder leads the row")
     }
 
-    /// The free space above the page at rest — the icon, 24, a one-line
-    /// composer, the row — is 0.62 of the space below it.
+    /// The free space above the icon is 0.62 of the space below the row.
     func testThePageAtRestSitsAtTheOpticalCentre() throws {
         let controller = controller(width: 900, height: 900)
         let root = controller.view
         let icon = try XCTUnwrap(root.subviews.first { $0 is NewSessionIconView })
         let above = top(icon, in: root)
-        let below = root.bounds.height - (above + 64 + 24 + 78 + 8 + 28)
+        let below = controller.composerGuide.frame.minY - 8 - 28
         XCTAssertEqual(above / below, 0.62, accuracy: 0.005)
     }
 
-    /// What grows — the note under the row, a taller composer — grows down:
-    /// the slot's top holds still.
+    /// The note is an overlay: as it comes, nothing moves.
     func testTheSlotsTopHoldsWhileWhatIsUnderItGrows() throws {
         let controller = NewSessionViewController()
         controller.loadViewIfNeeded()
@@ -133,10 +131,6 @@ final class NewSessionViewControllerTests: XCTestCase {
         controller.view.layoutSubtreeIfNeeded()
         XCTAssertEqual(controller.composerGuide.frame.maxY, slotTop)
         XCTAssertEqual(checkbox.frame, checkboxFrame, "the checkbox holds still as the note comes")
-
-        height.constant = 140
-        controller.view.layoutSubtreeIfNeeded()
-        XCTAssertEqual(controller.composerGuide.frame.maxY, slotTop)
     }
 
     // MARK: - The folder menu

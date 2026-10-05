@@ -20,10 +20,9 @@ enum NewSessionSpecimen {
                 "A window with no tabs opens on it, and so does a New tab: the app icon over its still glow, then "
                 + "the composer, 640 wide at most, and under it where Claude works — the folder's pop-up, the "
                 + "branch's and the Use a new worktree checkbox, leading-aligned on the card's inner line — with "
-                + "the line that says what Send will do under that. The page centres itself at rest, so the card's "
-                + "top never moves: the note, more lines and an error grow down. A folder that isn't a git "
-                + "repository says so in the row. Click the folder or the branch for its menu; the checkbox "
-                + "toggles.",
+                + "the line that says what Send will do under that, an overlay that moves nothing. A folder that "
+                + "isn't a git repository says so in the row. Click the folder or the branch for its menu; the "
+                + "checkbox toggles.",
             specimens: [
                 .init(title: "A folder, in place", view: host(.rest), height: nil),
                 .init(title: "A new worktree — the line says what Send will do", view: host(.worktree), height: nil),

@@ -9,10 +9,9 @@ import DisplayModels
 /// is leading-aligned, its words on the card's inner line, so nothing moves
 /// when what it says changes.
 ///
-/// What the page centres, a third of the way down, is the page at rest — the
-/// icon, 24, a one-line composer, the row — at a fixed height, so the slot's
-/// top never moves: lines typed into the composer, the note and an error all
-/// grow down, into the space under it.
+/// The page centres the icon, the slot and the row, a third of the way down.
+/// The note is an overlay under the row, outside that layout: it comes and
+/// goes without moving anything.
 ///
 /// The composer is not this view's: its container pins the composer's view to
 /// `composerGuide`, and moves it out when the tab hands over. This view only
@@ -45,8 +44,6 @@ public final class NewSessionViewController: NSViewController {
     private static let margin: CGFloat = 24
     /// The composer's slot at its widest.
     private static let slotWidth: CGFloat = 640
-    /// A one-line composer: the slot's height in the block the page centres.
-    private static let restingSlotHeight: CGFloat = 78
     /// The row's controls' bezels start this far in from the slot's edge,
     /// their words on the card's 16-pt inner line.
     private static let rowInset: CGFloat = 8
@@ -180,18 +177,16 @@ public final class NewSessionViewController: NSViewController {
 
     private func configureConstraints() {
         // A third of the way down, not the middle: the free space above the
-        // page at rest is 0.62 of the space below it (the optical centre).
+        // icon is 0.62 of the space below the row (the optical centre).
         let above = NSLayoutGuide()
         let below = NSLayoutGuide()
-        // The page at rest: the icon, 24, a one-line composer, the row.
-        let rest = NSLayoutGuide()
         // The row's line, the controls centred in it.
         let rowLine = NSLayoutGuide()
-        for guide in [above, below, rest, rowLine] { view.addLayoutGuide(guide) }
+        for guide in [above, below, rowLine] { view.addLayoutGuide(guide) }
 
         // Until a composer is in the slot, a composer's worth — weaker than any
         // view's hugging, so the composer in it keeps its own height.
-        let slotHeight = composerGuide.heightAnchor.constraint(equalToConstant: Self.restingSlotHeight)
+        let slotHeight = composerGuide.heightAnchor.constraint(equalToConstant: 78)
         slotHeight.priority = .fittingSizeCompression
         // 640 unless the view is narrower: a wish for the slot's own width,
         // which any width of the view can grant. A wish to be the view's width
@@ -203,13 +198,10 @@ public final class NewSessionViewController: NSViewController {
         NSLayoutConstraint.activate([
             above.topAnchor.constraint(equalTo: view.topAnchor),
             above.heightAnchor.constraint(equalTo: below.heightAnchor, multiplier: 0.62),
-            rest.topAnchor.constraint(equalTo: above.bottomAnchor),
-            rest.heightAnchor.constraint(
-                equalToConstant: NewSessionIconView.side + 24 + Self.restingSlotHeight + Self.rowGap + Self.rowHeight),
-            below.topAnchor.constraint(equalTo: rest.bottomAnchor),
+            iconView.topAnchor.constraint(equalTo: above.bottomAnchor),
+            below.topAnchor.constraint(equalTo: rowLine.bottomAnchor),
             below.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            iconView.topAnchor.constraint(equalTo: rest.topAnchor),
             iconView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
 
             composerGuide.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: 24),
@@ -227,6 +219,7 @@ public final class NewSessionViewController: NSViewController {
                 lessThanOrEqualTo: composerGuide.trailingAnchor, constant: -Self.rowInset),
             branchButton.widthAnchor.constraint(lessThanOrEqualToConstant: 260),
 
+            // The overlay: hangs under the row, in no one's way.
             explanationLabel.topAnchor.constraint(equalTo: rowLine.bottomAnchor),
             explanationLabel.leadingAnchor.constraint(equalTo: composerGuide.leadingAnchor, constant: Self.noteInset),
             explanationLabel.trailingAnchor.constraint(

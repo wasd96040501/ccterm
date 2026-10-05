@@ -597,6 +597,55 @@ final class EditorAreaTests: XCTestCase {
         XCTAssertIdentical(mounted.area.activeViewController, mounted.probes[0])
     }
 
+    /// Closing an editor gives its room to the one left, which fills the
+    /// area, and the window keeps its width — with the area beside a sidebar,
+    /// as the app's window has it, and tabs that wish to be wider and run an
+    /// endless animation as they appear (a spinner): nothing an editor shows
+    /// can hold the split, or the window, at a width.
+    /// Needs the display awake — the second editor opens with motion.
+    func testClosingAnEditorLeavesTheOtherFillingTheWindow() throws {
+        let size = NSSize(width: 1400, height: 676)
+        let window = TestWindow.make(contentSize: size)
+        defer { window.close() }
+        let area = EditorAreaViewController()
+        let recorder = Recorder()
+        area.delegate = recorder
+        let outer = NSSplitViewController()
+        let sidebar = NSViewController()
+        sidebar.view = NSView()
+        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
+        sidebarItem.minimumThickness = 290
+        sidebarItem.maximumThickness = 290
+        sidebarItem.canCollapse = false
+        outer.addSplitViewItem(sidebarItem)
+        let detail = NSSplitViewItem(viewController: area)
+        detail.canCollapse = false
+        outer.addSplitViewItem(detail)
+        window.contentViewController = outer
+        TestWindow.park(window, contentSize: size)
+        area.activeGroup.addTabViewItem(
+            NSTabViewItem(viewController: WishingViewController(title: "Left", spins: true)))
+        settle(window)
+        let mounted = Mounted(window: window, area: area, recorder: recorder, probes: [])
+        let right = try XCTUnwrap(
+            area.addGroup(with: NSTabViewItem(viewController: WishingViewController(title: "Right", spins: true))))
+        finishOpening(mounted)
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.3))
+        settle(window)
+        let editors = area.splitView.bounds.width
+        XCTAssertEqual(
+            frame(of: area.groups[0]).width + frame(of: right).width + area.splitView.dividerThickness, editors,
+            accuracy: 0.5, "premise: the editors tile the area")
+
+        area.removeGroup(right)
+        settle(window)
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.3))
+        settle(window)
+        XCTAssertEqual(window.contentLayoutRect.width, size.width, "the window changed its width")
+        XCTAssertEqual(area.groups.count, 1)
+        XCTAssertEqual(frame(of: area.groups[0]).width, editors, accuracy: 0.5, "the editor left fills the area")
+    }
+
     func testMovingATabToANewEditorKeepsItsViewControllerAndDoesNotCloseIt() throws {
         let mounted = mount(tabs: 2)
         defer { mounted.window.close() }
@@ -2060,16 +2109,30 @@ private final class LiveResizeProbe: NSView {
 }
 
 /// A tab whose content wishes for a width, as the app's composer does: a card
-/// 720 wide unless the tab is narrower — a wish just under the window's own
-/// size (`.windowSizeStayPut` less one) — and never closer than 16 to either
-/// side.
+/// 720 wide unless the tab is narrower — a wish under the 250 the split holds
+/// its editors at — and never closer than 16 to either side.
 private final class WishingViewController: NSViewController {
 
     private static let wish: CGFloat = 720
+    /// Starts an endless animation each time it lays out, as a spinner
+    /// restarted by its host's layout does.
+    private let spins: Bool
 
-    init(title: String) {
+    init(title: String, spins: Bool = false) {
+        self.spins = spins
         super.init(nibName: nil, bundle: nil)
         self.title = title
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        guard spins, let layer = view.layer else { return }
+        let turn = CABasicAnimation(keyPath: "opacity")
+        turn.fromValue = 1
+        turn.toValue = 0.99
+        turn.duration = 1
+        turn.repeatCount = .infinity
+        layer.add(turn, forKey: "spin")
     }
 
     @available(*, unavailable)
@@ -2079,11 +2142,12 @@ private final class WishingViewController: NSViewController {
 
     override func loadView() {
         view = NSView()
+        view.wantsLayer = spins
         let card = NSView()
         card.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(card)
         let width = card.widthAnchor.constraint(equalToConstant: Self.wish)
-        width.priority = NSLayoutConstraint.Priority(NSLayoutConstraint.Priority.windowSizeStayPut.rawValue - 1)
+        width.priority = NSLayoutConstraint.Priority(240)
         NSLayoutConstraint.activate([
             card.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             card.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16),

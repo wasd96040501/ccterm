@@ -132,11 +132,17 @@ final class ComposerView: NSView {
         surface.clip.addSubview(contentStack)
     }
 
+    /// The narrowest the card is: its buttons at their last tier, the status
+    /// on its own line — set by `layout` from what they hold. Required, so a
+    /// tab, a split and the window are never narrower than the card can be.
+    private lazy var minimumWidth = surface.widthAnchor.constraint(greaterThanOrEqualToConstant: 0)
+
     private func configureConstraints() {
         // The column: as wide as 720 allows, centred — a wish, never a size
-        // for the window.
+        // for the window — and no narrower than its last tier.
+        minimumWidth.isActive = true
         let fill = surface.widthAnchor.constraint(equalToConstant: Self.maxWidth)
-        fill.priority = .wishUnderWindowSize
+        fill.priority = .wish
         NSLayoutConstraint.activate([
             surface.topAnchor.constraint(equalTo: topAnchor),
             surface.centerXAnchor.constraint(equalTo: centerXAnchor),
@@ -352,6 +358,9 @@ final class ComposerView: NSView {
         let status = statusView.isEmpty ? 0 : statusView.fittingSize.width + 4
         let line = controlsRow.fittingSize.width + 16 - (statusView.superview === controlsRow ? status : 0)
         let widths = Tier.allCases.map { (tier: $0, width: line + growth(of: $0)) }
+        if let narrowest = widths.last?.width, abs(minimumWidth.constant - narrowest) > 0.5 {
+            minimumWidth.constant = narrowest
+        }
         // The fullest words that fit beside the status; when even the glyphs
         // don't, the status takes its own line and the words fit without it.
         let nextTier: Tier

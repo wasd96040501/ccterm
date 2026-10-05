@@ -81,7 +81,7 @@ final class PlaygroundTab: NSViewController {
         transcript.view.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(transcript.view, positioned: .below, relativeTo: dock)
         let width = composer.view.widthAnchor.constraint(equalToConstant: Self.composerWidth)
-        width.priority = .wishUnderWindowSize
+        width.priority = .wish
         NSLayoutConstraint.activate([
             transcript.view.topAnchor.constraint(equalTo: view.topAnchor),
             transcript.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),

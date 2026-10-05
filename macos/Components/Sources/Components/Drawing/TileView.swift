@@ -97,42 +97,54 @@ public final class TileView: NSView {
         }
     }
 
+    /// Starts the state's endless motion once, in a window, and leaves it
+    /// running while the state holds — a new configuration of the same state
+    /// or a move within the view tree doesn't restart it. An endless
+    /// animation added again during another view's animation (an editor
+    /// opening) would hold that animation open for good.
     private func animate() {
-        ring.removeAllAnimations()
-        ring.lineDashPattern = nil
-        ring.opacity = 1
         let length = Self.squircleLength
-        let still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || window == nil
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let motion: (key: String, animation: CAAnimation)?
         switch tile.state {
-        case .running where NSWorkspace.shared.accessibilityDisplayShouldReduceMotion:
+        case .running where reduceMotion:
+            ring.lineDashPattern = nil
             let pulse = CABasicAnimation(keyPath: "opacity")
             pulse.fromValue = 1
             pulse.toValue = 0.35
             pulse.duration = 1
             pulse.autoreverses = true
             pulse.repeatCount = .infinity
-            ring.add(pulse, forKey: "pulse")
+            motion = ("pulse", pulse)
         case .running:
             ring.lineDashPattern = [NSNumber(value: length / 3), NSNumber(value: length * 2 / 3)]
-            guard !still else { break }
             let travel = CABasicAnimation(keyPath: "lineDashPhase")
             travel.fromValue = 0
             travel.toValue = -length
             travel.duration = 1
             travel.repeatCount = .infinity
-            ring.add(travel, forKey: "travel")
+            motion = ("travel", travel)
+        case .background where reduceMotion:
+            ring.lineDashPattern = [NSNumber(value: length * 0.03), NSNumber(value: length * 0.0325)]
+            motion = nil
         case .background:
             ring.lineDashPattern = [NSNumber(value: length * 0.03), NSNumber(value: length * 0.0325)]
-            guard !still else { break }
             let turn = CABasicAnimation(keyPath: "lineDashPhase")
             turn.fromValue = 0
             turn.toValue = -length
             turn.duration = 4
             turn.repeatCount = .infinity
-            ring.add(turn, forKey: "turn")
+            motion = ("turn", turn)
         default:
-            break
+            ring.lineDashPattern = nil
+            motion = nil
         }
+        let running = ring.animationKeys() ?? []
+        if running == motion.map({ [$0.key] }) ?? [] { return }
+        ring.removeAllAnimations()
+        ring.opacity = 1
+        guard let motion, window != nil else { return }
+        ring.add(motion.animation, forKey: motion.key)
     }
 
     // MARK: - Glyphs

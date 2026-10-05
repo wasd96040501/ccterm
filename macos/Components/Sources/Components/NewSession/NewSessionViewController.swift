@@ -189,7 +189,7 @@ public final class NewSessionViewController: NSViewController {
         // less the margins would pull the view down to 688 — and, in a split,
         // the divider over (its holding priority is weaker).
         let slotWidth = composerGuide.widthAnchor.constraint(equalToConstant: Self.slotWidth)
-        slotWidth.priority = .wishUnderWindowSize
+        slotWidth.priority = .wish
 
         NSLayoutConstraint.activate([
             above.topAnchor.constraint(equalTo: view.topAnchor),

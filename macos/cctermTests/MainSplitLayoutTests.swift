@@ -4,8 +4,8 @@ import XCTest
 @testable import ccterm
 
 /// The main split's geometry at the window sizes users actually run: the
-/// sidebar stays inside its thickness limits, the detail pane keeps its
-/// minimum, and the two panes tile the window side by side.
+/// sidebar stays inside its thickness limits and the two panes tile the
+/// window side by side.
 @MainActor
 final class MainSplitLayoutTests: XCTestCase {
 
@@ -39,7 +39,7 @@ final class MainSplitLayoutTests: XCTestCase {
 
         XCTAssertGreaterThanOrEqual(sidebarWidth, 290 - Geometry.tolerance, file: file, line: line)
         XCTAssertLessThanOrEqual(sidebarWidth, 350 + Geometry.tolerance, file: file, line: line)
-        XCTAssertGreaterThanOrEqual(detailWidth, 680 - Geometry.tolerance, file: file, line: line)
+        XCTAssertGreaterThan(detailWidth, 0, file: file, line: line)
         Geometry.assertContained(sidebar, in: stage.rootView, file: file, line: line)
         Geometry.assertContained(detail, in: stage.rootView, file: file, line: line)
         Geometry.assertNoOverlap(sidebar, detail, in: stage.rootView, file: file, line: line)

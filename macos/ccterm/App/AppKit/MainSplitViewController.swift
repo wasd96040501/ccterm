@@ -77,8 +77,9 @@ final class MainSplitViewController: NSSplitViewController {
         sidebarItem.titlebarSeparatorStyle = .automatic
         addSplitViewItem(sidebarItem)
 
+        // The editors are as narrow as what they show allows: the composer's
+        // narrowest card and its margins (its required constraints).
         let detailItem = NSSplitViewItem(viewController: editorArea)
-        detailItem.minimumThickness = 680
         detailItem.canCollapse = false
         detailItem.titlebarSeparatorStyle = .none
         addSplitViewItem(detailItem)

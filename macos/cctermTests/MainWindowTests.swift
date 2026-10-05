@@ -355,7 +355,8 @@ final class MainWindowTests: XCTestCase {
 
     /// The window, not what is in it, decides its width: with the New view of
     /// an empty area, a New tab, or a session's tab, it grows as wide as asked
-    /// and shrinks to its minimum, and the editors take the difference.
+    /// and shrinks to the least its content requires — the sidebar beside the
+    /// composer's narrowest card — and the editors take the difference.
     func testTheWindowResizesFreelyWhateverTheTabShows() async throws {
         let stage = AppKitStage.mainWindow()
         defer { stage.teardown() }
@@ -375,7 +376,13 @@ final class MainWindowTests: XCTestCase {
     private func expectFreeResizing(of stage: AppKitStage, _ what: String) async throws {
         let window = stage.window
         let detail = try XCTUnwrap(stage.mainSplit).splitViewItems[1].viewController.view
-        for width in [1600, window.minSize.width, 1200] {
+        // Asked to be narrower than anything can be, it stops at the least its
+        // content's required constraints allow.
+        window.setFrame(NSRect(origin: window.frame.origin, size: NSSize(width: 100, height: 800)), display: true)
+        await stage.settle(rounds: 3)
+        let least = window.frame.width
+        XCTAssertLessThan(least, 700, "\(what): the content asks for \(least) at least")
+        for width in [1600, least, 1200] {
             window.setFrame(NSRect(origin: window.frame.origin, size: NSSize(width: width, height: 800)), display: true)
             await stage.settle(rounds: 3)
             XCTAssertEqual(window.frame.width, width, accuracy: 0.5, "\(what): the window would not be \(width) wide")

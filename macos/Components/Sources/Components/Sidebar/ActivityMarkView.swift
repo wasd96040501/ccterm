@@ -102,11 +102,20 @@ public final class ActivityMarkView: NSView {
         }
     }
 
+    /// Starts the turn once, in a window, and leaves it running while the
+    /// mark responds — a new configuration or a move within the view tree
+    /// doesn't restart it. An endless animation added again during another
+    /// view's animation would hold that animation open for good.
     private func animate() {
+        let turns: Bool
+        if case .responding = activity, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            turns = true
+        } else {
+            turns = false
+        }
+        if turns == (shape.animation(forKey: "turn") != nil) { return }
         shape.removeAllAnimations()
-        guard case .responding = activity, window != nil,
-            !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        else { return }
+        guard turns, window != nil else { return }
         let turn = CABasicAnimation(keyPath: "transform.rotation.z")
         turn.fromValue = 0
         turn.toValue = -2 * Double.pi

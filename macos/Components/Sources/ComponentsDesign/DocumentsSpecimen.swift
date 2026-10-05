@@ -220,7 +220,7 @@ enum DocumentsSpecimen {
 
 /// A document as the sheet frames it: a caption bar over the document, rounded,
 /// under a hairline: the caption, then a document 380 tall with its jump bar.
-private final class DocumentFrame: NSView {
+private final class DocumentFrame: NSView, ControllerHost {
     struct Content {
         var caption: String
         var header: DocumentHeader
@@ -233,6 +233,7 @@ private final class DocumentFrame: NSView {
 
     /// What owns the body, kept as long as the frame is.
     private let body: NSViewController
+    var controllers: [NSViewController] { [body] }
 
     init(_ content: Content) {
         body = content.body

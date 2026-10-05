@@ -26,7 +26,7 @@ enum PlaygroundSpecimen {
     }
 
     private static func window(_ scene: Scene) -> DesignPageViewController.Specimen {
-        let content = MainWindowContent(scene)
+        let content = MainWindowHost(MainWindowContent(scene))
         let title = scene.title
         let frame = WindowFrame(
             content: content, contentSize: Host.mainWindow,
@@ -232,8 +232,31 @@ enum PlaygroundSpecimen {
 /// sidebar as a split's sidebar item, 290 to 350 wide (22 % of the window
 /// between), beside the editor area, its tabs with the + and a live session's
 /// mark; with no tab, a New view.
-private final class MainWindowContent: NSView, EditorAreaViewControllerDelegate {
-    private let split = NSSplitViewController()
+/// The main window's content, held as its window holds it.
+private final class MainWindowHost: NSView, ControllerHost {
+    private let content: MainWindowContent
+    var controllers: [NSViewController] { [content] }
+
+    init(_ content: MainWindowContent) {
+        self.content = content
+        super.init(frame: .zero)
+        let view = content.view
+        view.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(view)
+        NSLayoutConstraint.activate([
+            view.topAnchor.constraint(equalTo: topAnchor),
+            view.bottomAnchor.constraint(equalTo: bottomAnchor),
+            view.leadingAnchor.constraint(equalTo: leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+}
+
+/// The sidebar beside the editor area, as the app's main split holds them.
+private final class MainWindowContent: NSSplitViewController, EditorAreaViewControllerDelegate {
     private let sidebar = SidebarViewController()
     private let editorArea = EditorAreaViewController()
     private let scene: PlaygroundSpecimen.Scene
@@ -242,7 +265,7 @@ private final class MainWindowContent: NSView, EditorAreaViewControllerDelegate 
 
     init(_ scene: PlaygroundSpecimen.Scene) {
         self.scene = scene
-        super.init(frame: .zero)
+        super.init(nibName: nil, bundle: nil)
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
         sidebarItem.minimumThickness = Host.sidebarWidth
         sidebarItem.maximumThickness = Host.sidebarMaximumWidth
@@ -251,23 +274,13 @@ private final class MainWindowContent: NSView, EditorAreaViewControllerDelegate 
         sidebarItem.canCollapseFromWindowResize = false
         sidebarItem.titlebarSeparatorStyle = .automatic
 
-        split.addSplitViewItem(sidebarItem)
+        addSplitViewItem(sidebarItem)
         let detailItem = NSSplitViewItem(viewController: editorArea)
         detailItem.minimumThickness = Host.editorsMinimumWidth
         detailItem.canCollapse = false
         detailItem.titlebarSeparatorStyle = .none
-        split.addSplitViewItem(detailItem)
-        split.splitView.dividerStyle = .thin
-
-        let content = split.view
-        content.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(content)
-        NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: topAnchor),
-            content.bottomAnchor.constraint(equalTo: bottomAnchor),
-            content.leadingAnchor.constraint(equalTo: leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: trailingAnchor),
-        ])
+        addSplitViewItem(detailItem)
+        splitView.dividerStyle = .thin
 
         sidebar.show(SidebarSpecimen.library)
         var activities = SidebarSpecimen.activities
@@ -290,7 +303,7 @@ private final class MainWindowContent: NSView, EditorAreaViewControllerDelegate 
             editorArea.open(PlaygroundSpecimen.rowGapTab(scene), pinned: true)
             sidebar.select(transcriptAt: PlaygroundSpecimen.rowGap)
         case .split:
-            // The second editor opens once the window has its size (`layout()`).
+            // The second editor opens once the window has its size (`viewDidAppear`).
             editorArea.open(PlaygroundSpecimen.rowGapTab(scene), pinned: true)
             // Both sessions were opened from the sidebar, the second last.
             sidebar.select(transcriptAt: PlaygroundSpecimen.rowGap)
@@ -306,16 +319,14 @@ private final class MainWindowContent: NSView, EditorAreaViewControllerDelegate 
 
     /// Split: the second editor opens at half the area, which it has only
     /// once the window is laid out — as a reader splits a window on screen.
-    override func layout() {
-        super.layout()
-        guard scene == .split, !hasSplit, window != nil, bounds.width > 0 else { return }
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        guard scene == .split, !hasSplit else { return }
         hasSplit = true
-        DispatchQueue.main.async { [self] in
-            layoutSubtreeIfNeeded()
-            editorArea.addGroup(with: PlaygroundSpecimen.tabBarTab())?
-                .addTabViewItem(PlaygroundSpecimen.newTab(in: "ghostty"))
-            editorArea.reloadIndicators()
-        }
+        view.layoutSubtreeIfNeeded()
+        editorArea.addGroup(with: PlaygroundSpecimen.tabBarTab())?
+            .addTabViewItem(PlaygroundSpecimen.newTab(in: "ghostty"))
+        editorArea.reloadIndicators()
     }
 
     /// A live session's mark in its tab — nothing while idle or at rest.

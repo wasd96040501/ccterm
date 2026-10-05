@@ -34,8 +34,9 @@ enum SettingsWindowSpecimen {
 
 /// The real split, holding the two panes the app's window holds; it drives
 /// its window's toolbar row, as the window controller drives the toolbar.
-private final class SettingsContent: NSView, SettingsSplitViewControllerDelegate {
+private final class SettingsContent: NSView, ControllerHost, SettingsSplitViewControllerDelegate {
     private let split: SettingsSplitViewController
+    var controllers: [NSViewController] { [split] }
     private let initial: Int
     private weak var chromeFrame: WindowFrame?
 
@@ -112,6 +113,7 @@ private final class PaneViewController: NSViewController {
         let view = NSView()
         content.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(content)
+        adoptControllers(shownIn: content)
         NSLayoutConstraint.activate([
             content.topAnchor.constraint(equalTo: view.topAnchor, constant: Host.settingsToolbarHeight),
             content.leadingAnchor.constraint(equalTo: view.leadingAnchor),

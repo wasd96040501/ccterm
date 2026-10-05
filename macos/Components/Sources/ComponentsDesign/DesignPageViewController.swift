@@ -154,6 +154,7 @@ final class DesignPageViewController: NSViewController {
         note.textColor = .secondaryLabelColor
         add(note, to: column, fullWidth: false, after: 32)
         for specimen in section.specimens {
+            adoptControllers(shownIn: specimen.view)
             let title = label(specimen.title, size: 13, weight: .semibold)
             title.textColor = .secondaryLabelColor
             add(title, to: column, fullWidth: false, after: 10)

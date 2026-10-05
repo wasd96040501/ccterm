@@ -72,9 +72,6 @@ final class PlaygroundTranscript: NSViewController {
         super.viewDidLayout()
         let bottom = Self.bottomGap + view.safeAreaInsets.bottom
         if transcript.contentInsets.bottom != bottom { transcript.contentInsets.bottom = bottom }
-        // A view in no view controller tree may never be told it appeared:
-        // the first layout in a window loads it, a turn later, out of layout.
-        if !hasLoaded { DispatchQueue.main.async { [weak self] in self?.loadIfLaidOut() } }
     }
 
     private func loadIfLaidOut() {

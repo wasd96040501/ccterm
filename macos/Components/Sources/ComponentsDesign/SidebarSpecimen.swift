@@ -95,8 +95,9 @@ enum SidebarSpecimen {
     ]
 
     /// The source list filling its window's content.
-    private final class SidebarHost: NSView {
+    private final class SidebarHost: NSView, ControllerHost {
         private let sidebar = SidebarViewController()
+        var controllers: [NSViewController] { [sidebar] }
 
         init(library: Bool) {
             super.init(frame: .zero)

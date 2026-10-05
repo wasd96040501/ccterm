@@ -59,8 +59,9 @@ enum GeneralSpecimen {
 /// The section as General shows it, driven by a stand-in for the app: a
 /// field being typed in is checked, Return finds what it names, and the
 /// checkbox sets itself.
-final class LaunchHost: NSView, LaunchSectionViewControllerDelegate {
+final class LaunchHost: NSView, ControllerHost, LaunchSectionViewControllerDelegate {
     private let section = LaunchSectionViewController()
+    var controllers: [NSViewController] { [section] }
     private var state: LaunchSectionViewController.State
 
     init(

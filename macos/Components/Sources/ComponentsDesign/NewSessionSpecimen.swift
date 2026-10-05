@@ -75,8 +75,9 @@ enum NewSessionSpecimen {
 /// The view in its pane at the pane's real size, centred. It answers the
 /// view's delegate from the fixture, so the page stays live.
 @MainActor
-private final class NewSessionHost: NSView, NewSessionViewControllerDelegate {
+private final class NewSessionHost: NSView, ControllerHost, NewSessionViewControllerDelegate {
     private let controller = NewSessionViewController()
+    var controllers: [NSViewController] { [controller] }
     private let stage = NSView()
     private var content: NewSessionContent
 

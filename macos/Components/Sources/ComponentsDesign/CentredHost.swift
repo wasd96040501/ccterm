@@ -2,9 +2,12 @@ import AppKit
 
 /// A host that holds its content at a fixed size, centred in the card: for a
 /// component whose host is not a window the style page can draw yet.
-final class CentredHost: NSView {
+final class CentredHost: NSView, ControllerHost {
     /// What owns the content, kept as long as the host is.
     private let owner: AnyObject?
+
+    /// The owner, when it is a view controller; a popover keeps its own.
+    var controllers: [NSViewController] { [owner as? NSViewController].compactMap { $0 } }
 
     init(_ content: NSView, size: NSSize, owner: AnyObject? = nil) {
         self.owner = owner

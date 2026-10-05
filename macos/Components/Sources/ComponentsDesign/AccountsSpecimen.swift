@@ -79,11 +79,12 @@ enum AccountsSpecimen {
 /// stand-in for the app: Sign In… waits on the browser until Cancel, Sign
 /// Out… signs out, Add Provider… and Duplicate add a row and flash it,
 /// Delete… removes one, ⓘ flashes it.
-final class AccountsHost: NSView, SubscriptionSectionViewControllerDelegate,
+final class AccountsHost: NSView, ControllerHost, SubscriptionSectionViewControllerDelegate,
     ProvidersSectionViewControllerDelegate
 {
     private let subscriptionSection = SubscriptionSectionViewController()
     private let providersSection = ProvidersSectionViewController()
+    var controllers: [NSViewController] { [subscriptionSection, providersSection] }
     private var providers: [ProvidersSectionViewController.Row]
 
     /// `providers` nil leaves the providers section out; `inset` is the form's
@@ -174,8 +175,9 @@ final class AccountsHost: NSView, SubscriptionSectionViewControllerDelegate,
 
 /// The design's Local Proxy variables in the real list, which edits them
 /// as the app's editor does: every edit comes back as the next rows.
-private final class VariablesHost: NSView, EnvironmentVariablesViewControllerDelegate {
+private final class VariablesHost: NSView, ControllerHost, EnvironmentVariablesViewControllerDelegate {
     private let list = EnvironmentVariablesViewController()
+    var controllers: [NSViewController] { [list] }
     private var variables: [(isEnabled: Bool, name: String, value: String)] = [
         (true, "NO_PROXY", "127.0.0.1,localhost"),
         (true, "API_TIMEOUT_MS", "3000000"),
@@ -252,8 +254,9 @@ private final class VariablesHost: NSView, EnvironmentVariablesViewControllerDel
 /// Proxy or subscription, driven by a stand-in for the app: every edit
 /// comes back as the next presentation, as the app's view model sends it; ⌘V
 /// says what it read. Its buttons have no presenter to answer them.
-private final class EditorHost: NSView, AccountEditorViewControllerDelegate {
+private final class EditorHost: NSView, ControllerHost, AccountEditorViewControllerDelegate {
     private let sheet: AccountEditorViewController
+    var controllers: [NSViewController] { [sheet] }
     private var presentation: AccountEditorPresentation
     private var variables: [(isEnabled: Bool, name: String, value: String)]
 
@@ -376,8 +379,9 @@ private final class EditorHost: NSView, AccountEditorViewControllerDelegate {
 }
 
 /// The sign-in sheet's content, as the sheet shows it: its own size.
-private final class SignInHost: NSView {
+private final class SignInHost: NSView, ControllerHost {
     private let sheet = SignInViewController()
+    var controllers: [NSViewController] { [sheet] }
     /// The sheet's size, from its content (`preferredContentSize`).
     let size: NSSize
 

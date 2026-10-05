@@ -386,42 +386,6 @@ final class ComposerViewControllerTests: XCTestCase {
         XCTAssertEqual(words.alphaValue, 1)
         XCTAssertEqual(token.alphaValue, 1)
     }
-
-    // MARK: Placement
-
-    private var keyHints: NSTextField? {
-        find(NSTextField.self) { $0.stringValue.contains("⇧⇥") }
-    }
-
-    /// In a page the key hints sit 12 under the card, in the 16-pt line the
-    /// view ends on; floating, the view is the card alone.
-    func testInAPageTheKeyHintsSitUnderTheCard() throws {
-        configure(F.newTab)
-        window.layoutIfNeeded()
-        let card = try XCTUnwrap(find(ComposerView.self))
-        let hints = try XCTUnwrap(keyHints)
-        XCTAssertFalse(hints.isHidden)
-        XCTAssertEqual(card.frame.minY, 12 + 16, accuracy: 0.5)
-        XCTAssertEqual(hints.frame.midY, 8, accuracy: 0.5)
-
-        configure(F.idle)
-        window.layoutIfNeeded()
-        XCTAssertTrue(hints.isHidden)
-        XCTAssertEqual(card.frame, composer.view.bounds)
-    }
-
-    /// The hints are for an empty field: words fade them out, and clearing
-    /// the field brings them back.
-    func testTheKeyHintsShowOnlyWhileTheFieldIsEmpty() throws {
-        configure(F.newTab)
-        let hints = try XCTUnwrap(keyHints)
-        XCTAssertEqual(hints.alphaValue, 1)
-
-        composer.text = "Fix the gutter"
-        wait(for: [expectation(for: NSPredicate { _, _ in hints.alphaValue == 0 }, evaluatedWith: nil)], timeout: 2)
-        composer.text = ""
-        wait(for: [expectation(for: NSPredicate { _, _ in hints.alphaValue == 1 }, evaluatedWith: nil)], timeout: 2)
-    }
 }
 
 /// A responder above the composer, counting the ⎋ that reach it.

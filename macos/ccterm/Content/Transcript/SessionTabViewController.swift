@@ -494,7 +494,7 @@ final class SessionTabViewController: NSViewController {
     /// 6. The composer glides from where it stood to its place: 0.3 s, ease-out,
     /// the position and the width as constraint constants — the card itself
     /// doesn't relayout differently as it goes. The card's top edge is what
-    /// holds still at the swap: in the page the key hints were under it.
+    /// holds still at the swap.
     /// Reduce Motion: it fades in at its place.
     private func glide(from captured: NSRect) {
         let target = composer.view.convert(composer.view.bounds, to: nil)

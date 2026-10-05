@@ -133,7 +133,7 @@ enum ComposerFixtures {
         let working = action == .stop
         let percent = ring.map { "\(Int(($0 * 100).rounded())) %" }
         return P(
-            placeholder: draft ? "Ask Claude to…" : "Message Claude",
+            placeholder: draft ? "Ask Claude, or type / for commands" : "Message Claude",
             model: P.Chip(
                 title: model, detail: provider, glyph: fast ? .fast : nil,
                 trailingGlyph: pending ? .later : nil,
@@ -179,7 +179,7 @@ enum ComposerFixtures {
         model: "Default", provider: "Work Relay", mode: .acceptEdits, placement: .page, draft: true,
         current: "model:\(relay.uuidString):default")
     static let loading = P(
-        placeholder: "Ask Claude to…", model: P.Chip(title: "Loading…", isEnabled: false),
+        placeholder: "Ask Claude, or type / for commands", model: P.Chip(title: "Loading…", isEnabled: false),
         effort: P.Chip(title: "—", glyph: .effort(level: nil), isEnabled: false, titleIsDroppable: true),
         mode: P.Chip(title: "Ask", glyph: .ask, isEnabled: false, titleIsDroppable: true),
         fastMode: P.FastModeSwitch(isOn: false, isEnabled: false), placement: .page,

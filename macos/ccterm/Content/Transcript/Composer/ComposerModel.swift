@@ -60,7 +60,7 @@ nonisolated enum ComposerModel {
         let ringText = percent.map { "\($0) %" }
         return ComposerPresentation(
             placeholder: input.context == .draft
-                ? String(localized: "Ask Claude to…") : String(localized: "Message Claude"),
+                ? String(localized: "Ask Claude, or type / for commands") : String(localized: "Message Claude"),
             model: facts.modelChip(), effort: facts.effortChip(), mode: facts.modeChip(),
             modelSections: facts.modelSections(),
             modelPanelHeader: facts.timing(of: .fastMode(facts.shownFast)) == .afterTurn

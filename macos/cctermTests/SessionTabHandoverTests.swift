@@ -127,7 +127,7 @@ final class SessionTabHandoverTests: XCTestCase {
     // MARK: - Geometry
 
     /// Nothing jumps: right after the swap the card's top edge is where it
-    /// stood in the New view (the key hints under it are gone), not at the
+    /// stood in the New view, not at the
     /// bottom; the transcript is the whole tab.
     func testTheComposerStartsTheGlideWhereItStood() throws {
         let tab = mountDraft()
@@ -178,7 +178,7 @@ final class SessionTabHandoverTests: XCTestCase {
     }
 
     /// Needs the display awake: samples the composer's frames. Until the swap
-    /// the card's top edge holds still (in the page, the key hints under it);
+    /// the card's top edge holds still;
     /// from the swap the glide moves its bottom edge, only ever down, to rest.
     /// The card may grow on the way (the session's first state), upward.
     func testTheGlideMovesMonotonicallyDownward() throws {
@@ -188,18 +188,24 @@ final class SessionTabHandoverTests: XCTestCase {
         let start = composer.view.convert(composer.view.bounds, to: tab.view)
 
         try send("Fix the gutter", in: tab)
-        var samples: [NSRect] = []
+        // Each frame, and whether the composer still stood in the New view:
+        // the swap mounts the transcript.
+        var samples: [(frame: NSRect, inPage: Bool)] = []
         let deadline = Date().addingTimeInterval(2)
         while Date() < deadline {
             RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0 / 120))
-            samples.append(composer.view.convert(composer.view.bounds, to: tab.view))
-            if let last = samples.last, abs(last.minY - 16) < 0.5, samples.count > 5 { break }
+            samples.append(
+                (
+                    composer.view.convert(composer.view.bounds, to: tab.view),
+                    !tab.children.contains { $0 is TranscriptViewController }
+                ))
+            if let last = samples.last, abs(last.frame.minY - 16) < 0.5, samples.count > 5 { break }
         }
 
         XCTAssertGreaterThan(samples.count, 5, "the glide produced no frames (is the display asleep?)")
-        XCTAssertEqual(try XCTUnwrap(samples.last).minY, 16, accuracy: 0.5)
-        let page = samples.prefix { abs($0.height - start.height) < 0.5 }
-        let gliding = samples.dropFirst(page.count)
+        XCTAssertEqual(try XCTUnwrap(samples.last).frame.minY, 16, accuracy: 0.5)
+        let page = samples.prefix { $0.inPage }.map(\.frame)
+        let gliding = samples.dropFirst(page.count).map(\.frame)
         for frame in page {
             XCTAssertEqual(frame.maxY, start.maxY, accuracy: 0.5, "the card moved before the swap")
         }

@@ -103,7 +103,7 @@ final class ComposerModelTests: XCTestCase {
     }
 
     func testThePlaceholderFollowsTheTab() {
-        XCTAssertEqual(model(.draft).placeholder, L("Ask Claude to…"))
+        XCTAssertEqual(model(.draft).placeholder, L("Ask Claude, or type / for commands"))
         XCTAssertEqual(model(session(.idle)).placeholder, L("Message Claude"))
     }
 

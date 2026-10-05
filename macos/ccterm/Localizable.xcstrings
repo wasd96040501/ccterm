@@ -571,12 +571,12 @@
         }
       }
     },
-    "Ask Claude to…": {
+    "Ask Claude, or type / for commands": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "让 Claude…"
+            "value": "告诉 Claude 要做什么，或输入 / 使用命令"
           }
         }
       }

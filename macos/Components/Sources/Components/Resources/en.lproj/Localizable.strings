@@ -101,9 +101,6 @@
 "Show all %lld lines" = "Show all %lld lines";
 /* Composer */
 "Send" = "Send";
-"New Line" = "New Line";
-"Mode" = "Mode";
-"Commands" = "Commands";
 "Stop" = "Stop";
 "Show Log" = "Show Log";
 "Restart" = "Restart";

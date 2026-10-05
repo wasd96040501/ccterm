@@ -8,8 +8,8 @@ import DisplayModels
 /// same instance, serves a New tab and the session it becomes: its
 /// container moves its view from the New view's middle to the tab's bottom.
 ///
-/// In a page (`ComposerPresentation.Placement`) the key hints sit 12 pt under the
-/// card, while the field is empty; floating, the view is the card alone.
+/// The view is the card; where it stands (`ComposerPresentation.Placement`)
+/// decides only which way its menus and completion open.
 ///
 /// Draws a `ComposerPresentation` (`configure(with:)`) and reports intents to its
 /// delegate; it never knows a store. Its own state is only the field's text
@@ -26,11 +26,6 @@ public final class ComposerViewController: NSViewController {
 
     private let card = ComposerView()
     private var model: ComposerPresentation?
-    private let keyHints = NSTextField(labelWithAttributedString: ComposerViewController.hints())
-    /// The card, 12, the hints' 16-pt line: in a page.
-    private var hintsUnderCard: [NSLayoutConstraint] = []
-    /// The card's bottom is the view's: floating.
-    private var cardAtBottom: NSLayoutConstraint?
 
     /// Model's, Effort's or Mode's menu, whichever is open.
     private let menuPopover = MenuPopover()
@@ -53,32 +48,14 @@ public final class ComposerViewController: NSViewController {
 
     public override func loadView() {
         view = NSView()
-        keyHints.alignment = .center
-        keyHints.lineBreakMode = .byTruncatingTail
-        keyHints.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        for subview in [card, keyHints] {
-            subview.translatesAutoresizingMaskIntoConstraints = false
-            view.addSubview(subview)
-        }
-        let hintsLine = NSLayoutGuide()
-        view.addLayoutGuide(hintsLine)
+        card.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(card)
         NSLayoutConstraint.activate([
             card.topAnchor.constraint(equalTo: view.topAnchor),
             card.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             card.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            keyHints.centerYAnchor.constraint(equalTo: hintsLine.centerYAnchor),
-            keyHints.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            keyHints.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor),
+            card.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
-        hintsUnderCard = [
-            hintsLine.topAnchor.constraint(equalTo: card.bottomAnchor, constant: 12),
-            hintsLine.heightAnchor.constraint(equalToConstant: 16),
-            hintsLine.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ]
-        let cardAtBottom = card.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        self.cardAtBottom = cardAtBottom
-        cardAtBottom.isActive = true
-        keyHints.isHidden = true
     }
 
     public override func viewDidLoad() {
@@ -97,10 +74,8 @@ public final class ComposerViewController: NSViewController {
     /// Shows `model`. Idempotent.
     public func configure(with model: ComposerPresentation) {
         loadViewIfNeeded()
-        let placementChanged = model.placement != self.model?.placement
         self.model = model
         card.configure(with: model)
-        if placementChanged { place(model.placement) }
         if menuPopover.isShown, let openControl {
             menuPopover.configure(with: ComposerMenu.content(of: openControl, in: model))
         }
@@ -112,10 +87,7 @@ public final class ComposerViewController: NSViewController {
     /// read*, a cancelled launch).
     public var text: String {
         get { card.text }
-        set {
-            card.setText(newValue)
-            updateKeyHints()
-        }
+        set { card.setText(newValue) }
     }
 
     /// Whether the field's words and token are drawn dimmed — the container's
@@ -130,64 +102,6 @@ public final class ComposerViewController: NSViewController {
     /// Gives the field the focus.
     public func focus() {
         card.focus()
-    }
-
-    // MARK: - Key hints
-
-    /// The hints under the card in a page; the card alone floating.
-    private func place(_ placement: ComposerPresentation.Placement) {
-        let inPage = placement == .page
-        // One bottom at a time: the old one goes before the new one comes.
-        if inPage {
-            cardAtBottom?.isActive = false
-            NSLayoutConstraint.activate(hintsUnderCard)
-        } else {
-            NSLayoutConstraint.deactivate(hintsUnderCard)
-            cardAtBottom?.isActive = true
-        }
-        keyHints.isHidden = !inPage
-        keyHints.alphaValue = card.text.isEmpty ? 1 : 0
-    }
-
-    /// The hints show only while the field is empty: they fade, 0.2 s.
-    private func updateKeyHints() {
-        let alpha: CGFloat = card.text.isEmpty ? 1 : 0
-        guard keyHints.alphaValue != alpha else { return }
-        guard !keyHints.isHidden, view.window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        else {
-            keyHints.alphaValue = alpha
-            return
-        }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.2
-            keyHints.animator().alphaValue = alpha
-        }
-    }
-
-    /// `↩ Send   ⇧↩ New Line   ⇧⇥ Mode   / Commands`: the keys in secondary
-    /// ink, 3 pt before their words; 14 pt between the hints.
-    private static func hints() -> NSAttributedString {
-        let font = NSFont.systemFont(ofSize: 11)
-        let pairs = [
-            ("↩", String(localized: "Send", bundle: .module)),
-            ("⇧↩", String(localized: "New Line", bundle: .module)),
-            ("⇧⇥", String(localized: "Mode", bundle: .module)),
-            ("/", String(localized: "Commands", bundle: .module)),
-        ]
-        // A zero-width joiner carries each gap as its kerning, so the gap is exact.
-        let joiner = "\u{200D}"
-        let text = NSMutableAttributedString()
-        for (index, (key, words)) in pairs.enumerated() {
-            if index > 0 { text.append(NSAttributedString(string: joiner, attributes: [.font: font, .kern: 14])) }
-            text.append(
-                NSAttributedString(
-                    string: key, attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor]))
-            text.append(NSAttributedString(string: joiner, attributes: [.font: font, .kern: 3]))
-            text.append(
-                NSAttributedString(
-                    string: words, attributes: [.font: font, .foregroundColor: NSColor.tertiaryLabelColor]))
-        }
-        return text
     }
 
     // MARK: - Menus
@@ -285,7 +199,6 @@ extension ComposerViewController: ComposerViewDelegate {
 
     func composerViewDidChangeText(_ composerView: ComposerView) {
         updateSlashList()
-        updateKeyHints()
     }
 
     func composerView(_ composerView: ComposerView, handle key: ComposerFieldView.Key) -> Bool {

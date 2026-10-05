@@ -6,7 +6,7 @@ import DisplayModels
 /// at the transcript's column: 720 wide, every state the sheet shows — idle
 /// with words, running with Stop, waiting for you, starting, at rest, failed,
 /// a model with no effort in Bypass, Fast with the context ring, a refusal, a
-/// command token, the New tab's with its key hints, nothing known yet.
+/// command token, the New tab's, nothing known yet.
 enum ComposerSpecimen {
     /// The transcript's column, where a session's composer floats.
     static let columnWidth: CGFloat = 720
@@ -27,7 +27,7 @@ enum ComposerSpecimen {
             ("Fast, Max, the context ring at 72 %", F.fastRing, ""),
             ("Refused — the red line under the card", F.refused, ""),
             ("A command token", F.idle, "/review #327"),
-            ("A New tab — the key hints under the card", F.newTab, ""),
+            ("A New tab — its placeholder names the commands", F.newTab, ""),
             ("Nothing known yet", F.loading, ""),
         ]
         var specimens = states.map { title, state, text in
@@ -38,9 +38,8 @@ enum ComposerSpecimen {
             title: "Composer",
             note:
                 "One card: an optional failure section, the growing field, the Model / Effort / Mode pull-downs, "
-                + "the status slot and the action button. In a page the key hints sit under it while the field is "
-                + "empty. The pull-downs open the one menu (Menus); `/` at the start completes a command into a token. It "
-                + "is shown at the transcript's column, 720 wide.",
+                + "the status slot and the action button. The pull-downs open the one menu (Menus); `/` at the start "
+                + "completes a command into a token. It is shown at the transcript's column, 720 wide.",
             specimens: specimens)
     }
 

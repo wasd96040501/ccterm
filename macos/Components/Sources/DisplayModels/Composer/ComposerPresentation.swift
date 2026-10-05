@@ -11,8 +11,7 @@ import Foundation
 public struct ComposerPresentation: Equatable, Sendable {
     /// Where the container stands the card.
     public enum Placement: Equatable, Sendable {
-        /// In a page (a New tab's): the key hints under it, and room below for
-        /// its menus and completion.
+        /// In a page (a New tab's): room below for its menus and completion.
         case page
         /// Over a session's bottom edge: nothing under it; its menus and
         /// completion open above.

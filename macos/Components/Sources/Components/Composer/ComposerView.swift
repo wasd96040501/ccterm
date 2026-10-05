@@ -15,8 +15,9 @@ import DisplayModels
 /// Words are never cut: the buttons keep as many of their words as their line
 /// holds — the provider's name goes first, then Effort's and Mode's names
 /// (glyphs and tooltips remain) — and when even glyphs leave no room for the
-/// status, it takes a line of its own under the buttons. The line is
-/// measured, not matched against set widths.
+/// status, it takes a line of its own under the buttons, which then keep the
+/// words their line holds. The line is measured, not matched against set
+/// widths.
 @MainActor
 final class ComposerView: NSView {
     /// The three pull-downs.

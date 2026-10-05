@@ -260,8 +260,9 @@ prompt, so this leaves nothing in the sidebar.
   truncated: as the chips' line stops holding everything, the chips drop
   their words first (the provider name, then the effort and mode names —
   glyphs and tooltips remain), and when even the glyphs leave it no room
-  the status takes a line of its own under the chips. The app measures the
-  line; the sheet's container widths only stand in for that.
+  the status takes a line of its own under the chips, which then keep the
+  words their line holds. The app measures the line; the sheet's container
+  widths only stand in for that.
 - **Context.** A 14-pt ring with a percentage appears in the status slot once
   the context is half full (`get_context_usage` after each turn); click opens
   `/context` beside. Below half, it isn't shown.

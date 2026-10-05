@@ -96,6 +96,17 @@ struct Access {
     /// The statement it is part of: two children's members met in one
     /// statement is a container feeding one from the other.
     var statement: SyntaxIdentifier? = nil
+    /// The file it is written in — an extension's, not its type's.
+    var file = ""
+}
+
+/// `item.anchor` tied to `other.otherAnchor` (nil: a constant), or an item a
+/// split or stack arranges (`anchor` is `split` / `stack`, `other` its order).
+struct Pin {
+    let item: String
+    let anchor: String
+    var other: String? = nil
+    var otherAnchor: String? = nil
 }
 
 /// A declared type, or `extension Foo` of a type outside the map (framework
@@ -122,6 +133,9 @@ final class TypeInfo {
     var hosts: [String] = []
     var flows: [Flow] = []
     var accesses: [Access] = []
+    /// Where it places what it lays out: each anchor constraint and each
+    /// split or stack it fills, as written.
+    var pins: [Pin] = []
     var tasks = 0
     /// Lines added by extensions declared in other files.
     var extensionLines = 0

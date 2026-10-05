@@ -99,9 +99,10 @@ struct Rules {
             if let type = index.propertyType(property, in: owner), isComponent(type) {
                 found.insert(ObjectIdentifier(type))
             }
-            // `[URL: MarkView]`, `[Row]`: the element is held too.
+            // `[URL: MarkView]`, `[Row]`: the element is held too — but `[NumberedLinesView.Line]`
+            // holds lines, not the view their type is nested in.
             if let text = property.type {
-                for word in text.split(whereSeparator: { !$0.isLetter && !$0.isNumber && $0 != "_" }) {
+                for word in text.split(whereSeparator: { !$0.isLetter && !$0.isNumber && $0 != "_" && $0 != "." }) {
                     if let type = index.lookup(String(word), from: owner), isComponent(type) {
                         found.insert(ObjectIdentifier(type))
                     }
@@ -119,6 +120,8 @@ struct Rules {
         let isSettable: Bool
         /// AppKit's own (`intrinsicContentSize`), not the type's chosen surface.
         let isOverride: Bool
+        /// A function, not a stored or computed property.
+        var isFunction = false
     }
 
     /// The declared type of `member` on `type`: a property's type or a
@@ -136,7 +139,8 @@ struct Rules {
         }
         if let function = type.members.first(where: { $0.name == member }), let returns = function.returnType {
             return Declared(
-                text: returns, isStatic: function.isStatic, isSettable: false, isOverride: function.isOverride)
+                text: returns, isStatic: function.isStatic, isSettable: false, isOverride: function.isOverride,
+                isFunction: true)
         }
         return nil
     }
@@ -172,14 +176,17 @@ struct Rules {
                 let declared = declaredType(of: access.name, on: target)
                 let holds = userChildren.contains(ObjectIdentifier(target))
                 // B1: geometry fed into a component (a settable size, inset or
-                // guide), or read by one that doesn't hold it. A holder reading
-                // its own child's natural size to lay it out is its job.
-                if let declared, !declared.isStatic, !declared.isOverride, let core = index.coreName(declared.text),
-                    Self.geometry.contains(core), declared.isSettable || !holds
+                // guide), or read by one that doesn't hold it — a static constant
+                // too. A holder reading its own child's natural size to lay it
+                // out is its job; a static function of its arguments is no state;
+                // a helper in the component's own file is part of it.
+                if let declared, !(declared.isStatic && declared.isFunction), !declared.isOverride,
+                    let core = index.coreName(declared.text), Self.geometry.contains(core),
+                    declared.isSettable || !holds, access.file != target.file
                 {
                     found.append(
                         Finding(
-                            rule: "B1", file: user.file, line: access.line,
+                            rule: "B1", file: access.file, line: access.line,
                             what: "`\(user.shortName)` uses `\(target.shortName).\(access.name): \(declared.text)`"))
                 }
                 // B3: a component inside the child, reached through it.
@@ -189,7 +196,7 @@ struct Rules {
                 {
                     found.append(
                         Finding(
-                            rule: "B3", file: user.file, line: access.line,
+                            rule: "B3", file: access.file, line: access.line,
                             what: "`\(user.shortName)` reaches `\(inner.shortName)` through "
                                 + "`\(target.shortName).\(access.name)`"))
                 }
@@ -210,7 +217,7 @@ struct Rules {
                 let names = uses.map { "`\($0.base).\($0.access.name)`" }
                 found.append(
                     Finding(
-                        rule: "B2", file: user.file, line: first.access.line,
+                        rule: "B2", file: first.access.file, line: first.access.line,
                         what: "`\(user.shortName)` joins \(Array(Set(names)).sorted().joined(separator: " and "))"))
             }
         }

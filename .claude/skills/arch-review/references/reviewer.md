@@ -10,7 +10,7 @@ You are reviewing the architecture of part of CCTerm — a native macOS app (Swi
 **Read these files, and nothing else:**
 1. `build/arch/units/index.md` — the whole scope: modules, unit graph, cross-unit data flow, cycles, unreferenced types. Read it first; its legend explains every label the unit files use.
 2. Your shard: {UNIT_FILES} (under `build/arch/units/`)
-3. When your shard holds the app, `Components` or `DisplayModels`: `build/arch/tree.md` (the component tree), `build/arch/data.md` (each binder's stores, components and events) and `build/arch/rules.md` (every break of where code lives and the component boundaries, already found — build on them, don't restate them).
+3. When your shard holds the app, `Components` or `DisplayModels`: `build/arch/tree.md` (the component tree and where each container places its parts), `build/arch/data.md` (each binder's stores, the data it keeps itself, its components and events) and `build/arch/rules.md` (every break of where code lives and the component boundaries, already found — build on them, don't restate them).
 4. The conventions: {DOC_PATHS}
 
 Don't open `.swift` files, grep the repo, or run commands. The map is deliberately all you get, so you judge structure, not implementation. When the map can't settle a question, say what you'd need to know — don't go and look.

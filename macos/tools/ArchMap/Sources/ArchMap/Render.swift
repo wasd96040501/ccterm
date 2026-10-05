@@ -116,7 +116,8 @@ struct Renderer {
         (`sink`, `for-await`, `observes` = withObservationTracking, `swiftui-reads` = SwiftUI body reading an \
         @Observable, `notified-by`, `kvo`), what it **wires** on others (`sets-callback`, `sets-delegate`, `passes` = hands a publisher or stream to what it constructs), \
         what it **creates**, `.shared` singletons it reaches for, and **used by** = which other units touch it \
-        and through which of its own members (`init` = constructs it); **internal, used only inside** = members nothing but the type itself touches (candidates for `private`). Used-by counts every target — demo and \
+        and through which of its own members (`init` = constructs it); **internal, used only inside** = members nothing but the type itself touches (candidates for `private`); **minor types** = private or nested types with no data-flow role, \
+        named only. Used-by counts every target — demo and \
         smoke executables too, even outside the scope; tests are not parsed. Names resolve only within a \
         file's module and its imports. Receivers are resolved to types where the map can \
         (`LibraryStore.$nodes`); otherwise the raw expression is kept. Resolution is syntactic: treat \
@@ -165,7 +166,7 @@ struct Renderer {
             "",
             "Files: "
                 + unitFiles.map {
-                    "\(($0.path as NSString).lastPathComponent) (\($0.lines)L; \($0.imports.joined(separator: ", ")))"
+                    "\(($0.path as NSString).lastPathComponent) (\($0.imports.joined(separator: ", ")))"
                 }.joined(separator: " · "),
         ]
         let deps = dependencies(of: unit)
@@ -188,7 +189,7 @@ struct Renderer {
             }
         }
         if !minor.isEmpty {
-            out.append("Minor types (private or nested, no data-flow role): " + minor.joined(separator: ", "))
+            out.append("Minor types: " + minor.joined(separator: ", "))
         }
         return (out + entries).joined(separator: "\n") + "\n"
     }

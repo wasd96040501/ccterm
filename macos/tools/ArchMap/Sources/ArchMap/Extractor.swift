@@ -256,7 +256,7 @@ final class Extractor: SyntaxVisitor {
             owner.accesses.append(
                 Access(
                     base: base, name: node.declName.baseName.text, scope: scope, line: line(node),
-                    statement: statement?.id))
+                    statement: statement?.id, file: file.path))
         }
         return .visitChildren
     }
@@ -265,6 +265,7 @@ final class Extractor: SyntaxVisitor {
 
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
         let callee = node.calledExpression
+        recordPins(node)
         if let constructed = constructedType(callee) {
             if constructed == "Task" {
                 owner.tasks += 1
@@ -272,12 +273,15 @@ final class Extractor: SyntaxVisitor {
                 owner.creates.append(constructed)
                 for argument in node.arguments {
                     // `Render` keeps only the ones that turn out to be publishers or streams.
-                    let root = publisherRoot(argument.expression)
-                    guard root.is(MemberAccessExprSyntax.self) || root.is(FunctionCallExprSyntax.self) else { continue }
-                    owner.flows.append(
-                        Flow(
-                            kind: .passes, subject: root, scope: scope,
-                            target: (constructed, argument.label?.text ?? "_")))
+                    for root in publisherRoots(argument.expression) {
+                        guard root.is(MemberAccessExprSyntax.self) || root.is(FunctionCallExprSyntax.self) else {
+                            continue
+                        }
+                        owner.flows.append(
+                            Flow(
+                                kind: .passes, subject: root, scope: scope,
+                                target: (constructed, argument.label?.text ?? "_")))
+                    }
                 }
             }
             if constructed.hasPrefix("NSHosting"),
@@ -308,7 +312,7 @@ final class Extractor: SyntaxVisitor {
         case "detached" where base.trimmedDescription == "Task":
             owner.tasks += 1
         case "sink", "assign":
-            owner.flows.append(Flow(kind: .sink, subject: publisherRoot(base), scope: scope))
+            for root in publisherRoots(base) { owner.flows.append(Flow(kind: .sink, subject: root, scope: scope)) }
         case "post" where isCenter:
             owner.flows.append(Flow(kind: .notifyPost, subject: base, scope: scope, detail: argument(call, "name")))
         case "addObserver" where isCenter, "publisher" where isCenter, "notifications" where isCenter:
@@ -367,6 +371,48 @@ final class Extractor: SyntaxVisitor {
     }
 
     /// `Foo(…)`, `Foo<Bar>(…)`, `Foo.init(…)` → "Foo".
+    /// `a.topAnchor.constraint(equalTo: b.bottomAnchor)`, `addSplitViewItem(x)`,
+    /// `stack.addArrangedSubview(x)`, `NSStackView(views: [a, b])`: where the
+    /// type places things, as written — `Tree` reads it back as words.
+    private func recordPins(_ node: FunctionCallExprSyntax) {
+        func anchor(_ expr: ExprSyntax?) -> (base: String, name: String)? {
+            guard let member = expr?.as(MemberAccessExprSyntax.self) else { return nil }
+            let name = member.declName.baseName.text
+            guard name.hasSuffix("Anchor") else { return nil }
+            return (member.base?.trimmedDescription ?? "", String(name.dropLast("Anchor".count)))
+        }
+        let callee = node.calledExpression
+        if let member = callee.as(MemberAccessExprSyntax.self) {
+            let name = member.declName.baseName.text
+            if name == "constraint", let item = anchor(member.base) {
+                let other = node.arguments.first.flatMap { anchor($0.expression) }
+                owner.pins.append(Pin(item: item.base, anchor: item.name, other: other?.base, otherAnchor: other?.name))
+                return
+            }
+            let arranged = [
+                "addArrangedSubview": "stack", "insertArrangedSubview": "stack", "addSplitViewItem": "split",
+            ]
+            if let kind = arranged[name], let first = node.arguments.first {
+                owner.pins.append(
+                    Pin(item: first.expression.trimmedDescription, anchor: kind, other: member.base?.trimmedDescription)
+                )
+            }
+            return
+        }
+        if let ref = callee.as(DeclReferenceExprSyntax.self), ref.baseName.text == "addSplitViewItem",
+            let first = node.arguments.first
+        {
+            owner.pins.append(Pin(item: first.expression.trimmedDescription, anchor: "split"))
+        }
+        if constructedType(callee) == "NSStackView",
+            let views = node.arguments.first(where: { $0.label?.text == "views" })?.expression.as(ArrayExprSyntax.self)
+        {
+            for element in views.elements {
+                owner.pins.append(Pin(item: element.expression.trimmedDescription, anchor: "stack"))
+            }
+        }
+    }
+
     private func constructedType(_ callee: ExprSyntax) -> String? {
         if let ref = callee.as(DeclReferenceExprSyntax.self), ref.baseName.text.first?.isUppercase == true {
             return ref.baseName.text
@@ -399,6 +445,27 @@ final class Extractor: SyntaxVisitor {
             current = base
         }
         return current
+    }
+
+    /// Every publisher a chain reads: its root, and what `combineLatest` / `merge` /
+    /// `zip` join into it (`a.$x.combineLatest(a.$y) {…}` follows both).
+    private func publisherRoots(_ expr: ExprSyntax) -> [ExprSyntax] {
+        var joined: [ExprSyntax] = []
+        var current = expr
+        while let call = current.as(FunctionCallExprSyntax.self),
+            let member = call.calledExpression.as(MemberAccessExprSyntax.self),
+            let base = member.base
+        {
+            if ["combineLatest", "merge", "zip"].contains(member.declName.baseName.text) {
+                for argument in call.arguments where !argument.expression.is(ClosureExprSyntax.self) {
+                    joined += publisherRoots(argument.expression).filter {
+                        $0.is(MemberAccessExprSyntax.self) || $0.is(FunctionCallExprSyntax.self)
+                    }
+                }
+            }
+            current = base
+        }
+        return [current] + joined
     }
 
     private func argument(_ call: FunctionCallExprSyntax, _ label: String) -> String? {

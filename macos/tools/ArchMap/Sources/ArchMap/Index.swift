@@ -228,6 +228,7 @@ final class Index {
                     target.hosts += ext.hosts
                     target.flows += ext.flows
                     target.accesses += ext.accesses
+                    target.pins += ext.pins
                     target.tasks += ext.tasks
                     continue
                 }
@@ -244,6 +245,7 @@ final class Index {
                     merged.hosts += ext.hosts
                     merged.flows += ext.flows
                     merged.accesses += ext.accesses
+                    merged.pins += ext.pins
                     merged.tasks += ext.tasks
                     merged.extensionLines += ext.lines
                 } else {
@@ -380,7 +382,10 @@ final class Index {
             type.members.filter {
                 ["public", "open"].contains($0.access) && !$0.isOverride && !$0.isObjC && !$0.isWitness
             }.map(\.name)
-            + type.properties.filter { !$0.isLet && ($0.modifiers.contains("public") || $0.modifiers.contains("open")) }
+            + type.properties.filter {
+                !$0.isLet && !$0.modifiers.contains("override")
+                    && ($0.modifiers.contains("public") || $0.modifiers.contains("open"))
+            }
             .map(\.name)
         return Set(names).subtracting(required).filter { name in
             let outside = (uses[name] ?? []).contains { $0 != type.module }

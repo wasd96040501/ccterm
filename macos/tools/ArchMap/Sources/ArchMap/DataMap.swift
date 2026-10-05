@@ -111,11 +111,67 @@ struct DataMap {
         return lines
     }
 
+    /// Types whose values are scalars, not a body of state.
+    private static let scalars: Set<String> = [
+        "Bool", "Int", "Double", "CGFloat", "Float", "String", "URL", "Date", "UUID", "TimeInterval", "NSRect",
+        "CGRect", "NSSize", "CGSize", "NSPoint", "CGPoint", "NSEdgeInsets", "NSRange", "Substring",
+    ]
+
+    /// What a store publishes: `@Published` properties as `Store.name` with their declared types.
+    private var published: [(name: String, type: String, store: TypeInfo)] {
+        index.types.filter(isStore).flatMap { store in
+            store.properties.filter { $0.wrappers.contains { $0.hasPrefix("@Published") } }
+                .compactMap { p in p.type.map { ("\(store.shortName).\(p.name)", $0, store) } }
+        }
+    }
+
+    private func words(_ text: String) -> [String] {
+        text.split(whereSeparator: { !$0.isLetter && !$0.isNumber && $0 != "_" && $0 != "." }).map(String.init)
+    }
+
+    /// The state a binder keeps itself: every stored `var` that holds data — a collection or a
+    /// mapped model — rather than a component, a store, a delegate, a closure, a task or a flag,
+    /// with the members that write it and, when a store publishes the same type, which.
+    private func kept(_ type: TypeInfo) -> [String] {
+        let own = members.members[type.name] ?? []
+        var lines: [String] = []
+        for property in type.properties where !property.isLet && !property.isStatic && !property.isComputed {
+            guard let text = property.type ?? index.propertyType(property, in: type)?.name, !text.contains("->")
+            else { continue }
+            let named = words(text).filter { !["Optional", "Array", "Set", "Dictionary"].contains($0) }
+            let mapped = named.compactMap { index.lookup($0, from: type) }
+            let isCollection = text.contains("[") || text.hasPrefix("Set<") || text.hasPrefix("Dictionary<")
+            guard
+                !mapped.contains(where: {
+                    rules.isComponent($0) || isStore($0) || isBinder($0) || $0.kind == "protocol"
+                }),
+                !named.contains(where: { $0.hasSuffix("Cancellable") || $0 == "Task" || $0.hasPrefix("NS") }),
+                isCollection || (!mapped.isEmpty && !named.allSatisfy(Self.scalars.contains))
+            else { continue }
+            var line = "`\(property.name): \(text)`"
+            let writers = own.filter { $0.writes.contains(property.name) && $0.name != "init" }.map(\.name)
+            var seen: Set<String> = []
+            let unique = writers.filter { seen.insert($0).inserted }
+            line += unique.isEmpty ? " — set at init only" : " — written by " + unique.joined(separator: ", ")
+            let element = Set(mapped.map(\.name))
+            let mirrors = published.filter { p in
+                !element.isEmpty
+                    && Set(words(p.type).compactMap { index.lookup($0, from: p.store)?.name })
+                        .intersection(element).count == element.count
+            }.map(\.name)
+            if !mirrors.isEmpty { line += " · of what " + mirrors.joined(separator: ", ") + " publishes" }
+            lines.append(line)
+        }
+        return lines
+    }
+
     func render(header: String) -> String {
         var out = header + "\n\n"
         out += "How to read: data down, events up (`macos/CLAUDE.md` § Data down, events up). Per binder — the app's "
         out += "controllers, coordinators and root: *subscribes* the store values it follows, *asks* every store "
-        out += "member it calls, *configures* the components it builds or holds with the display models they show, "
+        out += "member it calls, *keeps* the data it stores itself (what writes it, and which store value publishes "
+        out +=
+            "that type, if one does), *configures* the components it builds or holds with the display models they show, "
         out += "*hears* each protocol it answers for a view, each method with the store calls it leads to. Then per "
         out += "store, who reads and calls it. Calls are syntactic and follow the binder's own members only.\n"
         out += "\n## Binders\n"
@@ -128,6 +184,7 @@ struct DataMap {
             for (store, calls) in asks(binder).sorted(by: { $0.key < $1.key }) {
                 section += "- asks \(store): " + calls.joined(separator: ", ") + "\n"
             }
+            for line in kept(binder) { section += "- keeps \(line)\n" }
             let configured = rules.children(of: binder).compactMap { byID[$0] }.filter { $0.module != Placement.app }
                 .sorted { $0.name < $1.name }
             if !configured.isEmpty {

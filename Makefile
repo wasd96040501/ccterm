@@ -115,8 +115,9 @@ appkit-doc: ## Look up an AppKit symbol (SYMBOL=NSStackView or SYMBOL=NSStackVie
 
 # The architecture, read off the Swift sources (no app build), rewritten into
 # build/arch/ on every run: index.md (modules and what follows), tree.md (the
-# component tree from the composition root), data.md (store → binder →
-# component, and each event back) and rules.md (every break of macos/CLAUDE.md
+# component tree from the composition root, and where each container places its
+# parts), data.md (store → binder → component, what each binder keeps itself,
+# and each event back) and rules.md (every break of macos/CLAUDE.md
 # § Where code lives and § Component boundaries, counted in the terminal).
 # SCOPE (names or paths, comma-separated) adds units/ — per source directory,
 # each type's dependencies, data flow and surface — which /arch-review reads;

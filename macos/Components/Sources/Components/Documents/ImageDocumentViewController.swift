@@ -39,6 +39,7 @@ public final class ImageDocumentViewController: NSViewController {
             scroll.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         host.show(NSImage(data: image.data), pixels: CGSize(width: image.width, height: image.height))
+        host.fill(scroll.contentView)
         setAccessibilityLabel()
     }
 
@@ -48,6 +49,8 @@ public final class ImageDocumentViewController: NSViewController {
 
     /// The picture at its size, with a margin; centred in the clip when smaller
     /// (`.imgdoc`: 24 pt around it, 6-pt corners, a hairline outside its edge).
+    /// Constraints size it: at least the clip, at least the picture and its
+    /// margin, and no more.
     private final class ImageHostView: NSView {
         private static let margin: CGFloat = 24
         private static let radius: CGFloat = 6
@@ -55,6 +58,8 @@ public final class ImageDocumentViewController: NSViewController {
         /// The hairline, outside the picture so it covers none of it.
         private let ring = CALayer()
         private var size = CGSize.zero
+        private lazy var imageWidth = imageView.widthAnchor.constraint(equalToConstant: 0)
+        private lazy var imageHeight = imageView.heightAnchor.constraint(equalToConstant: 0)
 
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
@@ -63,7 +68,16 @@ public final class ImageDocumentViewController: NSViewController {
             imageView.layer?.cornerRadius = Self.radius
             imageView.layer?.cornerCurve = .continuous
             imageView.layer?.masksToBounds = true
+            imageView.translatesAutoresizingMaskIntoConstraints = false
             addSubview(imageView)
+            NSLayoutConstraint.activate([
+                imageWidth,
+                imageHeight,
+                imageView.centerXAnchor.constraint(equalTo: centerXAnchor),
+                imageView.centerYAnchor.constraint(equalTo: centerYAnchor),
+                widthAnchor.constraint(greaterThanOrEqualTo: imageView.widthAnchor, constant: 2 * Self.margin),
+                heightAnchor.constraint(greaterThanOrEqualTo: imageView.heightAnchor, constant: 2 * Self.margin),
+            ])
             wantsLayer = true
             ring.borderWidth = 0.5
             ring.cornerRadius = Self.radius + 0.5
@@ -91,20 +105,31 @@ public final class ImageDocumentViewController: NSViewController {
         func show(_ image: NSImage?, pixels: CGSize) {
             imageView.image = image
             size = image?.size == .zero || image == nil ? pixels : (image?.size ?? pixels)
-            needsLayout = true
+            imageWidth.constant = size.width
+            imageHeight.constant = size.height
         }
 
+        /// Pins it to `clip`'s top leading corner, at least as large as it and
+        /// otherwise as small as the picture allows.
+        func fill(_ clip: NSClipView) {
+            translatesAutoresizingMaskIntoConstraints = false
+            let snugWidth = widthAnchor.constraint(equalTo: clip.widthAnchor)
+            let snugHeight = heightAnchor.constraint(equalTo: clip.heightAnchor)
+            snugWidth.priority = .defaultLow
+            snugHeight.priority = .defaultLow
+            NSLayoutConstraint.activate([
+                leadingAnchor.constraint(equalTo: clip.leadingAnchor),
+                topAnchor.constraint(equalTo: clip.topAnchor),
+                widthAnchor.constraint(greaterThanOrEqualTo: clip.widthAnchor),
+                heightAnchor.constraint(greaterThanOrEqualTo: clip.heightAnchor),
+                snugWidth,
+                snugHeight,
+            ])
+        }
+
+        /// The hairline follows the picture.
         override func layout() {
             super.layout()
-            let clip = enclosingScrollView?.contentSize ?? bounds.size
-            let width = max(clip.width, size.width + 2 * Self.margin)
-            let height = max(clip.height, size.height + 2 * Self.margin)
-            if frame.size != CGSize(width: width, height: height) {
-                setFrameSize(CGSize(width: width, height: height))
-            }
-            imageView.frame = CGRect(
-                x: ((width - size.width) / 2).rounded(), y: ((height - size.height) / 2).rounded(),
-                width: size.width, height: size.height)
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             ring.frame = imageView.frame.insetBy(dx: -0.5, dy: -0.5)

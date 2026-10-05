@@ -265,6 +265,28 @@ final class ComposerViewControllerTests: XCTestCase {
 
     // MARK: - Narrow
 
+    /// As the card narrows the buttons drop words whole — the provider's name
+    /// first — and at no width is a button narrower than its words.
+    func testNarrowingDropsWordsAndCutsNone() throws {
+        configure(F.newTab)
+        var droppedAt: CGFloat?
+        for width in stride(from: CGFloat(728), through: 240, by: -8) {
+            window.setContentSize(NSSize(width: width + 32, height: 300))
+            window.layoutIfNeeded()
+            let buttons = composer.view.descendants(MenuButton.self)
+            XCTAssertEqual(buttons.count, 3)
+            for button in buttons {
+                XCTAssertGreaterThanOrEqual(
+                    button.frame.width, button.intrinsicContentSize.width - 0.5,
+                    "\(button.attributedTitle.string) cut at \(width)")
+            }
+            let model = buttons.first { $0.attributedTitle.string.hasPrefix("Default") }
+            if droppedAt == nil, model?.attributedTitle.string.contains("Work Relay") == false { droppedAt = width }
+        }
+        let dropped = try XCTUnwrap(droppedAt, "the provider's name never went")
+        XCTAssertLessThan(dropped, 480, "the provider’s name went with room for it — its line is under 480")
+    }
+
     /// The status's words never set the card's width: in a window sized to
     /// 330 pt the card stays 330 wide and its status moves under the controls.
     func testANarrowCardIsTheWidthItIsGivenWithTheStatusUnderTheControls() throws {

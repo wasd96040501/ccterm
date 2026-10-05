@@ -221,10 +221,11 @@
 @keyframes chipflash { 0%, 30% { background: var(--sel); } 100% { background: transparent; } }
 
 /* Text never truncates: when the card narrows, labels the glyph already
-   carries go first (their names stay in the tooltip), the account name before them. */
+   carries go first (their names stay in the tooltip), the account name before them.
+   The app drops them when its measured line stops fitting; these widths stand in. */
 @container (max-width: 600px) { .chip .acct { display: none; } }
 @container (max-width: 500px) { .chip .opt { display: none; } }
-/* Narrower still, the status takes a line of its own under the controls. */
+/* Narrower still — no room even beside the glyphs — the status takes a line of its own. */
 @container (max-width: 380px) { .lv-status { order: 9; flex-basis: 100%; margin: 4px 8px 0; } }
 
 .lv-status { font-size: 11px; color: var(--tertiary); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; margin: 0 8px; }

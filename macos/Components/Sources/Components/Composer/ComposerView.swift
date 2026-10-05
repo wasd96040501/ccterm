@@ -12,9 +12,11 @@ import DisplayModels
 /// a hairline and a soft shadow; focus — in the key window, as a focus ring —
 /// adds a 1-pt accent ring at 45 % and a 4-pt halo at 12 %.
 ///
-/// Words are never cut: when the card narrows the buttons drop the provider's
-/// name, then Effort's and Mode's names (glyphs and tooltips remain), and
-/// below 380 pt the status takes a line of its own under the buttons.
+/// Words are never cut: the buttons keep as many of their words as their line
+/// holds — the provider's name goes first, then Effort's and Mode's names
+/// (glyphs and tooltips remain) — and when even glyphs leave no room for the
+/// status, it takes a line of its own under the buttons. The line is
+/// measured, not matched against set widths.
 @MainActor
 final class ComposerView: NSView {
     /// The three pull-downs.
@@ -23,8 +25,6 @@ final class ComposerView: NSView {
     weak var delegate: ComposerViewDelegate?
 
     static let maxWidth: CGFloat = 720
-    /// The card's width below which the status takes its own line.
-    static let narrowWidth: CGFloat = 380
 
     // MARK: Subviews
 
@@ -34,6 +34,9 @@ final class ComposerView: NSView {
     private let modelButton = MenuButton()
     private let effortButton = MenuButton()
     private let modeButton = MenuButton()
+    /// Never shown: a chip at another tier, measured without re-titling the
+    /// buttons on screen.
+    private let measuringButton = MenuButton()
     private let spacer = NSView()
     private let statusView = ComposerStatusView()
     private let ringView = ContextRingButton()
@@ -53,7 +56,7 @@ final class ComposerView: NSView {
     private var tier = Tier.full
 
     /// How much of their words the buttons keep as the card narrows.
-    private enum Tier: Int, Comparable {
+    private enum Tier: Int, Comparable, CaseIterable {
         case full
         /// The provider's name is gone.
         case withoutDetail
@@ -167,7 +170,7 @@ final class ComposerView: NSView {
     private func configureActions() {
         for (control, button) in [(Control.model, modelButton), (.effort, effortButton), (.mode, modeButton)] {
             // The words keep their width over everything but the window's: the
-            // card drops them by tier when it narrows (`layout`), so they are
+            // card drops them by tier as it narrows (`layout`), so they are
             // never cut — and never what widens the window.
             button.setContentCompressionResistancePriority(.dragThatCannotResizeWindow, for: .horizontal)
             button.target = self
@@ -303,17 +306,19 @@ final class ComposerView: NSView {
 
     // MARK: - The buttons
 
-    private func showButtons() {
-        guard let model else { return }
-        show(model.model, on: modelButton)
-        show(model.effort, on: effortButton)
-        show(model.mode, on: modeButton)
+    private var chips: [(chip: ComposerPresentation.Chip, button: MenuButton)] {
+        guard let model else { return [] }
+        return [(model.model, modelButton), (model.effort, effortButton), (model.mode, modeButton)]
     }
 
-    /// `chip` on `button`, as much as the tier keeps: its glyph, title and
+    private func showButtons() {
+        for (chip, button) in chips { show(chip, on: button, at: tier) }
+    }
+
+    /// `chip` on `button`, as much as `tier` keeps: its glyph, title and
     /// detail, in secondary ink, red for Bypass, tertiary while disabled; the
     /// detail and the trailing clock tertiary; no chevron while disabled.
-    private func show(_ chip: ComposerPresentation.Chip, on button: MenuButton) {
+    private func show(_ chip: ComposerPresentation.Chip, on button: MenuButton, at tier: Tier) {
         let ink: NSColor = !chip.isEnabled ? .tertiaryLabelColor : chip.isDanger ? .failureText : .secondaryLabelColor
         button.show(
             chip.titleIsDroppable && tier >= .glyphsOnly ? "" : chip.title, font: .systemFont(ofSize: 12), ink: ink,
@@ -329,18 +334,29 @@ final class ComposerView: NSView {
 
     override func layout() {
         super.layout()
-        // Narrowing is a question of the card's own width, which constraints can't ask.
-        // (The room the card is given, not the width its contents ask for.)
+        // The room the card is given, not the width its contents ask for — a
+        // question constraints can't ask, so the line is measured at each tier.
         let width = min(bounds.width, Self.maxWidth)
-        let nextTier: Tier = width > 600 ? .full : width > 500 ? .withoutDetail : .glyphsOnly
+        guard width > 0, model != nil else { return }
+        // The line as it is, less the status; the status's own width.
+        let status = statusView.isEmpty ? 0 : statusView.fittingSize.width + 4
+        let line = controlsRow.fittingSize.width + 16 - (statusView.superview === controlsRow ? status : 0)
+        let widths = Tier.allCases.map { (tier: $0, width: line + growth(of: $0)) }
+        // The fullest words that fit beside the status; when even the glyphs
+        // don't, the status takes its own line and the words fit without it.
+        let nextTier: Tier
+        let nextNarrow: Bool
+        if let fits = widths.first(where: { $0.width + status <= width }) {
+            (nextTier, nextNarrow) = (fits.tier, false)
+        } else {
+            nextTier = widths.first { $0.width <= width }?.tier ?? .glyphsOnly
+            nextNarrow = true
+        }
         let tierChanged = nextTier != tier
         if tierChanged {
             tier = nextTier
             showButtons()
         }
-        // The status takes its own line below 380, and wherever its words
-        // wouldn't fit beside the controls — never cut, never widening the card.
-        let nextNarrow = width > 0 && (width < Self.narrowWidth || !statusFitsInline(at: width))
         let narrowChanged = nextNarrow != isNarrow
         if narrowChanged {
             isNarrow = nextNarrow
@@ -350,12 +366,13 @@ final class ComposerView: NSView {
         super.layout()
     }
 
-    /// Whether the controls' line holds the status at `width`.
-    private func statusFitsInline(at width: CGFloat) -> Bool {
-        guard !statusView.isEmpty else { return true }
-        var needed = controlsRow.fittingSize.width + 16
-        if statusView.superview !== controlsRow { needed += statusView.fittingSize.width + 4 }
-        return needed <= width
+    /// How much wider the buttons are at `tier` than as they are shown.
+    private func growth(of tier: Tier) -> CGFloat {
+        guard tier != self.tier else { return 0 }
+        return chips.reduce(0) { growth, shown in
+            show(shown.chip, on: measuringButton, at: tier)
+            return growth + measuringButton.intrinsicContentSize.width - shown.button.intrinsicContentSize.width
+        }
     }
 
     override func mouseDown(with event: NSEvent) {

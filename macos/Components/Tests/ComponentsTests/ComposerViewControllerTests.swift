@@ -248,12 +248,19 @@ final class ComposerViewControllerTests: XCTestCase {
 
     func testTheContextRingOpensTheContext() throws {
         configure(F.fastRing)
-        let ring = try XCTUnwrap(find(ContextRingView.self))
+        let ring = try XCTUnwrap(find(ContextRingButton.self))
         XCTAssertFalse(ring.isHidden)
-        ring.mouseDown(with: NSEvent())
+        ring.performClick(nil)
         XCTAssertEqual(recorder.contexts, 1)
         configure(F.state(ring: nil))
         XCTAssertTrue(ring.isHidden)
+    }
+
+    func testWaitingForYouShowsTheRequest() throws {
+        configure(F.waiting)
+        let button = try XCTUnwrap(find(NSButton.self) { $0.title == "Waiting for you ↑" && !$0.isHidden })
+        button.performClick(nil)
+        XCTAssertEqual(recorder.waiting, 1)
     }
 
     // MARK: - Narrow

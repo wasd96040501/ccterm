@@ -36,7 +36,7 @@ final class ComposerView: NSView {
     private let modeButton = MenuButton()
     private let spacer = NSView()
     private let statusView = ComposerStatusView()
-    private let ringView = ContextRingView()
+    private let ringView = ContextRingButton()
     private let stopButton = ComposerActionButton(kind: .stop)
     private let sendButton = ComposerActionButton(kind: .send)
     private let controlsRow = NSStackView()
@@ -186,14 +186,10 @@ final class ComposerView: NSView {
             guard let self else { return }
             self.delegate?.composerViewDidRequestLog(self)
         }
-        statusView.onPress = { [weak self] in
-            guard let self else { return }
-            self.delegate?.composerViewDidRequestWaitingRequest(self)
-        }
-        ringView.onPress = { [weak self] in
-            guard let self else { return }
-            self.delegate?.composerViewDidRequestContextUsage(self)
-        }
+        statusView.waitingButton.target = self
+        statusView.waitingButton.action = #selector(showWaitingRequest)
+        ringView.target = self
+        ringView.action = #selector(showContextUsage)
         sendButton.setAccessibilityLabel(String(localized: "Send", bundle: .module))
         stopButton.setAccessibilityLabel(String(localized: "Stop", bundle: .module))
     }
@@ -378,6 +374,14 @@ final class ComposerView: NSView {
         delegate?.composerViewDidRequestStop(self)
     }
 
+    @objc private func showWaitingRequest() {
+        delegate?.composerViewDidRequestWaitingRequest(self)
+    }
+
+    @objc private func showContextUsage() {
+        delegate?.composerViewDidRequestContextUsage(self)
+    }
+
     @objc private func send() {
         submit()
     }
@@ -545,14 +549,13 @@ private final class CardSurfaceView: NSView {
 
 /// The status slot (design 08 *The status slot*): 11-pt tertiary words, with the
 /// running arc while the CLI starts or compacts, or the coral *Waiting for you ↑*
-/// whose click scrolls to the request.
+/// — AppKit's accessory-bar button, whose press scrolls to the request.
 private final class ComposerStatusView: NSView {
-    var onPress: (() -> Void)?
+    let waitingButton = NSButton(title: "", target: nil, action: nil)
 
     private let label = NSTextField(labelWithString: "")
     private let tile = TileView()
     private let tileHost = NSView()
-    private var isWaitingForYou = false
 
     var isEmpty: Bool { isHidden }
 
@@ -566,6 +569,10 @@ private final class ComposerStatusView: NSView {
         // own line instead (`ComposerView.layout`); a resistance above the
         // window's would widen the window.
         label.setContentCompressionResistancePriority(.dragThatCannotResizeWindow, for: .horizontal)
+        label.textColor = .tertiaryLabelColor
+        waitingButton.bezelStyle = .accessoryBar
+        waitingButton.showsBorderOnlyWhileMouseInside = true
+        waitingButton.setContentCompressionResistancePriority(.dragThatCannotResizeWindow, for: .horizontal)
         tileHost.translatesAutoresizingMaskIntoConstraints = false
         // The design draws the tile at three quarters (12 pt) with a −3 margin,
         // so it takes 10 pt of the line and overhangs it by 1 on each side.
@@ -577,7 +584,7 @@ private final class ComposerStatusView: NSView {
         stack.alignment = .centerY
         stack.spacing = 6
         stack.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
-        stack.setViews([tileHost, label], in: .leading)
+        stack.setViews([tileHost, label, waitingButton], in: .leading)
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
         NSLayoutConstraint.activate([
@@ -604,28 +611,15 @@ private final class ComposerStatusView: NSView {
         switch status {
         case .note(let words):
             label.stringValue = words
-            isWaitingForYou = false
+            label.isHidden = false
+            waitingButton.isHidden = true
         case .waitingForYou(let words):
-            label.stringValue = words
-            isWaitingForYou = true
+            waitingButton.attributedTitle = NSAttributedString(
+                string: words,
+                attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.sidebarCoral])
+            label.isHidden = true
+            waitingButton.isHidden = false
         }
         tileHost.isHidden = !isBusy
-        label.textColor = isWaitingForYou ? NSColor.sidebarCoral : .tertiaryLabelColor
-        setAccessibilityRole(isWaitingForYou ? .button : .staticText)
-        setAccessibilityLabel(label.stringValue)
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        isWaitingForYou && bounds.contains(convert(point, from: superview)) ? self : nil
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        if isWaitingForYou { onPress?() }
-    }
-
-    override func accessibilityPerformPress() -> Bool {
-        guard isWaitingForYou else { return false }
-        onPress?()
-        return true
     }
 }

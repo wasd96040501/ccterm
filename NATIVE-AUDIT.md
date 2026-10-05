@@ -42,7 +42,7 @@ Status: `[ ]` open · `[x]` fixed (commit) · `[-]` dropped (why)
 ## Second batch
 
 ### Hand-made controls
-- [ ] **7. Composer status and context ring** — `Composer/ComposerView.swift` (`ComposerStatusView`), `Composer/ContextRingView.swift`: `hitTest` + `mouseDown` + a hand-set `.button` role. Native: borderless `NSButton`.
+- [x] **7. Composer status and context ring** — **Fixed** (*The status and the context ring are AppKit's buttons*): *Waiting for you ↑* is an accessory-bar button beside the note label (the stack shows one); the ring is `ContextRingButton`, its image the drawn ring, its title the percentage. No `hitTest` / `mouseDown` / role overrides. Was: — `Composer/ComposerView.swift` (`ComposerStatusView`), `Composer/ContextRingView.swift`: `hitTest` + `mouseDown` + a hand-set `.button` role. Native: borderless `NSButton`.
 - [ ] **8. Attachment thumbnails invisible to VoiceOver** — `Rows/AttachmentsRowView.swift` (`Thumbnail`): a label without `isAccessibilityElement`.
 - [ ] **9. Slash list selection** — `Composer/SlashListViewController.swift`: selection highlight off, cells paint their own, rows reloaded per ↑↓; `mouseDown` override. Native: `NSTableRowView.drawSelection(in:)`, `clickedRow`.
 - [ ] **10. New tab +** — `TranscriptWorkspace` `NewTabButton.swift`: hand-made hover / press, `focusRingType = .none`.

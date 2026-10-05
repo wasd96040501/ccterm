@@ -131,7 +131,7 @@ final class ComposerFieldView: NSView {
 
     /// The words' attributes: 14 pt on the 22-pt line, the glyphs raised to
     /// its middle (a fixed line height puts its extra space over them).
-    static let textAttributes: [NSAttributedString.Key: Any] = [
+    private static let textAttributes: [NSAttributedString.Key: Any] = [
         .font: font, .foregroundColor: NSColor.labelColor, .paragraphStyle: lineStyle,
         .baselineOffset: (lineHeight - (font.ascender - font.descender)) / 2,
     ]
@@ -308,12 +308,13 @@ private final class ComposerTextView: NSTextView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         guard string.isEmpty, !hasMarkedText(), !hidesPlaceholder else { return }
-        // On the first line, as the words would be.
-        var attributes = ComposerFieldView.textAttributes
+        // On the first line, as the words would be: the typing attributes,
+        // in tertiary, on the paragraph's line.
+        var attributes = typingAttributes
         attributes[.foregroundColor] = NSColor.tertiaryLabelColor
+        let line = defaultParagraphStyle?.minimumLineHeight ?? bounds.height
         (placeholder as NSString).draw(
-            in: NSRect(x: 0, y: 0, width: bounds.width, height: ComposerFieldView.lineHeight),
-            withAttributes: attributes)
+            in: NSRect(x: 0, y: 0, width: bounds.width, height: line), withAttributes: attributes)
     }
 
     override func becomeFirstResponder() -> Bool {

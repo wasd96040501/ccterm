@@ -76,12 +76,15 @@ enum NewSessionSpecimen {
     }
 }
 
-/// The view in its pane at the pane's real size, centred. It answers the
-/// view's delegate from the fixture, so the page stays live.
+/// The view in its pane at the pane's real size, centred, with the real
+/// composer in its slot, mounted as the session tab mounts it: the composer
+/// is the pane's, pinned to the slot. It answers the view's delegate from the
+/// fixture, so the page stays live.
 @MainActor
 private final class NewSessionHost: NSView, ControllerHost, NewSessionViewControllerDelegate {
     private let controller = NewSessionViewController()
-    var controllers: [NSViewController] { [controller] }
+    private let composer = ComposerViewController()
+    var controllers: [NSViewController] { [controller, composer] }
     private let stage = NSView()
     private var content: NewSessionContent
 
@@ -98,16 +101,15 @@ private final class NewSessionHost: NSView, ControllerHost, NewSessionViewContro
         stage.addSubview(controller.view)
         addSubview(stage)
 
-        // The composer's stand-in: a card in the slot.
-        let card = SlotCard()
-        card.translatesAutoresizingMaskIntoConstraints = false
-        controller.view.addSubview(card)
+        composer.configure(with: ComposerFixtures.newTab)
+        composer.view.translatesAutoresizingMaskIntoConstraints = false
+        stage.addSubview(composer.view)
+        let guide = controller.composerGuide
         NSLayoutConstraint.activate([
-            controller.composerGuide.heightAnchor.constraint(equalToConstant: 96),
-            card.leadingAnchor.constraint(equalTo: controller.composerGuide.leadingAnchor),
-            card.trailingAnchor.constraint(equalTo: controller.composerGuide.trailingAnchor),
-            card.topAnchor.constraint(equalTo: controller.composerGuide.topAnchor),
-            card.bottomAnchor.constraint(equalTo: controller.composerGuide.bottomAnchor),
+            composer.view.topAnchor.constraint(equalTo: guide.topAnchor),
+            composer.view.leadingAnchor.constraint(equalTo: guide.leadingAnchor),
+            composer.view.trailingAnchor.constraint(equalTo: guide.trailingAnchor),
+            guide.heightAnchor.constraint(equalTo: composer.view.heightAnchor),
         ])
     }
 
@@ -155,29 +157,5 @@ private final class NewSessionHost: NSView, ControllerHost, NewSessionViewContro
         guard case .repository(_, let on) = content.branchRow, let name = id.base as? String else { return }
         content.branchRow = .repository(branchTitle: name, usesWorktree: on)
         controller.configure(with: content)
-    }
-}
-
-/// What stands for the composer: the window's colour in a hairline, 18-pt
-/// continuous corners.
-private final class SlotCard: NSView {
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-        layer?.cornerRadius = 18
-        layer?.cornerCurve = .continuous
-        layer?.borderWidth = 0.5
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
-
-    override var wantsUpdateLayer: Bool { true }
-
-    override func updateLayer() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-            layer?.borderColor = NSColor.separatorColor.cgColor
-        }
     }
 }

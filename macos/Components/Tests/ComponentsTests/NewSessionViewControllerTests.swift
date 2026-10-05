@@ -41,6 +41,20 @@ final class NewSessionViewControllerTests: XCTestCase {
         return try XCTUnwrap(find(root), "no \(identifier)")
     }
 
+    /// The slot in the page's coordinates: it is the column's guide.
+    private func slot(_ controller: NewSessionViewController) -> NSRect {
+        let guide = controller.composerGuide
+        return guide.owningView?.convert(guide.frame, to: controller.view) ?? .zero
+    }
+
+    /// The icon, wherever in the page it is.
+    private func icon(in root: NSView) throws -> NSView {
+        func find(_ view: NSView) -> NSView? {
+            view is NewSessionIconView ? view : view.subviews.lazy.compactMap(find).first
+        }
+        return try XCTUnwrap(find(root), "no icon")
+    }
+
     /// Top of `frame` measured down from the top of `root`.
     private func top(_ view: NSView, in root: NSView) -> CGFloat {
         root.bounds.maxY - view.convert(view.bounds, to: root).maxY
@@ -49,9 +63,9 @@ final class NewSessionViewControllerTests: XCTestCase {
     // MARK: - The composer's slot
 
     func testTheComposerIs640WideAtMostAnd24InFromEachSide() {
-        XCTAssertEqual(controller(width: 900).composerGuide.frame.width, 640)
-        XCTAssertEqual(controller(width: 600).composerGuide.frame.width, 552)
-        XCTAssertEqual(controller(width: 600).composerGuide.frame.minX, 24)
+        XCTAssertEqual(slot(controller(width: 900)).width, 640)
+        XCTAssertEqual(slot(controller(width: 600)).width, 552)
+        XCTAssertEqual(slot(controller(width: 600)).minX, 24)
     }
 
     /// The slot's width is a wish of its own, never one on the view's: held
@@ -76,7 +90,7 @@ final class NewSessionViewControllerTests: XCTestCase {
         ])
         host.layoutSubtreeIfNeeded()
         XCTAssertEqual(view.frame.width, 900)
-        XCTAssertEqual(controller.composerGuide.frame.width, 640)
+        XCTAssertEqual(slot(controller).width, 640)
     }
 
     // MARK: - The page
@@ -86,10 +100,10 @@ final class NewSessionViewControllerTests: XCTestCase {
     func testTheRowSitsUnderTheSlotOnTheCardsInnerLine() throws {
         let controller = controller(width: 900)
         let root = controller.view
-        let icon = try XCTUnwrap(root.subviews.first { $0 is NewSessionIconView })
+        let icon = try icon(in: root)
         let folder = try view("newSession.folder", in: root)
         let worktree = try view("newSession.worktree", in: root)
-        let slot = controller.composerGuide.frame
+        let slot = slot(controller)
         let slotTop = root.bounds.maxY - slot.maxY
         XCTAssertEqual(slotTop, top(icon, in: root) + 64 + 24)
 
@@ -106,8 +120,8 @@ final class NewSessionViewControllerTests: XCTestCase {
     func testTheCardsTopSitsAtTheOpticalCentre() throws {
         let controller = controller(width: 900, height: 900)
         let root = controller.view
-        let above = root.bounds.maxY - controller.composerGuide.frame.maxY
-        let below = controller.composerGuide.frame.maxY
+        let above = root.bounds.maxY - slot(controller).maxY
+        let below = slot(controller).maxY
         XCTAssertEqual(above / below, 0.62, accuracy: 0.005)
     }
 
@@ -121,7 +135,7 @@ final class NewSessionViewControllerTests: XCTestCase {
         height.isActive = true
         controller.view.frame = NSRect(x: 0, y: 0, width: 900, height: 720)
         controller.view.layoutSubtreeIfNeeded()
-        let slotTop = controller.composerGuide.frame.maxY
+        let slotTop = slot(controller).maxY
         let checkbox = try view("newSession.worktree", in: controller.view)
         let checkboxFrame = checkbox.frame
 
@@ -130,12 +144,12 @@ final class NewSessionViewControllerTests: XCTestCase {
         draft.explanation = "Starts a new branch from main"
         controller.configure(with: draft)
         controller.view.layoutSubtreeIfNeeded()
-        XCTAssertEqual(controller.composerGuide.frame.maxY, slotTop)
+        XCTAssertEqual(slot(controller).maxY, slotTop)
         XCTAssertEqual(checkbox.frame, checkboxFrame, "the checkbox holds still as the note comes")
 
         height.constant = 140
         controller.view.layoutSubtreeIfNeeded()
-        XCTAssertEqual(controller.composerGuide.frame.maxY, slotTop)
+        XCTAssertEqual(slot(controller).maxY, slotTop)
     }
 
     // MARK: - The folder menu

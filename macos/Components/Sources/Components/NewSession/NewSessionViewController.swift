@@ -1,21 +1,27 @@
 import AppKit
 import DisplayModels
 
-/// The New view (design 08 *The New view*): two things, not a stack of
-/// centred lines — the app icon at 64 pt over its still glow, centred, then a
-/// column 640 pt wide: a slot for the composer and, under it, where Claude
-/// works — the folder's pop-up, the branch's, the *Use a new worktree*
-/// checkbox — with the line that says what Send will do under that. The row
-/// is leading-aligned, its words on the card's inner line, so nothing moves
-/// when what it says changes.
+/// The New view (design 08 *The New view*): one column — the app icon at
+/// 64 pt over its still glow, the composer's slot, and under it where Claude
+/// works (the folder's pop-up, the branch's, the *Use a new worktree*
+/// checkbox) with the line that says what Send will do.
 ///
-/// The card's top edge sits at the optical centre, the icon over it: what
-/// grows — more lines, the note, an error — grows down, and nothing above it
-/// moves. The note is an overlay under the row, outside the layout.
+///     view                    the page: places the column, nothing else
+///     └─ column               the unit: 640 wide at most, 24 from each side,
+///        │                    centred — the one width the page decides
+///        ├─ iconView          centred in the column, at its top
+///        ├─ composerGuide     the column's width, 24 under the icon
+///        ├─ controlsRow       8 under the slot, on the card's inner line
+///        └─ explanationLabel  under the row, an overlay below the column
 ///
-/// The composer is not this view's: its container pins the composer's view to
-/// `composerGuide`, and moves it out when the tab hands over. This view only
-/// keeps the slot, which takes the height of what fills it.
+/// Everything in the column is placed against the column alone. Its width is
+/// the one wish here (as wide as allowed, `.wish`); what fills it never
+/// negotiates it. The card's top edge sits at the optical centre: what grows
+/// — more lines, the note, an error — grows down, and nothing above it moves.
+///
+/// The composer is not this view's: its container pins the composer's view
+/// to `composerGuide` — the column's slot — and moves it out when the tab
+/// hands over. The slot takes the height of what fills it.
 ///
 /// Send's one motion is `rise(completion:)`: 600 ms, the icon's cursor lit
 /// row by row from the bottom while the glow swells (design 08 *Send is the one
@@ -25,9 +31,13 @@ import DisplayModels
 public final class NewSessionViewController: NSViewController {
     public weak var delegate: NewSessionViewControllerDelegate?
 
-    /// Where the composer goes: 640 pt wide at most and 24 in from each side,
-    /// centred, 24 under the icon. The container sets its height to the composer's.
+    /// Where the composer goes: the column's width, 24 under the icon. The
+    /// container pins the composer's view to it and sets its height to the
+    /// composer's.
     public let composerGuide = NSLayoutGuide()
+
+    /// The icon, the slot, the row and the note: the unit the page places.
+    private let column = NSView()
 
     private var content: NewSessionContent?
     private let prefersReducedMotion: () -> Bool
@@ -42,8 +52,8 @@ public final class NewSessionViewController: NSViewController {
 
     /// The page's side margin (the design's `.lv-new` padding).
     private static let margin: CGFloat = 24
-    /// The composer's slot at its widest.
-    private static let slotWidth: CGFloat = 640
+    /// The column at its widest.
+    private static let columnWidth: CGFloat = 640
     /// The row's controls' bezels start this far in from the slot's edge,
     /// their words on the card's 16-pt inner line.
     private static let rowInset: CGFloat = 8
@@ -164,62 +174,75 @@ public final class NewSessionViewController: NSViewController {
     // MARK: - Tree
 
     private func configureHierarchy() {
+        column.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(column)
         for subview in [iconView, controlsRow, explanationLabel] {
             subview.translatesAutoresizingMaskIntoConstraints = false
-            view.addSubview(subview)
+            column.addSubview(subview)
         }
-        view.addLayoutGuide(composerGuide)
+        column.addLayoutGuide(composerGuide)
     }
 
     private func configureConstraints() {
-        // The card's top a third of the way down, not the middle: the space
-        // above it is 0.62 of the space below it (the optical centre).
+        configurePageConstraints()
+        configureColumnConstraints()
+    }
+
+    /// The page places the column: centred, 640 wide unless the page less
+    /// its margins is narrower — the one wish, so nothing in the column, the
+    /// split it stands in or the window is moved for it — and the card's top
+    /// a third of the way down (the space above it 0.62 of the space below).
+    private func configurePageConstraints() {
         let above = NSLayoutGuide()
         let below = NSLayoutGuide()
+        for guide in [above, below] { view.addLayoutGuide(guide) }
+        let wide = column.widthAnchor.constraint(equalToConstant: Self.columnWidth)
+        wide.priority = .wish
+        NSLayoutConstraint.activate([
+            column.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            column.widthAnchor.constraint(lessThanOrEqualToConstant: Self.columnWidth),
+            column.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -2 * Self.margin),
+            wide,
+
+            above.topAnchor.constraint(equalTo: view.topAnchor),
+            above.bottomAnchor.constraint(equalTo: composerGuide.topAnchor),
+            below.topAnchor.constraint(equalTo: composerGuide.topAnchor),
+            below.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            above.heightAnchor.constraint(equalTo: below.heightAnchor, multiplier: 0.62),
+        ])
+    }
+
+    /// Each part against the column alone.
+    private func configureColumnConstraints() {
         // The row's line, the controls centred in it.
         let rowLine = NSLayoutGuide()
-        for guide in [above, below, rowLine] { view.addLayoutGuide(guide) }
-
+        column.addLayoutGuide(rowLine)
         // Until a composer is in the slot, a composer's worth — weaker than any
         // view's hugging, so the composer in it keeps its own height.
         let slotHeight = composerGuide.heightAnchor.constraint(equalToConstant: 78)
         slotHeight.priority = .fittingSizeCompression
-        // 640 unless the view is narrower: a wish for the slot's own width,
-        // which any width of the view can grant. A wish to be the view's width
-        // less the margins would pull the view down to 688 — and, in a split,
-        // the divider over (its holding priority is weaker).
-        let slotWidth = composerGuide.widthAnchor.constraint(equalToConstant: Self.slotWidth)
-        slotWidth.priority = .wish
-
         NSLayoutConstraint.activate([
-            above.topAnchor.constraint(equalTo: view.topAnchor),
-            above.heightAnchor.constraint(equalTo: below.heightAnchor, multiplier: 0.62),
-            above.bottomAnchor.constraint(equalTo: composerGuide.topAnchor),
-            below.topAnchor.constraint(equalTo: composerGuide.topAnchor),
-            below.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            iconView.topAnchor.constraint(equalTo: column.topAnchor),
+            iconView.centerXAnchor.constraint(equalTo: column.centerXAnchor),
 
-            iconView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-
-            iconView.bottomAnchor.constraint(equalTo: composerGuide.topAnchor, constant: -24),
-            composerGuide.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            composerGuide.widthAnchor.constraint(lessThanOrEqualToConstant: Self.slotWidth),
-            composerGuide.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -2 * Self.margin),
-            slotWidth,
+            composerGuide.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: 24),
+            composerGuide.leadingAnchor.constraint(equalTo: column.leadingAnchor),
+            composerGuide.trailingAnchor.constraint(equalTo: column.trailingAnchor),
             slotHeight,
 
             rowLine.topAnchor.constraint(equalTo: composerGuide.bottomAnchor, constant: Self.rowGap),
             rowLine.heightAnchor.constraint(equalToConstant: Self.rowHeight),
+            rowLine.bottomAnchor.constraint(equalTo: column.bottomAnchor),
             controlsRow.centerYAnchor.constraint(equalTo: rowLine.centerYAnchor),
-            controlsRow.leadingAnchor.constraint(equalTo: composerGuide.leadingAnchor, constant: Self.rowInset),
-            controlsRow.trailingAnchor.constraint(
-                lessThanOrEqualTo: composerGuide.trailingAnchor, constant: -Self.rowInset),
+            controlsRow.leadingAnchor.constraint(equalTo: column.leadingAnchor, constant: Self.rowInset),
+            controlsRow.trailingAnchor.constraint(lessThanOrEqualTo: column.trailingAnchor, constant: -Self.rowInset),
             branchButton.widthAnchor.constraint(lessThanOrEqualToConstant: 260),
 
-            // The overlay: hangs under the row, in no one's way.
+            // The overlay: hangs under the row, below the column, in no one's way.
             explanationLabel.topAnchor.constraint(equalTo: rowLine.bottomAnchor),
             noteLeading,
             explanationLabel.trailingAnchor.constraint(
-                lessThanOrEqualTo: composerGuide.trailingAnchor, constant: -Self.rowInset),
+                lessThanOrEqualTo: column.trailingAnchor, constant: -Self.rowInset),
         ])
     }
 

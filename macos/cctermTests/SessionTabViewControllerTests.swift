@@ -64,7 +64,8 @@ final class SessionTabViewControllerTests: XCTestCase {
         let composer = try composer(of: tab)
         tab.view.layoutSubtreeIfNeeded()
 
-        let guide = newSession.view.convert(newSession.composerGuide.frame, to: tab.view)
+        let slot = newSession.composerGuide
+        let guide = try XCTUnwrap(slot.owningView).convert(slot.frame, to: tab.view)
         let card = composer.view.frame
         XCTAssertGreaterThan(card.height, 20, "premise: the composer was laid out")
         XCTAssertEqual(card.minX, guide.minX, accuracy: 0.5)

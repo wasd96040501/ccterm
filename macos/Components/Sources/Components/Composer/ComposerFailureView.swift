@@ -69,6 +69,8 @@ final class ComposerFailureView: NSView {
         detailLabel.isSelectable = true
         detailLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textStack.orientation = .vertical
+        // The words take the section's width when the buttons wrap below.
+        textStack.setHuggingPriority(.stretches, for: .horizontal)
         textStack.alignment = .leading
         // The sheet's line boxes: the title's is 13 × 1.45 = 18.85 pt, about
         // 3 more than a label's, split above and below its words (the stack

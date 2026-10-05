@@ -7,8 +7,12 @@ import DisplayModels
 /// under the card, the one red line of an error.
 ///
 /// It draws a `ComposerPresentation` and reports intents to its delegate; the
-/// field's words are the only state it keeps. The card is 720 pt at most,
-/// centred, the window's background, a hairline and a soft shadow, its
+/// field's words are the only state it keeps. The card fills the width it is
+/// given — where it stands decides that (the New view's column, a session's
+/// 720), and moves it there (the glide animates that width) — and asks only
+/// to be no narrower than its narrowest tier. Nothing in it hugs the card
+/// narrower: the rows stretch, their spacer and labels taking the room. The
+/// card is the window's background, a hairline and a soft shadow, its
 /// continuous corners concentric with the action button: the button's
 /// half-height and the 8 pt round it. It draws no focus: the caret is the
 /// focus, as in a text view.
@@ -25,8 +29,6 @@ final class ComposerView: NSView {
     typealias Control = ComposerMenu.Control
 
     weak var delegate: ComposerViewDelegate?
-
-    static let maxWidth: CGFloat = 720
 
     // MARK: Subviews
 
@@ -96,6 +98,8 @@ final class ComposerView: NSView {
         controlsRow.orientation = .horizontal
         controlsRow.alignment = .centerY
         controlsRow.spacing = 0
+        // The row is the card's width: its spacer takes the room.
+        controlsRow.setHuggingPriority(.stretches, for: .horizontal)
         controlsRow.setViews(
             [modelButton, effortButton, modeButton, spacer, statusView, ringView, stopButton, sendButton],
             in: .leading)
@@ -113,10 +117,13 @@ final class ComposerView: NSView {
         errorLabel.isSelectable = true
         errorLabel.isHidden = true
         errorLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        // The card's width, its words wrapping in it.
+        errorLabel.setContentHuggingPriority(.stretches, for: .horizontal)
 
         contentStack.orientation = .vertical
         contentStack.alignment = .leading
         contentStack.spacing = 0
+        contentStack.setHuggingPriority(.stretches, for: .horizontal)
         contentStack.setViews([failureView, body], in: .leading)
         failureView.isHidden = true
 
@@ -138,18 +145,12 @@ final class ComposerView: NSView {
     private lazy var minimumWidth = surface.widthAnchor.constraint(greaterThanOrEqualToConstant: 0)
 
     private func configureConstraints() {
-        // The column: as wide as 720 allows, centred — a wish, never a size
-        // for the window — and no narrower than its last tier.
+        // The card is the view's width, no narrower than its last tier.
         minimumWidth.isActive = true
-        let fill = surface.widthAnchor.constraint(equalToConstant: Self.maxWidth)
-        fill.priority = .wish
         NSLayoutConstraint.activate([
             surface.topAnchor.constraint(equalTo: topAnchor),
-            surface.centerXAnchor.constraint(equalTo: centerXAnchor),
-            surface.widthAnchor.constraint(lessThanOrEqualToConstant: Self.maxWidth),
-            surface.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor),
-            surface.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
-            fill,
+            surface.leadingAnchor.constraint(equalTo: leadingAnchor),
+            surface.trailingAnchor.constraint(equalTo: trailingAnchor),
             errorLabel.topAnchor.constraint(equalTo: surface.bottomAnchor, constant: 8),
             errorLabel.leadingAnchor.constraint(equalTo: surface.leadingAnchor, constant: 16),
             errorLabel.trailingAnchor.constraint(equalTo: surface.trailingAnchor, constant: -16),
@@ -352,7 +353,7 @@ final class ComposerView: NSView {
         super.layout()
         // The room the card is given, not the width its contents ask for — a
         // question constraints can't ask, so the line is measured at each tier.
-        let width = min(bounds.width, Self.maxWidth)
+        let width = bounds.width
         guard width > 0, model != nil else { return }
         // The line as it is, less the status; the status's own width.
         let status = statusView.isEmpty ? 0 : statusView.fittingSize.width + 4

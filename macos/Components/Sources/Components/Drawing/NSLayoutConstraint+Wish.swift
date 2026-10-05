@@ -8,4 +8,9 @@ extension NSLayoutConstraint.Priority {
     /// inside what wishes hug at less, so they never pull it narrower. A wish
     /// any stronger takes the pane's width from the split.
     public static let wish = NSLayoutConstraint.Priority(240)
+
+    /// The hugging of a view that is meant to be stretched to what holds it —
+    /// a row with a spacer, a label that wraps at its container's width — so
+    /// it never pulls a wish narrower.
+    public static let stretches = NSLayoutConstraint.Priority(1)
 }

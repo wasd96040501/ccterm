@@ -379,16 +379,6 @@
         }
       }
     },
-    "A new branch from %@, in a new worktree": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "基于 %@ 的新分支，在新工作树中"
-          }
-        }
-      }
-    },
     "API Key": {
       "localizations": {
         "zh-Hans": {
@@ -829,6 +819,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在检查…"
+          }
+        }
+      }
+    },
+    "Checks out pull request #%lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检出拉取请求 #%lld"
           }
         }
       }
@@ -2244,16 +2244,6 @@
         }
       }
     },
-    "Pull request #%lld, in a new worktree": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "拉取请求 #%lld，在新工作树中"
-          }
-        }
-      }
-    },
     "Queue ↩": {
       "localizations": {
         "zh-Hans": {
@@ -2897,6 +2887,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在启动 Claude…"
+          }
+        }
+      }
+    },
+    "Starts a new branch from %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从 %@ 新建分支"
           }
         }
       }

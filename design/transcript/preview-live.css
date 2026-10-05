@@ -166,7 +166,7 @@
 }
 .lv-pop:hover, .lv-pop.open { background: var(--hover); color: var(--label); }
 .lv-pop:active { background: var(--sel-quiet); }
-.lv-pop.folder { color: var(--label); }                    /* the one choice Send makes final: first, in label ink */
+.lv-pop.folder, .lv-pop.folder .g { color: var(--label); }  /* the one choice Send makes final: first, in label ink */
 .lv-pop .g { width: var(--i-ctl); height: var(--i-ctl); flex: none; color: var(--secondary); }
 .lv-where .lv-check { margin-left: 8px; }
 .lv-where .nogit { font-size: 12px; color: var(--tertiary); margin-left: 8px; }

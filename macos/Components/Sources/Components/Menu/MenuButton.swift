@@ -4,8 +4,7 @@ import AppKit
 /// AppKit's accessory-bar button, its bezel shown under the pointer, darker
 /// while pressed and on while its popover is open. It acts on release, as any
 /// button does. The bezel is as tall as its control size, which holds a
-/// chip's words; a larger title (the New view's folder) takes the
-/// variable-height push bezel instead.
+/// chip's words.
 ///
 /// Only the popover turns it on and off: a press sends the action and leaves
 /// the state as it is (`Cell.nextState`), so the button can't show a menu

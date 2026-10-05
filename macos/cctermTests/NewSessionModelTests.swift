@@ -108,7 +108,7 @@ final class NewSessionModelTests: XCTestCase {
     func testAWorktreeSaysWhereTheNewBranchStarts() {
         let model = model(draft { $0.toggleWorktree(in: repository()) })
         let main = "main"
-        XCTAssertEqual(model.explanation, String(localized: "A new branch from \(main), in a new worktree"))
+        XCTAssertEqual(model.explanation, String(localized: "Starts a new branch from \(main)"))
 
         let other = self.model(
             draft {
@@ -116,13 +116,13 @@ final class NewSessionModelTests: XCTestCase {
                 $0.choose(branch: .named("fix-gutter-overflow"), in: repository())
             })
         let name = "fix-gutter-overflow"
-        XCTAssertEqual(other.explanation, String(localized: "A new branch from \(name), in a new worktree"))
+        XCTAssertEqual(other.explanation, String(localized: "Starts a new branch from \(name)"))
     }
 
     func testAPullRequestSaysSo() {
         let model = model(draft { $0.choose(branch: .pullRequest(327), in: repository()) })
         let number = 327
-        XCTAssertEqual(model.explanation, String(localized: "Pull request #\(number), in a new worktree"))
+        XCTAssertEqual(model.explanation, String(localized: "Checks out pull request #\(number)"))
         guard case .repository(let title, let usesWorktree, _) = model.branchRow else {
             return XCTFail("\(model.branchRow)")
         }

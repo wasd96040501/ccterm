@@ -1,4 +1,4 @@
-.PHONY: build release install dmg clean fmt fmt-check test-unit test-kit test-ui design test-sdk test-list bench-list record-list demo-kit demo-list logs icon sidebar-icons window-chrome new-view-icons composer-icons design-shots appkit-doc arch help
+.PHONY: build release install dmg clean fmt fmt-check test-unit test-kit test-ui design test-sdk test-list bench-list record-list demo-kit demo-list logs icon sidebar-icons window-chrome composer-icons design-shots appkit-doc arch help
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings macos/ccterm/MainMenu.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
@@ -148,9 +148,6 @@ sidebar-icons: ## Regenerate the sidebar glyph assets (Components/Resources/Asse
 
 window-chrome: ## Regenerate the window chrome assets (Components/Resources/Assets.xcassets/WindowChrome) from the design sheets' window mocks
 	cd design/window-chrome && bun run build
-
-new-view-icons: ## Regenerate the New view's glyph assets (Components/Resources/Assets.xcassets/NewView) from design/new-view-icons
-	cd design/new-view-icons && bun run build
 
 composer-icons: ## Regenerate the composer glyph assets (Assets.xcassets/Composer) from design/composer-icons
 	cd design/composer-icons && bun run build

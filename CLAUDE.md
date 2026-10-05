@@ -75,7 +75,7 @@ make demo-list                       # ExactList demo app
 make record-list [FILTER=<name>]     # ExactList demo scenarios captured off screen → /tmp/exactlist-recordings
 make logs [CONFIG=release] [CATEGORY=X] [LEVEL=debug]   # tail unified log of THIS worktree's build
 make appkit-doc SYMBOL=NSTableView   # Apple's DocC for an AppKit symbol
-make icon / make sidebar-icons / make window-chrome / make new-view-icons   # regenerate the app icon / the app's glyph assets from design/ (see "Icons" in macos/CLAUDE.md)
+make icon / make sidebar-icons / make window-chrome   # regenerate the app icon / the app's glyph assets from design/ (see "Icons" in macos/CLAUDE.md)
 make arch [SCOPE=core|app|kit|sdk|<dir>|<unit>] [DETAIL=members]   # build/arch/: tree.md (the component tree from AppDelegate), data.md (store → binder → component, and each event back), rules.md (every break of macos/CLAUDE.md § Where code lives and § Component boundaries, with its fix; the terminal counts them); SCOPE adds units/, the per-directory map /arch-review reads; DETAIL=members adds each type's calls and state writers
 ```
 

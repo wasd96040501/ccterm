@@ -1,18 +1,18 @@
 import Foundation
 
-/// What the New view is shown, worded: the folder pop-up's title and the path
-/// under it, the folders its menu lists, the row under the path, and the line
-/// that says what Send will do. The app builds it from the draft and the
+/// What the New view is shown, worded: the folder pop-up's title and its
+/// path, the folders its menu lists, the rest of the row, and the line that
+/// says what Send will do. The app builds it from the draft and the
 /// folder's repository; the view draws it as it is.
 public struct NewSessionContent: Equatable, Sendable {
     /// The folder pop-up's title (the folder's name), or *Choose Folder…*.
     public var folderTitle: String
-    /// The path under it, `~` for home; `nil` without a folder.
+    /// Its path, `~` for home — the pop-up's tooltip; `nil` without a folder.
     public var folderPath: String?
     /// The folder menu's *Recent*, in the order shown; empty lists none.
     public var recentFolders: [Folder]
     public var branchRow: BranchRow
-    /// What the choices add up to, or `nil` (the line keeps its height).
+    /// What the choices add up to, or `nil` (no line).
     public var explanation: String?
 
     public init(
@@ -43,11 +43,11 @@ public struct NewSessionContent: Equatable, Sendable {
         }
     }
 
-    /// The row under the path.
+    /// The row after the folder.
     public enum BranchRow: Equatable, Sendable {
-        /// A git folder: the branch pop-up's title and the Worktree toggle.
+        /// A git folder: the branch pop-up's title and the worktree checkbox.
         case repository(branchTitle: String, usesWorktree: Bool)
-        /// *Not a git repository*, worded, at the same height.
+        /// *Not a git repository*, worded.
         case notARepository(String)
         /// The repository is still being read.
         case loading

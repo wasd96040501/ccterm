@@ -134,7 +134,7 @@ extension PlaygroundTab: NewSessionViewControllerDelegate {
     func newSessionViewControllerDidToggleWorktree(_ newSessionViewController: NewSessionViewController) {
         guard var draft, case .repository(let title, let on) = draft.branchRow else { return }
         draft.branchRow = .repository(branchTitle: title, usesWorktree: !on)
-        draft.explanation = on ? nil : "A new branch from \(title), in a new worktree"
+        draft.explanation = on ? nil : "Starts a new branch from \(title)"
         show(draft)
     }
 

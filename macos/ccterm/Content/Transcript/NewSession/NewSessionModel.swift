@@ -8,14 +8,14 @@ import Foundation
 nonisolated struct NewSessionModel: Equatable, Sendable {
     /// The folder pop-up's title (the folder's name), or *Choose Folder…*.
     var folderTitle: String
-    /// The path under it, `~` for home; `nil` without a folder.
+    /// Its path, `~` for home — the folder pop-up's tooltip; `nil` without a folder.
     var folderPath: String?
     /// The folder menu's *Recent*: the sidebar's projects, eight at most.
     var recentFolders: [Folder]
     var branchRow: BranchRow
     /// What the choices add up to — *Switches to fix-gutter-overflow when you
-    /// send*, *A new branch from main, in a new worktree*, *Pull request #327,
-    /// in a new worktree* — or `nil` (the line keeps its height).
+    /// send*, *Starts a new branch from main*, *Checks out pull request #327*
+    /// — or `nil` (no line).
     var explanation: String?
     /// Whether Send can launch (a folder is known).
     var canSend: Bool
@@ -29,11 +29,11 @@ nonisolated struct NewSessionModel: Equatable, Sendable {
         var isChosen = false
     }
 
-    /// The row under the path.
+    /// The row after the folder.
     enum BranchRow: Equatable, Sendable {
-        /// A git folder: the branch pop-up's title and the Worktree toggle.
+        /// A git folder: the branch pop-up's title and the worktree checkbox.
         case repository(branchTitle: String, usesWorktree: Bool, branches: BranchList)
-        /// *Not a git repository*, at the same height.
+        /// *Not a git repository*.
         case notARepository(String)
         /// The repository is still being read.
         case loading
@@ -125,11 +125,11 @@ nonisolated struct NewSessionModel: Equatable, Sendable {
         of draft: NewSessionDraft, shown: String, in repository: RepositoryState
     ) -> String? {
         if case .pullRequest(let number) = draft.branch {
-            return String(localized: "Pull request #\(number), in a new worktree")
+            return String(localized: "Checks out pull request #\(number)")
         }
         if draft.usesWorktree {
             let base = draft.branch == nil ? (repository.branch ?? "HEAD") : shown
-            return String(localized: "A new branch from \(base), in a new worktree")
+            return String(localized: "Starts a new branch from \(base)")
         }
         if draft.branch != nil, shown != repository.branch {
             return String(localized: "Switches to \(shown) when you send")

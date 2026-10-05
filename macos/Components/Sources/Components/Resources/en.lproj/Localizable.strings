@@ -88,7 +88,7 @@
 "Choose Folder…" = "Choose Folder…";
 "Branch" = "Branch";
 "Filter" = "Filter";
-"Worktree" = "Worktree";
+"Use a new worktree" = "Use a new worktree";
 "Work in a new git worktree (--worktree), leaving this folder as it is" = "Work in a new git worktree (--worktree), leaving this folder as it is";
 "Choose the folder Claude will work in." = "Choose the folder Claude will work in.";
 "Recent" = "Recent";

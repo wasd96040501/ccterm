@@ -1,11 +1,18 @@
 import AppKit
 import DisplayModels
 
-/// The New view (design 08): centred a third of the way down — the app icon
-/// at 64 pt over its still glow, the folder as a 22-pt pop-up title with its
-/// path under it, the branch pop-up and the Worktree toggle on one row that
-/// never moves, the line that says what Send will do, then a slot for the
-/// composer (640 pt).
+/// The New view (design 08 *The New view*): two things, not a stack of
+/// centred lines — the app icon at 64 pt over its still glow, centred, then a
+/// column 640 pt wide: a slot for the composer and, under it, where Claude
+/// works — the folder's pop-up, the branch's, the *Use a new worktree*
+/// checkbox — with the line that says what Send will do under that. The row
+/// is leading-aligned, its words on the card's inner line, so nothing moves
+/// when what it says changes.
+///
+/// What the page centres, a third of the way down, is the page at rest — the
+/// icon, 24, a one-line composer, the row — at a fixed height, so the slot's
+/// top never moves: lines typed into the composer, the note and an error all
+/// grow down, into the space under it.
 ///
 /// The composer is not this view's: its container pins the composer's view to
 /// `composerGuide`, and moves it out when the tab hands over. This view only
@@ -20,7 +27,7 @@ public final class NewSessionViewController: NSViewController {
     public weak var delegate: NewSessionViewControllerDelegate?
 
     /// Where the composer goes: 640 pt wide at most and 24 in from each side,
-    /// centred, under the explanation line. The container sets its height to the composer's.
+    /// centred, 24 under the icon. The container sets its height to the composer's.
     public let composerGuide = NSLayoutGuide()
 
     private var content: NewSessionContent?
@@ -38,17 +45,27 @@ public final class NewSessionViewController: NSViewController {
     private static let margin: CGFloat = 24
     /// The composer's slot at its widest.
     private static let slotWidth: CGFloat = 640
+    /// A one-line composer: the slot's height in the block the page centres.
+    private static let restingSlotHeight: CGFloat = 78
+    /// The row's controls' bezels start this far in from the slot's edge,
+    /// their words on the card's 16-pt inner line.
+    private static let rowInset: CGFloat = 8
+    /// The note's words start on that line too.
+    private static let noteInset: CGFloat = 16
+    /// The row's line: 8 under the slot, 28 tall.
+    private static let rowGap: CGFloat = 8
+    private static let rowHeight: CGFloat = 28
+    /// The row's words, and the space the branch and the checkbox keep
+    /// after the folder past the stack's 4.
+    private static let rowFont = NSFont.systemFont(ofSize: 12)
+    private static let groupGap: CGFloat = 12
 
     private let iconView = NewSessionIconView()
 
-    /// The page's title: the folder's name, 22-pt semibold.
-    private static let titleFont = NSFont.systemFont(ofSize: 22, weight: .semibold)
-
+    /// The folder: its name in label ink, the one choice Send makes final;
+    /// its path is the tooltip.
     private lazy var folderButton: MenuButton = {
         let button = MenuButton()
-        // The 22-pt title outgrows the accessory bar's fixed bezel; this one
-        // is as tall as what it holds.
-        button.bezelStyle = .flexiblePush
         button.lineBreakMode = .byTruncatingMiddle
         button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         button.target = self
@@ -57,16 +74,10 @@ public final class NewSessionViewController: NSViewController {
         return button
     }()
 
-    private lazy var pathLabel: NSTextField = {
-        let label = Self.label(size: 11, color: .tertiaryLabelColor)
-        label.lineBreakMode = .byTruncatingMiddle
-        return label
-    }()
-
     private lazy var branchButton: MenuButton = {
         let button = MenuButton()
         button.lineBreakMode = .byTruncatingMiddle
-        button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        button.setContentCompressionResistancePriority(.defaultLow - 1, for: .horizontal)
         button.toolTip = String(localized: "Branch", bundle: .module)
         button.target = self
         button.action = #selector(showBranchMenu(_:))
@@ -74,37 +85,49 @@ public final class NewSessionViewController: NSViewController {
         return button
     }()
 
-    /// On while the session gets a worktree of its own: the accessory-bar
-    /// toggle beside the branch's button, drawn on as the system draws it.
-    private lazy var worktreeButton: NSButton = {
+    /// On while the session gets a worktree of its own: an option for Send,
+    /// as a checkbox is in a save panel.
+    private lazy var worktreeCheckbox: NSButton = {
         let button = NSButton(
-            title: String(localized: "Worktree", bundle: .module), target: self,
+            checkboxWithTitle: String(localized: "Use a new worktree", bundle: .module), target: self,
             action: #selector(toggleWorktree(_:)))
-        button.bezelStyle = .accessoryBar
-        button.setButtonType(.pushOnPushOff)
-        button.font = .systemFont(ofSize: 12)
-        button.contentTintColor = .secondaryLabelColor
-        button.showsBorderOnlyWhileMouseInside = true
-        let glyph = NSImage.newViewWorktree.copy() as? NSImage ?? NSImage.newViewWorktree
-        glyph.size = NSSize(width: 14, height: 14)
-        button.image = glyph
-        button.imagePosition = .imageLeading
+        button.attributedTitle = NSAttributedString(
+            string: button.title, attributes: [.font: Self.rowFont, .foregroundColor: NSColor.secondaryLabelColor])
+        button.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
         button.toolTip = String(
             localized: "Work in a new git worktree (--worktree), leaving this folder as it is", bundle: .module)
         button.setAccessibilityIdentifier("newSession.worktree")
         return button
     }()
 
-    private lazy var notRepositoryLabel = Self.label(size: 12, color: .tertiaryLabelColor)
-    private lazy var explanationLabel = Self.label(size: 11, color: .tertiaryLabelColor)
+    private lazy var notRepositoryLabel: NSTextField = {
+        let label = NSTextField(labelWithString: "")
+        label.font = Self.rowFont
+        label.textColor = .tertiaryLabelColor
+        label.lineBreakMode = .byTruncatingTail
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return label
+    }()
 
-    /// Branch and Worktree, 8 apart, or the line that says the folder isn't a
-    /// repository: whichever shows; a hidden view takes no room.
-    private lazy var whereRow: NSStackView = {
-        let row = NSStackView(views: [branchButton, worktreeButton, notRepositoryLabel])
+    /// What the choices add up to, in tertiary under the row; wraps, and
+    /// takes no room while there is nothing to say.
+    private lazy var explanationLabel: NSTextField = {
+        let label = NSTextField(wrappingLabelWithString: "")
+        label.font = .systemFont(ofSize: 11)
+        label.textColor = .tertiaryLabelColor
+        label.isSelectable = false
+        return label
+    }()
+
+    /// The folder, then the branch and the checkbox or the line that says
+    /// the folder isn't a repository: whichever shows; a hidden view takes
+    /// no room.
+    private lazy var controlsRow: NSStackView = {
+        let row = NSStackView(views: [folderButton, branchButton, worktreeCheckbox, notRepositoryLabel])
         row.orientation = .horizontal
         row.alignment = .centerY
-        row.spacing = 8
+        row.spacing = 4
+        row.setCustomSpacing(Self.groupGap, after: branchButton)
         return row
     }()
 
@@ -133,6 +156,13 @@ public final class NewSessionViewController: NSViewController {
         if let content { configure(with: content) }
     }
 
+    public override func viewDidLayout() {
+        super.viewDidLayout()
+        // The note wraps at the slot's width less its insets.
+        let width = max(composerGuide.frame.width - 2 * Self.noteInset, 0)
+        if explanationLabel.preferredMaxLayoutWidth != width { explanationLabel.preferredMaxLayoutWidth = width }
+    }
+
     public override func viewDidDisappear() {
         super.viewDidDisappear()
         menuPopover.close()
@@ -141,7 +171,7 @@ public final class NewSessionViewController: NSViewController {
     // MARK: - Tree
 
     private func configureHierarchy() {
-        for subview in [iconView, folderButton, pathLabel, whereRow, explanationLabel] {
+        for subview in [iconView, controlsRow, explanationLabel] {
             subview.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(subview)
         }
@@ -150,19 +180,18 @@ public final class NewSessionViewController: NSViewController {
 
     private func configureConstraints() {
         // A third of the way down, not the middle: the free space above the
-        // content is 0.62 of the space below it (the optical centre).
+        // page at rest is 0.62 of the space below it (the optical centre).
         let above = NSLayoutGuide()
         let below = NSLayoutGuide()
-        // Each line of words is the design's line box (its size × 1.45, the
-        // note's 15), the words centred in it.
-        let folderLine = NSLayoutGuide()
-        let pathLine = NSLayoutGuide()
-        let noteLine = NSLayoutGuide()
-        for guide in [above, below, folderLine, pathLine, noteLine] { view.addLayoutGuide(guide) }
+        // The page at rest: the icon, 24, a one-line composer, the row.
+        let rest = NSLayoutGuide()
+        // The row's line, the controls centred in it.
+        let rowLine = NSLayoutGuide()
+        for guide in [above, below, rest, rowLine] { view.addLayoutGuide(guide) }
 
         // Until a composer is in the slot, a composer's worth — weaker than any
         // view's hugging, so the composer in it keeps its own height.
-        let slotHeight = composerGuide.heightAnchor.constraint(equalToConstant: 100)
+        let slotHeight = composerGuide.heightAnchor.constraint(equalToConstant: Self.restingSlotHeight)
         slotHeight.priority = .fittingSizeCompression
         // 640 unless the view is narrower: a wish for the slot's own width,
         // which any width of the view can grant. A wish to be the view's width
@@ -174,72 +203,71 @@ public final class NewSessionViewController: NSViewController {
         NSLayoutConstraint.activate([
             above.topAnchor.constraint(equalTo: view.topAnchor),
             above.heightAnchor.constraint(equalTo: below.heightAnchor, multiplier: 0.62),
-            iconView.topAnchor.constraint(equalTo: above.bottomAnchor),
-            composerGuide.bottomAnchor.constraint(equalTo: below.topAnchor),
+            rest.topAnchor.constraint(equalTo: above.bottomAnchor),
+            rest.heightAnchor.constraint(
+                equalToConstant: NewSessionIconView.side + 24 + Self.restingSlotHeight + Self.rowGap + Self.rowHeight),
+            below.topAnchor.constraint(equalTo: rest.bottomAnchor),
             below.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
+            iconView.topAnchor.constraint(equalTo: rest.topAnchor),
             iconView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            folderLine.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: 16),
-            folderLine.heightAnchor.constraint(equalToConstant: 34),
-            folderButton.centerYAnchor.constraint(equalTo: folderLine.centerYAnchor),
-            folderButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            folderButton.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -2 * Self.margin),
-            pathLine.topAnchor.constraint(equalTo: folderLine.bottomAnchor, constant: 2),
-            pathLine.heightAnchor.constraint(equalToConstant: 16),
-            pathLabel.centerYAnchor.constraint(equalTo: pathLine.centerYAnchor),
-            pathLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            pathLabel.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -2 * Self.margin),
-            whereRow.topAnchor.constraint(equalTo: pathLine.bottomAnchor, constant: 8),
-            whereRow.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            whereRow.heightAnchor.constraint(equalToConstant: 24),
-            whereRow.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -2 * Self.margin),
-            noteLine.topAnchor.constraint(equalTo: whereRow.bottomAnchor, constant: 2),
-            noteLine.heightAnchor.constraint(equalToConstant: 15),
-            explanationLabel.centerYAnchor.constraint(equalTo: noteLine.centerYAnchor),
-            explanationLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            explanationLabel.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -2 * Self.margin),
 
-            branchButton.widthAnchor.constraint(lessThanOrEqualToConstant: 260),
-
-            composerGuide.topAnchor.constraint(equalTo: noteLine.bottomAnchor, constant: 20),
+            composerGuide.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: 24),
             composerGuide.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             composerGuide.widthAnchor.constraint(lessThanOrEqualToConstant: Self.slotWidth),
             composerGuide.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -2 * Self.margin),
             slotWidth,
             slotHeight,
+
+            rowLine.topAnchor.constraint(equalTo: composerGuide.bottomAnchor, constant: Self.rowGap),
+            rowLine.heightAnchor.constraint(equalToConstant: Self.rowHeight),
+            controlsRow.centerYAnchor.constraint(equalTo: rowLine.centerYAnchor),
+            controlsRow.leadingAnchor.constraint(equalTo: composerGuide.leadingAnchor, constant: Self.rowInset),
+            controlsRow.trailingAnchor.constraint(
+                lessThanOrEqualTo: composerGuide.trailingAnchor, constant: -Self.rowInset),
+            branchButton.widthAnchor.constraint(lessThanOrEqualToConstant: 260),
+
+            explanationLabel.topAnchor.constraint(equalTo: rowLine.bottomAnchor),
+            explanationLabel.leadingAnchor.constraint(equalTo: composerGuide.leadingAnchor, constant: Self.noteInset),
+            explanationLabel.trailingAnchor.constraint(
+                lessThanOrEqualTo: composerGuide.trailingAnchor, constant: -Self.noteInset),
         ])
     }
 
     // MARK: - Showing the model
 
-    /// Shows `content`. Idempotent.
+    /// Shows `content`, configuring the controls in place: a press never
+    /// rebuilds what it pressed. Idempotent.
     public func configure(with content: NewSessionContent) {
         self.content = content
         guard isViewLoaded else { return }
 
         folderButton.show(
-            content.folderTitle, font: Self.titleFont, ink: .labelColor)
+            content.folderTitle, font: Self.rowFont, ink: .labelColor, glyph: NSImage.symbol("folder", pointSize: 11))
+        folderButton.toolTip = content.folderPath
         if menuPopover.isShown, let content = menuContent(for: menuPopover.anchor) {
             menuPopover.configure(with: content)
         }
-        pathLabel.stringValue = content.folderPath ?? ""
         explanationLabel.stringValue = content.explanation ?? ""
+        explanationLabel.isHidden = (content.explanation ?? "").isEmpty
 
         switch content.branchRow {
         case .repository(let branchTitle, let usesWorktree):
             branchButton.isHidden = false
-            worktreeButton.isHidden = false
+            worktreeCheckbox.isHidden = false
             notRepositoryLabel.isHidden = true
+            controlsRow.setCustomSpacing(controlsRow.spacing, after: folderButton)
             showBranch(branchTitle)
             showWorktree(usesWorktree)
         case .notARepository(let words):
             branchButton.isHidden = true
-            worktreeButton.isHidden = true
+            worktreeCheckbox.isHidden = true
             notRepositoryLabel.isHidden = false
+            controlsRow.setCustomSpacing(Self.groupGap, after: folderButton)
             notRepositoryLabel.stringValue = words
         case .loading:
             branchButton.isHidden = true
-            worktreeButton.isHidden = true
+            worktreeCheckbox.isHidden = true
             notRepositoryLabel.isHidden = true
         }
     }
@@ -248,12 +276,12 @@ public final class NewSessionViewController: NSViewController {
     private func showBranch(_ name: String) {
         let glyph = NSImage.sidebarWorktree.copy() as? NSImage ?? NSImage.sidebarWorktree
         glyph.size = NSSize(width: 10, height: 11)
-        branchButton.show(name, font: .systemFont(ofSize: 12), ink: .secondaryLabelColor, glyph: glyph)
+        branchButton.show(name, font: Self.rowFont, ink: .secondaryLabelColor, glyph: glyph)
     }
 
-    /// Worktree as the draft has it.
+    /// The checkbox as the draft has it.
     private func showWorktree(_ isOn: Bool) {
-        worktreeButton.state = isOn ? .on : .off
+        worktreeCheckbox.state = isOn ? .on : .off
     }
 
     /// Plays Send's rise and calls `completion` when it ends (at once under
@@ -415,23 +443,11 @@ public final class NewSessionViewController: NSViewController {
         if let content = menuContent(for: branchButton) { menuPopover.configure(with: content) }
     }
 
-    /// A press asks for the other choice; the button goes on showing the
+    /// A press asks for the other choice; the checkbox goes on showing the
     /// draft's, which comes back through `configure(with:)` when the owner
     /// takes it.
     @objc private func toggleWorktree(_ sender: NSControl) {
         delegate?.newSessionViewControllerDidToggleWorktree(self)
         if let content, case .repository(_, let usesWorktree) = content.branchRow { showWorktree(usesWorktree) }
-    }
-
-    // MARK: - Pieces
-
-    private static func label(size: CGFloat, color: NSColor) -> NSTextField {
-        let label = NSTextField(labelWithString: "")
-        label.font = .systemFont(ofSize: size)
-        label.textColor = color
-        label.alignment = .center
-        label.lineBreakMode = .byTruncatingTail
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return label
     }
 }

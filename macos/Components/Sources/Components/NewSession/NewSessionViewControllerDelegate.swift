@@ -8,7 +8,7 @@ import Foundation
 public protocol NewSessionViewControllerDelegate: AnyObject {
     /// A folder from *Recent*, or from *Choose Folder…* (⌘O)'s open panel.
     func newSessionViewController(_ newSessionViewController: NewSessionViewController, didChooseFolder url: URL)
-    /// The Worktree toggle.
+    /// The *Use a new worktree* checkbox.
     func newSessionViewControllerDidToggleWorktree(_ newSessionViewController: NewSessionViewController)
     /// The branch menu for what is typed in its filter, asked each time the
     /// menu opens, the filter changes or the view is shown anew; `nil` when

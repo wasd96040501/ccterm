@@ -9,7 +9,7 @@ Sources/Components/      the views: one directory per family (Form/, Settings/ �
   Documents/             what opens beside a transcript: the jump bar, the approval bar and the command, source and image bodies, over `NumberedLinesView` (values: `DocumentHeader`, `CommandSummary`, `SourceLines`)
   Menu/                  every pop-up: MenuPopover (MenuContent in, choices out) — an NSPopover, with the system's fade, holding an inset table under an optional search field, opened by a `MenuButton` (the system's accessory-bar button, bezel under the pointer, on while its popover is open); MenuPopup, the slash list's child panel
   Composer/              the composer card (ComposerViewController) with its menus and slash list, over ComposerPresentation; the dock that fades the transcript under it
-  NewSession/            the New view (hero, folder, branch row, rise) with its folder and branch menus, over NewSessionContent and NewSessionBranchMenu
+  NewSession/            the New view (icon, composer slot, the row of where Claude works, rise) with its folder and branch menus, over NewSessionContent and NewSessionBranchMenu
   Rows/                  the transcript's row views (PageRowView and its kinds), drawn from display values; the contract test holds each to its declared height
 Sources/ComponentsDesign/  the style page — every component in its real host, live (`make design`)
 Tests/ComponentsTests/   component tests; *SnapshotTests render off screen, only when named

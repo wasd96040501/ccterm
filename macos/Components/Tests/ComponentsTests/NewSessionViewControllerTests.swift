@@ -5,8 +5,8 @@ import XCTest
 @testable import Components
 
 /// The New view's geometry and its folder menu, as the design's stylesheet
-/// gives them (`preview-live.css` *New view*: line boxes of the sheet's 1.45,
-/// the composer `min(640, 100%)` inside 24 pt of padding, the optical centre).
+/// gives them (`preview-live.css` *New view*: the block the page centres, the
+/// composer `min(640, 100%)` inside 24 pt of padding, the row under it).
 @MainActor
 final class NewSessionViewControllerTests: XCTestCase {
     private let folder = URL(fileURLWithPath: NSHomeDirectory() + "/dev/ccterm")
@@ -79,35 +79,64 @@ final class NewSessionViewControllerTests: XCTestCase {
         XCTAssertEqual(controller.composerGuide.frame.width, 640)
     }
 
-    // MARK: - The stack
+    // MARK: - The page
 
-    /// Icon, 16, the folder's 34-pt line, 2, the path's 16, 8, the 24-pt row,
-    /// 2, the note's 15, 20, the composer; each button centred in its line.
-    func testTheStackKeepsTheDesignsLines() throws {
+    /// The icon, 24, the slot; the row's line 8 under the slot, 28 tall, its
+    /// controls centred in it and starting 8 in from the slot's edge.
+    func testTheRowSitsUnderTheSlotOnTheCardsInnerLine() throws {
         let controller = controller(width: 900)
         let root = controller.view
         let icon = try XCTUnwrap(root.subviews.first { $0 is NewSessionIconView })
         let folder = try view("newSession.folder", in: root)
-        let branch = try view("newSession.branch", in: root)
-        let iconTop = top(icon, in: root)
+        let worktree = try view("newSession.worktree", in: root)
+        let slot = controller.composerGuide.frame
+        let slotTop = root.bounds.maxY - slot.maxY
+        XCTAssertEqual(slotTop, top(icon, in: root) + 64 + 24)
 
-        let folderTop = iconTop + 64 + 16
-        XCTAssertEqual(top(folder, in: root) + folder.frame.height / 2, folderTop + 17)
-        // The row's top: the folder's line, 2, the path's 16, 8.
-        let rowTop = folderTop + 34 + 2 + 16 + 8
-        XCTAssertEqual(top(branch, in: root) + branch.frame.height / 2, rowTop + 12)
-        let slotTop = root.bounds.maxY - controller.composerGuide.frame.maxY
-        XCTAssertEqual(slotTop, rowTop + 24 + 2 + 15 + 20)
+        let rowMiddle = slotTop + slot.height + 8 + 14
+        for control in [folder, worktree] {
+            XCTAssertEqual(top(control, in: root) + control.frame.height / 2, rowMiddle, accuracy: 0.5)
+        }
+        XCTAssertEqual(folder.convert(folder.bounds, to: root).minX, slot.minX + 8)
+        XCTAssertLessThan(folder.frame.maxX, worktree.frame.minX, "the folder leads the row")
     }
 
-    /// The free space above the content is 0.62 of the space below it.
-    func testTheContentSitsAtTheOpticalCentre() throws {
+    /// The free space above the page at rest — the icon, 24, a one-line
+    /// composer, the row — is 0.62 of the space below it.
+    func testThePageAtRestSitsAtTheOpticalCentre() throws {
         let controller = controller(width: 900, height: 900)
         let root = controller.view
         let icon = try XCTUnwrap(root.subviews.first { $0 is NewSessionIconView })
         let above = top(icon, in: root)
-        let below = controller.composerGuide.frame.minY
+        let below = root.bounds.height - (above + 64 + 24 + 78 + 8 + 28)
         XCTAssertEqual(above / below, 0.62, accuracy: 0.005)
+    }
+
+    /// What grows — the note under the row, a taller composer — grows down:
+    /// the slot's top holds still.
+    func testTheSlotsTopHoldsWhileWhatIsUnderItGrows() throws {
+        let controller = NewSessionViewController()
+        controller.loadViewIfNeeded()
+        controller.configure(with: content)
+        let height = controller.composerGuide.heightAnchor.constraint(equalToConstant: 78)
+        height.isActive = true
+        controller.view.frame = NSRect(x: 0, y: 0, width: 900, height: 720)
+        controller.view.layoutSubtreeIfNeeded()
+        let slotTop = controller.composerGuide.frame.maxY
+        let checkbox = try view("newSession.worktree", in: controller.view)
+        let checkboxFrame = checkbox.frame
+
+        var draft = content
+        draft.branchRow = .repository(branchTitle: "main", usesWorktree: true)
+        draft.explanation = "Starts a new branch from main"
+        controller.configure(with: draft)
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(controller.composerGuide.frame.maxY, slotTop)
+        XCTAssertEqual(checkbox.frame, checkboxFrame, "the checkbox holds still as the note comes")
+
+        height.constant = 140
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(controller.composerGuide.frame.maxY, slotTop)
     }
 
     // MARK: - The folder menu
@@ -142,10 +171,11 @@ final class NewSessionViewControllerTests: XCTestCase {
         XCTAssertEqual(key, "⌘O")
     }
 
-    // MARK: - The row under the path
+    // MARK: - The row
 
     /// A folder with no repository says so where the row is; while it is read
-    /// the row is empty. Either way the branch pop-up and Worktree are gone.
+    /// the row holds the folder alone. Either way the branch pop-up and the
+    /// checkbox are gone.
     func testTheRowShowsOnlyWhatItIsGiven() throws {
         let controller = controller(width: 900)
         let branch = try view("newSession.branch", in: controller.view)
@@ -171,8 +201,8 @@ final class NewSessionViewControllerTests: XCTestCase {
 
     // MARK: - What it reports
 
-    /// A press on Worktree asks for the other choice; the button goes on
-    /// showing the draft's until the draft changes.
+    /// A click on the checkbox asks for the other choice; it goes on showing
+    /// the draft's until the draft changes.
     func testWorktreeIsReportedAsAnIntentAndShowsTheDraft() throws {
         let controller = controller(width: 900)
         let delegate = Delegate()

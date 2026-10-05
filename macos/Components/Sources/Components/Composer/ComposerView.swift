@@ -30,7 +30,10 @@ final class ComposerView: NSView {
 
     // MARK: Subviews
 
-    private let surface = CardSurfaceView()
+    /// Its corners concentric with the action button, which sits
+    /// `actionInset` in from the card's corner.
+    private lazy var surface = CardSurfaceView(
+        radius: sendButton.intrinsicContentSize.height / 2 + Self.actionInset)
     private let failureView = ComposerFailureView()
     private let field = ComposerFieldView()
     private let modelButton = MenuButton()
@@ -77,8 +80,6 @@ final class ComposerView: NSView {
         configureHierarchy()
         configureConstraints()
         configureActions()
-        // The action button sits `actionInset` in from the card's corner.
-        surface.radius = sendButton.intrinsicContentSize.height / 2 + Self.actionInset
     }
 
     /// The action buttons' distance from the card's trailing and bottom edges.
@@ -471,13 +472,8 @@ private final class CardSurfaceView: NSView {
     /// Where the content goes; clips to the card's shape.
     let clip = NSView()
 
-    /// The corners' radius; the composer sets it from its action button.
-    var radius: CGFloat = 0 {
-        didSet {
-            clip.layer?.cornerRadius = radius
-            needsLayout = true
-        }
-    }
+    /// The corners' radius.
+    private let radius: CGFloat
 
     /// The card's shape under its content, casting the soft shadow. The
     /// view's own layer has no corner radius — AppKit would mask it, and the
@@ -488,8 +484,9 @@ private final class CardSurfaceView: NSView {
 
     private let ringWidth: CGFloat = 0.5
 
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
+    init(radius: CGFloat) {
+        self.radius = radius
+        super.init(frame: .zero)
         wantsLayer = true
         clipsToBounds = false
         // 0 6 20: a 20-pt blur is a 10-pt shadow radius.
@@ -502,6 +499,7 @@ private final class CardSurfaceView: NSView {
             layer?.addSublayer(edge)
         }
         clip.wantsLayer = true
+        clip.layer?.cornerRadius = radius
         clip.layer?.cornerCurve = .continuous
         clip.layer?.masksToBounds = true
         clip.translatesAutoresizingMaskIntoConstraints = false

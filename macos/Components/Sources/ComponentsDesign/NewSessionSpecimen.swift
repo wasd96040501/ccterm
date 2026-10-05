@@ -3,10 +3,10 @@ import Components
 import DisplayModels
 
 /// The New view (design/transcript, section 8 *The New view*, and the
-/// Playground's window with no tabs): the app icon over its glow, the folder
-/// as the page's title, the branch and Worktree on a row that never moves, the
-/// line that says what Send will do, and the composer's slot — a card stands in
-/// for the composer, which is the app's. Each state the sheet shows; its two
+/// Playground's window with no tabs): the app icon over its glow, the
+/// composer's slot — a card stands in for the composer, which is the app's —
+/// and under it the folder, the branch and *Use a new worktree*, with the line
+/// that says what Send will do. Each state the sheet shows; its two
 /// menus are the Menus section's.
 enum NewSessionSpecimen {
     /// The pane a New tab gets in the sheet's main window (900 × 642, under its
@@ -17,15 +17,16 @@ enum NewSessionSpecimen {
         DesignPageViewController.Section(
             title: "New view",
             note:
-                "A window with no tabs opens on it, and so does a New tab: the app icon over its still glow, the "
-                + "folder as a 22-pt title with its path under it, the branch pop-up and the Worktree toggle on one "
-                + "row that never moves, and under it the line that says what Send will do. The composer sits in "
-                + "the slot under that, 640 wide at most, a third of the way down the pane. A folder that isn't a "
-                + "git repository says so at the row's height, so the composer doesn't move. Click the folder or "
-                + "the branch for its menu; Worktree toggles.",
+                "A window with no tabs opens on it, and so does a New tab: the app icon over its still glow, then "
+                + "the composer, 640 wide at most, and under it where Claude works — the folder's pop-up, the "
+                + "branch's and the Use a new worktree checkbox, leading-aligned on the card's inner line — with "
+                + "the line that says what Send will do under that. The page centres itself at rest, so the card's "
+                + "top never moves: the note, more lines and an error grow down. A folder that isn't a git "
+                + "repository says so in the row. Click the folder or the branch for its menu; the checkbox "
+                + "toggles.",
             specimens: [
                 .init(title: "A folder, in place", view: host(.rest), height: nil),
-                .init(title: "Worktree on — the line says what Send will do", view: host(.worktree), height: nil),
+                .init(title: "A new worktree — the line says what Send will do", view: host(.worktree), height: nil),
                 .init(title: "A folder that isn't a git repository", view: host(.notARepository), height: nil),
                 .init(title: "No folder yet", view: host(.noFolder), height: nil),
             ])
@@ -59,7 +60,7 @@ enum NewSessionSpecimen {
                 return NewSessionContent(
                     folderTitle: "ccterm", folderPath: "~/dev/ccterm", recentFolders: recents,
                     branchRow: .repository(branchTitle: "main", usesWorktree: true),
-                    explanation: "A new branch from main, in a new worktree")
+                    explanation: "Starts a new branch from main")
             case .notARepository:
                 return NewSessionContent(
                     folderTitle: "claude-notes", folderPath: "~/notes/claude-notes", recentFolders: recents,
@@ -135,7 +136,7 @@ private final class NewSessionHost: NSView, ControllerHost, NewSessionViewContro
     func newSessionViewControllerDidToggleWorktree(_ newSessionViewController: NewSessionViewController) {
         guard case .repository(let title, let on) = content.branchRow else { return }
         content.branchRow = .repository(branchTitle: title, usesWorktree: !on)
-        content.explanation = on ? nil : "A new branch from \(title), in a new worktree"
+        content.explanation = on ? nil : "Starts a new branch from \(title)"
         controller.configure(with: content)
     }
 

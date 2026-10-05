@@ -40,6 +40,26 @@ public final class EditorAreaViewController: NSSplitViewController {
 
     public weak var delegate: EditorAreaViewControllerDelegate?
 
+    /// What the area shows when no editor has a tab — the whole area, no tab
+    /// bar — instead of *No Editor*; `nil` keeps *No Editor*. Opening this
+    /// controller as a tab (`open(_:pinned:beside:)` with an item holding it)
+    /// takes it out of the empty area first, so it moves into its tab as the
+    /// same object; the host sets a new one for the next time the tabs run out.
+    public var emptyViewController: NSViewController? {
+        didSet {
+            guard emptyViewController !== oldValue else { return }
+            groups.forEach { $0.reloadTabBar() }
+        }
+    }
+
+    /// Whether each tab bar ends in a + (24-pt circle, *New Tab ⌘T* tooltip)
+    /// that sends `newTab(_:)` from its editor.
+    public var showsNewTabButton = false {
+        didSet {
+            groups.forEach { $0.showsNewTabButton = showsNewTabButton }
+        }
+    }
+
     /// The editor the reader is working in. Never `nil`: there is always one.
     public private(set) var activeGroup: EditorGroupViewController {
         didSet {
@@ -217,17 +237,24 @@ public final class EditorAreaViewController: NSSplitViewController {
     }
 
     /// Opens a collapsed editor to half the area, the way Xcode opens one, with
-    /// the motion a sidebar is toggled with. Uncollapsing through its animator
-    /// returns an item to the width its view has, so the editor is laid out at
-    /// that width first, with its tab in it: the tab appears at its final size
-    /// and is uncovered, not reflowed, and the other editor narrows as in a
-    /// divider drag. (`preferredThicknessFraction` doesn't size an item that
-    /// isn't a sidebar — measured.)
+    /// the motion a sidebar is toggled with: the editor is laid out at half
+    /// first, with its tab in it, so the tab appears at its final size and is
+    /// uncovered, not reflowed, and the other editor narrows as in a divider
+    /// drag.
+    ///
+    /// The item's animator does it: it opens the item to the width its view
+    /// has at priority 250.001 and moves the divider at 252 (AppKit's
+    /// `NSSplitViewWrapperView-WeakViewBreadth` and `-ConstantBreadth`). So
+    /// a tab's content wishes under 250, and never moves the split (or the
+    /// window): the split alone decides each editor's width. Once it lands,
+    /// the divider is put where the editor is.
+    /// (`preferredThicknessFraction` doesn't size an item that isn't a sidebar
+    /// — measured.)
     private func expand(_ group: EditorGroupViewController) {
         guard let item = splitViewItem(for: group), item.isCollapsed else { return }
         let area = splitView.bounds
-        group.view.frame = NSRect(
-            x: 0, y: 0, width: ((area.width - splitView.dividerThickness) / 2).rounded(.down), height: area.height)
+        let half = ((area.width - splitView.dividerThickness) / 2).rounded(.down)
+        group.view.frame = NSRect(x: 0, y: 0, width: half, height: area.height)
         group.view.layoutSubtreeIfNeeded()
         // A split view item animates even in a group of duration 0, so Reduce
         // Motion opens it outright — and outright it takes a width of its own
@@ -240,7 +267,14 @@ public final class EditorAreaViewController: NSSplitViewController {
             splitView.setPosition(
                 splitView.bounds.width - splitView.dividerThickness - width, ofDividerAt: 0)
         } else {
-            item.animator().isCollapsed = false
+            NSAnimationContext.runAnimationGroup { _ in
+                item.animator().isCollapsed = false
+            } completionHandler: { [self] in
+                // Where the editor landed: the split keeps a divider the
+                // animation moved only while it runs.
+                splitView.setPosition(
+                    splitView.bounds.width - splitView.dividerThickness - group.view.frame.width, ofDividerAt: 0)
+            }
         }
     }
 
@@ -250,6 +284,7 @@ public final class EditorAreaViewController: NSSplitViewController {
         super.insertSplitViewItem(splitViewItem, at: index)
         guard let group = splitViewItem.viewController as? EditorGroupViewController else { return }
         group.delegate = self
+        group.showsNewTabButton = showsNewTabButton
         if !draggedTypes.isEmpty { group.acceptDrops(of: draggedTypes) }
     }
 
@@ -279,6 +314,26 @@ public final class EditorAreaViewController: NSSplitViewController {
             return
         }
         activeGroup.removeTabViewItem(item)
+    }
+
+    /// A new tab in the active editor — or, sent from a tab bar's +, in that
+    /// bar's editor, which becomes the active one. What the tab is, and where
+    /// in the editor it goes, are the delegate's
+    /// (`editorArea(_:didRequestNewTabIn:)`). A standard responder action, so
+    /// a nil-targeted menu item (⌘T) finds it.
+    @objc public func newTab(_ sender: Any?) {
+        if let view = sender as? NSView, let group = groups.first(where: { view.isDescendant(of: $0.view) }) {
+            activate(group)
+        }
+        delegate?.editorArea(self, didRequestNewTabIn: activeGroup)
+    }
+
+    /// Asks the delegate again for every tab's indicator
+    /// (`editorArea(_:indicatorViewFor:)`), as `NSTableView.reloadData` asks for
+    /// its rows; a tab whose answer is the same view keeps it untouched, so an
+    /// animating indicator doesn't restart.
+    public func reloadIndicators() {
+        groups.forEach { $0.reloadTabBar() }
     }
 
     /// Back through the active editor's history — a toolbar's back button.
@@ -412,6 +467,18 @@ extension EditorAreaViewController: EditorGroupViewControllerDelegate {
             return nil
         }
         return delegate.editorArea(self, tabViewItemWithIdentifier: identifier)
+    }
+
+    func editorGroupDidTakeEmptyViewController(_ group: EditorGroupViewController) {
+        emptyViewController = nil
+    }
+
+    func editorGroupDidRequestNewTab(_ group: EditorGroupViewController) {
+        newTab(group.view)
+    }
+
+    func editorGroup(_ group: EditorGroupViewController, indicatorViewFor item: NSTabViewItem) -> NSView? {
+        delegate?.editorArea(self, indicatorViewFor: item)
     }
 
     func position(of group: EditorGroupViewController) -> EditorGroupViewController.Position {

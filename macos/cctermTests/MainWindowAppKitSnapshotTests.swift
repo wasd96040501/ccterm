@@ -1,6 +1,8 @@
 import AgentSDK
 import AppKit
 import Combine
+import Components
+import DisplayModels
 import TranscriptKit
 import XCTest
 
@@ -41,7 +43,7 @@ final class MainWindowAppKitSnapshotTests: XCTestCase {
         try fixture.write("-x-repo/s1.jsonl", lines, modified: 300)
 
         let store = LibraryStore(directories: Just(fixture.directory).eraseToAnyPublisher())
-        let split = MainSplitViewController(library: store, sessions: .reading())
+        let split = MainSplitViewController(library: store, context: .reading())
         split.loadViewIfNeeded()
         store.start()
         defer { store.stop() }
@@ -59,7 +61,7 @@ final class MainWindowAppKitSnapshotTests: XCTestCase {
         outline.expandItem(outline.item(atRow: 1))
         let session = try XCTUnwrap(store.nodes.first?.children.first)
         let sidebar = try XCTUnwrap(split.splitViewItems[0].viewController as? SidebarViewController)
-        split.sidebarViewController(sidebar, didOpen: session)
+        split.sidebarViewController(sidebar, didOpen: SidebarNode(session))
 
         let size = CGSize(width: 1200, height: 800)
         let image = ViewSnapshot.renderViewController(split, size: size, settle: 1.5)
@@ -78,7 +80,7 @@ final class MainWindowAppKitSnapshotTests: XCTestCase {
     /// its line.
     func testLoadingSidebarSnapshot() throws {
         let store = LibraryStore(directories: Empty().eraseToAnyPublisher())
-        let split = MainSplitViewController(library: store, sessions: .reading())
+        let split = MainSplitViewController(library: store, context: .reading())
         let image = ViewSnapshot.renderViewController(split, size: CGSize(width: 1200, height: 800), settle: 0.5)
         let url = ViewSnapshot.writePNG(image, name: "MainWindowAppKit-LoadingSidebar")
         let attachment = XCTAttachment(contentsOfFile: url)
@@ -111,8 +113,8 @@ final class MainWindowAppKitSnapshotTests: XCTestCase {
         let split = try XCTUnwrap(stage.mainSplit)
         let sidebar = try XCTUnwrap(split.splitViewItems[0].viewController as? SidebarViewController)
         let sessions = store.nodes.flatMap(\.children)
-        split.sidebarViewController(sidebar, didOpen: sessions[1])
-        split.sidebarViewController(sidebar, didOpen: sessions[0])
+        split.sidebarViewController(sidebar, didOpen: SidebarNode(sessions[1]))
+        split.sidebarViewController(sidebar, didOpen: SidebarNode(sessions[0]))
         let title = try XCTUnwrap(stage.window.toolbar?.items.compactMap { $0.view as? MainWindowTitleView }.first)
         XCTAssertTrue(stage.drainUntil(timeout: 5) { title.subtitle != nil }, "the branch never came")
         stage.drain(seconds: 0.5)

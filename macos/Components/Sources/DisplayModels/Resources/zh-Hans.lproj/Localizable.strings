@@ -1,0 +1,4 @@
+/* A field check's sentence: the reason, then what stays in use. */
+"Checking…" = "正在检查…";
+"%@." = "%@。";
+"Still using %@." = "仍在使用 %@。";

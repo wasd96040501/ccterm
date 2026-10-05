@@ -36,7 +36,7 @@ final class UserMessageKindTests: XCTestCase {
 
     func testSyntheticText() {
         XCTAssertEqual(kind("<system-reminder>be brief</system-reminder>", isSynthetic: true), .synthetic)
-        XCTAssertEqual(kind("Continue from where you left off.", origin: "auto-continuation"), .synthetic)
+        XCTAssertEqual(kind("   ", origin: "auto-continuation"), .synthetic)
     }
 
     func testInterruptions() {
@@ -253,7 +253,44 @@ final class UserMessageKindTests: XCTestCase {
 
             This is how Claude Code surfaces a prompt a plugin submits between turns — it starts this turn in the user's place. Address the message above.
             """
-        XCTAssertEqual(kind(text, origin: "plugin"), .message(from: .plugin(name: "taskcut"), text: "Continue."))
+        XCTAssertEqual(
+            kind(text, origin: "plugin"), .message(from: .plugin(name: "taskcut", duringTurn: false), text: "Continue.")
+        )
+    }
+
+    func testMessageFromAPluginWhileClaudeWorked() {
+        let text = """
+            The taskcut plugin sent a message while you were working:
+            Also run the linter.
+
+            This is how Claude Code surfaces prompts a plugin submits mid-turn — within the running turn, often alongside the next tool result. Address the message above as you continue this turn.
+            """
+        XCTAssertEqual(
+            kind(text, origin: "plugin"),
+            .message(from: .plugin(name: "taskcut", duringTurn: true), text: "Also run the linter."))
+    }
+
+    func testPluginMessageKeepsTheOtherHeadersNote() {
+        // Each header strips only its own note: text that merely ends like the other one stays.
+        let between =
+            "The a plugin sent a message:\nGo.\n\nThis is how Claude Code surfaces prompts a plugin submits mid-turn — within the running turn, often alongside the next tool result. Address the message above as you continue this turn."
+        guard case .message(.plugin(_, let duringTurn), let text) = kind(between, origin: "plugin") else {
+            return XCTFail("not a plugin message")
+        }
+        XCTAssertFalse(duringTurn)
+        XCTAssertTrue(text.hasPrefix("Go."))
+        XCTAssertTrue(text.contains("mid-turn"))
+    }
+
+    func testAutoContinuation() {
+        let words =
+            "Your claude.ai usage limit has reset. Continue the task you were working on when the limit was reached; do not repeat work that is already complete."
+        XCTAssertEqual(kind(words, origin: "auto-continuation"), .autoContinuation(text: words))
+        XCTAssertEqual(
+            kind("\(words)\n", origin: "auto-continuation", isSynthetic: true), .autoContinuation(text: words),
+            "isMeta (isSynthetic) doesn't hide it")
+        XCTAssertEqual(
+            kind("Goal set: ship it", origin: "auto-continuation"), .autoContinuation(text: "Goal set: ship it"))
     }
 
     // MARK: - Falling back

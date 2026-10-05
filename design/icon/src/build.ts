@@ -5,7 +5,7 @@
 //   bun run build            write AppIcon.icon + review sheet
 //   bun run build --no-render
 
-import { mkdirSync, writeFileSync } from "node:fs"
+import { mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { Resvg } from "@resvg/resvg-js"
 import { compose, SHIP } from "./design"
@@ -30,6 +30,7 @@ if (!hasIctool()) {
 }
 
 for (const r of RENDITIONS) ictoolRender(ICON, join(OUT, `render-${r}.png`), r)
+writeArtSet()
 // Tracked, for the README.
 ictoolRender(ICON, resolve(import.meta.dir, "../preview.png"), "Default", 512)
 // Tracked; uploaded by hand as the GitHub social preview.
@@ -60,3 +61,29 @@ const H = ladderY + 256 + P * 2
 const sheet = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">${parts.join("")}</svg>`
 writeFileSync(join(OUT, "review.png"), new Resvg(sheet).render().asPng())
 console.log(`review → ${join(OUT, "review.png")}`)
+
+// The icon as an image the app draws (the New view's hero): Default, and the
+// Dark rendition under the Dark appearance — the app can't ask the system for
+// the rendition of a view's appearance (`NSApp.applicationIconImage` is the
+// one the Dock shows). Rendered by ictool, full bleed, so the hero is the
+// pixels the Dock shows and its cursor rows sit at `x / 1024` of the width.
+function writeArtSet() {
+  const dir = join(ROOT, "macos/Components/Sources/Components/Resources/Assets.xcassets/AppIconArt.imageset")
+  rmSync(dir, { recursive: true, force: true })
+  mkdirSync(dir, { recursive: true })
+  const images: object[] = []
+  for (const [rendition, suffix] of [["Default", ""], ["Dark", "-dark"]] as const) {
+    for (const scale of [1, 2]) {
+      const file = `AppIconArt${suffix}@${scale}x.png`
+      ictoolRender(ICON, join(dir, file), rendition, 128 * scale)
+      images.push({
+        filename: file,
+        idiom: "universal",
+        scale: `${scale}x`,
+        ...(rendition === "Dark" ? { appearances: [{ appearance: "luminosity", value: "dark" }] } : {}),
+      })
+    }
+  }
+  writeFileSync(join(dir, "Contents.json"), JSON.stringify({ images, info: { author: "xcode", version: 1 } }, null, 2) + "\n")
+  console.log(`wrote ${dir}`)
+}

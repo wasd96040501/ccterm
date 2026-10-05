@@ -135,3 +135,26 @@ jobs:
 
       - name: Run package tests
         run: make test-list
+
+  # Components: the app's components, testable without the app. Same shape.
+  test-ui:
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain info
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: macos/Components/.build
+          key: ui-${{ runner.os }}-${{ runner.arch }}-pkg${{ hashFiles('macos/Components/Package.swift') }}-src${{ hashFiles('macos/Components/Sources/**/*.swift', 'macos/Components/Tests/**/*.swift') }}
+          restore-keys: |
+            ui-${{ runner.os }}-${{ runner.arch }}-pkg${{ hashFiles('macos/Components/Package.swift') }}-
+
+      - name: Run package tests
+        run: make test-ui

@@ -1,9 +1,9 @@
-.PHONY: build release install dmg clean prune test-clean fmt fmt-check test-unit test-kit test-sdk test-list bench-list record-list demo-kit demo-list logs icon sidebar-icons appkit-doc arch help
+.PHONY: build release install dmg clean prune test-clean fmt fmt-check test-unit test-kit test-ui design test-sdk test-list bench-list record-list demo-kit demo-list logs icon sidebar-icons window-chrome composer-icons design-shots appkit-doc arch help
 
-XCSTRINGS := macos/ccterm/Localizable.xcstrings
+XCSTRINGS := macos/ccterm/Localizable.xcstrings macos/ccterm/MainMenu.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
 SWIFT_FORMAT := swift-format
-SWIFT_SRC := macos/ccterm macos/cctermTests macos/AgentSDK/Sources macos/AgentSDK/Tests macos/TranscriptKit/Sources macos/TranscriptKit/Tests macos/ExactList/Sources macos/ExactList/Tests macos/tools
+SWIFT_SRC := macos/ccterm macos/cctermTests macos/Components/Sources macos/Components/Tests macos/AgentSDK/Sources macos/AgentSDK/Tests macos/TranscriptKit/Sources macos/TranscriptKit/Tests macos/ExactList/Sources macos/ExactList/Tests macos/tools
 PREFIX ?= /Applications
 
 help: ## Show available commands
@@ -32,6 +32,22 @@ test-kit: ## Run TranscriptKit's package tests (FILTER=SomeTests; snapshots only
 	@cd macos/TranscriptKit && \
 		if [ -n "$(FILTER)" ]; then swift test --filter "$(FILTER)"; \
 		else swift test --skip SnapshotTests; fi
+
+# Components' own tests: every view the app draws with, built from its init, a
+# display model and a delegate — no app, no store. Same split as test-kit.
+test-ui: ## Run Components' package tests (FILTER=SomeTests; snapshots only when named)
+	@cd macos/Components && swift build --product ComponentsDesign && \
+		if [ -n "$(FILTER)" ]; then swift test --filter "$(FILTER)"; \
+		else swift test --skip SnapshotTests; fi
+
+# The style page: every Components component tiled on one page, live, with
+# fixture models. Foreground; close the window to stop. The -isysroot is
+# demo-kit's, for the same reason (see there).
+design: ## Run the style page (Components' components, tiled)
+	@cd macos/Components && swift run \
+		-Xswiftc -Xclang-linker -Xswiftc -isysroot \
+		-Xswiftc -Xclang-linker -Xswiftc "$$(xcrun --sdk macosx --show-sdk-path)" \
+		ComponentsDesign
 
 # AgentSDK's own tests: protocol decoding, transcript reconstruction, and
 # `Session` driven over stdio by a scripted fake CLI — no real `claude` needed.
@@ -97,14 +113,16 @@ appkit-doc: ## Look up an AppKit symbol (SYMBOL=NSStackView or SYMBOL=NSStackVie
 	@test -n "$(SYMBOL)" || (echo "Usage: make appkit-doc SYMBOL=NSStackView[.member]" && exit 1)
 	@python3 macos/scripts/appkit-doc.py "$(SYMBOL)"
 
-# The architecture map an /arch-review reads instead of the code: parses the
-# Swift sources (no app build) and rewrites build/arch/ from scratch — index.md
-# plus one file per source directory with each type's dependencies, data flow
-# (@Published, AsyncStream, @Observable, callbacks, delegates) and which of its
-# members other units use. SCOPE takes names or paths, comma-separated.
-# DETAIL=members adds, per unit, how each type's members call one another and
-# write its state — what a simplification pass reads.
-arch: ## Map structure + data flow to build/arch/ (SCOPE=core|app|kit|sdk|<dir under macos/>, DETAIL=members)
+# The architecture, read off the Swift sources (no app build), rewritten into
+# build/arch/ on every run: index.md (modules and what follows), tree.md (the
+# component tree from the composition root), data.md (store → binder →
+# component, and each event back) and rules.md (every break of macos/CLAUDE.md
+# § Where code lives and § Component boundaries, counted in the terminal).
+# SCOPE (names or paths, comma-separated) adds units/ — per source directory,
+# each type's dependencies, data flow and surface — which /arch-review reads;
+# DETAIL=members adds there how each type's members call one another and write
+# its state.
+arch: ## Component tree, data dependencies and rule breaks to build/arch/ (SCOPE=core|app|kit|sdk|<dir> adds the unit map, DETAIL=members)
 	@swift run --package-path macos/tools/ArchMap --quiet ArchMap "$(CURDIR)/macos" "$(CURDIR)/build/arch" "$(SCOPE)" "$(DETAIL)"
 
 dmg: ## Create DMG installer (usage: make dmg APP=/path/to/ccterm.app)
@@ -120,12 +138,22 @@ dmg: ## Create DMG installer (usage: make dmg APP=/path/to/ccterm.app)
 
 # App icon: design/icon/src/design.ts is the source of truth. This regenerates
 # macos/ccterm/AppIcon.icon (Icon Composer document, SVG layers) from it and,
-# with Xcode 26+, renders every system appearance to design/icon/out/review.png.
-icon: ## Regenerate AppIcon.icon from design/icon (+ review renders in design/icon/out)
+# with Xcode 26+, renders every system appearance to design/icon/out/review.png
+# and the in-app icon (Components/Resources/Assets.xcassets/AppIconArt, Any + Dark) the New tab shows.
+icon: ## Regenerate AppIcon.icon and the AppIconArt image set from design/icon (+ review renders in design/icon/out)
 	cd design/icon && bun install --frozen-lockfile && bun run build
 
-sidebar-icons: ## Regenerate the sidebar glyph assets (Assets.xcassets/Sidebar) from design/sidebar-icons
+sidebar-icons: ## Regenerate the sidebar glyph assets (Components/Resources/Assets.xcassets/Sidebar) from design/sidebar-icons
 	cd design/sidebar-icons && bun run build
+
+window-chrome: ## Regenerate the window chrome assets (Components/Resources/Assets.xcassets/WindowChrome) from the design sheets' window mocks
+	cd design/window-chrome && bun run build
+
+composer-icons: ## Regenerate the composer glyph assets (Assets.xcassets/Composer) from design/composer-icons
+	cd design/composer-icons && bun run build
+
+design-shots: ## Render the transcript design sheet's live parts to /tmp/design-shots (headless Chrome), for DesignParity
+	node design/transcript/shots/capture.mjs
 
 fmt: ## Format Swift sources and localization strings
 	$(SWIFT_FORMAT) format --parallel --in-place --recursive $(SWIFT_SRC)

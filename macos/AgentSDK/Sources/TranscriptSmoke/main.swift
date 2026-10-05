@@ -80,7 +80,7 @@ final class Run {
                 transcript.append(message)
             case .permissionRequest(let request):
                 request.respond(.allow())
-            case .permissionRequestCancelled, .exited:
+            case .permissionRequestCancelled, .flagSettingsChanged, .exited:
                 break
             }
         }

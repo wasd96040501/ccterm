@@ -1,4 +1,5 @@
 import AgentSDK
+import DisplayModels
 import Foundation
 
 /// A transcript as its tab shows it: the entries in reading order, and what
@@ -36,6 +37,8 @@ nonisolated struct TranscriptPage: Sendable, Equatable {
                 for (position, one) in news.news.enumerated() {
                     locations[one.id] = Location(entry: index, item: position)
                 }
+            case .prompt(let prompt):
+                for image in prompt.images { locations[image.id] = Location(entry: index, item: nil) }
             default:
                 break
             }
@@ -45,11 +48,18 @@ nonisolated struct TranscriptPage: Sendable, Equatable {
 
     /// The page of `transcript`; and of a live session's state over it:
     /// `partial`, the response streaming in, and `requests`, the calls waiting
-    /// for the reader (`TranscriptPageBuilder`).
-    init(_ transcript: Transcript, partial: AssistantMessage? = nil, requests: [PermissionRequest] = []) {
+    /// for the reader (`TranscriptPageBuilder`); `prompts`, the prompts sent
+    /// from here that the transcript doesn't have yet — each a prompt entry
+    /// under its uuid, the id the transcript's own message takes when its
+    /// replay arrives, with its delivery under it; `restarts`, a divider each
+    /// after the message it follows.
+    init(
+        _ transcript: Transcript, partial: AssistantMessage? = nil, requests: [PermissionRequest] = [],
+        prompts: [LocalPrompt] = [], restarts: [SessionState.Restart] = []
+    ) {
         var builder = TranscriptPageBuilder(
             messages: transcript.messages, workingDirectory: transcript.metadata.cwd, partial: partial,
-            requests: requests)
+            requests: requests, prompts: prompts, restarts: restarts)
         self.init(entries: builder.build(), workingDirectory: transcript.metadata.cwd)
     }
 
@@ -88,14 +98,16 @@ nonisolated struct TranscriptPage: Sendable, Equatable {
             if one.kind == .command, let origin = one.origin, let call = call(origin), call.kind == .command {
                 return .command(call)
             }
-            return .news(one)
+            return .news(one, report: news.reports[position])
         case .command(let command):
             switch command.command {
             case .shell: return .shellCommand(command)
             case .slash: return command.output.isEmpty && command.errorOutput.isEmpty ? nil : .commandOutput(command)
             }
         case .divider(let divider):
-            return divider.summary.map { .compactionSummary($0) }
+            return divider.summary.map { .compactionSummary($0) } ?? divider.prompt.map { .continuationPrompt($0) }
+        case .prompt(let prompt):
+            return prompt.images.first { $0.id == id }.map { .image($0) }
         case .agentMessage(let message) where message.opensBeside:
             return .agentMessage(message)
         default:
@@ -114,7 +126,9 @@ nonisolated struct TranscriptPage: Sendable, Equatable {
         case .web: return .web(call)
         case .agent: return .agent(call)
         case .tasks: return .taskList(taskList(through: call.id))
-        case .schedule, .message, .other: return .other(call)
+        case .advisor: return .advice(call)
+        case .message: return .sentMessage(call)
+        case .schedule, .skill, .worktree, .notify, .other: return .other(call)
         }
     }
 
@@ -124,10 +138,8 @@ nonisolated struct TranscriptPage: Sendable, Equatable {
         switch entries[location.entry] {
         case .run(let run):
             return run.items.lazy.flatMap(\.calls).first { $0.id == id }
-        case .question(let question):
-            return question.call
-        case .plan(let plan):
-            return plan.call
+        case .question(_, let call), .plan(_, let call):
+            return call
         default:
             return nil
         }
@@ -143,8 +155,8 @@ nonisolated struct TranscriptPage: Sendable, Equatable {
                 if let input = call.use.input(as: Tools.TodoWrite.self) {
                     order = input.todos.indices.map(String.init)
                     tasks = Dictionary(
-                        uniqueKeysWithValues: input.todos.enumerated().map {
-                            (String($0.offset), TaskListItem(subject: $0.element.content, status: $0.element.status))
+                        uniqueKeysWithValues: input.todos.enumerated().compactMap { offset, todo in
+                            TaskListItem(subject: todo.content, taskStatus: todo.status).map { (String(offset), $0) }
                         })
                 } else if let input = call.use.input(as: Tools.TaskCreate.self) {
                     let taskID: String
@@ -161,7 +173,8 @@ nonisolated struct TranscriptPage: Sendable, Equatable {
                         order.removeAll { $0 == input.taskID }
                     } else {
                         tasks[input.taskID] = TaskListItem(
-                            subject: input.subject ?? task.subject, status: input.status ?? task.status)
+                            subject: input.subject ?? task.subject,
+                            status: input.status.flatMap(TaskListItem.Status.init) ?? task.status)
                     }
                 }
                 if call.id == id { return order.compactMap { tasks[$0] } }

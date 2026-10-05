@@ -1,4 +1,6 @@
 import AgentSDK
+import Components
+import DisplayModels
 import XCTest
 
 @testable import ccterm
@@ -10,7 +12,7 @@ final class ValidationDetailTests: XCTestCase {
 
     func testACommandBeingCheckedSaysSo() {
         let detail = LaunchCommandValidation.State.checking.detail(fallback: "claude")
-        XCTAssertEqual(detail, ValidationDetail(text: String(localized: "Checking…"), isError: false))
+        XCTAssertEqual(detail, .checking)
     }
 
     func testAWorkingCommandShowsItsVersionWithoutThePath() {
@@ -20,19 +22,12 @@ final class ValidationDetailTests: XCTestCase {
         XCTAssertFalse(detail.text?.contains("/usr/local") ?? true)
     }
 
-    func testAFailingCommandGivesItsReasonAsASentenceAndWhatStaysInUse() {
+    func testAFailingCommandIsAProblemWithWhatStaysInUse() {
         let alone = LaunchCommandValidation.State.invalid("Not found").detail(fallback: nil)
-        XCTAssertEqual(alone, ValidationDetail(text: String(localized: "\("Not found")."), isError: true))
+        XCTAssertEqual(alone, .problem("Not found", fallback: nil))
 
         let kept = LaunchCommandValidation.State.invalid("Not found").detail(fallback: "orange")
-        XCTAssertEqual(
-            kept.text, String(localized: "\("Not found").") + " " + String(localized: "Still using \("orange")."))
-        XCTAssertTrue(kept.isError)
-    }
-
-    func testAReasonThatEndsInPunctuationGetsNoSecondOne() {
-        let detail = LaunchCommandValidation.State.invalid("Command failed.").detail(fallback: nil)
-        XCTAssertEqual(detail.text, "Command failed.")
+        XCTAssertEqual(kept, .problem("Not found", fallback: "orange"))
     }
 
     func testAFolderSaysWhatItHoldsOrWhyItCannotBeUsed() {
@@ -42,10 +37,7 @@ final class ValidationDetailTests: XCTestCase {
         XCTAssertFalse(valid.isError)
 
         let invalid = FolderValidation.State.invalid("Folder doesn’t exist").detail(fallback: "~/.claude")
-        XCTAssertEqual(
-            invalid.text,
-            String(localized: "\("Folder doesn’t exist").") + " " + String(localized: "Still using \("~/.claude")."))
-        XCTAssertTrue(invalid.isError)
+        XCTAssertEqual(invalid, .problem("Folder doesn’t exist", fallback: "~/.claude"))
     }
 
     func testNothingToSayShowsNoText() {

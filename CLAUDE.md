@@ -4,6 +4,8 @@ Native macOS client for Claude Code. Pure AppKit (Swift), programmatic, minimum 
 
 The app is a main window — a sidebar listing every session transcript on disk (`AgentSDK`'s `SessionDirectory`, grouped by project) beside a tabbed, splittable editor area that shows them (`TranscriptKit`'s view and workspace) — plus Settings and About. A session tab can also run its session: ccterm starts or resumes the CLI (`Sessions/`) and the tab follows it live.
 
+**What goes where:** the app holds state and flow — stores, services, view models, coordinators, and the binders that join a store to a view; it draws nothing. Every view is drawn by a package: the app's own in `Components`, shown values from `DisplayModels`. Place a new type by [macos/CLAUDE.md § Where code lives](macos/CLAUDE.md#where-code-lives--the-app-or-a-package) before writing it.
+
 ## Where to read more
 
 This file holds repo-wide commands and workflow. Engineering conventions and area rules live next to the code — when you touch an area, read its `CLAUDE.md` first.
@@ -14,6 +16,7 @@ This file holds repo-wide commands and workflow. Engineering conventions and are
 | The app's transcript tab — page model, run rows, documents beside | [macos/ccterm/Content/Transcript/CLAUDE.md](macos/ccterm/Content/Transcript/CLAUDE.md) |
 | `TranscriptKit` package — the transcript view (API rules, internals, media, workspace, tests) | [macos/TranscriptKit/CLAUDE.md](macos/TranscriptKit/CLAUDE.md) |
 | `ExactList` package — an exact, anchored, animated list for AppKit; `SPEC.md` is normative | [macos/ExactList/CLAUDE.md](macos/ExactList/CLAUDE.md) |
+| `Components` package — every view the app draws with (components, generic controls) and the style page | [macos/Components/CLAUDE.md](macos/Components/CLAUDE.md) |
 | App unit tests (parallel safety, snapshots, measurement probes) | [cctermTests/CLAUDE.md](macos/cctermTests/CLAUDE.md) |
 | AppKit verification harness (real-tree mount, geometry / animation / interaction probes) | [cctermTests/Harness/CLAUDE.md](macos/cctermTests/Harness/CLAUDE.md) |
 | AgentSDK package + real-CLI smoke executables | [macos/AgentSDK/CLAUDE.md](macos/AgentSDK/CLAUDE.md) |
@@ -25,8 +28,8 @@ ccterm/
 ├── macos/
 │   ├── ccterm.xcodeproj/
 │   ├── ccterm/               # App sources
-│   │   ├── App/              # CCTermApp + menu commands; AppKit/ holds AppDelegate (composition root) + window controllers + main split
-│   │   ├── Content/          # About/, Settings/, Sidebar/ (session outline), Transcript/ (a transcript tab)
+│   │   ├── App/              # AppKit/: AppDelegate (the entry and composition root), the main menu, the main window's controller and split
+│   │   ├── Content/          # About/, Settings/, Transcript/ (a session tab): binders, models and mappings — their views are Components'
 │   │   ├── Accounts/         # AccountStore (JSON + keychain secrets), LaunchStore (how the CLI is launched), LaunchCheckService, SubscriptionService
 │   │   ├── Library/          # LibraryStore — the session tree on disk, and reading one transcript
 │   │   ├── Sessions/         # SessionStore — every session by transcript URL: read at rest, or run live (LiveSession, SessionState)
@@ -35,6 +38,7 @@ ccterm/
 │   │   └── Resources/
 │   ├── cctermTests/          # The app's only test target
 │   ├── TranscriptKit/        # Standalone SwiftPM package (own tests, own demo)
+│   ├── Components/             # Standalone SwiftPM package: the app's components and the DisplayModels they draw; the library depends on nothing (own tests, the style page)
 │   ├── ExactList/            # Standalone SwiftPM package: the list engine (SPEC.md, own tests, own demo)
 │   ├── AgentSDK/             # Swift SDK package over the claude CLI
 │   ├── Config.xcconfig
@@ -63,6 +67,8 @@ make fmt / make fmt-check            # swift-format + xcstrings
 make test-unit                       # app logic tests (snapshots skipped)
 make test-unit FILTER=<Class>[/testMethod]   # one class/method; naming a *SnapshotTests class runs it
 make test-kit [FILTER=<Class>]       # TranscriptKit package tests
+make test-ui [FILTER=<Class>]        # Components package tests (DesignPageSnapshotTests renders the style page off screen)
+make design                          # the style page: every Components component in its real host, live (foreground)
 make test-sdk [FILTER=<Class>]       # AgentSDK package tests
 make demo-kit                        # TranscriptKit demo app (foreground; close window to stop)
 make test-list [FILTER=<Class>]      # ExactList package tests
@@ -71,20 +77,21 @@ make demo-list                       # ExactList demo app
 make record-list [FILTER=<name>]     # ExactList demo scenarios captured off screen → /tmp/exactlist-recordings
 make logs [CONFIG=release] [CATEGORY=X] [LEVEL=debug]   # tail unified log of THIS worktree's build
 make appkit-doc SYMBOL=NSTableView   # Apple's DocC for an AppKit symbol
-make arch [SCOPE=core|app|kit|sdk|<dir>|<unit>] [DETAIL=members]   # architecture map → build/arch/ (what /arch-review reads); DETAIL=members adds each type's calls and state writers
+make icon / make sidebar-icons / make window-chrome   # regenerate the app icon / the app's glyph assets from design/ (see "Icons" in macos/CLAUDE.md)
+make arch [SCOPE=core|app|kit|sdk|<dir>|<unit>] [DETAIL=members]   # build/arch/: tree.md (the component tree from AppDelegate), data.md (store → binder → component, and each event back), rules.md (every break of macos/CLAUDE.md § Where code lives and § Component boundaries, with its fix; the terminal counts them); SCOPE adds units/, the per-directory map /arch-review reads; DETAIL=members adds each type's calls and state writers
 ```
 
 `make build` and `make test-unit` write their logs under the checkout's `macos/build/logs/` (newest 10 builds, 5 test runs kept), so a removed worktree takes them along. `make build` prints success/failure plus two log paths. On failure read the summary log first; open the full log only if the summary isn't enough — don't `tail`/`cat` it blindly.
 
 ## Tests
 
-Unit tests only — no XCUITest target. Four suites, all merge gates: `cctermTests` (`make test-unit`), TranscriptKit's own (`make test-kit`), ExactList's own (`make test-list`) and AgentSDK's own (`make test-sdk`); the package suites stay separate so each package is testable without the app. Click / keystroke / focus flows are tested by driving the session / bridge / controller directly. `*SnapshotTests.swift` files render a view to a PNG for **visual review**; they're skipped by default and on CI and run only when named with `FILTER`.
+Unit tests only — no XCUITest target. Five suites, all merge gates: `cctermTests` (`make test-unit`), TranscriptKit's own (`make test-kit`), Components' own (`make test-ui`), ExactList's own (`make test-list`) and AgentSDK's own (`make test-sdk`); the package suites stay separate so each package is testable without the app. Click / keystroke / focus flows are tested by driving the session / bridge / controller directly. `*SnapshotTests.swift` files render a view to a PNG for **visual review**; they're skipped by default and on CI and run only when named with `FILTER`.
 
-After editing a view, verify it visually: find or add its `*SnapshotTests` class, `make test-unit FILTER=<Class>`, then `open /tmp/ccterm-screenshots/<Name>.png` and look. Details in [cctermTests/CLAUDE.md](macos/cctermTests/CLAUDE.md).
+After editing a view, look at it where it lives: a component on the style page (`make test-ui FILTER=DesignPageSnapshotTests`, then its section's PNG — [Components/CLAUDE.md](macos/Components/CLAUDE.md)); a screen the app composes in its `*SnapshotTests` class (`make test-unit FILTER=<Class>`, then `open /tmp/ccterm-screenshots/<Name>.png` — [cctermTests/CLAUDE.md](macos/cctermTests/CLAUDE.md)).
 
 ## CI
 
-Every PR runs `fmt.yml` (`make fmt-check`, `make test-clean`) and `test.yml` (four jobs: `test` → `make test-unit`, `test-kit` → `make test-kit`, `test-list` → `make test-list`, `test-sdk` → `make test-sdk`; the package jobs need no Xcode project). `test.yml` caches DerivedData (`macos/build/test-dd`), keyed on runner + Xcode + `.github/cache-salt` + source hash. **If incremental CI builds go bad** (stale `.swiftmodule` link errors that don't reproduce after local `make clean`), edit `.github/cache-salt` and commit to force a cold build.
+Every PR runs `fmt.yml` (`make fmt-check`, `make test-clean`) and `test.yml` (five jobs: `test` → `make test-unit`, `test-kit` → `make test-kit`, `test-ui` → `make test-ui`, `test-list` → `make test-list`, `test-sdk` → `make test-sdk`; the package jobs need no Xcode project). `test.yml` caches DerivedData (`macos/build/test-dd`), keyed on runner + Xcode + `.github/cache-salt` + source hash. **If incremental CI builds go bad** (stale `.swiftmodule` link errors that don't reproduce after local `make clean`), edit `.github/cache-salt` and commit to force a cold build.
 
 ## Logging
 
@@ -125,7 +132,7 @@ Strings live in `Localizable.xcstrings`; source is English, `zh-Hans` is the tra
 - **Commit as you go**, one complete semantic change per commit (a fix + its test; a refactor that leaves the suite green).
 - **History is append-only, on every branch.** Integrate with `git merge origin/main` (or `gh pr update-branch`), never `git rebase`. Never collapse a branch's commits (`reset --soft`, `rebase -i`) — the squash merge does that. Never `git push --force`; if a push is rejected, merge `origin/<branch>` and push again.
 - **Open the PR only when it's ready to merge.** Pushing a branch without a PR runs no workflow (free backup); once a PR exists every push buys a full CI run (~5 min macOS). Draft PRs bill the same.
-- **All gates green locally before opening:** `make fmt-check`, `make test-unit`, `make test-kit`, `make test-list`, `make test-sdk` (`make fmt` auto-fixes). Re-run every gate after every fix. A test failure is a real bug — never skip it to get green.
+- **All gates green locally before opening:** `make fmt-check`, `make test-unit`, `make test-kit`, `make test-ui`, `make test-list`, `make test-sdk` (`make fmt` auto-fixes). Re-run every gate after every fix. A test failure is a real bug — never skip it to get green.
 - **Red CI:** a job that ran no steps is a billing failure — read the annotation (`gh run view <id>`), not the colour. A job that ran and failed is real: `gh run download <run> --dir /tmp/<name>`, reproduce locally, push the verified fix — no speculative commits.
 - **After a squash merge the branch is spent.** `git fetch origin && git checkout -B <fresh-name> origin/main`, delete the old branch locally and remotely. Never `git pull` to "fix" the divergence.
 

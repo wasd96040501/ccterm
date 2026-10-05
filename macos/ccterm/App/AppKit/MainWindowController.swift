@@ -1,6 +1,7 @@
 import AgentSDK
 import AppKit
 import Combine
+import Components
 import TranscriptWorkspace
 
 /// Window controller for the AppKit-rooted main window. The window is
@@ -21,13 +22,19 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
 
     /// The task following the shown transcript's branch.
     private var branchTask: Task<Void, Never>?
+    /// The transcript shown, and whether the library had its project when its
+    /// title was set — a session just started isn't listed until the CLI writes
+    /// its transcript, so the title waits for the library's next read.
+    private var shownTranscript: URL?
+    private var titleHasProject = false
+    private var libraryObservation: AnyCancellable?
     /// Waiting to show the window; see `showWindow(whenLoadedWithin:)`.
     private var pendingShow: AnyCancellable?
 
-    init(library: LibraryStore, sessions: SessionStore, git: GitService) {
+    init(library: LibraryStore, context: TranscriptTab.Context, git: GitService) {
         self.library = library
         self.git = git
-        splitController = MainSplitViewController(library: library, sessions: sessions)
+        splitController = MainSplitViewController(library: library, context: context)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1200, height: 860),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -40,7 +47,9 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         window.titleVisibility = .hidden
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 970, height: 540)  // the sidebar's 290 beside the editors' 680
+        // As narrow as the sidebar beside the editors' narrowest — their
+        // constraints say how narrow; the height is the window's own.
+        window.minSize = NSSize(width: 0, height: 540)
         window.contentViewController = splitController
 
         super.init(window: window)
@@ -55,6 +64,12 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         window.center()
         splitController.delegate = self
         installToolbar()
+        libraryObservation = library.$nodes.dropFirst().sink { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let url = self.shownTranscript, !self.titleHasProject else { return }
+                self.showTitle(of: url)
+            }
+        }
     }
 
     @available(*, unavailable)
@@ -89,9 +104,17 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         super.showWindow(sender)
     }
 
-    /// File › New Session…, in this window's editors.
-    func newSession() {
-        splitController.newSession()
+    /// File › New Tab, in this window's editors.
+    func newTab() {
+        splitController.newTab()
+    }
+
+    /// An action sent to nil while the window itself is first responder never
+    /// passes its content controller, so the content controller is asked here
+    /// for the target it would name.
+    override func supplementalTarget(forAction action: Selector, sender: Any?) -> Any? {
+        splitController.supplementalTarget(forAction: action, sender: sender)
+            ?? super.supplementalTarget(forAction: action, sender: sender)
     }
 
     private func installToolbar() {
@@ -128,8 +151,9 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     }
 
     /// Back and forward as one control, as Xcode's and Finder's: a momentary
-    /// segmented group, each segment a subitem with its own action, aimed at the
-    /// editor area and validated by it. Navigational, so AppKit keeps it at the leading
+    /// segmented group, each segment a subitem with the editor area's own
+    /// action sent to nil — the responder chain finds the area, which also
+    /// enables each segment. Navigational, so AppKit keeps it at the leading
     /// edge of the title area.
     private func navigationItem() -> NSToolbarItem {
         let back = String(localized: "Back")
@@ -140,12 +164,11 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
                 NSImage(systemSymbolName: "chevron.left", accessibilityDescription: back),
                 NSImage(systemSymbolName: "chevron.right", accessibilityDescription: forward),
             ].compactMap { $0 },
-            selectionMode: .momentary, labels: [back, forward], target: splitController.editorArea, action: nil)
+            selectionMode: .momentary, labels: [back, forward], target: nil, action: nil)
         for (subitem, action) in zip(
             group.subitems,
             [#selector(EditorAreaViewController.goBack(_:)), #selector(EditorAreaViewController.goForward(_:))])
         {
-            subitem.target = splitController.editorArea
             subitem.action = action
         }
         group.isNavigational = true
@@ -168,10 +191,32 @@ extension MainWindowController: MainSplitViewControllerDelegate {
     /// a name never stands over another project's branch; with no transcript,
     /// the title goes at once.
     func mainSplitViewController(_ split: MainSplitViewController, didShowTranscriptAt url: URL?) {
+        shownTranscript = url
+        guard let url else {
+            branchTask?.cancel()
+            branchTask = nil
+            titleHasProject = false
+            show(project: nil, branch: nil)
+            return
+        }
+        showTitle(of: url)
+    }
+
+    private func showTitle(of url: URL) {
         branchTask?.cancel()
         branchTask = nil
-        guard let url, let project = library.path(toTranscriptAt: url).first else {
+        guard let project = library.path(toTranscriptAt: url).first else {
+            titleHasProject = false
             show(project: nil, branch: nil)
+            return
+        }
+        titleHasProject = true
+        // A worktree session says so under its project, in place of the branch.
+        let worktree = library.path(toTranscriptAt: url).last?.worktreeBranch.map {
+            SessionTabTitle.worktreeSubtitle(branch: $0)
+        }
+        if let worktree {
+            show(project: project.title, branch: worktree)
             return
         }
         branchTask = Task { [weak self, library, git] in

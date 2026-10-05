@@ -14,12 +14,13 @@ final class PageRowChangesTests: XCTestCase {
         ids.map { row($0) }
     }
 
-    /// Applies `changes` the way a batch does — removals, inserts, reloads in
+    /// Applies `changes` the way a batch does — removals, moves, inserts, reloads in
     /// call order — to the ids of `old`, taking inserted and reloaded rows
     /// from `new`; the result must be `new`.
     private func applied(_ changes: PageRow.Changes, to old: [PageRow], toward new: [PageRow]) -> [PageRow] {
         var result = old
         for index in changes.removed.reversed() { result.remove(at: index) }
+        for move in changes.moved { result.insert(result.remove(at: move.from), at: move.to) }
         for index in changes.inserted { result.insert(new[index], at: index) }
         for index in changes.reloaded { result[index] = new[index] }
         return result
@@ -82,11 +83,35 @@ final class PageRowChangesTests: XCTestCase {
         XCTAssertEqual(PageRow.changes(from: old, to: new).reloaded, IndexSet(integer: 0))
     }
 
-    func testRowsThatSwapPlacesAreRemovedAndInsertedAgain() {
+    /// A queued prompt at the end that the CLI takes into the running turn
+    /// lands higher up: one move, nothing removed or inserted, and the row
+    /// that changed with it is reloaded in its new place.
+    func testAQueuedPromptTheTurnTakesInMovesOnceFromTheEnd() {
+        let old = [row("a"), row("b"), row("c"), row("q", "queued")]
+        let new = [row("a"), row("b"), row("q", "sent"), row("c")]
+        let changes = assertTurns(old, into: new)
+        XCTAssertEqual(changes.moved, [PageRow.Changes.Move(from: 3, to: 2)])
+        XCTAssertTrue(changes.removed.isEmpty)
+        XCTAssertTrue(changes.inserted.isEmpty)
+        XCTAssertEqual(changes.reloaded, IndexSet(integer: 2))
+        XCTAssertEqual(changes.regapped, IndexSet(integer: 3))
+    }
+
+    func testRowsThatSwapPlacesMoveOnce() {
         let changes = assertTurns(rows("a", "b", "c"), into: rows("c", "a", "b"))
         XCTAssertTrue(changes.reloaded.isEmpty)
-        XCTAssertEqual(changes.removed.count, 1)
-        XCTAssertEqual(changes.inserted.count, 1)
+        XCTAssertTrue(changes.removed.isEmpty)
+        XCTAssertTrue(changes.inserted.isEmpty)
+        XCTAssertEqual(changes.moved, [PageRow.Changes.Move(from: 2, to: 0)])
+    }
+
+    func testAMoveAmongRowsGoneAndNewIsNumberedAfterTheRemovals() {
+        let old = rows("x", "a", "q", "y", "b")
+        let new = rows("q", "a", "n", "b")
+        let changes = assertTurns(old, into: new)
+        XCTAssertEqual(changes.removed, IndexSet([0, 3]))
+        XCTAssertEqual(changes.moved, [PageRow.Changes.Move(from: 1, to: 0)])
+        XCTAssertEqual(changes.inserted, IndexSet(integer: 2))
     }
 
     func testAnyTwoListsTurnIntoEachOther() {

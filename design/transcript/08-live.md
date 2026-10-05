@@ -107,20 +107,30 @@ badge, not a thing.
 
 ```
                              ▣                           app icon, 64 pt, a soft glow
-                          ccterm ⌄                       folder: 22-pt pop-up
-                       ~/dev/ccterm                      11-pt tertiary
-                  ⑂ main ⌄    ⧉ Worktree                 branch pop-up · toggle; git folders only
-        A new branch from main, in a new worktree        what Send will do; height kept
+                                                         24
      ┌──────────────────────────────────────────────┐
-     │ Ask Claude to…                                │    the composer, 640 pt
+     │ Ask Claude, or type / for commands            │    the composer, 640 pt
      │                                               │
      │ Opus 5.5 ⌄   ▂▄▆ High ⌄   ✧ Auto ⌄       (↑)  │
      └──────────────────────────────────────────────┘
-                 ↩ Send   ⇧↩ New Line   ⇧⇥ Mode          11-pt tertiary, while empty
+       ▭ ccterm ⌄   ⑂ main ⌄   ☑ Use a new worktree     where Claude works: 12-pt controls
+       Starts a new branch from main                    what Send will do: 11-pt tertiary
 ```
 
-- **Centred**, vertically a third of the way down rather than at the centre
-  (the optical centre, the way Spotlight's field sits).
+- **Two things, not a stack of centred lines.** The app icon, centred, is
+  the page's one decoration; under it, one column — the card and the row
+  under it — sharing the card's edges, every word in it starting on the
+  card's 16-pt inner line. Centring every line in turn (icon, title, path,
+  controls, note, card, hints) made a pyramid, each line a different width
+  on one axis; a column has one edge to read down.
+- **The card's top edge sits at the optical centre**, a third of the way
+  down rather than at the centre (the way Spotlight's field sits), and the
+  icon hangs 24 over it. The card grows down only: more lines, the line
+  under the row and an error never move anything above it. **The line under
+  the row is an overlay**, outside the layout. In a session the card stands
+  on the window's bottom and grows up only. Nothing else on the
+  page: the keys (↩, ⇧↩, ⇧⇥) are the conventions of a field and a menu's
+  shortcut, and `/` is named by the placeholder.
 - **The decoration is the app icon** (`design/icon`, the shipped pixels) at
   64 pt — the page is the app's own front door. Behind it, a glow made of the
   icon's cursor ramp (peach → coral → violet): a vertical gradient under a
@@ -153,32 +163,42 @@ badge, not a thing.
   `NSApp.applicationIconImage` doesn't follow the appearance (to be verified
   on macOS 26), `design/icon`'s build exports the Default and Dark renders
   into an image set with Any / Dark appearances.
-- **The folder is the title**, because it is the one choice that can't be
-  undone: a 22-pt semibold pop-up with the folder's name, its path and git
-  branch under it in 11-pt tertiary. Its menu:
-  - **Recent** — the sidebar's projects, most recent first, eight at most;
-  - **Choose Folder… ⌘O** — an open panel (*Choose the folder Claude will
-    work in.*).
-- **Branch and Worktree** sit on one row under the path: a borderless
-  pop-up with the branch glyph and name, and a toggle button, **Worktree**
-  (accent-tinted when on, `aria-pressed`). Both are choices *about* the
-  folder, so they sit under it, not in its menu. **The row never moves**: the
-  toggle doesn't change either control's text, and what the choices add up to
-  is said on the line under the row — 11-pt tertiary, its height kept when it
-  has nothing to say, so the composer doesn't jump either:
-  - in place, on the checked-out branch: nothing;
-  - in place, another branch: *Switches to fix-gutter-overflow when you send*;
-  - Worktree on: *A new branch from main, in a new worktree*;
-  - a pull request: *Pull request #327, in a new worktree*.
+- **Where Claude works is a row under the card**: the folder, the branch
+  and *Use a new worktree*, borderless 12-pt controls on the card's 16-pt
+  line. They are settings of what you send, so they sit with it, after it,
+  as a mail's options do; under the card, nothing above it moves when the
+  row changes, and on Send the row fades as the card glides down.
+  - **The folder** comes first and is the one control in label ink (the
+    others are secondary): it is the one choice Send makes final. A pop-up
+    with the folder glyph and the folder's name; its path is its tooltip and
+    each item's subtitle in its menu:
+    - **Recent** — the sidebar's projects, most recent first, eight at most;
+    - **Choose Folder… ⌘O** — an open panel (*Choose the folder Claude will
+      work in.*).
+  - **The branch** — a pop-up with the branch glyph and name.
+  - **Use a new worktree** — a checkbox (`NSButton`, `.checkbox`, small).
+    Turning a worktree on is an option of the launch, taken when you send,
+    not a mode that applies now — the job of a checkbox, as *Hide extension*
+    is in a save panel. A switch is for a setting that takes effect at
+    once; a toggle button is a toolbar's.
+  - **What Send will do** is the line under the row, 11-pt tertiary,
+    leading-aligned with it, and absent when there is nothing to say:
+    - in place, on the checked-out branch: nothing;
+    - in place, another branch: *Switches to fix-gutter-overflow when you
+      send*;
+    - with a new worktree: *Starts a new branch from main*;
+    - a pull request: *Checks out pull request #327*.
 - **The branch pop-up opens a popover with a filter**, as Xcode's toolbar
-  branch picker does: a search field (focused, 26 pt) over the list,
+  branch picker does: a search field (focused, a 24-pt capsule) over the list,
   sections *Local* and *Remote* (a remote branch with a local twin is listed
-  once), 360 pt at most, then it scrolls. Typing filters; ↩ takes the first
-  match. Typing `#327` adds *Pull Request · #327 — Checked out in a new
-  worktree*, and choosing it turns Worktree on.
-- **What the branch means depends on Worktree.**
+  once), each with origin's default branch first, then the checked-out one,
+  then the rest newest commit first; 264 pt of list whatever is typed, then
+  it scrolls. Typing filters; ↩ takes the first
+  match. Typing `#327` adds *Pull Request · #327 — Checks out in a new
+  worktree*, and choosing it checks *Use a new worktree*.
+- **What the branch means depends on the worktree checkbox.**
   - **In place** it's the branch Claude works on. The checked-out one is
-    marked *Checked out here*. Another one is checked out with `git switch`
+    marked *Current branch*. Another one is checked out with `git switch`
     when you send — ccterm's step, not the CLI's. Greyed, with the reason,
     when git would refuse or it would carry your work along: *Checked out in
     another worktree*; *Uncommitted changes here — use a worktree*.
@@ -190,12 +210,12 @@ badge, not a thing.
     branch makes the worktree itself (`git worktree add -b <name>
     .claude/worktrees/<name> <branch>`) and launches the CLI in it. A pull
     request is the CLI's own: `--worktree #327`.
-- **Worktree** is off by default, and off again when the folder changes (the
-  branch goes back to the checkout's). Turning it off returns a branch that
-  can't be had in place to the checkout's. **Only a git folder has the row** —
-  the CLI refuses `--worktree` elsewhere (*Can only use --worktree in a git
-  repository*). A folder that isn't one shows *Not a git repository* in its
-  place, at the same height. A worktree session's tab title and sidebar row
+- **Use a new worktree** is off by default, and off again when the folder
+  changes (the branch goes back to the checkout's). Turning it off returns a
+  branch that can't be had in place to the checkout's. **Only a git folder
+  has a branch and the checkbox** — the CLI refuses `--worktree` elsewhere
+  (*Can only use --worktree in a git repository*). A folder that isn't one
+  shows *Not a Git repository* after the folder. A worktree session's tab title and sidebar row
   carry its branch (*quiet-otter · worktree*, *pr-327 · worktree*).
 - **Default folder**: the folder of the session tab that was active when ⌘T
   was pressed; otherwise the most recent project.
@@ -207,11 +227,27 @@ badge, not a thing.
   `current_permission_mode`. *Default* follows the CLI's setting rather than
   pinning a model.
 - **Typing `/`** at the start of the field opens command completion above the
-  field (see *Slash commands*).
+  field (see *Slash commands*). The New view's placeholder says so: *Ask
+  Claude, or type / for commands*.
 - **Send** (↩, or the arrow) launches. The page turns into the session tab in
   place: the prompt appears as the first bubble at once, the composer glides
   from its centre to the bottom (0.3 s, ease-out; Reduce Motion: a
   cross-fade), and the tab enters *Starting* — after the rise (above).
+
+**The words, in Chinese.** zh-Hans is written as Chinese, not translated
+word for word: a placeholder says what to do, a checkbox is a verb phrase,
+the note says what Send does.
+
+| English | zh-Hans |
+|---|---|
+| Ask Claude, or type / for commands | 告诉 Claude 要做什么，或输入 / 使用命令 |
+| Use a new worktree | 使用新工作树 |
+| Switches to %@ when you send | 发送时切换到 %@ |
+| Starts a new branch from %@ | 从 %@ 新建分支 |
+| Checks out pull request #%lld | 检出拉取请求 #%lld |
+| Not a Git repository | 非 Git 仓库 |
+
+*Worktree* is 工作树, as git's own Chinese has it; a branch is 分支.
 
 **Where the menus get models before any session runs.** ccterm keeps a
 **catalog** — `initialize`'s `models` (with each one's `supportedEffortLevels`,
@@ -227,45 +263,103 @@ prompt, so this leaves nothing in the sidebar.
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│ Message Claude                                                   │  14 pt, grows 1 → 8 lines
+│ Message Claude                                                   │  14 pt, 2 lines, grows to 8
 │                                                                  │
 │ Sonnet 5.5 ◷ ⌄   ▂▄▆█ Extra High ⌄   ✎ Accept Edits ⌄    ◔ 72 %  (■)│  accessory row, 28 pt
 └────────────────────────────────────────────────────────────────┘
 ```
 
 - **The card.** 720 pt wide at most, centred in the tab (the transcript's
-  column plus its margins), the card radius (see *One shape language*), window background, a hairline and a
-  soft shadow; it floats 16 pt above the tab's bottom edge and the transcript
-  scrolls under it. Focus adds a 1-pt accent ring at 45 % with a 4-pt accent
-  halo at 12 %.
+  column plus its margins), window background, a hairline and a soft
+  shadow; it floats 16 pt above the tab's bottom edge and the transcript
+  scrolls under it.
+  - **Its corners are concentric with its action button** — continuous,
+    the button's half-height and the 8 pt round it: 14 + 8 = 22 with the
+    sheet's 28-pt circle, whatever the system's size makes it in the app,
+    and the gap round the button is the same 8 all the way round, as
+    macOS 26 nests every shape in its container. A radius chosen on its own
+    (18) left the button off-centre in its corner.
+  - **No focus ring.** The caret is the focus, as in Notes and Messages: a
+    text view this size takes the keyboard without a ring, and an accent
+    halo round a whole card reads as a web form. Its controls keep the
+    system's own focus rings for Full Keyboard Access.
 - **The accessory row** is three pull-down buttons, a status slot, and the
   action button. Each pull-down is borderless, 24 pt tall, 12-pt secondary
-  text with its glyph, and a chevron; hover gives it the hover fill. Their
-  menus are NSMenus with item subtitles (`NSMenuItem.subtitle`, macOS 14.4)
-  and section headers — except Model's, a panel with a height limit (see
-  *Model*).
+  text with its glyph, and a chevron; hover gives it the hover fill. Each
+  opens its menu in an `NSPopover` (see *Menus are popovers*).
   - **Model** — the model's short name. *Fast* adds a bolt before it.
   - **Effort** — a 5-bar level glyph filled to the level, then its name. The
     bars are the page's one bit of ornament in the composer.
   - **Mode** — the mode's glyph and short name. Bypass is red, glyph and text;
     every other mode is secondary.
-- **The action button** is a 28-pt circle: an accent arrow when there is text
-  to send, a grey disabled arrow when the field is empty, a stop square
-  (label fill) while Claude works. Working *and* text in the field shows both,
-  stop to the left.
+- **The action button** is AppKit's round button (`NSButton`, the
+  `.circular` bezel, the large control size — 28 pt on the sheet). Its look
+  and its states are the system's: it acts on release, darkens while
+  pressed, has no hover, and greys when disabled.
+  - **Send** — `arrow.up`, primary tint prominence (before macOS 26, the
+    accent as its bezel colour): the accent bezel with a white arrow while
+    there is text to send; disabled when the field is empty. The system
+    takes the tint away then, and while the window isn't key.
+  - **Stop** — `stop.fill` on the plain bezel, in label ink, while Claude
+    works or starts.
+  - Working *and* text in the field shows both, Stop to the left.
 - **The status slot** (11-pt, tertiary, before the button) is empty unless
   something is out of the ordinary: *Starting Claude…*, *Compacting…*, *Will
   resume when you send*, or the coral *Waiting for you ↑* when the request
   that waits has scrolled out of view (click scrolls to it). It is never
-  truncated: when the composer narrows, the chips drop their words first
-  (the provider name, then the effort and mode names — glyphs and tooltips
-  remain), and below 380 pt the status takes a line of its own under the
-  chips.
+  truncated: as the chips' line stops holding everything, the chips drop
+  their words first (the provider name, then the effort and mode names —
+  glyphs and tooltips remain), and when even the glyphs leave it no room
+  the status takes a line of its own under the chips, which then keep the
+  words their line holds. The app measures the line; the sheet's container
+  widths only stand in for that.
 - **Context.** A 14-pt ring with a percentage appears in the status slot once
   the context is half full (`get_context_usage` after each turn); click opens
   `/context` beside. Below half, it isn't shown.
 - **Errors** (a send refused, a model the organisation doesn't allow) are one
   12-pt red line under the card, and the control reverts.
+
+### Menus are popovers
+
+Every pop-up of the composer and the New view — Model, Effort, Permission
+Mode, the folder, the branch — is an `NSPopover` holding the menu's rows,
+never an `NSMenu` or a window of our own.
+
+- **As AppKit draws it** (measured on macOS 26): the body is exactly the
+  content's size, continuous corners of 20 pt, the popover material; an arrow
+  10.5 pt tall and 28 pt at its base points at the control's centre, its tip
+  2.5 pt off the control. The composer's open above their chip, the New view's
+  below their pop-up, each on the other side when there is no room.
+- **AppKit's own transition** (`animates`, the default, left on): it fades in
+  as it opens and out as it closes, at the system's timing. The choice is
+  made on the click; the fade is only the popover leaving. It closes on a
+  click outside, on ⎋, and on a choice. Opened from another pop-up while one
+  is open, the first goes at once, as a menu does moving along a menu bar.
+- **Opened by a button.** Each pop-up is an `NSButton` that shows its bezel
+  under the pointer, darkens while pressed and stays on while its popover is
+  open; a second click closes it.
+- **One chevron.** Every pop-up's indicator is SF Symbol `chevron.down`
+  configured from its title's font at the `.small` scale — so it follows the
+  title's size and weight — 4 pt after the title, in tertiary, whatever the
+  button's state (the bezel shows hover and on). As a symbol beside text, it centres on
+  the title's cap height, not on the button's frame or baseline.
+- **One size while open, measured before it opens, never out of
+  proportion.** A popover never resizes under the pointer, and is only as
+  big as its content (HIG *Popovers*): as wide as its widest row and as tall
+  as its rows, from its least width — Effort 240, Permission Mode, Model and
+  the branch picker 300, the folder 320 — to 1.618 times it, the golden
+  ratio, on either side. Past that a path gives way in its middle (the
+  Finder's way) and a long list scrolls (Model, Fast Mode staying under
+  it). The branch picker has a list height of its own, 264 pt, since its
+  rows change as the filter does.
+- **Concentric with its corners.** The list is an inset `NSTableView`: rows
+  sit 10 pt in from the body's edges, the selection the system's. The branch
+  picker's filter is an `NSSearchField` at its regular size, a capsule 24 pt
+  tall, 8 pt from the edges, so its 12-pt round follows the body's 20.
+- **Nothing matches** the filter: the list keeps its size and says *No
+  Matching Branches* in its middle.
+- Keys as a menu's: ↑ ↓ move over what can be chosen, ↩ chooses, ⎋ closes,
+  typing selects by title — or, with a filter field, types into it.
 
 ### Model
 
@@ -278,15 +372,15 @@ each account is a section of it, in Settings' order:
 
 ```
   ┌──────────────────────────────────────────────┐
-  │ ✦ Claude Max  Subscription                    │  sticky section header
+  │ ✦ Claude Max  Subscription                    │  section header
   │   Default (recommended)    Opus 5.5           │
   │ ✓ Opus 5.5                                    │
   │   Fable 5.1 · Sonnet 5.5 · Haiku 4.5          │
-  │   7 More Models                               │  expands in place
+  │   Opus 5 · Fable 5 · Opus 4.8 · …             │  every model, none folded
   │ ▤ Work Relay  relay.example.com  Restarts the session │
   │   Default · Opus · Sonnet · Haiku           ↻ │
   │ ▤ DeepSeek  api.deepseek.com                  │
-  │   Default                                   ↻ │  ↕ scrolls, 360 pt at most
+  │   Default                                   ↻ │  ↕ scrolls past 1.618 × width
   │ ───────────────────────────────────────────── │
   │ ⚡︎ Fast Mode                            ( ●) │  a switch, outside the scroll
   └──────────────────────────────────────────────┘
@@ -298,14 +392,11 @@ have to pick a model on your behalf; and both would mean *restart* while only
 one says so. With one menu, the only expensive choice — a model in another
 account — is marked where it is chosen.
 
-- **A panel, not an NSMenu**, because it has a height limit: 360 pt, then it
-  scrolls, with each account's header sticking to the top as its models pass
-  under it. A borderless child panel with the menu material, NSMenu's metrics
-  (22-pt rows, 5-pt inset, 12-pt radius), keyboard navigation and
-  type-select. Fast Mode sits under the scroll, always visible.
-- **Older models** of an account fold into one *N More Models* row that
-  expands in place (the panel stays open, the scroll stays put). The current
-  model is never folded.
+- **A popover as tall as its list, to 1.618 times its 300 width**, then
+  the list scrolls, each account's header scrolling with its models. Fast
+  Mode sits under the list, always visible.
+- **Every model is listed**, newest first as the CLI gives them; none is
+  folded away.
 - **A section header** is the account's mark (the Claude mark for the
   subscription, a server glyph for a provider), its name, and its detail in
   tertiary (*Subscription*, the provider's host).
@@ -324,8 +415,8 @@ account — is marked where it is chosen.
   > *[Cancel]  [Restart]*
 
   While Claude works the text adds *Claude stops what it's doing now.*, the
-  button reads **Stop and Restart**, and Cancel becomes the default button —
-  Return must not throw away a turn. Restarting interrupts the turn, ends the
+  button reads **Stop and Restart**, marked destructive and no longer the
+  default — Return must not throw away a turn; Escape still cancels. Restarting interrupts the turn, ends the
   process, and resumes with `--resume` plus the new environment and
   `--model`; the transcript gets a divider *Restarted as Work Relay · Sonnet*.
   At rest or failed there is no process: the choice is free and the next Send
@@ -334,7 +425,7 @@ account — is marked where it is chosen.
 
 - **Fast Mode** is a switch (a small `NSSwitch` at the row's trailing edge) — a
   setting that stays on, not a choice among items — so toggling it leaves the
-  panel open and the chip's bolt appears behind it. Only models with
+  popover open and the chip's bolt appears behind it. Only models with
   `supportsFastMode` enable it. On others it's
   disabled: *Opus 5.5, Opus 5 and Opus 4.8 only*; on a provider's model,
   *Only with the subscription*. When the account can't use
@@ -361,7 +452,7 @@ account — is marked where it is chosen.
   ▂▄    Medium
 ✓ ▂▄▆   High                    ← subtitle: Default
   ▂▄▆█  Extra High
-  ▂▄▆██ Max                     ← subtitle: This session only
+  ▂▄▆██ Max
 ```
 
 - Levels are the model's `supportedEffortLevels`. The others are listed but
@@ -426,7 +517,7 @@ applies, and **how** ccterm sends it. The two tabs are the two halves.
 |---|---|---|---|---|---|---|---|
 | **Folder** | choose · `cwd` | — fixed | — | — | — | — | — |
 | **Branch** | choose · `git switch` at Send, or the worktree's base | — | — | — | — | — | — |
-| **Worktree** | toggle, git folders only · `--worktree` | — | — | — | — | — | — |
+| **Worktree** | checkbox, git folders only · `--worktree` | — | — | — | — | — | — |
 | **Account** | follows the model · env | choose · the launch starts over in it | confirm → restart, resume | confirm → stop, restart | confirm → stop, restart | env on resume | env on restart |
 | **Model** | choose · `--model` | choose · held, sent when ready | `set_model` · ≈ 1.5 s, `/model` bubble | choose · **after this turn** ◷ | after this turn ◷ | choose · `--model` on resume | choose · `--model` on restart |
 | **Fast** | toggle · `fastMode` flag setting | held | `apply_flag_settings` | after this turn ◷ | after this turn ◷ | flag on resume | flag on restart |
@@ -542,8 +633,9 @@ Every view on this page draws from the same few numbers.
 |---|---|---|
 | **Radius · tag** | 5 | the command token, tooltips |
 | **Radius · control** | 7 | chips, tabs, sidebar and menu rows (row = control − 2) |
-| **Radius · popover** | 12 | menus, the model panel, the slash list |
-| **Radius · card** | 18 | the composer, the alert, cards |
+| **Radius · popover** | 12 | the slash list, banners (a menu's popover is the system's 20, continuous) |
+| **Radius · card** | 18 | the alert, cards |
+| **Radius · composer** | 22 | the composer: concentric with its action button (14 + 8) |
 | **Icon · row** | 16 | anything that heads a row: sidebar, menu items, tiles |
 | **Icon · control** | 14 | inside a 12-pt control: chips, the action button, the ring |
 | **Icon · badge** | 10 | a mark on a word: the clock, the bolt, the check |

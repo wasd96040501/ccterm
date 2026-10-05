@@ -32,6 +32,11 @@ public struct AssistantMessage: Sendable, Equatable {
     /// uuids of earlier messages this one replaces; drop those rows.
     public var supersedes: [String]
     public var timestamp: Date?
+    /// The effort level the turn ran on (on disk: `effort`) — with ``model``,
+    /// what a resume passes again.
+    public var effort: Effort? = nil
+    /// The advisor's model, when one ran in this turn (`advisorModel`).
+    public var advisorModel: String? = nil
 
     public init(
         uuid: String, sessionID: String, messageID: String, model: String, content: [ContentBlock],
@@ -72,5 +77,7 @@ extension AssistantMessage: Decodable {
         self.isAborted = c.lenient(Bool.self, "aborted", "isAbortedMidStream") ?? false
         self.supersedes = c.lenient([String].self, "supersedes") ?? []
         self.timestamp = c.timestamp("timestamp")
+        self.effort = c.lenient(String.self, "effort").flatMap(Effort.init)
+        self.advisorModel = c.lenient(String.self, "advisorModel")
     }
 }

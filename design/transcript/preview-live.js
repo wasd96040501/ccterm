@@ -49,13 +49,14 @@ const MODE = (v) => MODES.find((m) => m.v === v);
 const CYCLE = ["default", "acceptEdits", "plan", "auto"]; // ⇧⇥, the CLI's own order
 
 // `branch` is what the folder has checked out (null: not a git repository);
+// `def`, origin's default branch; `local` and `remote` newest commit first;
 // `elsewhere`, branches checked out in another worktree; `dirty`, uncommitted
 // changes — both stop a switch in place.
 const FOLDERS = [
-  { name: "ccterm", path: "~/dev/ccterm", branch: "main", local: ["main", "live-session-design", "fix-gutter-overflow", "exactlist-bench", "settings-accounts"], remote: ["origin/main", "origin/release/1.4", "origin/sidebar-icons"], elsewhere: ["live-session-design"] },
-  { name: "ghostty", path: "~/dev/ghostty", branch: "main", local: ["main", "tab-accessory"], remote: ["origin/main"], dirty: true },
+  { name: "ccterm", path: "~/dev/ccterm", branch: "main", def: "main", local: ["live-session-design", "exactlist-bench", "fix-gutter-overflow", "main", "settings-accounts"], remote: ["origin/sidebar-icons", "origin/main", "origin/release/1.4"], elsewhere: ["live-session-design"] },
+  { name: "ghostty", path: "~/dev/ghostty", branch: "main", def: "main", local: ["main", "tab-accessory"], remote: ["origin/main"], dirty: true },
   { name: "claude-notes", path: "~/notes/claude-notes", branch: null }, // not a git repository
-  { name: "dotfiles", path: "~/dotfiles", branch: "master", local: ["master"], remote: ["origin/master"] },
+  { name: "dotfiles", path: "~/dotfiles", branch: "master", def: "master", local: ["master"], remote: ["origin/master"] },
 ];
 // Accounts, as Settings has them: the subscription, then API providers.
 const ACCOUNTS = [
@@ -121,8 +122,8 @@ const MODE_GLYPH = {
   bypassPermissions: `<path d="${SHIELD}"/><path d="M8 5.6v3"/>${dot(8, 10.6)}`,
 };
 const LV = {
-  chev: '<svg class="cv" viewBox="0 0 8 8"><path d="M1.5 3l2.5 2.5L6.5 3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  chev2: '<svg class="chev2" viewBox="0 0 12 12"><path d="M3 4.8L6 7.8l3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  /** chevron.down, small scale: sized in em, so it follows its title. */
+  chev: '<svg class="cv" viewBox="0 0 10 10" aria-hidden="true"><path d="M2.6 3.7L5 6.1l2.4-2.4" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   plus: '<svg width="10" height="10" viewBox="0 0 10 10"><path d="M5 1v8M1 5h8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
   up: '<svg viewBox="0 0 14 14"><path d="M7 11.5V3M3.2 6.6L7 2.8l3.8 3.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   stop: '<svg viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" rx="2" fill="currentColor"/></svg>',
@@ -312,12 +313,7 @@ function menuItems(kind, s) {
       const restarts = live && a.id !== here;
       out.push({ acct: a, note: restarts ? "Restarts the session" : "" });
       const item = (m) => ({ label: m.label, sub: m.sub, checked: cur === m.v, trail: restarts ? svg16(RESTART) : "", act: () => chooseModel(s, m.v) });
-      out.push(...ms.filter((m) => !m.other).map(item));
-      const older = ms.filter((m) => m.other);
-      if (older.length) {
-        if (s.moreModels || older.some((m) => m.v === cur)) out.push(...older.map(item));
-        else out.push({ label: `${older.length} More Models`, more: true, keep: true, act: () => { s.moreModels = true; } });
-      }
+      out.push(...ms.map(item));
     }
     out.push({ sep: true });
     out.push({ label: "Fast Mode", glyph: LV.bolt.replace('class="bolt"', 'class="g" style="padding:2px 3px"'), sub: fm.fast ? "Faster output on Opus · billed as extra usage" : fm.acct === "sub" ? "Opus 5.5, Opus 5 and Opus 4.8 only" : "Only with the subscription", toggle: true, on: shownFast(s), disabled: !fm.fast, keep: true, act: () => setFast(s, !shownFast(s)) });
@@ -330,7 +326,7 @@ function menuItems(kind, s) {
       { header: `Effort · ${m.short || m.label}` },
       ...EFFORTS.map(([v, label]) => {
         const ok = m.eff.includes(v);
-        return { label, glyph: bars(v), checked: eff === v, disabled: !ok, sub: !ok ? `Not on ${m.short || m.label}` : v === "high" ? "Default" : v === "max" ? "This session only" : null, act: () => chooseEffort(s, v) };
+        return { label, glyph: bars(v), checked: eff === v, disabled: !ok, sub: !ok ? `Not on ${m.short || m.label}` : v === "high" ? "Default" : null, act: () => chooseEffort(s, v) };
       }),
     ];
   }
@@ -362,58 +358,102 @@ function branchItems(s) {
   const why = (b) => !inPlace || b === f.branch ? null
     : (f.elsewhere || []).includes(b) ? "Checked out in another worktree"
     : f.dirty ? "Uncommitted changes here — use a worktree" : null;
-  const item = (b) => ({ label: b, checked: s.branch === b, disabled: !!why(b), sub: why(b) || (b === f.branch ? "Checked out here" : null), act: () => { s.branch = b; LW.refresh(s); } });
+  const item = (b) => ({ label: b, checked: s.branch === b, disabled: !!why(b), sub: why(b) || (b === f.branch ? "Current branch" : null), act: () => { s.branch = b; LW.refresh(s); } });
   const match = (b) => !q || b.toLowerCase().includes(q.replace(/^#/, ""));
-  const local = f.local.filter(match), remote = f.remote.filter((b) => match(b) && !f.local.includes(b.replace(/^origin\//, "")));
+  // origin's default branch first, then the checked-out one, then the rest
+  // as git lists them: newest commit first.
+  const rank = (b) => (b.replace(/^origin\//, "") === f.def ? 0 : b === f.branch ? 1 : 2);
+  const order = (list) => list.map((b, i) => [b, i]).sort((x, y) => rank(x[0]) - rank(y[0]) || x[1] - y[1]).map((p) => p[0]);
+  const local = order(f.local.filter(match)), remote = order(f.remote.filter((b) => match(b) && !f.local.includes(b.replace(/^origin\//, ""))));
   const out = [];
   if (local.length) out.push({ header: "Local" }, ...local.map(item));
   if (remote.length) out.push({ header: "Remote" }, ...remote.map(item));
   // The CLI checks out a pull request itself: --worktree #123.
   const pr = q.match(/^#?(\d+)$/);
-  if (pr) out.push({ header: "Pull Request" }, { label: `#${pr[1]}`, sub: "Checked out in a new worktree", checked: s.branch === `#${pr[1]}`, act: () => { s.branch = `#${pr[1]}`; s.worktree = true; LW.refresh(s); } });
-  if (!out.length) out.push({ label: "No Matching Branches", disabled: true });
+  if (pr) out.push({ header: "Pull Request" }, { label: `#${pr[1]}`, sub: "Checks out in a new worktree", checked: s.branch === `#${pr[1]}`, act: () => { s.branch = `#${pr[1]}`; s.worktree = true; LW.refresh(s); } });
+  // Nothing matches: the list stays its size and says so in its middle.
   return out;
 }
+
+/** Every menu is an NSPopover, as AppKit draws one (measured on macOS 26):
+ *  its body is exactly the content's size, continuous corners of 20 pt, and a
+ *  10.5-pt arrow, 28 pt at its base, its tip 2.5 pt off the control it points
+ *  at; it opens without animation. Each kind has one size, fixed while it is
+ *  open — filtering scrolls inside, the box never moves. Each is as wide as
+ *  its widest row and as tall as its rows, from its kind's width to 1.618
+ *  times it (the golden ratio) — past that the list scrolls (Model) and a
+ *  path gives way in its middle; the branch picker has 264 of list whatever
+ *  the filter leaves. */
+const PO = { r: 20, arrow: 10.5, base: 28, tip: 2.5, inset: 10 };
+const PO_KIND = { effort: { w: 240 }, mode: { w: 300 }, folder: { w: 320 }, model: { w: 300 }, branch: { w: 300, list: 264 } };
+
 function menuHTML(items, opts = {}) {
   const anyGlyph = items.some((i) => i.glyph);
   const body = items.map((it, i) => {
     if (it.sep) return '<div class="msep"></div>';
     if (it.header) return `<div class="mh"><span>${esc(it.header)}</span>${it.key ? `<kbd>${it.key}</kbd>` : ""}</div>`;
     if (it.acct) return `<div class="mh acct">${acctMark(it.acct, 14)}<span>${esc(it.acct.name)}<i>${esc(it.acct.detail)}</i></span>${it.note ? `<em>${esc(it.note)}</em>` : ""}</div>`;
-    const cls = ["mi", anyGlyph ? "" : "nog", it.toggle ? "tg" : "", it.disabled ? "dis" : "", it.danger ? "danger" : "", it.more ? "more" : "", opts.hl === i ? "hl" : ""].join(" ");
+    const cls = ["mi", anyGlyph ? "" : "nog", it.toggle ? "tg" : "", it.disabled ? "dis" : "", it.danger ? "danger" : "", opts.hl === i ? "hl" : ""].join(" ");
     // A setting, not a choice: a switch at the trailing edge (NSSwitch, small),
     // and the menu stays open so the chip can be seen to change.
     if (it.toggle) return `<div class="${cls}" data-mi="${i}" role="switch" aria-checked="${!!it.on}"><span></span>${it.glyph || "<span></span>"}<span class="l">${esc(it.label)}</span><span class="k"><span class="nsw${it.on ? " on" : ""}"></span></span>${it.sub ? `<span class="s">${esc(it.sub)}</span>` : ""}</div>`;
     return `<div class="${cls}" data-mi="${i}">${it.checked ? LV.check : "<span></span>"}${anyGlyph ? it.glyph || "<span></span>" : ""}<span class="l">${esc(it.label)}</span>${
-      it.submenu ? `<span class="k">${LV.sub}</span>` : it.k ? `<span class="k">${esc(it.k)}</span>` : it.trail ? `<span class="k t">${it.trail}</span>` : "<span></span>"
+      it.k ? `<span class="k">${esc(it.k)}</span>` : it.trail ? `<span class="k t">${it.trail}</span>` : "<span></span>"
     }${it.sub ? `<span class="s">${esc(it.sub)}</span>` : ""}</div>`;
   });
-  // A long list is a panel with its own scroller, capped in height; what
-  // follows its last separator (Fast Mode) stays below the scroll, always seen.
-  const panel = opts.panel || items.some((i) => i.acct);
-  if (!panel) return `<div class="lv-menu${opts.static ? " static" : ""}" role="menu">${body.join("")}</div>`;
+  // The model list scrolls, its account heads with it; what follows its
+  // last separator (Fast Mode) stays below the scroll, always seen.
+  const scrolls = items.some((i) => i.acct);
   const filter = opts.filter != null ? `<div class="mfilter"><svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="5.2" cy="5.2" r="3.6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 8l2.6 2.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg><input placeholder="Filter" value="${esc(opts.filter)}" spellcheck="false"></div>` : "";
-  const cut = items.map((i) => !!i.sep).lastIndexOf(true);
+  const cut = scrolls ? items.map((i) => !!i.sep).lastIndexOf(true) : -1;
   const head = cut < 0 ? body : body.slice(0, cut), foot = cut < 0 ? [] : body.slice(cut + 1);
-  return `<div class="lv-menu${opts.static ? " static" : ""} panel" role="menu">${filter}<div class="mscroll">${head.join("")}</div>${foot.length ? `<div class="mfoot">${foot.join("")}</div>` : ""}</div>`;
+  const empty = opts.filter != null && !items.length ? `<div class="mempty">No Matching Branches</div>` : "";
+  const kind = PO_KIND[opts.kind] || { w: 240 };
+  const list = kind.list ? ` style="height:${kind.list}px"` : "";
+  return `<div class="lv-po${opts.static ? " static" : ""}" data-kind="${opts.kind || ""}" role="menu" style="min-width:${kind.w}px;max-width:${Math.round(kind.w * 1.618)}px">` +
+    `<svg class="po-frame" aria-hidden="true"><path/></svg>` +
+    `<div class="po-body" style="max-height:${Math.round(kind.w * 1.618)}px">${filter}<div class="mscroll"${list}>${empty || head.join("")}</div>${foot.length ? `<div class="mfoot">${foot.join("")}</div>` : ""}</div></div>`;
+}
+
+/** Draws `el`'s popover — body and arrow as one shape — with its arrow on
+ *  `edge` ("top": it opens below what it points at) at `ax` from its leading
+ *  edge, and clips its content to the body's continuous corners. */
+function shapePopover(el, edge, ax) {
+  const body = el.querySelector(".po-body");
+  const w = el.offsetWidth, h = body.offsetHeight, a = PO.arrow;
+  el.style.paddingTop = edge === "top" ? `${a}px` : "0";
+  el.style.paddingBottom = edge === "bottom" ? `${a}px` : "0";
+  ax = Math.max(PO.r + PO.base / 2, Math.min(w - PO.r - PO.base / 2, ax ?? w / 2));
+  const y0 = edge === "top" ? a : 0, half = PO.base / 2;
+  // The arrow flares into the body's edge and rounds at its tip.
+  const arrow = edge === "top"
+    ? `M${ax - half - 2} ${y0}C${ax - half + 6} ${y0} ${ax - 3.2} 0.4 ${ax} 0.4C${ax + 3.2} 0.4 ${ax + half - 6} ${y0} ${ax + half + 2} ${y0}Z`
+    : `M${ax - half - 2} ${y0 + h}C${ax - half + 6} ${y0 + h} ${ax - 3.2} ${y0 + h + a - 0.4} ${ax} ${y0 + h + a - 0.4}C${ax + 3.2} ${y0 + h + a - 0.4} ${ax + half - 6} ${y0 + h} ${ax + half + 2} ${y0 + h}Z`;
+  const svg = el.querySelector(".po-frame");
+  svg.setAttribute("width", w);
+  svg.setAttribute("height", h + a);
+  svg.setAttribute("viewBox", `0 0 ${w} ${h + a}`);
+  svg.querySelector("path").setAttribute("d", contRect(w, h, PO.r).replace(/(-?\d+\.\d+) (-?\d+\.\d+)/g, (_, x, y) => `${x} ${(+y + y0).toFixed(2)}`) + arrow);
+  body.style.clipPath = `path("${contRect(w, h, PO.r)}")`;
 }
 
 const MENU = {
-  el: null, sub: null, items: null, chip: null,
+  el: null, items: null, chip: null,
   open(chip, kind, s) {
-    this.close();
+    this.close({ at: "once" }); // moving from another button: one menu replaces another, no fade
     this.items = menuItems(kind, s);
     this.kind = kind;
     this.s = s;
     this.chip = chip;
     chip.classList.add("open");
-    const filtered = kind === "branch"; // a popover with a filter field, as Xcode's branch picker
+    const filtered = kind === "branch"; // a filter field over the list, as Xcode's branch picker
     if (filtered) { s.bq = ""; this.items = menuItems(kind, s); }
     const host = document.createElement("div");
-    host.innerHTML = menuHTML(this.items, filtered ? { filter: "", panel: true } : {});
+    host.innerHTML = menuHTML(this.items, filtered ? { filter: "", kind } : { kind });
     this.el = host.firstElementChild;
     document.body.appendChild(this.el);
-    this.place(this.el, chip.getBoundingClientRect(), chip.closest(".lv-new") ? "below" : "auto");
+    this.place(this.el, chip.getBoundingClientRect(), chip.closest(".lv-new") ? "below" : "above");
+    this.el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 150, easing: "ease-out" });
     if (filtered) {
       const input = this.el.querySelector(".mfilter input");
       input.focus();
@@ -421,7 +461,7 @@ const MENU = {
         s.bq = input.value;
         this.items = menuItems(kind, s);
         const tmp = document.createElement("div");
-        tmp.innerHTML = menuHTML(this.items, { filter: s.bq, panel: true });
+        tmp.innerHTML = menuHTML(this.items, { filter: s.bq, kind });
         const sc = this.el.querySelector(".mscroll");
         sc.innerHTML = tmp.querySelector(".mscroll").innerHTML;
         sc.scrollTop = 0;
@@ -436,69 +476,50 @@ const MENU = {
       const mi = e.target.closest("[data-mi]");
       if (!mi) return;
       const it = this.items[+mi.dataset.mi];
-      if (it.disabled || it.submenu) return;
-      if (it.keep) { // expands in place: the panel stays open where it is
+      if (it.disabled) return;
+      if (it.keep) { // a switch: the popover stays open, its size and scroll where they are
         e.stopPropagation();
         it.act();
         const old = this.el.querySelector(".mscroll");
-        const top = old && old.scrollTop, cap = old && old.style.maxHeight;
+        const top = old.scrollTop, height = old.style.height;
         this.items = menuItems(this.kind, this.s);
         const host = document.createElement("div");
-        host.innerHTML = menuHTML(this.items);
-        this.el.innerHTML = host.firstElementChild.innerHTML;
+        host.innerHTML = menuHTML(this.items, { kind: this.kind });
+        this.el.querySelector(".po-body").innerHTML = host.querySelector(".po-body").innerHTML;
         const sc = this.el.querySelector(".mscroll");
-        if (sc && old) { sc.style.maxHeight = cap; sc.scrollTop = top; }
+        sc.style.height = height;
+        sc.scrollTop = top;
         return;
       }
       this.close();
       it.act();
     });
-    this.el.addEventListener("mouseover", (e) => {
-      const mi = e.target.closest("[data-mi]");
-      if (!mi) return;
-      const it = this.items[+mi.dataset.mi];
-      if (it.submenu) this.openSub(mi, it.submenu);
-      else if (this.sub && !this.sub.contains(e.target)) { this.sub.remove(); this.sub = null; }
-    });
-  },
-  openSub(row, items) {
-    if (this.sub) this.sub.remove();
-    const host = document.createElement("div");
-    host.innerHTML = menuHTML(items);
-    this.sub = host.firstElementChild;
-    document.body.appendChild(this.sub);
-    const r = row.getBoundingClientRect();
-    const w = this.sub.offsetWidth;
-    const left = r.right + 4 + w > innerWidth ? r.left - w - 4 : r.right + 4;
-    this.sub.style.left = `${left}px`;
-    this.sub.style.top = `${Math.min(r.top - 5, innerHeight - this.sub.offsetHeight - 8)}px`;
-    this.sub.addEventListener("click", (e) => {
-      const mi = e.target.closest("[data-mi]");
-      if (!mi || items[+mi.dataset.mi].disabled) return;
-      const it = items[+mi.dataset.mi];
-      this.close();
-      it.act();
-    });
   },
   place(el, r, dir) {
-    // As NSMenu does: the preferred side if it fits, else the other, else the
-    // roomier one with the panel's scroller shortened to fit.
-    const roomBelow = innerHeight - 8 - (r.bottom + 4), roomAbove = r.top - 4 - 8;
-    let h = el.offsetHeight;
-    const prefer = dir === "below" ? "below" : "above";
-    const fits = (side) => (side === "below" ? roomBelow : roomAbove) >= h;
-    const below = fits(prefer) ? prefer === "below" : fits(prefer === "below" ? "above" : "below") ? prefer !== "below" : roomBelow > roomAbove;
-    const sc = el.querySelector(".mscroll"), room = below ? roomBelow : roomAbove;
-    if (sc && h > room) { sc.style.maxHeight = `${Math.max(120, sc.offsetHeight - (h - room))}px`; h = el.offsetHeight; }
-    const w = el.offsetWidth;
-    el.style.top = `${below ? r.bottom + 4 : r.top - h - 4}px`;
-    el.style.left = `${Math.max(8, Math.min(r.left - 4, innerWidth - w - 8))}px`;
+    // As NSPopover does: on the preferred side if it fits, else the other;
+    // centred on the control and kept 8 pt inside the window, its arrow at
+    // the control's centre wherever the body had to move.
+    const a = PO.arrow, gap = PO.tip;
+    const h = el.querySelector(".po-body").offsetHeight + a, w = el.offsetWidth;
+    const roomBelow = innerHeight - 8 - (r.bottom + gap), roomAbove = r.top - gap - 8;
+    const below = dir === "below" ? roomBelow >= h || roomBelow > roomAbove : !(roomAbove >= h || roomAbove > roomBelow);
+    const cx = (r.left + r.right) / 2;
+    const left = Math.max(8, Math.min(cx - w / 2, innerWidth - w - 8));
+    shapePopover(el, below ? "top" : "bottom", cx - left);
+    el.style.left = `${left}px`;
+    el.style.top = `${below ? r.bottom + gap : r.top - gap - h}px`;
   },
-  close() {
-    if (this.el) this.el.remove();
-    if (this.sub) this.sub.remove();
+  /** Closes as NSPopover does: the choice is made on the click; the popover
+   *  only fades out after it, taking no more clicks. */
+  close(o = {}) {
+    const el = this.el;
+    if (el && o.at === "once") el.remove();
+    else if (el) {
+      el.style.pointerEvents = "none";
+      el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 150, easing: "ease-in" }).onfinish = () => el.remove();
+    }
     if (this.chip) this.chip.classList.remove("open");
-    this.el = this.sub = this.chip = null;
+    this.el = this.chip = null;
   },
 };
 
@@ -530,7 +551,7 @@ function accHTML(s, o = {}) {
   if (s.ctx >= 0.5) h += ringHTML(s.ctx);
   const stoppable = working || s.state === "starting";
   if (stoppable) h += `<button class="act-btn stop" data-lv="stop" data-sid="${s.id}" title="${s.state === "starting" ? "Cancel" : "Stop"} ⌘.">${LV.stop}</button>`;
-  if (!stoppable || hasText) h += `<button class="act-btn" data-lv="send" data-sid="${s.id}" title="${working ? "Queue" : "Send"} ↩"${hasText ? "" : " disabled"}>${LV.up}</button>`;
+  if (!stoppable || hasText) h += `<button class="act-btn primary" data-lv="send" data-sid="${s.id}" title="${working ? "Queue" : "Send"} ↩"${hasText ? "" : " disabled"}>${LV.up}</button>`;
   return h;
 }
 /** A failure is the composer's own top section, not a strip above it: one
@@ -543,37 +564,72 @@ function bannerHTML(s) {
     `<div class="bt"><button class="abtn">Show Log</button><button class="abtn def" data-lv="restart" data-sid="${s.id}">Restart</button></div></div>`;
 }
 function composerHTML(s, o = {}) {
-  const ph = isNew(s) ? "Ask Claude to…" : "Message Claude";
+  const ph = isNew(s) ? (o.t || EN).ask : "Message Claude";
   const tok = s.token ? cmdToken("/", s.token) : "";
-  return `<div class="lv-comp${o.focus ? " focus" : ""}" data-sid="${s.id}">${bannerHTML(s)}
+  return `<div class="lv-comp" data-sid="${s.id}">${bannerHTML(s)}
     <div class="lv-field">${tok}<textarea rows="1" placeholder="${ph}" data-sid="${s.id}"${o.static ? " readonly tabindex=-1" : ""}>${esc(o.text != null ? o.text : s.text || "")}</textarea></div>
     <div class="lv-acc">${accHTML(s, o)}</div>
   </div><div class="lv-err">${esc(s.err || "")}</div>`;
 }
-const WT_GLYPH = '<svg class="g" viewBox="0 0 14 14" aria-hidden="true"><path d="M4.2 3.2V2.6c0-.6.4-1 1-1h6.2c.6 0 1 .4 1 1v6.2c0 .6-.4 1-1 1h-.6" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="1.6" y="4.2" width="8.2" height="8.2" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
-/** What Claude works on, under the folder: the branch pop-up and the Worktree
- *  toggle on one row that never moves, and a line under it, its height
- *  reserved, that says what Send will do. A folder that isn't a git
- *  repository has neither, and the row says so. */
-function whereHTML(s) {
+/** The New view's words. The sheet is English; ZH is the zh-Hans the app
+ *  ships, shown on one specimen (08-live.md "The words"). */
+const EN = {
+  ask: "Ask Claude, or type / for commands",
+  worktree: "Use a new worktree",
+  nogit: "Not a Git repository",
+  sw: (b) => `Switches to ${b} when you send`,
+  from: (b) => `Starts a new branch from ${b}`,
+  pr: (n) => `Checks out pull request ${n}`,
+};
+const ZH = {
+  ask: "告诉 Claude 要做什么，或输入 / 使用命令",
+  worktree: "使用新工作树",
+  nogit: "非 Git 仓库",
+  sw: (b) => `发送时切换到 ${b}`,
+  from: (b) => `从 ${b} 新建分支`,
+  pr: (n) => `检出拉取请求 ${n}`,
+};
+const BRANCH_GLYPH = '<circle cx="5" cy="3.8" r="1.7"/><circle cx="5" cy="12.2" r="1.7"/><circle cx="11" cy="5.6" r="1.7"/><path d="M5 5.5v5M11 7.3c0 2.6-6 1.4-6 3.2"/>';
+const CHECK9 = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 5.3l2 2L8 2.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+/** Where Claude works, under the card: the folder (the choice Send makes
+ *  final, so first and in label ink), the branch, and the worktree checkbox —
+ *  an option for Send, as a checkbox is in a save panel. What they add up to
+ *  is said on a line under it. Leading-aligned, so nothing moves when
+ *  that changes. A folder that isn't a git repository has no branch or
+ *  worktree, and the row says so. */
+function whereHTML(s, t = EN) {
   const f = s.folder;
-  if (!f.branch) return '<div class="lv-where"><span class="nogit">Not a git repository</span></div><div class="lv-note"></div>';
+  const folder = `<button class="lv-pop folder" data-lv-menu="folder" data-sid="${s.id}" title="${esc(f.path)}">${svg16(LV.folder)}<span>${esc(f.name)}</span>${LV.chev}</button>`;
+  if (!f.branch) return `<div class="lv-where">${folder}<span class="nogit">${t.nogit}</span></div>`;
   const pr = /^#\d+$/.test(s.branch || "");
-  const note = s.worktree
-    ? (pr ? `Pull request ${esc(s.branch)}, in a new worktree` : `A new branch from ${esc(s.branch)}, in a new worktree`)
-    : s.branch !== f.branch ? `Switches to ${esc(s.branch)} when you send` : "";
-  return `<div class="lv-where">` +
-    `<button class="lv-pop" data-lv-menu="branch" data-sid="${s.id}" title="Branch">${LV.branch}<span>${esc(s.branch)}</span>${LV.chev2}</button>` +
-    `<button class="lv-tog${s.worktree ? " on" : ""}" aria-pressed="${s.worktree}" data-lv="worktree" data-sid="${s.id}" title="Work in a new git worktree (--worktree), leaving this folder as it is">${WT_GLYPH}Worktree</button>` +
-    `</div><div class="lv-note">${note}</div>`;
+  const note = s.worktree ? (pr ? t.pr(esc(s.branch)) : t.from(esc(s.branch)))
+    : s.branch !== f.branch ? t.sw(esc(s.branch)) : "";
+  return `<div class="lv-where">${folder}` +
+    `<button class="lv-pop" data-lv-menu="branch" data-sid="${s.id}" title="Branch">${svg16(BRANCH_GLYPH)}<span>${esc(s.branch)}</span>${LV.chev}</button>` +
+    `<button class="lv-check${s.worktree ? " on" : ""}" role="checkbox" aria-checked="${s.worktree}" data-lv="worktree" data-sid="${s.id}" title="Work in a new git worktree (--worktree), leaving this folder as it is"><i>${CHECK9}</i>${t.worktree}</button>` +
+    `<span class="lv-note">${note}</span></div>`;
 }
-function heroHTML(s) {
-  const f = s.folder;
-  return `<div class="lv-hero"><div class="lv-appicon">${appIcon(64)}</div>
-    <button class="lv-folder" data-lv-menu="folder" data-sid="${s.id}">${esc(f.name)}${LV.chev2}</button>
-    <div class="lv-path">${esc(f.path)}</div>${whereHTML(s)}</div>`;
+/** The one decoration: the app icon, centred over the column. */
+const heroHTML = () => `<div class="lv-hero"><div class="lv-appicon">${appIcon(64)}</div></div>`;
+/** The New view: the icon, then the card with the row under it, in the
+ *  block the page centres (`.lv-anchor`). */
+const newViewHTML = (s, o = {}) => `<div class="lv-anchor">${heroHTML()}<div class="lv-compwrap">${composerHTML(s, o)}${whereHTML(s, o.t)}</div></div>`;
+/** Shows `s` in a row built by `whereHTML`, in place, as `configure(with:)`
+ *  does: the controls stay the ones that were there — a press never rebuilds
+ *  what it pressed — and only a row of another shape (a folder that is or
+ *  isn't a repository) is built anew. */
+function fillWhere(row, s) {
+  const tmp = document.createElement("div");
+  tmp.innerHTML = whereHTML(s);
+  const next = tmp.firstElementChild;
+  if (row.children.length !== next.children.length) return row.replaceWith(next);
+  [...next.children].forEach((part, i) => {
+    const old = row.children[i];
+    if (old.outerHTML === part.outerHTML) return;
+    for (const a of part.attributes) if (old.getAttribute(a.name) !== a.value) old.setAttribute(a.name, a.value);
+    if (old.innerHTML !== part.innerHTML) old.innerHTML = part.innerHTML;
+  });
 }
-const hintHTML = () => '<div class="lv-hint"><span><kbd>↩</kbd>Send</span><span><kbd>⇧↩</kbd>New Line</span><span><kbd>⇧⇥</kbd>Mode</span><span><kbd>/</kbd>Commands</span></div>';
 
 function slashHTML(q, on = 0, opts = {}) {
   const list = COMMANDS.filter(([n]) => n.startsWith(q));
@@ -614,8 +670,7 @@ const LW = {
     root.addEventListener("keydown", (e) => this.key(e));
     root.addEventListener("click", (e) => this.click(e));
     root.addEventListener("input", (e) => this.input(e));
-    root.addEventListener("focusin", (e) => { const c = e.target.closest(".lv-comp"); if (c) c.classList.add("focus"); const g = e.target.closest(".lv-group"); if (g) this.setFocus(+g.dataset.g); });
-    root.addEventListener("focusout", (e) => { const c = e.target.closest(".lv-comp"); if (c) c.classList.remove("focus"); });
+    root.addEventListener("focusin", (e) => { const g = e.target.closest(".lv-group"); if (g) this.setFocus(+g.dataset.g); });
   },
 
   // Tabs ------------------------------------------------------------------
@@ -723,7 +778,7 @@ const LW = {
     el.dataset.sid = t.s.id;
     if (kind === "new") {
       el.className = "lv-new";
-      el.innerHTML = `${heroHTML(t.s)}<div class="lv-compwrap" style="width:min(640px,100%);position:relative">${composerHTML(t.s)}</div>${hintHTML()}`;
+      el.innerHTML = newViewHTML(t.s);
     } else {
       el.className = "lv-sess";
       el.innerHTML = `<div class="lv-scroll"><div class="transcript"></div></div><div class="lv-dock">${composerHTML(t.s)}</div>`;
@@ -733,12 +788,9 @@ const LW = {
     this.panes.set(t.id, el);
     return el;
   },
-  /** Re-render only the parts of a page that state changes: hero, banner, accessory row. */
+  /** Re-render only the parts of a page that state changes: the row, banner, accessory row. */
   fill(el, s) {
-    if (el.dataset.kind === "new") {
-      el.querySelector(".lv-hero").outerHTML = heroHTML(s);
-      el.querySelector(".lv-hint").style.opacity = s.text || s.token ? 0 : 1;
-    }
+    if (el.dataset.kind === "new") fillWhere(el.querySelector(".lv-where"), s);
     const dock = el.querySelector(".lv-dock") || el.querySelector(".lv-compwrap");
     const banner = dock.querySelector(".lv-banner");
     if (s.state === "failed" && !banner) dock.querySelector(".lv-comp").insertAdjacentHTML("afterbegin", bannerHTML(s));
@@ -790,7 +842,7 @@ const LW = {
     }).join("");
   },
   sizeFields() {
-    this.root.querySelectorAll(".lv-field textarea").forEach((ta) => { ta.style.height = "auto"; ta.style.height = `${Math.min(176, ta.scrollHeight)}px`; });
+    this.root.querySelectorAll(".lv-field textarea").forEach((ta) => { ta.style.height = "auto"; ta.style.height = `${Math.min(176, Math.max(44, ta.scrollHeight))}px`; });
   },
 
   // Events --------------------------------------------------------------
@@ -849,8 +901,6 @@ const LW = {
   fillAcc(s) {
     for (const el of this.panes.values()) if (el.dataset.sid === s.id && el.isConnected) {
       el.querySelector(".lv-acc").innerHTML = accHTML(s);
-      const hint = el.querySelector(".lv-hint");
-      if (hint) hint.style.opacity = s.text || s.token ? 0 : 1;
     }
   },
   slash(s, ta) {
@@ -1169,11 +1219,11 @@ function resume(s, row) {
   }, 1200);
 }
 /** NSAlert as a sheet on the window: the app icon, a bold question, what will
- *  happen, two buttons. While Claude works the default is Cancel — stopping
- *  work isn't what Return should do. */
+ *  happen, two buttons. While Claude works no button is the default (the
+ *  stopping one is marked destructive): Return does nothing, Escape cancels. */
 function alertHTML(o) {
   return `<div class="lv-alert" role="alertdialog"><div class="ai">${appIcon(56)}</div><b>${esc(o.title)}</b><p>${esc(o.text)}</p><div class="ab">` +
-    `<button class="abtn${o.cancelDefault ? " def" : ""}" data-alert="0">Cancel</button><button class="abtn${o.cancelDefault ? "" : " def"}" data-alert="1">${esc(o.ok)}</button></div></div>`;
+    `<button class="abtn" data-alert="0">Cancel</button><button class="abtn${o.destructive ? "" : " def"}" data-alert="1">${esc(o.ok)}</button></div></div>`;
 }
 function restartAlert(s, v) {
   const a = acctOf(v), m = MODEL(v), working = WORKING.has(s.state);
@@ -1181,7 +1231,7 @@ function restartAlert(s, v) {
     title: `Restart this session as ${a.name}?`,
     text: `Claude Code reads its account when it starts. ccterm ends this session's process and resumes the conversation as ${a.name}, on ${m.short || m.label}.${working ? " Claude stops what it's doing now." : ""}`,
     ok: working ? "Stop and Restart" : "Restart",
-    cancelDefault: working,
+    destructive: working,
   };
 }
 function confirmRestart(s, v) {
@@ -1196,7 +1246,7 @@ function confirmRestart(s, v) {
   };
   const onKey = (e) => {
     if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(false); }
-    if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); done(!restartAlert(s, v).cancelDefault); }
+    if (e.key === "Enter" && !restartAlert(s, v).destructive) { e.preventDefault(); e.stopPropagation(); done(true); }
   };
   document.addEventListener("keydown", onKey, true);
   host.onclick = (e) => { const b = e.target.closest("[data-alert]"); if (b) done(b.dataset.alert === "1"); };
@@ -1286,11 +1336,16 @@ function buildLiveSpecimens() {
   const nv = specS({ folder: FOLDERS[0] });
   const nv2 = specS({ folder: FOLDERS[0], worktree: true, model: "relay:default", effort: "high", mode: "acceptEdits" });
   const nv3 = specS({ folder: FOLDERS[2] });
-  const newv = (x, hint) => `<div class="lv-new static" style="padding:28px 8px 22px">${heroHTML(x)}<div style="width:100%">${composerHTML(x, { static: true })}</div>${hint ? hintHTML() : ""}</div>`;
+  const nv4 = specS({ folder: FOLDERS[0], branch: "fix-gutter-overflow" });
+  const newv = (x, t) => `<div class="lv-new static" style="padding:28px 8px 22px">${newViewHTML(x, { static: true, t })}</div>`;
+  // The words the chips show for these specimens; the menus' stay English on the sheet.
+  const zh = (html) => html.replace(/>High</g, ">高<").replace(/>Accept Edits</g, ">接受编辑<").replace(/>Auto</g, ">自动<");
   document.getElementById("lv-newview").innerHTML = [
-    card("<b>The New view</b>The app icon, its cursor's light spilling onto the page — the one bit of colour. The folder is the title: the one choice Send makes final. Under it, the branch and <i>Worktree</i>, on a row that never moves.", newv(nv, true)),
-    card("<b>Worktree on · a provider's model</b>The line under the row says what Send will do; its height is kept when it says nothing. A provider's model names its account on the chip.", newv(nv2)),
-    card("<b>A folder that isn't a git repository</b>No branch, so no worktree: the row says so, at the same height, so the composer doesn't move.", newv(nv3)),
+    card("<b>The New view</b>Two things: the app icon — its cursor's light on the page, the one bit of colour — and a column. The card is the column; under it, where Claude works: the folder first, in label ink (the one choice Send makes final), the branch, and <i>Use a new worktree</i>.", newv(nv)),
+    card("<b>Another branch, in place</b>What Send will do is said on a line under the row, from the same edge. It sits under the card, so nothing above it moves when it comes and goes.", newv(nv4)),
+    card("<b>A new worktree · a provider's model</b>A checkbox, as an option for Send is in a save panel; the branch is now where the new one starts. A provider's model names its account on the chip.", newv(nv2)),
+    card("<b>A folder that isn't a git repository</b>No branch, so no worktree: the row says so after the folder.", newv(nv3)),
+    card("<b>In Chinese</b>Written as Chinese, not word for word: the placeholder says what to do, the checkbox is a verb phrase, the note is what Send does — 从 main 新建分支, not 基于 main 的新分支，在新工作树中.", zh(newv(nv2, ZH))),
   ].join("");
 
   // The conversation icon
@@ -1304,7 +1359,7 @@ function buildLiveSpecimens() {
 
   // Composer states
   const cs = [
-    ["<b>Idle</b>Plain: three controls and Send. The arrow lights when there is text.", { state: "idle", model: "sonnet", effort: "xhigh", mode: "acceptEdits" }, { text: "Now run the snapshot tests", focus: true }],
+    ["<b>Idle</b>Plain: three controls and Send. The arrow lights when there is text.", { state: "idle", model: "sonnet", effort: "xhigh", mode: "acceptEdits" }, { text: "Now run the snapshot tests" }],
     ["<b>Responding · a model chosen mid-turn</b>The chip takes the new name with a clock: it switches after this turn. Text in the field shows Stop and Queue.", { state: "responding", model: "opus", pendingModel: "sonnet", effort: "high", mode: "auto" }, { text: "Also update the docs" }],
     ["<b>Waiting for you</b>Coral, the one time: the request is off screen; click scrolls to it.", { state: "waiting", model: "opus", effort: "high", mode: "default" }, {}],
     ["<b>Starting</b>The launch's login-shell probe can take seconds; the prompt waits, dim, in its bubble.", { state: "starting", model: "opus", effort: "high", mode: "auto" }, {}],
@@ -1315,7 +1370,10 @@ function buildLiveSpecimens() {
     ["<b>Refused</b>The control reverts; the reason is one red line under the card.", { state: "idle", model: "opus", effort: "high", mode: "auto", err: "Opus 4.8 isn't available to your organization." }, {}],
     ["<b>A command, completed</b>The field draws the same token as the transcript's bubble.", { state: "idle", model: "opus", effort: "high", mode: "auto", token: "review" }, { text: "#327" }],
   ];
-  document.getElementById("lv-composers").innerHTML = cs.map(([c, o, so]) => card(c, staticComposer(o, so))).join("");
+  const btn = (label, cls, glyph, disabled) => `<div><button class="act-btn ${cls}"${disabled ? " disabled" : ""} tabindex="-1">${glyph}</button>${label}</div>`;
+  const buttons = card("<b>The action button — AppKit's round button</b><code>NSButton</code>, the <code>.circular</code> bezel, the large control size. Send has primary tint prominence: the accent bezel, a white <code>arrow.up</code>; with nothing to send it is disabled, and the system takes the tint away — as it does while the window isn't key. Stop is the plain bezel with <code>stop.fill</code> in label ink. Pressed, the system darkens the bezel; it acts on release, and has no hover.",
+    `<div class="btn-states">${btn("Send", "primary", LV.up)}${btn("pressed", "primary pressed", LV.up)}${btn("nothing to send", "primary", LV.up, true)}${btn("Stop", "stop", LV.stop)}${btn("pressed", "stop pressed", LV.stop)}</div>`);
+  document.getElementById("lv-composers").innerHTML = buttons + cs.map(([c, o, so]) => card(c, staticComposer(o, so))).join("");
 
   // Menus
   const idle = specS({ state: "idle", model: "opus", effort: "high", mode: "auto" });
@@ -1325,16 +1383,36 @@ function buildLiveSpecimens() {
   const fast = specS({ state: "idle", model: "opus", fast: true, effort: "high", mode: "acceptEdits" });
   const hk = specS({ state: "idle", model: "haiku", mode: "default" });
   const fig = (cap, html) => `<figure><figcaption>${cap}</figcaption>${html}</figure>`;
+  // A popover as it opens: the composer's above its chip, the New view's
+  // below its pop-up, the arrow on the control's centre.
+  const shaped = [];
+  const po = (kind, s, control, opts = {}) => {
+    shaped.push({ kind, s });
+    const above = kind !== "folder" && kind !== "branch";
+    const pop = menuHTML(opts.items || menuItems(kind, s), { static: true, kind, filter: opts.filter });
+    return `<div class="po-spec ${above ? "above" : "below"}">${above ? pop + control : control + pop}</div>`;
+  };
+  const chipStub = (label) => `<span class="chip open">${label}${LV.chev}</span>`;
+  const branchStub = `<span class="lv-pop open">${svg16(BRANCH_GLYPH)}<span>main</span>${LV.chev}</span>`;
+  const folderStub = `<span class="lv-pop folder open">${svg16(LV.folder)}<span>ccterm</span>${LV.chev}</span>`;
+  const filtered = (q) => { const s = specS({ model: "opus" }); s.bq = q; return s; };
   document.getElementById("lv-menus").innerHTML = `<div class="lv-menus">${[
-    fig("<b>Model · a New tab</b>One list, a section per account, in Settings' order. The account follows the model. Capped at 360 pt; it scrolls inside.", menuHTML(menuItems("model", newp), { static: true })),
-    fig("<b>Model · a live session, while Claude works</b>Within the account: after this turn. Another account restarts the CLI — its items say so, and choosing one asks first.", menuHTML(menuItems("model", busy), { static: true })),
-    fig("<b>Switching account in a live session</b>An NSAlert sheet. Idle: Restart is the default. While Claude works, Cancel is.", `<div class="lv-sheethost static">${alertHTML(restartAlert(busy, "relay:default"))}</div>`),
-    fig("<b>Effort · Sonnet 4.6</b>Extra High isn't on this model: it runs as High, and says why.", menuHTML(menuItems("effort", s46), { static: true })),
-    fig("<b>Permission mode · Fast on</b>Auto is greyed with its reason; Bypass waits on Settings.", menuHTML(menuItems("mode", fast), { static: true })),
-    fig("<b>Permission mode · Haiku</b>", menuHTML(menuItems("mode", hk), { static: true })),
-    fig("<b>Folder</b>The New view's title menu.", menuHTML(menuItems("folder", idle), { static: true })),
+    fig("<b>Model · a New tab</b>One list, a section per account, in Settings' order. The account follows the model. Every model under its account's head; past 1.618 times the popover's width the list scrolls, Fast Mode under it.", po("model", newp, chipStub("Opus 5.5"))),
+    fig("<b>Model · a live session, while Claude works</b>Within the account: after this turn. Another account restarts the CLI — its items say so, and choosing one asks first.", po("model", busy, chipStub("Opus 5.5"))),
+    fig("<b>Switching account in a live session</b>An NSAlert sheet. Idle: Restart is the default. While Claude works, neither is: Return does nothing, Escape cancels.", `<div class="lv-sheethost static">${alertHTML(restartAlert(busy, "relay:default"))}</div>`),
+    fig("<b>Effort · Sonnet 4.6</b>Extra High isn't on this model: it runs as High, and says why.", po("effort", s46, chipStub("Extra High"))),
+    fig("<b>Permission mode · Fast on</b>Auto is greyed with its reason; Bypass waits on Settings.", po("mode", fast, chipStub("Accept Edits"))),
+    fig("<b>Permission mode · Haiku</b>", po("mode", hk, chipStub("Ask"))),
+    fig("<b>Folder</b>The first pop-up under the New view's card.", po("folder", idle, folderStub)),
+    fig("<b>Branch</b>A search field over the list, 8 in so its capsule follows the popover's corners. Local, then Remote: origin's default branch first, then the checked-out one, then newest commit first. 300 × 264 of list whatever the filter leaves.", po("branch", idle, branchStub, { filter: "" })),
+    fig("<b>Branch · #327</b>A number offers that pull request; the box keeps its size.", po("branch", filtered("#327"), branchStub, { filter: "#327", items: menuItems("branch", filtered("#327")) })),
+    fig("<b>Branch · nothing matches</b>The list keeps its size and says so in its middle.", po("branch", filtered("zzz"), branchStub, { filter: "zzz", items: menuItems("branch", filtered("zzz")) })),
     fig("<b>Commands</b>Above the card; ↑ ↓ move, ↩ or ⇥ completes.", `<div style="width:420px">${slashHTML("", 0, { static: true })}</div>`),
   ].join("")}</div>`;
+  document.querySelectorAll("#lv-menus .po-spec").forEach((spec, i) => {
+    const el = spec.querySelector(".lv-po");
+    shapePopover(el, spec.classList.contains("above") ? "bottom" : "top");
+  });
 }
 
 // MARK: - The language: radii, icon sizes
@@ -1356,7 +1434,7 @@ function contRect(w, h, r) {
     `L${P(a, h)}C${P(b, h)} ${P(c, h - i)} ${P(d, h - e)}C${P(f, h - g)} ${P(g, h - f)} ${P(e, h - d)}C${P(i, h - c)} ${P(0, h - b)} ${P(0, h - a)}` +
     `L${P(0, a)}C${P(0, b)} ${P(i, c)} ${P(e, d)}C${P(g, f)} ${P(f, g)} ${P(d, e)}C${P(c, i)} ${P(b, 0)} ${P(a, 0)}Z`;
 }
-const RADII = { "--r-tag": 5, "--r-ctl": 7, "--r-pop": 12, "--r-card": 18 };
+const RADII = { "--r-tag": 5, "--r-ctl": 7, "--r-pop": 12, "--r-card": 18, "--r-comp": 22 };
 /** A prompt's life, from Send to the transcript (08-live.md "A prompt, from
  *  Send to the transcript"): the measured timeline, then each state its
  *  bubble can be in. */
@@ -1390,7 +1468,7 @@ function buildLang() {
   const ic = (html, label) => `<div>${html}<span>${label}</span></div>`;
   document.getElementById("lv-lang").innerHTML = [
     card(`<b>Continuous corners — what the app draws</b>Every radius on this page is a continuous corner: the curve starts further along the edge and eases into it, so no corner shows where the straight edge stops (red, a circular corner of the same radius; blue, continuous). In AppKit it's one line: <code>layer.cornerCurve = .continuous</code> with the radii as listed — no scaling. <span class="cnote">${css ? "This browser draws the sheet's corners as squircles (CSS <code>corner-shape</code>), a near match." : "This browser has no CSS <code>corner-shape</code> (Safari, so far), so the controls on this sheet show circular corners; the drawings here are the real shape."}</span>`, `<div class="sw">${ic(zoom(18), "one corner · 4×")}${ic(cmp(120, 72, 18), "card · 18")}${ic(cmp(56, 24, 7), "control · 7")}</div>`),
-    card("<b>Four radii, continuous</b>tag 5 · control 7 · popover 12 · card 18, drawn as AppKit draws them. The + and the action button stay circles; tiles stay Lamé curves.", `<div class="sw">${box("--r-tag", 28, 22, "token")}${box("--r-ctl", 64, 24, "chip · tab · row")}${box("--r-pop", 88, 56, "menu · panel")}${box("--r-card", 120, 72, "composer · alert")}</div>`),
+    card("<b>Five radii, continuous</b>tag 5 · control 7 · popover 12 · card 18 · composer 22, drawn as AppKit draws them. The composer's is not a size but a consequence: concentric with its action button, the 28-pt circle 8 pt in from its corner — 14 + 8. The + and the action button stay circles; tiles stay Lamé curves.", `<div class="sw">${box("--r-tag", 28, 22, "token")}${box("--r-ctl", 64, 24, "chip · tab · row")}${box("--r-pop", 88, 56, "menu · panel")}${box("--r-card", 120, 72, "alert")}${box("--r-comp", 160, 78, "composer")}</div>`),
     card("<b>Three icon sizes, one optical size</b>16 for anything that heads a row (sidebar, menu items, tiles); 14 inside a 12-pt control (chips, the action button, ring); 10 for a badge on a word (clock, bolt, check). Within a size, every glyph covers the same area — √(w·h) = 11.5 of 16, long side ≤ 14 — at one stroke weight, so a pencil and a shield read the same size; a thin, wide meter is sized by its width instead.", `<div class="sw">${ic(sessionIcon(16), "16 · row")}${ic(`<span style="color:var(--secondary)">${svg16(GLYPHS.change).replace('class="g"', 'width="16" height="16"')}</span>`, "16 · menu")}${ic(`<span style="color:var(--secondary)">${bars("high").replace('class="g"', 'width="14" height="14"')}</span>`, "14 · chip")}${ic(`<span style="color:var(--secondary)">${svg16(MODE_GLYPH.auto).replace('class="g"', 'width="14" height="14"')}</span>`, "14 · chip")}${ic(`<span style="color:var(--tertiary)">${LV.clock.replace('class="pend"', 'width="10" height="10"')}</span>`, "10 · badge")}</div>`),
     card("<b>A 4-pt grid; words never cut</b>Padding and gaps are 4, 8, 12, 16 or 24. When the composer narrows, labels the glyph already says go first — the provider name, then Effort's and Mode's words (kept in their tooltips) — so the status line keeps its sentence. Only titles, which can be any length, truncate.", `<div style="display:grid;gap:12px">${staticComposer({ state: "rest", model: "relay:default", effort: "high", mode: "acceptEdits" })}<div style="width:min(330px,100%)">${staticComposer({ state: "rest", model: "relay:default", effort: "high", mode: "acceptEdits" })}</div></div>`),
   ].join("");
@@ -1405,7 +1483,7 @@ function buildMatrix() {
     ["grp", "Launch-only — or a restart"],
     ["Folder", '<span class="y">choose</span> · <code>cwd</code>', '<span class="no">fixed</span>', '<span class="no">fixed</span>', '<span class="no">fixed</span>', '<span class="no">fixed</span>', '<span class="no">fixed</span>', '<span class="no">fixed</span>'],
     ["Branch", '<span class="y">choose</span> · <code>git switch</code> at Send, or the worktree\'s base', "—", "—", "—", "—", "—", "—"],
-    ["Worktree", '<span class="y">toggle</span>, git folders only · <code>--worktree</code>', "—", "—", "—", "—", "—", "—"],
+    ["Worktree", '<span class="y">checkbox</span>, git folders only · <code>--worktree</code>', "—", "—", "—", "—", "—", "—"],
     ["Account", '<span class="y">follows the model</span> · env', "follows the model · relaunch", '<span class="y">confirm</span> → restart, resume', '<span class="y">confirm</span> → stop, restart', '<span class="y">confirm</span> → stop, restart', "env on resume", "env on restart"],
     ["grp", "Steerable"],
     ["Model", '<span class="y">choose</span> · <code>--model</code>', '<span class="y">choose</span> · held', '<span class="y">now</span> · <code>set_model</code> ≈ 1.5 s', W("after this turn"), W("after this turn"), '<span class="y">choose</span> · <code>--model</code>', '<span class="y">choose</span> · <code>--model</code>'],
@@ -1423,7 +1501,7 @@ function buildMatrix() {
 
 // MARK: - Boot
 
-document.addEventListener("click", (e) => { if (MENU.el && !MENU.el.contains(e.target) && !(MENU.sub && MENU.sub.contains(e.target))) MENU.close(); });
+document.addEventListener("click", (e) => { if (MENU.el && !MENU.el.contains(e.target)) MENU.close(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && MENU.el) MENU.close(); });
 window.addEventListener("scroll", () => MENU.close(), { passive: true });
 document.addEventListener("DOMContentLoaded", () => {

@@ -44,9 +44,9 @@ final class AppKitStage {
     /// real-sized window" is the zero-config case.
     static let defaultWindowSize = CGSize(width: 1200, height: 860)
 
-    /// The main window's minimum content size. Source:
-    /// `MainWindowController` `window.minSize` (`970 × 540`). Use for
-    /// narrow-edge tests (shrink-to-fit, sidebar-collapse boundaries).
+    /// A narrow main window: the sidebar beside an editor area under 700,
+    /// at the window's least height (`MainWindowController` `window.minSize`).
+    /// Use for narrow-edge tests (shrink-to-fit, sidebar-collapse boundaries).
     static let minWindowSize = CGSize(width: 970, height: 540)
 
     // MARK: - Stored

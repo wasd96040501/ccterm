@@ -1,4 +1,5 @@
 import AgentSDK
+import DisplayModels
 import TranscriptKit
 import XCTest
 

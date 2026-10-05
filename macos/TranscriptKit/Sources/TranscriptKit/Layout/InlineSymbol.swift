@@ -142,8 +142,16 @@ struct InlineSymbol {
     init(_ design: Design, font: NSFont, color: NSColor) {
         // The one scale factor in the type: everything else is this times a
         // number the symbol published.
-        let scale = font.xHeight / design.alignment.height
+        self.init(design, scale: font.xHeight / design.alignment.height, font: font, color: color)
+    }
 
+    /// A symbol whose ink is `inkWidth` wide, where the sheet sets the glyph at
+    /// a size of its own rather than the line's (`.imgtok svg`, 11).
+    init(_ design: Design, inkWidth: CGFloat, font: NSFont, color: NSColor) {
+        self.init(design, scale: inkWidth / design.alignment.width, font: font, color: color)
+    }
+
+    private init(_ design: Design, scale: CGFloat, font: NSFont, color: NSColor) {
         self.design = design
         self.box = CGSize(
             width: design.canvas.width * scale, height: design.canvas.height * scale)

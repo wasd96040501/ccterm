@@ -30,6 +30,9 @@ public enum SystemMessage: Sendable, Equatable {
     case permissionDenied(PermissionDenied)
     /// The full slash-command list; replaces any previous list.
     case commandsChanged([SlashCommand])
+    /// The session's name, at startup when it has one and after each rename
+    /// (`session_title_changed`).
+    case sessionTitleChanged(title: String)
     case other(subtype: String, raw: JSONValue)
 }
 
@@ -241,6 +244,8 @@ extension SystemMessage: Decodable {
             case "commands_changed":
                 _ = try c.required([JSONValue].self, "commands")
                 self = .commandsChanged(c.lenientArray(SlashCommand.self, "commands") ?? [])
+            case "session_title_changed":
+                self = .sessionTitleChanged(title: try c.required(String.self, "title"))
             default:
                 self = .other(subtype: subtype, raw: decoder.rawValue())
             }

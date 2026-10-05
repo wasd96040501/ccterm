@@ -1,3 +1,4 @@
+import DisplayModels
 import Foundation
 
 /// One thing on the page, in reading order — the closed vocabulary of what a
@@ -9,7 +10,7 @@ import Foundation
 /// and a markdown row (`PageRow.rows`).
 nonisolated enum TranscriptEntry: Sendable, Equatable, Identifiable {
     /// What the reader typed.
-    case prompt(id: String, text: String)
+    case prompt(PromptEntry)
     /// What the model wrote, as markdown.
     case reply(id: String, markdown: String)
     case run(ToolRun)
@@ -20,19 +21,22 @@ nonisolated enum TranscriptEntry: Sendable, Equatable, Identifiable {
     /// reply before it.
     case interruption(id: String)
     case agentMessage(AgentMessage)
-    case question(Question)
-    case plan(Plan)
+    /// The call stays beside what the row shows of it: a decision answers the
+    /// call, and `TranscriptPage.call(_:)` finds it.
+    case question(Question, call: ToolCall)
+    case plan(Plan, call: ToolCall)
 
     var id: String {
         switch self {
-        case .prompt(let id, _), .reply(let id, _), .interruption(let id): id
+        case .prompt(let prompt): prompt.id
+        case .reply(let id, _), .interruption(let id): id
         case .run(let run): run.id
         case .news(let news): news.id
         case .command(let command): command.id
         case .divider(let divider): divider.id
         case .agentMessage(let message): message.id
-        case .question(let question): question.id
-        case .plan(let plan): plan.id
+        case .question(let question, _): question.id
+        case .plan(let plan, _): plan.id
         }
     }
 }

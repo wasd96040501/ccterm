@@ -1,6 +1,7 @@
 import AgentSDK
 import AppKit
 import Combine
+import Components
 import XCTest
 
 @testable import ccterm
@@ -102,5 +103,34 @@ final class GeneralSettingsViewControllerTests: XCTestCase {
 
         typeAndReturn("", in: folderField)
         await waitFor(launch.$preferences) { $0.configDirectory.isEmpty }
+    }
+
+    // MARK: - Allow Bypass Permissions
+
+    /// General's one button: the Allow Bypass Permissions checkbox.
+    private func bypassCheckbox() throws -> NSButton {
+        func find(_ view: NSView) -> NSButton? {
+            if let button = view as? NSButton { return button }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        return try XCTUnwrap(find(pane.view), "no Allow Bypass Permissions checkbox in General")
+    }
+
+    func testAllowBypassPermissionsStartsOffAndFollowsTheSetting() throws {
+        let checkbox = try bypassCheckbox()
+        XCTAssertEqual(checkbox.state, .off, "off by default")
+
+        launch.setAllowsBypassPermissions(true)
+        XCTAssertEqual(checkbox.state, .on, "the checkbox did not follow the setting")
+    }
+
+    func testTheCheckboxSetsAndClearsAllowBypassPermissions() throws {
+        let checkbox = try bypassCheckbox()
+
+        checkbox.performClick(nil)
+        XCTAssertTrue(launch.preferences.allowsBypassPermissions)
+
+        checkbox.performClick(nil)
+        XCTAssertFalse(launch.preferences.allowsBypassPermissions)
     }
 }

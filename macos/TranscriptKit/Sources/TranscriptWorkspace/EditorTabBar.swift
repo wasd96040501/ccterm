@@ -81,6 +81,9 @@ final class EditorTabBar: NSView, NSDraggingSource {
         var toolTip: String?
         /// The temporary tab: its title in italics and its pin hollow.
         var isPreview = false
+        /// What the tab shows in its close button's slot while the pointer is
+        /// elsewhere; the same view for the same state, so it is never rebuilt.
+        var indicator: NSView?
     }
 
     weak var delegate: EditorTabBarDelegate?
@@ -793,7 +796,33 @@ private final class EditorTabView: NSView {
     }()
 
     var isHovered = false {
-        didSet { hoverFill.isHidden = !isHovered }
+        didSet {
+            hoverFill.isHidden = !isHovered
+            // The close button takes the indicator's slot while the pointer is here.
+            indicator?.alphaValue = isHovered ? 0 : 1
+        }
+    }
+
+    /// The tab's mark, centred where the close button shows on hover: on the
+    /// centre of the glass's leading end, half the tab's height in.
+    private(set) var indicator: NSView?
+    private var indicatorConstraints: [NSLayoutConstraint] = []
+
+    private func show(indicator new: NSView?) {
+        guard new !== indicator else { return }
+        NSLayoutConstraint.deactivate(indicatorConstraints)
+        indicatorConstraints = []
+        if indicator?.superview === self { indicator?.removeFromSuperview() }
+        indicator = new
+        guard let new else { return }
+        new.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(new)
+        indicatorConstraints = [
+            new.centerXAnchor.constraint(equalTo: leadingAnchor, constant: EditorTabBar.height / 2),
+            new.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ]
+        NSLayoutConstraint.activate(indicatorConstraints)
+        new.alphaValue = isHovered ? 0 : 1
     }
 
     private let imageView: NSImageView = {
@@ -874,6 +903,7 @@ private final class EditorTabView: NSView {
             item.isPreview ? NSFontManager.shared.convert(Self.font, toHaveTrait: .italicFontMask) : Self.font
         imageView.image = item.image
         imageView.isHidden = imageView.image == nil
+        show(indicator: item.indicator)
         toolTip = item.toolTip ?? item.title
         setAccessibilityLabel(item.title)
     }

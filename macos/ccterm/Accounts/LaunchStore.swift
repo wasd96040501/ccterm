@@ -13,6 +13,7 @@ final class LaunchStore {
     /// The keys the settings have always been kept under.
     private static let commandKey = "customCLICommand"
     private static let configDirectoryKey = "claudeConfigDirectory"
+    private static let allowsBypassKey = "allowsBypassPermissions"
 
     /// What General says.
     @Published private(set) var preferences: LaunchPreferences
@@ -52,7 +53,8 @@ final class LaunchStore {
         self.resolveDirectory = resolveDirectory
         let preferences = LaunchPreferences(
             command: defaults.string(forKey: Self.commandKey) ?? "",
-            configDirectory: defaults.string(forKey: Self.configDirectoryKey) ?? "")
+            configDirectory: defaults.string(forKey: Self.configDirectoryKey) ?? "",
+            allowsBypassPermissions: defaults.bool(forKey: Self.allowsBypassKey))
         self.preferences = preferences
         let general = LaunchEnvironment.resolve(command: "", general: preferences)
         self.general = general
@@ -81,6 +83,25 @@ final class LaunchStore {
         LaunchEnvironment.resolve(command: command, general: preferences)
     }
 
+    /// How a session on `account` is launched under the current General
+    /// settings: its command, and — for a provider — the base URL, the
+    /// credential and the model names as the environment the CLI reads
+    /// (`ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY`,
+    /// `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_<FAMILY>_MODEL`) plus its own
+    /// variables. The account is read from the CLI's environment at launch;
+    /// nothing in the control protocol changes it.
+    func configuration(for account: Account, secrets: AccountSecrets) -> CLIConfiguration {
+        LaunchEnvironment.resolve(account: account, secrets: secrets, general: preferences)
+    }
+
+    /// Sets General's *Allow Bypass Permissions*. Sessions already running keep
+    /// how they were launched.
+    func setAllowsBypassPermissions(_ allows: Bool) {
+        var next = preferences
+        next.allowsBypassPermissions = allows
+        update(next)
+    }
+
     /// Sets General's launch command; empty runs `claude`. Nothing is checked
     /// here — see ``LaunchCheckService``.
     func setCommand(_ command: String) {
@@ -104,6 +125,7 @@ final class LaunchStore {
         for (value, key) in [(next.command, Self.commandKey), (next.configDirectory, Self.configDirectoryKey)] {
             if value.isEmpty { defaults.removeObject(forKey: key) } else { defaults.set(value, forKey: key) }
         }
+        defaults.set(next.allowsBypassPermissions, forKey: Self.allowsBypassKey)
         publishConfigurations()
     }
 

@@ -105,4 +105,40 @@ final class TailFollowingTests: XCTestCase {
         XCTAssertEqual(offset(mounted), Self.tail)
         XCTAssertEqual(host.tailFollowing, [true])
     }
+
+    // MARK: transcriptViewDidScroll
+
+    /// Every offset change is a report, as it happens.
+    func testEveryScrollIsReported() throws {
+        let (mounted, host) = mount()
+        defer { mounted.teardown() }
+        host.resetRecordings()
+
+        mounted.scroll(toY: 2000)
+        XCTAssertEqual(host.scrollReports, 1)
+        mounted.scroll(toY: 1000)
+        mounted.scroll(toY: 1500)
+        XCTAssertEqual(host.scrollReports, 3)
+    }
+
+    /// A programmatic scroll is a scroll.
+    func testScrollToRowReports() throws {
+        let (mounted, host) = mount()
+        defer { mounted.teardown() }
+        host.resetRecordings()
+
+        mounted.transcript.scrollToRow(at: 10, scrollPosition: .top)
+        mounted.settle()
+        XCTAssertGreaterThanOrEqual(host.scrollReports, 1)
+    }
+
+    /// Nothing moved, nothing to say.
+    func testSettlingWithoutScrollingReportsNothing() throws {
+        let (mounted, host) = mount()
+        defer { mounted.teardown() }
+        host.resetRecordings()
+
+        mounted.settle(passes: 3)
+        XCTAssertEqual(host.scrollReports, 0)
+    }
 }

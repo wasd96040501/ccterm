@@ -37,6 +37,10 @@ extension UserMessage {
         /// Text the CLI added for the model: reminders, skill bodies,
         /// scheduled prompts, notes on attached images.
         case synthetic
+        /// A turn the CLI started with its own words
+        /// (`origin.kind: "auto-continuation"`): a usage limit that reset, a
+        /// plan approved in the browser, a goal set with `/goal`.
+        case autoContinuation(text: String)
     }
 
     /// Who sent a ``Kind/message(from:text:)``.
@@ -48,7 +52,10 @@ extension UserMessage {
         case session(address: String, name: String?, mode: String?)
         /// The coordinator of the team this session works in.
         case coordinator
-        case plugin(name: String)
+        /// A plugin's prompt: `duringTurn` when it came while the model worked
+        /// (*…sent a message while you were working:*) rather than starting
+        /// a turn in the user's place.
+        case plugin(name: String, duringTurn: Bool)
     }
 
     public var kind: Kind { Kind(self) }
@@ -81,7 +88,8 @@ extension UserMessage.Kind {
         case "peer", "coordinator", "plugin":
             return relayedMessage(text) ?? .prompt
         case "auto-continuation":
-            return .synthetic
+            let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return words.isEmpty ? .synthetic : .autoContinuation(text: words)
         default:
             break
         }
@@ -121,7 +129,9 @@ extension UserMessage.Kind {
     /// `The coordinator sent a message while you were working:` — and, for
     /// some senders, followed by a note to the model.
     private static func relayedMessage(_ text: Substring) -> Self? {
-        guard let newline = text.firstIndex(of: "\n"), let sender = sender(inHeader: text[..<newline]) else {
+        guard let newline = text.firstIndex(of: "\n"),
+            let (sender, duringTurn) = Self.sender(inHeader: text[..<newline])
+        else {
             return nil
         }
         let body = text[text.index(after: newline)...]
@@ -133,15 +143,19 @@ extension UserMessage.Kind {
         }
         if sender.hasPrefix("The "), sender.hasSuffix(" plugin") {
             let name = String(sender.dropFirst("The ".count).dropLast(" plugin".count))
-            return .message(from: .plugin(name: name), text: body.removingSuffix(pluginNote))
+            return .message(
+                from: .plugin(name: name, duringTurn: duringTurn),
+                text: body.removingSuffix(duringTurn ? pluginMidTurnNote : pluginNote))
         }
         return nil
     }
 
-    /// `<sender>` in `<sender> sent a message:` or `… while you were working:`.
-    private static func sender(inHeader header: Substring) -> Substring? {
-        for ending in [" sent a message:", " sent a message while you were working:"] where header.hasSuffix(ending) {
-            return header.dropLast(ending.count)
+    /// `<sender>` in `<sender> sent a message:` or `… while you were working:`,
+    /// and whether it was the second.
+    private static func sender(inHeader header: Substring) -> (Substring, duringTurn: Bool)? {
+        for (ending, duringTurn) in [(" sent a message:", false), (" sent a message while you were working:", true)]
+        where header.hasSuffix(ending) {
+            return (header.dropLast(ending.count), duringTurn)
         }
         return nil
     }
@@ -149,6 +163,9 @@ extension UserMessage.Kind {
     private static let coordinatorNote = "Address this before completing your current task."
     private static let pluginNote =
         "This is how Claude Code surfaces a prompt a plugin submits between turns — it starts this turn in the user's place. Address the message above."
+
+    private static let pluginMidTurnNote =
+        "This is how Claude Code surfaces prompts a plugin submits mid-turn — within the running turn, often alongside the next tool result. Address the message above as you continue this turn."
 
     /// An element carrying another party's message.
     private static func message(_ element: TaggedElement) -> Self? {

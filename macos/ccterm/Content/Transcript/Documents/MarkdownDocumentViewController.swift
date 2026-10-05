@@ -42,6 +42,8 @@ final class MarkdownDocumentViewController: NSViewController {
         hasLoaded = true
         view.layoutSubtreeIfNeeded()
         transcript.reloadData()
+        // A document is read from its top; a transcript opens at its end.
+        transcript.scrollToRow(at: 0, scrollPosition: .top)
     }
 }
 

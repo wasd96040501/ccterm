@@ -56,3 +56,12 @@ extension SettingsKey where Value == Int {
     /// Days transcripts are kept before cleanup; at least 1.
     public static var cleanupPeriodDays: Self { Self("cleanupPeriodDays") }
 }
+
+extension SettingsKey where Value == JSONValue {
+    /// How `--worktree` makes its worktree: `{"baseRef": "head"}` branches from
+    /// the local HEAD, `"fresh"` (the default) from origin's default branch.
+    /// Read at launch (`--settings`). Also holds `symlinkDirectories`, `sparsePaths`
+    /// and `bgIsolation`; an applied object replaces the whole value, so a host that
+    /// reads the layer first keeps them.
+    public static var worktree: Self { Self("worktree") }
+}

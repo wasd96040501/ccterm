@@ -1,4 +1,5 @@
 import Combine
+import DisplayModels
 import Foundation
 
 /// An account being edited in its sheet. Holds the draft — the account and
@@ -190,7 +191,7 @@ final class AccountEditorViewModel {
         if let provider {
             fields.name = provider.name
             fields.baseURL = provider.baseURL
-            fields.authentication = provider.authentication
+            fields.authentication = .init(provider.authentication)
             fields.model = provider.models.main
             fields.opus = provider.models.opus
             fields.sonnet = provider.models.sonnet
@@ -216,19 +217,11 @@ final class AccountEditorViewModel {
                 plan: subscription.planName.map { String(localized: "Claude \($0)") } ?? "—")
         }
 
-        let authentication = provider?.authentication ?? .authToken
         return AccountEditorPresentation(
             canSave: canSave && canSaveCommand, baseURLError: baseURLError,
-            credentialTitle: authentication == .apiKey ? String(localized: "API key") : String(localized: "Token"),
             maskedCredential: masked(secrets.credential), subscription: details, fields: fields,
             fieldsRevision: fieldsRevision, environmentRows: rows(secrets.environment), commandDetail: command.detail)
     }
-
-    /// The Authentication menu: each way, and what it sends.
-    static let authenticationOptions: [(authentication: Account.Authentication, title: String, detail: String)] = [
-        (.authToken, String(localized: "Auth Token"), "Authorization: Bearer"),
-        (.apiKey, String(localized: "API Key"), "x-api-key"),
-    ]
 
     private static func rows(_ environment: [EnvironmentVariable]) -> [EnvironmentRow] {
         let names = environment.map(\.name)

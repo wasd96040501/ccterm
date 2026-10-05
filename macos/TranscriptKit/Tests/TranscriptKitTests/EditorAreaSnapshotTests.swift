@@ -77,6 +77,40 @@ final class EditorAreaSnapshotTests: XCTestCase {
         }
     }
 
+    /// The bar ending in its +, plain and under the pointer, with a mark in a tab
+    /// and the close button over another: `EditorArea-NewTab-{light,dark}.png`.
+    func testNewTabButtonAndIndicators() async throws {
+        let size = NSSize(width: 720, height: 96)
+        let window = TestWindow.make(contentSize: size)
+        defer { window.close() }
+        let area = EditorAreaViewController()
+        area.showsNewTabButton = true
+        let marks = SnapshotMarks()
+        area.delegate = marks
+        window.contentViewController = area
+        TestWindow.park(window, contentSize: size)
+        for title in ["Row gap and tool rows", "New Session", "Fix gutter"] {
+            let page = NSViewController()
+            page.title = title
+            page.view = NSView()
+            marks.titles[ObjectIdentifier(page)] = title
+            area.activeGroup.addTabViewItem(NSTabViewItem(viewController: page))
+        }
+        area.activeGroup.selectedTabViewItemIndex = 1
+        area.reloadIndicators()
+        window.contentView?.layoutSubtreeIfNeeded()
+        let bar = area.activeGroup.tabBar
+        bar.mouseMoved(with: Self.mouseMoved(at: bar.rect(forTabAt: 2), in: bar))
+
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            window.appearance = NSAppearance(named: appearance)
+            window.contentView?.layoutSubtreeIfNeeded()
+            try await WindowCapture.waitForFrames(of: window, spanning: 0.4)
+            let url = try await WindowCapture.capture(window, named: "EditorArea-NewTab-\(name)")
+            add(XCTAttachment(contentsOfFile: url))
+        }
+    }
+
     private static func mouseMoved(at rect: NSRect, in view: NSView) -> NSEvent {
         NSEvent.mouseEvent(
             with: .mouseMoved, location: view.convert(NSPoint(x: rect.midX, y: rect.midY), to: nil),
@@ -145,5 +179,42 @@ private final class SnapshotPage: NSViewController, TranscriptViewDataSource,
 
     func transcriptView(_ transcriptView: TranscriptView, rowAt row: Int) -> TranscriptRow {
         rows[row]
+    }
+}
+
+/// Marks for the first and the last tab of the snapshot's bar: a coral dot and
+/// a red one, as the app's.
+@MainActor
+private final class SnapshotMarks: EditorAreaViewControllerDelegate {
+    var titles: [ObjectIdentifier: String] = [:]
+    private var views: [String: NSView] = [:]
+
+    func editorArea(_ editorArea: EditorAreaViewController, indicatorViewFor tabViewItem: NSTabViewItem) -> NSView? {
+        guard let title = tabViewItem.viewController.flatMap({ titles[ObjectIdentifier($0)] }) else { return nil }
+        let colour: NSColor
+        switch title {
+        case "Row gap and tool rows": colour = .systemOrange
+        case "Fix gutter": colour = .systemRed
+        default: return nil
+        }
+        if let view = views[title] { return view }
+        let dot = SnapshotDot(colour)
+        views[title] = dot
+        return dot
+    }
+}
+
+private final class SnapshotDot: NSView {
+    private let colour: NSColor
+    init(_ colour: NSColor) {
+        self.colour = colour
+        super.init(frame: NSRect(x: 0, y: 0, width: 14, height: 14))
+    }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("code-only") }
+    override var intrinsicContentSize: NSSize { NSSize(width: 14, height: 14) }
+    override func draw(_ dirtyRect: NSRect) {
+        colour.setFill()
+        NSBezierPath(ovalIn: NSRect(x: 4, y: 4, width: 6, height: 6)).fill()
     }
 }

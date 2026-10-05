@@ -1,3 +1,4 @@
+import DisplayModels
 import Foundation
 
 /// A configuration folder being typed, checked by looking for it on disk after

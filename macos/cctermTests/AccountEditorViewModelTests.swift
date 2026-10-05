@@ -1,4 +1,6 @@
 import AgentSDK
+import Components
+import DisplayModels
 import XCTest
 
 @testable import ccterm
@@ -66,10 +68,9 @@ final class AccountEditorViewModelTests: XCTestCase {
     func testTheCredentialRowFollowsTheAuthentication() {
         let model = newProvider()
         model.setCredential("sk-proxy-example-4b0e9d2c7c1e")
-        XCTAssertEqual(model.presentation.credentialTitle, String(localized: "Token"))
+        XCTAssertEqual(model.presentation.fields.authentication, .authToken)
         XCTAssertEqual(model.presentation.maskedCredential, "sk-••••••••7c1e")
         model.setAuthentication(.apiKey)
-        XCTAssertEqual(model.presentation.credentialTitle, String(localized: "API key"))
         XCTAssertEqual(model.presentation.fields.authentication, .apiKey)
     }
 
@@ -145,7 +146,7 @@ final class AccountEditorViewModelTests: XCTestCase {
         model.setCommand("missing")
         await waitFor(model.$presentation) { $0.commandDetail.isError }
         XCTAssertFalse(model.presentation.canSave)
-        XCTAssertEqual(model.presentation.commandDetail.text, String(localized: "\(String(localized: "Not found"))."))
+        XCTAssertEqual(model.presentation.commandDetail, .problem(String(localized: "Not found"), fallback: nil))
         model.setCommand("")
         XCTAssertEqual(
             model.presentation.commandDetail, .none, "General's launch is known, so its answer shows at once")

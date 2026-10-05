@@ -1,5 +1,7 @@
 import AgentSDK
 import AppKit
+import Components
+import DisplayModels
 import TranscriptWorkspace
 import XCTest
 
@@ -27,8 +29,9 @@ final class DocumentRoutingTests: XCTestCase {
         area = try XCTUnwrap(split.splitViewItems[1].viewController as? EditorAreaViewController)
         let sidebar = try XCTUnwrap(split.splitViewItems[0].viewController as? SidebarViewController)
         let session = LibraryNode(id: url.path, kind: .session, title: "a", transcriptURL: url, children: [])
-        split.sidebarViewController(sidebar, didOpen: session)
-        transcript = try XCTUnwrap(area.activeViewController as? TranscriptViewController)
+        split.sidebarViewController(sidebar, didOpen: SidebarNode(session))
+        transcript = try XCTUnwrap(
+            area.activeViewController?.children.lazy.compactMap { $0 as? TranscriptViewController }.first)
     }
 
     override func tearDown() async throws {
@@ -83,7 +86,8 @@ final class DocumentRoutingTests: XCTestCase {
         split.transcriptTab(
             transcript, didRequestOpen: .document(document.reference), pinned: pinned,
             makeItem: {
-                TranscriptTab.makeItem(document, sessions: .reading { _ in Transcript(data: Data()) }, delegate: split)
+                TranscriptTab.makeDocumentItem(
+                    document, sessions: .reading { _ in Transcript(data: Data()) }, delegate: split)
             })
     }
 

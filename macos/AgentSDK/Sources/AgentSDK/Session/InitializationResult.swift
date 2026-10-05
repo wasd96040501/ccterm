@@ -12,6 +12,10 @@ public struct InitializationResult: Sendable, Equatable {
         public var supportsAdaptiveThinking: Bool
         public var supportsFastMode: Bool
         public var supportsAutoMode: Bool
+        /// The model id an alias resolves to (`opus` → `claude-opus-5-5`).
+        public var resolvedModel: String?
+        /// Listed but not choosable; the reason is folded into ``description``.
+        public var isDisabled: Bool = false
 
         public init(
             value: String, displayName: String? = nil, description: String = "", supportsEffort: Bool = false,
@@ -48,6 +52,21 @@ public struct InitializationResult: Sendable, Equatable {
     public var account: Account?
     public var outputStyle: String
     public var availableOutputStyles: [String]
+    /// The model the session runs on now (`current_model`).
+    public var currentModel: String?
+    /// The permission mode in effect (`current_permission_mode`).
+    public var currentPermissionMode: PermissionMode?
+    /// Whether Fast Mode is on, off or unavailable (`fast_mode_state`).
+    public var fastModeState: String?
+    /// Why Fast Mode can't be used, when it can't (`fast_mode_disabled_reason`).
+    public var fastModeDisabledReason: String?
+    /// Models the account can see but not select (`unavailable_models`, with
+    /// ``Model/isDisabled`` set). Disjoint from ``models``; the CLI sends them
+    /// only to hosts it allowlists, so for most it is empty.
+    public var unavailableModels: [Model] = []
+    /// Whether a turn is running when the host attaches (`session_state`:
+    /// `idle`, `running`, `requires_action`); `nil` on an older CLI.
+    public var sessionState: String?
 }
 
 // MARK: - Decodable
@@ -61,10 +80,20 @@ extension InitializationResult: Decodable {
         self.account = c.lenient(Account.self, "account")
         self.outputStyle = c.lenient(String.self, "output_style") ?? ""
         self.availableOutputStyles = c.lenient([String].self, "available_output_styles") ?? []
+        self.unavailableModels = (c.lenientArray(Model.self, "unavailable_models") ?? []).map {
+            var model = $0
+            model.isDisabled = true
+            return model
+        }
+        self.sessionState = c.lenient(String.self, "session_state")
+        self.currentModel = c.lenient(String.self, "current_model")
+        self.currentPermissionMode = c.lenient(String.self, "current_permission_mode").flatMap(PermissionMode.init)
+        self.fastModeState = c.lenient(String.self, "fast_mode_state")
+        self.fastModeDisabledReason = c.lenient(String.self, "fast_mode_disabled_reason")
     }
 }
 
-extension InitializationResult.Model: Decodable {
+extension InitializationResult.Model: Codable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: AnyCodingKey.self)
         self.value = try c.required(String.self, "value")
@@ -75,6 +104,23 @@ extension InitializationResult.Model: Decodable {
         self.supportsAdaptiveThinking = c.lenient(Bool.self, "supportsAdaptiveThinking") ?? false
         self.supportsFastMode = c.lenient(Bool.self, "supportsFastMode") ?? false
         self.supportsAutoMode = c.lenient(Bool.self, "supportsAutoMode") ?? false
+        self.resolvedModel = c.lenient(String.self, "resolvedModel")
+        self.isDisabled = c.lenient(Bool.self, "disabled") ?? false
+    }
+
+    /// The CLI's own shape, which `init(from:)` reads back.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: AnyCodingKey.self)
+        try c.encode(value, forKey: "value")
+        try c.encode(displayName, forKey: "displayName")
+        try c.encode(description, forKey: "description")
+        try c.encode(supportsEffort, forKey: "supportsEffort")
+        try c.encode(supportedEffortLevels, forKey: "supportedEffortLevels")
+        try c.encode(supportsAdaptiveThinking, forKey: "supportsAdaptiveThinking")
+        try c.encode(supportsFastMode, forKey: "supportsFastMode")
+        try c.encode(supportsAutoMode, forKey: "supportsAutoMode")
+        try c.encodeIfPresent(resolvedModel, forKey: "resolvedModel")
+        try c.encode(isDisabled, forKey: "disabled")
     }
 }
 

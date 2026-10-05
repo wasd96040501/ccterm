@@ -39,7 +39,7 @@ Directories depend downward only, so the graph stays acyclic: `Process/` and `Pr
 
 ## Smoke executables (real `claude` CLI)
 
-Anything that must run against a real CLI is an `executableTarget` here, **not an XCTest** — an XCTest in `cctermTests` boots the host app (`CCTermApp` startup, git probing) before the test body runs, so a smoke there takes minutes to fail for reasons unrelated to the smoke.
+Anything that must run against a real CLI is an `executableTarget` here, **not an XCTest** — an XCTest in `cctermTests` boots the host app (`AppDelegate` startup, git probing) before the test body runs, so a smoke there takes minutes to fail for reasons unrelated to the smoke.
 
 ```bash
 cd macos/AgentSDK

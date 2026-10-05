@@ -16,4 +16,7 @@ nonisolated extension String {
         let trimmed = drop { $0.isNewline }
         return String(trimmed.prefix { !$0.isNewline })
     }
+
+    /// Itself, or `nil` when it is empty — for an optional detail.
+    var nonEmpty: String? { isEmpty ? nil : self }
 }

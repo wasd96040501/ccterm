@@ -1,6 +1,7 @@
 import AgentSDK
 import AppKit
 import Combine
+import Components
 import TranscriptWorkspace
 import XCTest
 
@@ -102,5 +103,41 @@ final class SidebarViewControllerTests: XCTestCase {
         XCTAssertEqual(titles(), ["repo", "Newer", "Named", "Auto", "other"])
         XCTAssertEqual(outline.selectedRow, try row(titled: "Auto"))
         XCTAssertEqual(tabs(), ["Auto"])
+    }
+
+    // MARK: - Selecting a session the window already shows
+
+    private func firstSession() throws -> LibraryNode {
+        func find(_ nodes: [LibraryNode]) -> LibraryNode? {
+            for node in nodes {
+                if node.kind == .session { return node }
+                if let found = find(node.children) { return found }
+            }
+            return nil
+        }
+        return try XCTUnwrap(find(store.nodes))
+    }
+
+    /// A session just started in a New tab is selected in the sidebar without
+    /// being opened again: its tab is the one showing.
+    func testSelectingASessionTheWindowShowsReportsNothing() throws {
+        let sidebar = try XCTUnwrap(stage.mainSplit?.splitViewItems[0].viewController as? SidebarViewController)
+        let node = try firstSession()
+
+        sidebar.select(transcriptAt: try XCTUnwrap(node.transcriptURL))
+
+        XCTAssertEqual(outline.selectedRow, try row(titled: node.title), "the row was not selected")
+        XCTAssertTrue(area.groups.flatMap(\.tabViewItems).isEmpty, "selecting it opened a tab")
+    }
+
+    /// One the library doesn't list yet waits; the next one it does list is
+    /// selected as before.
+    func testASessionTheLibraryDoesNotListYetSelectsNothing() throws {
+        let sidebar = try XCTUnwrap(stage.mainSplit?.splitViewItems[0].viewController as? SidebarViewController)
+        outline.deselectAll(nil)
+
+        sidebar.select(transcriptAt: URL(fileURLWithPath: "/nowhere/not-yet.jsonl"))
+
+        XCTAssertEqual(outline.selectedRow, -1)
     }
 }

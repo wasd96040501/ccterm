@@ -270,6 +270,19 @@ public protocol TranscriptViewDelegate: AnyObject {
     /// follows does not, because it never left.
     func transcriptView(_ transcriptView: TranscriptView, didChangeTailFollowing isFollowingTail: Bool)
 
+    /// The visible region moved by scrolling — the reader's wheel, drag or key,
+    /// or `scrollToRow`, a reload or a resize that shifted the offset.
+    ///
+    /// What a host needs when something it shows depends on *which rows are on
+    /// screen* (a pill that says a row below the fold wants an answer). Sibling
+    /// of `didChangeTailFollowing`, which reports only the end of the range.
+    ///
+    /// Called on every change of the offset, once the rows it needs are
+    /// mounted — as a clip view's bounds notification is. Read the state when
+    /// it arrives (`rect(ofRow:)`, the scroll view's visible rect); like every
+    /// callback, it may not reload or scroll the transcript.
+    func transcriptViewDidScroll(_ transcriptView: TranscriptView)
+
     /// A key the reader pressed in the transcript, as the standard key
     /// bindings name it (`moveUp(_:)`, `moveDown(_:)`, …); `true` if the host
     /// handled it. Asked before the transcript scrolls by it, so a host whose
@@ -327,6 +340,8 @@ extension TranscriptViewDelegate {
     public func transcriptView(
         _ transcriptView: TranscriptView, didChangeTailFollowing isFollowingTail: Bool
     ) {}
+
+    public func transcriptViewDidScroll(_ transcriptView: TranscriptView) {}
 
     public func transcriptView(_ transcriptView: TranscriptView, doCommandBy selector: Selector) -> Bool {
         false

@@ -96,7 +96,7 @@
   </div>
 
   <h3>Playground — a window with no tabs opens on the New view</h3>
-  <p class="note"><b>Type and press ↩</b> to launch; the composer glides to the bottom. Then try the chips <i>while Claude works</i>: Model shows its clock, Effort and Mode apply at once. ↩ while it works <b>queues</b> (withdraw it before the CLI takes it). <b>⇧⇥</b> cycles the mode; <b>/</b> completes commands — try <code>/model sonnet</code>, <code>/effort max</code>, <code>/compact</code>. <b>⌘.</b> stops. The model menu lists every account; in a live session, a model from another account <b>asks before restarting</b> the CLI. Pick a <b>branch</b> (type to filter; <code>#327</code> offers that pull request) and toggle <b>Worktree</b> under a git folder. The <b>+</b> on each tab bar opens a New tab in that group — <b>⌃T</b> here, since the browser keeps ⌘T. Ask Permissions mode stops at an edit for your approval (⌘↩ / ⎋).</p>
+  <p class="note"><b>Type and press ↩</b> to launch; the composer glides to the bottom. Then try the chips <i>while Claude works</i>: Model shows its clock, Effort and Mode apply at once. ↩ while it works <b>queues</b> (withdraw it before the CLI takes it). <b>⇧⇥</b> cycles the mode; <b>/</b> completes commands — try <code>/model sonnet</code>, <code>/effort max</code>, <code>/compact</code>. <b>⌘.</b> stops. The model menu lists every account; in a live session, a model from another account <b>asks before restarting</b> the CLI. Pick a <b>branch</b> (type to filter; <code>#327</code> offers that pull request) and check <b>Use a new worktree</b> under a git folder. The <b>+</b> on each tab bar opens a New tab in that group — <b>⌃T</b> here, since the browser keeps ⌘T. Ask Permissions mode stops at an edit for your approval (⌘↩ / ⎋).</p>
   <div class="lv-scen">
     <div class="seg" role="group" aria-label="Scenario">
       <button data-scene="empty">No tabs</button><button data-scene="new">New tab</button><button data-scene="responding">Responding</button><button data-scene="waiting">Waiting for you</button><button data-scene="rest">At rest</button><button data-scene="failed">Failed</button><button data-scene="split">Split</button>
@@ -125,7 +125,7 @@
   <p class="note">Measured on the CLI (2.1.286, <code>QueueTimingSmoke</code>): the prompt is <i>started</i> within 3 ms, but its replay — the CLI writing it into the conversation — comes with the first streamed token, 2–2.5 s later. Waiting for the replay would leave the prompt invisible for that long, so the bubble is drawn at Send and the replay only confirms it, by uuid, in place.</p>
   <div id="lv-prompt"></div>
 
-  <h3>Menus — NSMenu with subtitles and section headers; the model panel scrolls</h3>
+  <h3>Menus — every one an NSPopover: the system's fade, one size while open; the model list scrolls, the branch list filters</h3>
   <div id="lv-menus"></div>
 
   <h3>One shape language — radii, icon sizes, spacing</h3>

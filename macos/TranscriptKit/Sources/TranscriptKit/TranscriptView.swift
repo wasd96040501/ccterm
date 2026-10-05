@@ -577,7 +577,7 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
     /// together. Mirrors `NSCollectionView.performBatchUpdates(_:completionHandler:)`
     /// and `NSTableView`'s `beginUpdates()` / `endUpdates()`.
     ///
-    /// Inside `updates`, call this view's `insertRows`, `removeRows`,
+    /// Inside `updates`, call this view's `insertRows`, `removeRows`, `moveRow`,
     /// `reloadRows` and `noteHeightOfRows`, with indexes following
     /// `NSTableView`'s incremental rules; nothing else on the transcript is
     /// asked for or changed until it returns. Nested calls join the outermost.
@@ -679,6 +679,28 @@ public final class TranscriptView: NSView, NSUserInterfaceValidations {
         holdingRowsStillForFind { list.removeRows(at: indexes, withAnimation: options) }
         findSession.shiftFind(byRowsRemoved: indexes)
         // Out here rather than in the sweep: see `keepFind(_:)`.
+        findSession.reportFind()
+    }
+
+    /// Announces that the row at `oldIndex` now sits at `newIndex`. Mirrors
+    /// `NSTableView.moveRow(at:to:)`: the same as a removal followed by an
+    /// insertion, except that the row's view travels and the move is animated —
+    /// the row slides from its place to the new one, and the rows between make
+    /// way. `newIndex` is the row's index once it has been taken out and put
+    /// back (the numbering the list has after the call). Inside
+    /// `performBatchUpdates`, indexes follow the batch's calls so far.
+    ///
+    /// A move changes where a row is, not what it is: a row whose content
+    /// changed too is announced with `reloadRows(at:)` afterwards. Like every
+    /// mutation, it holds the viewport still, and nothing slides while a find is
+    /// up.
+    public func moveRow(at oldIndex: Int, to newIndex: Int) {
+        // The row keeps its identity, so what is filed under it stays; the
+        // selection is found again by that identity, as after a removal.
+        sweepCache()
+        holdingRowsStillForFind { list.moveRow(at: oldIndex, to: newIndex) }
+        findSession.shiftFind(byRowsRemoved: IndexSet(integer: oldIndex))
+        findSession.shiftFind(byRowsInserted: IndexSet(integer: newIndex))
         findSession.reportFind()
     }
 
@@ -1048,6 +1070,7 @@ extension TranscriptView: ListAdapterDelegate {
 
     func listAdapterDidScroll(_ adapter: ListAdapter) {
         findSession.placeFindOverlay()
+        delegate?.transcriptViewDidScroll(self)
     }
 }
 

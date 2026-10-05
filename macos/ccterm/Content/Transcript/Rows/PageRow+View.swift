@@ -1,4 +1,6 @@
 import AppKit
+import Components
+import DisplayModels
 import TranscriptKit
 
 /// Where a page row meets TranscriptKit: which content it is, the gap above
@@ -11,7 +13,7 @@ extension PageRow {
 
     private var content: TranscriptRowContent {
         switch kind {
-        case .prompt(let text): .userMessage(text)
+        case .prompt(let bubble): .userMessage(bubble.userMessage)
         case .markdown(let markdown): .markdown(markdown)
         default: .view
         }
@@ -26,6 +28,9 @@ extension PageRow {
         switch kind {
         case .runItem, .newsItem, .showMore: return 0
         case .approval: return Self.approvalSpacing
+        // What reports on a bubble sits close under it, and its pictures close over it.
+        case .note: return Self.noteSpacing
+        case .prompt where above?.isAttachments == true: return Self.attachmentsSpacing
         default:
             let air = air + (above?.air ?? 0)
             return air == 0 ? nil : TranscriptView.rowSpacing - air
@@ -33,6 +38,12 @@ extension PageRow {
     }
 
     private static let approvalSpacing: CGFloat = 6
+    private static let noteSpacing: CGFloat = 3
+    private static let attachmentsSpacing: CGFloat = 4
+
+    private var isAttachments: Bool {
+        if case .attachments = kind { true } else { false }
+    }
 
     /// The room above and below this row's words inside its box: a line of
     /// work's wash. Every row a run or news can end on has the same, so
@@ -56,8 +67,11 @@ extension PageRow {
             ShowMoreRowView.height(for: .init(runID: runID, hidden: hidden), width: width)
         case .approval(let approval):
             ApprovalCardView.height(for: approval, width: width)
-        case .command(let command):
-            CapsuleRowView.height(for: command, width: width)
+        case .attachments(let images):
+            AttachmentsRowView.height(
+                for: .init(images: images, titles: images.map(\.title), highlighted: nil), width: width)
+        case .note(let note):
+            NoteRowView.height(for: note, width: width)
         case .divider(let divider):
             DividerRowView.height(for: divider, width: width)
         case .interruption:
@@ -75,7 +89,8 @@ extension PageRow {
     /// Call from `transcriptView(_:viewForRow:)` only.
     @MainActor
     func makeView(
-        in transcript: TranscriptView, isSelected: Bool, flashes: Bool, delegate: PageRowViewDelegate
+        in transcript: TranscriptView, isSelected: Bool, flashes: Bool, highlightedImage: Int? = nil,
+        delegate: PageRowViewDelegate
     ) -> NSView {
         func view<V: PageRowView>(_: V.Type, _ model: V.Model) -> V {
             let view = transcript.makeView(withIdentifier: V.reuseIdentifier) { V() }
@@ -92,8 +107,12 @@ extension PageRow {
             return view(ShowMoreRowView.self, .init(runID: runID, hidden: hidden))
         case .approval(let approval):
             return view(ApprovalCardView.self, approval)
-        case .command(let command):
-            return view(CapsuleRowView.self, command)
+        case .attachments(let images):
+            return view(
+                AttachmentsRowView.self,
+                .init(images: images, titles: images.map(\.title), highlighted: highlightedImage))
+        case .note(let note):
+            return view(NoteRowView.self, note)
         case .divider(let divider):
             return view(DividerRowView.self, divider)
         case .interruption:
@@ -114,11 +133,13 @@ extension PageRow {
         case .runLine(let run, let disclosure):
             WorkLineRowView.Model(
                 line: run.line, level: .line,
-                action: run.isSingle ? .open(run.items[0].id) : .toggle(run.id, expanded: disclosure != .collapsed),
+                action: run.isSingle
+                    ? (run.items[0].opensBeside ? .open(run.items[0].id) : .none)
+                    : .toggle(run.id, expanded: disclosure != .collapsed),
                 origin: nil, isSelected: isSelected, flashes: flashes)
         case .runItem(let item):
             WorkLineRowView.Model(
-                line: item.line, level: .item, action: .open(item.id), origin: nil,
+                line: item.line, level: .item, action: item.opensBeside ? .open(item.id) : .none, origin: nil,
                 isSelected: isSelected,
                 flashes: flashes)
         case .newsLine(let news, let disclosure):

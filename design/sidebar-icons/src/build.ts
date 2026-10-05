@@ -1,6 +1,8 @@
-// Build the sidebar's glyphs: the geometry below → template SVG image sets in
-// macos/ccterm/Assets.xcassets/Sidebar, plus index.html, the design sheet,
-// drawn from the same paths. The colours are the system's, not ours.
+// Build the sidebar's glyphs: the geometry below → SVG image sets in
+// macos/Components/Sources/Components/Resources/Assets.xcassets/Sidebar, plus index.html, the design sheet,
+// drawn from the same paths. The subagent and the workflow are template glyphs
+// tinted by the system's colours; the conversation is a full-colour document
+// icon (white paper, the app's prompt on it) that is never tinted.
 //
 //   bun run build
 
@@ -8,7 +10,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 
 const ROOT = resolve(import.meta.dir, "../../..")
-const ASSETS = join(ROOT, "macos/ccterm/Assets.xcassets/Sidebar")
+const ASSETS = join(ROOT, "macos/Components/Sources/Components/Resources/Assets.xcassets/Sidebar")
 const SHEET = resolve(import.meta.dir, "../index.html")
 
 // MARK: - Colour: as Xcode colours its file types
@@ -31,6 +33,8 @@ const COLOURS = {
   // oklch(0.70 0.155 50): the folder's tab lightness, clean.
   coral: { name: "coral", light: "#e97d39", dark: "#e97d39", asset: "SidebarCoral" },
   gray: { name: "systemGray", light: "#8e8e93", dark: "#98989d" },
+  // The title's secondary ink, a step down: what the design's `--tertiary` is.
+  tertiary: { name: "tertiaryLabelColor", light: "#b4b4b6", dark: "#6c6c70" },
   indigo: { name: "systemIndigo", light: "#6155f5", dark: "#6d7cff" },
 } satisfies Record<string, Colour>
 
@@ -39,8 +43,7 @@ const COLOURS = {
 const num = (v: number) => String(Math.round(v * 1000) / 1000)
 
 /** The curve around (cx, cy), sampled; clockwise on screen. */
-function lame(cx: number, cy: number, a: number, b: number, n: number): string {
-  const steps = 144
+function lame(cx: number, cy: number, a: number, b: number, n: number, steps = 144): string {
   const points: string[] = []
   for (let i = 0; i < steps; i++) {
     const t = (2 * Math.PI * i) / steps
@@ -67,23 +70,14 @@ type Glyph = {
   geometry: string
   fill: string
   stroke?: string
+  /** A glyph drawn as it is in the design: strokes in `ink`, on its own
+   *  `size` box rather than the 16-pt grid. */
+  markup?: (ink: string) => string
+  size?: [number, number]
   colour: Colour
 }
 
 const GLYPHS: Glyph[] = [
-  {
-    asset: "SidebarSession",
-    name: "Conversation",
-    role: "a session",
-    geometry:
-      "Squircle body n = 4, 13 × 10 about (8, 7); a tail from its lower left; two 1.5-pt slots at y 5.5 and 8.5, 6.5 and 4 long.",
-    fill:
-      lame(8, 7, 6.5, 5, 4) +
-      "M3.4 10.6L8.4 11.4L3.6 14.6Q3.1 14.9 3.1 14.3Z" +
-      slot(4.75, 11.25, 5.5, 1.5) +
-      slot(4.75, 8.75, 8.5, 1.5),
-    colour: COLOURS.coral,
-  },
   {
     asset: "SidebarAgent",
     name: "Subagent",
@@ -103,7 +97,65 @@ const GLYPHS: Glyph[] = [
     stroke: "M4 6.75V9.5A2.5 2.5 0 0 0 6.5 12H9.25",
     colour: COLOURS.indigo,
   },
+  {
+    // design/transcript/preview-live.js `LV.branch`, verbatim: the sidebar row's
+    // mark after a worktree session's title. 1:1 with the design, so not a Lamé
+    // shape — three small rings and the line that joins them.
+    asset: "SidebarWorktree",
+    name: "Worktree",
+    role: "a session in a worktree",
+    geometry:
+      "The design's branch glyph as drawn there, 9 × 10: three 1.2-pt-radius rings, two stacked and one up and to the right, a 1-pt line from the lower ring past the upper to the third ring. Shown after the title, in the tertiary ink.",
+    fill: "",
+    markup: (ink) =>
+      `<g fill="none" stroke="${ink}" stroke-width="1">` +
+      `<circle cx="2.2" cy="2" r="1.2"/><circle cx="2.2" cy="8" r="1.2"/><circle cx="6.8" cy="3.4" r="1.2"/>` +
+      `<path d="M2.2 3.2v3.6M6.8 4.6c0 1.6-4.6 1-4.6 2.2"/></g>`,
+    size: [9, 10],
+    colour: COLOURS.tertiary,
+  },
 ]
+
+// MARK: - The conversation icon: white paper with the app's prompt
+//
+// A Mac document is white with its kind's emblem, the way a Swift file is white
+// paper with an orange bird (design/transcript 08-live.md). One squircle bubble
+// (n = 4, 13 × 10) with a tail to the lower left; the app icon's prompt on it,
+// small — the chevron in system grey, the cursor one solid block in the middle
+// of the icon's coral ramp. Full colour, not a template, so it stays itself on a
+// selected row, as Finder's icons do. The edge is drawn twice as wide *under*
+// the fill, so only its outer half shows and the tail joins the body with no seam.
+
+const BUBBLE =
+  lame(8, 7.2, 6.6, 5.1, 4, 96) + "M3.5 10.8L8.2 11.6L3.7 14.7Q3.2 15 3.2 14.4Z"
+const CHEVRON = "M5.1 5.3l1.9 1.9-1.9 1.9"
+const CURSOR = { x: 8.6, y: 5.3, width: 2.1, height: 3.8, rx: 0.35 }
+const INK = "#6E6E73"
+const CORAL = "#FF6E7C"
+const PAPER = {
+  light: { fill: "#FFFFFF", edge: 0.34 },
+  dark: { fill: "#F5F5F7", edge: 0.5 },
+}
+
+const DOCUMENT = {
+  asset: "SidebarSession",
+  name: "Conversation",
+  role: "a session",
+  geometry:
+    "Squircle bubble n = 4, 13 × 10 about (8, 7.2), a tail from its lower left; white paper with a 0.55-pt edge at 34 % black (50 % in Dark, on #F5F5F7). The prompt: a 1.15-pt chevron in #6E6E73 and the cursor as one coral block, #FF6E7C.",
+}
+
+function documentSvg(mode: "light" | "dark"): string {
+  const { fill, edge } = PAPER[mode]
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">` +
+    `<path d="${BUBBLE}" fill="none" stroke="#000000" stroke-opacity="${edge}" stroke-width="1.1" stroke-linejoin="round"/>` +
+    `<path d="${BUBBLE}" fill="${fill}"/>` +
+    `<path d="${CHEVRON}" fill="none" stroke="${INK}" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"/>` +
+    `<rect x="${CURSOR.x}" y="${CURSOR.y}" width="${CURSOR.width}" height="${CURSOR.height}" rx="${CURSOR.rx}" fill="${CORAL}"/>` +
+    `</svg>`
+  )
+}
 
 // MARK: - Asset catalog
 
@@ -111,6 +163,10 @@ const INFO = { author: "xcode", version: 1 }
 const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`
 
 function svg(glyph: Glyph, colour = "#000000"): string {
+  if (glyph.markup) {
+    const [w, h] = glyph.size ?? [16, 16]
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${glyph.markup(colour)}</svg>`
+  }
   const stroke = glyph.stroke
     ? `<path d="${glyph.stroke}" fill="none" stroke="${colour}" stroke-width="1.5" stroke-linecap="round"/>`
     : ""
@@ -134,6 +190,27 @@ for (const glyph of GLYPHS) {
       images: [{ filename: file, idiom: "universal" }],
       info: INFO,
       properties: { "preserves-vector-representation": true, "template-rendering-intent": "template" },
+    }),
+  )
+}
+{
+  const images = join(ASSETS, `${DOCUMENT.asset}.imageset`)
+  mkdirSync(images)
+  writeFileSync(join(images, `${DOCUMENT.asset}.svg`), `${documentSvg("light")}\n`)
+  writeFileSync(join(images, `${DOCUMENT.asset}-dark.svg`), `${documentSvg("dark")}\n`)
+  writeFileSync(
+    join(images, "Contents.json"),
+    json({
+      images: [
+        { filename: `${DOCUMENT.asset}.svg`, idiom: "universal" },
+        {
+          appearances: [{ appearance: "luminosity", value: "dark" }],
+          filename: `${DOCUMENT.asset}-dark.svg`,
+          idiom: "universal",
+        },
+      ],
+      info: INFO,
+      properties: { "preserves-vector-representation": true, "template-rendering-intent": "original" },
     }),
   )
 }
@@ -162,20 +239,56 @@ console.log(`wrote ${ASSETS}`)
 
 const grid = Array.from({ length: 17 }, (_, i) => `M0 ${i}H16M${i} 0V16`).join("")
 
-function construction(glyph: Glyph, c: string): string {
+/** What a glyph draws, centred on the 16-pt grid. */
+function drawn(glyph: Glyph, c: string): string {
+  if (glyph.markup) {
+    const [w, h] = glyph.size ?? [16, 16]
+    return `<g transform="translate(${(16 - w) / 2} ${(16 - h) / 2})">${glyph.markup(c)}</g>`
+  }
   const stroke = glyph.stroke
     ? `<path d="${glyph.stroke}" fill="none" stroke="${c}" stroke-width="1.5" stroke-linecap="round"/>`
     : ""
+  return `<path d="${glyph.fill}" fill="${c}"/>${stroke}`
+}
+
+function construction(glyph: Glyph, c: string): string {
   return (
     `<svg width="192" height="192" viewBox="0 0 16 16">` +
     `<path d="${grid}" stroke="var(--grid)" stroke-width="0.04"/>` +
     `<g fill="none" stroke="var(--key)" stroke-width="0.05" stroke-dasharray="0.25 0.2">` +
     `<circle cx="8" cy="8" r="7.5"/><path d="M8 0V16M0 8H16"/></g>` +
-    `<path d="${glyph.fill}" fill="${c}"/>${stroke}</svg>`
+    `${drawn(glyph, c)}</svg>`
   )
 }
 
-type Row = { level: number; open?: boolean; kind: "folder" | Glyph["asset"]; title: string; selected?: boolean }
+const documentIcon = (dark: boolean) => {
+  const { fill, edge } = PAPER[dark ? "dark" : "light"]
+  return (
+    `<path d="${BUBBLE}" fill="none" stroke="#000" stroke-opacity="${edge}" stroke-width="1.1" stroke-linejoin="round"/>` +
+    `<path d="${BUBBLE}" fill="${fill}"/>` +
+    `<path d="${CHEVRON}" fill="none" stroke="${INK}" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"/>` +
+    `<rect x="${CURSOR.x}" y="${CURSOR.y}" width="${CURSOR.width}" height="${CURSOR.height}" rx="${CURSOR.rx}" fill="${CORAL}"/>`
+  )
+}
+
+function documentConstruction(): string {
+  return (
+    `<svg width="192" height="192" viewBox="0 0 16 16" style="background:#e9e9eb;border-radius:12px">` +
+    `<path d="${grid}" stroke="var(--grid)" stroke-width="0.04"/>` +
+    documentIcon(false) +
+    `</svg>`
+  )
+}
+
+type Row = {
+  level: number
+  open?: boolean
+  kind: "folder" | Glyph["asset"] | "SidebarSession"
+  title: string
+  selected?: boolean
+  /** A worktree session: the branch mark after its title. */
+  worktree?: boolean
+}
 const ROWS: Row[] = [
   { level: 0, open: true, kind: "folder", title: "ccterm" },
   { level: 1, open: true, kind: "SidebarSession", title: "Sidebar and session preview", selected: true },
@@ -184,6 +297,7 @@ const ROWS: Row[] = [
   { level: 2, open: true, kind: "SidebarWorkflow", title: "review-changes" },
   { level: 3, kind: "SidebarAgent", title: "review: bugs" },
   { level: 1, open: false, kind: "SidebarSession", title: "Squash merge admin" },
+  { level: 1, open: false, kind: "SidebarSession", title: "Fix the gutter overflow", worktree: true },
 ]
 
 // Xcode's navigator geometry: 22-pt rows, 14-pt indent, the icon 13 pt past
@@ -193,23 +307,31 @@ function sidebar(dark: boolean): string {
   const rows = ROWS.map((row, i) => {
     const x = 14 + row.level * 14
     const y = 8 + i * 22
+    const isDocument = row.kind === "SidebarSession"
     const glyph = GLYPHS.find((g) => g.asset === row.kind)
     const ink = row.selected ? "#ffffff" : glyph ? (dark ? glyph.colour.dark : glyph.colour.light) : ""
     const chevron =
       row.open === undefined
         ? ""
         : `<path d="${row.open ? `M${x + 1} ${y + 9}L${x + 4} ${y + 12}L${x + 7} ${y + 9}` : `M${x + 2.5} ${y + 7.5}L${x + 5.5} ${y + 10.5}L${x + 2.5} ${y + 13.5}`}" fill="none" stroke="${row.selected ? "#fff" : dark ? "#98989d" : "#8a8a8e"}" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>`
-    const icon = glyph
-      ? `<path d="${glyph.fill}" fill="${ink}"/>` +
-        (glyph.stroke ? `<path d="${glyph.stroke}" fill="none" stroke="${ink}" stroke-width="1.5" stroke-linecap="round"/>` : "")
+    const icon = isDocument
+      ? documentIcon(dark)
+      : glyph
+      ? drawn(glyph, ink)
       : `<path d="M1 4.2Q1 3 2.2 3H6L7.4 4.4H13.8Q15 4.4 15 5.6V6H1Z" fill="#5aa8ec"/><path d="M1 5.6H15V12.8Q15 14 13.8 14H2.2Q1 14 1 12.8Z" fill="#7cc0f6"/>`
     const highlight = row.selected ? `<rect x="10" y="${y}" width="${W - 20}" height="22" rx="5" fill="#2f6fdf"/>` : ""
     const text = row.selected ? "#ffffff" : dark ? "#e8e8ea" : "#1d1d1f"
+    const mark = row.worktree ? GLYPHS.find((g) => g.asset === "SidebarWorktree") : undefined
+    // The title's width is the sheet's estimate; the app lays it out for real.
+    const wt = mark?.markup
+      ? `<g transform="translate(${x + 34 + row.title.length * 6.5 + 5} ${y + 6})">${mark.markup(row.selected ? "#fff" : dark ? mark.colour.dark : mark.colour.light)}</g>`
+      : ""
     return (
       highlight +
       chevron +
       `<g transform="translate(${x + 13} ${y + 3})">${icon}</g>` +
-      `<text x="${x + 34}" y="${y + 15.5}" font-size="13" fill="${text}">${row.title}</text>`
+      `<text x="${x + 34}" y="${y + 15.5}" font-size="13" fill="${text}">${row.title}</text>` +
+      wt
     )
   }).join("")
   return (
@@ -218,7 +340,14 @@ function sidebar(dark: boolean): string {
   )
 }
 
-const cards = GLYPHS.map((glyph) => {
+const documentCard = `<section class="card">
+  ${documentConstruction()}
+  <div class="title"><h2>${DOCUMENT.name}</h2><span>${DOCUMENT.role} · <code>${DOCUMENT.asset}</code></span></div>
+  <p>${DOCUMENT.geometry}</p>
+  <div class="swatch"><i style="background:${PAPER.light.fill};box-shadow:inset 0 0 0 1px #ccc"></i><i style="background:${PAPER.dark.fill};box-shadow:inset 0 0 0 1px #ccc"></i><code>full colour, not a template · white ${PAPER.light.fill} · ${PAPER.dark.fill} in Dark</code></div>
+</section>`
+
+const cards = documentCard + GLYPHS.map((glyph) => {
   const { name, light, dark } = glyph.colour
   return `<section class="card">
   ${construction(glyph, light)}
@@ -261,13 +390,13 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 <main>
 <header>
 <h1>Sidebar icons</h1>
-<p class="lede">Every outline is a Lamé curve |x/a|ⁿ + |y/b|ⁿ = 1 on the 16-pt grid · colours as Xcode gives its file types: system colours, and one of our own the way Swift has its own</p>
+<p class="lede">Every outline is a Lamé curve |x/a|ⁿ + |y/b|ⁿ = 1 on the 16-pt grid · the conversation is white paper with the app's prompt, as a Mac document is; the others are tinted like Xcode's file types</p>
 </header>
 <div class="cards">
 ${cards}
 </div>
 <div class="mocks">${sidebar(false)}${sidebar(true)}</div>
-<p class="note">Sidebars at 2×, in Xcode's navigator geometry. Folders are the system icon, drawn approximately here. On a selected, focused row the glyphs turn white, like the title.</p>
+<p class="note">Sidebars at 2×, in Xcode's navigator geometry. Folders are the system icon, drawn approximately here. On a selected, focused row the subagent and workflow glyphs turn white, like the title; the conversation stays itself, as Finder's icons do.</p>
 </main>
 </body>
 </html>

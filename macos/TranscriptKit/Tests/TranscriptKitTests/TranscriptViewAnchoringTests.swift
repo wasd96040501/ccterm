@@ -125,6 +125,80 @@ final class TranscriptViewAnchoringTests: XCTestCase {
         XCTAssertEqual(offset(mounted), 2700)
     }
 
+    // MARK: - Moving
+
+    /// A move with no motion, so the end state is exact: a group of duration 0
+    /// is how AppKit says so.
+    private func move(_ mounted: MountedTranscript, _ host: RecordingHost, from: Int, to: Int) {
+        host.moveRow(at: from, to: to)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            mounted.transcript.moveRow(at: from, to: to)
+        }
+        mounted.settle()
+    }
+
+    func testMovingARowAmongRowsAboveTheViewportMovesNothing() throws {
+        let (mounted, host) = mount()
+        defer { mounted.teardown() }
+        scrollRow50ToTop(mounted)
+
+        move(mounted, host, from: 10, to: 20)
+
+        XCTAssertEqual(mounted.documentRect(ofRow: 50).minY, 2700)
+        XCTAssertEqual(offset(mounted), 2700)
+    }
+
+    func testMovingARowFromAboveTheViewportToBelowHoldsTheContentStill() throws {
+        let (mounted, host) = mount()
+        defer { mounted.teardown() }
+        scrollRow50ToTop(mounted)
+
+        move(mounted, host, from: 3, to: 90)
+
+        // What was row 50 is row 49 now, still at the top of the viewport.
+        XCTAssertEqual(mounted.documentRect(ofRow: 49).minY, 2646)
+        XCTAssertEqual(offset(mounted), 2646, "content shifted under the reader")
+    }
+
+    func testAMovedRowKeepsItsView() throws {
+        let (mounted, host) = mount()
+        defer { mounted.teardown() }
+        scrollRow50ToTop(mounted)
+
+        let moved = try XCTUnwrap(
+            mounted.transcript.descendants(ofType: RecordingHost.ProbeView.self)
+                .first { mounted.transcript.row(for: $0) == 52 })
+        moved.setAccessibilityIdentifier("moved")
+
+        move(mounted, host, from: 52, to: 54)
+
+        XCTAssertEqual(mounted.transcript.row(for: moved), 54, "the row's view went elsewhere")
+        XCTAssertEqual(moved.accessibilityIdentifier(), "moved")
+    }
+
+    func testMovingRowsInABatchFollowsTheBatchsOwnNumbering() throws {
+        let (mounted, host) = mount()
+        defer { mounted.teardown() }
+        scrollRow50ToTop(mounted)
+        let ids = host.rows.map(\.id)
+
+        host.moveRow(at: 60, to: 55)
+        host.moveRow(at: 56, to: 58)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            mounted.transcript.performBatchUpdates {
+                mounted.transcript.moveRow(at: 60, to: 55)
+                mounted.transcript.moveRow(at: 56, to: 58)
+            }
+        }
+        mounted.settle()
+
+        XCTAssertEqual(host.rows.count, mounted.transcript.numberOfRows)
+        XCTAssertEqual(host.rows[55].id, ids[60])
+        XCTAssertEqual(offset(mounted), 2700)
+    }
+
     // MARK: - The tail
 
     func testAppendingWhileAtTheTailFollowsIt() throws {

@@ -1,4 +1,5 @@
 import AgentSDK
+import DisplayModels
 import Foundation
 
 /// A message another agent put into the conversation — a subagent, another
@@ -27,6 +28,13 @@ nonisolated struct AgentMessage: Sendable, Equatable, Identifiable {
     /// The caption over the words of a message that stays on the page: the
     /// sidebar's glyph for the party, and their name.
     var caption: Caption {
+        // A plugin says when it spoke: it started this turn in the reader's
+        // place, or steered one already running.
+        if case .plugin(_, let duringTurn) = sender {
+            return Caption(
+                glyph: .plugin, text: String(localized: "Plugin “\(name)”"),
+                detail: duringTurn ? String(localized: "While Claude worked") : String(localized: "Started this turn"))
+        }
         let glyph: Caption.Glyph =
             switch sender {
             case .agent: .subagent

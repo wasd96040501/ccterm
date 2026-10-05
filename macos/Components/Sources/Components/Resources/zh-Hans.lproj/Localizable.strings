@@ -1,0 +1,120 @@
+/* The secret field's eye: what pressing it does to the value. */
+"Hide" = "隐藏";
+"Show" = "显示";
+
+/* Settings: accounts, providers, variables, sign-in, field checks. */
+"Details" = "详细信息";
+"Add Provider…" = "添加提供方…";
+"Import from Clipboard" = "从剪贴板导入";
+"Name" = "名称";
+"Value" = "值";
+"Warning" = "警告";
+"No API Providers" = "没有 API 提供方";
+"Run Claude Code through the Anthropic API, a gateway or a local proxy." = "通过 Anthropic API、网关或本地代理运行 Claude Code。";
+"Or press ⌘V to paste shell aliases or commands." = "也可以按 ⌘V 粘贴 shell 别名或命令。";
+"No Variables" = "没有变量";
+"Click + or paste to add." = "点按 + 或粘贴以添加。";
+"Add Variable" = "添加变量";
+"Remove Variable" = "移除变量";
+"Paste %@ lines or a command" = "粘贴 %@ 行或一条命令";
+"Checking…" = "正在检查…";
+"Sign in to Claude" = "登录 Claude";
+"Waiting for your browser…" = "正在等待浏览器…";
+"Open Browser Again" = "重新打开浏览器";
+"Cancel" = "取消";
+
+/* Settings: the sign-in sheet. */
+"Continue in your browser. CCTerm finishes signing in when you approve access." = "请在浏览器中继续。你批准访问后，CCTerm 会完成登录。";
+
+/* Settings: the Subscription and API Providers sections. */
+"Not signed in" = "未登录";
+"Use your Claude Pro or Max plan." = "使用你的 Claude Pro 或 Max 套餐。";
+"Sign In…" = "登录…";
+"Subscription" = "订阅";
+"Details…" = "详细信息…";
+"Duplicate" = "复制";
+"Delete…" = "删除…";
+"Sign Out…" = "退出登录…";
+"API Providers" = "API 提供方";
+/* Sidebar: the loading state, a live session mark, its context menu. */
+"Loading…" = "正在载入…";
+"Idle" = "空闲";
+"Responding" = "正在回复";
+"Needs Your Input" = "需要你的输入";
+"Failed" = "失败";
+"End Session" = "结束会话";
+
+/* AccountEditorViewController */
+"Required" = "必填";
+"Base URL" = "Base URL";
+"Default Model" = "默认模型";
+"Command" = "命令";
+"None" = "无";
+"Manage" = "管理";
+"Add" = "添加";
+"Save" = "存储";
+"Account" = "账户";
+"Email" = "电子邮件";
+"Organization" = "组织";
+"Plan" = "套餐";
+"Connection" = "连接";
+"Authentication" = "认证方式";
+"Environment Variables" = "环境变量";
+"Models" = "模型";
+"Launch" = "启动";
+"Arguments" = "参数";
+"Automatic" = "自动";
+"Auth Token" = "认证令牌";
+"API Key" = "API 密钥";
+"Token" = "令牌";
+"API key" = "API 密钥";
+
+/* LaunchSectionViewController */
+"Launch Command" = "启动命令";
+"Configuration Folder" = "配置文件夹";
+"Allow Bypass Permissions" = "允许绕过权限";
+"Lets a session switch to Bypass Permissions, which skips every permission check. Applies to sessions started after this." = "允许会话切换到“绕过权限”模式，该模式会跳过所有权限检查。对此后启动的会话生效。";
+"Claude Code" = "Claude Code";
+
+/* SettingsWindowController */
+"Back" = "后退";
+"Forward" = "前进";
+
+/* AboutView */
+"Version %@ (%@)" = "版本 %1$@（%2$@）";
+"Commit" = "提交";
+
+/* The New view */
+"Choose Folder…" = "选择文件夹…";
+"Filter" = "筛选";
+"Branch" = "分支";
+"Use a new worktree" = "使用新工作树";
+"Work in a new git worktree (--worktree), leaving this folder as it is" = "在新的 git 工作树 (--worktree) 中工作，保持此文件夹不变";
+"Choose the folder Claude will work in." = "选择 Claude 工作的文件夹。";
+"Recent" = "最近";
+/* Documents */
+"Deny" = "拒绝";
+"Allow" = "允许";
+"Show in Transcript" = "在对话中显示";
+"Open" = "打开";
+"Copy" = "复制";
+"Show all %lld lines" = "显示全部 %lld 行";
+/* Composer */
+"Send" = "发送";
+"Stop" = "停止";
+"Show Log" = "显示日志";
+"Restart" = "重新启动";
+"Claude quit unexpectedly" = "Claude 意外退出";
+"Fast Mode" = "快速模式";
+/* Rows */
+"Interrupted" = "已中断";
+"Keep Planning" = "继续规划";
+"Approve" = "批准";
+"Show all" = "显示全部";
+"Show %lld more" = "显示其余 %lld 项";
+"Submit" = "提交";
+"Chat About This" = "聊聊这个";
+"Choose any" = "可多选";
+"Other — type something" = "其他 — 请输入";
+"Notes" = "备注";
+"Selected" = "已选";

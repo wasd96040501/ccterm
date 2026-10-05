@@ -1,5 +1,7 @@
 import AgentSDK
 import AppKit
+import Components
+import DisplayModels
 
 /// A tab beside the transcript: one document — a command, a file, a
 /// subagent's conversation, words — under the jump bar every document has.
@@ -64,14 +66,6 @@ final class DocumentViewController: NSViewController {
         return stack
     }()
 
-    private lazy var note: NSTextField = {
-        let label = NSTextField(labelWithString: "")
-        label.textColor = .tertiaryLabelColor
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.isHidden = true
-        return label
-    }()
-
     /// `document` is what the reader just opened; without one — a tab made
     /// from history — the tab has no title until `load` gives it.
     /// `makeConversation` makes the transcript tab a subagent's conversation
@@ -127,7 +121,6 @@ final class DocumentViewController: NSViewController {
     private func configureHierarchy() {
         view.addSubview(bars)
         view.addSubview(bodyArea)
-        view.addSubview(note)
     }
 
     private func configureConstraints() {
@@ -142,8 +135,6 @@ final class DocumentViewController: NSViewController {
             bodyArea.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             bodyArea.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             bodyArea.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            note.centerXAnchor.constraint(equalTo: bodyArea.centerXAnchor),
-            note.centerYAnchor.constraint(equalTo: bodyArea.centerYAnchor),
         ])
     }
 
@@ -196,8 +187,7 @@ final class DocumentViewController: NSViewController {
 
     private func show(_ document: Document?) {
         guard let document else {
-            note.stringValue = String(localized: "This document is no longer in the transcript.")
-            note.isHidden = false
+            embed(DocumentNoteViewController(String(localized: "This document is no longer in the transcript.")))
             appLog(.warning, "DocumentViewController", "no document for \(reference.id)")
             return
         }
@@ -259,21 +249,24 @@ final class DocumentViewController: NSViewController {
     private func makeBody(for document: Document) -> NSViewController {
         switch document.content {
         case .command(let call):
-            return CommandDocumentViewController(.call(call))
+            return CommandDocumentViewController(CommandSummary(call))
         case .shellCommand(let command):
-            return CommandDocumentViewController(.local(command))
+            return CommandDocumentViewController(CommandSummary(command))
         case .change(let calls):
-            return SourceDocumentViewController(.change(calls))
+            return SourceDocumentViewController(SourceLines.change(calls), mode: .change, path: calls.first?.filePath)
         case .newFile(let call):
-            return SourceDocumentViewController(.newFile(call))
+            return SourceDocumentViewController(SourceLines.newFile(call), mode: .newFile, path: call.filePath)
         case .read(let call):
-            return SourceDocumentViewController(.read(call))
+            return SourceDocumentViewController(SourceLines.read(call), mode: .read, path: call.filePath)
         case .agent:
             if let url = conversationURL(of: document) {
                 return makeConversation(url, DocumentHeader(document).title)
             }
             return MarkdownDocumentViewController(markdown: DocumentMarkdown.markdown(for: document.content))
-        case .agentMessage, .search, .web, .taskList, .news, .commandOutput, .compactionSummary, .other:
+        case .image(let image):
+            return ImageDocumentViewController(image, title: image.title)
+        case .agentMessage, .search, .web, .taskList, .news, .commandOutput, .log, .contextUsage, .compactionSummary,
+            .advice, .sentMessage, .continuationPrompt, .other:
             return MarkdownDocumentViewController(markdown: DocumentMarkdown.markdown(for: document.content))
         }
     }

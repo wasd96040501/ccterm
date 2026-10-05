@@ -78,6 +78,7 @@ func label(_ message: Message) -> String {
         case .backgroundTasksChanged: return "system.background_tasks_changed"
         case .permissionDenied: return "system.permission_denied"
         case .commandsChanged: return "system.commands_changed"
+        case .sessionTitleChanged: return "system.session_title_changed"
         case .other(let subtype, _): return "system.other(\(subtype))"
         }
     case .streamEvent: return "stream_event"
@@ -126,6 +127,8 @@ func record(_ event: SessionEvent) {
         request.respond(.allow())
     case .permissionRequestCancelled(let id):
         log("permission request cancelled id=\(id)")
+    case .flagSettingsChanged(let settings):
+        log("flag settings changed \(settings)")
     case .exited(let t):
         termination = t
     }

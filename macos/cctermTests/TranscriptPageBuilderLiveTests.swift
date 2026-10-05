@@ -1,4 +1,5 @@
 import AgentSDK
+import DisplayModels
 import XCTest
 
 @testable import ccterm
@@ -93,7 +94,7 @@ final class TranscriptPageBuilderLiveTests: XCTestCase {
         var s = MessageScript()
         s.call("q", "AskUserQuestion", #"{"questions":[]}"#)
         let entries = page(s, requests: [request("q", "AskUserQuestion", input: #"{"questions":[]}"#)])
-        guard case .question(let question) = entries.first else { return XCTFail("\(entries)") }
+        guard case .question(let question, _) = entries.first else { return XCTFail("\(entries)") }
         XCTAssertEqual(question.tile, Tile(glyph: .question, state: .waiting))
     }
 

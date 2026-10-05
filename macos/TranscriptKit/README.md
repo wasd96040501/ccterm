@@ -12,7 +12,7 @@ directly on `NSTableView`:
 - **Data source, not data storage.** `TranscriptViewDataSource` answers
   `numberOfRows(in:)` and `transcriptView(_:rowAt:)`; the host owns
   the backing data and announces every mutation through
-  `insertRows(at:withAnimation:)` / `removeRows(at:withAnimation:)` /
+  `insertRows(at:withAnimation:)` / `removeRows(at:withAnimation:)` / `moveRow(at:to:)` /
   `reloadRows(at:)` / `reloadData()`, optionally batched with
   `performBatchUpdates(anchoring:_:)`, which also says what holds still.
 - **Rows are identified by the host.** `transcriptView(_:rowAt:)` hands back a
@@ -27,7 +27,7 @@ directly on `NSTableView`:
   | Case | Payload | Drawn by | Height from |
   |---|---|---|---|
   | `.markdown` | one complete markdown document as `String` | the transcript | self-sizing |
-  | `.userMessage` | message text as `String` | the transcript | self-sizing |
+  | `.userMessage` | `UserMessage`: text, tokens (a command, a picture) and `isPending` | the transcript | self-sizing |
   | `.view` | none | a host `NSView` | the delegate |
 
   A markdown document is always one row; the view never splits it. Anything
@@ -71,7 +71,8 @@ directly on `NSTableView`:
   the last row with it. `scrollToRow(at:scrollPosition:)` is the deliberate
   exception. The delegate hears when the viewport arrives at or leaves the tail
   (`transcriptView(_:didChangeTailFollowing:)`), which is what a "jump to
-  latest" button needs.
+  latest" button needs, and `transcriptViewDidScroll(_:)` hears every scroll,
+  coalesced to one call per runloop pass.
 
   `NSTableView` promises none of this: `insertRows(at:withAnimation:)`
   documents only that `numberOfRows` grows and says nothing about the scroll

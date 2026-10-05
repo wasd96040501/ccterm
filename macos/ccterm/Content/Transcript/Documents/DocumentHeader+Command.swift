@@ -1,3 +1,4 @@
+import DisplayModels
 import Foundation
 
 /// The command document's header (02-command.md "Layout"): the kind's tile in

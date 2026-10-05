@@ -1,5 +1,7 @@
 import AgentSDK
 import AppKit
+import Components
+import DisplayModels
 import TranscriptKit
 import TranscriptWorkspace
 import XCTest
@@ -40,8 +42,10 @@ final class TranscriptViewControllerTests: XCTestCase {
     }
 
     private func mountTab(_ url: URL) throws -> TranscriptView {
-        let stage = AppKitStage.mount(
-            TranscriptViewController(fileURL: url, title: "t", sessions: .reading(), acceptsInput: false))
+        let sessions = SessionStore.reading()
+        let controller = TranscriptViewController(fileURL: url, title: "t", sessions: sessions)
+        controller.follow(sessions.states(at: url))
+        let stage = AppKitStage.mount(controller)
         self.stage = stage
         stage.rootViewController.viewDidAppear()
         return try XCTUnwrap(stage.find(TranscriptView.self))
@@ -59,25 +63,33 @@ final class TranscriptViewControllerTests: XCTestCase {
             visible.insetBy(dx: 0, dy: -1).contains(last), "last row \(last) not in view \(visible)")
     }
 
-    /// A session's own tab: the composer sits under the transcript and takes
-    /// none of its rows.
-    func testASessionsOwnTabHasAComposerUnderTheTranscript() throws {
+    /// A session's own tab: the composer floats 16 pt above the bottom edge,
+    /// 720 pt at most, and the transcript runs behind it at full size — its last
+    /// row comes to rest clear above the card.
+    func testASessionsOwnTabHasAComposerFloatingOverTheTranscript() throws {
         let url = try writeConversation("-p/own.jsonl", turns: 5)
-        let stage = AppKitStage.mount(
-            TranscriptViewController(fileURL: url, title: "t", sessions: .reading(), acceptsInput: true))
+        let stage = AppKitStage.mount(SessionTabViewController(.session(url), title: "t", context: .reading()))
         self.stage = stage
         stage.rootViewController.viewDidAppear()
         let transcript = try XCTUnwrap(stage.find(TranscriptView.self))
-        let composer = try XCTUnwrap(stage.find(ComposerView.self))
+        let composer = try XCTUnwrap(
+            stage.rootViewController.children.compactMap { $0 as? ComposerViewController }.first
+        ).view
         XCTAssertTrue(stage.drainUntil(timeout: 5) { transcript.numberOfRows == 10 })
         let host = stage.rootViewController.view
         host.layoutSubtreeIfNeeded()
         let composerFrame = host.convert(composer.bounds, from: composer)
         let transcriptFrame = host.convert(transcript.bounds, from: transcript)
         XCTAssertGreaterThan(composerFrame.height, 30)
-        // The host is not flipped: under means lower.
-        XCTAssertGreaterThanOrEqual(transcriptFrame.minY, composerFrame.maxY - 0.5)
-        XCTAssertEqual(transcriptFrame.width, host.bounds.width)
+        // The host is not flipped: the card stands 16 pt above its bottom edge.
+        XCTAssertEqual(composerFrame.minY, 16, accuracy: 0.5)
+        XCTAssertLessThanOrEqual(composerFrame.width, 720.5)
+        XCTAssertEqual(composerFrame.midX, host.bounds.midX, accuracy: 0.5)
+        // The transcript is the whole tab, the card over it.
+        XCTAssertEqual(transcriptFrame, host.bounds)
+        // The last row rests above the card (transcript coordinates grow downward).
+        let lastRow = transcript.rect(ofRow: transcript.numberOfRows - 1)
+        XCTAssertLessThanOrEqual(lastRow.maxY, transcript.bounds.height - composerFrame.maxY + 0.5)
     }
 
     func testAnUnreadableFileShowsANote() throws {
@@ -93,7 +105,9 @@ final class TranscriptViewControllerTests: XCTestCase {
         let sidebar = try XCTUnwrap(split.splitViewItems[0].viewController as? SidebarViewController)
         let area = try XCTUnwrap(split.splitViewItems[1].viewController as? EditorAreaViewController)
         split.sidebarViewController(
-            sidebar, didOpen: LibraryNode(id: url.path, kind: .session, title: "long", transcriptURL: url, children: [])
+            sidebar,
+            didOpen: SidebarNode(
+                LibraryNode(id: url.path, kind: .session, title: "long", transcriptURL: url, children: []))
         )
         let transcript = try XCTUnwrap(stage.find(TranscriptView.self))
         XCTAssertTrue(stage.drainUntil(timeout: 10) { transcript.numberOfRows > 0 })

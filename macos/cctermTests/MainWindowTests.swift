@@ -1,6 +1,8 @@
 import AgentSDK
 import AppKit
 import Combine
+import Components
+import DisplayModels
 import TranscriptWorkspace
 import XCTest
 
@@ -37,7 +39,11 @@ final class MainWindowTests: XCTestCase {
         XCTAssertEqual(
             navigation.subitems.map(\.action),
             [#selector(EditorAreaViewController.goBack(_:)), #selector(EditorAreaViewController.goForward(_:))])
-        XCTAssertTrue(navigation.subitems.allSatisfy { $0.target === stage.mainSplit?.editorArea })
+        XCTAssertTrue(navigation.subitems.allSatisfy { $0.target == nil }, "a segment is aimed by hand")
+        let split = try XCTUnwrap(stage.mainSplit)
+        for action in navigation.subitems.compactMap(\.action) {
+            XCTAssertTrue(split.supplementalTarget(forAction: action, sender: nil) as? NSObject === split.editorArea)
+        }
         XCTAssertFalse(toolbar.items[2].isBordered, "the title sits in a bezel")
     }
 
@@ -69,7 +75,7 @@ final class MainWindowTests: XCTestCase {
         defer { stage.teardown() }
         await stage.settle()
         let split = try XCTUnwrap(stage.mainSplit)
-        split.sidebarViewController(try sidebar(of: split), didOpen: Self.session("a"))
+        split.sidebarViewController(try sidebar(of: split), didOpen: SidebarNode(Self.session("a")))
         await stage.settle()
 
         let bar = try XCTUnwrap(tabBar(in: stage), "no tab bar with one tab open")
@@ -92,8 +98,8 @@ final class MainWindowTests: XCTestCase {
         await stage.settle()
         let split = try XCTUnwrap(stage.mainSplit)
         let (back, forward) = try navigation(in: stage)
-        split.sidebarViewController(try sidebar(of: split), didOpen: Self.session("a"))
-        split.sidebarViewController(try sidebar(of: split), didOpen: Self.session("b"))
+        split.sidebarViewController(try sidebar(of: split), didOpen: SidebarNode(Self.session("a")))
+        split.sidebarViewController(try sidebar(of: split), didOpen: SidebarNode(Self.session("b")))
 
         stage.window.toolbar?.validateVisibleItems()
         XCTAssertTrue(back.isEnabled)
@@ -123,8 +129,8 @@ final class MainWindowTests: XCTestCase {
         let split = try XCTUnwrap(stage.mainSplit)
         let sidebar = try sidebar(of: split)
 
-        sidebar.delegate?.sidebarViewController(sidebar, didSelect: try Self.node("Named", in: library))
-        sidebar.delegate?.sidebarViewController(sidebar, didSelect: try Self.node("fix it", in: library))
+        sidebar.delegate?.sidebarViewController(sidebar, didSelect: SidebarNode(try Self.node("Named", in: library)))
+        sidebar.delegate?.sidebarViewController(sidebar, didSelect: SidebarNode(try Self.node("fix it", in: library)))
         XCTAssertEqual(tabTitles(of: split), ["fix it"], "premise: the look was replaced")
 
         split.editorArea.goBack(nil)
@@ -157,12 +163,12 @@ final class MainWindowTests: XCTestCase {
         let title = try titleView(in: stage)
         XCTAssertTrue(title.isHidden, "a title with nothing open")
 
-        sidebar.delegate?.sidebarViewController(sidebar, didOpen: try Self.node("Named", in: library))
+        sidebar.delegate?.sidebarViewController(sidebar, didOpen: SidebarNode(try Self.node("Named", in: library)))
         await expect(title, shows: "repo", "feature")
         XCTAssertFalse(title.isHidden)
         XCTAssertEqual(stage.window.title, "repo", "the Window menu names the window something else")
 
-        sidebar.delegate?.sidebarViewController(sidebar, didOpen: try Self.node("fix it", in: library))
+        sidebar.delegate?.sidebarViewController(sidebar, didOpen: SidebarNode(try Self.node("fix it", in: library)))
         await expect(title, shows: "other", nil)
 
         split.editorArea.closeTab(nil)
@@ -190,9 +196,10 @@ final class MainWindowTests: XCTestCase {
         let split = try XCTUnwrap(stage.mainSplit)
         let sidebar = try sidebar(of: split)
         let title = try titleView(in: stage)
-        sidebar.delegate?.sidebarViewController(sidebar, didOpen: try Self.node("Named", in: library))
+        sidebar.delegate?.sidebarViewController(sidebar, didOpen: SidebarNode(try Self.node("Named", in: library)))
         await expect(title, shows: "repo", "feature")
-        let transcript = try XCTUnwrap(split.editorArea.activeViewController as? TranscriptViewController)
+        let transcript = try XCTUnwrap(
+            split.editorArea.activeViewController?.children.lazy.compactMap { $0 as? TranscriptViewController }.first)
 
         let document = Document(
             reference: DocumentReference(transcriptURL: transcript.fileURL, id: "c1"),
@@ -200,7 +207,8 @@ final class MainWindowTests: XCTestCase {
         split.transcriptTab(
             transcript, didRequestOpen: .document(document.reference), pinned: false,
             makeItem: {
-                TranscriptTab.makeItem(document, sessions: .reading { _ in Transcript(data: Data()) }, delegate: split)
+                TranscriptTab.makeDocumentItem(
+                    document, sessions: .reading { _ in Transcript(data: Data()) }, delegate: split)
             })
         await stage.settle()
         XCTAssertTrue(
@@ -225,9 +233,10 @@ final class MainWindowTests: XCTestCase {
         await stage.settle()
         let split = try XCTUnwrap(stage.mainSplit)
         let sidebar = try sidebar(of: split)
-        sidebar.delegate?.sidebarViewController(sidebar, didOpen: try Self.node("Named", in: library))
+        sidebar.delegate?.sidebarViewController(sidebar, didOpen: SidebarNode(try Self.node("Named", in: library)))
         await stage.settle()
-        let transcript = try XCTUnwrap(split.editorArea.activeViewController as? TranscriptViewController)
+        let transcript = try XCTUnwrap(
+            split.editorArea.activeViewController?.children.lazy.compactMap { $0 as? TranscriptViewController }.first)
         let window = try XCTUnwrap(transcript.view.window)
         let list = try XCTUnwrap(stage.find(NSScrollView.self, in: transcript.view)?.documentView)
         XCTAssertTrue(window.makeFirstResponder(list), "premise: the reader is in the transcript")
@@ -238,7 +247,8 @@ final class MainWindowTests: XCTestCase {
         split.transcriptTab(
             transcript, didRequestOpen: .document(document.reference), pinned: false,
             makeItem: {
-                TranscriptTab.makeItem(document, sessions: .reading { _ in Transcript(data: Data()) }, delegate: split)
+                TranscriptTab.makeDocumentItem(
+                    document, sessions: .reading { _ in Transcript(data: Data()) }, delegate: split)
             })
         await stage.settle()
         let opened = try XCTUnwrap(split.editorArea.activeViewController as? DocumentViewController)
@@ -249,7 +259,7 @@ final class MainWindowTests: XCTestCase {
         await stage.settle()
         let tabs = split.editorArea.groups.flatMap(\.tabViewItems).map(\.viewController)
         XCTAssertFalse(tabs.contains { $0 is DocumentViewController }, "the document is still open")
-        XCTAssertTrue(tabs.contains { $0 === transcript }, "⌘W closed the transcript")
+        XCTAssertTrue(tabs.contains { $0 === transcript.parent }, "⌘W closed the transcript")
     }
 
     /// The CLI records a detached HEAD as "HEAD": no branch under the name.
@@ -267,8 +277,33 @@ final class MainWindowTests: XCTestCase {
         await stage.settle()
         let sidebar = try sidebar(of: try XCTUnwrap(stage.mainSplit))
 
-        sidebar.delegate?.sidebarViewController(sidebar, didOpen: try Self.node("Named", in: library))
+        sidebar.delegate?.sidebarViewController(sidebar, didOpen: SidebarNode(try Self.node("Named", in: library)))
         await expect(try titleView(in: stage), shows: "repo", nil)
+    }
+
+    /// A worktree session says so under its project, in place of the branch
+    /// (design 08: *quiet-otter · worktree*).
+    func testAWorktreeSessionSaysSoUnderItsProject() async throws {
+        let fixture = try SessionDirectoryFixture()
+        defer { fixture.remove() }
+        try LibraryStoreTests.writeLibrary(fixture)
+        try fixture.write(
+            "-x-repo--claude-worktrees-quiet-otter/s1.jsonl",
+            [
+                Self.user(cwd: "/x/repo/.claude/worktrees/quiet-otter", branch: "worktree-quiet-otter"),
+                Rows.customTitle("Otter"),
+            ],
+            modified: 300)
+        let library = try await Self.startedLibrary(fixture)
+        defer { library.stop() }
+        let stage = AppKitStage.mainWindow(library: library)
+        defer { stage.teardown() }
+        await stage.settle()
+        let sidebar = try sidebar(of: try XCTUnwrap(stage.mainSplit))
+
+        sidebar.delegate?.sidebarViewController(sidebar, didOpen: SidebarNode(try Self.node("Otter", in: library)))
+
+        await expect(try titleView(in: stage), shows: "repo", String(localized: "\("quiet-otter") · worktree"))
     }
 
     /// Alone, the name is centred; a branch coming raises it — moving, not
@@ -316,6 +351,47 @@ final class MainWindowTests: XCTestCase {
         add(XCTAttachment(string: fadeIn.report()))
     }
 
+    // MARK: - Size
+
+    /// The window, not what is in it, decides its width: with the New view of
+    /// an empty area, a New tab, or a session's tab, it grows as wide as asked
+    /// and shrinks to the least its content requires — the sidebar beside the
+    /// composer's narrowest card — and the editors take the difference.
+    func testTheWindowResizesFreelyWhateverTheTabShows() async throws {
+        let stage = AppKitStage.mainWindow()
+        defer { stage.teardown() }
+        await stage.settle()
+        let split = try XCTUnwrap(stage.mainSplit)
+        try await expectFreeResizing(of: stage, "the empty area's New view")
+
+        split.newTab()
+        await stage.settle()
+        try await expectFreeResizing(of: stage, "a New tab")
+
+        split.sidebarViewController(try sidebar(of: split), didOpen: SidebarNode(Self.session("a")))
+        await stage.settle()
+        try await expectFreeResizing(of: stage, "a session's tab")
+    }
+
+    private func expectFreeResizing(of stage: AppKitStage, _ what: String) async throws {
+        let window = stage.window
+        let detail = try XCTUnwrap(stage.mainSplit).splitViewItems[1].viewController.view
+        // Asked to be narrower than anything can be, it stops at the least its
+        // content's required constraints allow.
+        window.setFrame(NSRect(origin: window.frame.origin, size: NSSize(width: 100, height: 800)), display: true)
+        await stage.settle(rounds: 3)
+        let least = window.frame.width
+        XCTAssertLessThan(least, 700, "\(what): the content asks for \(least) at least")
+        for width in [1600, least, 1200] {
+            window.setFrame(NSRect(origin: window.frame.origin, size: NSSize(width: width, height: 800)), display: true)
+            await stage.settle(rounds: 3)
+            XCTAssertEqual(window.frame.width, width, accuracy: 0.5, "\(what): the window would not be \(width) wide")
+            XCTAssertEqual(
+                detail.convert(detail.bounds, to: nil).maxX, window.frame.width, accuracy: 0.5,
+                "\(what): the editors did not take the width")
+        }
+    }
+
     // MARK: - Fixtures
 
     typealias Rows = SessionDirectoryFixture
@@ -336,7 +412,7 @@ final class MainWindowTests: XCTestCase {
         defer { fixture.remove() }
         try LibraryStoreTests.writeLibrary(fixture)
         let library = LibraryStore(directories: Just(fixture.directory).eraseToAnyPublisher())
-        let controller = Self.parked(MainWindowController(library: library, sessions: .reading(), git: GitService()))
+        let controller = Self.parked(MainWindowController(library: library, context: .reading(), git: GitService()))
         let window = try XCTUnwrap(controller.window)
         defer {
             window.orderOut(nil)
@@ -357,7 +433,7 @@ final class MainWindowTests: XCTestCase {
     /// saying it is loading.
     func testTheWindowOpensAtTheDeadlineWhileTheLibraryLoads() async throws {
         let library = LibraryStore(directories: Empty().eraseToAnyPublisher())
-        let controller = Self.parked(MainWindowController(library: library, sessions: .reading(), git: GitService()))
+        let controller = Self.parked(MainWindowController(library: library, context: .reading(), git: GitService()))
         let window = try XCTUnwrap(controller.window)
         defer { window.orderOut(nil) }
 

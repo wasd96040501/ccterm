@@ -205,3 +205,22 @@ both as `.unknown`.
   **PushNotification**, **SendUserMessage**, **SendUserFile**: the kinds
   table in the README maps each tool name; read their inputs off a
   transcript before drawing their labels.
+
+## Checked against the CLI (2.1.286)
+
+What the real CLI did when ccterm's live sessions were built against it
+(AgentSDK's `LiveControlsSmoke` and `SettingsSmoke` replay these):
+
+- **A typed `/effort` or `/fast`** reaches the host as a top-level
+  `{type: "apply_flag_settings", settings, uuid, session_id}` line on stdout,
+  not as a control request; nothing answers it. (The control-request form is
+  handled too, in case a later CLI sends it.)
+- **`set_model` can also be refused with `error_code: "auth_failed"`**,
+  beside the codes listed above.
+- **The stdio `initialize` response carries no `current_model`** (only a
+  remote-control attach gets one): the model a session runs on is the one it
+  was launched with, and what `set_model` last acknowledged.
+- **`set_model`'s acknowledgement is the confirmation.** The `/model`
+  local-command echo was not seen while idle; a host must not wait for it.
+- **`unavailable_models` is only sent to hosts the CLI allowlists**, so
+  ccterm normally sees none; disabled rows come through `list_models`.

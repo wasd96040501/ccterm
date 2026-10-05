@@ -8,6 +8,10 @@ nonisolated struct LaunchPreferences: Equatable, Sendable {
     var command = ""
     /// `CLAUDE_CONFIG_DIR`; empty leaves the CLI's default (`~/.claude`).
     var configDirectory = ""
+    /// Whether every launch carries `--allow-dangerously-skip-permissions`, the
+    /// only way a session can enter Bypass Permissions later (General's *Allow
+    /// Bypass Permissions*, off by default).
+    var allowsBypassPermissions = false
 
     /// What is wrong with `path` as the configuration folder, ready to show;
     /// `nil` when it is empty (the default) or an existing folder. A leading

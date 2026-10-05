@@ -14,7 +14,7 @@ Run from the repo root: `make test-kit [FILTER=<Class>]` (`swift test`) and `mak
 
 ## 1. Mirror `NSTableView`
 
-The public surface is `NSTableView`'s, name for name and signature for signature: `numberOfRows`, `reloadData()`, `insertRows(at:withAnimation:)`, `removeRows(at:withAnimation:)`, `reloadRows(at:)`, `noteHeightOfRows(withIndexesChanged:)`, `rect(ofRow:)`, `row(for:)`, `makeView(withIdentifier:…)`. The data source says *what* the rows are; the delegate says *how they appear*. A host that has written an `NSTableViewDataSource` already knows the API and can check it against Apple's docs.
+The public surface is `NSTableView`'s, name for name and signature for signature: `numberOfRows`, `reloadData()`, `insertRows(at:withAnimation:)`, `removeRows(at:withAnimation:)`, `moveRow(at:to:)`, `reloadRows(at:)`, `noteHeightOfRows(withIndexesChanged:)`, `rect(ofRow:)`, `row(for:)`, `makeView(withIdentifier:…)`. The data source says *what* the rows are; the delegate says *how they appear*. A host that has written an `NSTableViewDataSource` already knows the API and can check it against Apple's docs.
 
 Before adding or renaming anything public, look up the AppKit counterpart (`make appkit-doc SYMBOL=NSTableView`) and take its spelling unless §2 applies.
 
@@ -38,7 +38,7 @@ Public API lands when a caller needs it. The rest of `NSTableView`'s surface —
 
 The renderer this replaces reached ~18 000 lines because every new kind of content meant a new block kind, layout file and enum case in several switches. Three rules keep that from recurring:
 
-- **The content vocabulary is closed.** `TranscriptRowContent` has three cases (`.markdown`, `.userMessage`, `.view`) and gains none. Anything richer — tool cards, attachments, pictures, progress rows — is `.view`, drawn by a host `NSView`. If a new case seems needed, the answer is a `.view` (pictures are: see `TranscriptMedia`). A case with no renderer behind it is not pending work; remove it.
+- **The content vocabulary is closed.** `TranscriptRowContent` has three cases (`.markdown`, `.userMessage`, `.view`) and gains none — a case's payload may grow (`.userMessage` carries tokens and a pending flag; the bubble draws a token as an inset of its own colour), a fourth case may not. Anything richer — tool cards, attachments, pictures, progress rows — is `.view`, drawn by a host `NSView`. If a new case seems needed, the answer is a `.view` (pictures are: see `TranscriptMedia`). A case with no renderer behind it is not pending work; remove it.
 - **Collaboration goes through the two protocols.** No `onSomethingChanged` closures between internal types, no `@Observable` fields for the host to watch. A new host-facing event is a delegate requirement with a default implementation.
   - **Context menu:** `transcriptView(_:menu:forRow:)` receives the menu the transcript would show and returns the one to show. The transcript contributes and executes only what it can implement itself (today, Copy — it depends on a selection only the transcript sees); host items (Quote, Retry, …) carry their own target/action and never route back. The menu is built fresh per click; `.view` rows never reach the hook, since AppKit already asks the host's view for its menu.
   - **Selection** has no API; a host sees it only through Copy. It is the transcript's (`TextSelection`, held by row identity and renumbered by every mutation).

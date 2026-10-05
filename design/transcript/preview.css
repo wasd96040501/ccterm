@@ -357,7 +357,6 @@ html, body {
 .qa .opt.on .radio { background: var(--accent); border-color: var(--accent); box-shadow: inset 0 0 0 2.5px var(--window); }
 .qa .opt.on .cbx { background: var(--accent); border-color: var(--accent); }
 .qa .opt.live { color: var(--label); cursor: default; border-radius: var(--r-ctl, 7px); margin-left: -8px; padding-left: 8px; grid-template-columns: 16px 1fr; }
-.qa .opt.live:hover { background: var(--hover); }
 .qa .opt.live .radio, .qa .opt.live .cbx { border-color: var(--tertiary); }
 .qa .opt.live .d { color: var(--secondary); }
 .qa .opt.other .oin { font: inherit; font-size: 13px; line-height: 18px; border: 0; outline: 0; background: none; padding: 0; color: var(--label); width: 100%; }

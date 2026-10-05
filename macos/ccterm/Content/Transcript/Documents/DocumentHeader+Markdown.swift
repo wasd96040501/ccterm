@@ -1,4 +1,5 @@
 import AgentSDK
+import DisplayModels
 import Foundation
 
 /// The header of a document set as markdown — a search, a page fetched, an
@@ -35,16 +36,42 @@ nonisolated extension DocumentHeader {
         case .taskList:
             let title = String(localized: "Task list")
             return DocumentHeader(tile: Tile(glyph: .tool(.tasks), state: .done), crumbs: [title], title: title)
-        case .news(let news):
-            let title = newsTitle(news)
+        case .news(let news, let report):
+            let title = newsTitle(report)
             return DocumentHeader(
                 tile: Tile(glyph: news.line.tile.glyph, state: news.line.tile.state), crumbs: [title], title: title)
         case .commandOutput(let command):
             let title = command.title
             return DocumentHeader(tile: Tile(glyph: .tool(.command), state: .done), crumbs: [title], title: title)
+        case .log(let failure):
+            let title = String(localized: "Session Log")
+            return DocumentHeader(
+                tile: Tile(glyph: .tool(.command), state: .failed), crumbs: [title], stat: StyledText(failure.message),
+                title: title, showsTranscriptJump: false)
+        case .contextUsage(let usage):
+            let title = String(localized: "Context Usage")
+            let percent = usage.percentage
+            return DocumentHeader(
+                tile: Tile(glyph: .tool(.command), state: .done), crumbs: [title],
+                stat: StyledText("\(percent)%"), title: title, showsTranscriptJump: false)
         case .compactionSummary:
             let title = String(localized: "Summary")
             return DocumentHeader(tile: Tile(glyph: .tool(.other), state: .done), crumbs: [title], title: title)
+        case .advice(let call):
+            let title = String(localized: "Advisor")
+            return DocumentHeader(
+                tile: Tile(glyph: .tool(.advisor), state: Tile.State(call.state)), crumbs: [title], title: title)
+        case .sentMessage(let call):
+            let title = String(localized: "To \(call.sentMessage?.party ?? "")")
+            return DocumentHeader(
+                tile: Tile(glyph: .tool(.message), state: Tile.State(call.state)), crumbs: [title], title: title)
+        case .continuationPrompt:
+            let title = String(localized: "Prompt")
+            return DocumentHeader(tile: Tile(glyph: .tool(.other), state: .done), crumbs: [title], title: title)
+        case .image(let image):
+            return DocumentHeader(
+                tile: Tile(glyph: .image, state: .done), crumbs: [image.title],
+                stat: StyledText("\(image.dimensions) · \(image.format)"), title: image.title)
         case .other(let call):
             let title = call.toolName.tool
             return DocumentHeader(
@@ -87,8 +114,8 @@ nonisolated extension DocumentHeader {
 
     /// The task's own name — what the CLI quoted in its summary — else the
     /// whole summary.
-    private static func newsTitle(_ news: TaskNews) -> String {
-        let summary = news.report.summary
+    private static func newsTitle(_ report: TaskReport) -> String {
+        let summary = report.summary
         for (open, close) in [("“", "”"), ("\"", "\"")] {
             guard let start = summary.range(of: open),
                 let end = summary.range(of: close, range: start.upperBound..<summary.endIndex)

@@ -1,24 +1,27 @@
 import AgentSDK
 import AppKit
 import Combine
-import SwiftUI
+import Components
 
-/// AppKit-side application delegate and the app's composition root. Owns
-/// the main window's lifecycle — creating it from
-/// `applicationWillFinishLaunching` instead of declaring a SwiftUI `Window`
-/// scene — and every auxiliary window's (lazy `SettingsWindowController` /
-/// `AboutWindowController`), so the OS can't resurface them from saved
-/// state at the next launch and SwiftUI can't auto-open them as the
-/// leading `Window` scene.
+/// The app's entry, its delegate and its composition root. Owns the main
+/// window's lifecycle — created in `applicationWillFinishLaunching` — and
+/// every auxiliary window's (lazy `SettingsWindowController` /
+/// `AboutWindowController`), none restorable, so the OS can't resurface them
+/// from saved state at the next launch.
 ///
-/// `CCTermApp.body` keeps only a `Settings { EmptyView() }` placeholder to
-/// satisfy the `App` protocol's `some Scene` requirement; menu items live
-/// in `AppCommands` — a SwiftUI `Commands` block attached to that
-/// placeholder scene. SwiftUI merges those into the app's main menu, so
-/// cold-start menu clicks (⌘, → `showSettingsWindow()`, App > About ccterm
-/// → `showAboutWindow()`) resolve their closures without an AppKit bridge.
+/// It installs the main menu (`MainMenu`) and, at the responder chain's end,
+/// answers what no window does: About, Settings, a New Tab with no main
+/// window key, ⌘W in a window without tabs.
+@main
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    static func main() {
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        app.run()
+    }
+
     private(set) var mainWindowController: MainWindowController?
 
     // The object graph, built once in `applicationWillFinishLaunching`; nil in
@@ -41,11 +44,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The sessions ccterm runs, and every tab's way to its session.
     /// Process-wide: a session outlives its tabs and windows.
     private var sessions: SessionStore?
+    /// What each account's CLI offers, for the composer's menus. Process-wide:
+    /// one probe per account serves every window.
+    private var catalog: ModelCatalogStore?
 
-    /// Lazy AppKit-rooted Settings window. Created on the first
-    /// `showSettingsWindow()` call (⌘, or App > Settings… menu item)
-    /// — never at launch, so the OS cannot resurface it from saved
-    /// state.
+    /// Lazy Settings window. Created on the first `showSettingsWindow(_:)`
+    /// (⌘, or App > Settings…) — never at launch, so the OS cannot resurface
+    /// it from saved state.
     private var settingsWindowController: SettingsWindowController?
 
     /// What Settings reads and changes; `nil` before launch has built it.
@@ -55,12 +60,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             accounts: accounts, launch: launch, launchCheck: launchCheck, subscription: subscription)
     }
 
-    func showSettingsWindow() {
+    @objc func showSettingsWindow(_ sender: Any?) {
         guard let context = settingsContext else { return }
         let controller =
             settingsWindowController
             ?? {
-                let c = SettingsWindowController(context: context)
+                let c = SettingsWindowController(
+                    panes: SettingsPane.allCases.map { .init($0, context: context) },
+                    initial: SettingsPane.accounts.rawValue)
                 c.windowFrameAutosaveName = "SettingsWindow"
                 settingsWindowController = c
                 return c
@@ -70,18 +77,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Lazy AppKit-rooted About window. Same shape as
-    /// `settingsWindowController` — created
-    /// on the first `showAboutWindow()` call (App > About ccterm menu
-    /// item) so SwiftUI cannot auto-open it as the leading `Window`
-    /// scene and the OS cannot resurface it from saved state.
+    /// Lazy About window, as `settingsWindowController`: created on the first
+    /// `showAboutWindow(_:)` (App > About ccterm).
     private var aboutWindowController: AboutWindowController?
 
-    func showAboutWindow() {
+    @objc func showAboutWindow(_ sender: Any?) {
         let controller =
             aboutWindowController
             ?? {
-                let c = AboutWindowController()
+                let c = AboutWindowController(content: .current, icon: NSApp.applicationIconImage)
                 aboutWindowController = c
                 return c
             }()
@@ -90,15 +94,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// File › New Session…: in the main window, shown first if it was closed.
-    func newSession() {
+    /// File › New Tab, ⌘T: in the main window, shown first if it was
+    /// closed. With the main window key its editor area answers `newTab:`
+    /// first; this is for when another window is key, or none.
+    @objc func newTab(_ sender: Any?) {
         guard let mainWindowController else { return }
         mainWindowController.showWindow(nil)
         mainWindowController.window?.makeKeyAndOrderFront(nil)
-        mainWindowController.newSession()
+        mainWindowController.newTab()
+    }
+
+    /// File › Close Tab, ⌘W, in a window without tabs (Settings, About):
+    /// closes it, as Xcode's ⌘W does where there is no tab.
+    @objc func closeTab(_ sender: Any?) {
+        NSApp.keyWindow?.performClose(sender)
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        NSApp.mainMenu = MainMenu.make()
         // Hosted unit tests keep NSApp alive for AppKit rendering, but the host
         // shows no Dock icon and opens no window of its own.
         if Self.isUnderXCTest {
@@ -138,19 +151,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             configurations: launch.$subscription.removeDuplicates().eraseToAnyPublisher())
         let library = LibraryStore(
             directories: launch.$sessionDirectory.removeDuplicates().eraseToAnyPublisher(), indexDirectory: caches)
-        // Sessions launch as General says, so they are written where the
-        // library reads.
+        // A launch of an account's CLI changes with its own settings and with
+        // General's, so the catalog re-reads when either does.
+        let catalog = ModelCatalogStore(
+            accounts: accounts.$accounts.combineLatest(launch.$preferences).map(\.0).eraseToAnyPublisher(),
+            configuration: { [accounts, launch] account in
+                launch.configuration(for: account, secrets: try await accounts.secrets(for: account.id))
+            },
+            probe: Self.probe,
+            cacheURL: caches.appendingPathComponent("ModelCatalog.json"))
+        // Sessions launch as their account says, under General, so they are
+        // written where the library reads.
         let sessions = SessionStore(
-            configurations: launch.$general.eraseToAnyPublisher(),
+            launch: { [accounts, launch] id in
+                guard let account = accounts.accounts.first(where: { $0.id == id }) else {
+                    throw AgentSDKError.launchFailed(String(localized: "That account no longer exists."))
+                }
+                return launch.configuration(for: account, secrets: try await accounts.secrets(for: id))
+            },
             directories: launch.$sessionDirectory.eraseToAnyPublisher(),
+            catalog: catalog.$catalog.eraseToAnyPublisher(),
+            preferences: launch.$preferences.eraseToAnyPublisher(),
+            branches: BranchService(),
             read: { [library] in try await library.transcript(at: $0) })
+        let context = TranscriptTab.Context(
+            sessions: sessions,
+            catalog: catalog.$catalog.eraseToAnyPublisher(),
+            preferences: launch.$preferences.eraseToAnyPublisher(),
+            defaults: NewSessionDefaults(defaults: .standard),
+            branches: BranchService(),
+            recentFolders: library.$nodes.map { nodes in
+                nodes.filter { $0.kind == .project }.map { URL(fileURLWithPath: $0.id, isDirectory: true) }
+            }.eraseToAnyPublisher())
         self.accounts = accounts
         self.launch = launch
         self.launchCheck = launchCheck
         self.subscription = subscription
         self.library = library
         self.sessions = sessions
-        let controller = MainWindowController(library: library, sessions: sessions, git: GitService())
+        self.catalog = catalog
+        let controller = MainWindowController(library: library, context: context, git: GitService())
         // Where the frame persists is the app's configuration, not the window's:
         // a `MainWindowController` built anywhere else writes no defaults.
         controller.windowFrameAutosaveName = "MainWindow"
@@ -201,7 +241,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return .terminateLater
     }
 
+    /// A short-lived CLI that answers `initialize` and is ended: what an
+    /// account offers, read without a session (`ModelCatalogStore`). It writes
+    /// no transcript. A CLI that doesn't answer in a minute is terminated, as
+    /// `Session.close(timeout:)` does, and so is one whose probe is cancelled:
+    /// either way its pending `initialize` fails.
+    private static let probe: @Sendable (CLIConfiguration) async throws -> InitializationResult = { configuration in
+        let session = Session(
+            configuration: SessionConfiguration(
+                workingDirectory: FileManager.default.homeDirectoryForCurrentUser, launch: configuration))
+        let watchdog = Task {
+            try await Task.sleep(for: .seconds(60))
+            session.terminate()
+        }
+        defer {
+            watchdog.cancel()
+            session.terminate()
+        }
+        return try await withTaskCancellationHandler {
+            try await session.start()
+        } onCancel: {
+            session.terminate()
+        }
+    }
+
     /// XCTest injects this into a hosted test run.
     private static let isUnderXCTest =
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+}
+
+extension AppDelegate: NSMenuItemValidation {
+    /// New Tab while there is a main window to open it in; Close Tab while a
+    /// window is key. The rest are always there.
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(newTab(_:)): mainWindowController != nil
+        case #selector(closeTab(_:)): NSApp.keyWindow != nil
+        default: true
+        }
+    }
 }

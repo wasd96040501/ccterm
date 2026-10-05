@@ -153,13 +153,39 @@ public final class Session: @unchecked Sendable {
         _ = try await sendControlRequest("interrupt")
     }
 
-    /// Switches the model; `nil` restores the default.
-    func setModel(_ model: String?) async throws {
+    /// Switches the model; `nil` (or `"default"`) restores the default. The CLI
+    /// checks entitlement first (≈ 1.5 s), answers, then echoes a `/model`
+    /// local-command output. A refusal throws
+    /// ``AgentSDKError/controlRequestFailed(subtype:message:)``; its
+    /// ``AgentSDKError/refusalCode`` names why (`restricted_by_org`, …).
+    public func setModel(_ model: String?) async throws {
         _ = try await sendControlRequest("set_model", ["model": model.map(JSONValue.string) ?? .null])
     }
 
-    func setPermissionMode(_ mode: PermissionMode) async throws {
+    /// Switches the permission mode, in effect now; the CLI confirms with a
+    /// `system/status` carrying it. Refusals as for ``setModel(_:)``
+    /// (`bypass_not_launched`, `auto_mode_fast_mode`, …).
+    public func setPermissionMode(_ mode: PermissionMode) async throws {
         _ = try await sendControlRequest("set_permission_mode", ["mode": .string(mode.rawValue)])
+    }
+
+    /// Withdraws a prompt sent while a turn runs; `false` when it already left
+    /// the queue (`cancel_async_message`).
+    public func cancelAsyncMessage(uuid: String) async throws -> Bool {
+        let response = try await sendControlRequest("cancel_async_message", ["message_uuid": .string(uuid)])
+        guard let cancelled = response["cancelled"]?.boolValue else {
+            throw AgentSDKError.invalidResponse(subtype: "cancel_async_message")
+        }
+        return cancelled
+    }
+
+    /// The models this CLI offers now, disabled ones included (`list_models`).
+    public func listModels() async throws -> [InitializationResult.Model] {
+        let response = try await sendControlRequest("list_models")
+        guard let models = response["models"]?.arrayValue else {
+            throw AgentSDKError.invalidResponse(subtype: "list_models")
+        }
+        return models.compactMap { try? $0.decode(InitializationResult.Model.self) }
     }
 
     /// Caps thinking tokens; `nil` removes the cap.
@@ -279,6 +305,8 @@ public final class Session: @unchecked Sendable {
             settle(response)
         case .controlRequest(let id, let request):
             answer(request, id: id)
+        case .flagSettings(let settings):
+            continuation.yield(.flagSettingsChanged(settings))
         case .controlCancel(let id):
             if let request = state.withLock({ $0.permissions.removeValue(forKey: id) }) {
                 request.invalidate()
@@ -298,7 +326,8 @@ public final class Session: @unchecked Sendable {
         if response["subtype"]?.stringValue == "error" {
             let message = response["error"]?.stringValue ?? "unknown error"
             pending.continuation.resume(
-                throwing: AgentSDKError.controlRequestFailed(subtype: pending.subtype, message: message))
+                throwing: AgentSDKError.controlRequestFailed(
+                    subtype: pending.subtype, message: message, code: response["error_code"]?.stringValue))
         } else {
             pending.continuation.resume(returning: response["response"] ?? .null)
         }
@@ -319,6 +348,12 @@ public final class Session: @unchecked Sendable {
             reply(id, success: .object([:]))
         case "elicitation":
             reply(id, success: ["action": "cancel"])
+        case "apply_flag_settings":
+            // The CLI sends a typed /effort or /fast as a top-level line (see
+            // `OutputLine`); a control request of the same name is answered
+            // the same way, so either form reaches the host.
+            reply(id, success: .object([:]))
+            continuation.yield(.flagSettingsChanged(request["settings"] ?? .object([:])))
         case let subtype:
             reply(id, error: "Unsupported control request subtype: \(subtype ?? "")")
         }
@@ -426,6 +461,9 @@ private enum OutputLine: Decodable {
     case controlRequest(id: String, request: JSONValue)
     case controlResponse(JSONValue)
     case controlCancel(id: String)
+    /// `{type: "apply_flag_settings", settings}`: a typed `/effort` or `/fast`
+    /// changed a flag setting (no reply expected).
+    case flagSettings(JSONValue)
     case ignored
 
     init(from decoder: Decoder) throws {
@@ -442,6 +480,8 @@ private enum OutputLine: Decodable {
             self = c.lenient(JSONValue.self, "response").map(OutputLine.controlResponse) ?? .ignored
         case "control_cancel_request":
             self = c.lenient(String.self, "request_id").map(OutputLine.controlCancel) ?? .ignored
+        case "apply_flag_settings":
+            self = c.lenient(JSONValue.self, "settings").map(OutputLine.flagSettings) ?? .ignored
         case "keep_alive":
             self = .ignored
         default:

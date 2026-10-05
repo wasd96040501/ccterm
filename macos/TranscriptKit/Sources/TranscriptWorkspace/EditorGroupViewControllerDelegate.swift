@@ -44,4 +44,18 @@ protocol EditorGroupViewControllerDelegate: AnyObject {
 
     /// Opens a second editor on the right of `group` showing `item`.
     func editorGroup(_ group: EditorGroupViewController, didRequestNewGroupWith item: NSTabViewItem)
+
+    /// What `group` shows while it has no tab (the whole editor, no bar), or
+    /// `nil` for its own *No Editor*.
+    var emptyViewController: NSViewController? { get }
+
+    /// `group` took the empty view controller as a tab's: the area lets go of
+    /// it, so it is not mounted again when the tabs run out.
+    func editorGroupDidTakeEmptyViewController(_ group: EditorGroupViewController)
+
+    /// The + of `group`'s bar was pressed.
+    func editorGroupDidRequestNewTab(_ group: EditorGroupViewController)
+
+    /// What `item`'s tab shows in its close button's slot, or `nil`.
+    func editorGroup(_ group: EditorGroupViewController, indicatorViewFor item: NSTabViewItem) -> NSView?
 }

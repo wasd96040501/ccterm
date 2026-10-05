@@ -1,10 +1,11 @@
 import AgentSDK
+import DisplayModels
 import Foundation
 
 /// The markdown of a document that is words rather than code — a search, a
 /// page fetched, an agent's report, the task list (a `- [x]` checklist as it
 /// stood after that call), a task's news, a command's output, a
-/// compaction's summary, any other call. TranscriptKit sets it, so find,
+/// compaction's summary, a session's log and its context, any other call. TranscriptKit sets it, so find,
 /// selection and copy work in it as in a reply.
 ///
 /// Every document opens with its title as a heading and a status line under
@@ -36,19 +37,30 @@ nonisolated enum DocumentMarkdown {
             return (title, [], [message.text])
         case .taskList(let items):
             return (title, [], [checklist(items)])
-        case .news(let news):
-            return (title, newsStatus(news.report), newsBody(news))
+        case .news(_, let report):
+            return (title, newsStatus(report), newsBody(report))
         case .commandOutput(let command):
             let output = command.outputIsError ? command.errorOutput : command.output
             return (
                 ([command.title, command.arguments].filter { !$0.isEmpty }).joined(separator: " "),
                 [String(localized: "Local command output")], [fenced(output.trimmingCharacters(in: .newlines))]
             )
+        case .log(let failure):
+            return (title, [failure.message], [logBody(failure)])
+        case .contextUsage(let usage):
+            return (title, [usage.model].compactMap { $0 }, contextBody(usage))
         case .compactionSummary(let summary):
             return (title, [String(localized: "What the model continued from")], [summary])
+        case .advice(let call):
+            return (title, [call.advisor?.model].compactMap { $0 }, [call.advisor?.advice ?? ""])
+        case .sentMessage(let call):
+            let message = call.sentMessage
+            return (title, [message?.summary ?? ""].filter { !$0.isEmpty }, [message?.body ?? ""])
+        case .continuationPrompt(let text):
+            return (title, [String(localized: "Written by Claude Code, not by you")], [text])
         case .other(let call):
             return (title, otherStatus(call), other(call))
-        case .command, .shellCommand, .change, .newFile, .read:
+        case .command, .shellCommand, .change, .newFile, .read, .image:
             // Not words; their own bodies show them.
             return (title, [], [])
         }
@@ -160,13 +172,12 @@ nonisolated enum DocumentMarkdown {
 
     /// The list as it stood: done items struck through, the rest open.
     private static func checklist(_ items: [TaskListItem]) -> String {
-        items.compactMap { item -> String? in
+        items.map { item -> String in
             let subject = escaped(item.subject)
             switch item.status {
             case .completed: return "- [x] ~~\(subject)~~"
             case .inProgress: return "- [ ] **\(subject)**"
             case .pending: return "- [ ] \(subject)"
-            case .deleted: return nil
             }
         }.joined(separator: "\n")
     }
@@ -199,8 +210,7 @@ nonisolated enum DocumentMarkdown {
 
     /// The failures and the way to recover, when there are any, above the
     /// result; a monitor's event.
-    private static func newsBody(_ news: TaskNews) -> [String] {
-        let report = news.report
+    private static func newsBody(_ report: TaskReport) -> [String] {
         if let event = report.event { return [event] }
         var body: [String] = []
         if let failures = report.failures, !failures.isEmpty {
@@ -249,7 +259,7 @@ nonisolated enum DocumentMarkdown {
     }
 
     /// A fenced block whose fence is longer than any run of backticks inside.
-    private static func fenced(_ text: String, language: String = "") -> String {
+    static func fenced(_ text: String, language: String = "") -> String {
         guard !text.isEmpty else { return "" }
         var longest = 0
         var run = 0
@@ -262,7 +272,7 @@ nonisolated enum DocumentMarkdown {
     }
 
     /// Words shown as they are, not read as markdown.
-    private static func escaped(_ text: String) -> String {
+    static func escaped(_ text: String) -> String {
         var result = ""
         for character in text {
             if "\\`*_[]<>~".contains(character) { result.append("\\") }

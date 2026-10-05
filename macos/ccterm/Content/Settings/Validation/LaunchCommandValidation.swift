@@ -1,4 +1,5 @@
 import AgentSDK
+import DisplayModels
 import Foundation
 
 /// A launch command being typed — in General, or in an account's sheet —

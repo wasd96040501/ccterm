@@ -9,7 +9,13 @@ final class SessionStateTests: XCTestCase {
     private var state = SessionState(transcript: Transcript(messages: []))
 
     override func setUp() {
-        state.isLive = true
+        state.didBeginLaunch()
+        state.didLaunch(Self.initialization())
+    }
+
+    /// An `initialize` answer with `json` as its body.
+    static func initialization(_ json: String = "{}") -> InitializationResult {
+        try! JSONDecoder().decode(InitializationResult.self, from: Data(json.utf8))
     }
 
     // MARK: - Events as the CLI writes them
@@ -192,36 +198,36 @@ final class SessionStateTests: XCTestCase {
     // MARK: - Turns
 
     func testATurnRunsFromItsStartToItsResult() {
-        XCTAssertFalse(state.isResponding)
+        XCTAssertNotEqual(state.phase, .responding)
         state.apply(line(#"{"type":"command_lifecycle","command_uuid":"u1","state":"queued"}"#))
-        XCTAssertFalse(state.isResponding)
+        XCTAssertNotEqual(state.phase, .responding)
         state.apply(line(#"{"type":"command_lifecycle","command_uuid":"u1","state":"started"}"#))
-        XCTAssertTrue(state.isResponding)
+        XCTAssertEqual(state.phase, .responding)
         state.apply(
             line(
                 #"{"type":"result","subtype":"success","is_error":false,"uuid":"r","session_id":"s","result":"x","num_turns":1}"#
             ))
-        XCTAssertFalse(state.isResponding)
+        XCTAssertNotEqual(state.phase, .responding)
     }
 
     func testASentPromptRespondsUntilItStartsOrEndsWithoutStarting() {
-        state.didSend("u1")
-        XCTAssertTrue(state.isResponding, "responding from the send, before the CLI says so")
+        state.didSend(LocalPrompt(id: "u1", text: "", delivery: .sent))
+        XCTAssertEqual(state.phase, .responding, "responding from the send, before the CLI says so")
         state.apply(line(#"{"type":"command_lifecycle","command_uuid":"u1","state":"refused"}"#))
-        XCTAssertFalse(state.isResponding, "a refused prompt never ran")
+        XCTAssertNotEqual(state.phase, .responding, "a refused prompt never ran")
 
-        state.didSend("u2")
+        state.didSend(LocalPrompt(id: "u2", text: "", delivery: .sent))
         state.apply(line(#"{"type":"command_lifecycle","command_uuid":"u2","state":"started"}"#))
-        state.didSend("u3")
+        state.didSend(LocalPrompt(id: "u3", text: "", delivery: .sent))
         state.apply(line(#"{"type":"command_lifecycle","command_uuid":"u3","state":"cancelled"}"#))
-        XCTAssertTrue(state.isResponding, "the running turn goes on")
+        XCTAssertEqual(state.phase, .responding, "the running turn goes on")
     }
 
     // MARK: - Activity
 
     func testAnActivityIsTheMostUrgentThing() {
         XCTAssertEqual(state.activity, .idle)
-        state.didSend("u1")
+        state.didSend(LocalPrompt(id: "u1", text: "", delivery: .sent))
         XCTAssertEqual(state.activity, .responding)
         state.apply(.permissionRequest(request("r1")))
         XCTAssertEqual(state.activity, .needsInput)
@@ -234,11 +240,11 @@ final class SessionStateTests: XCTestCase {
     // MARK: - Exit
 
     func testACleanExitIsAtRestNotFailed() {
-        state.didSend("u1")
+        state.didSend(LocalPrompt(id: "u1", text: "", delivery: .sent))
         state.apply(.exited(Termination(exitCode: 0, stderr: "")))
-        XCTAssertFalse(state.isLive)
-        XCTAssertFalse(state.isResponding)
-        XCTAssertNil(state.failure)
+        XCTAssertFalse(state.hasProcess)
+        XCTAssertNotEqual(state.phase, .responding)
+        XCTAssertEqual(state.phase, .atRest)
         XCTAssertNil(state.activity)
     }
 
@@ -246,7 +252,7 @@ final class SessionStateTests: XCTestCase {
         state.apply(start())
         state.apply(.permissionRequest(request("r1")))
         state.apply(.exited(Termination(exitCode: 3, stderr: "fatal: boom")))
-        XCTAssertEqual(state.activity, .failed(message: "fatal: boom"))
+        XCTAssertEqual(state.activity, .failed(message: "\(String(localized: "Exit code \(3)")) · fatal: boom"))
         XCTAssertTrue(state.requests.isEmpty, "nothing waits for an answer a dead CLI can't take")
         XCTAssertNil(state.partial)
     }

@@ -12,6 +12,11 @@ public enum ContentBlock: Sendable, Equatable {
     case toolUse(ToolUseBlock)
     case toolResult(ToolResultBlock)
     case image(ImageBlock)
+    /// A call to a tool the API runs itself (`server_tool_use`) — the advisor.
+    case serverToolUse(ServerToolUseBlock)
+    /// The advisor's answer to a ``serverToolUse(_:)``, in the same assistant
+    /// message (`advisor_tool_result`).
+    case advisorToolResult(AdvisorToolResultBlock)
     case unknown(type: String, raw: JSONValue)
 }
 
@@ -49,6 +54,17 @@ extension ContentBlock: Codable {
                         toolUseID: try c.required(String.self, "tool_use_id"),
                         content: c.contentBlocks("content") ?? [],
                         isError: c.lenient(Bool.self, "is_error") ?? false))
+            case "server_tool_use":
+                self = .serverToolUse(
+                    ServerToolUseBlock(
+                        id: try c.required(String.self, "id"),
+                        name: try c.required(String.self, "name"),
+                        input: c.lenient(JSONValue.self, "input") ?? .object([:])))
+            case "advisor_tool_result":
+                self = .advisorToolResult(
+                    AdvisorToolResultBlock(
+                        toolUseID: try c.required(String.self, "tool_use_id"),
+                        content: Self.advisorContent(c.lenient(JSONValue.self, "content") ?? .null)))
             case "image":
                 self = .image(ImageBlock(source: Self.imageSource(c.lenient(JSONValue.self, "source") ?? .null)))
             default:
@@ -57,6 +73,23 @@ extension ContentBlock: Codable {
         } catch {
             self = .unknown(type: type, raw: decoder.rawValue())
         }
+    }
+
+    /// The advisor's answer in one of its four wire shapes (protocol.md *The advisor*).
+    private static func advisorContent(_ raw: JSONValue) -> AdvisorToolResultBlock.Content {
+        switch raw["type"]?.stringValue {
+        case "advisor_result":
+            if let text = raw["text"]?.stringValue {
+                return .result(text: text, stopReason: raw["stop_reason"]?.stringValue)
+            }
+        case "advisor_redacted_result":
+            return .redacted
+        case "advisor_tool_result_error":
+            if let code = raw["error_code"]?.stringValue { return .error(code: code) }
+        default:
+            break
+        }
+        return .unknown(raw)
     }
 
     private static func imageSource(_ raw: JSONValue) -> ImageBlock.Source {
@@ -104,6 +137,26 @@ extension ContentBlock: Codable {
                 source = raw
             }
             return ["type": "image", "source": source]
+        case .serverToolUse(let block):
+            return [
+                "type": "server_tool_use", "id": .string(block.id), "name": .string(block.name), "input": block.input,
+            ]
+        case .advisorToolResult(let block):
+            let content: JSONValue
+            switch block.content {
+            case .result(let text, let stopReason):
+                var body: [String: JSONValue] = ["type": "advisor_result", "text": .string(text)]
+                if let stopReason { body["stop_reason"] = .string(stopReason) }
+                content = .object(body)
+            case .redacted:
+                // The encrypted payload isn't kept; nothing readable is lost.
+                content = ["type": "advisor_redacted_result", "encrypted_content": ""]
+            case .error(let code):
+                content = ["type": "advisor_tool_result_error", "error_code": .string(code)]
+            case .unknown(let raw):
+                content = raw
+            }
+            return ["type": "advisor_tool_result", "tool_use_id": .string(block.toolUseID), "content": content]
         case .unknown(_, let raw):
             return raw
         }

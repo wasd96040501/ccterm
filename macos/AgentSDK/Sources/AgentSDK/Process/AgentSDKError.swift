@@ -12,8 +12,9 @@ public enum AgentSDKError: Error, LocalizedError, Sendable, Equatable {
     case notRunning
     /// The CLI process exited while a request was outstanding.
     case processExited(Termination)
-    /// The CLI answered a control request with an error.
-    case controlRequestFailed(subtype: String, message: String)
+    /// The CLI answered a control request with an error. `code` is the
+    /// response's `error_code` when it gave one (see ``refusalCode``).
+    case controlRequestFailed(subtype: String, message: String, code: String? = nil)
     /// The CLI's answer to a control request did not have the expected shape.
     case invalidResponse(subtype: String)
     /// A one-shot ``Prompt`` run failed.
@@ -24,6 +25,14 @@ public enum AgentSDKError: Error, LocalizedError, Sendable, Equatable {
     case versionFailed(exitCode: Int32, message: String)
     /// `claude --version` ran but printed no version.
     case noVersion(output: String)
+
+    /// For a control request the CLI refused: its `error_code`
+    /// (`restricted_by_org`, `bypass_not_launched`, …), so a host can say why
+    /// in its own words. `nil` for any other error, or a refusal without one.
+    public var refusalCode: String? {
+        if case .controlRequestFailed(_, _, let code) = self { return code }
+        return nil
+    }
 
     public var errorDescription: String? {
         switch self {
@@ -37,7 +46,7 @@ public enum AgentSDKError: Error, LocalizedError, Sendable, Equatable {
             return "Session is not running."
         case .processExited(let termination):
             return "CLI process exited with code \(termination.exitCode)."
-        case .controlRequestFailed(let subtype, let message):
+        case .controlRequestFailed(let subtype, let message, _):
             return "\(subtype) failed: \(message)"
         case .invalidResponse(let subtype):
             return "Unexpected response to \(subtype)."

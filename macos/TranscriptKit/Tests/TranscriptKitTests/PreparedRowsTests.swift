@@ -223,14 +223,14 @@ final class PreparedRowsTests: XCTestCase {
 
         // A row the host serves as a bubble, and one it serves as a document.
         let batch = [SourceHost.Row(Self.userTurn), SourceHost.Row(Self.sources[1])]
-        XCTAssertEqual(batch[0].described.content, .userMessage(Self.userTurn))
+        XCTAssertEqual(batch[0].described.content, .userMessage(.init(Self.userTurn)))
         XCTAssertEqual(batch[1].described.content, .markdown(Self.sources[1]))
 
         // Prepared under the right identities and the wrong cases — each as what
         // the other one is.
         let prepared = await subject.transcript.prepareRows([
             TranscriptRow(id: batch[0].id, content: .markdown(batch[0].source)),
-            TranscriptRow(id: batch[1].id, content: .userMessage(batch[1].source)),
+            TranscriptRow(id: batch[1].id, content: .userMessage(.init(batch[1].source))),
         ])
         XCTAssertEqual(prepared.count, 2, "nothing was prepared, so nothing is being rejected")
 
@@ -247,7 +247,7 @@ final class PreparedRowsTests: XCTestCase {
         for source in [Self.userTurn, Self.sources[1]] {
             XCTAssertNotEqual(
                 RowCache.Entry(measuring: .markdown(source), width: 600, reusing: nil)?.height,
-                RowCache.Entry(measuring: .userMessage(source), width: 600, reusing: nil)?.height,
+                RowCache.Entry(measuring: .userMessage(.init(source)), width: 600, reusing: nil)?.height,
                 "this source measures the same either way, so it cannot detect a wrong case")
         }
 
@@ -720,7 +720,7 @@ private final class SourceHost: NSObject, TranscriptViewDataSource, TranscriptVi
     /// by accident in every other test in the file.
     nonisolated static func content(for source: String) -> TranscriptRowContent {
         if source == hostDrawn { return .view }
-        if source.hasPrefix(userTurnPrefix) { return .userMessage(source) }
+        if source.hasPrefix(userTurnPrefix) { return .userMessage(.init(source)) }
         return .markdown(source)
     }
 

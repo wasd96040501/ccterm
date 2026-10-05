@@ -1,0 +1,120 @@
+/* The secret field's eye: what pressing it does to the value. */
+"Hide" = "Hide";
+"Show" = "Show";
+
+/* Settings: accounts, providers, variables, sign-in, field checks. */
+"Details" = "Details";
+"Add Provider…" = "Add Provider…";
+"Import from Clipboard" = "Import from Clipboard";
+"Name" = "Name";
+"Value" = "Value";
+"Warning" = "Warning";
+"No API Providers" = "No API Providers";
+"Run Claude Code through the Anthropic API, a gateway or a local proxy." = "Run Claude Code through the Anthropic API, a gateway or a local proxy.";
+"Or press ⌘V to paste shell aliases or commands." = "Or press ⌘V to paste shell aliases or commands.";
+"No Variables" = "No Variables";
+"Click + or paste to add." = "Click + or paste to add.";
+"Add Variable" = "Add Variable";
+"Remove Variable" = "Remove Variable";
+"Paste %@ lines or a command" = "Paste %@ lines or a command";
+"Checking…" = "Checking…";
+"Sign in to Claude" = "Sign in to Claude";
+"Waiting for your browser…" = "Waiting for your browser…";
+"Open Browser Again" = "Open Browser Again";
+"Cancel" = "Cancel";
+
+/* Settings: the sign-in sheet. */
+"Continue in your browser. CCTerm finishes signing in when you approve access." = "Continue in your browser. CCTerm finishes signing in when you approve access.";
+
+/* Settings: the Subscription and API Providers sections. */
+"Not signed in" = "Not signed in";
+"Use your Claude Pro or Max plan." = "Use your Claude Pro or Max plan.";
+"Sign In…" = "Sign In…";
+"Subscription" = "Subscription";
+"Details…" = "Details…";
+"Duplicate" = "Duplicate";
+"Delete…" = "Delete…";
+"Sign Out…" = "Sign Out…";
+"API Providers" = "API Providers";
+/* Sidebar: the loading state, a live session mark, its context menu. */
+"Loading…" = "Loading…";
+"Idle" = "Idle";
+"Responding" = "Responding";
+"Needs Your Input" = "Needs Your Input";
+"Failed" = "Failed";
+"End Session" = "End Session";
+
+/* AccountEditorViewController */
+"Required" = "Required";
+"Base URL" = "Base URL";
+"Default Model" = "Default Model";
+"Command" = "Command";
+"None" = "None";
+"Manage" = "Manage";
+"Add" = "Add";
+"Save" = "Save";
+"Account" = "Account";
+"Email" = "Email";
+"Organization" = "Organization";
+"Plan" = "Plan";
+"Connection" = "Connection";
+"Authentication" = "Authentication";
+"Environment Variables" = "Environment Variables";
+"Models" = "Models";
+"Launch" = "Launch";
+"Arguments" = "Arguments";
+"Automatic" = "Automatic";
+"Auth Token" = "Auth Token";
+"API Key" = "API Key";
+"Token" = "Token";
+"API key" = "API key";
+
+/* LaunchSectionViewController */
+"Launch Command" = "Launch Command";
+"Configuration Folder" = "Configuration Folder";
+"Allow Bypass Permissions" = "Allow Bypass Permissions";
+"Lets a session switch to Bypass Permissions, which skips every permission check. Applies to sessions started after this." = "Lets a session switch to Bypass Permissions, which skips every permission check. Applies to sessions started after this.";
+"Claude Code" = "Claude Code";
+
+/* SettingsWindowController */
+"Back" = "Back";
+"Forward" = "Forward";
+
+/* AboutView */
+"Version %@ (%@)" = "Version %@ (%@)";
+"Commit" = "Commit";
+
+/* The New view */
+"Choose Folder…" = "Choose Folder…";
+"Branch" = "Branch";
+"Filter" = "Filter";
+"Use a new worktree" = "Use a new worktree";
+"Work in a new git worktree (--worktree), leaving this folder as it is" = "Work in a new git worktree (--worktree), leaving this folder as it is";
+"Choose the folder Claude will work in." = "Choose the folder Claude will work in.";
+"Recent" = "Recent";
+/* Documents */
+"Deny" = "Deny";
+"Allow" = "Allow";
+"Show in Transcript" = "Show in Transcript";
+"Open" = "Open";
+"Copy" = "Copy";
+"Show all %lld lines" = "Show all %lld lines";
+/* Composer */
+"Send" = "Send";
+"Stop" = "Stop";
+"Show Log" = "Show Log";
+"Restart" = "Restart";
+"Claude quit unexpectedly" = "Claude quit unexpectedly";
+"Fast Mode" = "Fast Mode";
+/* Rows */
+"Interrupted" = "Interrupted";
+"Keep Planning" = "Keep Planning";
+"Approve" = "Approve";
+"Show all" = "Show all";
+"Show %lld more" = "Show %lld more";
+"Submit" = "Submit";
+"Chat About This" = "Chat About This";
+"Choose any" = "Choose any";
+"Other — type something" = "Other — type something";
+"Notes" = "Notes";
+"Selected" = "Selected";

@@ -439,7 +439,7 @@ function shapePopover(el, edge, ax) {
 const MENU = {
   el: null, items: null, chip: null,
   open(chip, kind, s) {
-    this.close();
+    this.close({ at: "once" }); // moving from another button: one menu replaces another, no fade
     this.items = menuItems(kind, s);
     this.kind = kind;
     this.s = s;
@@ -510,9 +510,10 @@ const MENU = {
   },
   /** Closes as NSPopover does: the choice is made on the click; the popover
    *  only fades out after it, taking no more clicks. */
-  close() {
+  close(o = {}) {
     const el = this.el;
-    if (el) {
+    if (el && o.at === "once") el.remove();
+    else if (el) {
       el.style.pointerEvents = "none";
       el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 150, easing: "ease-in" }).onfinish = () => el.remove();
     }

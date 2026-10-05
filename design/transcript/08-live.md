@@ -333,7 +333,8 @@ never an `NSMenu` or a window of our own.
 - **AppKit's own transition** (`animates`, the default, left on): it fades in
   as it opens and out as it closes, at the system's timing. The choice is
   made on the click; the fade is only the popover leaving. It closes on a
-  click outside, on ⎋, and on a choice.
+  click outside, on ⎋, and on a choice. Opened from another pop-up while one
+  is open, the first goes at once, as a menu does moving along a menu bar.
 - **Opened by a button.** Each pop-up is an `NSButton` that shows its bezel
   under the pointer, darkens while pressed and stays on while its popover is
   open; a second click closes it.

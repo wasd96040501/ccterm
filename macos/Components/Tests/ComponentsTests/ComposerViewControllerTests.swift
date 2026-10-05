@@ -351,7 +351,15 @@ final class ComposerViewControllerTests: XCTestCase {
         XCTAssertTrue(popoverIsOpen())
         effort.performClick(nil)
         XCTAssertEqual(effort.state, .off)
+        wait { !popoverIsOpen() }
         XCTAssertFalse(popoverIsOpen())
+    }
+
+    /// Runs the run loop until `condition` holds, two seconds at most: the
+    /// popover fades out after it closes.
+    private func wait(until condition: () -> Bool) {
+        let deadline = Date(timeIntervalSinceNow: 2)
+        while !condition(), Date() < deadline { RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.02)) }
     }
 
     // MARK: - Dimming the words

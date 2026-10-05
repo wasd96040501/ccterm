@@ -2,8 +2,8 @@ import AppKit
 
 /// Every pop-up of the composer and the New view — Model, Effort, Permission
 /// Mode, the folder, the branch (design 08 *Menus are popovers*): a system
-/// popover without animation that closes on a click outside, on ⎋ and on a
-/// choice. It holds the menu's list, an inset table — under a search field
+/// popover, with the system's fade in and out, that closes on a click
+/// outside, on ⎋ and on a choice. It holds the menu's list, an inset table — under a search field
 /// when the menu has one, over the items that stay in view (Fast Mode).
 ///
 /// It opens from a `MenuButton` and keeps the button on while it is open; a
@@ -27,7 +27,6 @@ public final class MenuPopover: NSPopover {
 
     public override init() {
         super.init()
-        animates = false
         behavior = .transient
         contentViewController = list
         delegate = self
@@ -46,10 +45,17 @@ public final class MenuPopover: NSPopover {
 
     /// Opens against `button` — over it when `above`, else under it, on the
     /// other side when there is no room — and turns the button on until it
-    /// closes. Open from another button, it closes there first.
+    /// closes. Open from another button, it leaves that one first, at once,
+    /// as a menu does moving along a menu bar: one menu replacing another
+    /// doesn't fade, and a popover still fading out can't open again.
     public func show(from button: NSButton, above: Bool) {
         guard button.window != nil else { return }
-        if isShown { close() }
+        if isShown {
+            let animated = animates
+            animates = false
+            close()
+            animates = animated
+        }
         contentSize = list.popoverSize
         // A flipped view's maximum y is its bottom.
         let edge: NSRectEdge = above == button.isFlipped ? .minY : .maxY
@@ -71,7 +77,10 @@ public final class MenuPopover: NSPopover {
 }
 
 extension MenuPopover: NSPopoverDelegate {
-    public func popoverDidClose(_ notification: Notification) {
+    /// The close starts here; the fade after it is only the popover leaving,
+    /// and a show from another button can come before the fade ends — so the
+    /// button goes off and the owner hears of it now, not when it has gone.
+    public func popoverWillClose(_ notification: Notification) {
         anchor?.state = .off
         anchor = nil
         onClose?()

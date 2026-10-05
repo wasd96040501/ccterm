@@ -12,7 +12,7 @@ enum MenuSpecimen {
         return DesignPageViewController.Section(
             title: "Menus",
             note:
-                "Every pop-up is a system popover without its animation, of one size while it is open, opened by "
+                "Every pop-up is a system popover with its own fade, of one size while it is open, opened by "
                 + "a button that shows its bezel under the pointer and stays on while the popover is up. Inside, "
                 + "an inset table: heads, items with a check, a glyph, a title, a subtitle under it and a key, glyph "
                 + "or switch at the trailing edge, greyed items with their reason, hairlines between groups. The "

@@ -15,6 +15,9 @@ final class MenuPopoverTests: XCTestCase {
 
     override func setUp() {
         stage = Stage()
+        // The fade is AppKit's; these tests cover what the popover does once
+        // it has closed, so it closes at once.
+        stage.popover.animates = false
         chosen = []
         searches = []
         stage.popover.onChoose = { [unowned self] item in chosen.append(item.id) }

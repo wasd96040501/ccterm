@@ -210,7 +210,15 @@ final class NewSessionViewControllerTests: XCTestCase {
         XCTAssertTrue(popoverIsOpen())
         button.performClick(nil)
         XCTAssertEqual(button.state, .off)
+        wait { !popoverIsOpen() }
         XCTAssertFalse(popoverIsOpen())
+    }
+
+    /// Runs the run loop until `condition` holds, two seconds at most: the
+    /// popover fades out after it closes.
+    private func wait(until condition: () -> Bool) {
+        let deadline = Date(timeIntervalSinceNow: 2)
+        while !condition(), Date() < deadline { RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.02)) }
     }
 
     /// The branch menu is the owner's to word and filter: the view asks for it

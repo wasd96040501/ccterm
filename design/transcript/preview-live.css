@@ -305,8 +305,10 @@
 .lv-po .po-frame path { fill: var(--po-bg); }
 .lv-po .po-body { position: relative; display: flex; flex-direction: column; backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6); }
 .lv-po .mscroll { padding: 10px; overflow: auto; scrollbar-width: thin; }
-.lv-po { width: max-content; max-width: calc(100vw - 48px); }   /* its widest row, as far as the screen */
-.lv-po .mscroll { max-height: calc(100vh - 160px); }              /* scrolls only past the screen's room */
+/* As big as its content and never out of proportion: no side past 1.618 times
+   the kind's width (the golden ratio, set inline); past it the list scrolls. */
+.lv-po { width: max-content; }
+.lv-po .mscroll { flex: 1 1 auto; min-height: 0; }
 .lv-po .mfoot { padding: 6px 10px 10px; border-top: 0.5px solid var(--separator); }
 .lv-po .mi { border-radius: calc(10px * var(--k)); }
 .lv-po .mempty { height: 100%; display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--secondary); }

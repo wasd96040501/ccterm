@@ -91,18 +91,34 @@ final class MenuPopoverTests: XCTestCase {
         XCTAssertGreaterThan(last.maxY, scroll.contentView.bounds.height - 20)
     }
 
-    /// Every menu without a search shows all its rows: the list is as tall
-    /// as they are, measured before it opens, so nothing scrolls.
-    func testEveryRowIsInViewWithoutScrolling() throws {
-        for control in [ComposerMenu.Control.model, .effort, .mode] {
-            open(ComposerMenu.content(of: control, in: MenuFixtures.composer))
+    /// A short menu shows all its rows: the list is as tall as they are,
+    /// measured before it opens, so nothing scrolls.
+    func testAShortMenuShowsEveryRowWithoutScrolling() throws {
+        let contents = [
+            ComposerMenu.content(of: .effort, in: MenuFixtures.composer),
+            ComposerMenu.content(of: .mode, in: MenuFixtures.composer), MenuFixtures.folder,
+        ]
+        for content in contents {
+            open(content)
             let table = try table
             let scroll = try XCTUnwrap(table.enclosingScrollView)
             let rows = table.rect(ofRow: table.numberOfRows - 1).maxY + table.rect(ofRow: 0).minY
-            XCTAssertEqual(scroll.contentView.bounds.height, rows, accuracy: 1, "\(control)")
-            XCTAssertFalse(scroll.verticalScroller?.isHidden == false, "\(control) shows no scroller")
+            XCTAssertEqual(scroll.contentView.bounds.height, rows, accuracy: 1, "\(content.minWidth)")
             stage.popover.close()
         }
+    }
+
+    /// A long list stops at 1.618 times the menu's least width and scrolls;
+    /// Fast Mode stays under it.
+    func testALongListStopsAtTheGoldenRatioAndScrolls() throws {
+        let content = ComposerMenu.content(of: .model, in: MenuFixtures.composer)
+        open(content)
+        let table = try table
+        let scroll = try XCTUnwrap(table.enclosingScrollView)
+        let rows = table.rect(ofRow: table.numberOfRows - 1).maxY + table.rect(ofRow: 0).minY
+        XCTAssertLessThanOrEqual(stage.popover.contentSize.height, (content.minWidth * 1.618).rounded(.up))
+        XCTAssertLessThan(scroll.contentView.bounds.height, rows, "the list scrolls")
+        XCTAssertGreaterThan(stage.popover.contentSize.height, scroll.frame.height, "Fast Mode under the list")
     }
 
     /// The popover widens for its rows: a folder's path is shown whole.
@@ -114,6 +130,7 @@ final class MenuPopoverTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(path.frame.width, path.intrinsicContentSize.width - 0.5, path.stringValue)
         }
         XCTAssertGreaterThanOrEqual(stage.popover.contentSize.width, 320)
+        XCTAssertLessThanOrEqual(stage.popover.contentSize.width, (320 * 1.618).rounded(.up))
     }
 
     // MARK: - One size while open

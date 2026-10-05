@@ -10,14 +10,17 @@ import AppKit
 /// press on the button, as anywhere outside it, closes it.
 ///
 /// Its size is measured before it shows and kept until it closes — searching
-/// or flipping a switch changes what the list shows, never the box:
-/// - **Width:** its widest row's, from the menu's least width up to what
-///   the screen holds, as a menu does; past that a title gives way at its
-///   end and a path at its start.
-/// - **Height:** every row's, measured at that width; the list scrolls only
-///   past the room the screen leaves beside the button, as a menu does. A
-///   menu whose rows change while it is open (a search) gives its list a
-///   height of its own, and that list scrolls.
+/// or flipping a switch changes what the list shows, never the box. A
+/// popover is only as big as its content (HIG *Popovers*), and never out of
+/// proportion: no side outgrows the menu's least width by more than the
+/// golden ratio, so a long list or a long path never turns it into a strip.
+/// - **Width:** its widest row's, from the menu's least width to 1.618 times
+///   it; past that a title gives way at its end and a path in its middle.
+/// - **Height:** every row's, measured at that width, to 1.618 times the
+///   least width; past that the list scrolls (Model). A menu whose rows change
+///   while it is open (a search) gives its list a height of its own, and that
+///   list scrolls.
+/// - Both stay inside the room the screen leaves beside the button.
 /// - The search field over the list and the footer under it never scroll.
 ///
 /// The owner hands it a `MenuContent` and hears choices, searches and the
@@ -51,6 +54,9 @@ public final class MenuPopover: NSPopover {
         list.configure(with: content)
         if !isShown { contentSize = list.size(room: Self.unbounded) }
     }
+
+    /// How far a side may outgrow the menu's least width: the golden ratio.
+    fileprivate static let proportion: CGFloat = 1.618
 
     /// The popover's frame beyond its content: the arrow and the margin the
     /// system keeps from the screen's edge.
@@ -255,7 +261,8 @@ private final class MenuListViewController: NSViewController {
         view.layoutSubtreeIfNeeded()
         let rowMargin = content.minWidth - (table.tableColumns.first?.width ?? content.minWidth)
         let footerMargin = footer.edgeInsets.left + footer.edgeInsets.right
-        let maxWidth = max(room.width, content.minWidth)
+        let maxWidth = max(min(room.width, content.minWidth * MenuPopover.proportion), content.minWidth)
+        let maxHeight = min(room.height, content.minWidth * MenuPopover.proportion)
         let widest = max(
             content.rows.map { naturalWidth(of: $0, at: maxWidth - rowMargin) + rowMargin }.max() ?? 0,
             content.footer.map { naturalWidth(of: .item($0), at: maxWidth - footerMargin) + footerMargin }.max() ?? 0)
@@ -274,7 +281,7 @@ private final class MenuListViewController: NSViewController {
                 table.numberOfRows > 0 ? table.rect(ofRow: table.numberOfRows - 1).maxY + table.rect(ofRow: 0).minY : 0
             view.layoutSubtreeIfNeeded()
             let fixed = view.fittingSize.height
-            listHeight.constant = min(ceil(rows), max(room.height - fixed, 0))
+            listHeight.constant = min(ceil(rows), max(maxHeight - fixed, 0))
         }
         view.layoutSubtreeIfNeeded()
         return view.fittingSize

@@ -380,8 +380,10 @@ function branchItems(s) {
  *  10.5-pt arrow, 28 pt at its base, its tip 2.5 pt off the control it points
  *  at; it opens without animation. Each kind has one size, fixed while it is
  *  open — filtering scrolls inside, the box never moves. Each is as wide as
- *  its widest row, its kind's width at least, and as tall as its rows; the
- *  branch picker has 264 of list whatever the filter leaves. */
+ *  its widest row and as tall as its rows, from its kind's width to 1.618
+ *  times it (the golden ratio) — past that the list scrolls (Model) and a
+ *  path gives way in its middle; the branch picker has 264 of list whatever
+ *  the filter leaves. */
 const PO = { r: 20, arrow: 10.5, base: 28, tip: 2.5, inset: 10 };
 const PO_KIND = { effort: { w: 240 }, mode: { w: 300 }, folder: { w: 320 }, model: { w: 300 }, branch: { w: 300, list: 264 } };
 
@@ -408,9 +410,9 @@ function menuHTML(items, opts = {}) {
   const empty = opts.filter != null && !items.length ? `<div class="mempty">No Matching Branches</div>` : "";
   const kind = PO_KIND[opts.kind] || { w: 240 };
   const list = kind.list ? ` style="height:${kind.list}px"` : "";
-  return `<div class="lv-po${opts.static ? " static" : ""}" data-kind="${opts.kind || ""}" role="menu" style="min-width:${kind.w}px">` +
+  return `<div class="lv-po${opts.static ? " static" : ""}" data-kind="${opts.kind || ""}" role="menu" style="min-width:${kind.w}px;max-width:${Math.round(kind.w * 1.618)}px">` +
     `<svg class="po-frame" aria-hidden="true"><path/></svg>` +
-    `<div class="po-body">${filter}<div class="mscroll"${list}>${empty || head.join("")}</div>${foot.length ? `<div class="mfoot">${foot.join("")}</div>` : ""}</div></div>`;
+    `<div class="po-body" style="max-height:${Math.round(kind.w * 1.618)}px">${filter}<div class="mscroll"${list}>${empty || head.join("")}</div>${foot.length ? `<div class="mfoot">${foot.join("")}</div>` : ""}</div></div>`;
 }
 
 /** Draws `el`'s popover — body and arrow as one shape — with its arrow on
@@ -1395,7 +1397,7 @@ function buildLiveSpecimens() {
   const folderStub = `<span class="lv-pop folder open">${svg16(LV.folder)}<span>ccterm</span>${LV.chev}</span>`;
   const filtered = (q) => { const s = specS({ model: "opus" }); s.bq = q; return s; };
   document.getElementById("lv-menus").innerHTML = `<div class="lv-menus">${[
-    fig("<b>Model · a New tab</b>One list, a section per account, in Settings' order. The account follows the model. Every model under its account's head, as tall as the list; it scrolls only past the screen's room.", po("model", newp, chipStub("Opus 5.5"))),
+    fig("<b>Model · a New tab</b>One list, a section per account, in Settings' order. The account follows the model. Every model under its account's head; past 1.618 times the popover's width the list scrolls, Fast Mode under it.", po("model", newp, chipStub("Opus 5.5"))),
     fig("<b>Model · a live session, while Claude works</b>Within the account: after this turn. Another account restarts the CLI — its items say so, and choosing one asks first.", po("model", busy, chipStub("Opus 5.5"))),
     fig("<b>Switching account in a live session</b>An NSAlert sheet. Idle: Restart is the default. While Claude works, neither is: Return does nothing, Escape cancels.", `<div class="lv-sheethost static">${alertHTML(restartAlert(busy, "relay:default"))}</div>`),
     fig("<b>Effort · Sonnet 4.6</b>Extra High isn't on this model: it runs as High, and says why.", po("effort", s46, chipStub("Extra High"))),

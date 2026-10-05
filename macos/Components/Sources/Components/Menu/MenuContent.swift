@@ -71,11 +71,12 @@ public struct MenuContent {
     public var searchPlaceholder: String?
     /// Said in the list's middle when `rows` is empty.
     public var emptyText: String?
-    /// The least the popover is wide; its rows widen it, as far as the screen.
+    /// The least the popover is wide; its rows widen it to 1.618 times this,
+    /// and its height stops there too.
     public var minWidth: CGFloat
     /// The list's height whatever it holds — for a menu whose rows change
     /// while it is open (a search), so the box doesn't; `nil`: as tall as
-    /// its rows, scrolling only past the screen's room.
+    /// its rows, scrolling past 1.618 times `minWidth`.
     public var listHeight: CGFloat?
 
     public init(

@@ -49,7 +49,8 @@ final class MenuItemView: NSTableCellView {
         subtitle.font = .systemFont(ofSize: 11)
         subtitle.isSelectable = false
         key.font = .systemFont(ofSize: 12)
-        key.lineBreakMode = .byTruncatingHead
+        // A path gives way in its middle, as the Finder's do.
+        key.lineBreakMode = .byTruncatingMiddle
         key.setContentCompressionResistancePriority(.defaultLow - 1, for: .horizontal)
         toggle.controlSize = .mini
         toggle.target = self

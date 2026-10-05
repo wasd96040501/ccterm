@@ -343,13 +343,15 @@ never an `NSMenu` or a window of our own.
   title's size and weight — 4 pt after the title, in tertiary, whatever the
   button's state (the bezel shows hover and on). As a symbol beside text, it centres on
   the title's cap height, not on the button's frame or baseline.
-- **One size while open, measured before it opens.** A popover never
-  resizes under the pointer. It is as wide as its widest row — Effort 240,
-  Permission Mode, Model and the branch picker 300, the folder 320 at least
-  — so a folder's path shows whole, and as tall as all its rows: nothing
-  scrolls unless the screen beside the button has no room for them, as a
-  menu does. The branch picker alone has a list height of its own, 264 pt,
-  since its rows change as the filter does; that list scrolls.
+- **One size while open, measured before it opens, never out of
+  proportion.** A popover never resizes under the pointer, and is only as
+  big as its content (HIG *Popovers*): as wide as its widest row and as tall
+  as its rows, from its least width — Effort 240, Permission Mode, Model and
+  the branch picker 300, the folder 320 — to 1.618 times it, the golden
+  ratio, on either side. Past that a path gives way in its middle (the
+  Finder's way) and a long list scrolls (Model, Fast Mode staying under
+  it). The branch picker has a list height of its own, 264 pt, since its
+  rows change as the filter does.
 - **Concentric with its corners.** The list is an inset `NSTableView`: rows
   sit 10 pt in from the body's edges, the selection the system's. The branch
   picker's filter is an `NSSearchField` at its regular size, a capsule 24 pt
@@ -378,7 +380,7 @@ each account is a section of it, in Settings' order:
   │ ▤ Work Relay  relay.example.com  Restarts the session │
   │   Default · Opus · Sonnet · Haiku           ↻ │
   │ ▤ DeepSeek  api.deepseek.com                  │
-  │   Default                                   ↻ │  ↕ scrolls only past the screen
+  │   Default                                   ↻ │  ↕ scrolls past 1.618 × width
   │ ───────────────────────────────────────────── │
   │ ⚡︎ Fast Mode                            ( ●) │  a switch, outside the scroll
   └──────────────────────────────────────────────┘
@@ -390,9 +392,9 @@ have to pick a model on your behalf; and both would mean *restart* while only
 one says so. With one menu, the only expensive choice — a model in another
 account — is marked where it is chosen.
 
-- **A popover as tall as its list**, scrolling only past the screen's room,
-  each account's header scrolling with its models. Fast Mode sits under the
-  list, always visible.
+- **A popover as tall as its list, to 1.618 times its 300 width**, then
+  the list scrolls, each account's header scrolling with its models. Fast
+  Mode sits under the list, always visible.
 - **Every model is listed**, newest first as the CLI gives them; none is
   folded away.
 - **A section header** is the account's mark (the Claude mark for the

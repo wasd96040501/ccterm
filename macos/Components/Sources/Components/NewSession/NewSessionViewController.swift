@@ -268,9 +268,9 @@ public final class NewSessionViewController: NSViewController {
         guard !isRising else { return }
         isRising = true
         view.layoutSubtreeIfNeeded()
-        iconView.rise()
         let generation = riseGeneration
-        DispatchQueue.main.asyncAfter(deadline: .now() + NewSessionIconView.riseDuration) { [weak self] in
+        // The animations' own end; a settled rise's ends too, and is let go.
+        iconView.rise { [weak self] in
             guard let self, riseGeneration == generation else { return }
             isRising = false
             let completions = riseCompletions

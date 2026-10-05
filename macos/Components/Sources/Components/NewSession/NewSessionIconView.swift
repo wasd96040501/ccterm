@@ -69,11 +69,16 @@ final class NewSessionIconView: NSView {
 
     // MARK: - The rise
 
-    /// Plays Send's rise: the five rows' flashes and the glow's swell. The
-    /// glow stays up when it ends. Not under Reduce Motion — the caller skips it.
-    func rise() {
+    /// Plays Send's rise: the five rows' flashes and the glow's swell, and
+    /// calls `completion` when their animations end (or are taken off by
+    /// `settle`). The glow stays up when it ends. Not under Reduce Motion —
+    /// the caller skips it.
+    func rise(completion: @escaping @MainActor () -> Void) {
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { MainActor.assumeIsolated { completion() } }
         lightView.flash(rows: Self.rowCount)
         glowView.swell()
+        CATransaction.commit()
     }
 
     /// Ends the rise where it is: the flashes gone, the glow back at rest, at once.

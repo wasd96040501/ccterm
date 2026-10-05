@@ -59,7 +59,7 @@ Status: `[ ]` open · `[x]` fixed (commit) · `[-]` dropped (why)
 
 ### Timing and flag patches
 - [ ] **19. Split expand on measured private priorities** — `EditorAreaViewController.expand(_:)`, the composer's 720 wish at 499 (above the divider's 490).
-- [ ] **20. Rise end by `asyncAfter(0.6)`** — `NewSessionViewController`. Native: the animation's completion.
+- [x] **20. Rise end by `asyncAfter(0.6)`** — **Fixed** (*The rise ends when its animations do*): the flashes and the swell are added in one `CATransaction` whose completion block ends the rise; a settled rise's completion is let go by its generation. Was: — `NewSessionViewController`. Native: the animation's completion.
 - [ ] **21. Scroll report by `main.async` + flag** — `TranscriptView` `isScrollReportPending`.
 - [ ] **22. Style page without containment** — `ComponentsDesign` hosts add a VC's view without `addChild`, patched with `main.async`; specimens' appear callbacks change the page window's focus.
 - [ ] **23. Back / forward forwarded by hand** — `MainSplitViewController` instead of `supplementalTarget`.

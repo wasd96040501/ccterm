@@ -9,9 +9,9 @@ import DisplayModels
 /// is leading-aligned, its words on the card's inner line, so nothing moves
 /// when what it says changes.
 ///
-/// The page centres the icon, the slot and the row, a third of the way down.
-/// The note is an overlay under the row, outside that layout: it comes and
-/// goes without moving anything.
+/// The card's top edge sits at the optical centre, the icon over it: what
+/// grows — more lines, the note, an error — grows down, and nothing above it
+/// moves. The note is an overlay under the row, outside the layout.
 ///
 /// The composer is not this view's: its container pins the composer's view to
 /// `composerGuide`, and moves it out when the tab hands over. This view only
@@ -176,8 +176,8 @@ public final class NewSessionViewController: NSViewController {
     }
 
     private func configureConstraints() {
-        // A third of the way down, not the middle: the free space above the
-        // icon is 0.62 of the space below the row (the optical centre).
+        // The card's top a third of the way down, not the middle: the space
+        // above it is 0.62 of the space below it (the optical centre).
         let above = NSLayoutGuide()
         let below = NSLayoutGuide()
         // The row's line, the controls centred in it.
@@ -198,13 +198,13 @@ public final class NewSessionViewController: NSViewController {
         NSLayoutConstraint.activate([
             above.topAnchor.constraint(equalTo: view.topAnchor),
             above.heightAnchor.constraint(equalTo: below.heightAnchor, multiplier: 0.62),
-            iconView.topAnchor.constraint(equalTo: above.bottomAnchor),
-            below.topAnchor.constraint(equalTo: rowLine.bottomAnchor),
+            above.bottomAnchor.constraint(equalTo: composerGuide.topAnchor),
+            below.topAnchor.constraint(equalTo: composerGuide.topAnchor),
             below.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
             iconView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
 
-            composerGuide.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: 24),
+            iconView.bottomAnchor.constraint(equalTo: composerGuide.topAnchor, constant: -24),
             composerGuide.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             composerGuide.widthAnchor.constraint(lessThanOrEqualToConstant: Self.slotWidth),
             composerGuide.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -2 * Self.margin),

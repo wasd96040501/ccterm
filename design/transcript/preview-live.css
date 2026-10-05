@@ -124,12 +124,13 @@
    inner line. A leading-aligned row never moves when what it says changes. */
 
 .lv-new { display: flex; flex-direction: column; align-items: center; padding: 0 24px; overflow: auto; }
-.lv-new::before { content: ""; flex: 0.62 1 0; }   /* the optical centre: a third of the way down */
-.lv-new::after { content: ""; flex: 1 1 0; }
-/* What the page centres: the icon, the card, the row. The note under the
-   row is an overlay, outside that layout, so it moves nothing. */
-.lv-anchor { flex: none; width: 100%; display: flex; flex-direction: column; align-items: center; }
-.lv-hero { display: flex; flex-direction: column; align-items: center; margin-bottom: 24px; }
+/* The card's top edge sits at the optical centre — the space above it 0.62
+   of the space below — and the icon hangs 24 over it: what grows (more
+   lines, the note, an error) grows down, and nothing above it moves. The
+   note under the row is an overlay, outside the layout. */
+.lv-new::before { content: ""; flex: 0.62 1 0; }
+.lv-anchor { flex: 1 1 0; width: 100%; display: flex; flex-direction: column; align-items: center; position: relative; }
+.lv-hero { position: absolute; bottom: calc(100% + 24px); left: 50%; transform: translateX(-50%); }
 .lv-compwrap { width: min(640px, 100%); position: relative; }
 
 /* The app icon, and its cursor's light on the page. Both hold still; on Send
@@ -212,7 +213,7 @@
 .lv-field { display: flex; align-items: flex-start; gap: 6px; min-height: 22px; padding-right: 8px; }
 .lv-field textarea {
   flex: 1; min-width: 0; border: 0; outline: 0; resize: none; background: none; color: var(--label); padding: 0; margin: 0;
-  font: 14px/22px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; min-height: 22px; max-height: 176px; overflow-y: auto;
+  font: 14px/22px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; min-height: 44px; max-height: 176px; overflow-y: auto;   /* two lines before it grows, eight before it scrolls */
 }
 .lv-field textarea::placeholder { color: var(--tertiary); }
 .lv-field .cmdtok { margin: 2px 0 0; padding: 2px 5px; font-size: 13px; background: var(--fill); flex: none; border-radius: var(--r-tag); }

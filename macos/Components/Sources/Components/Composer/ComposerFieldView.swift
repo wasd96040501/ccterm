@@ -36,6 +36,8 @@ final class ComposerFieldView: NSView {
 
     static let font = NSFont.systemFont(ofSize: 14)
     static let lineHeight: CGFloat = 22
+    /// The field holds two lines before it grows, and eight before it scrolls.
+    static let minLines = 2
     static let maxLines = 8
 
     /// What it says while empty.
@@ -86,18 +88,13 @@ final class ComposerFieldView: NSView {
         view.isAutomaticQuoteSubstitutionEnabled = false
         view.isAutomaticDashSubstitutionEnabled = false
         view.isAutomaticTextReplacementEnabled = false
-        view.textContainerInset = NSSize(width: 0, height: Self.topInset)
         view.textContainer?.lineFragmentPadding = 0
         view.isVerticallyResizable = true
         view.isHorizontallyResizable = false
         view.autoresizingMask = [.width]
         view.textContainer?.widthTracksTextView = true
-        let style = NSMutableParagraphStyle()
-        style.lineSpacing = Self.lineSpacing
-        view.defaultParagraphStyle = style
-        view.typingAttributes = [
-            .font: Self.font, .foregroundColor: NSColor.labelColor, .paragraphStyle: style,
-        ]
+        view.defaultParagraphStyle = Self.lineStyle
+        view.typingAttributes = Self.textAttributes
         view.delegate = self
         return view
     }()
@@ -114,18 +111,30 @@ final class ComposerFieldView: NSView {
     }()
 
     private let tokenView = CommandTokenView()
-    private lazy var heightConstraint = scrollView.heightAnchor.constraint(equalToConstant: Self.lineHeight)
+    /// The field's height: its text's (`fitsText`), held between two lines
+    /// and eight by required limits.
+    private lazy var fitsText: NSLayoutConstraint = {
+        let fits = scrollView.heightAnchor.constraint(equalToConstant: Self.lineHeight)
+        fits.priority = .defaultHigh
+        return fits
+    }()
     private lazy var plainLeading = scrollView.leadingAnchor.constraint(equalTo: leadingAnchor)
     private lazy var tokenLeading = scrollView.leadingAnchor.constraint(equalTo: tokenView.trailingAnchor, constant: 6)
 
-    /// The line's 22 pt less the font's own height, added after each line.
-    private static var lineSpacing: CGFloat {
-        let font = Self.font
-        return max(0, lineHeight - (font.ascender - font.descender + font.leading))
-    }
+    /// Every line is 22 pt: the paragraph's line height, fixed.
+    private static let lineStyle: NSParagraphStyle = {
+        let style = NSMutableParagraphStyle()
+        style.minimumLineHeight = lineHeight
+        style.maximumLineHeight = lineHeight
+        return style
+    }()
 
-    /// Centres the 14-pt text in its 22-pt line.
-    private static var topInset: CGFloat { (lineSpacing / 2).rounded(.down) }
+    /// The words' attributes: 14 pt on the 22-pt line, the glyphs raised to
+    /// its middle (a fixed line height puts its extra space over them).
+    static let textAttributes: [NSAttributedString.Key: Any] = [
+        .font: font, .foregroundColor: NSColor.labelColor, .paragraphStyle: lineStyle,
+        .baselineOffset: (lineHeight - (font.ascender - font.descender)) / 2,
+    ]
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -140,7 +149,9 @@ final class ComposerFieldView: NSView {
             scrollView.topAnchor.constraint(equalTo: topAnchor),
             scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
             scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            heightConstraint,
+            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: Self.lineHeight * CGFloat(Self.minLines)),
+            scrollView.heightAnchor.constraint(lessThanOrEqualToConstant: Self.lineHeight * CGFloat(Self.maxLines)),
+            fitsText,
             plainLeading,
         ])
     }
@@ -212,30 +223,29 @@ final class ComposerFieldView: NSView {
 
     // MARK: - Sizing
 
-    /// The field is as tall as its text, from one line up to eight.
-    private var wantedHeight: CGFloat {
+    /// How tall the text is: its lines, 22 pt each.
+    private var textHeight: CGFloat {
         guard let layoutManager = textView.layoutManager, let container = textView.textContainer else {
             return Self.lineHeight
         }
         layoutManager.ensureLayout(for: container)
         let used = ceil(layoutManager.usedRect(for: container).height)
-        let text = used + Self.lineSpacing / 2 + Self.topInset
-        return min(max(text, Self.lineHeight), Self.lineHeight * CGFloat(Self.maxLines))
+        return used
     }
 
     override func layout() {
         super.layout()
         // A change of width rewraps the text; follow it.
-        let wanted = wantedHeight
-        if abs(heightConstraint.constant - wanted) > 0.5 {
-            heightConstraint.constant = wanted
+        let height = textHeight
+        if abs(fitsText.constant - height) > 0.5 {
+            fitsText.constant = height
             super.layout()
         }
     }
 
     private func textDidChange() {
         textView.needsDisplay = true
-        heightConstraint.constant = wantedHeight
+        fitsText.constant = textHeight
         delegate?.composerFieldViewDidChange(self)
     }
 }
@@ -298,10 +308,12 @@ private final class ComposerTextView: NSTextView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         guard string.isEmpty, !hasMarkedText(), !hidesPlaceholder else { return }
-        let origin = NSPoint(x: textContainerInset.width, y: textContainerInset.height)
+        // On the first line, as the words would be.
+        var attributes = ComposerFieldView.textAttributes
+        attributes[.foregroundColor] = NSColor.tertiaryLabelColor
         (placeholder as NSString).draw(
-            at: origin,
-            withAttributes: [.font: font ?? .systemFont(ofSize: 14), .foregroundColor: NSColor.tertiaryLabelColor])
+            in: NSRect(x: 0, y: 0, width: bounds.width, height: ComposerFieldView.lineHeight),
+            withAttributes: attributes)
     }
 
     override func becomeFirstResponder() -> Bool {

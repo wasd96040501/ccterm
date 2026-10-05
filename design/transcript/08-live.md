@@ -123,11 +123,12 @@ badge, not a thing.
   card's 16-pt inner line. Centring every line in turn (icon, title, path,
   controls, note, card, hints) made a pyramid, each line a different width
   on one axis; a column has one edge to read down.
-- **Centred**, vertically a third of the way down rather than at the centre
-  (the optical centre, the way Spotlight's field sits). What is centred is
-  the icon, the card and the row; **the line under the row is an overlay**,
-  outside that layout, so it comes and goes without moving anything.
-  Nothing else on the
+- **The card's top edge sits at the optical centre**, a third of the way
+  down rather than at the centre (the way Spotlight's field sits), and the
+  icon hangs 24 over it. The card grows down only: more lines, the line
+  under the row and an error never move anything above it. **The line under
+  the row is an overlay**, outside the layout. In a session the card stands
+  on the window's bottom and grows up only. Nothing else on the
   page: the keys (↩, ⇧↩, ⇧⇥) are the conventions of a field and a menu's
   shortcut, and `/` is named by the placeholder.
 - **The decoration is the app icon** (`design/icon`, the shipped pixels) at
@@ -262,7 +263,7 @@ prompt, so this leaves nothing in the sidebar.
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│ Message Claude                                                   │  14 pt, grows 1 → 8 lines
+│ Message Claude                                                   │  14 pt, 2 lines, grows to 8
 │                                                                  │
 │ Sonnet 5.5 ◷ ⌄   ▂▄▆█ Extra High ⌄   ✎ Accept Edits ⌄    ◔ 72 %  (■)│  accessory row, 28 pt
 └────────────────────────────────────────────────────────────────┘

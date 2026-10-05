@@ -174,13 +174,16 @@ final class ComposerViewControllerTests: XCTestCase {
         XCTAssertEqual(recorder.submitted, ["/context"])
     }
 
-    func testTheFieldGrowsWithItsWordsAndStopsAtEightLines() throws {
+    /// Two lines fit before the field grows; past eight it scrolls.
+    func testTheFieldHoldsTwoLinesThenGrowsAndStopsAtEight() throws {
         let before = composer.fittedHeight
+        composer.text = "line 1\nline 2"
+        XCTAssertEqual(composer.fittedHeight, before, "a second line fits the field as it is")
         composer.text = (1...3).map { "line \($0)" }.joined(separator: "\n")
-        XCTAssertEqual(composer.fittedHeight - before, 44, accuracy: 2)
+        XCTAssertEqual(composer.fittedHeight - before, 22, accuracy: 2)
         composer.text = (1...20).map { "line \($0)" }.joined(separator: "\n")
         composer.view.layoutSubtreeIfNeeded()
-        XCTAssertEqual(composer.fittedHeight - before, 22 * 7, accuracy: 2)
+        XCTAssertEqual(composer.fittedHeight - before, 22 * 6, accuracy: 2)
     }
 
     // MARK: Keys

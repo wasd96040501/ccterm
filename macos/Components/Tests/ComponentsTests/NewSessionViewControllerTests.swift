@@ -101,17 +101,18 @@ final class NewSessionViewControllerTests: XCTestCase {
         XCTAssertLessThan(folder.frame.maxX, worktree.frame.minX, "the folder leads the row")
     }
 
-    /// The free space above the icon is 0.62 of the space below the row.
-    func testThePageAtRestSitsAtTheOpticalCentre() throws {
+    /// The card's top sits at the optical centre: the space above it is 0.62
+    /// of the space below it.
+    func testTheCardsTopSitsAtTheOpticalCentre() throws {
         let controller = controller(width: 900, height: 900)
         let root = controller.view
-        let icon = try XCTUnwrap(root.subviews.first { $0 is NewSessionIconView })
-        let above = top(icon, in: root)
-        let below = controller.composerGuide.frame.minY - 8 - 28
+        let above = root.bounds.maxY - controller.composerGuide.frame.maxY
+        let below = controller.composerGuide.frame.maxY
         XCTAssertEqual(above / below, 0.62, accuracy: 0.005)
     }
 
-    /// The note is an overlay: as it comes, nothing moves.
+    /// The note is an overlay and the card grows down: as either comes,
+    /// the card's top holds still.
     func testTheSlotsTopHoldsWhileWhatIsUnderItGrows() throws {
         let controller = NewSessionViewController()
         controller.loadViewIfNeeded()
@@ -131,6 +132,10 @@ final class NewSessionViewControllerTests: XCTestCase {
         controller.view.layoutSubtreeIfNeeded()
         XCTAssertEqual(controller.composerGuide.frame.maxY, slotTop)
         XCTAssertEqual(checkbox.frame, checkboxFrame, "the checkbox holds still as the note comes")
+
+        height.constant = 140
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(controller.composerGuide.frame.maxY, slotTop)
     }
 
     // MARK: - The folder menu

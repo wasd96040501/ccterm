@@ -841,7 +841,7 @@ const LW = {
     }).join("");
   },
   sizeFields() {
-    this.root.querySelectorAll(".lv-field textarea").forEach((ta) => { ta.style.height = "auto"; ta.style.height = `${Math.min(176, ta.scrollHeight)}px`; });
+    this.root.querySelectorAll(".lv-field textarea").forEach((ta) => { ta.style.height = "auto"; ta.style.height = `${Math.min(176, Math.max(44, ta.scrollHeight))}px`; });
   },
 
   // Events --------------------------------------------------------------

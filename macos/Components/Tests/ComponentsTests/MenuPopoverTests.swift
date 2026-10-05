@@ -201,6 +201,32 @@ final class MenuPopoverTests: XCTestCase {
         XCTAssertEqual([stage.button.state, stage.other.state], [.off, .on])
     }
 
+    /// Moving from one menu to another with fewer, shorter rows, as the New
+    /// view does from a long branch list to the folder: the new rows are
+    /// handed over while the old menu is still open — rows that would come
+    /// into view are the new content's, never the old count's.
+    func testAnotherMenuWithFewerRowsReplacesAnOpenOne() throws {
+        let branches = MenuContent(
+            rows: (0..<30).map {
+                .item(MenuContent.Item(id: $0, title: "branch-\($0)", subtitle: "Checked out in another worktree"))
+            },
+            searchPlaceholder: "Filter", minWidth: 300, listHeight: 264)
+        open(branches)
+        let longer = try table.numberOfRows
+        // The open menu's rows laid out, as they are on screen.
+        try popoverWindow.layoutIfNeeded()
+        try popoverWindow.displayIfNeeded()
+        var shown = 0
+        try table.enumerateAvailableRowViews { _, _ in shown += 1 }
+        XCTAssertGreaterThan(shown, 0, "premise: the open menu's rows are laid out")
+        stage.popover.configure(with: MenuFixtures.folder)
+        stage.popover.show(from: stage.other, above: false)
+        let table = try table
+        XCTAssertLessThan(MenuFixtures.folder.rows.count, longer, "premise: the second menu is shorter")
+        XCTAssertEqual(table.numberOfRows, MenuFixtures.folder.rows.count)
+        XCTAssertEqual(stage.popover.anchor, stage.other)
+    }
+
     /// A switch leaves the popover open; a choice closes it.
     func testWhatKeepsItOpen() {
         XCTAssertTrue(MenuContent.Item(id: 0, title: "Fast Mode", trailing: .toggle(isOn: false)).isToggle)

@@ -280,10 +280,11 @@ private final class MenuListViewController: NSViewController {
         return view.fittingSize
     }
 
-    /// Each row's height at `rowWidth`, for `heightOfRow`.
+    /// Each row's height at `rowWidth`, for `heightOfRow`. The table learns
+    /// them from the `reloadData()` that always follows — never before it,
+    /// when it still holds the rows of the content shown last.
     private func measureRows() {
         rowHeights = content.rows.map { height(of: $0, at: rowWidth) }
-        table.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<content.rows.count))
     }
 
     /// The width `row` takes with nothing squeezing it, its subtitle wrapping

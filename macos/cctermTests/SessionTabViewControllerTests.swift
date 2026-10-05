@@ -145,6 +145,14 @@ final class SessionTabViewControllerTests: XCTestCase {
         XCTAssertNil(session.supplementalTarget(forAction: action, sender: nil))
     }
 
+    /// File › Stop is greyed while there is nothing to stop.
+    func testStopIsDisabledWithNothingToStop() {
+        let tab = SessionTabViewController(
+            .session(URL(fileURLWithPath: "/nonexistent/s.jsonl")), title: "s", context: context())
+        let stop = NSMenuItem(title: "Stop", action: TranscriptTab.stopAction, keyEquivalent: ".")
+        XCTAssertFalse(tab.validateMenuItem(stop))
+    }
+
     func testASessionsTabIsNoDraft() throws {
         let tab = SessionTabViewController(
             .session(URL(fileURLWithPath: "/nonexistent/s.jsonl")), title: "s", context: context())

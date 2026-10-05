@@ -28,7 +28,7 @@ ccterm/
 ├── macos/
 │   ├── ccterm.xcodeproj/
 │   ├── ccterm/               # App sources
-│   │   ├── App/              # CCTermApp + menu commands; AppKit/ holds AppDelegate (composition root) + the main window's controller and split
+│   │   ├── App/              # AppKit/: AppDelegate (the entry and composition root), the main menu, the main window's controller and split
 │   │   ├── Content/          # About/, Settings/, Transcript/ (a session tab): binders, models and mappings — their views are Components'
 │   │   ├── Accounts/         # AccountStore (JSON + keychain secrets), LaunchStore (how the CLI is launched), LaunchCheckService, SubscriptionService
 │   │   ├── Library/          # LibraryStore — the session tree on disk, and reading one transcript

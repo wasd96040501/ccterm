@@ -244,9 +244,12 @@ final class SessionTabViewController: NSViewController {
     /// so the window's menu reaches it from anywhere in the tab, and the split
     /// view controller hands it on from the sidebar.
     @objc func stopResponding(_ sender: Any?) {
-        guard handoverURL != nil || state?.phase.canStop == true else { return }
+        guard canStop else { return }
         composerViewControllerDidRequestStop(composer)
     }
+
+    /// A turn or a launch is under way: what Stop stops.
+    private var canStop: Bool { handoverURL != nil || state?.phase.canStop == true }
 
     // MARK: - The draft
 
@@ -811,5 +814,12 @@ extension SessionState.Phase {
         case .starting, .responding, .compacting: true
         case .atRest, .idle, .failed: false
         }
+    }
+}
+
+/// File › Stop is enabled while there is something to stop.
+extension SessionTabViewController: NSMenuItemValidation {
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        item.action == #selector(stopResponding(_:)) ? canStop : true
     }
 }

@@ -140,7 +140,7 @@ final class SessionStore {
             nonisolated(unsafe) let held = subscription
             continuation.onTermination = { [weak self] _ in
                 held.cancel()
-                Task { @MainActor in self?.stopReading(url) }
+                Task { @MainActor [weak self] in self?.stopReading(url) }
             }
         }
     }

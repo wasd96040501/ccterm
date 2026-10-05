@@ -1,6 +1,6 @@
 .PHONY: build release install dmg clean fmt fmt-check test-unit test-kit test-ui design test-sdk test-list bench-list record-list demo-kit demo-list logs icon sidebar-icons window-chrome new-view-icons composer-icons design-shots appkit-doc arch help
 
-XCSTRINGS := macos/ccterm/Localizable.xcstrings
+XCSTRINGS := macos/ccterm/Localizable.xcstrings macos/ccterm/MainMenu.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
 SWIFT_FORMAT := swift-format
 SWIFT_SRC := macos/ccterm macos/cctermTests macos/Components/Sources macos/Components/Tests macos/AgentSDK/Sources macos/AgentSDK/Tests macos/TranscriptKit/Sources macos/TranscriptKit/Tests macos/ExactList/Sources macos/ExactList/Tests macos/tools

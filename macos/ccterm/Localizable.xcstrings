@@ -997,26 +997,6 @@
         }
       }
     },
-    "Close Tab": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "关闭标签页"
-          }
-        }
-      }
-    },
-    "Close Window": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "关闭窗口"
-          }
-        }
-      }
-    },
     "Command": {
       "localizations": {
         "zh-Hans": {
@@ -1878,17 +1858,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "新会话"
-          }
-        }
-      }
-    },
-    "New Tab": {
-      "comment": "File menu: opens a New tab.",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "新建标签页"
           }
         }
       }
@@ -2829,16 +2798,6 @@
         }
       }
     },
-    "Settings…": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "设置…"
-          }
-        }
-      }
-    },
     "Show all": {
       "localizations": {
         "zh-Hans": {
@@ -2948,17 +2907,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "仍在检查"
-          }
-        }
-      }
-    },
-    "Stop": {
-      "comment": "File menu: stops the session's turn.",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "停止"
           }
         }
       }

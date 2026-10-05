@@ -2,24 +2,26 @@ import AgentSDK
 import AppKit
 import Combine
 import Components
-import SwiftUI
 
-/// AppKit-side application delegate and the app's composition root. Owns
-/// the main window's lifecycle — creating it from
-/// `applicationWillFinishLaunching` instead of declaring a SwiftUI `Window`
-/// scene — and every auxiliary window's (lazy `SettingsWindowController` /
-/// `AboutWindowController`), so the OS can't resurface them from saved
-/// state at the next launch and SwiftUI can't auto-open them as the
-/// leading `Window` scene.
+/// The app's entry, its delegate and its composition root. Owns the main
+/// window's lifecycle — created in `applicationWillFinishLaunching` — and
+/// every auxiliary window's (lazy `SettingsWindowController` /
+/// `AboutWindowController`), none restorable, so the OS can't resurface them
+/// from saved state at the next launch.
 ///
-/// `CCTermApp.body` keeps only a `Settings { EmptyView() }` placeholder to
-/// satisfy the `App` protocol's `some Scene` requirement; menu items live
-/// in `AppCommands` — a SwiftUI `Commands` block attached to that
-/// placeholder scene. SwiftUI merges those into the app's main menu, so
-/// cold-start menu clicks (⌘, → `showSettingsWindow()`, App > About ccterm
-/// → `showAboutWindow()`) resolve their closures without an AppKit bridge.
+/// It installs the main menu (`MainMenu`) and, at the responder chain's end,
+/// answers what no window does: About, Settings, a New Tab with no main
+/// window key, ⌘W in a window without tabs.
+@main
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    static func main() {
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        app.run()
+    }
+
     private(set) var mainWindowController: MainWindowController?
 
     // The object graph, built once in `applicationWillFinishLaunching`; nil in
@@ -46,10 +48,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// one probe per account serves every window.
     private var catalog: ModelCatalogStore?
 
-    /// Lazy AppKit-rooted Settings window. Created on the first
-    /// `showSettingsWindow()` call (⌘, or App > Settings… menu item)
-    /// — never at launch, so the OS cannot resurface it from saved
-    /// state.
+    /// Lazy Settings window. Created on the first `showSettingsWindow(_:)`
+    /// (⌘, or App > Settings…) — never at launch, so the OS cannot resurface
+    /// it from saved state.
     private var settingsWindowController: SettingsWindowController?
 
     /// What Settings reads and changes; `nil` before launch has built it.
@@ -59,7 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             accounts: accounts, launch: launch, launchCheck: launchCheck, subscription: subscription)
     }
 
-    func showSettingsWindow() {
+    @objc func showSettingsWindow(_ sender: Any?) {
         guard let context = settingsContext else { return }
         let controller =
             settingsWindowController
@@ -76,14 +77,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Lazy AppKit-rooted About window. Same shape as
-    /// `settingsWindowController` — created
-    /// on the first `showAboutWindow()` call (App > About ccterm menu
-    /// item) so SwiftUI cannot auto-open it as the leading `Window`
-    /// scene and the OS cannot resurface it from saved state.
+    /// Lazy About window, as `settingsWindowController`: created on the first
+    /// `showAboutWindow(_:)` (App > About ccterm).
     private var aboutWindowController: AboutWindowController?
 
-    func showAboutWindow() {
+    @objc func showAboutWindow(_ sender: Any?) {
         let controller =
             aboutWindowController
             ?? {
@@ -97,16 +95,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// File › New Tab, ⌘T: in the main window, shown first if it was
-    /// closed. With the main window key the menu's `newTab:` already reached its
-    /// editor area; this is for when another window is key, or none.
-    func newTab() {
+    /// closed. With the main window key its editor area answers `newTab:`
+    /// first; this is for when another window is key, or none.
+    @objc func newTab(_ sender: Any?) {
         guard let mainWindowController else { return }
         mainWindowController.showWindow(nil)
         mainWindowController.window?.makeKeyAndOrderFront(nil)
         mainWindowController.newTab()
     }
 
+    /// File › Close Tab, ⌘W, in a window without tabs (Settings, About):
+    /// closes it, as Xcode's ⌘W does where there is no tab.
+    @objc func closeTab(_ sender: Any?) {
+        NSApp.keyWindow?.performClose(sender)
+    }
+
     func applicationWillFinishLaunching(_ notification: Notification) {
+        NSApp.mainMenu = MainMenu.make()
         // Hosted unit tests keep NSApp alive for AppKit rendering, but the host
         // shows no Dock icon and opens no window of its own.
         if Self.isUnderXCTest {
@@ -263,4 +268,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// XCTest injects this into a hosted test run.
     private static let isUnderXCTest =
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+}
+
+extension AppDelegate: NSMenuItemValidation {
+    /// New Tab while there is a main window to open it in; Close Tab while a
+    /// window is key. The rest are always there.
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(newTab(_:)): mainWindowController != nil
+        case #selector(closeTab(_:)): NSApp.keyWindow != nil
+        default: true
+        }
+    }
 }

@@ -29,3 +29,6 @@ jobs:
 
       - name: Check formatting and repo hygiene
         run: make fmt-check
+
+      - name: Test clean.sh
+        run: make test-clean

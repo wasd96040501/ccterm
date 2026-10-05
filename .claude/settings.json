@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "script=\"$CLAUDE_PROJECT_DIR/macos/scripts/clean.sh\"; if [ -x \"$script\" ]; then nohup \"$script\" prune >>\"${TMPDIR:-/tmp}/ccterm-prune.log\" 2>&1 </dev/null & fi; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}

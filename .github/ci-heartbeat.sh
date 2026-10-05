@@ -11,7 +11,7 @@ while kill -0 "$CMD" 2>/dev/null; do
   kill -0 "$CMD" 2>/dev/null || break
   ELAPSED=$((SECONDS - START))
   echo "::group::heartbeat ${ELAPSED}s"
-  tail -n 15 /tmp/ccterm-utest-*/raw.log 2>/dev/null
+  tail -n 15 macos/build/logs/utest-*/raw.log 2>/dev/null
   echo "--- processes"
   ps -axo pid,etime,%cpu,command | grep -E "xcodebuild|ccterm.app|xctest|swift-frontend|testmanagerd|SWBBuildService" | grep -v grep | cut -c1-200
   echo "::endgroup::"

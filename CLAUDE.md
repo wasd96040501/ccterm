@@ -60,7 +60,9 @@ Always go through `make`; never call `macos/scripts/*.sh` directly. (Those scrip
 ```bash
 make build                           # Debug build
 make release                         # Release build
-make clean
+make clean [DRY_RUN=1]               # THIS checkout only: its DerivedData, macos/build (build + test logs), package .build dirs
+make prune [DRY_RUN=1]               # DerivedData of deleted worktrees + day-old /tmp logs; runs at every session start
+make test-clean                      # clean.sh against throwaway directories
 make fmt / make fmt-check            # swift-format + xcstrings
 make test-unit                       # app logic tests (snapshots skipped)
 make test-unit FILTER=<Class>[/testMethod]   # one class/method; naming a *SnapshotTests class runs it
@@ -79,7 +81,7 @@ make icon / make sidebar-icons / make window-chrome   # regenerate the app icon 
 make arch [SCOPE=core|app|kit|sdk|<dir>|<unit>] [DETAIL=members]   # build/arch/: tree.md (the component tree from AppDelegate), data.md (store → binder → component, and each event back), rules.md (every break of macos/CLAUDE.md § Where code lives and § Component boundaries, with its fix; the terminal counts them); SCOPE adds units/, the per-directory map /arch-review reads; DETAIL=members adds each type's calls and state writers
 ```
 
-`make build` prints success/failure plus two log paths. On failure read the summary log first; open the full log only if the summary isn't enough — don't `tail`/`cat` it blindly.
+`make build` and `make test-unit` write their logs under the checkout's `macos/build/logs/` (newest 10 builds, 5 test runs kept), so a removed worktree takes them along. `make build` prints success/failure plus two log paths. On failure read the summary log first; open the full log only if the summary isn't enough — don't `tail`/`cat` it blindly.
 
 ## Tests
 
@@ -89,7 +91,7 @@ After editing a view, look at it where it lives: a component on the style page (
 
 ## CI
 
-Every PR runs `fmt.yml` (`make fmt-check`) and `test.yml` (five jobs: `test` → `make test-unit`, `test-kit` → `make test-kit`, `test-ui` → `make test-ui`, `test-list` → `make test-list`, `test-sdk` → `make test-sdk`; the package jobs need no Xcode project). `test.yml` caches DerivedData (`macos/build/test-dd`), keyed on runner + Xcode + `.github/cache-salt` + source hash. **If incremental CI builds go bad** (stale `.swiftmodule` link errors that don't reproduce after local `make clean`), edit `.github/cache-salt` and commit to force a cold build.
+Every PR runs `fmt.yml` (`make fmt-check`, `make test-clean`) and `test.yml` (five jobs: `test` → `make test-unit`, `test-kit` → `make test-kit`, `test-ui` → `make test-ui`, `test-list` → `make test-list`, `test-sdk` → `make test-sdk`; the package jobs need no Xcode project). `test.yml` caches DerivedData (`macos/build/test-dd`), keyed on runner + Xcode + `.github/cache-salt` + source hash. **If incremental CI builds go bad** (stale `.swiftmodule` link errors that don't reproduce after local `make clean`), edit `.github/cache-salt` and commit to force a cold build.
 
 ## Logging
 

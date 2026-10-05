@@ -11,7 +11,8 @@
   --r-tag: calc(5px * var(--k));     /* tokens, small marks */
   --r-ctl: calc(7px * var(--k));     /* chips, tabs, menu rows, sidebar selection */
   --r-pop: calc(12px * var(--k));    /* completion, banners */
-  --r-card: calc(18px * var(--k));   /* the composer, alerts, specimen cards */
+  --r-card: calc(18px * var(--k));   /* alerts, specimen cards */
+  --r-comp: calc(22px * var(--k));   /* the composer: concentric with its action button, 14 + 8 */
   --i-row: 16px;                     /* sidebar rows, menu items, tiles */
   --i-ctl: 14px;                     /* glyphs inside 12-pt controls */
   --i-badge: 10px;                   /* clock, bolt, checkmark */
@@ -28,7 +29,7 @@
 @supports (corner-shape: squircle) {
   :root { --k: 1.45; }
   .sq, .chip, .mi, .lv-slash, .sl, .lv-banner, .lv-comp, .lv-card, .lv-card .stage, .lv-alert,
-  .lv-side .it::before, .lv-folder, .lv-group > .tabbar .tab, .tabbar.spec-bar .tab, .matrix-wrap { corner-shape: squircle; }
+  .lv-side .it::before, .lv-pop, .lv-group > .tabbar .tab, .tabbar.spec-bar .tab, .matrix-wrap { corner-shape: squircle; }
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) { --po-bg: color-mix(in srgb, #2d2d30 94%, transparent); --side-bg: #2b2b2e; --side-sel: rgba(255, 255, 255, 0.12); --si-fill: #f5f5f7; --si-edge: rgba(0, 0, 0, 0.5); --glow: 0.36; --ic-top: #1f1f21; --ic-bot: #0e0e0f; --rim-top: 0.34; --rim-mid: 0.1; --rim-bot: 0.2; }
@@ -111,16 +112,22 @@
 .lv-plus:hover .lv-tip { opacity: 1; transition-delay: .5s; }
 .lv-plus.hover .lv-tip { opacity: 1; }
 
-/* MARK: - New view */
+/* MARK: - New view
+
+   Two things, not a stack of centred lines: the app icon, centred, the one
+   decoration; then a column — the card, and under it the row that says where
+   Claude works — sharing the card's edges, its contents on the card's 16-pt
+   inner line. A leading-aligned row never moves when what it says changes. */
 
 .lv-new { display: flex; flex-direction: column; align-items: center; padding: 0 24px; overflow: auto; }
 .lv-new::before { content: ""; flex: 0.62 1 0; }   /* the optical centre: a third of the way down */
 .lv-new::after { content: ""; flex: 1 1 0; }
-.lv-hero { display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 20px; }
+.lv-hero { display: flex; flex-direction: column; align-items: center; margin-bottom: 24px; }
+.lv-compwrap { width: min(640px, 100%); position: relative; }
 
 /* The app icon, and its cursor's light on the page. Both hold still; on Send
    they rise once (RISE_MS) and the page hands over. */
-.lv-appicon { position: relative; width: 64px; height: 64px; margin-bottom: 16px; }
+.lv-appicon { position: relative; width: 64px; height: 64px; }
 .lv-appicon::before {
   content: ""; position: absolute; left: 50%; top: 66%; width: 112px; height: 84px; transform: translate(-50%, -50%); z-index: 0;
   background: linear-gradient(180deg, #FFB46C, #FF6E7C 50%, #B95CF8);
@@ -137,26 +144,26 @@
 .lv-new.rising .lv-appicon::before { animation: lvswell 600ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
 @keyframes lvswell { to { opacity: var(--glow); transform: translate(-50%, -54%) scale(1.08, 1.18); } }
 .lv-new.rising textarea { opacity: 0.5; }
+.lv-new.rising .lv-where { opacity: 0; transition: opacity .3s; }
 
-.lv-folder {
-  font: inherit; font-size: 22px; font-weight: 600; color: var(--label); background: none; border: 0;
-  border-radius: var(--r-ctl); padding: 1px 8px 1px 10px; display: inline-flex; align-items: center; gap: 6px; cursor: default;
+/* Where Claude works: the folder, the branch, the worktree checkbox, all
+   borderless 12-pt controls whose contents start on the card's 16-pt line;
+   what Send will do on a line under them, in tertiary — under the card, so
+   nothing above it moves when it comes and goes. */
+.lv-where { display: flex; flex-wrap: wrap; align-items: center; gap: 0 4px; min-height: 28px; margin: 8px 0 0 8px; }
+.lv-pop {
+  display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: 0; border-radius: var(--r-ctl);
+  background: none; font: inherit; font-size: 12px; color: var(--secondary); cursor: default; white-space: nowrap;
 }
-.lv-folder:hover, .lv-folder.open { background: var(--hover); }
-.lv-folder .chev2 { width: 11px; height: 11px; color: var(--tertiary); }
-.lv-path { font-size: 11px; color: var(--tertiary); margin-top: 2px; }
-/* Branch and Worktree: one row of borderless controls that never moves; the
-   note under it keeps its height whether it says something or not. */
-.lv-where { display: flex; gap: 8px; align-items: center; justify-content: center; min-height: 24px; margin-top: 8px; }
-.lv-pop, .lv-tog { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: 0; border-radius: var(--r-ctl); background: none; font: inherit; font-size: 12px; color: var(--secondary); cursor: default; white-space: nowrap; }
-.lv-pop:hover, .lv-pop.open, .lv-tog:hover { background: var(--hover); color: var(--label); }
-.lv-pop svg:first-child { width: 10px; height: 11px; }
-.lv-pop .chev2 { width: 10px; height: 10px; color: var(--tertiary); }
-.lv-tog .g { width: var(--i-ctl); height: var(--i-ctl); }
-.lv-tog.on { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
-.lv-tog.on:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
-.lv-where .nogit { font-size: 12px; color: var(--tertiary); }
-.lv-note { font-size: 11px; color: var(--tertiary); min-height: 15px; line-height: 15px; margin-top: 2px; }
+.lv-pop:hover, .lv-pop.open { background: var(--hover); color: var(--label); }
+.lv-pop:active { background: var(--sel-quiet); }
+.lv-pop.folder { color: var(--label); }                    /* the one choice Send makes final: first, in label ink */
+.lv-pop .g { width: var(--i-ctl); height: var(--i-ctl); flex: none; color: var(--secondary); }
+.lv-where .lv-check { margin-left: 8px; }
+.lv-where .nogit { font-size: 12px; color: var(--tertiary); margin-left: 8px; }
+.lv-note { flex-basis: 100%; padding: 0 8px; font-size: 11px; color: var(--tertiary); line-height: 16px; }
+.lv-note:empty { display: none; }
+
 /* The branch picker's filter: NSSearchField at its regular size, a capsule
    24 tall, 8 in from the popover's edges, so its 12 round is concentric with
    the popover's 20. */
@@ -165,17 +172,14 @@
 .mfilter svg { width: 12px; height: 12px; flex: none; }
 .mfilter input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font: inherit; font-size: 13px; color: var(--label); }
 
-/* A checkbox, as AppKit's: a 12-pt box, accent and white when on. */
-.lv-check { display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 11px; color: var(--secondary); background: none; border: 0; padding: 0; cursor: default; }
-.lv-check i { width: 12px; height: 12px; border-radius: 3.5px; box-shadow: inset 0 0 0 1px var(--tertiary); background: var(--window); display: grid; place-items: center; }
-.lv-check i svg { width: 8px; height: 8px; color: #fff; opacity: 0; }
+/* A checkbox, as AppKit's (NSButton, .checkbox) at the small size: a 14-pt
+   box, accent and white when on, its title 12 pt beside it. */
+.lv-check { display: inline-flex; align-items: center; gap: 6px; height: 24px; font: inherit; font-size: 12px; color: var(--secondary); background: none; border: 0; padding: 0; cursor: default; white-space: nowrap; }
+.lv-check i { flex: none; width: 14px; height: 14px; border-radius: 4px; background: var(--window); box-shadow: inset 0 0 0 0.5px var(--tertiary), 0 0.5px 1px rgba(0, 0, 0, 0.08); display: grid; place-items: center; }
+.lv-check i svg { width: 9px; height: 9px; color: #fff; opacity: 0; }
 .lv-check.on i { background: var(--accent); box-shadow: none; }
 .lv-check.on i svg { opacity: 1; }
-.lv-check:hover { color: var(--label); }
-
-.lv-hint { font-size: 11px; color: var(--tertiary); margin-top: 12px; display: flex; gap: 4px 14px; flex-wrap: wrap; justify-content: center; min-height: 16px; transition: opacity .2s; }
-.lv-hint kbd { font: inherit; color: var(--secondary); margin-right: 3px; }
-.lv-new .lv-comp { width: min(640px, 100%); }
+.lv-check:active i { filter: brightness(0.92); }
 
 /* MARK: - Session view: transcript above, composer docked */
 
@@ -188,12 +192,17 @@
 
 /* MARK: - The composer */
 
+/* Every pull-down's indicator: SF Symbol chevron.down at its title's point
+   size, small scale — so it follows the title's size — in the next quieter
+   ink, centred on the title's cap height (an inline-flex line box centres
+   there), 4 pt after the title. */
+.cv { flex: none; width: 0.8em; height: 0.8em; color: var(--tertiary); }
+:hover > .cv, .open > .cv { color: var(--secondary); }
+
 .lv-comp {
-  position: relative; background: var(--window); border-radius: var(--r-card); padding: 12px 8px 8px 16px; container-type: inline-size;
+  position: relative; background: var(--window); border-radius: var(--r-comp); padding: 12px 8px 8px 16px; container-type: inline-size;
   box-shadow: 0 0 0 0.5px var(--separator), 0 1px 2px rgba(0,0,0,.04), 0 6px 20px rgba(0,0,0,.06);
-  transition: box-shadow .15s;
 }
-.lv-comp.focus { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent), 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent), 0 6px 20px rgba(0,0,0,.06); }
 .lv-field { display: flex; align-items: flex-start; gap: 6px; min-height: 22px; padding-right: 8px; }
 .lv-field textarea {
   flex: 1; min-width: 0; border: 0; outline: 0; resize: none; background: none; color: var(--label); padding: 0; margin: 0;
@@ -211,7 +220,6 @@
 .chip:hover:not(:disabled), .chip.open { background: var(--hover); color: var(--label); }
 .chip:disabled { color: var(--tertiary); }
 .chip .g { width: var(--i-ctl); height: var(--i-ctl); flex: none; display: block; }
-.chip .cv { width: 8px; height: 8px; opacity: .7; flex: none; }
 .chip .acct { color: var(--tertiary); }
 .chip .acct::before { content: "·"; margin: 0 4px 0 1px; }
 .chip.danger, .chip.danger:hover { color: var(--red-text); }
@@ -251,7 +259,7 @@
 /* The failed banner: a red wash over the card, never a filled button. */
 .lv-banner {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin: -12px -8px 12px -16px; padding: 12px 12px 12px 16px;
-  border-radius: var(--r-card) var(--r-card) 0 0; background: color-mix(in srgb, var(--red) 6%, transparent); border-bottom: 0.5px solid var(--separator);
+  border-radius: var(--r-comp) var(--r-comp) 0 0; background: color-mix(in srgb, var(--red) 6%, transparent); border-bottom: 0.5px solid var(--separator);
 }
 .lv-banner .oct { width: var(--i-row); height: var(--i-row); flex: none; align-self: flex-start; margin-top: 1px; }
 .lv-banner .tx { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -270,7 +278,8 @@
 /* MARK: - Menus and the model panel */
 
 /* A popover (shapePopover draws its body and arrow as one shape): the
-   popover material, a hairline edge and the system's shadow, no animation.
+   popover material, a hairline edge and the system's shadow; it fades in as
+   it opens and out as it closes, as NSPopover does (MENU.open / close).
    Rows sit 10 in from its edges, their fill 10 round, concentric with the
    body's 20. */
 .lv-po { position: fixed; z-index: 50; box-sizing: border-box; font-size: 13px; color: var(--label); user-select: none; }
@@ -362,7 +371,8 @@
 .lv-scen .seg { flex-wrap: wrap; }
 .lv-scen .seg button.on { background: var(--window); color: var(--label); box-shadow: 0 0 0 0.5px var(--separator), 0 1px 2px rgba(0,0,0,.08); }
 .lv-specs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 16px; }
-#lv-composers, #lv-newview, #lv-icon, #lv-lang { grid-template-columns: repeat(auto-fit, minmax(min(500px, 100%), 1fr)); }
+#lv-composers, #lv-icon, #lv-lang { grid-template-columns: repeat(auto-fit, minmax(min(500px, 100%), 1fr)); }
+#lv-newview { grid-template-columns: repeat(auto-fit, minmax(min(720px, 100%), 1fr)); }   /* the card at its 640 */
 .lv-card { background: var(--window); border-radius: var(--r-card); box-shadow: 0 0 0 0.5px var(--separator); padding: 16px 16px 20px; min-width: 0; }
 .lv-card > .cap { font-size: 12px; color: var(--secondary); margin-bottom: 12px; }
 .lv-card > .cap b { display: block; color: var(--label); font-weight: 600; }
@@ -372,7 +382,7 @@
 .lv-menus figure { margin: 0; display: flex; flex-direction: column; gap: 8px; }
 .lv-menus figcaption { font-size: 12px; color: var(--secondary); max-width: 320px; }
 .po-spec { display: flex; flex-direction: column; align-items: center; gap: 2.5px; }
-.po-spec .chip, .po-spec .lv-pop, .po-spec .lv-folder { flex: none; }
+.po-spec .chip, .po-spec .lv-pop { flex: none; }
 .lv-menus figcaption b { color: var(--label); font-weight: 600; display: block; }
 
 .tabbar.spec-bar { border-radius: var(--r-pop) var(--r-pop) 0 0; border: 0.5px solid var(--separator); height: 34px; align-items: center; }

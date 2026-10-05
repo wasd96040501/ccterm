@@ -274,8 +274,9 @@ prompt, so this leaves nothing in the sidebar.
   column plus its margins), window background, a hairline and a soft
   shadow; it floats 16 pt above the tab's bottom edge and the transcript
   scrolls under it.
-  - **Its corners are concentric with its action button** — 22 pt,
-    continuous: the 28-pt circle sits 8 pt in from the corner, so 14 + 8,
+  - **Its corners are concentric with its action button** — continuous,
+    the button's half-height and the 8 pt round it: 14 + 8 = 22 with the
+    sheet's 28-pt circle, whatever the system's size makes it in the app,
     and the gap round the button is the same 8 all the way round, as
     macOS 26 nests every shape in its container. A radius chosen on its own
     (18) left the button off-centre in its corner.
@@ -292,14 +293,14 @@ prompt, so this leaves nothing in the sidebar.
     bars are the page's one bit of ornament in the composer.
   - **Mode** — the mode's glyph and short name. Bypass is red, glyph and text;
     every other mode is secondary.
-- **The action button** is AppKit's push button with a circle for its
-  border shape (`NSButton`, `.push`, `borderShape = .circle`, the large
-  control size — 28 pt on the sheet; before macOS 26, the `.circular` bezel).
-  Its look and its states are the system's: it acts on release, darkens
-  while pressed, has no hover, and greys when disabled.
-  - **Send** — `arrow.up`, primary tint prominence: the accent bezel with a
-    white arrow while there is text to send; disabled when the field is
-    empty, and the system takes the tint away.
+- **The action button** is AppKit's round button (`NSButton`, the
+  `.circular` bezel, the large control size — 28 pt on the sheet). Its look
+  and its states are the system's: it acts on release, darkens while
+  pressed, has no hover, and greys when disabled.
+  - **Send** — `arrow.up`, primary tint prominence (before macOS 26, the
+    accent as its bezel colour): the accent bezel with a white arrow while
+    there is text to send; disabled when the field is empty. The system
+    takes the tint away then, and while the window isn't key.
   - **Stop** — `stop.fill` on the plain bezel, in label ink, while Claude
     works or starts.
   - Working *and* text in the field shows both, Stop to the left.

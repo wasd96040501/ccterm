@@ -60,12 +60,6 @@ enum ComposerGlyph {
         }
     }
 
-    /// The action button's arrow, in its 14-pt box.
-    static var send: NSImage { symbol(.send, scale: 1, in: NSSize(width: 14, height: 14)) }
-
-    /// The action button's stop square, in its 10-pt box.
-    static var stop: NSImage { symbol(.stop, scale: 1, in: NSSize(width: 10, height: 10)) }
-
     /// The failure's octagon, red with a white bang, in its 16-pt box.
     static var failure: NSImage {
         let configuration = NSImage.SymbolConfiguration(pointSize: 13.4, weight: .medium)
@@ -89,8 +83,6 @@ enum ComposerGlyph {
         static let bypassMode = Symbol(name: "exclamationmark.shield", pointSize: 11.4, weight: .medium)  // in 14
         static let clock = Symbol(name: "clock", pointSize: 9.4, weight: .semibold)  // in 10
         static let bolt = Symbol(name: "bolt.fill", pointSize: 8.8, weight: .bold)  // 10 × 12
-        static let send = Symbol(name: "arrow.up", pointSize: 12, weight: .bold)  // in 14
-        static let stop = Symbol(name: "stop.fill", pointSize: 10.6, weight: .bold)  // in 10
         static let check = Symbol(name: "checkmark", pointSize: 9.2, weight: .bold)  // in 10
         static let restart = Symbol(name: "arrow.clockwise", pointSize: 11.8, weight: .bold)  // in 16
         static let rack = Symbol(name: "server.rack", pointSize: 9.8, weight: .bold)  // in 16

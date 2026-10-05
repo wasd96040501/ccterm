@@ -3,7 +3,8 @@ import AppKit
 /// The design's four corner radii (design/transcript 08-live.md, *One shape
 /// language*; `--r-tag` … `--r-card` in preview-live.css). Every shape a live
 /// session draws takes one of them, with `cornerCurve = .continuous` and no
-/// scaling. Circles (the +, the action button) and capsules stay what they are.
+/// scaling. Circles (the +, the action button) and capsules stay what they
+/// are; the composer's corners follow its action button (`ComposerView`).
 public enum CornerRadius {
     /// The command token, tooltips.
     public static let tag: CGFloat = 5
@@ -18,6 +19,6 @@ public enum CornerRadius {
     public static let systemPopover: CGFloat = 20
     /// A menu row's fill, 10 in from the popover's edge: the popover's less 10.
     public static let menuRow: CGFloat = systemPopover - 10
-    /// The composer, the alert, cards.
+    /// The alert, cards.
     public static let card: CGFloat = 18
 }

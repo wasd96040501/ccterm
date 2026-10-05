@@ -8,9 +8,10 @@ import DisplayModels
 ///
 /// It draws a `ComposerPresentation` and reports intents to its delegate; the
 /// field's words are the only state it keeps. The card is 720 pt at most,
-/// centred, the card radius with continuous corners, the window's background,
-/// a hairline and a soft shadow; focus — in the key window, as a focus ring —
-/// adds a 1-pt accent ring at 45 % and a 4-pt halo at 12 %.
+/// centred, the window's background, a hairline and a soft shadow, its
+/// continuous corners concentric with the action button: the button's
+/// half-height and the 8 pt round it. It draws no focus: the caret is the
+/// focus, as in a text view.
 ///
 /// Words are never cut: the buttons keep as many of their words as their line
 /// holds — the provider's name goes first, then Effort's and Mode's names
@@ -76,7 +77,12 @@ final class ComposerView: NSView {
         configureHierarchy()
         configureConstraints()
         configureActions()
+        // The action button sits `actionInset` in from the card's corner.
+        surface.radius = sendButton.intrinsicContentSize.height / 2 + Self.actionInset
     }
+
+    /// The action buttons' distance from the card's trailing and bottom edges.
+    private static let actionInset: CGFloat = 8
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
@@ -154,7 +160,7 @@ final class ComposerView: NSView {
             field.trailingAnchor.constraint(equalTo: body.trailingAnchor, constant: -16),
             controlsRow.topAnchor.constraint(equalTo: field.bottomAnchor, constant: 8),
             controlsRow.leadingAnchor.constraint(equalTo: body.leadingAnchor, constant: 8),
-            controlsRow.trailingAnchor.constraint(equalTo: body.trailingAnchor, constant: -8),
+            controlsRow.trailingAnchor.constraint(equalTo: body.trailingAnchor, constant: -Self.actionInset),
             controlsRow.heightAnchor.constraint(greaterThanOrEqualToConstant: 28),
             statusLine.topAnchor.constraint(equalTo: controlsRow.bottomAnchor),
             statusLine.leadingAnchor.constraint(equalTo: body.leadingAnchor, constant: 8),
@@ -165,8 +171,10 @@ final class ComposerView: NSView {
     }
 
     /// The card's bottom padding, under the chips or under the status line.
-    private lazy var bodyBottomPlain = controlsRow.bottomAnchor.constraint(equalTo: body.bottomAnchor, constant: -8)
-    private lazy var bodyBottomWithStatus = statusLine.bottomAnchor.constraint(equalTo: body.bottomAnchor, constant: -8)
+    private lazy var bodyBottomPlain = controlsRow.bottomAnchor.constraint(
+        equalTo: body.bottomAnchor, constant: -Self.actionInset)
+    private lazy var bodyBottomWithStatus = statusLine.bottomAnchor.constraint(
+        equalTo: body.bottomAnchor, constant: -Self.actionInset)
 
     private func configureActions() {
         for (control, button) in [(Control.model, modelButton), (.effort, effortButton), (.mode, modeButton)] {
@@ -439,10 +447,6 @@ extension ComposerView: ComposerFieldViewDelegate {
         delegate?.composerViewDidChangeText(self)
     }
 
-    func composerFieldView(_ field: ComposerFieldView, didChangeFocus isFocused: Bool) {
-        surface.isFocused = isFocused
-    }
-
     func composerFieldView(_ field: ComposerFieldView, handle key: ComposerFieldView.Key) -> Bool {
         if let delegate, delegate.composerView(self, handle: key) { return true }
         switch key {
@@ -460,31 +464,29 @@ extension ComposerView: ComposerFieldViewDelegate {
 /// The card: the window's background with continuous corners, and around it
 /// what the design draws as box-shadows (preview-live.css `.lv-comp`) — all
 /// outside the edge, so the card is its full width: a 0.5-pt separator ring,
-/// a 1-pt contact shadow and a soft one; in focus, a 1-pt accent ring at 45 %
-/// over a 4-pt halo at 12 %, and no contact shadow. The content is clipped to
-/// the corners (the failure section's wash runs to the edge); the rings and
+/// a 1-pt contact shadow and a soft one. The content is clipped to the
+/// corners (the failure section's wash runs to the edge); the ring and
 /// shadows are not.
 private final class CardSurfaceView: NSView {
     /// Where the content goes; clips to the card's shape.
     let clip = NSView()
 
-    var isFocused = false {
+    /// The corners' radius; the composer sets it from its action button.
+    var radius: CGFloat = 0 {
         didSet {
-            guard isFocused != oldValue else { return }
-            needsDisplay = true
+            clip.layer?.cornerRadius = radius
             needsLayout = true
         }
     }
 
     /// The card's shape under its content, casting the soft shadow. The
     /// view's own layer has no corner radius — AppKit would mask it, and the
-    /// rings and shadows are outside its bounds.
+    /// ring and shadows are outside its bounds.
     private let body = CALayer()
     private let contact = CALayer()
-    private let halo = CALayer()
     private let ring = CALayer()
 
-    private var ringWidth: CGFloat { isFocused ? 1 : 0.5 }
+    private let ringWidth: CGFloat = 0.5
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -495,13 +497,11 @@ private final class CardSurfaceView: NSView {
         body.shadowRadius = 10
         contact.shadowOffset = CGSize(width: 0, height: -1)
         contact.shadowRadius = 1
-        halo.borderWidth = 4
-        for edge in [contact, body, halo, ring] {
+        for edge in [contact, body, ring] {
             edge.cornerCurve = .continuous
             layer?.addSublayer(edge)
         }
         clip.wantsLayer = true
-        clip.layer?.cornerRadius = CornerRadius.card
         clip.layer?.cornerCurve = .continuous
         clip.layer?.masksToBounds = true
         clip.translatesAutoresizingMaskIntoConstraints = false
@@ -521,16 +521,13 @@ private final class CardSurfaceView: NSView {
 
     override func updateLayer() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            let accent = NSColor.controlAccentColor
             body.backgroundColor = NSColor.windowBackgroundColor.cgColor
             clip.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
             body.shadowColor = NSColor.black.cgColor
             body.shadowOpacity = 0.06
             contact.shadowColor = NSColor.black.cgColor
-            contact.shadowOpacity = isFocused ? 0 : 0.04
-            ring.borderColor = (isFocused ? accent.withAlphaComponent(0.45) : NSColor.separatorColor).cgColor
-            halo.borderColor = accent.withAlphaComponent(0.12).cgColor
-            halo.isHidden = !isFocused
+            contact.shadowOpacity = 0.04
+            ring.borderColor = NSColor.separatorColor.cgColor
         }
         placeEdges()
     }
@@ -540,18 +537,15 @@ private final class CardSurfaceView: NSView {
         placeEdges()
     }
 
-    /// The rings sit outside the edge, their corners grown by their width.
+    /// The ring sits outside the edge, its corners grown by its width.
     private func placeEdges() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        let radius = CornerRadius.card
         body.frame = bounds
         body.cornerRadius = radius
         ring.borderWidth = ringWidth
         ring.frame = bounds.insetBy(dx: -ringWidth, dy: -ringWidth)
         ring.cornerRadius = radius + ringWidth
-        halo.frame = bounds.insetBy(dx: -4, dy: -4)
-        halo.cornerRadius = radius + 4
         contact.frame = bounds
         contact.shadowPath = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
         CATransaction.commit()

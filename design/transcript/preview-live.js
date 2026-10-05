@@ -1370,7 +1370,7 @@ function buildLiveSpecimens() {
     ["<b>A command, completed</b>The field draws the same token as the transcript's bubble.", { state: "idle", model: "opus", effort: "high", mode: "auto", token: "review" }, { text: "#327" }],
   ];
   const btn = (label, cls, glyph, disabled) => `<div><button class="act-btn ${cls}"${disabled ? " disabled" : ""} tabindex="-1">${glyph}</button>${label}</div>`;
-  const buttons = card("<b>The action button — AppKit's push button, a circle</b><code>NSButton</code>, <code>.push</code>, <code>borderShape = .circle</code>, the large control size. Send has primary tint prominence: the accent bezel, a white <code>arrow.up</code>; with nothing to send it is disabled and the system takes the tint away. Stop is the plain bezel with <code>stop.fill</code> in label ink. Pressed, the system darkens the bezel; it acts on release, and has no hover.",
+  const buttons = card("<b>The action button — AppKit's round button</b><code>NSButton</code>, the <code>.circular</code> bezel, the large control size. Send has primary tint prominence: the accent bezel, a white <code>arrow.up</code>; with nothing to send it is disabled, and the system takes the tint away — as it does while the window isn't key. Stop is the plain bezel with <code>stop.fill</code> in label ink. Pressed, the system darkens the bezel; it acts on release, and has no hover.",
     `<div class="btn-states">${btn("Send", "primary", LV.up)}${btn("pressed", "primary pressed", LV.up)}${btn("nothing to send", "primary", LV.up, true)}${btn("Stop", "stop", LV.stop)}${btn("pressed", "stop pressed", LV.stop)}</div>`);
   document.getElementById("lv-composers").innerHTML = buttons + cs.map(([c, o, so]) => card(c, staticComposer(o, so))).join("");
 

@@ -252,12 +252,12 @@
 .ring .bgc { fill: none; stroke: var(--tile); stroke-width: 2; }
 .ring .fgc { fill: none; stroke: var(--secondary); stroke-width: 2; stroke-linecap: round; }
 
-/* The action button: AppKit's push button with a circle for its border
-   shape (NSButton .push, borderShape .circle, the large control size).
-   Send takes primary tint prominence — the accent bezel, a white arrow —
-   and the system drops the tint when it is disabled. Stop is the plain
-   bezel, the stop glyph in label ink. Pressed, the system darkens the bezel
-   (lightens it in Dark); a push button has no hover. */
+/* The action button: AppKit's round button (NSButton, the .circular
+   bezel, the large control size). Send takes primary tint prominence — the
+   accent bezel, a white arrow — and the system drops the tint when it is
+   disabled or its window isn't key. Stop is the plain bezel, the stop glyph
+   in label ink. Pressed, the system darkens the bezel (lightens it in Dark);
+   it has no hover. */
 .act-btn {
   flex: none; width: 28px; height: 28px; border-radius: 50%; border: 0; display: grid; place-items: center; cursor: default; margin-left: 4px;
   background: var(--bezel); color: var(--label); box-shadow: var(--bezel-edge);

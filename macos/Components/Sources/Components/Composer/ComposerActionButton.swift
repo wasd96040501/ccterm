@@ -1,8 +1,12 @@
 import AppKit
 
-/// The composer's round button (design 08 *The action button*): a 28-pt circle
-/// holding the accent arrow of Send — grey while there is nothing to send — or
-/// the stop square, in the label colour, while Claude works or starts.
+/// The composer's action button (design 08 *The action button*): AppKit's
+/// round button (the `.circular` bezel) at the large control size. Send —
+/// `arrow.up` — is tinted with the accent (primary tint prominence; before
+/// macOS 26, the accent as its bezel colour), which the system drops while it
+/// is disabled or its window isn't key. Stop — `stop.fill` — is the plain
+/// bezel. Its look, its press, its disabled state and its size are the
+/// system's.
 @MainActor
 final class ComposerActionButton: NSButton {
     enum Kind {
@@ -10,70 +14,28 @@ final class ComposerActionButton: NSButton {
         case stop
     }
 
-    static let diameter: CGFloat = 28
-
     let kind: Kind
 
     init(kind: Kind) {
         self.kind = kind
         super.init(frame: .zero)
-        isBordered = false
         title = ""
+        controlSize = .large
         imagePosition = .imageOnly
-        imageScaling = .scaleNone
-        setButtonType(.momentaryChange)
-        wantsLayer = true
-        layer?.cornerRadius = Self.diameter / 2
-        // preview-live.css `.act-btn svg`: the arrow 14 pt, the stop square 10.
-        switch kind {
-        case .send:
-            image = ComposerGlyph.send
-        case .stop:
-            image = ComposerGlyph.stop
+        image = NSImage(systemSymbolName: kind == .send ? "arrow.up" : "stop.fill", accessibilityDescription: nil)
+        bezelStyle = .circular
+        if kind == .send {
+            if #available(macOS 26, *) {
+                tintProminence = .primary
+            } else {
+                bezelColor = .controlAccentColor
+            }
         }
         translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: Self.diameter),
-            heightAnchor.constraint(equalToConstant: Self.diameter),
-        ])
+        // A circle: as wide as the control size makes it tall.
+        widthAnchor.constraint(equalTo: heightAnchor).isActive = true
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
-
-    override var isEnabled: Bool {
-        didSet { needsDisplay = true }
-    }
-
-    override var isHighlighted: Bool {
-        didSet { needsDisplay = true }
-    }
-
-    override var wantsUpdateLayer: Bool { true }
-
-    override func updateLayer() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            let fill: NSColor
-            let ink: NSColor
-            switch kind {
-            case .send where isEnabled:
-                fill = .controlAccentColor
-                ink = .white
-            case .send:
-                fill = .composerTile
-                ink = .tertiaryLabelColor
-            case .stop:
-                fill = .labelColor
-                ink = .windowBackgroundColor
-            }
-            layer?.backgroundColor =
-                (isHighlighted ? fill.blended(withFraction: 0.15, of: .black) ?? fill : fill).cgColor
-            contentTintColor = ink
-        }
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        needsDisplay = true
-    }
 }

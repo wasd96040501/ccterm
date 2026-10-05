@@ -1,13 +1,10 @@
 import AppKit
 
-/// What the field reports to the composer: its words changed, the focus moved,
-/// or a key the composer decides.
+/// What the field reports to the composer: its words changed, or a key the
+/// composer decides.
 @MainActor
 protocol ComposerFieldViewDelegate: AnyObject {
     func composerFieldViewDidChange(_ field: ComposerFieldView)
-    /// The field shows focus, or stops: it holds the keyboard in the key
-    /// window — as AppKit shows a focus ring only there.
-    func composerFieldView(_ field: ComposerFieldView, didChangeFocus isFocused: Bool)
     /// The reader pressed `key`; `true` when the composer took it.
     func composerFieldView(_ field: ComposerFieldView, handle key: ComposerFieldView.Key) -> Bool
 }
@@ -102,11 +99,6 @@ final class ComposerFieldView: NSView {
             .font: Self.font, .foregroundColor: NSColor.labelColor, .paragraphStyle: style,
         ]
         view.delegate = self
-        view.onFocusChange = { [weak self] focused in
-            guard let self else { return }
-            holdsKeyboard = focused
-            reportFocus()
-        }
         return view
     }()
 
@@ -218,34 +210,6 @@ final class ComposerFieldView: NSView {
         window?.makeFirstResponder(textView)
     }
 
-    /// The text view is its window's first responder.
-    private var holdsKeyboard = false
-    /// What the delegate was last told.
-    private var showsFocus = false
-    private var keyObservers: [NSObjectProtocol] = []
-
-    /// Follows its window's key state: focus shows only in the key window.
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        keyObservers.forEach(NotificationCenter.default.removeObserver)
-        keyObservers = []
-        if let window {
-            keyObservers = [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification].map {
-                NotificationCenter.default.addObserver(forName: $0, object: window, queue: .main) { [weak self] _ in
-                    MainActor.assumeIsolated { self?.reportFocus() }
-                }
-            }
-        }
-        reportFocus()
-    }
-
-    private func reportFocus() {
-        let shows = holdsKeyboard && window?.isKeyWindow == true
-        guard shows != showsFocus else { return }
-        showsFocus = shows
-        delegate?.composerFieldView(self, didChangeFocus: shows)
-    }
-
     // MARK: - Sizing
 
     /// The field is as tall as its text, from one line up to eight.
@@ -330,7 +294,6 @@ extension ComposerFieldView: NSTextViewDelegate {
 private final class ComposerTextView: NSTextView {
     var placeholder = ""
     var hidesPlaceholder = false
-    var onFocusChange: ((Bool) -> Void)?
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
@@ -343,16 +306,7 @@ private final class ComposerTextView: NSTextView {
 
     override func becomeFirstResponder() -> Bool {
         let accepted = super.becomeFirstResponder()
-        if accepted {
-            needsDisplay = true
-            onFocusChange?(true)
-        }
-        return accepted
-    }
-
-    override func resignFirstResponder() -> Bool {
-        let accepted = super.resignFirstResponder()
-        if accepted { onFocusChange?(false) }
+        if accepted { needsDisplay = true }
         return accepted
     }
 }

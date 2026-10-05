@@ -158,6 +158,16 @@ final class ComposerViewControllerTests: XCTestCase {
         XCTAssertFalse(try press(#selector(NSResponder.deleteBackward(_:))))
     }
 
+    /// Typing is undoable; words set from outside (a send clears the field)
+    /// leave nothing to undo, so ⌘Z never replays edits against them.
+    func testSetWordsLeaveNothingToUndo() throws {
+        let view = try textView()
+        view.insertText("hello", replacementRange: view.selectedRange())
+        XCTAssertEqual(view.undoManager?.canUndo, true)
+        composer.text = ""
+        XCTAssertEqual(view.undoManager?.canUndo, false)
+    }
+
     func testATokenAloneCanBeSent() throws {
         composer.text = "/context"
         XCTAssertTrue(try press(#selector(NSResponder.insertNewline(_:))))

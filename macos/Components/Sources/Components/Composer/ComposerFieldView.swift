@@ -61,14 +61,20 @@ final class ComposerFieldView: NSView {
     /// The command already completed in front of the words, without its `/`.
     private(set) var token: String?
 
-    /// The words after the token.
+    /// The words after the token. Setting them is no edit of the user's, so
+    /// it clears what ⌘Z would undo.
     var body: String {
         get { textView.string }
         set {
             textView.string = newValue
+            undo.removeAllActions()
             textDidChange()
         }
     }
+
+    /// The text view's undo: the typing since the words or the token were
+    /// last set, none of it replayed against words that are gone.
+    private let undo = UndoManager()
 
     private lazy var textView: ComposerTextView = {
         let view = ComposerTextView(frame: .zero)
@@ -194,6 +200,7 @@ final class ComposerFieldView: NSView {
     private func setToken(_ name: String?) {
         guard name != token else { return }
         token = name
+        undo.removeAllActions()
         tokenView.isHidden = name == nil
         if let name { tokenView.name = name }
         plainLeading.isActive = name == nil
@@ -241,6 +248,8 @@ final class ComposerFieldView: NSView {
 }
 
 extension ComposerFieldView: NSTextViewDelegate {
+    func undoManager(for view: NSTextView) -> UndoManager? { undo }
+
     func textDidChange(_ notification: Notification) {
         textDidChange()
     }

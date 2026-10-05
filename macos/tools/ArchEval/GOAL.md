@@ -45,7 +45,11 @@ misses is too subtle or not a defect, and leaves the set.
 - One case is noise. "Higher" above means the new map hits at least two more holdout
   cases than the baseline map does on the same arms, and no dimension loses a case.
   A one-case difference is reported as "no measurable change".
-- Holdout arms, fixed now: baseline map (full) ×1, the better v1 map (full or core3,
-  chosen on dev) ×2, source ×1, each seed graded blind.
+- Holdout arms, fixed now: baseline map (full) ×1, v1 core3 ×1, source ×1, each seed
+  graded blind. One run per arm, for token cost — single-run variance is higher, and the
+  two-case rule stands.
+- The comparison that decides: v1 core3 (≈30 KB) against baseline full (≈247 KB). core3
+  was chosen on dev (13/16 vs full-v1's 7/8) and is the harder test: a smaller map must
+  find more.
 - A pattern that repeats across cases (the same kind of miss in several seeds) outweighs
   any single rate.

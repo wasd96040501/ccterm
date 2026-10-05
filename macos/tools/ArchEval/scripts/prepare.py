@@ -49,6 +49,7 @@ def main() -> None:
             (out / "src").mkdir(parents=True)
             subprocess.run(["cp", "-cR", str(BASE), str(out / "src/macos")], check=True)
             shutil.copy(case / "key.json", out / "key.json")
+            shutil.copy(case / "key.json", out / "answer.json")  # what the grader reads
             patch = case / "patch.diff"
             if patch.exists() and patch.stat().st_size:
                 shutil.copy(patch, out / "patch.diff")

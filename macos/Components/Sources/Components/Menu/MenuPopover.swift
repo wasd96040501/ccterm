@@ -99,6 +99,9 @@ private final class MenuListViewController: NSViewController {
 
     /// Set while the owner answers a search: its rows start at the top.
     private var isSearching = false
+    /// The pointer moved the selection last, not a key: rows the wheel
+    /// scrolls under the pointer become the selection, as in a menu.
+    private var selectionFollowsPointer = false
 
     override func loadView() {
         view = NSView()
@@ -120,6 +123,10 @@ private final class MenuListViewController: NSViewController {
                 rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
                 owner: self))
         scroll.documentView = table
+        scroll.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(listDidScroll), name: NSView.boundsDidChangeNotification,
+            object: scroll.contentView)
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
@@ -218,6 +225,7 @@ private final class MenuListViewController: NSViewController {
     func didOpen() {
         view.window?.makeFirstResponder(content.searchPlaceholder == nil ? table : search)
         search.stringValue = ""
+        selectionFollowsPointer = false
         table.deselectAll(nil)
         if let checked = content.rows.firstIndex(where: {
             if case .item(let item) = $0 { item.isChecked } else { false }
@@ -262,8 +270,11 @@ private final class MenuListViewController: NSViewController {
         }
     }
 
-    /// Moves the selection to the next item that can be chosen, up or down.
+    /// Moves the selection to the next item that can be chosen, up or down —
+    /// for the search field, which keeps the keyboard; the table's own ↑ ↓
+    /// do it when the list has it.
     private func moveSelection(by step: Int) {
+        selectionFollowsPointer = false
         var row = table.selectedRow < 0 ? (step > 0 ? -1 : content.rows.count) : table.selectedRow
         repeat { row += step } while content.rows.indices.contains(row) && item(at: row) == nil
         guard content.rows.indices.contains(row) else { return }
@@ -284,23 +295,27 @@ private final class MenuListViewController: NSViewController {
     // MARK: - Pointer and keys
 
     override func mouseMoved(with event: NSEvent) {
-        select(table.row(at: table.convert(event.locationInWindow, from: nil)))
+        selectionFollowsPointer = true
+        selectRowUnderPointer()
     }
 
     override func mouseExited(with event: NSEvent) {
+        selectionFollowsPointer = false
         table.deselectAll(nil)
     }
 
+    @objc private func listDidScroll() {
+        if selectionFollowsPointer { selectRowUnderPointer() }
+    }
+
+    private func selectRowUnderPointer() {
+        guard let window = view.window else { return }
+        select(table.row(at: table.convert(window.mouseLocationOutsideOfEventStream, from: nil)))
+    }
+
+    /// What the table passes up — ↩ and ⎋; it moves its selection itself.
     override func keyDown(with event: NSEvent) {
         interpretKeyEvents([event])
-    }
-
-    override func moveUp(_ sender: Any?) {
-        moveSelection(by: -1)
-    }
-
-    override func moveDown(_ sender: Any?) {
-        moveSelection(by: 1)
     }
 
     override func insertNewline(_ sender: Any?) {

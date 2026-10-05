@@ -114,7 +114,6 @@ public final class WorkLineRowView: NSView, PageRowView {
         accessory.imageScaling = .scaleNone
         for view in [wordsView, tile, accessory] { addSubview(view) }
         setAccessibilityElement(true)
-        setAccessibilityRole(.button)
     }
 
     public convenience init() {
@@ -148,6 +147,13 @@ public final class WorkLineRowView: NSView, PageRowView {
         var label = model.line.text.string + model.line.exceptions.string
         if !model.line.meta.isEmpty { label += ", " + model.line.meta.string }
         setAccessibilityLabel(label)
+        switch model.action {
+        case .toggle(_, let expanded):
+            setAccessibilityRole(.disclosureTriangle)
+            setAccessibilityExpanded(expanded)
+        case .open: setAccessibilityRole(.button)
+        case .none: setAccessibilityRole(.staticText)
+        }
 
         needsLayout = true
         needsDisplay = true
@@ -392,6 +398,17 @@ public final class WorkLineRowView: NSView, PageRowView {
         guard let opened else { return super.mouseDown(with: event) }
         // A press that opens a document stops here: the focus goes to it.
         delegate.pageRowView(self, didRequestDocument: opened, pinned: event.clickCount == 2)
+    }
+
+    /// What a click on the line does, for VoiceOver's press.
+    public override func accessibilityPerformPress() -> Bool {
+        guard let model, let delegate else { return false }
+        switch model.action {
+        case .toggle(let id, _): delegate.pageRowView(self, didToggleDisclosureOf: id, inAllRuns: false)
+        case .open(let id): delegate.pageRowView(self, didRequestDocument: id, pinned: false)
+        case .none: return false
+        }
+        return true
     }
 
     /// The id a named file under `point` opens, when it is a link.

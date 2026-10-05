@@ -34,7 +34,8 @@ final class MenuItemView: NSTableCellView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        check.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)?
+        check.image = NSImage(
+            systemSymbolName: "checkmark", accessibilityDescription: String(localized: "Selected", bundle: .module))?
             .withSymbolConfiguration(.init(pointSize: 11, weight: .semibold))
         title.font = .systemFont(ofSize: 13)
         title.lineBreakMode = .byTruncatingTail

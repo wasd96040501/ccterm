@@ -60,4 +60,28 @@ final class WorkLineRowViewPressTests: XCTestCase {
             byX.filter { !opening.contains($0.0) }.allSatisfy { $0.1 == "toggle r1" },
             "everywhere else toggles the run")
     }
+
+    /// To VoiceOver a run's line is a disclosure it can press, and a line that
+    /// does nothing is text.
+    func testVoiceOverPressesWhatTheLineDoes() {
+        let view = WorkLineRowView()
+        let spy = Spy()
+        view.delegate = spy
+        let line = WorkLine(
+            tile: Tile(glyph: .tool(.change), state: .done), text: StyledText("Ran 3 commands"), detail: nil,
+            exceptions: StyledText(), meta: StyledText())
+        func show(_ action: WorkLineRowView.Model.Action) {
+            view.configure(
+                with: WorkLineRowView.Model(
+                    line: line, level: .line, action: action, origin: nil, isSelected: false, flashes: false))
+        }
+        show(.toggle("r1", expanded: true))
+        XCTAssertEqual(view.accessibilityRole(), .disclosureTriangle)
+        XCTAssertEqual(view.isAccessibilityExpanded(), true)
+        XCTAssertTrue(view.accessibilityPerformPress())
+        XCTAssertEqual(spy.events, ["toggle r1"])
+        show(.none)
+        XCTAssertEqual(view.accessibilityRole(), .staticText)
+        XCTAssertFalse(view.accessibilityPerformPress())
+    }
 }

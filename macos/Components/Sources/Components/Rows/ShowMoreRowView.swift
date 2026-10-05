@@ -20,24 +20,23 @@ public final class ShowMoreRowView: NSView, PageRowView {
     /// An item's indent, then an item's words: two tiles and a gap's worth.
     private static let leading: CGFloat = 48
 
-    private let label = NSTextField(labelWithString: "")
+    private let button = NSButton(title: "", target: nil, action: nil)
     private var runID: String?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .systemFont(ofSize: 13)
-        label.textColor = .linkColor
-        label.lineBreakMode = .byTruncatingTail
-        label.maximumNumberOfLines = 1
-        addSubview(label)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.isBordered = false
+        button.lineBreakMode = .byTruncatingTail
+        button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        button.target = self
+        button.action = #selector(showAll)
+        addSubview(button)
         NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.leading),
-            label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
-            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            button.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.leading),
+            button.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+            button.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
-        setAccessibilityElement(true)
-        setAccessibilityRole(.button)
     }
 
     public convenience init() {
@@ -51,16 +50,12 @@ public final class ShowMoreRowView: NSView, PageRowView {
 
     public func configure(with model: Model) {
         runID = model.runID
-        label.stringValue = String(localized: "Show \(model.hidden) more", bundle: .module)
-        setAccessibilityLabel(label.stringValue)
+        button.attributedTitle = NSAttributedString(
+            string: String(localized: "Show \(model.hidden) more", bundle: .module),
+            attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.linkColor])
     }
 
-    public override func hitTest(_ point: NSPoint) -> NSView? {
-        bounds.contains(convert(point, from: superview)) ? self : nil
-    }
-
-    public override func mouseDown(with event: NSEvent) {
+    @objc private func showAll() {
         if let runID { delegate?.pageRowView(self, didRequestAllItemsOf: runID) }
-        super.mouseDown(with: event)
     }
 }

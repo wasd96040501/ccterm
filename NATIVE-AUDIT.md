@@ -43,10 +43,10 @@ Status: `[ ]` open · `[x]` fixed (commit) · `[-]` dropped (why)
 
 ### Hand-made controls
 - [x] **7. Composer status and context ring** — **Fixed** (*The status and the context ring are AppKit's buttons*): *Waiting for you ↑* is an accessory-bar button beside the note label (the stack shows one); the ring is `ContextRingButton`, its image the drawn ring, its title the percentage. No `hitTest` / `mouseDown` / role overrides. Was: — `Composer/ComposerView.swift` (`ComposerStatusView`), `Composer/ContextRingView.swift`: `hitTest` + `mouseDown` + a hand-set `.button` role. Native: borderless `NSButton`.
-- [ ] **8. Attachment thumbnails invisible to VoiceOver** — `Rows/AttachmentsRowView.swift` (`Thumbnail`): a label without `isAccessibilityElement`.
+- [x] **8. Attachment thumbnails invisible to VoiceOver** — **Fixed** (*Attachment thumbnails are images VoiceOver can open*): each thumbnail is one accessibility image named by its title; its press opens it. Was: — `Rows/AttachmentsRowView.swift` (`Thumbnail`): a label without `isAccessibilityElement`.
 - [ ] **9. Slash list selection** — `Composer/SlashListViewController.swift`: selection highlight off, cells paint their own, rows reloaded per ↑↓; `mouseDown` override. Native: `NSTableRowView.drawSelection(in:)`, `clickedRow`.
 - [ ] **10. New tab +** — `TranscriptWorkspace` `NewTabButton.swift`: hand-made hover / press, `focusRingType = .none`.
-- [ ] **11. Accessibility contradictions** — `MenuItemView` doesn't expose its check; `WorkLineRowView` / `ShowMoreRowView` claim `.button` without a press.
+- [x] **11. Accessibility contradictions** — **Fixed** (*Rows say to VoiceOver what they do*): the menu's check is an image described *Selected*; a work line is a disclosure (with its expanded state) when it toggles, a button when it opens, text when it does nothing, and VoiceOver's press does what a click does; *Show N more* is a borderless `NSButton` (no `hitTest` / `mouseDown`). Was: — `MenuItemView` doesn't expose its check; `WorkLineRowView` / `ShowMoreRowView` claim `.button` without a press.
 
 ### Hand-measured layout
 - [ ] **12. Slash list row heights** — `SlashListViewController.swift` `descriptionWidth` / `boundingRect`, missing the cells' insets. Native: `usesAutomaticRowHeights`.

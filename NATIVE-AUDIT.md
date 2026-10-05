@@ -70,7 +70,7 @@ Status: `[ ]` open · `[x]` fixed (commit) · `[-]` dropped (why)
 - [x] **26. New view title font** (fixed with 2) — variation axis 650 + fixed kern from CSS. Native: `.systemFont(ofSize: 22, weight: .semibold)`.
 
 ### Services
-- [ ] **27. `SessionStore.known`** — every transcript read is kept for the app's life.
+- [x] **27. `SessionStore.known`** — **Fixed** (*A transcript is known while a tab reads it*): `states(at:)` counts its streams per URL; when the last one ends the transcript is forgotten, and a later resume reads it as an unread one does. Was: — every transcript read is kept for the app's life.
 - [ ] **28. `ModelCatalogStore` cache** — mirror types and a `JSONSerialization` round trip for SDK types.
 - [ ] **29. Probes outdated by a counter, not cancelled** — `ModelCatalogStore`; the 60 s timeout can't fire through a detached launch (`AppDelegate`).
 - [x] **30. `git status` without `--no-optional-locks`** (fixed with 6: `GIT_OPTIONAL_LOCKS=0` for every call) — `BranchService`.

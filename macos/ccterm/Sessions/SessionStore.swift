@@ -44,9 +44,11 @@ final class SessionStore {
     private var subscriptions: Set<AnyCancellable> = []
     /// Each live session's state, followed into `activities`.
     private var followers: [URL: AnyCancellable] = [:]
-    /// The transcripts tabs have read, so that a resume starts from what the
-    /// tab shows.
+    /// The transcripts tabs read, so that a resume starts from what the tab
+    /// shows — kept while a tab reads it, forgotten with its last reader.
     private var known: [URL: Transcript] = [:]
+    /// How many `states(at:)` streams read each session.
+    private var readers: [URL: Int] = [:]
     /// Where each session's CLI works: what a restart or a resume launches in.
     private var workingDirectories: [URL: URL] = [:]
 
@@ -89,8 +91,10 @@ final class SessionStore {
     /// from disk on the settings it last ran on (or the tab's choices since),
     /// again when the catalog or General changes; live, every change of its
     /// state; it switches when the session goes live or ends. Throws when a
-    /// transcript at rest can't be read.
+    /// transcript at rest can't be read. The transcript read is known to a
+    /// resume until the last stream on `url` ends.
     func states(at url: URL) -> AsyncThrowingStream<SessionState, Error> {
+        readers[url, default: 0] += 1
         let read = read
         let current = $live.map { $0[url] }.removeDuplicates { $0 === $1 }
         let inputs = Publishers.CombineLatest3($catalog, $preferences, $rest.map { $0[url] }.removeDuplicates())
@@ -134,8 +138,18 @@ final class SessionStore {
                         }
                     }, receiveValue: { continuation.yield($0) })
             nonisolated(unsafe) let held = subscription
-            continuation.onTermination = { _ in held.cancel() }
+            continuation.onTermination = { [weak self] _ in
+                held.cancel()
+                Task { @MainActor in self?.stopReading(url) }
+            }
         }
+    }
+
+    private func stopReading(_ url: URL) {
+        readers[url, default: 1] -= 1
+        guard readers[url] == 0 else { return }
+        readers[url] = nil
+        known[url] = nil
     }
 
     // MARK: - Talking

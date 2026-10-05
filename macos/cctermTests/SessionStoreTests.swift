@@ -146,6 +146,9 @@ final class SessionStoreTests: XCTestCase {
         history.messages.append(.assistant(assistant))
         let store = try store(history: history)
         let url = scratch.appendingPathComponent("projects/p/0a1b.jsonl")
+        // The tab, reading the session while its choices are made.
+        let tab = Task { for try await _ in store.states(at: url) {} }
+        defer { tab.cancel() }
         try await state(of: store, at: url) { $0.settings != nil }
 
         store.update(.model(Fixture.choice("haiku")), at: url)

@@ -218,7 +218,7 @@ public final class NewSessionViewController: NSViewController {
         guard isViewLoaded else { return }
 
         folderButton.show(
-            content.folderTitle, font: Self.titleFont, ink: .labelColor, chevronInk: .tertiaryLabelColor)
+            content.folderTitle, font: Self.titleFont, ink: .labelColor)
         if menuPopover.isShown, let content = menuContent(for: menuPopover.anchor) {
             menuPopover.configure(with: content)
         }

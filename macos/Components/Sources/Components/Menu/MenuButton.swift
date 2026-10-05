@@ -39,10 +39,10 @@ package final class MenuButton: NSButton {
 
     /// Shows `title` in `font` and `ink` after `glyph` (a template image, in
     /// `ink` too), then `detail` and `trailing` in tertiary ink, then the
-    /// chevron in `chevronInk` (`ink` by default) when `hasChevron`.
+    /// chevron when `hasChevron`.
     package func show(
         _ title: String, font: NSFont, ink: NSColor, glyph: NSImage? = nil, detail: String? = nil,
-        trailing: NSImage? = nil, chevronInk: NSColor? = nil, hasChevron: Bool = true
+        trailing: NSImage? = nil, hasChevron: Bool = true
     ) {
         let words = NSMutableAttributedString(string: title, attributes: [.font: font, .foregroundColor: ink])
         func append(_ string: NSAttributedString) {
@@ -55,7 +55,9 @@ package final class MenuButton: NSButton {
                     string: detail, attributes: [.font: font, .foregroundColor: NSColor.tertiaryLabelColor]))
         }
         if let trailing { append(Self.inline(trailing, font: font, ink: .tertiaryLabelColor)) }
-        if hasChevron, let chevron = Self.chevron { append(Self.inline(chevron, font: font, ink: chevronInk ?? ink)) }
+        if hasChevron, let chevron = Self.chevron(for: font) {
+            append(Self.inline(chevron, font: font, ink: .tertiaryLabelColor))
+        }
         // The cell sets its words in the middle of the bezel by its own font.
         self.font = font
         attributedTitle = words
@@ -64,9 +66,16 @@ package final class MenuButton: NSButton {
         setAccessibilityLabel(title)
     }
 
-    /// The chevron: an SF Symbol, so it sits on the words' baseline as a
-    /// character does.
-    private static let chevron = NSImage.symbol("chevron.down", pointSize: 8, weight: .semibold)
+    /// Every pop-up's indicator (design 08 *One chevron*): `chevron.down` at
+    /// the title's size and weight, the small scale, so it follows the title;
+    /// a symbol among the words centres on their cap height, as a character
+    /// sits on their baseline. Tertiary whatever the state: the bezel shows
+    /// hover and on.
+    private static func chevron(for font: NSFont) -> NSImage? {
+        let traits = font.fontDescriptor.object(forKey: .traits) as? [NSFontDescriptor.TraitKey: Any]
+        let weight = (traits?[.weight] as? CGFloat).map { NSFont.Weight(rawValue: $0) } ?? .regular
+        return NSImage.symbol("chevron.down", pointSize: font.pointSize, weight: weight, scale: .small)
+    }
 
     /// `image` as a character of the words, in `ink`.
     private static func inline(_ image: NSImage, font: NSFont, ink: NSColor) -> NSAttributedString {

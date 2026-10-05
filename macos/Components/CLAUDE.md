@@ -26,6 +26,16 @@ What belongs here and what stays in the app is [macos/CLAUDE.md § Where code li
 - **Its words are the package's.** A component's own copy (an accessibility label, a fixed title) is `String(localized: "…", bundle: .module)` in `Resources/<lang>.lproj/Localizable.strings` — English and `zh-Hans`, landing in the same commit as the code. Words that come from the app arrive in the display model, already localized.
 - The component-boundary rules of `macos/CLAUDE.md` (B1–B4) apply here as in the app; `make arch` checks both.
 
+## The design says what; AppKit says how
+
+The design sheets are every component's source: `design/transcript/index.html` (its parts written up in `design/transcript/01-run.md` … `08-live.md`, styled by `preview.css` and `preview-live.css`) and `design/settings/index.html`. They fix what a component is — its parts, its states and what moves it between them, its words, colours, corner radii and spacing. They are not a pixel spec: HTML can't draw an AppKit control, so a CSS value says what the control should be, never how to draw it.
+
+- **Build from the AppKit control that does the job, and keep its own behaviour and look.** A button is an `NSButton` on a system bezel (`.accessoryBar` for a chip-sized title; `.flexiblePush` when the title outgrows its control size); a choice is a radio button or checkbox; a pop-up is an `NSPopover`; a list is a table; a row whose parts come and go is an `NSStackView`. What the control brings is the design's intent met: hover, press feedback, on state, corners, focus ring, acting on release, keyboard, VoiceOver, its measured size, the user's system settings (scroll bars, accent, contrast).
+- **Never bend a control to fit the sheet.** No acting on mouse-down, no hover or press drawn by hand, no accessibility role set on a control that has its own, no title laid out from hand-offset attachments, no system setting forced, no timestamp or delay patching what the control already handles (a transient popover already takes the press that dismisses it). Each of these trades the system's behaviour for a look and loses keyboard, VoiceOver or a state.
+- **Where the sheet and AppKit differ, AppKit wins and the sheet changes** — the HTML / CSS and its write-up in the same commit, so the sheet always describes what ships. The system's version is the one the user knows from every other Mac app.
+- **One writer per state.** A control that mirrors something — a menu button's on state, a toggle's value — is set only by what owns that thing; its own press doesn't flip it.
+- **Don't test AppKit.** A test covers the component's own logic: what it shows for a value, what it reports for a press (assert the window's hit test finds the control, then `performClick`). Whether a bezel highlights or a popover dismisses is the system's — look at it in the render (*Verify*, step 4) instead; a test that calls methods directly has never seen the control.
+
 ## Moving a component in
 
 The app's views come here one unit at a time — a family, or a component with the leaves only it uses — and each unit lands as one commit that leaves every gate green.

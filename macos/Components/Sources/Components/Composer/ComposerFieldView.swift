@@ -5,6 +5,8 @@ import AppKit
 @MainActor
 protocol ComposerFieldViewDelegate: AnyObject {
     func composerFieldViewDidChange(_ field: ComposerFieldView)
+    /// The field shows focus, or stops: it holds the keyboard in the key
+    /// window — as AppKit shows a focus ring only there.
     func composerFieldView(_ field: ComposerFieldView, didChangeFocus isFocused: Bool)
     /// The reader pressed `key`; `true` when the composer took it.
     func composerFieldView(_ field: ComposerFieldView, handle key: ComposerFieldView.Key) -> Bool
@@ -102,7 +104,8 @@ final class ComposerFieldView: NSView {
         view.delegate = self
         view.onFocusChange = { [weak self] focused in
             guard let self else { return }
-            self.delegate?.composerFieldView(self, didChangeFocus: focused)
+            holdsKeyboard = focused
+            reportFocus()
         }
         return view
     }()
@@ -215,7 +218,33 @@ final class ComposerFieldView: NSView {
         window?.makeFirstResponder(textView)
     }
 
-    var isFocused: Bool { window?.firstResponder === textView }
+    /// The text view is its window's first responder.
+    private var holdsKeyboard = false
+    /// What the delegate was last told.
+    private var showsFocus = false
+    private var keyObservers: [NSObjectProtocol] = []
+
+    /// Follows its window's key state: focus shows only in the key window.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        keyObservers.forEach(NotificationCenter.default.removeObserver)
+        keyObservers = []
+        if let window {
+            keyObservers = [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification].map {
+                NotificationCenter.default.addObserver(forName: $0, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.reportFocus() }
+                }
+            }
+        }
+        reportFocus()
+    }
+
+    private func reportFocus() {
+        let shows = holdsKeyboard && window?.isKeyWindow == true
+        guard shows != showsFocus else { return }
+        showsFocus = shows
+        delegate?.composerFieldView(self, didChangeFocus: shows)
+    }
 
     // MARK: - Sizing
 

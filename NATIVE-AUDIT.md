@@ -63,7 +63,7 @@ Status: `[ ]` open · `[x]` fixed (commit) · `[-]` dropped (why)
 - [ ] **21. Scroll report by `main.async` + flag** — `TranscriptView` `isScrollReportPending`.
 - [ ] **22. Style page without containment** — `ComponentsDesign` hosts add a VC's view without `addChild`, patched with `main.async`; specimens' appear callbacks change the page window's focus.
 - [x] **23. Back / forward forwarded by hand** — **Fixed** (*Back and forward are the editor area's actions sent to nil*): the toolbar's segments send `EditorAreaViewController.goBack(_:)` / `goForward(_:)` to nil; the split names the area as their supplemental target, as for ⌘W, and the window controller asks the split when the window itself is first responder. The area validates them; the split's copies and its toolbar validation are gone. Was: — `MainSplitViewController` instead of `supplementalTarget`.
-- [ ] **24. Focus ring ignores the key window** — `ComposerFieldView` / `ComposerView`.
+- [x] **24. Focus ring ignores the key window** — **Fixed** (*The composer's ring shows only in the key window*): the field reports focus as first responder in the key window, following its window's become / resign key notifications, so the card's ring goes when the window goes to the back, as AppKit's focus rings do. Was: — `ComposerFieldView` / `ComposerView`.
 - [ ] **25. Menu keys twice** — `MenuPopover` VC `moveUp`/`moveDown`/`cancelOperation` beside the table's own; hover selection stale on scroll.
 
 ### Fonts

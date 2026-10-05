@@ -9,8 +9,8 @@ import DisplayModels
 /// It draws a `ComposerPresentation` and reports intents to its delegate; the
 /// field's words are the only state it keeps. The card is 720 pt at most,
 /// centred, the card radius with continuous corners, the window's background,
-/// a hairline and a soft shadow; focus adds a 1-pt accent ring at 45 % and a
-/// 4-pt halo at 12 %.
+/// a hairline and a soft shadow; focus — in the key window, as a focus ring —
+/// adds a 1-pt accent ring at 45 % and a 4-pt halo at 12 %.
 ///
 /// Words are never cut: when the card narrows the buttons drop the provider's
 /// name, then Effort's and Mode's names (glyphs and tooltips remain), and

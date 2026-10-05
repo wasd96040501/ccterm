@@ -36,3 +36,16 @@ misses is too subtle or not a defect, and leaves the set.
   is no larger than the baseline's 247 KB.
 - Whatever the result, the report says it plainly; missing the bar is not a reason to
   iterate again.
+
+### Reading the numbers (added after the dev baseline, before any holdout run)
+
+- The sets are small: 9 dev seeds, 6 holdout seeds, two or three per dimension. Every
+  number is reported as hits / reviews with the case count beside it, never as a bare
+  percentage.
+- One case is noise. "Higher" above means the new map hits at least two more holdout
+  cases than the baseline map does on the same arms, and no dimension loses a case.
+  A one-case difference is reported as "no measurable change".
+- Holdout arms, fixed now: baseline map (full) ×1, the better v1 map (full or core3,
+  chosen on dev) ×2, source ×1, each seed graded blind.
+- A pattern that repeats across cases (the same kind of miss in several seeds) outweighs
+  any single rate.

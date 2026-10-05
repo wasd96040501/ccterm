@@ -38,8 +38,12 @@ final class MainWindowTests: XCTestCase {
         XCTAssertTrue(navigation.isNavigational)
         XCTAssertEqual(
             navigation.subitems.map(\.action),
-            [#selector(MainSplitViewController.goBack(_:)), #selector(MainSplitViewController.goForward(_:))])
-        XCTAssertTrue(navigation.subitems.allSatisfy { $0.target === stage.mainSplit })
+            [#selector(EditorAreaViewController.goBack(_:)), #selector(EditorAreaViewController.goForward(_:))])
+        XCTAssertTrue(navigation.subitems.allSatisfy { $0.target == nil }, "a segment is aimed by hand")
+        let split = try XCTUnwrap(stage.mainSplit)
+        for action in navigation.subitems.compactMap(\.action) {
+            XCTAssertTrue(split.supplementalTarget(forAction: action, sender: nil) as? NSObject === split.editorArea)
+        }
         XCTAssertFalse(toolbar.items[2].isBordered, "the title sits in a bezel")
     }
 

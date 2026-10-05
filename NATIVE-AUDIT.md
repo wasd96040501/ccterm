@@ -62,7 +62,7 @@ Status: `[ ]` open · `[x]` fixed (commit) · `[-]` dropped (why)
 - [x] **20. Rise end by `asyncAfter(0.6)`** — **Fixed** (*The rise ends when its animations do*): the flashes and the swell are added in one `CATransaction` whose completion block ends the rise; a settled rise's completion is let go by its generation. Was: — `NewSessionViewController`. Native: the animation's completion.
 - [ ] **21. Scroll report by `main.async` + flag** — `TranscriptView` `isScrollReportPending`.
 - [ ] **22. Style page without containment** — `ComponentsDesign` hosts add a VC's view without `addChild`, patched with `main.async`; specimens' appear callbacks change the page window's focus.
-- [ ] **23. Back / forward forwarded by hand** — `MainSplitViewController` instead of `supplementalTarget`.
+- [x] **23. Back / forward forwarded by hand** — **Fixed** (*Back and forward are the editor area's actions sent to nil*): the toolbar's segments send `EditorAreaViewController.goBack(_:)` / `goForward(_:)` to nil; the split names the area as their supplemental target, as for ⌘W, and the window controller asks the split when the window itself is first responder. The area validates them; the split's copies and its toolbar validation are gone. Was: — `MainSplitViewController` instead of `supplementalTarget`.
 - [ ] **24. Focus ring ignores the key window** — `ComposerFieldView` / `ComposerView`.
 - [ ] **25. Menu keys twice** — `MenuPopover` VC `moveUp`/`moveDown`/`cancelOperation` beside the table's own; hover selection stale on scroll.
 

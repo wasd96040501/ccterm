@@ -2,6 +2,7 @@ import AgentSDK
 import AppKit
 import Combine
 import Components
+import TranscriptWorkspace
 
 /// Window controller for the AppKit-rooted main window. The window is
 /// created in `applicationWillFinishLaunching` rather than declared as a
@@ -106,6 +107,14 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         splitController.newTab()
     }
 
+    /// An action sent to nil while the window itself is first responder never
+    /// passes its content controller, so the content controller is asked here
+    /// for the target it would name.
+    override func supplementalTarget(forAction action: Selector, sender: Any?) -> Any? {
+        splitController.supplementalTarget(forAction: action, sender: sender)
+            ?? super.supplementalTarget(forAction: action, sender: sender)
+    }
+
     private func installToolbar() {
         let toolbar = NSToolbar(identifier: "ccterm.main")
         toolbar.delegate = self
@@ -140,9 +149,10 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     }
 
     /// Back and forward as one control, as Xcode's and Finder's: a momentary
-    /// segmented group, each segment a subitem with its own action, aimed at the
-    /// split, which hands both to the editor area. Navigational, so AppKit keeps
-    /// it at the leading edge of the title area.
+    /// segmented group, each segment a subitem with the editor area's own
+    /// action sent to nil — the responder chain finds the area, which also
+    /// enables each segment. Navigational, so AppKit keeps it at the leading
+    /// edge of the title area.
     private func navigationItem() -> NSToolbarItem {
         let back = String(localized: "Back")
         let forward = String(localized: "Forward")
@@ -152,12 +162,11 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
                 NSImage(systemSymbolName: "chevron.left", accessibilityDescription: back),
                 NSImage(systemSymbolName: "chevron.right", accessibilityDescription: forward),
             ].compactMap { $0 },
-            selectionMode: .momentary, labels: [back, forward], target: splitController, action: nil)
+            selectionMode: .momentary, labels: [back, forward], target: nil, action: nil)
         for (subitem, action) in zip(
             group.subitems,
-            [#selector(MainSplitViewController.goBack(_:)), #selector(MainSplitViewController.goForward(_:))])
+            [#selector(EditorAreaViewController.goBack(_:)), #selector(EditorAreaViewController.goForward(_:))])
         {
-            subitem.target = splitController
             subitem.action = action
         }
         group.isNavigational = true

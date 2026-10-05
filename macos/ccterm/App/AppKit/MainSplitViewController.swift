@@ -113,8 +113,9 @@ final class MainSplitViewController: NSSplitViewController {
             .store(in: &subscriptions)
     }
 
-    /// A tab command sent to nil — ⌘W — reaches the editor area from the
-    /// sidebar too, not only from inside a tab.
+    /// The editor area's commands sent to nil — ⌘W, the toolbar's back and
+    /// forward — reach it from the sidebar too, not only from inside a tab;
+    /// the area validates them itself.
     override func supplementalTarget(forAction action: Selector, sender: Any?) -> Any? {
         // ⌘. stops the active session tab's turn from anywhere in the window.
         if action == TranscriptTab.stopAction {
@@ -126,29 +127,8 @@ final class MainSplitViewController: NSSplitViewController {
 
     private static let areaCommands: Set<Selector> = [
         #selector(EditorAreaViewController.closeTab(_:)), #selector(EditorAreaViewController.newTab(_:)),
+        #selector(EditorAreaViewController.goBack(_:)), #selector(EditorAreaViewController.goForward(_:)),
     ]
-
-    // MARK: - Back and forward
-
-    /// Back through the active editor's history — the toolbar's back button
-    /// aims here, and ⌘[ reaches it from the sidebar.
-    @objc func goBack(_ sender: Any?) {
-        editorArea.goBack(sender)
-    }
-
-    /// Forward through the active editor's history.
-    @objc func goForward(_ sender: Any?) {
-        editorArea.goForward(sender)
-    }
-
-    /// Back and forward while the active editor has somewhere to go: the
-    /// editor area answers.
-    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
-        switch item.action {
-        case #selector(goBack(_:)), #selector(goForward(_:)): editorArea.validateUserInterfaceItem(item)
-        default: super.validateUserInterfaceItem(item)
-        }
-    }
 
     // MARK: - New tabs
 
@@ -210,14 +190,6 @@ final class MainSplitViewController: NSSplitViewController {
         editorArea.reloadIndicators()
     }
 
-}
-
-/// A toolbar item asks its target `validateToolbarItem(_:)` and nothing else,
-/// so it is passed to the switch menu items are asked.
-extension MainSplitViewController: NSToolbarItemValidation {
-    func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
-        validateUserInterfaceItem(item)
-    }
 }
 
 extension MainSplitViewController: TranscriptTabDelegate {

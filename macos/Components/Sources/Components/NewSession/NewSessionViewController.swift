@@ -47,8 +47,6 @@ public final class NewSessionViewController: NSViewController {
     /// The row's controls' bezels start this far in from the slot's edge,
     /// their words on the card's 16-pt inner line.
     private static let rowInset: CGFloat = 8
-    /// The note's words start on that line too.
-    private static let noteInset: CGFloat = 16
     /// The row's line: 8 under the slot, 28 tall.
     private static let rowGap: CGFloat = 8
     private static let rowHeight: CGFloat = 28
@@ -106,15 +104,20 @@ public final class NewSessionViewController: NSViewController {
         return label
     }()
 
-    /// What the choices add up to, in tertiary under the row; wraps, and
-    /// takes no room while there is nothing to say.
+    /// What the choices add up to, in tertiary under the row, its words
+    /// under the folder's glyph; one line, the middle giving way (a branch's
+    /// name), and no room taken while there is nothing to say.
     private lazy var explanationLabel: NSTextField = {
-        let label = NSTextField(wrappingLabelWithString: "")
+        let label = NSTextField(labelWithString: "")
         label.font = .systemFont(ofSize: 11)
         label.textColor = .tertiaryLabelColor
-        label.isSelectable = false
+        label.lineBreakMode = .byTruncatingMiddle
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return label
     }()
+
+    /// The note's words start where the folder's glyph does.
+    private lazy var noteLeading = explanationLabel.leadingAnchor.constraint(equalTo: folderButton.leadingAnchor)
 
     /// The folder, then the branch and the checkbox or the line that says
     /// the folder isn't a repository: whichever shows; a hidden view takes
@@ -151,13 +154,6 @@ public final class NewSessionViewController: NSViewController {
         menuPopover.onChoose = { [weak self] item in self?.menuChose(item) }
         menuPopover.onSearch = { [weak self] words in self?.branchSearchChanged(words) }
         if let content { configure(with: content) }
-    }
-
-    public override func viewDidLayout() {
-        super.viewDidLayout()
-        // The note wraps at the slot's width less its insets.
-        let width = max(composerGuide.frame.width - 2 * Self.noteInset, 0)
-        if explanationLabel.preferredMaxLayoutWidth != width { explanationLabel.preferredMaxLayoutWidth = width }
     }
 
     public override func viewDidDisappear() {
@@ -221,9 +217,9 @@ public final class NewSessionViewController: NSViewController {
 
             // The overlay: hangs under the row, in no one's way.
             explanationLabel.topAnchor.constraint(equalTo: rowLine.bottomAnchor),
-            explanationLabel.leadingAnchor.constraint(equalTo: composerGuide.leadingAnchor, constant: Self.noteInset),
+            noteLeading,
             explanationLabel.trailingAnchor.constraint(
-                lessThanOrEqualTo: composerGuide.trailingAnchor, constant: -Self.noteInset),
+                lessThanOrEqualTo: composerGuide.trailingAnchor, constant: -Self.rowInset),
         ])
     }
 
@@ -238,6 +234,7 @@ public final class NewSessionViewController: NSViewController {
         folderButton.show(
             content.folderTitle, font: Self.rowFont, ink: .labelColor, glyph: NSImage.symbol("folder", pointSize: 11))
         folderButton.toolTip = content.folderPath
+        alignNoteWithFolderGlyph()
         if menuPopover.isShown, let content = menuContent(for: menuPopover.anchor) {
             menuPopover.configure(with: content)
         }
@@ -263,6 +260,16 @@ public final class NewSessionViewController: NSViewController {
             worktreeCheckbox.isHidden = true
             notRepositoryLabel.isHidden = true
         }
+    }
+
+    /// Puts the note's words under the folder's glyph: where the folder's
+    /// cell draws its image, less where the label's cell draws its words.
+    private func alignNoteWithFolderGlyph() {
+        let button = NSRect(origin: .zero, size: folderButton.intrinsicContentSize)
+        let glyph = folderButton.cell?.imageRect(forBounds: button).minX ?? 0
+        let label = NSRect(origin: .zero, size: explanationLabel.intrinsicContentSize)
+        let words = explanationLabel.cell?.titleRect(forBounds: label).minX ?? 0
+        noteLeading.constant = glyph - words
     }
 
     /// The branch glyph and name, 12 pt in secondary ink.

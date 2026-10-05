@@ -169,7 +169,7 @@
 .lv-pop .g { width: var(--i-ctl); height: var(--i-ctl); flex: none; color: var(--secondary); }
 .lv-where .lv-check { margin-left: 8px; }
 .lv-where .nogit { font-size: 12px; color: var(--tertiary); margin-left: 8px; }
-.lv-note { position: absolute; top: 100%; left: 0; right: 0; padding: 0 8px; font-size: 11px; color: var(--tertiary); line-height: 16px; }
+.lv-note { position: absolute; top: 100%; left: 0; right: 0; padding: 0 8px; font-size: 11px; color: var(--tertiary); line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }   /* starts under the folder's glyph */
 .lv-note:empty { display: none; }
 
 /* The branch picker's filter: NSSearchField at its regular size, a capsule

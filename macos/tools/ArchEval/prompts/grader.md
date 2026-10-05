@@ -6,7 +6,8 @@ area. You don't know how each reviewer worked, and must not guess.
 
 ## Inputs
 
-- The case key: `{CASE}/key.json` (for a control, `dimension` is `control`).
+- The case key: `{CASE}/key.json` — a JSON answer sheet describing the seeded defect (its `defect`,
+  `involved` types, `rule` and the `hit` criterion); no secrets. For a control, `dimension` is `control`.
 - The seeded change: `{CASE}/patch.diff` (absent for a control).
 - The patched sources, the ground truth: `{SRC}`.
 - The reviews: {REVIEWS}

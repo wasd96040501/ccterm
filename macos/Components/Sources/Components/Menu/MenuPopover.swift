@@ -230,7 +230,9 @@ private final class MenuListViewController: NSViewController {
 
     private func footerView(_ item: MenuContent.Item) -> NSView {
         let view = MenuItemView()
-        view.configure(item, glyphColumn: content.hasGlyphColumn, menuWidth: content.width)
+        view.configure(
+            item, glyphColumn: content.hasGlyphColumn,
+            width: content.width - footer.edgeInsets.left - footer.edgeInsets.right)
         view.onToggle = { [weak self] in self?.popover?.choose(item) }
         return view
     }
@@ -328,7 +330,7 @@ extension MenuListViewController: NSTableViewDataSource, NSTableViewDelegate {
         case .item(let item):
             let view = tableView.makeView(withIdentifier: .menuItem, owner: nil) as? MenuItemView ?? MenuItemView()
             view.identifier = .menuItem
-            view.configure(item, glyphColumn: content.hasGlyphColumn, menuWidth: content.width)
+            view.configure(item, glyphColumn: content.hasGlyphColumn, width: tableColumn?.width ?? content.width)
             view.onToggle = { [weak self] in self?.popover?.choose(item) }
             return view
         case .header, .account:

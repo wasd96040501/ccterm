@@ -50,12 +50,12 @@ Status: `[ ]` open · `[x]` fixed (commit) · `[-]` dropped (why)
 
 ### Hand-measured layout
 - [x] **12. Slash list row heights** (fixed with 9: a prototype row is laid out and its description measured by its own cell at the width it gets; the cell sets its wrap width from its frame) — `SlashListViewController.swift` `descriptionWidth` / `boundingRect`, missing the cells' insets. Native: `usesAutomaticRowHeights`.
-- [ ] **13. Menu subtitle width** — `Menu/MenuItemView.swift` from the menu's width, assuming 16 a side.
+- [x] **13. Menu subtitle width** — **Fixed** (*A menu's subtitles wrap at their column's width*): the row is told its table column's width (the footer's, under the list), not the menu's less an assumed 16 a side. Was: — `Menu/MenuItemView.swift` from the menu's width, assuming 16 a side.
 - [ ] **14. Composer tiers by fixed widths** — `ComposerView.layout()` 600 / 500. Native: measure, or stack visibility priorities.
 - [ ] **15. Image document centring** — `Documents/ImageDocumentViewController.swift` `ImageHostView.layout()` sets its own frame; doesn't follow the clip view.
 - [ ] **16. Hidden views still in hand-made constraints** (the New view's row fixed with 2; the sidebar's glyph open) — New view's branch row (`NewSessionViewController`), the sidebar's branch glyph (`SidebarViewController`). Native: `NSStackView` detaching hidden views.
 - [ ] **17. About sized once** — `About/AboutViewController.swift` `fittingSize` in `loadView`. Native: `NSHostingController` sizing.
-- [ ] **18. `MenuPopover.popoverSize`** — a getter that sets the list 10 000 tall to measure.
+- [ ] **18. `MenuPopover.popoverSize`** — a getter that sets the list 10 000 tall to measure. **Open:** with automatic row heights AppKit measures only the rows it lays out. Measuring each row by a prototype at the column's width (`heightOfRow`) was tried and dropped: a `layout()` that resets the subtitle's wrap width crashed AppKit's layout pass, and measuring by `fittingSize` laid the rows out wrong.
 
 ### Timing and flag patches
 - [ ] **19. Split expand on measured private priorities** — `EditorAreaViewController.expand(_:)`, the composer's 720 wish at 499 (above the divider's 490).

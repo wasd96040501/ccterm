@@ -80,9 +80,9 @@ final class MenuItemView: NSTableCellView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    /// Shows `item` in a menu `menuWidth` wide whose items keep the glyph
-    /// column (`glyphColumn`).
-    func configure(_ item: MenuContent.Item, glyphColumn: Bool, menuWidth: CGFloat) {
+    /// Shows `item` in a row `width` wide (its table column's, or the
+    /// footer's) whose menu keeps the glyph column (`glyphColumn`).
+    func configure(_ item: MenuContent.Item, glyphColumn: Bool, width: CGFloat) {
         self.item = item
         title.stringValue = item.title
         subtitle.stringValue = item.subtitle ?? ""
@@ -113,11 +113,10 @@ final class MenuItemView: NSTableCellView {
         }
         let wordsX = glyphColumn ? Self.wordsX : Self.wordsXWithoutGlyphs
         wordsLeading.constant = wordsX
-        // The subtitle wraps in what the row leaves it: the popover's width
-        // less the table's insets (16 a side), the words' column and the
-        // trailing column.
+        // The subtitle wraps in what the row leaves it: the row's width less
+        // the words' column and the trailing column.
         subtitle.preferredMaxLayoutWidth =
-            menuWidth - 32 - wordsX - Self.trailingInset - (trailingWidth > 0 ? trailingWidth + Self.trailingGap : 0)
+            width - wordsX - Self.trailingInset - (trailingWidth > 0 ? trailingWidth + Self.trailingGap : 0)
         toolTip = item.toolTip
         setAccessibilityLabel([item.title, item.subtitle].compactMap { $0 }.joined(separator: ", "))
         updateColors()

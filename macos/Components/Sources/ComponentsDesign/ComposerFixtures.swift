@@ -43,7 +43,7 @@ enum ComposerFixtures {
         let levels =
             [
                 ("low", "Low", nil), ("medium", "Medium", nil), ("high", "High", "Default"),
-                ("xhigh", "Extra High", nil), ("max", "Max", "This session only"),
+                ("xhigh", "Extra High", nil), ("max", "Max", nil),
             ] as [(String, String, String?)]
         let items = levels.enumerated().map { index, level in
             item(

@@ -71,7 +71,7 @@ final class NewSessionModelTests: XCTestCase {
 
     func testAFolderThatIsNotARepositoryHasNoRow() {
         let model = NewSessionModel(draft: draft(), repository: .notARepository, recentFolders: [])
-        XCTAssertEqual(model.branchRow, .notARepository(String(localized: "Not a git repository")))
+        XCTAssertEqual(model.branchRow, .notARepository(String(localized: "Not a Git repository")))
         XCTAssertNil(model.explanation)
     }
 
@@ -136,7 +136,7 @@ final class NewSessionModelTests: XCTestCase {
         let list = try list(of: model(draft()))
 
         let main = try XCTUnwrap(list.local.first { $0.name == "main" })
-        XCTAssertEqual(main.subtitle, String(localized: "Checked out here"))
+        XCTAssertEqual(main.subtitle, String(localized: "Current branch"))
         XCTAssertTrue(main.isEnabled)
         XCTAssertTrue(main.isChosen)
 
@@ -228,7 +228,7 @@ final class NewSessionModelTests: XCTestCase {
         XCTAssertEqual(
             rows.last,
             .pullRequest(
-                number: 327, subtitle: String(localized: "Checked out in a new worktree"), isChosen: false))
+                number: 327, subtitle: String(localized: "Checks out in a new worktree"), isChosen: false))
         XCTAssertEqual(picker.firstChoice(matching: "#327"), .pullRequest(327))
         XCTAssertEqual(picker.firstChoice(matching: "327"), .pullRequest(327))
     }

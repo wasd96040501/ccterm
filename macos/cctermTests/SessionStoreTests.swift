@@ -255,7 +255,7 @@ final class SessionStoreTests: XCTestCase {
             if case .failed = $0.phase { return true }
             return false
         }
-        XCTAssertEqual(state.activity, .failed(message: String(localized: "Not a git repository")))
+        XCTAssertEqual(state.activity, .failed(message: String(localized: "Not a Git repository")))
         guard case .notSent? = state.prompts.first?.delivery else { return XCTFail("the prompt vanished") }
         XCTAssertTrue(launches().isEmpty, "no CLI was started")
         await store.endAll()

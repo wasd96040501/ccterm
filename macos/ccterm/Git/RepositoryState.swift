@@ -2,7 +2,7 @@ import Foundation
 
 /// A folder's repository as the New view's branch row reads it (design 08
 /// *Branch and Worktree*). `nil` where the folder is in no repository — the
-/// row then says *Not a git repository*.
+/// row then says *Not a Git repository*.
 nonisolated struct RepositoryState: Sendable, Equatable {
     /// The repository's top: the folder's own checkout (a worktree's root when
     /// the folder is inside one).

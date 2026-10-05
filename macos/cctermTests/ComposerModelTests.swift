@@ -183,11 +183,11 @@ final class ComposerModelTests: XCTestCase {
         let menu = model(settings: settings("opus", effort: .high)).effortMenu
         let section = try XCTUnwrap(menu.sections.first)
         XCTAssertEqual(menu.sections.count, 1)
-        XCTAssertEqual(section.header, String(localized: "Effort · \("Opus 5.5")"))
-        XCTAssertEqual(section.items.map(\.title), [L("Low"), L("Medium"), L("High"), L("Extra High"), L("Max")])
+        XCTAssertEqual(section.header, "Effort · Opus 5.5")
+        XCTAssertEqual(section.items.map(\.title), ["Low", "Medium", "High", "Extra High", "Max"])
         XCTAssertEqual(section.items.map(\.isChecked), [false, false, true, false, false])
         XCTAssertEqual(section.items.map(\.isEnabled), [true, true, true, true, true])
-        XCTAssertEqual(section.items.map(\.subtitle), [nil, nil, L("Default"), nil, L("This session only")])
+        XCTAssertEqual(section.items.map(\.subtitle), [nil, nil, L("Default"), nil, nil])
         XCTAssertEqual(section.items.map(\.glyph), (1...5).map { .effort(level: $0) })
         XCTAssertEqual(
             section.items.map(\.id), [.low, .medium, .high, .xhigh, .max].map { ComposerModel.id(of: .effort($0)) })

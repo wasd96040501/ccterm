@@ -78,7 +78,7 @@ enum MenuFixtures {
             }
         }
         let local = rows([
-            ("main", "Checked out here", true), ("live-session-design", "Checked out in another worktree", false),
+            ("main", "Current branch", true), ("live-session-design", "Checked out in another worktree", false),
             ("exactlist-bench", nil, true), ("fix-gutter-overflow", nil, true), ("settings-accounts", nil, true),
         ])
         let remote = rows([("origin/sidebar-icons", nil, true), ("origin/release/1.4", nil, true)])
@@ -90,7 +90,7 @@ enum MenuFixtures {
                 .header("Pull Request"),
                 .item(
                     NewSessionBranchMenu.Item(
-                        id: number, title: "#\(number)", subtitle: "Checked out in a new worktree")),
+                        id: number, title: "#\(number)", subtitle: "Checks out in a new worktree")),
             ]
         }
         return NewSessionBranchMenu(rows: all, query: query, emptyText: all.isEmpty ? "No Matching Branches" : nil)

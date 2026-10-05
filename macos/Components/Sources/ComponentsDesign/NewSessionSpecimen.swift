@@ -26,7 +26,7 @@ enum NewSessionSpecimen {
             specimens: [
                 .init(title: "A folder, in place", view: host(.rest), height: nil),
                 .init(title: "A new worktree — the line says what Send will do", view: host(.worktree), height: nil),
-                .init(title: "A folder that isn't a git repository", view: host(.notARepository), height: nil),
+                .init(title: "A folder that isn't a Git repository", view: host(.notARepository), height: nil),
                 .init(title: "No folder yet", view: host(.noFolder), height: nil),
             ])
     }
@@ -63,7 +63,7 @@ enum NewSessionSpecimen {
             case .notARepository:
                 return NewSessionContent(
                     folderTitle: "claude-notes", folderPath: "~/notes/claude-notes", recentFolders: recents,
-                    branchRow: .notARepository("Not a git repository"))
+                    branchRow: .notARepository("Not a Git repository"))
             case .noFolder:
                 return NewSessionContent(
                     folderTitle: "Choose Folder…", recentFolders: recents, branchRow: .loading)

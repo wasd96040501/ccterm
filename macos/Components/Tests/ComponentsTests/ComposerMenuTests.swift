@@ -61,7 +61,7 @@ final class ComposerMenuTests: XCTestCase {
                 Line(title: "Low"), Line(title: "Medium"),
                 Line(title: "High", subtitle: "Default", checked: true),
                 Line(title: "Extra High"),
-                Line(title: "Max", subtitle: "This session only"),
+                Line(title: "Max"),
             ])
     }
 

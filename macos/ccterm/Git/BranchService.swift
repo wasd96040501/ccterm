@@ -132,7 +132,7 @@ struct BranchService: Sendable {
 
     // MARK: - git
 
-    private nonisolated static let notARepository = String(localized: "Not a git repository")
+    private nonisolated static let notARepository = String(localized: "Not a Git repository")
 
     /// Branch names under `namespace`, newest commit first, `prefix` cut.
     private nonisolated static func refs(_ namespace: String, prefix: String, in directory: URL) throws -> [String] {

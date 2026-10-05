@@ -783,26 +783,6 @@
         }
       }
     },
-    "Checked out here": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已在此处检出"
-          }
-        }
-      }
-    },
-    "Checked out in a new worktree": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在新工作树中检出"
-          }
-        }
-      }
-    },
     "Checked out in another worktree": {
       "localizations": {
         "zh-Hans": {
@@ -819,6 +799,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在检查…"
+          }
+        }
+      }
+    },
+    "Checks out in a new worktree": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在新工作树中检出"
           }
         }
       }
@@ -1139,6 +1129,16 @@
         }
       }
     },
+    "Current branch": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前分支"
+          }
+        }
+      }
+    },
     "Currently unavailable": {
       "localizations": {
         "zh-Hans": {
@@ -1330,26 +1330,6 @@
         }
       }
     },
-    "Effort · %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "思考强度 · %@"
-          }
-        }
-      }
-    },
-    "Effort: %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "思考强度：%@"
-          }
-        }
-      }
-    },
     "Enter a URL that starts with http:// or https://.": {
       "localizations": {
         "zh-Hans": {
@@ -1376,16 +1356,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "已退出，退出码 %lld"
-          }
-        }
-      }
-    },
-    "Extra High": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "超高"
           }
         }
       }
@@ -1538,16 +1508,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Haiku"
-          }
-        }
-      }
-    },
-    "High": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "高"
           }
         }
       }
@@ -1710,16 +1670,6 @@
         }
       }
     },
-    "Low": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "低"
-          }
-        }
-      }
-    },
     "MCP Tools": {
       "comment": "A section of the context document.",
       "localizations": {
@@ -1727,26 +1677,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "MCP 工具"
-          }
-        }
-      }
-    },
-    "Max": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "最高"
-          }
-        }
-      }
-    },
-    "Medium": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "中"
           }
         }
       }
@@ -1932,22 +1862,22 @@
         }
       }
     },
+    "Not a Git repository": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "非 Git 仓库"
+          }
+        }
+      }
+    },
     "Not a folder": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "不是文件夹"
-          }
-        }
-      }
-    },
-    "Not a git repository": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "不是 Git 仓库"
           }
         }
       }
@@ -3108,16 +3038,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "此会话没有记录它运行所在的文件夹。"
-          }
-        }
-      }
-    },
-    "This session only": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "仅限本次会话"
           }
         }
       }

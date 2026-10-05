@@ -115,16 +115,11 @@ nonisolated enum ComposerModel {
 // MARK: - Wording
 
 extension ComposerModel {
-    /// The five levels, in the order the menu lists them, with their names.
-    static var effortLevels: [(effort: Effort, name: String)] {
-        [
-            (.low, String(localized: "Low")),
-            (.medium, String(localized: "Medium")),
-            (.high, String(localized: "High")),
-            (.xhigh, String(localized: "Extra High")),
-            (.max, String(localized: "Max")),
-        ]
-    }
+    /// The five levels, in the order the menu lists them, with their names —
+    /// the CLI's terms, untranslated, as *Effort* is.
+    static let effortLevels: [(effort: Effort, name: String)] = [
+        (.low, "Low"), (.medium, "Medium"), (.high, "High"), (.xhigh, "Extra High"), (.max, "Max"),
+    ]
 
     /// 1…5: how many bars of the meter a level fills.
     static func meterLevel(of effort: Effort) -> Int {
@@ -302,7 +297,7 @@ extension ComposerModel {
             return Chip(
                 title: name, detail: nil, glyph: .effort(level: ComposerModel.meterLevel(of: level)),
                 trailingGlyph: nil, isEnabled: true, isDanger: false,
-                toolTip: String(localized: "Effort: \(name)"), titleIsDroppable: true)
+                toolTip: "Effort: \(name)", titleIsDroppable: true)
         }
 
         func modeChip() -> Chip {
@@ -327,8 +322,6 @@ extension ComposerModel {
                     subtitle = String(localized: "Not on \(modelName)")
                 } else if level == defaultEffort {
                     subtitle = String(localized: "Default")
-                } else if level == .max {
-                    subtitle = String(localized: "This session only")
                 } else {
                     subtitle = nil
                 }
@@ -338,7 +331,7 @@ extension ComposerModel {
                     isChecked: shownEffort == level, isEnabled: isOffered)
             }
             return Menu(sections: [
-                Menu.Section(header: String(localized: "Effort · \(modelName)"), headerHint: nil, items: items)
+                Menu.Section(header: "Effort · \(modelName)", headerHint: nil, items: items)
             ])
         }
 

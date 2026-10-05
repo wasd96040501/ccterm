@@ -193,11 +193,11 @@ badge, not a thing.
   once), each with origin's default branch first, then the checked-out one,
   then the rest newest commit first; 264 pt of list whatever is typed, then
   it scrolls. Typing filters; ↩ takes the first
-  match. Typing `#327` adds *Pull Request · #327 — Checked out in a new
+  match. Typing `#327` adds *Pull Request · #327 — Checks out in a new
   worktree*, and choosing it checks *Use a new worktree*.
 - **What the branch means depends on the worktree checkbox.**
   - **In place** it's the branch Claude works on. The checked-out one is
-    marked *Checked out here*. Another one is checked out with `git switch`
+    marked *Current branch*. Another one is checked out with `git switch`
     when you send — ccterm's step, not the CLI's. Greyed, with the reason,
     when git would refuse or it would carry your work along: *Checked out in
     another worktree*; *Uncommitted changes here — use a worktree*.
@@ -214,7 +214,7 @@ badge, not a thing.
   branch that can't be had in place to the checkout's. **Only a git folder
   has a branch and the checkbox** — the CLI refuses `--worktree` elsewhere
   (*Can only use --worktree in a git repository*). A folder that isn't one
-  shows *Not a git repository* after the folder. A worktree session's tab title and sidebar row
+  shows *Not a Git repository* after the folder. A worktree session's tab title and sidebar row
   carry its branch (*quiet-otter · worktree*, *pr-327 · worktree*).
 - **Default folder**: the folder of the session tab that was active when ⌘T
   was pressed; otherwise the most recent project.
@@ -244,7 +244,7 @@ the note says what Send does.
 | Switches to %@ when you send | 发送时切换到 %@ |
 | Starts a new branch from %@ | 从 %@ 新建分支 |
 | Checks out pull request #%lld | 检出拉取请求 #%lld |
-| Not a git repository | 不是 Git 仓库 |
+| Not a Git repository | 非 Git 仓库 |
 
 *Worktree* is 工作树, as git's own Chinese has it; a branch is 分支.
 
@@ -446,7 +446,7 @@ account — is marked where it is chosen.
   ▂▄    Medium
 ✓ ▂▄▆   High                    ← subtitle: Default
   ▂▄▆█  Extra High
-  ▂▄▆██ Max                     ← subtitle: This session only
+  ▂▄▆██ Max
 ```
 
 - Levels are the model's `supportedEffortLevels`. The others are listed but

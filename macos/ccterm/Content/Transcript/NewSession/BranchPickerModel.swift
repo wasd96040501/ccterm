@@ -11,7 +11,7 @@ nonisolated struct BranchPickerModel: Equatable, Sendable {
     enum Row: Equatable, Sendable {
         case header(String)
         case branch(NewSessionModel.BranchItem)
-        /// *Pull Request · #N — Checked out in a new worktree*.
+        /// *Pull Request · #N — Checks out in a new worktree*.
         case pullRequest(number: Int, subtitle: String, isChosen: Bool)
         /// Nothing matches.
         case empty(String)
@@ -49,7 +49,7 @@ nonisolated struct BranchPickerModel: Equatable, Sendable {
             rows += [
                 .header(String(localized: "Pull Request")),
                 .pullRequest(
-                    number: number, subtitle: String(localized: "Checked out in a new worktree"),
+                    number: number, subtitle: String(localized: "Checks out in a new worktree"),
                     isChosen: list.chosenPullRequest == number),
             ]
         }

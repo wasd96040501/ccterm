@@ -1,7 +1,7 @@
 import Foundation
 
 /// What the New view shows, worded (design 08 *The New view*): the folder
-/// title and its path, the branch row or *Not a git repository*, the line
+/// title and its path, the branch row or *Not a Git repository*, the line
 /// that says what Send will do, the folder menu and the branch list. Pure —
 /// built from the draft, the folder's repository and the recent projects;
 /// tested without AppKit.
@@ -33,7 +33,7 @@ nonisolated struct NewSessionModel: Equatable, Sendable {
     enum BranchRow: Equatable, Sendable {
         /// A git folder: the branch pop-up's title and the worktree checkbox.
         case repository(branchTitle: String, usesWorktree: Bool, branches: BranchList)
-        /// *Not a git repository*.
+        /// *Not a Git repository*.
         case notARepository(String)
         /// The repository is still being read.
         case loading
@@ -59,7 +59,7 @@ nonisolated struct NewSessionModel: Equatable, Sendable {
 
     struct BranchItem: Equatable, Sendable {
         var name: String
-        /// *Checked out here*; or why it can't be had in place, greyed:
+        /// *Current branch*; or why it can't be had in place, greyed:
         /// *Checked out in another worktree*, *Uncommitted changes here — use
         /// a worktree*.
         var subtitle: String?
@@ -93,7 +93,7 @@ nonisolated struct NewSessionModel: Equatable, Sendable {
             branchRow = .loading
             explanation = nil
         case .notARepository:
-            branchRow = .notARepository(String(localized: "Not a git repository"))
+            branchRow = .notARepository(String(localized: "Not a Git repository"))
             explanation = nil
         case .repository(let state):
             let shown = Self.shownBranch(of: draft, in: state)
@@ -153,7 +153,7 @@ nonisolated struct NewSessionModel: Equatable, Sendable {
                 switch refusal {
                 case .checkedOutElsewhere: String(localized: "Checked out in another worktree")
                 case .uncommittedChanges: String(localized: "Uncommitted changes here — use a worktree")
-                case nil: name == repository.branch ? String(localized: "Checked out here") : nil
+                case nil: name == repository.branch ? String(localized: "Current branch") : nil
                 }
             return BranchItem(name: name, subtitle: subtitle, isEnabled: refusal == nil, isChosen: name == chosen)
         }

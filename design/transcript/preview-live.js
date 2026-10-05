@@ -326,7 +326,7 @@ function menuItems(kind, s) {
       { header: `Effort · ${m.short || m.label}` },
       ...EFFORTS.map(([v, label]) => {
         const ok = m.eff.includes(v);
-        return { label, glyph: bars(v), checked: eff === v, disabled: !ok, sub: !ok ? `Not on ${m.short || m.label}` : v === "high" ? "Default" : v === "max" ? "This session only" : null, act: () => chooseEffort(s, v) };
+        return { label, glyph: bars(v), checked: eff === v, disabled: !ok, sub: !ok ? `Not on ${m.short || m.label}` : v === "high" ? "Default" : null, act: () => chooseEffort(s, v) };
       }),
     ];
   }
@@ -358,7 +358,7 @@ function branchItems(s) {
   const why = (b) => !inPlace || b === f.branch ? null
     : (f.elsewhere || []).includes(b) ? "Checked out in another worktree"
     : f.dirty ? "Uncommitted changes here — use a worktree" : null;
-  const item = (b) => ({ label: b, checked: s.branch === b, disabled: !!why(b), sub: why(b) || (b === f.branch ? "Checked out here" : null), act: () => { s.branch = b; LW.refresh(s); } });
+  const item = (b) => ({ label: b, checked: s.branch === b, disabled: !!why(b), sub: why(b) || (b === f.branch ? "Current branch" : null), act: () => { s.branch = b; LW.refresh(s); } });
   const match = (b) => !q || b.toLowerCase().includes(q.replace(/^#/, ""));
   // origin's default branch first, then the checked-out one, then the rest
   // as git lists them: newest commit first.
@@ -370,7 +370,7 @@ function branchItems(s) {
   if (remote.length) out.push({ header: "Remote" }, ...remote.map(item));
   // The CLI checks out a pull request itself: --worktree #123.
   const pr = q.match(/^#?(\d+)$/);
-  if (pr) out.push({ header: "Pull Request" }, { label: `#${pr[1]}`, sub: "Checked out in a new worktree", checked: s.branch === `#${pr[1]}`, act: () => { s.branch = `#${pr[1]}`; s.worktree = true; LW.refresh(s); } });
+  if (pr) out.push({ header: "Pull Request" }, { label: `#${pr[1]}`, sub: "Checks out in a new worktree", checked: s.branch === `#${pr[1]}`, act: () => { s.branch = `#${pr[1]}`; s.worktree = true; LW.refresh(s); } });
   // Nothing matches: the list stays its size and says so in its middle.
   return out;
 }
@@ -575,7 +575,7 @@ function composerHTML(s, o = {}) {
 const EN = {
   ask: "Ask Claude, or type / for commands",
   worktree: "Use a new worktree",
-  nogit: "Not a git repository",
+  nogit: "Not a Git repository",
   sw: (b) => `Switches to ${b} when you send`,
   from: (b) => `Starts a new branch from ${b}`,
   pr: (n) => `Checks out pull request ${n}`,
@@ -583,7 +583,7 @@ const EN = {
 const ZH = {
   ask: "告诉 Claude 要做什么，或输入 / 使用命令",
   worktree: "使用新工作树",
-  nogit: "不是 Git 仓库",
+  nogit: "非 Git 仓库",
   sw: (b) => `发送时切换到 ${b}`,
   from: (b) => `从 ${b} 新建分支`,
   pr: (n) => `检出拉取请求 ${n}`,

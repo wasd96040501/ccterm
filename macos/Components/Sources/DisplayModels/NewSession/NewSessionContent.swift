@@ -47,7 +47,7 @@ public struct NewSessionContent: Equatable, Sendable {
     public enum BranchRow: Equatable, Sendable {
         /// A git folder: the branch pop-up's title and the worktree checkbox.
         case repository(branchTitle: String, usesWorktree: Bool)
-        /// *Not a git repository*, worded.
+        /// *Not a Git repository*, worded.
         case notARepository(String)
         /// The repository is still being read.
         case loading

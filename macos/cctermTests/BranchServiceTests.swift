@@ -156,7 +156,7 @@ final class BranchServiceTests: XCTestCase {
             _ = try await service.prepare(.worktree(base: .head), in: plain, name: "x")
             XCTFail("expected a refusal")
         } catch let refusal as GitRefusal {
-            XCTAssertEqual(refusal.message, String(localized: "Not a git repository"))
+            XCTAssertEqual(refusal.message, String(localized: "Not a Git repository"))
         }
     }
 

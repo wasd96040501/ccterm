@@ -1139,6 +1139,7 @@ final class EditorAreaTests: XCTestCase {
 
         let button = try newTabButton(in: group)
         XCTAssertFalse(button.isHidden)
+        XCTAssertEqual(button.frame.size, NSSize(width: 24, height: 24), "the + is a 24-point circle")
         XCTAssertTrue(
             button.toolTip?.hasPrefix(Self.title("New Tab")) == true && button.toolTip?.hasSuffix("⌘T") == true)
         XCTAssertLessThanOrEqual(

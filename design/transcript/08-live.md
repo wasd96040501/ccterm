@@ -47,10 +47,10 @@ Five rules follow.
  ┌ Row gap and tool rows ┐ ┌ New Session ┐ ┌ Fix gutter ┐        (+)
 ```
 
-- **Every tab bar ends in a +.** AppKit's accessory-bar button at the
-  trailing end of each editor group's bar, a plus in secondary ink: its
-  bezel shows under the pointer and darkens while pressed, and hover shows
-  the tooltip **New Tab ⌘T**. In a split each group has its own, and it
+- **Every tab bar ends in a +.** A 24-pt circle at the trailing end of each
+  editor group's bar, quaternary fill, a 10-pt plus in secondary ink —
+  Ghostty's control, at the sheet's scale. Hover lifts the fill one step and
+  shows the tooltip **New Tab ⌘T**. In a split each group has its own, and it
   opens the New tab in *its* group.
 - **⌘T** opens a New tab in the focused group, after the active tab. If that
   group already has an untouched New tab, ⌘T selects it instead of adding a
@@ -648,8 +648,8 @@ Every view on this page draws from the same few numbers.
   continuous curve is made to read the same size as a circular corner of
   that radius. Shapes drawn with `NSBezierPath` use the same curve (a
   rounded-rect path built from the continuous-corner cubics, as
-  `contRect()` in `preview-live.js` draws it). The action button stays a
-  circle; tiles and icons stay Lamé curves.
+  `contRect()` in `preview-live.js` draws it). The + and the action button
+  stay circles; tiles and icons stay Lamé curves.
 - **About this sheet:** the specimens under *One shape language* draw the
   real curve in SVG, in every browser. The sheet's other shapes use CSS
   `corner-shape: squircle` (a superellipse, radius ×1.45 to match), which

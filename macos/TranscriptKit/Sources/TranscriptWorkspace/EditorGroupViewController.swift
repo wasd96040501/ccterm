@@ -140,6 +140,8 @@ public final class EditorGroupViewController: NSViewController {
             tabBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
             newTabButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
             newTabButton.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
+            newTabButton.widthAnchor.constraint(equalToConstant: NewTabButton.side),
+            newTabButton.heightAnchor.constraint(equalToConstant: NewTabButton.side),
             separator.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             separator.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             separator.topAnchor.constraint(equalTo: tabBar.bottomAnchor, constant: 6),

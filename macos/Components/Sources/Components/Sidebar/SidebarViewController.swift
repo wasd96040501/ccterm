@@ -358,29 +358,25 @@ extension SidebarViewController {
         private let title = NSTextField(labelWithString: "")
         private let mark = ActivityMarkView()
         /// A worktree session's branch glyph, after its title in tertiary
-        /// (design 08 *The sidebar*); out of the layout on every other row.
+        /// (design 08 *The sidebar*).
         private let branchGlyph = NSImageView()
-        private lazy var glyphWidth = branchGlyph.widthAnchor.constraint(equalToConstant: 0)
-        private lazy var glyphGap = branchGlyph.leadingAnchor.constraint(equalTo: title.trailingAnchor)
-        /// The mark's slot: its width while one shows, none otherwise, so a
-        /// row at rest gives its title the whole line.
-        private lazy var markWidth = mark.widthAnchor.constraint(equalToConstant: 0)
+        /// The title and the glyph at the leading end, the mark at the
+        /// trailing; a hidden glyph or mark leaves the stack, so a row at rest
+        /// gives its title the whole line.
+        private let line = NSStackView()
 
         /// The session's state, drawn as a small trailing mark; `nil` draws none.
         var activity: SidebarActivity? {
             didSet {
                 mark.activity = activity
-                markWidth.constant = activity == nil ? 0 : ActivityMarkView.slot
+                mark.isHidden = activity == nil
             }
         }
 
         /// The words of the worktree's branch glyph; `nil` draws no glyph.
         var worktreeCaption: String? {
             didSet {
-                let shown = worktreeCaption != nil
-                branchGlyph.isHidden = !shown
-                glyphWidth.constant = shown ? Self.glyphSize.width : 0
-                glyphGap.constant = shown ? 5 : 0
+                branchGlyph.isHidden = worktreeCaption == nil
                 branchGlyph.toolTip = worktreeCaption
                 branchGlyph.setAccessibilityLabel(branchGlyph.toolTip)
             }
@@ -425,7 +421,14 @@ extension SidebarViewController {
             branchGlyph.isHidden = true
             branchGlyph.setContentCompressionResistancePriority(.required, for: .horizontal)
             title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-            for subview in [image, title, branchGlyph, mark] as [NSView] {
+            mark.isHidden = true
+            line.orientation = .horizontal
+            line.alignment = .centerY
+            line.spacing = 0
+            line.setViews([title, branchGlyph], in: .leading)
+            line.setViews([mark], in: .trailing)
+            line.setCustomSpacing(5, after: title)
+            for subview in [image, line] as [NSView] {
                 subview.translatesAutoresizingMaskIntoConstraints = false
                 addSubview(subview)
             }
@@ -434,16 +437,12 @@ extension SidebarViewController {
                 image.centerYAnchor.constraint(equalTo: centerYAnchor),
                 image.widthAnchor.constraint(equalToConstant: 16),
                 image.heightAnchor.constraint(equalToConstant: 16),
-                title.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 5),
-                glyphGap,
-                glyphWidth,
+                line.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 5),
+                line.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+                line.centerYAnchor.constraint(equalTo: centerYAnchor),
+                branchGlyph.widthAnchor.constraint(equalToConstant: Self.glyphSize.width),
                 branchGlyph.heightAnchor.constraint(equalToConstant: Self.glyphSize.height),
-                branchGlyph.centerYAnchor.constraint(equalTo: centerYAnchor),
-                branchGlyph.trailingAnchor.constraint(lessThanOrEqualTo: mark.leadingAnchor),
-                title.centerYAnchor.constraint(equalTo: centerYAnchor),
-                mark.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
-                mark.centerYAnchor.constraint(equalTo: centerYAnchor),
-                markWidth,
+                mark.widthAnchor.constraint(equalToConstant: ActivityMarkView.slot),
                 mark.heightAnchor.constraint(equalToConstant: ActivityMarkView.slot),
             ])
         }

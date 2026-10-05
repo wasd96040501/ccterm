@@ -163,6 +163,9 @@ struct BranchService: Sendable {
     }
 
     /// Runs `git` in `directory`; its output, or git's last words on failure.
+    /// Its two pipes drain at once: git blocks writing to a full pipe, so
+    /// reading one to its end before the other could wait forever. Reads take
+    /// no optional locks, so a `status` never holds up the user's own git.
     @discardableResult
     private nonisolated static func git(_ arguments: [String], in directory: URL) throws -> String {
         let process = Process()
@@ -172,14 +175,16 @@ struct BranchService: Sendable {
         var environment = ProcessInfo.processInfo.environment
         environment["GIT_TERMINAL_PROMPT"] = "0"
         environment["LC_ALL"] = "C"
+        environment["GIT_OPTIONAL_LOCKS"] = "0"
         process.environment = environment
         let output = Pipe()
         let errors = Pipe()
         process.standardOutput = output
         process.standardError = errors
         try process.run()
+        let errorRead = DrainedPipe(errors)
         let data = output.fileHandleForReading.readDataToEndOfFile()
-        let errorData = errors.fileHandleForReading.readDataToEndOfFile()
+        let errorData = errorRead.wait()
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
             let message =
@@ -188,6 +193,27 @@ struct BranchService: Sendable {
             throw GitFailure.failed(message.replacingOccurrences(of: "fatal: ", with: ""))
         }
         return String(decoding: data, as: UTF8.self)
+    }
+}
+
+/// A pipe read to its end on a queue of its own, while the caller reads another.
+private final class DrainedPipe: @unchecked Sendable {
+    private let done = DispatchGroup()
+    /// Written once, before `done` is left.
+    private var data = Data()
+
+    init(_ pipe: Pipe) {
+        done.enter()
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            data = pipe.fileHandleForReading.readDataToEndOfFile()
+            done.leave()
+        }
+    }
+
+    /// What the pipe held, once it closed.
+    func wait() -> Data {
+        done.wait()
+        return data
     }
 }
 

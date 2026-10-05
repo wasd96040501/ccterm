@@ -30,10 +30,12 @@ Status: `[ ]` open · `[x]` fixed (commit) · `[-]` dropped (why)
   - ⎋ in the composer with no slash list falls through to NSTextView's `cancelOperation:` → `complete:` (`ComposerFieldView.swift`, `ComposerViewController.swift` `.escape`).
   - `menuDidClose` forces `makeKey()` + focus (`ComposerViewController.swift`).
   - Restart alert replaces Cancel's Escape with Return (`SessionTabViewController.swift`).
-- [ ] **5. Composer field edits bypass the text system** — `Composer/ComposerFieldView.swift` (`body` setter, `complete(command:)`, token delete).
+- [x] **5. Composer field edits bypass the text system** — **Fixed** (*The composer's undo holds only the typing since its words were set*): the field gives its text view its own `UndoManager` (`undoManager(for:)`) and clears it whenever the words or the token are set from outside — ⌘Z never replays edits against words that are gone. Test: typing is undoable; setting the words leaves nothing to undo.
+  Was: — `Composer/ComposerFieldView.swift` (`body` setter, `complete(command:)`, token delete).
   `textView.string =` with `allowsUndo` on: ⌘Z after a send replays edits against text that is gone.
   Native: `shouldChangeText` / `replaceCharacters` / `didChangeText`, or clear the undo stack.
-- [ ] **6. git pipe deadlock** — `ccterm/Git/BranchService.swift` `git(_:in:)`.
+- [x] **6. git pipe deadlock** — **Fixed** (*git's two pipes drain at once*): stderr reads to its end on a queue of its own while stdout is read. No test: `git(_:in:)` is private, and widening it for a test is forbidden.
+  Was: — `ccterm/Git/BranchService.swift` `git(_:in:)`.
   Reads stdout to EOF, then stderr, then waits: a hook filling stderr's pipe blocks git and us forever.
   Native: drain both pipes concurrently, wait on termination.
 
@@ -71,4 +73,4 @@ Status: `[ ]` open · `[x]` fixed (commit) · `[-]` dropped (why)
 - [ ] **27. `SessionStore.known`** — every transcript read is kept for the app's life.
 - [ ] **28. `ModelCatalogStore` cache** — mirror types and a `JSONSerialization` round trip for SDK types.
 - [ ] **29. Probes outdated by a counter, not cancelled** — `ModelCatalogStore`; the 60 s timeout can't fire through a detached launch (`AppDelegate`).
-- [ ] **30. `git status` without `--no-optional-locks`** — `BranchService`.
+- [x] **30. `git status` without `--no-optional-locks`** (fixed with 6: `GIT_OPTIONAL_LOCKS=0` for every call) — `BranchService`.

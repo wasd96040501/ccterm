@@ -124,7 +124,12 @@ badge, not a thing.
   controls, note, card, hints) made a pyramid, each line a different width
   on one axis; a column has one edge to read down.
 - **Centred**, vertically a third of the way down rather than at the centre
-  (the optical centre, the way Spotlight's field sits). Nothing else on the
+  (the optical centre, the way Spotlight's field sits). What is centred is
+  the page at rest — the icon, the card at one line and the row — as one
+  block of fixed height, so **the card's top never moves**: more lines in the
+  field, the line under the row and an error all grow down, under the
+  block. Centring what is there instead would move the icon and the card
+  each time the line under the row came or went. Nothing else on the
   page: the keys (↩, ⇧↩, ⇧⇥) are the conventions of a field and a menu's
   shortcut, and `/` is named by the placeholder.
 - **The decoration is the app icon** (`design/icon`, the shipped pixels) at
@@ -287,10 +292,17 @@ prompt, so this leaves nothing in the sidebar.
     bars are the page's one bit of ornament in the composer.
   - **Mode** — the mode's glyph and short name. Bypass is red, glyph and text;
     every other mode is secondary.
-- **The action button** is a 28-pt circle: an accent arrow when there is text
-  to send, a grey disabled arrow when the field is empty, a stop square
-  (label fill) while Claude works. Working *and* text in the field shows both,
-  stop to the left.
+- **The action button** is AppKit's push button with a circle for its
+  border shape (`NSButton`, `.push`, `borderShape = .circle`, the large
+  control size — 28 pt on the sheet; before macOS 26, the `.circular` bezel).
+  Its look and its states are the system's: it acts on release, darkens
+  while pressed, has no hover, and greys when disabled.
+  - **Send** — `arrow.up`, primary tint prominence: the accent bezel with a
+    white arrow while there is text to send; disabled when the field is
+    empty, and the system takes the tint away.
+  - **Stop** — `stop.fill` on the plain bezel, in label ink, while Claude
+    works or starts.
+  - Working *and* text in the field shows both, Stop to the left.
 - **The status slot** (11-pt, tertiary, before the button) is empty unless
   something is out of the ordinary: *Starting Claude…*, *Compacting…*, *Will
   resume when you send*, or the coral *Waiting for you ↑* when the request
@@ -327,8 +339,8 @@ never an `NSMenu` or a window of our own.
   open; a second click closes it.
 - **One chevron.** Every pop-up's indicator is SF Symbol `chevron.down`
   configured from its title's font at the `.small` scale — so it follows the
-  title's size and weight — 4 pt after the title, in tertiary (secondary
-  under the pointer and while open). As a symbol beside text, it centres on
+  title's size and weight — 4 pt after the title, in tertiary, whatever the
+  button's state (the bezel shows hover and on). As a symbol beside text, it centres on
   the title's cap height, not on the button's frame or baseline.
 - **One size while open.** A popover never resizes under the pointer:
   Effort, Permission Mode and the folder are as tall as their rows; Model is

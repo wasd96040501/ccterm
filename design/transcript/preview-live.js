@@ -549,7 +549,7 @@ function accHTML(s, o = {}) {
   if (s.ctx >= 0.5) h += ringHTML(s.ctx);
   const stoppable = working || s.state === "starting";
   if (stoppable) h += `<button class="act-btn stop" data-lv="stop" data-sid="${s.id}" title="${s.state === "starting" ? "Cancel" : "Stop"} ⌘.">${LV.stop}</button>`;
-  if (!stoppable || hasText) h += `<button class="act-btn" data-lv="send" data-sid="${s.id}" title="${working ? "Queue" : "Send"} ↩"${hasText ? "" : " disabled"}>${LV.up}</button>`;
+  if (!stoppable || hasText) h += `<button class="act-btn primary" data-lv="send" data-sid="${s.id}" title="${working ? "Queue" : "Send"} ↩"${hasText ? "" : " disabled"}>${LV.up}</button>`;
   return h;
 }
 /** A failure is the composer's own top section, not a strip above it: one
@@ -609,8 +609,25 @@ function whereHTML(s, t = EN) {
 }
 /** The one decoration: the app icon, centred over the column. */
 const heroHTML = () => `<div class="lv-hero"><div class="lv-appicon">${appIcon(64)}</div></div>`;
-/** The New view: the icon, then the card with the row under it. */
-const newViewHTML = (s, o = {}) => `${heroHTML()}<div class="lv-compwrap">${composerHTML(s, o)}${whereHTML(s, o.t)}</div>`;
+/** The New view: the icon, then the card with the row under it, in the
+ *  block the page centres (`.lv-anchor`). */
+const newViewHTML = (s, o = {}) => `<div class="lv-anchor">${heroHTML()}<div class="lv-compwrap">${composerHTML(s, o)}${whereHTML(s, o.t)}</div></div>`;
+/** Shows `s` in a row built by `whereHTML`, in place, as `configure(with:)`
+ *  does: the controls stay the ones that were there — a press never rebuilds
+ *  what it pressed — and only a row of another shape (a folder that is or
+ *  isn't a repository) is built anew. */
+function fillWhere(row, s) {
+  const tmp = document.createElement("div");
+  tmp.innerHTML = whereHTML(s);
+  const next = tmp.firstElementChild;
+  if (row.children.length !== next.children.length) return row.replaceWith(next);
+  [...next.children].forEach((part, i) => {
+    const old = row.children[i];
+    if (old.outerHTML === part.outerHTML) return;
+    for (const a of part.attributes) if (old.getAttribute(a.name) !== a.value) old.setAttribute(a.name, a.value);
+    if (old.innerHTML !== part.innerHTML) old.innerHTML = part.innerHTML;
+  });
+}
 
 function slashHTML(q, on = 0, opts = {}) {
   const list = COMMANDS.filter(([n]) => n.startsWith(q));
@@ -771,7 +788,7 @@ const LW = {
   },
   /** Re-render only the parts of a page that state changes: the row, banner, accessory row. */
   fill(el, s) {
-    if (el.dataset.kind === "new") el.querySelector(".lv-where").outerHTML = whereHTML(s);
+    if (el.dataset.kind === "new") fillWhere(el.querySelector(".lv-where"), s);
     const dock = el.querySelector(".lv-dock") || el.querySelector(".lv-compwrap");
     const banner = dock.querySelector(".lv-banner");
     if (s.state === "failed" && !banner) dock.querySelector(".lv-comp").insertAdjacentHTML("afterbegin", bannerHTML(s));
@@ -1351,7 +1368,10 @@ function buildLiveSpecimens() {
     ["<b>Refused</b>The control reverts; the reason is one red line under the card.", { state: "idle", model: "opus", effort: "high", mode: "auto", err: "Opus 4.8 isn't available to your organization." }, {}],
     ["<b>A command, completed</b>The field draws the same token as the transcript's bubble.", { state: "idle", model: "opus", effort: "high", mode: "auto", token: "review" }, { text: "#327" }],
   ];
-  document.getElementById("lv-composers").innerHTML = cs.map(([c, o, so]) => card(c, staticComposer(o, so))).join("");
+  const btn = (label, cls, glyph, disabled) => `<div><button class="act-btn ${cls}"${disabled ? " disabled" : ""} tabindex="-1">${glyph}</button>${label}</div>`;
+  const buttons = card("<b>The action button — AppKit's push button, a circle</b><code>NSButton</code>, <code>.push</code>, <code>borderShape = .circle</code>, the large control size. Send has primary tint prominence: the accent bezel, a white <code>arrow.up</code>; with nothing to send it is disabled and the system takes the tint away. Stop is the plain bezel with <code>stop.fill</code> in label ink. Pressed, the system darkens the bezel; it acts on release, and has no hover.",
+    `<div class="btn-states">${btn("Send", "primary", LV.up)}${btn("pressed", "primary pressed", LV.up)}${btn("nothing to send", "primary", LV.up, true)}${btn("Stop", "stop", LV.stop)}${btn("pressed", "stop pressed", LV.stop)}</div>`);
+  document.getElementById("lv-composers").innerHTML = buttons + cs.map(([c, o, so]) => card(c, staticComposer(o, so))).join("");
 
   // Menus
   const idle = specS({ state: "idle", model: "opus", effort: "high", mode: "auto" });

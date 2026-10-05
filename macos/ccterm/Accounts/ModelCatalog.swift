@@ -68,7 +68,7 @@ nonisolated struct ModelCatalog: Sendable, Equatable {
 }
 
 /// One account's section of the catalog.
-nonisolated struct AccountCatalog: Sendable, Equatable, Identifiable {
+nonisolated struct AccountCatalog: Sendable, Equatable, Identifiable, Codable {
     /// The `Account.id`.
     let id: UUID
     /// Settings' name for it (*Claude Max*, *Work Relay*).

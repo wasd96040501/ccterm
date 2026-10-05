@@ -116,7 +116,7 @@ final class ModelCatalogStore {
     // MARK: - The disk cache
 
     private func writeCache() {
-        let snapshot = accounts.compactMap { entries[$0.id] }.map(CachedAccount.init)
+        let snapshot = accounts.compactMap { entries[$0.id] }
         let url = cacheURL
         let previous = lastWrite
         lastWrite = Task.detached {
@@ -136,7 +136,7 @@ final class ModelCatalogStore {
             let cached = try? JSONDecoder().decode(CachedCatalog.self, from: data),
             cached.version == CachedCatalog.current
         else { return [:] }
-        return Dictionary(cached.accounts.map { ($0.id, $0.catalog) }, uniquingKeysWith: { $1 })
+        return Dictionary(cached.accounts.map { ($0.id, $0) }, uniquingKeysWith: { $1 })
     }
 }
 
@@ -220,86 +220,10 @@ extension AccountCatalog {
 
 // MARK: - The cache's shape
 
-/// `InitializationResult.Model` and `SlashCommand` only decode, so the cache
-/// keeps its own records of them.
+/// The catalogs as the SDK and the app code them; a file of another version
+/// is dropped and the next probe writes this one.
 private struct CachedCatalog: Codable {
-    static let current = 1
+    static let current = 2
     var version = CachedCatalog.current
-    var accounts: [CachedAccount]
-}
-
-private struct CachedAccount: Codable {
-    struct Model: Codable {
-        var value: String
-        var displayName: String
-        var description: String
-        var supportsEffort: Bool
-        var supportedEffortLevels: [String]
-        var supportsAdaptiveThinking: Bool
-        var supportsFastMode: Bool
-        var supportsAutoMode: Bool
-        var resolvedModel: String?
-        var isDisabled: Bool
-    }
-
-    struct Command: Codable {
-        var name: String
-        var description: String
-        var argumentHint: String
-    }
-
-    var id: UUID
-    var name: String
-    var detail: String
-    var isSubscription: Bool
-    var models: [Model]
-    var commands: [Command]
-    var fastModeUnavailableReason: String?
-    var defaultPermissionMode: String?
-
-    init(_ catalog: AccountCatalog) {
-        id = catalog.id
-        name = catalog.name
-        detail = catalog.detail
-        isSubscription = catalog.isSubscription
-        models = catalog.models.map {
-            Model(
-                value: $0.value, displayName: $0.displayName, description: $0.description,
-                supportsEffort: $0.supportsEffort, supportedEffortLevels: $0.supportedEffortLevels,
-                supportsAdaptiveThinking: $0.supportsAdaptiveThinking, supportsFastMode: $0.supportsFastMode,
-                supportsAutoMode: $0.supportsAutoMode, resolvedModel: $0.resolvedModel, isDisabled: $0.isDisabled)
-        }
-        commands = catalog.commands.map {
-            Command(name: $0.name, description: $0.description, argumentHint: $0.argumentHint)
-        }
-        fastModeUnavailableReason = catalog.fastModeUnavailableReason
-        defaultPermissionMode = catalog.defaultPermissionMode?.rawValue
-    }
-
-    var catalog: AccountCatalog {
-        AccountCatalog(
-            id: id, name: name, detail: detail, isSubscription: isSubscription, isLoaded: true,
-            models: models.map { cached in
-                var model = InitializationResult.Model(
-                    value: cached.value, displayName: cached.displayName, description: cached.description,
-                    supportsEffort: cached.supportsEffort, supportedEffortLevels: cached.supportedEffortLevels,
-                    supportsAdaptiveThinking: cached.supportsAdaptiveThinking,
-                    supportsFastMode: cached.supportsFastMode,
-                    supportsAutoMode: cached.supportsAutoMode)
-                model.resolvedModel = cached.resolvedModel
-                model.isDisabled = cached.isDisabled
-                return model
-            },
-            // `SlashCommand` decodes from the CLI's own shape; its `init` is the SDK's.
-            commands: commands.compactMap { command in
-                let json: [String: String] = [
-                    "name": command.name, "description": command.description, "argumentHint": command.argumentHint,
-                ]
-                return (try? JSONSerialization.data(withJSONObject: json)).flatMap {
-                    try? JSONDecoder().decode(SlashCommand.self, from: $0)
-                }
-            },
-            fastModeUnavailableReason: fastModeUnavailableReason,
-            defaultPermissionMode: defaultPermissionMode.flatMap(PermissionMode.init(rawValue:)))
-    }
+    var accounts: [AccountCatalog]
 }

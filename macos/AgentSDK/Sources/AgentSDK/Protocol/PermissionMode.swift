@@ -2,7 +2,7 @@ import Foundation
 
 /// How the CLI decides whether a tool call may run (`--permission-mode`,
 /// `permissions.defaultMode` in settings).
-public enum PermissionMode: String, Sendable, SettingsValue {
+public enum PermissionMode: String, Sendable, Codable, SettingsValue {
     case auto = "auto"
     case `default` = "default"
     case acceptEdits = "acceptEdits"

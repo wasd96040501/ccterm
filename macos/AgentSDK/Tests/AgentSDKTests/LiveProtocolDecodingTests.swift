@@ -171,6 +171,28 @@ final class LiveProtocolDecodingTests: XCTestCase {
         XCTAssertEqual(result.account?.apiProvider, "bedrock")
     }
 
+    /// A model and a command encode in the CLI's own shape and read back the
+    /// same — what a host's cache keeps.
+    func testModelsAndCommandsRoundTrip() throws {
+        var model = InitializationResult.Model(
+            value: "opus", displayName: "Opus", description: "The most capable", supportsEffort: true,
+            supportedEffortLevels: ["low", "high"], supportsAdaptiveThinking: true, supportsFastMode: true,
+            supportsAutoMode: true)
+        model.resolvedModel = "claude-opus-5-5"
+        model.isDisabled = true
+        let command = try JSONDecoder().decode(
+            SlashCommand.self, from: Data(#"{"name":"review","description":"Review","argument_hint":"<pr>"}"#.utf8))
+
+        let models = try JSONDecoder().decode(
+            [InitializationResult.Model].self, from: JSONEncoder().encode([model]))
+        let commands = try JSONDecoder().decode([SlashCommand].self, from: JSONEncoder().encode([command]))
+
+        XCTAssertEqual(models, [model])
+        XCTAssertEqual(commands, [command])
+        XCTAssertEqual(
+            try JSONDecoder().decode(PermissionMode.self, from: JSONEncoder().encode(PermissionMode.plan)), .plan)
+    }
+
     func testInitializationWithoutExtrasIsEmptyNotFailing() throws {
         let result = try JSONDecoder().decode(InitializationResult.self, from: Data(#"{"models":[]}"#.utf8))
         XCTAssertEqual(result.unavailableModels, [])

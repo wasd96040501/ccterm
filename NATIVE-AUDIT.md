@@ -71,6 +71,6 @@ Status: `[ ]` open · `[x]` fixed (commit) · `[-]` dropped (why)
 
 ### Services
 - [x] **27. `SessionStore.known`** — **Fixed** (*A transcript is known while a tab reads it*): `states(at:)` counts its streams per URL; when the last one ends the transcript is forgotten, and a later resume reads it as an unread one does. Was: — every transcript read is kept for the app's life.
-- [ ] **28. `ModelCatalogStore` cache** — mirror types and a `JSONSerialization` round trip for SDK types.
+- [x] **28. `ModelCatalogStore` cache** — **Fixed** (*The model cache stores the catalogs as they are*): `SlashCommand` and `InitializationResult.Model` encode in the CLI's own shape (the keys their decoders read), `PermissionMode` is `Codable` as `PermissionBehavior` is, and `AccountCatalog` is `Codable`; the cache is `[AccountCatalog]` at version 2. The mirror records and the `JSONSerialization` round trip are gone. Test: a model and a command round-trip in the SDK. Was: — mirror types and a `JSONSerialization` round trip for SDK types.
 - [ ] **29. Probes outdated by a counter, not cancelled** — `ModelCatalogStore`; the 60 s timeout can't fire through a detached launch (`AppDelegate`).
 - [x] **30. `git status` without `--no-optional-locks`** (fixed with 6: `GIT_OPTIONAL_LOCKS=0` for every call) — `BranchService`.

@@ -93,7 +93,7 @@ extension InitializationResult: Decodable {
     }
 }
 
-extension InitializationResult.Model: Decodable {
+extension InitializationResult.Model: Codable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: AnyCodingKey.self)
         self.value = try c.required(String.self, "value")
@@ -106,6 +106,21 @@ extension InitializationResult.Model: Decodable {
         self.supportsAutoMode = c.lenient(Bool.self, "supportsAutoMode") ?? false
         self.resolvedModel = c.lenient(String.self, "resolvedModel")
         self.isDisabled = c.lenient(Bool.self, "disabled") ?? false
+    }
+
+    /// The CLI's own shape, which `init(from:)` reads back.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: AnyCodingKey.self)
+        try c.encode(value, forKey: "value")
+        try c.encode(displayName, forKey: "displayName")
+        try c.encode(description, forKey: "description")
+        try c.encode(supportsEffort, forKey: "supportsEffort")
+        try c.encode(supportedEffortLevels, forKey: "supportedEffortLevels")
+        try c.encode(supportsAdaptiveThinking, forKey: "supportsAdaptiveThinking")
+        try c.encode(supportsFastMode, forKey: "supportsFastMode")
+        try c.encode(supportsAutoMode, forKey: "supportsAutoMode")
+        try c.encodeIfPresent(resolvedModel, forKey: "resolvedModel")
+        try c.encode(isDisabled, forKey: "disabled")
     }
 }
 

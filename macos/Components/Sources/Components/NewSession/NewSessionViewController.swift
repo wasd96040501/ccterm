@@ -392,7 +392,7 @@ public final class NewSessionViewController: NSViewController {
                 MenuContent.Item(
                     id: FolderChoice.chooseFolder, title: String(localized: "Choose Folder…", bundle: .module),
                     trailing: .key("⌘O"))))
-        return MenuContent(rows: rows, width: 320)
+        return MenuContent(rows: rows, minWidth: 320)
     }
 
     /// The branch's menu (design 08 *The New view*): a search field over the
@@ -412,7 +412,7 @@ public final class NewSessionViewController: NSViewController {
         }
         return MenuContent(
             rows: rows, searchPlaceholder: String(localized: "Filter", bundle: .module), emptyText: menu.emptyText,
-            width: 300, listHeight: 264)
+            minWidth: 300, listHeight: 264)
     }
 
     /// Opens `button`'s menu under it, or closes it when it is the one open:

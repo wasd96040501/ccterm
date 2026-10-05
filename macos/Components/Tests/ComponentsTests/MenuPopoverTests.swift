@@ -91,12 +91,29 @@ final class MenuPopoverTests: XCTestCase {
         XCTAssertGreaterThan(last.maxY, scroll.contentView.bounds.height - 20)
     }
 
-    /// The model list stops at 360 and scrolls; Fast Mode stays under it.
-    func testTheModelListStopsAt360() throws {
-        open(ComposerMenu.content(of: .model, in: MenuFixtures.composer))
-        let scroll = try XCTUnwrap(try table.enclosingScrollView)
-        XCTAssertEqual(scroll.frame.height, 360)
-        XCTAssertGreaterThan(stage.popover.contentSize.height, 360)
+    /// Every menu without a search shows all its rows: the list is as tall
+    /// as they are, measured before it opens, so nothing scrolls.
+    func testEveryRowIsInViewWithoutScrolling() throws {
+        for control in [ComposerMenu.Control.model, .effort, .mode] {
+            open(ComposerMenu.content(of: control, in: MenuFixtures.composer))
+            let table = try table
+            let scroll = try XCTUnwrap(table.enclosingScrollView)
+            let rows = table.rect(ofRow: table.numberOfRows - 1).maxY + table.rect(ofRow: 0).minY
+            XCTAssertEqual(scroll.contentView.bounds.height, rows, accuracy: 1, "\(control)")
+            XCTAssertFalse(scroll.verticalScroller?.isHidden == false, "\(control) shows no scroller")
+            stage.popover.close()
+        }
+    }
+
+    /// The popover widens for its rows: a folder's path is shown whole.
+    func testItWidensForItsRows() throws {
+        open(MenuFixtures.folder)
+        let paths = try list.descendants(NSTextField.self).filter { $0.stringValue.hasPrefix("~/") && !$0.isHidden }
+        XCTAssertFalse(paths.isEmpty)
+        for path in paths {
+            XCTAssertGreaterThanOrEqual(path.frame.width, path.intrinsicContentSize.width - 0.5, path.stringValue)
+        }
+        XCTAssertGreaterThanOrEqual(stage.popover.contentSize.width, 320)
     }
 
     // MARK: - One size while open

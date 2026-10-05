@@ -25,6 +25,12 @@ final class MenuItemView: NSTableCellView {
     private let toggle = NSSwitch()
     private lazy var words = NSStackView(views: [title, subtitle])
     private lazy var wordsLeading = words.leadingAnchor.constraint(equalTo: leadingAnchor)
+    /// The words end before a switch or a glyph at the trailing edge, which
+    /// stand beside both lines; a key stands beside the title alone.
+    private lazy var wordsBeforeToggle = words.trailingAnchor.constraint(
+        lessThanOrEqualTo: toggle.leadingAnchor, constant: -Self.trailingGap)
+    private lazy var wordsBeforeGlyph = words.trailingAnchor.constraint(
+        lessThanOrEqualTo: trailingGlyph.leadingAnchor, constant: -Self.trailingGap)
 
     private var item: MenuContent.Item?
 
@@ -111,6 +117,8 @@ final class MenuItemView: NSTableCellView {
             toggle.isHidden = false
             trailingWidth = toggle.intrinsicContentSize.width
         }
+        wordsBeforeToggle.isActive = !toggle.isHidden
+        wordsBeforeGlyph.isActive = !trailingGlyph.isHidden
         let wordsX = glyphColumn ? Self.wordsX : Self.wordsXWithoutGlyphs
         wordsLeading.constant = wordsX
         // The subtitle wraps in what the row leaves it: the row's width less

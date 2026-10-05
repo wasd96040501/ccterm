@@ -7,9 +7,18 @@ import AppKit
 /// when the menu has one, over the items that stay in view (Fast Mode).
 ///
 /// It opens from a `MenuButton` and keeps the button on while it is open; a
-/// press on the button, as anywhere outside it, closes it. Its size is set
-/// when it opens and kept until it closes: searching or flipping a switch
-/// changes what the list shows, never the box.
+/// press on the button, as anywhere outside it, closes it.
+///
+/// Its size is measured before it shows and kept until it closes — searching
+/// or flipping a switch changes what the list shows, never the box:
+/// - **Width:** its widest row's, from the menu's least width up to what
+///   the screen holds, as a menu does; past that a title gives way at its
+///   end and a path at its start.
+/// - **Height:** every row's, measured at that width; the list scrolls only
+///   past the room the screen leaves beside the button, as a menu does. A
+///   menu whose rows change while it is open (a search) gives its list a
+///   height of its own, and that list scrolls.
+/// - The search field over the list and the footer under it never scroll.
 ///
 /// The owner hands it a `MenuContent` and hears choices, searches and the
 /// close through the callbacks; a choice closes it, a switch doesn't.
@@ -36,11 +45,28 @@ public final class MenuPopover: NSPopover {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    /// Shows `content`. Closed, the popover takes its size; open, it keeps
-    /// the one it has.
+    /// Shows `content`. Closed, the popover takes its size (as if the screen
+    /// had room for every row); open, it keeps the one it has.
     public func configure(with content: MenuContent) {
         list.configure(with: content)
-        if !isShown { contentSize = list.popoverSize }
+        if !isShown { contentSize = list.size(room: Self.unbounded) }
+    }
+
+    /// The popover's frame beyond its content: the arrow and the margin the
+    /// system keeps from the screen's edge.
+    private static let frameAllowance: CGFloat = 24
+
+    private static let unbounded = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
+
+    /// The most the popover's content can take beside `button`: the screen's
+    /// width, and the height it leaves on the button's roomier side — each
+    /// less the popover's frame.
+    private static func room(beside button: NSButton) -> NSSize {
+        guard let window = button.window, let screen = window.screen?.visibleFrame else { return unbounded }
+        let anchor = window.convertToScreen(button.convert(button.bounds, to: nil))
+        return NSSize(
+            width: screen.width - 2 * frameAllowance,
+            height: max(anchor.minY - screen.minY, screen.maxY - anchor.maxY) - frameAllowance)
     }
 
     /// Opens against `button` — over it when `above`, else under it, on the
@@ -56,7 +82,7 @@ public final class MenuPopover: NSPopover {
             close()
             animates = animated
         }
-        contentSize = list.popoverSize
+        contentSize = list.size(room: Self.room(beside: button))
         // A flipped view's maximum y is its bottom.
         let edge: NSRectEdge = above == button.isFlipped ? .minY : .maxY
         show(relativeTo: button.bounds, of: button, preferredEdge: edge)
@@ -91,9 +117,15 @@ extension MenuPopover: NSPopoverDelegate {
 private final class MenuListViewController: NSViewController {
     weak var popover: MenuPopover?
 
-    private static let maxListHeight: CGFloat = 360
-
-    private var content = MenuContent(rows: [], width: 240)
+    private var content = MenuContent(rows: [], minWidth: 240)
+    /// Each row's height at the list's width, measured before it shows —
+    /// the table asks for them (`heightOfRow`) and never estimates.
+    private var rowHeights: [CGFloat] = []
+    /// The width the rows are laid out at: the column's.
+    private var rowWidth: CGFloat = 0
+    /// Rows laid out off screen to be measured.
+    private let sizingItem = MenuItemView()
+    private let sizingHeader = MenuHeaderView()
     private let search = NSSearchField()
     private let scroll = NSScrollView()
     private let table = NSTableView()
@@ -120,7 +152,6 @@ private final class MenuListViewController: NSViewController {
         table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
         table.headerView = nil
         table.style = .inset
-        table.usesAutomaticRowHeights = true
         table.backgroundColor = .clear
         table.allowsTypeSelect = true
         table.dataSource = self
@@ -182,7 +213,6 @@ private final class MenuListViewController: NSViewController {
         let selected = selectedItem?.id
         let offset = scroll.contentView.bounds.origin
         self.content = content
-        width.constant = content.width
         let hasSearch = content.searchPlaceholder != nil
         search.isHidden = !hasSearch
         search.placeholderString = content.searchPlaceholder
@@ -198,9 +228,10 @@ private final class MenuListViewController: NSViewController {
         footer.isHidden = !hasFooter
         listBottom.isActive = !hasFooter
         footerBottom.isActive = hasFooter
-        footer.setViews(content.footer.map(footerView), in: .top)
         empty.stringValue = content.emptyText ?? ""
         empty.isHidden = !content.rows.isEmpty || content.emptyText == nil
+        // Open, the box keeps its width: the rows that came are measured at it.
+        if popover?.isShown == true { measureRows() }
         table.reloadData()
         if isSearching {
             scroll.contentView.scroll(to: .zero)
@@ -213,20 +244,75 @@ private final class MenuListViewController: NSViewController {
         scroll.reflectScrolledClipView(scroll.contentView)
     }
 
-    /// The size the popover takes: the list's set height, or its rows' up to
-    /// 360, with the search field over it and the footer under it.
-    var popoverSize: NSSize {
+    /// Measures the content and answers the size the popover takes inside
+    /// `room`: the width first, then each row's height at it, then the
+    /// list's, under the search field and over the footer.
+    func size(room: NSSize) -> NSSize {
+        // How much narrower a row is than the popover: the inset table's
+        // margins, read from the table laid out at the menu's least width.
+        width.constant = content.minWidth
+        listHeight.constant = 0
+        view.layoutSubtreeIfNeeded()
+        let rowMargin = content.minWidth - (table.tableColumns.first?.width ?? content.minWidth)
+        let footerMargin = footer.edgeInsets.left + footer.edgeInsets.right
+        let maxWidth = max(room.width, content.minWidth)
+        let widest = max(
+            content.rows.map { naturalWidth(of: $0, at: maxWidth - rowMargin) + rowMargin }.max() ?? 0,
+            content.footer.map { naturalWidth(of: .item($0), at: maxWidth - footerMargin) + footerMargin }.max() ?? 0)
+        width.constant = min(max(ceil(widest), content.minWidth), maxWidth)
+        view.layoutSubtreeIfNeeded()
+        rowWidth = table.tableColumns.first?.width ?? width.constant - rowMargin
+        footer.setViews(
+            content.footer.map { footerView($0, width: width.constant - footerMargin) }, in: .top)
+        measureRows()
+        table.reloadData()
         if let height = content.listHeight {
             listHeight.constant = height
         } else {
-            // Every row laid out at the popover's width, then measured.
-            listHeight.constant = 10_000
+            // The inset table's margin over its first row, kept under its last.
+            let rows =
+                table.numberOfRows > 0 ? table.rect(ofRow: table.numberOfRows - 1).maxY + table.rect(ofRow: 0).minY : 0
             view.layoutSubtreeIfNeeded()
-            let rows = table.numberOfRows > 0 ? table.rect(ofRow: table.numberOfRows - 1).maxY + 10 : 0
-            listHeight.constant = min(ceil(rows), Self.maxListHeight)
+            let fixed = view.fittingSize.height
+            listHeight.constant = min(ceil(rows), max(room.height - fixed, 0))
         }
         view.layoutSubtreeIfNeeded()
         return view.fittingSize
+    }
+
+    /// Each row's height at `rowWidth`, for `heightOfRow`.
+    private func measureRows() {
+        rowHeights = content.rows.map { height(of: $0, at: rowWidth) }
+        table.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<content.rows.count))
+    }
+
+    /// The width `row` takes with nothing squeezing it, its subtitle wrapping
+    /// no wider than `limit`.
+    private func naturalWidth(of row: MenuContent.Row, at limit: CGFloat) -> CGFloat {
+        switch row {
+        case .item(let item):
+            sizingItem.configure(item, glyphColumn: content.hasGlyphColumn, width: limit)
+            return sizingItem.fittingSize.width
+        case .header, .account:
+            sizingHeader.configure(row)
+            return sizingHeader.fittingSize.width
+        case .separator:
+            return 0
+        }
+    }
+
+    /// How tall `row` is laid out `width` wide.
+    private func height(of row: MenuContent.Row, at width: CGFloat) -> CGFloat {
+        switch row {
+        case .item(let item):
+            sizingItem.configure(item, glyphColumn: content.hasGlyphColumn, width: width)
+            return ceil(sizingItem.fittingSize.height)
+        case .header, .account:
+            sizingHeader.configure(row)
+            return ceil(sizingHeader.fittingSize.height)
+        case .separator:
+            return ceil(Self.separatorView().fittingSize.height)
+        }
     }
 
     /// Opened: the keyboard goes to the search field or the list, nothing is
@@ -245,11 +331,9 @@ private final class MenuListViewController: NSViewController {
         }
     }
 
-    private func footerView(_ item: MenuContent.Item) -> NSView {
+    private func footerView(_ item: MenuContent.Item, width: CGFloat) -> NSView {
         let view = MenuItemView()
-        view.configure(
-            item, glyphColumn: content.hasGlyphColumn,
-            width: content.width - footer.edgeInsets.left - footer.edgeInsets.right)
+        view.configure(item, glyphColumn: content.hasGlyphColumn, width: width)
         view.onToggle = { [weak self] in self?.popover?.choose(item) }
         return view
     }
@@ -341,6 +425,10 @@ extension MenuListViewController: NSTableViewDataSource, NSTableViewDelegate {
         content.rows.count
     }
 
+    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+        rowHeights.indices.contains(row) ? rowHeights[row] : height(of: content.rows[row], at: rowWidth)
+    }
+
     func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
         item(at: row) != nil
     }
@@ -354,7 +442,7 @@ extension MenuListViewController: NSTableViewDataSource, NSTableViewDelegate {
         case .item(let item):
             let view = tableView.makeView(withIdentifier: .menuItem, owner: nil) as? MenuItemView ?? MenuItemView()
             view.identifier = .menuItem
-            view.configure(item, glyphColumn: content.hasGlyphColumn, width: tableColumn?.width ?? content.width)
+            view.configure(item, glyphColumn: content.hasGlyphColumn, width: rowWidth)
             view.onToggle = { [weak self] in self?.popover?.choose(item) }
             return view
         case .header, .account:
@@ -364,21 +452,25 @@ extension MenuListViewController: NSTableViewDataSource, NSTableViewDelegate {
             view.configure(content.rows[row])
             return view
         case .separator:
-            if let view = tableView.makeView(withIdentifier: .menuSeparator, owner: nil) { return view }
-            let view = NSTableCellView()
-            view.identifier = .menuSeparator
-            let line = NSBox()
-            line.boxType = .separator
-            line.translatesAutoresizingMaskIntoConstraints = false
-            view.addSubview(line)
-            NSLayoutConstraint.activate([
-                line.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                line.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-                line.topAnchor.constraint(equalTo: view.topAnchor, constant: 5),
-                line.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -5),
-            ])
-            return view
+            return tableView.makeView(withIdentifier: .menuSeparator, owner: nil) ?? Self.separatorView()
         }
+    }
+
+    /// A hairline with 5 over and under it.
+    fileprivate static func separatorView() -> NSView {
+        let view = NSTableCellView()
+        view.identifier = .menuSeparator
+        let line = NSBox()
+        line.boxType = .separator
+        line.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(line)
+        NSLayoutConstraint.activate([
+            line.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            line.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            line.topAnchor.constraint(equalTo: view.topAnchor, constant: 5),
+            line.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -5),
+        ])
+        return view
     }
 }
 

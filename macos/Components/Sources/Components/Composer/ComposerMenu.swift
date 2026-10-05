@@ -25,19 +25,19 @@ package enum ComposerMenu {
     package static func content(of control: Control, in model: ComposerPresentation) -> MenuContent {
         switch control {
         case .model: modelContent(of: model)
-        case .effort: content(of: model.effortMenu, width: 240)
-        case .mode: content(of: model.modeMenu, width: 300)
+        case .effort: content(of: model.effortMenu, minWidth: 240)
+        case .mode: content(of: model.modeMenu, minWidth: 300)
         }
     }
 
-    private static func content(of menu: ComposerPresentation.Menu, width: CGFloat) -> MenuContent {
+    private static func content(of menu: ComposerPresentation.Menu, minWidth: CGFloat) -> MenuContent {
         var rows: [MenuContent.Row] = []
         for (index, section) in menu.sections.enumerated() {
             if index > 0 { rows.append(.separator) }
             if let header = section.header { rows.append(.header(header, hint: section.headerHint)) }
             rows += section.items.map { .item(item($0)) }
         }
-        return MenuContent(rows: rows, width: width)
+        return MenuContent(rows: rows, minWidth: minWidth)
     }
 
     private static func modelContent(of model: ComposerPresentation) -> MenuContent {
@@ -55,7 +55,7 @@ package enum ComposerMenu {
             id: Choice.fastMode, title: String(localized: "Fast Mode", bundle: .module), subtitle: fast.subtitle,
             glyph: ComposerGlyph.menuImage(.fast), isEnabled: fast.isEnabled, trailing: .toggle(isOn: fast.isOn),
             toolTip: fast.subtitle)
-        return MenuContent(rows: rows, footer: [fastMode], width: 300)
+        return MenuContent(rows: rows, footer: [fastMode], minWidth: 300)
     }
 
     private static func item(_ item: ComposerPresentation.Item) -> MenuContent.Item {

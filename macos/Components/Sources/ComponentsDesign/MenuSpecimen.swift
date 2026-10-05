@@ -15,10 +15,10 @@ enum MenuSpecimen {
                 "Every pop-up is a system popover with its own fade, of one size while it is open, opened by "
                 + "a button that shows its bezel under the pointer and stays on while the popover is up. Inside, "
                 + "an inset table: heads, items with a check, a glyph, a title, a subtitle under it and a key, glyph "
-                + "or switch at the trailing edge, greyed items with their reason, hairlines between groups. The "
-                + "model list shows every model under its account's head, 360 at most, then it scrolls, Fast "
-                + "Mode under it; the branch list sits under a search field, 264 tall whatever it holds. Shown here is "
-                + "what each popover holds; the live row opens them.",
+                + "or switch at the trailing edge, greyed items with their reason, hairlines between groups. Each is "
+                + "measured before it opens: as wide as its widest row and as tall as all its rows, scrolling only "
+                + "past the screen's room; Fast Mode stays under the model list. The branch list sits under a search "
+                + "field, 264 tall whatever it holds. Shown here is what each popover holds; the live row opens them.",
             specimens: [
                 still(
                     "Model — every model, a section per account",

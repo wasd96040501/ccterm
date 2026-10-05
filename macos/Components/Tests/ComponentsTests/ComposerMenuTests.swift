@@ -124,7 +124,7 @@ final class ComposerMenuTests: XCTestCase {
     /// it has; none is folded away.
     func testTheModelMenuListsEveryModelUnderItsAccount() {
         let content = menu(.model, F.responding)
-        XCTAssertEqual(content.width, 300)
+        XCTAssertEqual(content.minWidth, 300)
         guard case .header? = content.rows.first else { return XCTFail("no note over the sections") }
         let heads = content.rows.compactMap { row -> String? in
             if case .account(_, let name, _, _) = row { name } else { nil }

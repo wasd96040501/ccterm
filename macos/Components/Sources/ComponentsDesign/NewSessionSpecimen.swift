@@ -49,6 +49,10 @@ enum NewSessionSpecimen {
                     url: URL(fileURLWithPath: home + "/notes/claude-notes"), title: "claude-notes",
                     path: "~/notes/claude-notes"),
                 .init(url: URL(fileURLWithPath: home + "/dotfiles"), title: "dotfiles", path: "~/dotfiles"),
+                // A long name beside a long path: the menu widens for both.
+                .init(
+                    url: URL(fileURLWithPath: home + "/Games/Ghost.Trick.Phantom.Detective"),
+                    title: "Ghost.Trick.Phantom.Detective", path: "~/Games/Ghost.Trick.Phantom.Detective"),
             ]
             switch self {
             case .rest:

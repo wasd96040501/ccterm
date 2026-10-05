@@ -163,6 +163,10 @@ public final class AttachmentsRowView: NSView, PageRowView {
             plate.translatesAutoresizingMaskIntoConstraints = false
             plate.addSubview(number)
             addSubview(plate)
+            // One image to VoiceOver, named by its title; pressing it opens it.
+            setAccessibilityElement(true)
+            setAccessibilityRole(.image)
+            number.setAccessibilityElement(false)
             // As narrow as the digits allow, 16 at the least.
             let snug = plate.widthAnchor.constraint(equalToConstant: 16)
             snug.priority = .defaultLow
@@ -222,6 +226,11 @@ public final class AttachmentsRowView: NSView, PageRowView {
 
         override func mouseDown(with event: NSEvent) {
             onClick?(index, event.clickCount == 2)
+        }
+
+        override func accessibilityPerformPress() -> Bool {
+            onClick?(index, false)
+            return true
         }
 
         override func resetCursorRects() {

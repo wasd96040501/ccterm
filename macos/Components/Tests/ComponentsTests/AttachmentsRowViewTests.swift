@@ -1,3 +1,4 @@
+import DisplayModels
 import XCTest
 
 @testable import Components
@@ -20,5 +21,29 @@ final class AttachmentsRowViewTests: XCTestCase {
         XCTAssertEqual(
             AttachmentsRowView.height(
                 for: .init(images: [wide, wide, wide], titles: [], highlighted: nil), width: 520), 196)
+    }
+
+    private final class Spy: PageRowViewDelegate {
+        var opened: [String] = []
+        func pageRowView(_ rowView: NSView, didRequestDocument id: String, pinned: Bool) { opened.append(id) }
+        func pageRowView(_ rowView: NSView, didToggleDisclosureOf runID: String, inAllRuns all: Bool) {}
+        func pageRowView(_ rowView: NSView, didRequestAllItemsOf runID: String) {}
+        func pageRowView(_ rowView: NSView, didRequestOriginOf callID: String) {}
+        func pageRowView(_ rowView: NSView, didDecide decision: Decision, forCall callID: String) {}
+    }
+
+    /// VoiceOver finds each thumbnail as an image named by its title, and
+    /// pressing it opens it.
+    func testEachThumbnailIsAnImageVoiceOverCanOpen() throws {
+        let image = RowsSpecimen.image(number: 1, width: 400, height: 200)
+        let row = AttachmentsRowView()
+        let spy = Spy()
+        row.delegate = spy
+        row.configure(with: .init(images: [image], titles: ["Image 1"], highlighted: nil))
+        let thumbnail = try XCTUnwrap(
+            row.subviews.first { $0.isAccessibilityElement() && $0.accessibilityRole() == .image })
+        XCTAssertEqual(thumbnail.accessibilityLabel(), "Image 1")
+        XCTAssertTrue(thumbnail.accessibilityPerformPress())
+        XCTAssertEqual(spy.opened, [image.id])
     }
 }

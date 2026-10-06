@@ -20,6 +20,8 @@ struct Rules {
     let modules: Set<String>
     let files: [SourceFile]
     let repoModules: Set<String>
+    /// What each view controller does per phase, for C1.
+    var lifecycle: Lifecycle? = nil
 
     private static let rules: [String: (title: String, section: String, fix: String)] = [
         "P1": (
@@ -53,6 +55,12 @@ struct Rules {
             "No reaching through a child", "Component boundaries",
             "Give the child a command of its own and call that, or send the action to `nil` (the responder chain) "
                 + "instead of targeting the grandchild."
+        ),
+        "C1": (
+            "Size before content", "Controllers & containment",
+            "Move the size-dependent work to `viewDidAppear`, guarded to run once, after "
+                + "`view.layoutSubtreeIfNeeded()`; keep size-independent setup (data source, subscriptions) in "
+                + "`viewDidLoad`."
         ),
         "B4": (
             "A component names only what it builds or holds", "Component boundaries",
@@ -243,12 +251,28 @@ struct Rules {
                         what: "`\(component.shortName)` names `\(other.shortName)`, which it neither builds nor holds"))
             }
         }
+        // C1: a view controller measuring before a container has sized it.
+        if let lifecycle {
+            for controller in components where isViewController(controller) {
+                for phase in Lifecycle.phases where Lifecycle.beforeSize.contains(phase) {
+                    guard let done = lifecycle.ops(of: controller.name, in: phase), !done.ops.isEmpty else { continue }
+                    let what = done.ops.sorted { $0.key < $1.key }.map { op, via in
+                        via == phase ? "`\(op)`" : "`\(op)` (in `\(via)` — check that path runs then)"
+                    }
+                    found.append(
+                        Finding(
+                            rule: "C1", file: controller.file, line: controller.line,
+                            what: "`\(controller.shortName).\(phase)` measures before it is sized: "
+                                + what.joined(separator: ", ")))
+                }
+            }
+        }
         return found.sorted { ($0.rule, $0.file, $0.line) < ($1.rule, $1.file, $1.line) }
     }
 
     // MARK: Report
 
-    static let order = ["P1", "P2", "P3", "B1", "B2", "B3", "B4"]
+    static let order = ["P1", "P2", "P3", "B1", "B2", "B3", "B4", "C1"]
 
     /// One line per rule that has findings, for the terminal.
     func summary() -> [String] {
@@ -263,8 +287,9 @@ struct Rules {
     func render(header: String) -> String {
         let all = findings()
         var out = header + "\n\n"
-        out += "How to read: each finding breaks one rule of `macos/CLAUDE.md` — § Where code lives (P) or "
-        out += "§ Component boundaries (B). Fix it the way its rule says; keep one only when the dependency can't "
+        out += "How to read: each finding breaks one rule of `macos/CLAUDE.md` — § Where code lives (P), "
+        out +=
+            "§ Component boundaries (B) or § Controllers & containment (C). Fix it the way its rule says; keep one only when the dependency can't "
         out += "be removed, and say why in the code. \(all.count) findings.\n"
         for rule in Self.order {
             let hits = all.filter { $0.rule == rule }

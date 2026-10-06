@@ -179,12 +179,13 @@ try fm.createDirectory(at: outDir, withIntermediateDirectories: true)
 
 // The app's placement, tree and data, whatever the scope: a scope picks what
 // the unit map describes, while these are facts about the app as a whole.
+let lifecycle = Lifecycle(files: sources)
 let rules = Rules(
     index: index, modules: ["ccterm", "Components", "DisplayModels"], files: sources,
-    repoModules: Set(modules.map(\.name)))
+    repoModules: Set(modules.map(\.name)), lifecycle: lifecycle)
 let ruleFindings = rules.findings()
 try write(rules.render(header: "# Rules — where code lives and component boundaries"), to: "rules.md")
-let tree = Tree(index: index, rules: rules)
+let tree = Tree(index: index, rules: rules, lifecycle: lifecycle)
 try write(tree.render(header: "# Component tree"), to: "tree.md")
 let renderer = Renderer(
     index: index, files: sources, units: units,

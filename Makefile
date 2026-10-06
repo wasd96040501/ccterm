@@ -116,9 +116,11 @@ appkit-doc: ## Look up an AppKit symbol (SYMBOL=NSStackView or SYMBOL=NSStackVie
 # The architecture, read off the Swift sources (no app build), rewritten into
 # build/arch/ on every run, to be read in levels: index.md (the top of the
 # component tree with counts to drill on, and the modules), tree.md (the
-# component tree from the composition root), data.md (store → binder → component, what each binder keeps itself,
+# component tree from the composition root, and each view controller's
+# lifecycle), data.md (store → binder → component, what each binder keeps itself,
 # and each event back) and rules.md (every break of macos/CLAUDE.md
-# § Where code lives and § Component boundaries, counted in the terminal).
+# § Where code lives, § Component boundaries and Size before content, counted
+# in the terminal).
 # SCOPE (names, paths or a type's name, comma-separated) adds units/ — per source
 # directory, each type's dependencies, data flow, surface and placement — which
 # /arch-review reads;

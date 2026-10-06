@@ -8,6 +8,8 @@ import Foundation
 struct Tree {
     let index: Index
     let rules: Rules
+    /// What each view controller does per phase.
+    var lifecycle: Lifecycle? = nil
 
     private var byID: [ObjectIdentifier: TypeInfo] {
         Dictionary(uniqueKeysWithValues: index.types.map { (ObjectIdentifier($0), $0) })
@@ -325,6 +327,7 @@ struct Tree {
         out += "of, but neither builds nor holds.\n"
         let (placed, kidsOf) = layout(roots)
         var lines: [String] = []
+        var controllers: [TypeInfo] = []
         func walk(
             _ type: TypeInfo, isOwn: Bool, relation: String?, prefix: String, last: Bool, isRoot: Bool,
             parentModule: String = ""
@@ -335,6 +338,7 @@ struct Tree {
             let how = relation.map { " (\($0))" } ?? ""
             lines.append(prefix + branch + type.name + tag + how + (isOwn ? notes(of: type) : " ↑"))
             guard isOwn else { return }
+            if rules.isViewController(type) { controllers.append(type) }
             let kids = kidsOf[ObjectIdentifier(type)] ?? []
             let childPrefix = isRoot ? "" : prefix + (last ? "   " : "│  ")
             for (offset, kid) in kids.enumerated() {
@@ -346,6 +350,16 @@ struct Tree {
         for root in roots { walk(root, isOwn: true, relation: nil, prefix: "", last: true, isRoot: true) }
         let expanded = placed
         out += "\n```\n" + lines.joined(separator: "\n") + "\n```\n"
+        let phases = controllers.compactMap { type in lifecycle?.summary(of: type.name).map { "- \(type.name): \($0)" }
+        }
+        if !phases.isEmpty {
+            out += "\n## Lifecycle\n\n"
+            out += "What each view controller does in each phase (`macos/CLAUDE.md` § Controllers & containment), "
+            out += "through its own methods; a closure's body runs later and is left out. *builds* adds views, "
+            out += "constraints or children, *subscribes* follows a publisher or notification, *measures* needs the "
+            out += "laid-out size — which before `viewDidAppear` is a C1 break.\n\n"
+            out += phases.joined(separator: "\n") + "\n"
+        }
         let unreached = index.types.filter {
             ["ccterm", "Components"].contains($0.module) && rules.isComponent($0)
                 && !expanded.contains(ObjectIdentifier($0)) && !$0.file.contains("/ComponentsDesign/")

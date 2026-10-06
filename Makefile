@@ -114,16 +114,17 @@ appkit-doc: ## Look up an AppKit symbol (SYMBOL=NSStackView or SYMBOL=NSStackVie
 	@python3 macos/scripts/appkit-doc.py "$(SYMBOL)"
 
 # The architecture, read off the Swift sources (no app build), rewritten into
-# build/arch/ on every run: index.md (modules and what follows), tree.md (the
-# component tree from the composition root, and where each container places its
-# parts), data.md (store → binder → component, what each binder keeps itself,
+# build/arch/ on every run, to be read in levels: index.md (the top of the
+# component tree with counts to drill on, and the modules), tree.md (the
+# component tree from the composition root), data.md (store → binder → component, what each binder keeps itself,
 # and each event back) and rules.md (every break of macos/CLAUDE.md
 # § Where code lives and § Component boundaries, counted in the terminal).
-# SCOPE (names or paths, comma-separated) adds units/ — per source directory,
-# each type's dependencies, data flow and surface — which /arch-review reads;
+# SCOPE (names, paths or a type's name, comma-separated) adds units/ — per source
+# directory, each type's dependencies, data flow, surface and placement — which
+# /arch-review reads;
 # DETAIL=members adds there how each type's members call one another and write
 # its state.
-arch: ## Component tree, data dependencies and rule breaks to build/arch/ (SCOPE=core|app|kit|sdk|<dir> adds the unit map, DETAIL=members)
+arch: ## Component tree, data dependencies and rule breaks to build/arch/ (SCOPE=core|app|kit|sdk|<dir>|<Type> adds the unit map, DETAIL=members)
 	@swift run --package-path macos/tools/ArchMap --quiet ArchMap "$(CURDIR)/macos" "$(CURDIR)/build/arch" "$(SCOPE)" "$(DETAIL)"
 
 dmg: ## Create DMG installer (usage: make dmg APP=/path/to/ccterm.app)

@@ -132,6 +132,9 @@ struct DataMap {
     /// The state a binder keeps itself: every stored `var` that holds data — a collection or a
     /// mapped model — rather than a component, a store, a delegate, a closure, a task or a flag,
     /// with the members that write it and, when a store publishes the same type, which.
+    /// How many stored values a binder keeps itself (0 for any other type).
+    func keptCount(_ type: TypeInfo) -> Int { isBinder(type) ? kept(type).count : 0 }
+
     private func kept(_ type: TypeInfo) -> [String] {
         let own = members.members[type.name] ?? []
         var lines: [String] = []

@@ -150,8 +150,8 @@ struct Tree {
         }
     }
 
-    /// Where a type places what it lays out, in words: `transcript fills · composer bottom, above
-    /// transcript`. Read off its anchor constraints and the splits and stacks it fills, one phrase
+    /// Where a type places what it lays out, in words, for its unit map: `transcript fills · composer
+    /// bottom, above transcript`. Read off its anchor constraints and the splits and stacks it fills, one phrase
     /// per item — which side of the container, which sibling it is next to. Coarse on purpose:
     /// nothing is solved, constants are dropped.
     func placement(of type: TypeInfo) -> String? {
@@ -248,19 +248,10 @@ struct Tree {
         return parts.count > 8 ? shown + " · +\(parts.count - 8) more" : shown
     }
 
-    // MARK: Render
+    typealias Kid = (type: TypeInfo, isOwn: Bool, relation: String?)
 
-    func render(header: String) -> String {
-        let roots = index.types.filter(isRoot)
-        var out = header + "\n\n"
-        out += "How to read: each line is a type that builds or holds the ones indented under it — a window, a "
-        out += "controller, a view, or a type that builds them (a coordinator, a factory). `[module]` says where it "
-        out +=
-            "lives, given where it differs from the line it hangs from; *reads* the stores and services it holds, *builds* the ones it makes, *shows* the display "
-        out += "models it names, *reports* its delegate and callbacks. A type sits under the nearest type that "
-        out += "builds or strongly holds it; anywhere else it is named with ↑. An edge that is not ownership says "
-        out += "so: *(weak)* a weak or unowned reference, *(named only)* a type it names or calls a static factory "
-        out += "of, but neither builds nor holds.\n"
+    /// Where each type sits: the types placed, and each owner's kids with whether it is their home.
+    private func layout(_ roots: [TypeInfo]) -> (Set<ObjectIdentifier>, [ObjectIdentifier: [Kid]]) {
         // Breadth first, so a type sits under its nearest builder, not under
         // the first one a depth-first walk happens to meet.
         var placed = Set(roots.map(ObjectIdentifier.init))
@@ -287,8 +278,53 @@ struct Tree {
         for (owner, kids) in edges {
             kidsOf[owner] = kids.map { ($0.type, home[ObjectIdentifier($0.type)] == owner, $0.relation) }
         }
+        return (placed, kidsOf)
+    }
+
+    /// The top of the tree for `index.md`: the root's components, opened down to `depth` while a subtree is big, each with what a
+    /// reader can drill on — how much hangs below, the rule breaks and kept data in that subtree.
+    func outline(depth: Int, findings: [Rules.Finding], keeps: (TypeInfo) -> Int) -> [String] {
+        let roots = index.types.filter(isRoot)
+        let (_, kidsOf) = layout(roots)
+        func subtree(_ type: TypeInfo) -> [TypeInfo] {
+            [type] + (kidsOf[ObjectIdentifier(type)] ?? []).filter(\.isOwn).flatMap { subtree($0.type) }
+        }
         var lines: [String] = []
-        var walked: [TypeInfo] = []
+        func walk(_ type: TypeInfo, level: Int) {
+            let all = subtree(type)
+            let files = Set(all.map(\.file) + all.flatMap(\.extensionFiles))
+            let breaks = findings.filter { files.contains($0.file) }.count
+            let kept = all.map(keeps).reduce(0, +)
+            var facts = ["\(all.count - 1) below"]
+            if breaks > 0 { facts.append("\(breaks) rule breaks") }
+            if kept > 0 { facts.append("keeps \(kept)") }
+            let reads = notes(of: type).components(separatedBy: " · ").first { $0.contains("reads ") }
+            if let reads { facts.append(reads.replacingOccurrences(of: " — ", with: "")) }
+            lines.append(String(repeating: "  ", count: level) + "- `\(type.name)` — " + facts.joined(separator: " · "))
+            guard level < depth, all.count > 10 else { return }
+            for kid in kidsOf[ObjectIdentifier(type)] ?? [] where kid.isOwn && !kid.type.name.contains(".") {
+                walk(kid.type, level: level + 1)
+            }
+        }
+        for root in roots { walk(root, level: 0) }
+        return lines
+    }
+
+    // MARK: Render
+
+    func render(header: String) -> String {
+        let roots = index.types.filter(isRoot)
+        var out = header + "\n\n"
+        out += "How to read: each line is a type that builds or holds the ones indented under it — a window, a "
+        out += "controller, a view, or a type that builds them (a coordinator, a factory). `[module]` says where it "
+        out +=
+            "lives, given where it differs from the line it hangs from; *reads* the stores and services it holds, *builds* the ones it makes, *shows* the display "
+        out += "models it names, *reports* its delegate and callbacks. A type sits under the nearest type that "
+        out += "builds or strongly holds it; anywhere else it is named with ↑. An edge that is not ownership says "
+        out += "so: *(weak)* a weak or unowned reference, *(named only)* a type it names or calls a static factory "
+        out += "of, but neither builds nor holds.\n"
+        let (placed, kidsOf) = layout(roots)
+        var lines: [String] = []
         func walk(
             _ type: TypeInfo, isOwn: Bool, relation: String?, prefix: String, last: Bool, isRoot: Bool,
             parentModule: String = ""
@@ -299,7 +335,6 @@ struct Tree {
             let how = relation.map { " (\($0))" } ?? ""
             lines.append(prefix + branch + type.name + tag + how + (isOwn ? notes(of: type) : " ↑"))
             guard isOwn else { return }
-            walked.append(type)
             let kids = kidsOf[ObjectIdentifier(type)] ?? []
             let childPrefix = isRoot ? "" : prefix + (last ? "   " : "│  ")
             for (offset, kid) in kids.enumerated() {
@@ -311,14 +346,6 @@ struct Tree {
         for root in roots { walk(root, isOwn: true, relation: nil, prefix: "", last: true, isRoot: true) }
         let expanded = placed
         out += "\n```\n" + lines.joined(separator: "\n") + "\n```\n"
-        let placements = walked.compactMap { type in placement(of: type).map { "- \(type.name): \($0)" } }
-        if !placements.isEmpty {
-            out += "\n## Placement\n\n"
-            out += "Where each type puts what it lays out, read off its anchor constraints, splits and stacks — "
-            out += "a sketch, not a solve: *fills*, *top*/*bottom*/*leading*/*trailing* a side of the container "
-            out += "it spans, *below*/*above*/*after*/*before* a sibling, *fixed* a constant size.\n\n"
-            out += placements.joined(separator: "\n") + "\n"
-        }
         let unreached = index.types.filter {
             ["ccterm", "Components"].contains($0.module) && rules.isComponent($0)
                 && !expanded.contains(ObjectIdentifier($0)) && !$0.file.contains("/ComponentsDesign/")

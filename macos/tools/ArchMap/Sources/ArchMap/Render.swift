@@ -9,6 +9,8 @@ struct Renderer {
     /// Units to write; the rest of the parsed universe only feeds resolution.
     let units: [String]
     let header: String
+    /// Where a type places its parts, in words (`Tree.placement`): detail for the unit map.
+    var places: (TypeInfo) -> String? = { _ in nil }
 
     private static let streamMarkers = [
         "AsyncStream", "AsyncThrowingStream", "AnyPublisher", "Publisher<", "Subject<", "PassthroughSubject",
@@ -115,7 +117,7 @@ struct Renderer {
         state it owns, what it **emits** (published values, streams, callbacks, delegates) and **consumes** \
         (`sink`, `for-await`, `observes` = withObservationTracking, `swiftui-reads` = SwiftUI body reading an \
         @Observable, `notified-by`, `kvo`), what it **wires** on others (`sets-callback`, `sets-delegate`, `passes` = hands a publisher or stream to what it constructs), \
-        what it **creates**, `.shared` singletons it reaches for, and **used by** = which other units touch it \
+        what it **creates**, where it **places** its parts (anchor constraints, splits and stacks, in words: *fills*, *bottom*, *below X* — a sketch, not a solve), `.shared` singletons it reaches for, and **used by** = which other units touch it \
         and through which of its own members (`init` = constructs it); **internal, used only inside** = members nothing but the type itself touches (candidates for `private`); **minor types** = private or nested types with no data-flow role, \
         named only. Used-by counts every target — demo and \
         smoke executables too, even outside the scope; tests are not parsed. Names resolve only within a \
@@ -298,6 +300,7 @@ struct Renderer {
         }
         if type.tasks > 0 { add("tasks", ["\(type.tasks) Task {…}"]) }
 
+        if let placed = places(type) { add("places", [placed]) }
         let deps = (index.deps[ObjectIdentifier(type)] ?? [])
         add("deps", deps.map { $0.unit == type.unit ? $0.name : "\($0.name) [\($0.unit)]" })
         let usedBy = index.usedBy[ObjectIdentifier(type)] ?? [:]

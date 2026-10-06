@@ -104,12 +104,18 @@ for module in modules {
     while path.hasSuffix("/") { path.removeLast() }
     let exact = sources.filter { under($0.path, path) || under($0.unit, path) }
     if !exact.isEmpty { return exact }
+    // A type's name (`TranscriptViewController`) selects the unit it is declared in.
+    if let type = index.types.first(where: { $0.kind != "extension" && ($0.name == token || $0.shortName == token) }) {
+        return sources.filter { $0.unit == type.unit }
+    }
     let tail = "/" + path.lowercased()
     return sources.filter { file in
         let unit = file.unit.lowercased()
         return unit.hasSuffix(tail) || unit == path.lowercased() || unit.contains(tail + "/")
     }
 }
+
+let index = Index(files: sources)
 
 var scoped: [SourceFile] = []
 for token in scopeArg.split(whereSeparator: { $0 == "," || $0 == " " }).map(String.init) {
@@ -124,8 +130,6 @@ for token in scopeArg.split(whereSeparator: { $0 == "," || $0 == " " }).map(Stri
     scoped += hits
 }
 let scopedPaths = Set(scoped.map(\.path))
-
-let index = Index(files: sources)
 
 /// Member names the test targets reach (`x.name`). Tests aren't mapped, but a
 /// member they exercise is surface, not a type's own detail.
@@ -180,15 +184,16 @@ let rules = Rules(
     repoModules: Set(modules.map(\.name)))
 let ruleFindings = rules.findings()
 try write(rules.render(header: "# Rules — where code lives and component boundaries"), to: "rules.md")
-try write(Tree(index: index, rules: rules).render(header: "# Component tree"), to: "tree.md")
+let tree = Tree(index: index, rules: rules)
+try write(tree.render(header: "# Component tree"), to: "tree.md")
 let renderer = Renderer(
     index: index, files: sources, units: units,
     header: "# Unit map — scope `\(scopeArg)`\n\n\(stamp) \(units.count) units · "
-        + "\(sources.filter { scopedPaths.contains($0.path) }.reduce(0) { $0 + $1.lines }) lines.")
+        + "\(sources.filter { scopedPaths.contains($0.path) }.reduce(0) { $0 + $1.lines }) lines.",
+    places: { tree.placement(of: $0) })
 let members = MemberMap(index: index, files: sources)
-try write(
-    DataMap(index: index, rules: rules, renderer: renderer, members: members)
-        .render(header: "# Data dependencies — the app's binders and stores"), to: "data.md")
+let dataMap = DataMap(index: index, rules: rules, renderer: renderer, members: members)
+try write(dataMap.render(header: "# Data dependencies — the app's binders and stores"), to: "data.md")
 
 // The unit map /arch-review reads: only for a scope asked for.
 let writesUnits = !scopeIsDefault || detail == "members"
@@ -217,6 +222,16 @@ if writesUnits {
     unitLine = "- the unit map /arch-review reads: `make arch SCOPE=<core|app|kit|sdk|dir|unit>`"
 }
 var overview: [String] = ["# Architecture", "", stamp, ""]
+overview += [
+    "Read in levels: this page, then the three maps below, then one unit at a time — "
+        + "`make arch SCOPE=<TypeName>` writes the unit map of the directory that type lives in "
+        + "(its types' state, flows, surface and placement) to `units/`.",
+    "", "## Top of the tree", "",
+    "The composition root's components, opened while a subtree holds more than ten types: how many hang below each, the rule breaks "
+        + "and binder-kept values in that subtree, and the stores it reads. Look where the counts are.", "",
+]
+overview += tree.outline(depth: 5, findings: ruleFindings, keeps: { dataMap.keptCount($0) })
+overview += ["", "## Maps", ""]
 overview.append(
     "- [tree.md](tree.md) — the component tree from `AppDelegate`: who builds or holds whom, what each reads, "
         + "shows and reports")

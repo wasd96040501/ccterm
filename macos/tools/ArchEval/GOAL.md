@@ -53,3 +53,15 @@ misses is too subtle or not a defect, and leaves the set.
   find more.
 - A pattern that repeats across cases (the same kind of miss in several seeds) outweighs
   any single rate.
+
+### Iteration 2 (fixed before its cases exist)
+
+- The last iteration GOAL allows. Changes: reading in levels (`index.md` tops the tree with
+  counts; units only on demand) and lifecycle (per-controller phases, rule C1).
+- Fresh cases: one new author agent writes four (two layout, one data, one component-tree),
+  with the same author prompt — it is not told what the map now shows. Never read by the
+  developer before grading.
+- Arms, one review each: v1 core3, v2 read in levels (core plus units on demand), source.
+  The comparison that decides: v2 against v1 core3, by the same two-case rule.
+- Cost is measured too: each review's subagent tokens are recorded, so "levels save tokens"
+  is a number, not a claim.

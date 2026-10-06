@@ -33,3 +33,19 @@ holdout is uncalibrated: all six seeds count.
   from 0/4 and 1/2 to 3/4 and 2/2 — the `keeps` lines.
 - Layout stays the blind spot: 0/2 on holdout for both maps. Placement showed no
   measurable effect on any seed; cutting it is the default unless it earns its place.
+
+## Iteration 2 — reading in levels, lifecycle (4 fresh seeds, one review per arm)
+
+| arm | hits | tree | layout | data | top-3 true/false | tokens per review (mean) |
+|---|---|---|---|---|---|---|
+| v1 core3 (30 KB) | 3/4 | 1/1 | 1/2 | 1/1 | 11/1 | 81k |
+| v2 in levels (33 KB core, units on demand) | 4/4 | 1/1 | 2/2 | 1/1 | 12/0 | 118k |
+| source | 4/4 | 1/1 | 2/2 | 1/1 | 12/0 | 156k |
+
+- One case apart, so by the two-case rule **no measurable change** on recall. The case
+  that differs is a size-before-content break (`viewWillAppear` reads the bounds): v1 had
+  no way to see it; v2 named it from rule C1. That is the blind spot iteration 1 left.
+- v2 matched source on these four seeds at about three quarters of source's tokens; v1
+  core3 is the cheapest and missed the lifecycle case.
+- Caveat: the author prompt has always listed "size-dependent work run before the view is
+  laid out" among its layout examples, so a lifecycle seed was likely; four seeds is small.
